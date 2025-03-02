@@ -1,0 +1,1 @@
+{"root":["./src/context/streamcontext.tsx","./src/electron/main.ts","./src/frontend/app.tsx","./src/frontend/main.tsx","./src/utils/encryption.ts","./src/utils/logger.ts","./src/utils/profilemanager.ts"],"errors":true,"version":"5.8.2"}
