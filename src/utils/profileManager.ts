@@ -1,136 +1,100 @@
 import fs from "fs";
 import path from "path";
-import crypto from "crypto";
+import { app } from "electron";
+import { Profile } from "../models/Profile";
+import { encryptData, decryptData, base64Encode, base64Decode } from "../utils/encryption";
 
-const PROFILE_DIR = path.join(__dirname, "profiles");
-const STATE_FILE = path.join(PROFILE_DIR, "profileState.json");
-const ALGORITHM = "aes-256-cbc";
-const SALT = "magillastream"; // Can be unique per profile later
+const PROFILE_DIR = path.join(app.getPath("userData"), "profiles");
+const LAST_USED_PROFILE_KEY = "lastUsedProfile";
 
+// Ensure the profile directory exists
 if (!fs.existsSync(PROFILE_DIR)) {
   fs.mkdirSync(PROFILE_DIR, { recursive: true });
 }
 
-// 🔹 Generate a secure encryption key from a password
-const deriveKey = (password: string): Buffer => {
-  return crypto.pbkdf2Sync(password, SALT, 100000, 32, "sha256");
-};
+export class ProfileManager {
+  private static instance: ProfileManager;
 
-// 🔹 Encode an object to base64 (for unencrypted profiles)
-const encodeBase64 = (data: any): string => Buffer.from(JSON.stringify(data)).toString("base64");
-const decodeBase64 = (data: string): any => JSON.parse(Buffer.from(data, "base64").toString("utf-8"));
+  private constructor() {}
 
-// 🔹 Encrypt a profile object
-const encrypt = (data: string, password: string): string => {
-  const key = deriveKey(password);
-  const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
-  const encrypted = Buffer.concat([cipher.update(data), cipher.final()]);
-  return iv.toString("hex") + ":" + encrypted.toString("hex");
-};
-
-// 🔹 Decrypt a profile object
-const decrypt = (data: string, password: string): string | null => {
-  try {
-    const key = deriveKey(password);
-    const [ivHex, encryptedHex] = data.split(":");
-    const iv = Buffer.from(ivHex, "hex");
-    const encrypted = Buffer.from(encryptedHex, "hex");
-    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
-    return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString();
-  } catch (error) {
-    return null; // Incorrect password or corrupted file
+  public static getInstance(): ProfileManager {
+    if (!ProfileManager.instance) {
+      ProfileManager.instance = new ProfileManager();
+    }
+    return ProfileManager.instance;
   }
-};
 
-// 🔹 Save a profile (encrypted or base64 encoded)
-export const saveProfile = (profile: any, password?: string) => {
-  try {
-    const filePath = path.join(PROFILE_DIR, `${profile.id}.json.enc`);
-    let dataToSave = password ? encrypt(JSON.stringify(profile), password) : encodeBase64(profile);
-    fs.writeFileSync(filePath, dataToSave, "utf-8");
-    console.log(`Profile ${profile.name} saved.`);
-  } catch (error) {
-    console.error("Error saving profile:", error);
+  // Get all profile names for UI dropdown
+  public getAllProfileNames(): { name: string; encrypted: boolean }[] {
+    if (!fs.existsSync(PROFILE_DIR)) return [];
+
+    return fs.readdirSync(PROFILE_DIR)
+      .filter(file => file.endsWith(".json"))
+      .map(file => {
+        const profileName = path.basename(file, ".json");
+        const filePath = path.join(PROFILE_DIR, file);
+        const data = fs.readFileSync(filePath, "utf8");
+
+        // Determine if it's encrypted (Base64 or AES)
+        const encrypted = /^[A-Za-z0-9+/]+={0,2}$/.test(data.trim()) || data.includes(":");
+        return { name: profileName, encrypted };
+      });
   }
-};
 
-// 🔹 Load a profile (requires password if encrypted)
-export const loadProfile = (profileId: string, password?: string): any | null => {
-  try {
-    const filePath = path.join(PROFILE_DIR, `${profileId}.json.enc`);
+  // Save the last used profile name to localStorage
+  public saveLastUsedProfile(profileName: string) {
+    localStorage.setItem(LAST_USED_PROFILE_KEY, JSON.stringify({ lastUsedProfile: profileName }));
+  }
+
+  // Retrieve the last used profile name from localStorage
+  public getLastUsedProfile(): string | null {
+    const storedData = localStorage.getItem(LAST_USED_PROFILE_KEY);
+    return storedData ? JSON.parse(storedData).lastUsedProfile : null;
+  }
+
+  // Save a profile to disk (encrypt if password is provided)
+  public saveProfile(profile: Profile, password?: string) {
+    const filePath = path.join(PROFILE_DIR, `${profile.name}.json`);
+    let data = JSON.stringify(profile, null, 2);
+
+    if (password) {
+      data = encryptData(data, password);
+    } else {
+      data = base64Encode(data);
+    }
+
+    fs.writeFileSync(filePath, data);
+    this.saveLastUsedProfile(profile.name);
+  }
+
+  // Load a profile from disk (decrypt if needed)
+  public loadProfile(profileName: string, password?: string): Profile | null {
+    const filePath = path.join(PROFILE_DIR, `${profileName}.json`);
     if (!fs.existsSync(filePath)) return null;
 
-    const rawData = fs.readFileSync(filePath, "utf-8");
-    return password ? JSON.parse(decrypt(rawData, password) || "null") : decodeBase64(rawData);
-  } catch (error) {
-    console.error("Error loading profile:", error);
-    return null;
+    let data = fs.readFileSync(filePath, "utf8");
+    try {
+      if (password) {
+        data = decryptData(data, password);
+      } else {
+        data = base64Decode(data);
+      }
+
+      // Instantiate Profile class from JSON data
+      const profileObj = JSON.parse(data);
+      return new Profile(profileObj.id, profileObj.name, profileObj.incomingURL, profileObj.generatePTS);
+    } catch (err) {
+      console.error("Error loading profile:", err);
+      return null;
+    }
   }
-};
 
-// 🔹 List available profiles (without decrypting them)
-export const listProfiles = (): { id: string; name: string; encrypted: boolean }[] => {
-  return fs.readdirSync(PROFILE_DIR)
-    .filter(file => file.endsWith(".json.enc"))
-    .map(file => {
-      const id = file.replace(".json.enc", "");
-      return { id, name: `Profile ${id}`, encrypted: true }; // Name must be decrypted to be accurate
-    });
-};
-
-// 🔹 Remove encryption (requires password)
-export const removeEncryption = (profileId: string, password: string) => {
-  const profile = loadProfile(profileId, password);
-  if (profile) {
-    saveProfile(profile); // Save as base64 instead of encrypted
-    console.log(`Encryption removed from profile ${profile.name}.`);
-  } else {
-    console.error("Incorrect password or profile does not exist.");
+  // Delete a profile from disk
+  public deleteProfile(profileName: string) {
+    const filePath = path.join(PROFILE_DIR, `${profileName}.json`);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      console.log(`Profile "${profileName}" deleted.`);
+    }
   }
-};
-
-// 🔹 Enable encryption on an existing profile
-export const enableEncryption = (profileId: string, password: string) => {
-  const profile = loadProfile(profileId);
-  if (profile) {
-    saveProfile(profile, password); // Save encrypted
-    console.log(`Profile ${profile.name} is now encrypted.`);
-  } else {
-    console.error("Profile does not exist.");
-  }
-};
-
-// 🔹 Change profile password
-export const changeProfilePassword = (profileId: string, oldPassword: string, newPassword: string) => {
-  const profile = loadProfile(profileId, oldPassword);
-  if (profile) {
-    saveProfile(profile, newPassword);
-    console.log(`Password changed for profile ${profile.name}.`);
-  } else {
-    console.error("Incorrect password.");
-  }
-};
-
-// 🔹 Delete a profile (with confirmation)
-export const deleteProfile = (profileId: string) => {
-  const filePath = path.join(PROFILE_DIR, `${profileId}.json.enc`);
-  if (fs.existsSync(filePath)) {
-    fs.unlinkSync(filePath);
-    console.log(`Profile ${profileId} deleted.`);
-  } else {
-    console.log("Profile not found.");
-  }
-};
-
-// 🔹 Store the last used profile and unsaved changes
-export const saveProfileState = (profileId: string, unsavedChanges: any) => {
-  const state = { lastUsedProfile: profileId, unsavedChanges };
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state), "utf-8");
-};
-
-// 🔹 Load the last used profile and unsaved changes
-export const loadProfileState = (): { lastUsedProfile: string | null, unsavedChanges: any } => {
-  if (!fs.existsSync(STATE_FILE)) return { lastUsedProfile: null, unsavedChanges: null };
-  return JSON.parse(fs.readFileSync(STATE_FILE, "utf-8"));
-};
+}

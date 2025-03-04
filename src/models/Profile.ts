@@ -1,15 +1,13 @@
-// Profile.ts
-
 import { OutputGroup } from "./OutputGroup";
 import { Theme } from "./Theme";
 
 export class Profile {
-  id: string;
-  name: string;
-  incomingURL: string;
-  generatePTS: boolean;
-  outputGroups: OutputGroup[];
-  theme?: Theme;
+  private id: string;
+  private name: string;
+  private incomingURL: string;
+  private generatePTS: boolean;
+  private outputGroups: OutputGroup[];
+  private theme?: Theme;
 
   constructor(id: string, name: string, incomingURL: string, generatePTS: boolean, theme?: Theme) {
     this.id = id;
@@ -20,13 +18,70 @@ export class Profile {
     this.theme = theme;
   }
 
-  // Add an output group
-  addOutputGroup(group: OutputGroup) {
+  // Getters
+  public getId(): string {
+    return this.id;
+  }
+
+  public getName(): string {
+    return this.name;
+  }
+
+  public getIncomingURL(): string {
+    return this.incomingURL;
+  }
+
+  public isPTSGenerated(): boolean {
+    return this.generatePTS;
+  }
+
+  public getOutputGroups(): OutputGroup[] {
+    return this.outputGroups;
+  }
+
+  public getTheme(): Theme | undefined {
+    return this.theme;
+  }
+
+  // Setters
+  public setName(newName: string): void {
+    this.name = newName;
+  }
+
+  public setIncomingURL(url: string): void {
+    this.incomingURL = url;
+  }
+
+  public setGeneratePTS(state: boolean): void {
+    this.generatePTS = state;
+  }
+
+  public setTheme(theme: Theme): void {
+    this.theme = theme;
+  }
+
+  // Output Group Methods
+  public addOutputGroup(group: OutputGroup): void {
     this.outputGroups.push(group);
   }
 
-  // Remove an output group by ID
-  removeOutputGroup(groupId: string) {
-    this.outputGroups = this.outputGroups.filter((g) => g.id !== groupId);
+  public removeOutputGroup(groupId: string): void {
+    this.outputGroups = this.outputGroups.filter(g => g.getId() !== groupId);
+  }
+
+  public getOutputGroupById(groupId: string): OutputGroup | undefined {
+    return this.outputGroups.find(g => g.getId() === groupId);
+  }
+
+  // Export profile as JSON
+  public export(): string {
+    return JSON.stringify({
+      id: this.id,
+      name: this.name,
+      incomingURL: this.incomingURL,
+      generatePTS: this.generatePTS,
+      outputGroups: this.outputGroups.map(group => group.export()),
+      theme: this.theme,
+    }, null, 2);
   }
 }
