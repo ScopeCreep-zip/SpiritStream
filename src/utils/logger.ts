@@ -5,12 +5,10 @@ import { app } from "electron";
 export class Logger {
   private static instance: Logger;
   private logDir: string;
-  private logFile: string;
 
   private constructor(userDataPath: string) {
     this.logDir = path.join(userDataPath, "logs");
-    this.logFile = path.join(this.logDir, "app.log");
-    this.setupLogFile();
+    this.setupLogDirectory();
   }
 
   public static async getInstance(): Promise<Logger> {
@@ -22,30 +20,39 @@ export class Logger {
     return Logger.instance;
   }
 
-  private setupLogFile() {
+  private setupLogDirectory() {
     if (!fs.existsSync(this.logDir)) {
       fs.mkdirSync(this.logDir, { recursive: true });
     }
-    if (!fs.existsSync(this.logFile)) {
-      fs.writeFileSync(this.logFile, "");
-    }
   }
 
-  public log(level: string, message: string) {
-    const timestamp = new Date().toISOString();
-    const logEntry = `${timestamp} [${level.toUpperCase()}]: ${message}\n`;
-    fs.appendFileSync(this.logFile, logEntry);
+  private getTimestamp(): string {
+    return new Date().toISOString();
   }
 
-  public info(message: string) {
-    this.log("info", message);
+  private getLogFilePath(logFile: string = "app.log"): string {
+    return path.join(this.logDir, logFile);
   }
 
-  public warn(message: string) {
-    this.log("warn", message);
+  private writeLog(level: string, message: string, logFile: string = "app.log") {
+    const timestamp = this.getTimestamp();
+    const logEntry = `[${timestamp}] [${level.toUpperCase()}] ${message}\n`;
+    fs.appendFileSync(this.getLogFilePath(logFile), logEntry);
   }
 
-  public error(message: string) {
-    this.log("error", message);
+  public debug(message: string, logFile?: string) {
+    this.writeLog("DEBUG", message, logFile);
+  }
+
+  public info(message: string, logFile?: string) {
+    this.writeLog("INFO", message, logFile);
+  }
+
+  public warn(message: string, logFile?: string) {
+    this.writeLog("WARN", message, logFile);
+  }
+
+  public error(message: string, logFile?: string) {
+    this.writeLog("ERROR", message, logFile);
   }
 }
