@@ -1,4 +1,5 @@
-import React, { createContext, useState, useContext, ReactNode } from "react";
+import React, { createContext, useState, useContext, ReactNode, useEffect } from "react";
+import { saveProfiles, loadProfiles } from "../utils/profileManager"; // Use Profile Manager
 
 // 🔹 Define types for the streaming settings
 type StreamTarget = {
@@ -37,10 +38,28 @@ type StreamContextType = {
 // 🔹 Create the context
 const StreamContext = createContext<StreamContextType | undefined>(undefined);
 
-// 🔹 Context Provider Component
 export const StreamProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
+  const [profiles, setProfiles] = useState<Profile[]>(() => {
+    try {
+      return loadProfiles() || []; // Load profiles from profileManager
+    } catch (error) {
+      console.error("Failed to load profiles:", error);
+      return [];
+    }
+  });
+
+  const [currentProfile, setCurrentProfile] = useState<Profile | null>(() => {
+    return profiles.length > 0 ? profiles[0] : null;
+  });
+
+  // 🔹 Save profiles whenever they change
+  useEffect(() => {
+    try {
+      saveProfiles(profiles);
+    } catch (error) {
+      console.error("Failed to save profiles:", error);
+    }
+  }, [profiles]);
 
   return (
     <StreamContext.Provider value={{ profiles, currentProfile, setProfiles, setCurrentProfile }}>
