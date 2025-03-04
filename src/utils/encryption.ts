@@ -11,27 +11,24 @@ const ITERATIONS = 100000;
 
 const keyStoragePath = path.join(app.getPath("userData"), "keyfile.enc");
 
+// 🔹 Log the key storage path
 (async () => {
   const log = await logger;
   log.info(`Key storage path: ${keyStoragePath}`);
 })();
 
-/**
- * Derives a 256-bit AES encryption key from a password using PBKDF2.
- */
+// 🔹 Derive a 256-bit AES encryption key using PBKDF2
 export async function deriveKey(password: string, salt: Buffer): Promise<Buffer> {
   const log = await logger;
   log.debug("Deriving encryption key...");
   return crypto.pbkdf2Sync(password, salt, ITERATIONS, KEY_LENGTH, "sha256");
 }
 
-/**
- * Encrypts data using AES-256-GCM with a password-derived key.
- */
+// 🔹 Encrypt data using AES-256-GCM
 export async function encryptData(password: string, data: object): Promise<string> {
   const log = await logger;
   log.info("Encrypting data...");
-  
+
   const salt = crypto.randomBytes(SALT_LENGTH);
   const iv = crypto.randomBytes(IV_LENGTH);
   const key = await deriveKey(password, salt);
@@ -41,7 +38,7 @@ export async function encryptData(password: string, data: object): Promise<strin
     const encrypted = Buffer.concat([cipher.update(JSON.stringify(data), "utf8"), cipher.final()]);
     const authTag = cipher.getAuthTag();
     log.debug("Data encryption successful.");
-    
+
     return Buffer.concat([salt, iv, authTag, encrypted]).toString("base64");
   } catch (error) {
     log.error(`Encryption failed: ${error}`);
@@ -49,9 +46,7 @@ export async function encryptData(password: string, data: object): Promise<strin
   }
 }
 
-/**
- * Decrypts data using AES-256-GCM with a password-derived key.
- */
+// 🔹 Decrypt AES-256-GCM encrypted data
 export async function decryptData(password: string, encryptedData: string): Promise<object | null> {
   const log = await logger;
   log.info("Attempting to decrypt data...");
@@ -76,13 +71,21 @@ export async function decryptData(password: string, encryptedData: string): Prom
   }
 }
 
-/**
- * Saves the encryption key securely for "Remember Me" functionality.
- */
+// 🔹 Base64 Encoding (for profiles without passwords)
+export function base64Encode(data: string): string {
+  return Buffer.from(data, "utf8").toString("base64");
+}
+
+// 🔹 Base64 Decoding
+export function base64Decode(encodedData: string): string {
+  return Buffer.from(encodedData, "base64").toString("utf8");
+}
+
+// 🔹 Securely store an encryption key (for "Remember Me" feature)
 export async function storeEncryptedKey(password: string): Promise<void> {
   const log = await logger;
   log.info("Storing encrypted key...");
-  
+
   const salt = crypto.randomBytes(SALT_LENGTH);
   const key = await deriveKey(password, salt);
   const encryptedKey = await encryptData(password, { key: key.toString("hex") });
@@ -95,9 +98,7 @@ export async function storeEncryptedKey(password: string): Promise<void> {
   }
 }
 
-/**
- * Retrieves the stored encryption key if "Remember Me" is enabled.
- */
+// 🔹 Retrieve a stored encryption key (if "Remember Me" is enabled)
 export async function retrieveStoredKey(password: string): Promise<string | null> {
   const log = await logger;
   log.info("Retrieving stored encryption key...");
@@ -125,9 +126,7 @@ export async function retrieveStoredKey(password: string): Promise<string | null
   }
 }
 
-/**
- * Deletes the stored key (for logging out / security reset).
- */
+// 🔹 Delete stored encryption key (for logout/security reset)
 export async function deleteStoredKey(): Promise<void> {
   const log = await logger;
   log.info("Deleting stored encryption key...");
