@@ -3,6 +3,7 @@ import path from "path";
 import { app } from "electron";
 import { Profile } from "../models/Profile";
 import { encryptData, decryptData, base64Encode, base64Decode } from "../utils/encryption";
+import { Logger } from "../utils/logger";
 
 const PROFILE_DIR = path.join(app.getPath("userData"), "profiles");
 const LAST_USED_PROFILE_KEY = "lastUsedProfile";
@@ -14,12 +15,16 @@ if (!fs.existsSync(PROFILE_DIR)) {
 
 export class ProfileManager {
   private static instance: ProfileManager;
+  private logger: Logger;
 
-  private constructor() {}
+  private constructor(logger: Logger) {
+    this.logger = logger;
+  }
 
-  public static getInstance(): ProfileManager {
+  public static async getInstance(): Promise<ProfileManager> {
     if (!ProfileManager.instance) {
-      ProfileManager.instance = new ProfileManager();
+      const logger = await Logger.getInstance();
+      ProfileManager.instance = new ProfileManager(logger);
     }
     return ProfileManager.instance;
   }
@@ -27,6 +32,7 @@ export class ProfileManager {
   // Get all profile names for UI dropdown
   public getAllProfileNames(): { name: string; encrypted: boolean }[] {
     if (!fs.existsSync(PROFILE_DIR)) return [];
+    this.logger.info("Fetching all profile names.");
 
     return fs.readdirSync(PROFILE_DIR)
       .filter(file => file.endsWith(".json"))
@@ -44,6 +50,7 @@ export class ProfileManager {
   // Save the last used profile name to localStorage
   public saveLastUsedProfile(profileName: string) {
     localStorage.setItem(LAST_USED_PROFILE_KEY, JSON.stringify({ lastUsedProfile: profileName }));
+    this.logger.info(`Last used profile set to: ${profileName}`);
   }
 
   // Retrieve the last used profile name from localStorage
@@ -53,38 +60,48 @@ export class ProfileManager {
   }
 
   // Save a profile to disk (encrypt if password is provided)
-  public saveProfile(profile: Profile, password?: string) {
-    const filePath = path.join(PROFILE_DIR, `${profile.name}.json`);
-    let data = JSON.stringify(profile, null, 2);
+  public async saveProfile(profile: Profile, password?: string) {
+    const filePath = path.join(PROFILE_DIR, `${profile.getName()}.json`);
+    let data = profile.export();
 
-    if (password) {
-      data = encryptData(data, password);
-    } else {
-      data = base64Encode(data);
+    try {
+      if (password) {
+        data = await encryptData(password, JSON.parse(data));
+        this.logger.info(`Profile ${profile.getName()} saved with encryption.`);
+      } else {
+        data = base64Encode(data);
+        this.logger.info(`Profile ${profile.getName()} saved with base64 encoding.`);
+      }
+
+      fs.writeFileSync(filePath, data);
+      this.saveLastUsedProfile(profile.getName());
+    } catch (error) {
+      this.logger.error(`Failed to save profile: ${error}`);
     }
-
-    fs.writeFileSync(filePath, data);
-    this.saveLastUsedProfile(profile.name);
   }
 
   // Load a profile from disk (decrypt if needed)
-  public loadProfile(profileName: string, password?: string): Profile | null {
+  public async loadProfile(profileName: string, password?: string): Promise<Profile | null> {
     const filePath = path.join(PROFILE_DIR, `${profileName}.json`);
-    if (!fs.existsSync(filePath)) return null;
+    if (!fs.existsSync(filePath)) {
+      this.logger.warn(`Profile ${profileName} does not exist.`);
+      return null;
+    }
 
     let data = fs.readFileSync(filePath, "utf8");
     try {
       if (password) {
-        data = decryptData(data, password);
+        data = JSON.stringify(await decryptData(password, data));
+        this.logger.info(`Profile ${profileName} decrypted successfully.`);
       } else {
         data = base64Decode(data);
+        this.logger.info(`Profile ${profileName} loaded using base64 decoding.`);
       }
 
-      // Instantiate Profile class from JSON data
       const profileObj = JSON.parse(data);
       return new Profile(profileObj.id, profileObj.name, profileObj.incomingURL, profileObj.generatePTS);
-    } catch (err) {
-      console.error("Error loading profile:", err);
+    } catch (error) {
+      this.logger.error(`Failed to load profile: ${error}`);
       return null;
     }
   }
@@ -94,7 +111,9 @@ export class ProfileManager {
     const filePath = path.join(PROFILE_DIR, `${profileName}.json`);
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
-      console.log(`Profile "${profileName}" deleted.`);
+      this.logger.info(`Profile "${profileName}" deleted.`);
+    } else {
+      this.logger.warn(`Attempted to delete non-existent profile: ${profileName}`);
     }
   }
 }
