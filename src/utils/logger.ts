@@ -11,9 +11,8 @@ export class Logger {
     this.setupLogDirectory();
   }
 
-  public static async getInstance(): Promise<Logger> {
+  public static getInstance(): Logger {
     if (!Logger.instance) {
-      await app.whenReady();
       const userDataPath = app.getPath("userData");
       Logger.instance = new Logger(userDataPath);
     }

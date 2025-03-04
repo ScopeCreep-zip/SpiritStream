@@ -1,42 +1,52 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useStreamContext } from "../context/streamContext";
+import { ProfileManager } from "../utils/profileManager";
+import { Profile } from "../models/Profile";
+
+const profileManager = ProfileManager.getInstance();
 
 const App: React.FC = () => {
-  const { profiles, currentProfile, setProfiles, setCurrentProfile } = useStreamContext();
+  const { profileNames, currentProfile, setCurrentProfile } = useStreamContext();
+  const [loadedProfile, setLoadedProfile] = useState<Profile | null>(null);
 
   // Create a new profile
   const createProfile = () => {
-    const newProfile = {
-      id: crypto.randomUUID(),
-      name: `Profile ${profiles.length + 1}`,
-      incomingURL: "",
-      generatePTS: false,
-      outputGroups: [],
-    };
+    const newProfile = new Profile(
+      crypto.randomUUID(),
+      `Profile ${profileNames.length + 1}`,
+      "",
+      false
+    );
 
-    setProfiles([...profiles, newProfile]);
-    setCurrentProfile(newProfile);
+    profileManager.saveProfile(newProfile);
+    setCurrentProfile(newProfile.getName());  // Store just the profile name in currentProfile
   };
 
-  // Select a profile
-  const selectProfile = (id: string) => {
-    const profile = profiles.find((p) => p.id === id);
-    if (profile) {
-      setCurrentProfile(profile);
+  // Select a profile by name
+  const selectProfile = (name: string) => {
+    setCurrentProfile(name);  // Just set the profile name (string)
+  };
+
+  // Load the selected profile into state
+  useEffect(() => {
+    if (currentProfile) {
+      const profile = profileManager.loadProfile(currentProfile);
+      setLoadedProfile(profile);  // Load the full Profile object when currentProfile changes
     }
-  };
+  }, [currentProfile]);
 
   // Delete the current profile
   const deleteProfile = () => {
     if (!currentProfile) return;
-    const updatedProfiles = profiles.filter((p) => p.id !== currentProfile.id);
-    setProfiles(updatedProfiles);
-    setCurrentProfile(updatedProfiles.length > 0 ? updatedProfiles[0] : null);
+    profileManager.deleteProfile(currentProfile);
+    setCurrentProfile(""); // Reset to empty string
+    setLoadedProfile(null);
   };
 
-  // Save the current profile (dummy function for now)
+  // Save the current profile
   const saveProfile = () => {
-    console.log("Saving profile:", currentProfile);
+    if (!loadedProfile) return;
+    profileManager.saveProfile(loadedProfile);
   };
 
   return (
@@ -55,7 +65,7 @@ const App: React.FC = () => {
         <button
           onClick={saveProfile}
           className="w-full px-4 py-2 bg-green-500 dark:bg-green-700 text-white rounded-md mb-2"
-          disabled={!currentProfile}
+          disabled={!loadedProfile}
         >
           Save Profile
         </button>
@@ -63,23 +73,23 @@ const App: React.FC = () => {
         <button
           onClick={deleteProfile}
           className="w-full px-4 py-2 bg-red-500 dark:bg-red-700 text-white rounded-md mb-4"
-          disabled={!currentProfile}
+          disabled={!loadedProfile}
         >
           Delete Profile
         </button>
 
         {/* Profile Selection */}
-        {profiles.length > 0 && (
+        {profileNames.length > 0 && (
           <div>
             <label className="block text-sm font-medium mb-2">Select Profile:</label>
             <select
               onChange={(e) => selectProfile(e.target.value)}
-              value={currentProfile?.id || ""}
+              value={currentProfile || ""}
               className="w-full p-2 border rounded-md dark:bg-gray-700 dark:text-white"
             >
-              {profiles.map((profile) => (
-                <option key={profile.id} value={profile.id}>
-                  {profile.name}
+              {profileNames.map((name) => (
+                <option key={name} value={name}>
+                  {name}
                 </option>
               ))}
             </select>
@@ -90,8 +100,8 @@ const App: React.FC = () => {
       {/* Main Content (Placeholder for Output Groups) */}
       <main className="flex-1 p-6">
         <h1 className="text-3xl font-bold">MagillaStream</h1>
-        {currentProfile ? (
-          <p className="mt-4 text-lg">Current Profile: {currentProfile.name}</p>
+        {loadedProfile ? (
+          <p className="mt-4 text-lg">Current Profile: {loadedProfile.getName()}</p> {/* Display full profile name */}
         ) : (
           <p className="mt-4 text-lg text-gray-500">No profile selected</p>
         )}

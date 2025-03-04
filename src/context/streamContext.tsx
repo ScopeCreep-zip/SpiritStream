@@ -1,68 +1,64 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect } from "react";
-import { saveProfiles, loadProfiles } from "../utils/profileManager"; // Use Profile Manager
+import { ProfileManager } from "../utils/profileManager";
+import { Logger } from "../utils/logger";
+import { Profile } from "../models/Profile";
 
-// 🔹 Define types for the streaming settings
-type StreamTarget = {
-  url: string;
-  streamKey: string;
-};
-
-type OutputGroup = {
-  id: string;
-  name: string;
-  videoEncoder: string;
-  resolution: string;
-  bitrate: string;
-  fps: string;
-  audioCodec: string;
-  audioBitrate: string;
-  streamTargets: StreamTarget[];
-};
-
-type Profile = {
-  id: string;
-  name: string;
-  incomingURL: string;
-  generatePTS: boolean;
-  outputGroups: OutputGroup[];
-};
+const profileManager = ProfileManager.getInstance();
+const logger = Logger.getInstance();
 
 // 🔹 Define the shape of the context
 type StreamContextType = {
-  profiles: Profile[];
+  profileNames: string[];
   currentProfile: Profile | null;
-  setProfiles: React.Dispatch<React.SetStateAction<Profile[]>>;
-  setCurrentProfile: React.Dispatch<React.SetStateAction<Profile | null>>;
+  setCurrentProfile: (profileName: string) => void;
 };
 
 // 🔹 Create the context
 const StreamContext = createContext<StreamContextType | undefined>(undefined);
 
 export const StreamProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [profiles, setProfiles] = useState<Profile[]>(() => {
-    try {
-      return loadProfiles() || []; // Load profiles from profileManager
-    } catch (error) {
-      console.error("Failed to load profiles:", error);
-      return [];
-    }
-  });
+  const [profileNames, setProfileNames] = useState<string[]>([]);
+  const [currentProfile, setCurrentProfile] = useState<Profile | null>(null);
 
-  const [currentProfile, setCurrentProfile] = useState<Profile | null>(() => {
-    return profiles.length > 0 ? profiles[0] : null;
-  });
-
-  // 🔹 Save profiles whenever they change
+  // 🔹 Load profile names on mount (for dropdown selection)
   useEffect(() => {
     try {
-      saveProfiles(profiles);
+      const profiles = profileManager.getAllProfileNames().map(({ name }) => name);
+      setProfileNames(profiles);
+
+      // Load the last used profile from localStorage
+      const lastUsedProfile = profileManager.getLastUsedProfile();
+      if (lastUsedProfile) {
+        selectProfile(lastUsedProfile);
+      }
     } catch (error) {
-      console.error("Failed to save profiles:", error);
+      logger.error(`Failed to load profile names: ${error}`);
     }
-  }, [profiles]);
+  }, []);
+
+  // 🔹 Load a profile when selected
+  const selectProfile = (profileName: string) => {
+    try {
+      const profile = profileManager.loadProfile(profileName);
+      if (profile) {
+        setCurrentProfile(profile);
+      } else {
+        logger.warn(`Profile ${profileName} could not be loaded.`);
+      }
+    } catch (error) {
+      logger.error(`Failed to load profile: ${error}`);
+    }
+  };
+
+  // 🔹 Update lastUsedProfile in localStorage whenever the profile changes
+  useEffect(() => {
+    if (currentProfile) {
+      profileManager.saveLastUsedProfile(currentProfile.getName());
+    }
+  }, [currentProfile]);
 
   return (
-    <StreamContext.Provider value={{ profiles, currentProfile, setProfiles, setCurrentProfile }}>
+    <StreamContext.Provider value={{ profileNames, currentProfile, setCurrentProfile: selectProfile }}>
       {children}
     </StreamContext.Provider>
   );

@@ -2,29 +2,27 @@ import fs from "fs";
 import path from "path";
 import { app } from "electron";
 import { Profile } from "../models/Profile";
-import { encryptData, decryptData, base64Encode, base64Decode } from "../utils/encryption";
+import { Encryption } from "../utils/encryption";
 import { Logger } from "../utils/logger";
 
 const PROFILE_DIR = path.join(app.getPath("userData"), "profiles");
 const LAST_USED_PROFILE_KEY = "lastUsedProfile";
 
-// Ensure the profile directory exists
-if (!fs.existsSync(PROFILE_DIR)) {
-  fs.mkdirSync(PROFILE_DIR, { recursive: true });
-}
-
 export class ProfileManager {
   private static instance: ProfileManager;
   private logger: Logger;
+  private encryption: Encryption;
 
-  private constructor(logger: Logger) {
+  private constructor(logger: Logger, encryption: Encryption) {
     this.logger = logger;
+    this.encryption = encryption;
   }
 
-  public static async getInstance(): Promise<ProfileManager> {
+  public static getInstance(): ProfileManager {
     if (!ProfileManager.instance) {
-      const logger = await Logger.getInstance();
-      ProfileManager.instance = new ProfileManager(logger);
+      const logger = Logger.getInstance();
+      const encryption = Encryption.getInstance();
+      ProfileManager.instance = new ProfileManager(logger, encryption);
     }
     return ProfileManager.instance;
   }
@@ -59,17 +57,16 @@ export class ProfileManager {
     return storedData ? JSON.parse(storedData).lastUsedProfile : null;
   }
 
-  // Save a profile to disk (encrypt if password is provided)
-  public async saveProfile(profile: Profile, password?: string) {
+  public saveProfile(profile: Profile, password?: string) {
     const filePath = path.join(PROFILE_DIR, `${profile.getName()}.json`);
     let data = profile.export();
 
     try {
       if (password) {
-        data = await encryptData(password, JSON.parse(data));
+        data = this.encryption.encryptData(password, JSON.parse(data));
         this.logger.info(`Profile ${profile.getName()} saved with encryption.`);
       } else {
-        data = base64Encode(data);
+        data = this.encryption.base64Encode(data);
         this.logger.info(`Profile ${profile.getName()} saved with base64 encoding.`);
       }
 
@@ -80,8 +77,7 @@ export class ProfileManager {
     }
   }
 
-  // Load a profile from disk (decrypt if needed)
-  public async loadProfile(profileName: string, password?: string): Promise<Profile | null> {
+  public loadProfile(profileName: string, password?: string): Profile | null {
     const filePath = path.join(PROFILE_DIR, `${profileName}.json`);
     if (!fs.existsSync(filePath)) {
       this.logger.warn(`Profile ${profileName} does not exist.`);
@@ -91,10 +87,10 @@ export class ProfileManager {
     let data = fs.readFileSync(filePath, "utf8");
     try {
       if (password) {
-        data = JSON.stringify(await decryptData(password, data));
+        data = JSON.stringify(this.encryption.decryptData(password, data));
         this.logger.info(`Profile ${profileName} decrypted successfully.`);
       } else {
-        data = base64Decode(data);
+        data = this.encryption.base64Decode(data);
         this.logger.info(`Profile ${profileName} loaded using base64 decoding.`);
       }
 
