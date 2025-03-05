@@ -24,21 +24,21 @@ const App: React.FC = () => {
 
   // Select a profile by name
   const selectProfile = (name: string) => {
-    setCurrentProfile(name);  // Just set the profile name (string)
+    setCurrentProfile(name);  // Just store the profile name (string)
   };
 
   // Load the selected profile into state
   useEffect(() => {
     if (currentProfile) {
-      const profile = profileManager.loadProfile(currentProfile);
-      setLoadedProfile(profile);  // Load the full Profile object when currentProfile changes
+      const profile = profileManager.loadProfile(typeof currentProfile === 'string' ? currentProfile : currentProfile?.getName());   // Load the full Profile object when currentProfile changes
+      setLoadedProfile(profile);
     }
   }, [currentProfile]);
 
   // Delete the current profile
   const deleteProfile = () => {
     if (!currentProfile) return;
-    profileManager.deleteProfile(currentProfile);
+    profileManager.deleteProfile(typeof currentProfile === 'string' ? currentProfile : currentProfile?.getName());
     setCurrentProfile(""); // Reset to empty string
     setLoadedProfile(null);
   };
@@ -83,13 +83,13 @@ const App: React.FC = () => {
           <div>
             <label className="block text-sm font-medium mb-2">Select Profile:</label>
             <select
-              onChange={(e) => selectProfile(e.target.value)}
-              value={currentProfile || ""}
+              onChange={(e) => selectProfile(e.target.value)}  // Just set the profile name
+              value={typeof currentProfile === 'string' ? currentProfile : currentProfile?.getName() || ""}
               className="w-full p-2 border rounded-md dark:bg-gray-700 dark:text-white"
             >
               {profileNames.map((name) => (
                 <option key={name} value={name}>
-                  {name}
+                  {name}  {/* Display the profile name */}
                 </option>
               ))}
             </select>
@@ -101,7 +101,7 @@ const App: React.FC = () => {
       <main className="flex-1 p-6">
         <h1 className="text-3xl font-bold">MagillaStream</h1>
         {loadedProfile ? (
-          <p className="mt-4 text-lg">Current Profile: {loadedProfile.getName()}</p> {/* Display full profile name */}
+          <p className="mt-4 text-lg">Current Profile: {loadedProfile.getName()}</p>  
         ) : (
           <p className="mt-4 text-lg text-gray-500">No profile selected</p>
         )}

@@ -18,6 +18,7 @@ export class ProfileManager {
     this.encryption = encryption;
   }
 
+  // Make getInstance() synchronous
   public static getInstance(): ProfileManager {
     if (!ProfileManager.instance) {
       const logger = Logger.getInstance();
@@ -56,6 +57,7 @@ export class ProfileManager {
     const storedData = localStorage.getItem(LAST_USED_PROFILE_KEY);
     return storedData ? JSON.parse(storedData).lastUsedProfile : null;
   }
+
 
   public saveProfile(profile: Profile, password?: string) {
     const filePath = path.join(PROFILE_DIR, `${profile.getName()}.json`);
