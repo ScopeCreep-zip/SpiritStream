@@ -1,66 +1,43 @@
 import "./init";
-import { app, BrowserWindow, ipcMain } from "electron";
-import path from "path";
-import { Logger } from "../utils/logger";
-import { ProfileManager } from "../utils/profileManager";
+import { app, BrowserWindow } from "electron";
+import Fastify from "fastify";
+import { Logger } from "../utils/logger"; 
 
-const mainDir = path.resolve(__dirname, "../..");
-const logger = Logger.getInstance();
-const profileManager = ProfileManager.getInstance();
+const logger = Logger.getInstance(); 
 
-let mainWindow: BrowserWindow | null = null;
-
-app.whenReady().then(() => {
-    logger.info("Initializing Profile Manager...");
-    console.log(profileManager.getAllProfileNames()); 
-    profileManager.getAllProfileNames();
-
-
-    logger.info("Creating main application window...");
-    createWindow();
+// Create Fastify server
+const fastify = Fastify({
+  logger: {
+    level: "info",
+    stream: {
+      write: (msg) => logger.info(msg.trim()), // Pipe Fastify logs to logger
+    },
+  },
 });
 
-const createWindow = () => {
-    logger.info("Creating main application window...");
-
-    mainWindow = new BrowserWindow({
-        width: 1200,
-        height: 800,
-        webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false,
-        },
-    });
-
-    if (process.env.NODE_ENV === "development") {
-        const loadURL = () => {
-            try {
-                logger.info("Loading Vite development server...");
-                mainWindow?.loadURL("http://localhost:5173");
-                mainWindow?.webContents.openDevTools();
-            } catch (e) {
-                logger.warn("Vite dev server not ready, retrying in 1s...");
-                setTimeout(loadURL, 1000);
-            }
-        };
-        loadURL();
-    } else {
-        logger.info("Loading production build...");
-        mainWindow.loadURL(`file://${path.join(mainDir, "dist/index.html")}`);
-    }
-};
-
-app.on("window-all-closed", () => {
-    logger.warn("All windows closed.");
-    if (process.platform !== "darwin") {
-        logger.info("Quitting app...");
-        app.quit();
-    }
+// Test route
+fastify.get("/api/test", async (request, reply) => {
+  return { message: "Fastify is running inside Electron!" };
 });
 
-app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-        logger.info("Recreating window on macOS activate.");
-        createWindow();
-    }
+// Start Fastify when Electron is ready
+app.whenReady().then(async () => {
+  try {
+    logger.info("Attempting to start Fastify..."); 
+    await fastify.listen({ port: 3000 });
+    logger.info("Fastify running on http://localhost:3000");
+  } catch (err) {
+    logger.error(`Fastify failed to start: ${err}`);
+    process.exit(1);
+  }
+
+  const mainWindow = new BrowserWindow({
+    width: 800,
+    height: 600,
+    webPreferences: {
+      nodeIntegration: true, // May change if using a preload script later
+    },
+  });
+
+  mainWindow.loadURL("about:blank"); // Temporary, will change later
 });

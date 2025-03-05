@@ -5,7 +5,7 @@
   "main": "src/electron/main.js",
   "scripts": {
     "build": "npx tsc",
-    "electron": "cross-env LOG_LEVEL=%LOG_LEVEL% electron dist/electron/main.js",
+    "electron": "electron dist/electron/main.js",
     "start": "cross-env LOG_LEVEL=debug npm run build && npm run electron"
   },
   "repository": {
@@ -31,5 +31,9 @@
     "cross-env": "^7.0.3",
     "electron": "^34.3.0",
     "typescript": "^5.8.2"
+  },
+  "dependencies": {
+    "fastify": "^5.2.1",
+    "fastify-cors": "^6.0.3"
   }
 }
