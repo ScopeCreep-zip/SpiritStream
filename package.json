@@ -4,10 +4,9 @@
   "description": "MagillaStream",
   "main": "src/electron/main.js",
   "scripts": {
-    "dev": "vite",
-    "build": "npx tsc && vite build --emptyOutDir=false",
+    "build": "npx tsc",
     "electron": "cross-env LOG_LEVEL=%LOG_LEVEL% electron dist/electron/main.js",
-    "start": "cross-env LOG_LEVEL=debug npm run build && concurrently \"npm run dev\" \"npm run electron\""
+    "start": "cross-env LOG_LEVEL=debug npm run build && npm run electron"
   },
   "repository": {
     "type": "git",
@@ -20,32 +19,17 @@
     "url": "https://github.com/billboyles/magillastream/issues"
   },
   "homepage": "https://github.com/billboyles/magillastream#readme",
-  "dependencies": {
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "vite": "^6.2.0"
-  },
   "devDependencies": {
-    "@types/babel__core": "^7.20.5",
-    "@types/babel__generator": "^7.6.8",
-    "@types/babel__template": "^7.4.4",
-    "@types/babel__traverse": "^7.20.6",
     "@types/cacheable-request": "^6.0.3",
     "@types/estree": "^1.0.6",
     "@types/http-cache-semantics": "^4.0.4",
     "@types/keyv": "^3.1.4",
     "@types/node": "^22.13.8",
-    "@types/react": "^19.0.10",
-    "@types/react-dom": "^19.0.4",
     "@types/responselike": "^1.0.3",
     "@types/yauzl": "^2.10.3",
-    "@vitejs/plugin-react": "^4.3.4",
-    "autoprefixer": "^10.4.20",
     "concurrently": "^9.1.2",
     "cross-env": "^7.0.3",
     "electron": "^34.3.0",
-    "postcss": "^8.5.3",
-    "tailwindcss": "^3.4.1",
     "typescript": "^5.8.2"
   }
 }

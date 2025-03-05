@@ -12,7 +12,9 @@ let mainWindow: BrowserWindow | null = null;
 
 app.whenReady().then(() => {
     logger.info("Initializing Profile Manager...");
-    profileManager.getAllProfileNames(); // Ensures profiles are loaded early
+    console.log(profileManager.getAllProfileNames()); 
+    profileManager.getAllProfileNames();
+
 
     logger.info("Creating main application window...");
     createWindow();

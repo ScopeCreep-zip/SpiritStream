@@ -1,9 +1,8 @@
 {
   "compilerOptions": {
-    "module": "CommonJS",
+    "module": "NodeNext",
     "target": "ESNext",
-    "moduleResolution": "node",
-    "jsx": "react-jsx",
+    "moduleResolution": "NodeNext",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -14,5 +13,5 @@
     "outDir": "./dist",
     "rootDir": "./src"
   },
-  "include": ["src/**/*", "src/models/.ts"]
+  "include": ["src/**/*"]
 }
