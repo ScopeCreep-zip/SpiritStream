@@ -2,6 +2,7 @@ import "./init";
 import { app, BrowserWindow } from "electron";
 import Fastify from "fastify";
 import { Logger } from "../utils/logger";
+import { FFmpegHandler } from "../utils/ffmpegHandler";
 
 const logger = Logger.getInstance();
 const PORT = Number(process.env.FASTIFY_PORT) || 3000; // Allow configurable port
@@ -37,6 +38,15 @@ app.on("activate", () => {
 // Start Fastify when Electron is ready
 app.whenReady().then(async () => {
   try {
+    logger.info("Testing FFmpeg...");
+    const ffmpegHandler = FFmpegHandler.getInstance();
+    try {
+      ffmpegHandler.testFFmpeg();
+      logger.info("FFmpeg test successful.");
+    } catch (err) {
+      logger.error(`FFmpeg test failed: ${err}`);
+    }
+
     logger.info("Attempting to start Fastify...");
     await fastify.listen({ port: PORT });
     logger.info(`Fastify running on http://localhost:${PORT}`);
