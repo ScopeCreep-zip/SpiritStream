@@ -9,7 +9,9 @@ export class OutputGroup {
   private fps: string;
   private audioCodec: string;
   private audioBitrate: string;
+  private generatePTS: boolean;
   private streamTargets: StreamTarget[];
+
 
   constructor(
     id: string,
@@ -19,7 +21,8 @@ export class OutputGroup {
     bitrate: string,
     fps: string,
     audioCodec: string,
-    audioBitrate: string
+    audioBitrate: string,
+    generatePTS: boolean
   ) {
     this.id = id;
     this.name = name;
@@ -29,6 +32,7 @@ export class OutputGroup {
     this.fps = fps;
     this.audioCodec = audioCodec;
     this.audioBitrate = audioBitrate;
+    this.generatePTS = generatePTS;
     this.streamTargets = [];
   }
 
@@ -65,6 +69,10 @@ export class OutputGroup {
     return this.audioBitrate;
   }
 
+  public isPTSGenerated(): boolean {
+    return this.generatePTS;
+  }
+
   public getStreamTargets(): StreamTarget[] {
     return this.streamTargets;
   }
@@ -98,6 +106,10 @@ export class OutputGroup {
     this.audioBitrate = bitrate;
   }
 
+  public setPTSGeneration(value: boolean): void {
+    this.generatePTS = value;
+  }
+
   // Stream Target Management
   public addStreamTarget(target: StreamTarget): void {
     this.streamTargets.push(target);
@@ -122,6 +134,7 @@ export class OutputGroup {
       fps: this.fps,
       audioCodec: this.audioCodec,
       audioBitrate: this.audioBitrate,
+      generatePTS: this.generatePTS,
       streamTargets: this.streamTargets.map(target => target.export()),
     }, null, 2);
   }

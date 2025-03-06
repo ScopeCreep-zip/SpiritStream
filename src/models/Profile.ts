@@ -5,7 +5,6 @@ export class Profile {
   private id: string;
   private name: string;
   private incomingURL: string;
-  private generatePTS: boolean;
   private outputGroups: OutputGroup[];
   private theme?: Theme;
 
@@ -13,7 +12,6 @@ export class Profile {
     this.id = id;
     this.name = name;
     this.incomingURL = incomingURL;
-    this.generatePTS = generatePTS;
     this.outputGroups = [];
     this.theme = theme;
   }
@@ -31,10 +29,6 @@ export class Profile {
     return this.incomingURL;
   }
 
-  public isPTSGenerated(): boolean {
-    return this.generatePTS;
-  }
-
   public getOutputGroups(): OutputGroup[] {
     return this.outputGroups;
   }
@@ -50,10 +44,6 @@ export class Profile {
 
   public setIncomingURL(url: string): void {
     this.incomingURL = url;
-  }
-
-  public setGeneratePTS(state: boolean): void {
-    this.generatePTS = state;
   }
 
   public setTheme(theme: Theme): void {
@@ -79,7 +69,6 @@ export class Profile {
       id: this.id,
       name: this.name,
       incomingURL: this.incomingURL,
-      generatePTS: this.generatePTS,
       outputGroups: this.outputGroups.map(group => group.export()),
       theme: this.theme,
     }, null, 2);
