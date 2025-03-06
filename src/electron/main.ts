@@ -2,7 +2,9 @@ import "./init";
 import { app, BrowserWindow } from "electron";
 import Fastify from "fastify";
 import { Logger } from "../utils/logger";
-import { FFmpegHandler } from "../utils/ffmpegHandler"; // Import FFmpegHandler
+import { FFmpegHandler } from "../utils/ffmpegHandler";
+import { OutputGroup } from "../models/OutputGroup";
+import { StreamTarget } from "../models/StreamTarget"; 
 
 const logger = Logger.getInstance();
 const PORT = Number(process.env.FASTIFY_PORT) || 3000; // Allow configurable port
@@ -35,26 +37,69 @@ app.on("activate", () => {
   }
 });
 
+// Function to test FFmpeg streaming with dummy OutputGroups
+function testFFmpegStreaming() {
+    const ffmpegHandler = FFmpegHandler.getInstance();
+    
+    // Dummy input URL (could be a local file or network stream)
+    const inputURL = "test.mp4"; 
+
+    // Dummy output groups
+    const outputGroups: OutputGroup[] = [
+        new OutputGroup(
+            "group1",
+            "1080p60_H264",
+            "h264_nvenc",
+            "1920x1080",
+            "6000k",
+            "60",
+            "aac",
+            "128k"
+        ),
+        new OutputGroup(
+            "group2",
+            "720p30_H265",
+            "hevc_nvenc",
+            "1280x720",
+            "3000k",
+            "30",
+            "aac",
+            "128k"
+        ),
+    ];
+
+    // Assign fake StreamTargets to each OutputGroup
+    outputGroups[0].addStreamTarget(new StreamTarget("yt", "rtmp://youtube.com/live", "KEY1"));
+    outputGroups[0].addStreamTarget(new StreamTarget("fb", "rtmp://facebook.com/live", "KEY2"));
+
+    outputGroups[1].addStreamTarget(new StreamTarget("twitch", "rtmp://twitch.tv/live", "KEY3"));
+    outputGroups[1].addStreamTarget(new StreamTarget("kick", "rtmp://kick.com/live", "KEY4"));
+
+    logger.info("Starting FFmpeg test with dummy OutputGroups...");
+    ffmpegHandler.startFFmpeg(inputURL, outputGroups);
+}
+
 // Start Fastify when Electron is ready
 app.whenReady().then(async () => {
   try {
-    logger.info("Testing FFmpeg...");
+    logger.debug("Testing FFmpeg...");
     const ffmpegHandler = FFmpegHandler.getInstance();
+    
     try {
       ffmpegHandler.testFFmpeg();
-      logger.info("FFmpeg test successful.");
+      logger.debug("FFmpeg test successful.");
     } catch (err) {
       logger.error(`FFmpeg test failed: ${err}`);
     }
 
-    logger.info("Attempting to start Fastify...");
+    logger.debug("Attempting to start Fastify...");
     await fastify.listen({ port: PORT });
-    logger.info(`Fastify running on http://localhost:${PORT}`);
+    logger.debug(`Fastify running on http://localhost:${PORT}`);
 
     ffmpegHandler.getAvailableAudioEncoders()
       .then(encoders => {
-        logger.info("Available Audio Encoders:");
-        encoders.forEach(encoder => logger.info(encoder));
+        logger.debug("Available Audio Encoders:");
+        encoders.forEach(encoder => logger.debug(encoder));
       })
       .catch(error => {
         logger.error(`Error detecting available audio encoders: ${error}`);
@@ -62,12 +107,15 @@ app.whenReady().then(async () => {
 
     ffmpegHandler.getAvailableVideoEncoders()
       .then(encoders => {
-        logger.info("Available Video Encoders:");
-        encoders.forEach(encoder => logger.info(encoder));
+        logger.debug("Available Video Encoders:");
+        encoders.forEach(encoder => logger.debug(encoder));
       })
       .catch(error => {
         logger.error(`Error detecting available video encoders: ${error}`);
       }); 
+
+    // Start FFmpeg streaming test after everything else is initialized
+    testFFmpegStreaming();
 
   } catch (err) {
     logger.error(`Fastify failed to start: ${err}`);
