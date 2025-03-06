@@ -2,17 +2,37 @@ import path from "path";
 import { app } from "electron";
 import { spawn, ChildProcessWithoutNullStreams } from "child_process";
 import { Logger } from "./logger";
+import { EncoderDetection } from "./encoderDetection";
 
 export class FFmpegHandler {
     private static instance: FFmpegHandler;
     private ffmpegPath: string;
     private logger: Logger;
+    private encoderDetection: EncoderDetection;
 
     private constructor() {
-        this.ffmpegPath = app.isPackaged
-            ? path.join(process.resourcesPath, "ffmpeg", "bin", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg")
-            : path.join(app.getAppPath(), "resources", "ffmpeg", "bin", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
+        // Get the correct path to the FFmpeg binary based on env
+        if (app.isPackaged) {
+            // production path
+            this.ffmpegPath = path.join(
+              process.resourcesPath,
+              "ffmpeg",
+              "bin",
+              process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg"
+            );
+          } else {
+            // development path
+            this.ffmpegPath = path.join(
+              path.dirname(app.getAppPath()), 
+              "resources",
+              "ffmpeg",
+              "bin",
+              process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg"
+            );
+          }
+
         this.logger = Logger.getInstance();
+        this.encoderDetection = new EncoderDetection(this.ffmpegPath);
     }
 
     public static getInstance(): FFmpegHandler {
@@ -38,5 +58,13 @@ export class FFmpegHandler {
         process.on("close", (code) => {
             this.logger.info(`FFmpeg process exited with code ${code}`, 'ffmpeg.log');
         });
+    }
+
+    public async getAvailableAudioEncoders(): Promise<string[]> {
+        return this.encoderDetection.getAvailableAudioEncoders();
+    }
+
+    public async getAvailableVideoEncoders(): Promise<string[]> {
+        return this.encoderDetection.getAvailableVideoEncoders();
     }
 }

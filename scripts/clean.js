@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 
 const distDir = path.join(__dirname, "..", "dist");
+const releaseDir = path.join(__dirname, "..", "release");
 
 function deleteFolderRecursive(folderPath) {
   if (fs.existsSync(folderPath)) {
@@ -14,3 +15,6 @@ function deleteFolderRecursive(folderPath) {
 
 // Delete `dist/`
 deleteFolderRecursive(distDir);
+
+// Delete `release/`
+deleteFolderRecursive(releaseDir);

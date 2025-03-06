@@ -2,7 +2,7 @@ import "./init";
 import { app, BrowserWindow } from "electron";
 import Fastify from "fastify";
 import { Logger } from "../utils/logger";
-import { FFmpegHandler } from "../utils/ffmpegHandler";
+import { FFmpegHandler } from "../utils/ffmpegHandler"; // Import FFmpegHandler
 
 const logger = Logger.getInstance();
 const PORT = Number(process.env.FASTIFY_PORT) || 3000; // Allow configurable port
@@ -50,6 +50,25 @@ app.whenReady().then(async () => {
     logger.info("Attempting to start Fastify...");
     await fastify.listen({ port: PORT });
     logger.info(`Fastify running on http://localhost:${PORT}`);
+
+    ffmpegHandler.getAvailableAudioEncoders()
+      .then(encoders => {
+        logger.info("Available Audio Encoders:");
+        encoders.forEach(encoder => logger.info(encoder));
+      })
+      .catch(error => {
+        logger.error(`Error detecting available audio encoders: ${error}`);
+      });
+
+    ffmpegHandler.getAvailableVideoEncoders()
+      .then(encoders => {
+        logger.info("Available Video Encoders:");
+        encoders.forEach(encoder => logger.info(encoder));
+      })
+      .catch(error => {
+        logger.error(`Error detecting available video encoders: ${error}`);
+      }); 
+
   } catch (err) {
     logger.error(`Fastify failed to start: ${err}`);
     process.exit(1);

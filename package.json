@@ -2,19 +2,43 @@
   "name": "magillastream",
   "version": "1.0.0",
   "description": "MagillaStream",
-  "main": "src/electron/main.js",
+  "main": "dist/electron/main.js",
   "scripts": {
-    "build": "npx tsc && electron-builder",
+    "clean": "node scripts/clean.js",
+    "compile": "npx tsc",
+    "pack": "electron-builder",
+    "build": "npm run clean && npm run compile && npm run pack",
     "electron": "electron dist/electron/main.js",
-    "start": "cross-env LOG_LEVEL=debug npm run build && npm run electron"
+    "copy-resources": "node scripts/copyResources.js",
+    "dev": "npm run compile && npm run copy-resources && npm run electron"
   },
   "build": {
     "extraResources": [
       {
         "from": "resources",
-        "to": "resources"
+        "to": "resources",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "config",
+        "to": "config",
+        "filter": [
+          "**/*"
+        ]
       }
-    ]
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "nsis",
+      "sign": false,
+      "forceCodeSigning": false,
+      "certificateFile": "E:/magillastream/magillastream-cert.pfx",
+      "certificatePassword": "test123"
+    }
   },
   "repository": {
     "type": "git",
@@ -32,13 +56,13 @@
     "@types/estree": "^1.0.6",
     "@types/http-cache-semantics": "^4.0.4",
     "@types/keyv": "^3.1.4",
-    "@types/node": "^22.13.8",
+    "@types/node": "^22.13.9",
     "@types/responselike": "^1.0.3",
     "@types/yauzl": "^2.10.3",
     "concurrently": "^9.1.2",
     "cross-env": "^7.0.3",
     "electron": "^34.3.0",
-    "electron-builder": "^24.5.1",
+    "electron-builder": "^24.6.0",
     "typescript": "^5.8.2"
   },
   "dependencies": {
