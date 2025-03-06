@@ -45,8 +45,7 @@ export class FFmpegHandler {
     }
 
     
-     // Runs a basic FFmpeg version test to verify functionality.
-     
+    // Runs a basic FFmpeg version test to verify functionality  
     public testFFmpeg(): void {
         this.logger.info(`Testing FFmpeg path at: ${this.ffmpegPath}`, 'ffmpeg.log');
         const process: ChildProcessWithoutNullStreams = spawn(this.ffmpegPath, ["-version"]);
@@ -66,33 +65,37 @@ export class FFmpegHandler {
     }
 
     
-     // Generates an FFmpeg command string for a given OutputGroup
-     
-    public createFFmpegCommand(inputURL: string, outputGroup: OutputGroup): string {
+    // Generates an FFmpeg command string for a given OutputGroup
+     public createFFmpegCommand(inputURL: string, outputGroup: OutputGroup): string {
         let command = `${this.ffmpegPath} -i "${inputURL}"`;
-
+    
         // Set video and audio encoding parameters
         command += ` -c:v ${outputGroup.getVideoEncoder()}`;
         command += ` -b:v ${outputGroup.getBitrate()}`;
         command += ` -r ${outputGroup.getFps()}`;
         command += ` -c:a ${outputGroup.getAudioCodec()}`;
         command += ` -b:a ${outputGroup.getAudioBitrate()}`;
-
+    
+        // Add PTS flag if enabled
+        if (outputGroup.isPTSGenerated()) {
+            command += " -copyts";  // Preserve timestamps
+        }
+    
         // Use -map to send the same encoded stream to multiple StreamTargets
         command += ` -map 0:v -map 0:a`;
-
+    
         // Add each StreamTarget as an output
         outputGroup.getStreamTargets().forEach((target: StreamTarget) => {
             command += ` -f flv "${target.getUrl()}/${target.getStreamKey()}"`;
         });
-
+    
         this.logger.info(`Generated FFmpeg Command: ${command}`, 'ffmpeg.log');
         return command;
     }
+    
 
     
-     // Starts FFmpeg processes for all OutputGroups
-     
+    // Starts FFmpeg processes for all OutputGroups
     public startFFmpeg(inputURL: string, outputGroups: OutputGroup[]): void {
         outputGroups.forEach(group => {
             const command = this.createFFmpegCommand(inputURL, group);
@@ -102,8 +105,7 @@ export class FFmpegHandler {
     }
 
     
-     // Runs a single FFmpeg process for an OutputGroup
-     
+    // Runs a single FFmpeg process for an OutputGroup
     private runFFmpegCommand(groupId: string, command: string): ChildProcess {
         this.logger.info(`Starting FFmpeg for OutputGroup ${groupId}: ${command}`, 'ffmpeg.log');
 
@@ -138,8 +140,7 @@ export class FFmpegHandler {
     }
 
     
-     // Stops all running FFmpeg processes
-     
+    // Stops all running FFmpeg processes
     public stopAllFFmpeg(): void {
         this.runningProcesses.forEach((process, groupId) => {
             process.kill();
@@ -150,15 +151,13 @@ export class FFmpegHandler {
     }
 
     
-     // Retrieves available audio encoders
-     
+    // Retrieves available audio encoders
     public async getAvailableAudioEncoders(): Promise<string[]> {
         return this.encoderDetection.getAvailableAudioEncoders();
     }
 
     
-     // Retrieves available video encoders
-     
+    // Retrieves available video encoders
     public async getAvailableVideoEncoders(): Promise<string[]> {
         return this.encoderDetection.getAvailableVideoEncoders();
     }
