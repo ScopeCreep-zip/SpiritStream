@@ -54,7 +54,8 @@ function testFFmpegStreaming() {
             "6000k",
             "60",
             "aac",
-            "128k"
+            "128k",
+            true
         ),
         new OutputGroup(
             "group2",
@@ -64,7 +65,8 @@ function testFFmpegStreaming() {
             "3000k",
             "30",
             "aac",
-            "128k"
+            "128k",
+            false
         ),
     ];
 
