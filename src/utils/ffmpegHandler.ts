@@ -9,13 +9,9 @@ export class FFmpegHandler {
     private logger: Logger;
 
     private constructor() {
-        this.ffmpegPath = path.join(
-            app.getAppPath(),
-            "resources",
-            "ffmpeg",
-            "bin",
-            process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg"
-        );
+        this.ffmpegPath = app.isPackaged
+            ? path.join(process.resourcesPath, "ffmpeg", "bin", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg")
+            : path.join(app.getAppPath(), "resources", "ffmpeg", "bin", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
         this.logger = Logger.getInstance();
     }
 
@@ -27,10 +23,12 @@ export class FFmpegHandler {
     }
 
     public testFFmpeg(): void {
+        this.logger.info(`Testing FFmpeg path at: ${this.ffmpegPath}`, 'ffmpeg.log');
         const process: ChildProcessWithoutNullStreams = spawn(this.ffmpegPath, ["-version"]);
 
         process.stdout.on("data", (data) => {
-            this.logger.info(`FFmpeg Output: ${data.toString().trim()}`, 'ffmpeg.log');
+            this.logger.info(`Using FFmpeg at: ${this.ffmpegPath}`, 'ffmpeg.log');
+        this.logger.info(`FFmpeg Output: ${data.toString().trim()}`, 'ffmpeg.log');
         });
 
         process.stderr.on("data", (data) => {

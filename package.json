@@ -4,9 +4,17 @@
   "description": "MagillaStream",
   "main": "src/electron/main.js",
   "scripts": {
-    "build": "npx tsc",
+    "build": "npx tsc && electron-builder",
     "electron": "electron dist/electron/main.js",
     "start": "cross-env LOG_LEVEL=debug npm run build && npm run electron"
+  },
+  "build": {
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": "resources"
+      }
+    ]
   },
   "repository": {
     "type": "git",
@@ -30,6 +38,7 @@
     "concurrently": "^9.1.2",
     "cross-env": "^7.0.3",
     "electron": "^34.3.0",
+    "electron-builder": "^24.5.1",
     "typescript": "^5.8.2"
   },
   "dependencies": {
