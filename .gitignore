@@ -3,3 +3,8 @@ dist/
 resources/
 release/
 magillastream-cert.pfx
+*.log
+*.mp4
+*.flv
+*.ps1
+TODO.md

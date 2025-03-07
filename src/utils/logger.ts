@@ -14,7 +14,7 @@ export class Logger {
     private constructor(userDataPath: string) {
         this.logDir = path.join(userDataPath, "logs");
         this.defaultLogFile = "app.log";
-        this.currentLogLevel = "debug";
+        this.currentLogLevel = "info";
         this.setupLogFile(this.defaultLogFile);
     }
 
@@ -62,6 +62,7 @@ export class Logger {
     }
 
     private log(level: LogLevel, message: string, logFile: string = this.defaultLogFile): void {
+        
         if (LOG_LEVELS.indexOf(level) > LOG_LEVELS.indexOf(this.currentLogLevel)) {
           return;
         }
@@ -74,29 +75,40 @@ export class Logger {
         } catch (err) {
             console.error(`[ERROR] Failed to write log to ${logFilePath}: ${err}`);
         }
+
+        // Handle console output based on log level
+        switch (level) {
+            case "debug":
+                console.debug(formattedMessage);
+                break;
+            case "info":
+                console.info(formattedMessage);
+                break;
+            case "warn":
+                console.warn(formattedMessage);
+                break;
+            case "error":
+                console.error(formattedMessage);
+                break;
+        }
     }
 
     public debug(message: string, logFile?: string): void {
       const formattedMessage = this.formatLogMessage("debug", message);
       this.log("debug", formattedMessage, logFile);
-      console.debug(formattedMessage);
     }
 
     public info(message: string, logFile?: string): void {
       const formattedMessage = this.formatLogMessage("info", message);
       this.log("info", formattedMessage, logFile);
-      console.info(formattedMessage);
     }
 
     public warn(message: string, logFile?: string): void {
       const formattedMessage = this.formatLogMessage("warn", message);
-      this.log("warn", formattedMessage, logFile);
-      console.warn(formattedMessage);
     }
 
     public error(message: string, logFile?: string): void {
       const formattedMessage = this.formatLogMessage("error", message);
       this.log("error", formattedMessage, logFile);
-      console.error(formattedMessage);
     }
 }

@@ -4,7 +4,8 @@ import Fastify from "fastify";
 import { Logger } from "../utils/logger";
 import { FFmpegHandler } from "../utils/ffmpegHandler";
 import { OutputGroup } from "../models/OutputGroup";
-import { StreamTarget } from "../models/StreamTarget"; 
+import { StreamTarget } from "../models/StreamTarget";
+import path from "path"; 
 
 const logger = Logger.getInstance();
 const PORT = Number(process.env.FASTIFY_PORT) || 3000; // Allow configurable port
@@ -42,43 +43,66 @@ function testFFmpegStreaming() {
     const ffmpegHandler = FFmpegHandler.getInstance();
     
     // Dummy input URL (could be a local file or network stream)
-    const inputURL = "test.mp4"; 
+    const inputFileName = "test.mp4";
+    const inputURL = app.isPackaged
+      ? path.join(process.resourcesPath, inputFileName)  // Production (Electron packaged)
+      : path.join(__dirname, "../..", inputFileName);       // Development (during `npm run dev`)
+    logger.debug(`Using input file: ${inputURL}`);
 
-    // Dummy output groups
-    const outputGroups: OutputGroup[] = [
-        new OutputGroup(
-            "group1",
-            "1080p60_H264",
-            "h264_nvenc",
-            "1920x1080",
-            "6000k",
-            "60",
-            "aac",
-            "128k",
-            true
-        ),
-        new OutputGroup(
-            "group2",
-            "720p30_H265",
-            "hevc_nvenc",
-            "1280x720",
-            "3000k",
-            "30",
-            "aac",
-            "128k",
-            false
-        ),
-    ];
+  //   // Dummy output groups
+  //   const outputGroups: OutputGroup[] = [
+  //       new OutputGroup(
+  //           "group1",
+  //           "1080p60",
+  //           "libx264",
+  //           "1920x1080",
+  //           "6000k",
+  //           "60",
+  //           "aac",
+  //           "128k",
+  //           true
+  //       ),
+  //       new OutputGroup(
+  //           "group2",
+  //           "720p30",
+  //           "libx264",
+  //           "1280x720",
+  //           "3000k",
+  //           "30",
+  //           "aac",
+  //           "128k",
+  //           false
+  //       ),
+  //   ];
+  
+  // // Assign test StreamTargets with explicit RTMP ports
+  // outputGroups[0].addStreamTarget(new StreamTarget("yt", "rtmp://localhost/test", "KEY1", 1936)); // YouTube on 1936
+  // outputGroups[0].addStreamTarget(new StreamTarget("fb", "rtmp://localhost/test", "KEY2", 1937)); // Facebook on 1937
 
-    // Assign fake StreamTargets to each OutputGroup
-    outputGroups[0].addStreamTarget(new StreamTarget("yt", "rtmp://youtube.com/live", "KEY1"));
-    outputGroups[0].addStreamTarget(new StreamTarget("fb", "rtmp://facebook.com/live", "KEY2"));
+  // outputGroups[1].addStreamTarget(new StreamTarget("twitch", "rtmp://localhost/test", "KEY3", 1938)); // Twitch on 1938
+  // outputGroups[1].addStreamTarget(new StreamTarget("kick", "rtmp://localhost/test", "KEY4", 1939)); // Kick on 1939
 
-    outputGroups[1].addStreamTarget(new StreamTarget("twitch", "rtmp://twitch.tv/live", "KEY3"));
-    outputGroups[1].addStreamTarget(new StreamTarget("kick", "rtmp://kick.com/live", "KEY4"));
+  // Dummy output group 
+  const outputGroups: OutputGroup[] = [
+    new OutputGroup(
+        "group1",
+        "1080p30",
+        "h264_qsv",  // Using libx264 for H.264 encoding
+        "1920x1080",  // 1080p resolution
+        "3000k",  // Lower bitrate for less resource usage
+        "30",  // 30fps for lower resource consumption
+        "aac",  // Audio codec AAC
+        "128k",  // Audio bitrate
+        false  // Disable PTS flag for simplicity
+    )
+  ];
 
-    logger.info("Starting FFmpeg test with dummy OutputGroups...");
-    ffmpegHandler.startFFmpeg(inputURL, outputGroups);
+  // Assign test StreamTarget with explicit RTMP port
+  outputGroups[0].addStreamTarget(new StreamTarget("yt", "rtmp://localhost/test", "KEY1", 1936));  // YouTube on 1936
+
+
+  logger.info("Starting FFmpeg test with dummy OutputGroups...");
+  ffmpegHandler.startFFmpeg(inputURL, outputGroups);
 }
 
 // Start Fastify when Electron is ready

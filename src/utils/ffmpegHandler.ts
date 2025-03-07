@@ -4,7 +4,7 @@ import { spawn, ChildProcess, ChildProcessWithoutNullStreams } from "child_proce
 import { Logger } from "./logger";
 import { EncoderDetection } from "./encoderDetection";
 import { OutputGroup } from "../models/OutputGroup";
-import { StreamTarget } from "../models/StreamTarget"; 
+import { StreamTarget } from "../models/StreamTarget";
 
 export class FFmpegHandler {
     private static instance: FFmpegHandler;
@@ -24,7 +24,7 @@ export class FFmpegHandler {
             );
         } else {
             this.ffmpegPath = path.join(
-                path.dirname(app.getAppPath()), 
+                path.dirname(app.getAppPath()),
                 "resources",
                 "ffmpeg",
                 "bin",
@@ -44,7 +44,6 @@ export class FFmpegHandler {
         return FFmpegHandler.instance;
     }
 
-    
     // Runs a basic FFmpeg version test to verify functionality  
     public testFFmpeg(): void {
         this.logger.info(`Testing FFmpeg path at: ${this.ffmpegPath}`, 'ffmpeg.log');
@@ -64,37 +63,36 @@ export class FFmpegHandler {
         });
     }
 
-    
     // Generates an FFmpeg command string for a given OutputGroup
-     public createFFmpegCommand(inputURL: string, outputGroup: OutputGroup): string {
-        let command = `${this.ffmpegPath} -i "${inputURL}"`;
-    
+    public createFFmpegCommand(inputURL: string, outputGroup: OutputGroup): string {
+        let command = `${this.ffmpegPath} -loglevel warning -i "${inputURL}"`;
+
         // Set video and audio encoding parameters
         command += ` -c:v ${outputGroup.getVideoEncoder()}`;
         command += ` -b:v ${outputGroup.getBitrate()}`;
         command += ` -r ${outputGroup.getFps()}`;
         command += ` -c:a ${outputGroup.getAudioCodec()}`;
         command += ` -b:a ${outputGroup.getAudioBitrate()}`;
-    
+
         // Add PTS flag if enabled
         if (outputGroup.isPTSGenerated()) {
             command += " -copyts";  // Preserve timestamps
         }
-    
+
         // Use -map to send the same encoded stream to multiple StreamTargets
         command += ` -map 0:v -map 0:a`;
-    
+
         // Add each StreamTarget as an output
         outputGroup.getStreamTargets().forEach((target: StreamTarget) => {
-            command += ` -f flv "${target.getUrl()}/${target.getStreamKey()}"`;
+            // Use the normalizedPath to get the properly formatted stream URL
+            const targetUrl = target.normalizedPath;  // Accessing the normalized URL
+            command += ` -f flv "${targetUrl}"`;
         });
-    
+
         this.logger.info(`Generated FFmpeg Command: ${command}`, 'ffmpeg.log');
         return command;
     }
-    
 
-    
     // Starts FFmpeg processes for all OutputGroups
     public startFFmpeg(inputURL: string, outputGroups: OutputGroup[]): void {
         outputGroups.forEach(group => {
@@ -104,7 +102,6 @@ export class FFmpegHandler {
         });
     }
 
-    
     // Runs a single FFmpeg process for an OutputGroup
     private runFFmpegCommand(groupId: string, command: string): ChildProcess {
         this.logger.info(`Starting FFmpeg for OutputGroup ${groupId}: ${command}`, 'ffmpeg.log');
@@ -127,7 +124,6 @@ export class FFmpegHandler {
         return process;
     }
 
-    
     // Stops an individual FFmpeg process for a specific OutputGroup
     public stopFFmpeg(groupId: string): void {
         if (this.runningProcesses.has(groupId)) {
@@ -139,7 +135,6 @@ export class FFmpegHandler {
         }
     }
 
-    
     // Stops all running FFmpeg processes
     public stopAllFFmpeg(): void {
         this.runningProcesses.forEach((process, groupId) => {
@@ -150,13 +145,11 @@ export class FFmpegHandler {
         this.runningProcesses.clear();
     }
 
-    
     // Retrieves available audio encoders
     public async getAvailableAudioEncoders(): Promise<string[]> {
         return this.encoderDetection.getAvailableAudioEncoders();
     }
 
-    
     // Retrieves available video encoders
     public async getAvailableVideoEncoders(): Promise<string[]> {
         return this.encoderDetection.getAvailableVideoEncoders();
