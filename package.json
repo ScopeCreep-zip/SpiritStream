@@ -10,7 +10,7 @@
     "build": "npm run clean && npm run compile && npm run pack",
     "electron": "electron dist/electron/main.js",
     "copy-resources": "node scripts/copyResources.js",
-    "dev:server": "cd src/server && node server.js",
+    "dev:server": "tsc && npm run electron",
     "dev:frontend": "cd frontend && npm run dev",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:frontend\""
   },
