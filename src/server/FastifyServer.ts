@@ -45,70 +45,71 @@ export class FastifyServer extends ServerBase {
 
     private setupRoutes(): void {
         // Profiles
-        this.fastify.get("/profiles", async (_, reply) => reply.send(this.getProfiles()));
-        this.fastify.get<{ Params: { id: string } }>("/profiles/:id", async (req, reply) => 
+        this.fastify.get("/api/profiles", async (_, reply) => reply.send(this.getProfiles()));
+        this.fastify.get<{ Params: { id: string } }>("/api/profiles/:id", async (req, reply) => 
             reply.send(this.getProfile(req.params.id))
         );
-        this.fastify.post<{ Body: Profile }>("/profiles", async (req, reply) => {
+        this.fastify.post<{ Body: Profile }>("/api/profiles", async (req, reply) => {
             this.createProfile(req.body);
             reply.send({ message: "Profile created." });
         });
-        this.fastify.put<{ Body: Profile }>("/profiles/:id", async (req, reply) => {
+        this.fastify.put<{ Body: Profile }>("/api/profiles/:id", async (req, reply) => {
             this.updateProfile(req.body);
             reply.send({ message: "Profile updated." });
         });
-        this.fastify.delete<{ Params: { id: string } }>("/profiles/:id", async (req, reply) => {
+        this.fastify.delete<{ Params: { id: string } }>("/api/profiles/:id", async (req, reply) => {
             this.deleteProfile(req.params.id);
             reply.send({ message: "Profile deleted." });
         });
-
+    
         // Output Groups
-        this.fastify.get("/output-groups", async (_, reply) => reply.send(this.getOutputGroups()));
-        this.fastify.get<{ Params: { id: string } }>("/output-groups/:id", async (req, reply) => 
+        this.fastify.get("/api/output-groups", async (_, reply) => reply.send(this.getOutputGroups()));
+        this.fastify.get<{ Params: { id: string } }>("/api/output-groups/:id", async (req, reply) => 
             reply.send(this.getOutputGroup(req.params.id))
         );
-        this.fastify.post<{ Body: OutputGroup }>("/output-groups", async (req, reply) => {
+        this.fastify.post<{ Body: OutputGroup }>("/api/output-groups", async (req, reply) => {
             this.createOutputGroup(req.body);
             reply.send({ message: "Output group created." });
         });
-        this.fastify.put<{ Body: OutputGroup }>("/output-groups/:id", async (req, reply) => {
+        this.fastify.put<{ Body: OutputGroup }>("/api/output-groups/:id", async (req, reply) => {
             this.updateOutputGroup(req.body);
             reply.send({ message: "Output group updated." });
         });
-        this.fastify.delete<{ Params: { id: string } }>("/output-groups/:id", async (req, reply) => {
+        this.fastify.delete<{ Params: { id: string } }>("/api/output-groups/:id", async (req, reply) => {
             this.deleteOutputGroup(req.params.id);
             reply.send({ message: "Output group deleted." });
         });
-
+    
         // Stream Targets
-        this.fastify.get("/stream-targets", async (_, reply) => reply.send(this.getStreamTargets()));
-        this.fastify.get<{ Params: { id: string } }>("/stream-targets/:id", async (req, reply) => 
+        this.fastify.get("/api/stream-targets", async (_, reply) => reply.send(this.getStreamTargets()));
+        this.fastify.get<{ Params: { id: string } }>("/api/stream-targets/:id", async (req, reply) => 
             reply.send(this.getStreamTarget(req.params.id))
         );
-        this.fastify.post<{ Body: StreamTarget }>("/stream-targets", async (req, reply) => {
+        this.fastify.post<{ Body: StreamTarget }>("/api/stream-targets", async (req, reply) => {
             this.createStreamTarget(req.body);
             reply.send({ message: "Stream target created." });
         });
-        this.fastify.put<{ Body: StreamTarget }>("/stream-targets/:id", async (req, reply) => {
+        this.fastify.put<{ Body: StreamTarget }>("/api/stream-targets/:id", async (req, reply) => {
             this.updateStreamTarget(req.body);
             reply.send({ message: "Stream target updated." });
         });
-
+    
         // FFmpeg Control
-        this.fastify.get("/ffmpeg/test", async (_, reply) => reply.send(this.testFFmpeg()));
-        this.fastify.get("/ffmpeg/video-encoders", async (_, reply) => reply.send(this.getVideoEncoders()));
-        this.fastify.get("/ffmpeg/audio-encoders", async (_, reply) => reply.send(this.getAudioEncoders()));
-
-        this.fastify.post<{ Body: OutputGroup[] }>("/ffmpeg/start", async (req, reply) => {
+        this.fastify.get("/api/ffmpeg/test", async (_, reply) => reply.send(this.testFFmpeg()));
+        this.fastify.get("/api/ffmpeg/video-encoders", async (_, reply) => reply.send(this.getVideoEncoders()));
+        this.fastify.get("/api/ffmpeg/audio-encoders", async (_, reply) => reply.send(this.getAudioEncoders()));
+    
+        this.fastify.post<{ Body: OutputGroup[] }>("/api/ffmpeg/start", async (req, reply) => {
             this.startFFmpeg(req.body);
             reply.send({ message: "FFmpeg started." });
         });
-
-        this.fastify.post("/ffmpeg/stop", async (_, reply) => {
+    
+        this.fastify.post("/api/ffmpeg/stop", async (_, reply) => {
             this.stopFFmpeg();
             reply.send({ message: "FFmpeg stopped." });
         });
     }
+    
 
     // Implement abstract methods
     public getProfiles(): Profile[] {
