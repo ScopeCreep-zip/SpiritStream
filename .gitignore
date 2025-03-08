@@ -9,3 +9,5 @@ magillastream-cert.pfx
 *.ps1
 TODO.md
 testing/
+frontend/node_modules/
+frontend/.vscode/
