@@ -1,0 +1,14 @@
+/* Global Theme Variables */
+:root {
+    --background: #000000;
+    --text-color: #ffffff;
+    --button-color: #1E90FF;
+    --button-hover-color: #4682B4;
+    --error-color: #FF4D4D;
+    --success-color: #32CD32;
+    --font-family: "Arial, sans-serif";
+    --border-radius: 5px;
+    --input-bg: #1a1a1a;
+    --input-border: #333333;
+  }
+  
