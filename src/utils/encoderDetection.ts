@@ -2,6 +2,7 @@ import { spawn, ChildProcess } from "child_process";
 import { Logger } from "./logger";
 import * as fs from 'fs';
 import * as path from 'path';
+import { app } from 'electron';
 
 export class EncoderDetection {
     private logger: Logger;
@@ -19,9 +20,23 @@ export class EncoderDetection {
 
     // Load the config file from 'config/encoders.conf'
     private loadConfig(): void {
-        const configDir = path.join(__dirname, 'config');  // Directory path for config files
-        const configFilePath = path.join(configDir, 'encoders.conf');  // The specific file for encoders
-
+        const isDev = process.env.NODE_ENV === 'development';  
+        let configDir;
+        
+        if (isDev) {
+            // In development, ensure we are looking in the root 'dist' directory
+            configDir = path.join(process.cwd(), 'dist', 'config');  // Use process.cwd() to get the root path
+            this.logger.info(`Development mode: Looking for config in ${configDir}`, 'ffmpeg.log');
+        } else {
+            // In production, use the userData directory for config
+            configDir = path.join(app.getPath('userData'), 'config');
+            this.logger.info(`Production mode: Looking for config in ${configDir}`, 'ffmpeg.log');
+        }
+        
+        const configFilePath = path.join(configDir, 'encoders.conf');  // Path to the config file
+    
+        this.logger.info(`Final config file path: ${configFilePath}`, 'ffmpeg.log');
+    
         // Check if the config directory exists
         if (fs.existsSync(configDir)) {
             // Check if the config file exists
@@ -36,14 +51,14 @@ export class EncoderDetection {
                     this.logger.error("Error loading encoders.conf", 'ffmpeg.log');
                 }
             } else {
-                this.logger.info("Config file 'encoders.conf' not found, using default encoders.", 'ffmpeg.log');
+                this.logger.debug(`Config file 'encoders.conf' not found at ${configFilePath}, using default encoders.`, 'ffmpeg.log');
                 this.setDefaultWhitelists();
             }
         } else {
-            this.logger.info("Config directory 'config' not found, using default encoders.", 'ffmpeg.log');
+            this.logger.warn(`Config directory not found at ${configDir}, using default encoders.`, 'ffmpeg.log');
             this.setDefaultWhitelists();
         }
-    }
+    }    
 
     // Fallback to default whitelist values if the config file doesn't exist or is malformed
     private setDefaultWhitelists(): void {
