@@ -64,43 +64,51 @@ export class FFmpegHandler {
     }
 
     // Generates an FFmpeg command string for a given OutputGroup
-    public createFFmpegCommand(inputURL: string, outputGroup: OutputGroup): string {
-        let command = `${this.ffmpegPath} -loglevel warning -i "${inputURL}"`;
-
+    public createFFmpegCommand(inputURL: string, outputGroup: OutputGroup, testMode = false): string {
+        let command = `${this.ffmpegPath} -loglevel warning`;
+    
+        // If in test mode, add real-time processing flag *before* input
+        if (testMode) {
+            command += " -re";
+        }
+    
+        command += ` -i "${inputURL}"`;
+    
         // Set video and audio encoding parameters
         command += ` -c:v ${outputGroup.getVideoEncoder()}`;
         command += ` -b:v ${outputGroup.getBitrate()}`;
         command += ` -r ${outputGroup.getFps()}`;
+    
+        // If in test mode, add GOP size after video codec (correct placement)
+        if (testMode) {
+            command += " -g 50";
+        }
+    
         command += ` -c:a ${outputGroup.getAudioCodec()}`;
         command += ` -b:a ${outputGroup.getAudioBitrate()}`;
-
-        // Add PTS flag if enabled
-        if (outputGroup.isPTSGenerated()) {
-            command += " -copyts";  // Preserve timestamps
-        }
-
+    
         // Use -map to send the same encoded stream to multiple StreamTargets
         command += ` -map 0:v -map 0:a`;
-
+    
         // Add each StreamTarget as an output
         outputGroup.getStreamTargets().forEach((target: StreamTarget) => {
-            // Use the normalizedPath to get the properly formatted stream URL
-            const targetUrl = target.normalizedPath;  // Accessing the normalized URL
+            const targetUrl = target.normalizedPath;
             command += ` -f flv "${targetUrl}"`;
         });
-
+    
         this.logger.info(`Generated FFmpeg Command: ${command}`, 'ffmpeg.log');
         return command;
     }
-
+    
     // Starts FFmpeg processes for all OutputGroups
-    public startFFmpeg(inputURL: string, outputGroups: OutputGroup[]): void {
+    public startFFmpeg(inputURL: string, outputGroups: OutputGroup[], testMode: boolean = false): void {
         outputGroups.forEach(group => {
-            const command = this.createFFmpegCommand(inputURL, group);
+            const command = this.createFFmpegCommand(inputURL, group, testMode);
             const process = this.runFFmpegCommand(group.getId(), command);
             this.runningProcesses.set(group.getId(), process);
         });
     }
+    
 
     // Runs a single FFmpeg process for an OutputGroup
     private runFFmpegCommand(groupId: string, command: string): ChildProcess {
