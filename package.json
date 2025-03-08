@@ -6,11 +6,13 @@
   "scripts": {
     "clean": "node scripts/clean.js",
     "compile": "npx tsc",
-    "pack": "electron-builder",
-    "build": "npm run clean && npm run compile && npm run pack",
-    "electron": "electron dist/electron/main.js",
     "copy-resources": "node scripts/copyResources.js",
-    "dev": "npm run compile && npm run copy-resources && npm run electron"
+    "pack": "electron-builder",
+    "build": "npm run clean && npm run compile && npm run copy-resources && npm run pack",
+    "electron": "electron dist/electron/main.js",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:frontend\"",
+    "dev:server": "cd src/server && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev"
   },
   "build": {
     "extraResources": [

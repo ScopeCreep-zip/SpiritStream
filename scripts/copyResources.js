@@ -1,8 +1,8 @@
 const fs = require("fs");
 const path = require("path");
 
-const srcDir = path.join(__dirname, "../resources");
-const destDir = path.join(__dirname, "../dist/resources");
+const sourceDirs = ["resources", "config"]; // Now copying both
+const distRoot = path.join(__dirname, "../dist");
 
 function copyRecursiveSync(src, dest) {
   if (!fs.existsSync(dest)) {
@@ -22,7 +22,16 @@ function copyRecursiveSync(src, dest) {
   }
 }
 
-// Ensure resources directory is copied to dist
-console.log(`Copying resources from ${srcDir} to ${destDir}...`);
-copyRecursiveSync(srcDir, destDir);
-console.log("Resources copied successfully.");
+// Loop through each source directory
+sourceDirs.forEach((dir) => {
+  const srcDir = path.join(__dirname, "..", dir);
+  const destDir = path.join(distRoot, dir);
+
+  if (fs.existsSync(srcDir)) {
+    console.log(`Copying ${dir} from ${srcDir} to ${destDir}...`);
+    copyRecursiveSync(srcDir, destDir);
+    console.log(`${dir} copied successfully.`);
+  } else {
+    console.warn(`Warning: ${dir} directory does not exist, skipping.`);
+  }
+});
