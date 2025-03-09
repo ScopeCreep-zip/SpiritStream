@@ -1,6 +1,6 @@
 <script>
   import "./theme.css";
-  import { outputGroups, addOutputGroup, addStreamTarget, removeStreamTarget } from './outputGroupStore';
+  import { outputGroups, addOutputGroup, removeOutputGroup, addStreamTarget, removeStreamTarget } from './outputGroupStore';
 </script>
 
 <main class="app-container">
@@ -37,37 +37,74 @@
     <button class="add-output-group" on:click={addOutputGroup}>Add Output Group</button>
 
     <!-- Output Groups Container -->
-    <div class="output-groups">
-      {#each $outputGroups as group, index}
-        <div class="output-group">
-          <div>
-            <label for="group-name-{index}">Group Name</label>
-            <input id="group-name-{index}" type="text" bind:value={group.name} placeholder="Enter group name"/>
-          </div>
-          <div>
-            <label for="forward-original-{index}">Forward Original</label>
-            <input id="forward-original-{index}" type="checkbox" bind:checked={group.forwardOriginal}/>
-          </div>
-          
-          <!-- Stream Targets Section for Each Group -->
-          <div>
-            <label for="stream-targets-{index}">Stream Targets</label>
-            <div id="stream-targets-{index}">
-              {#each group.streamTargets as target, targetIndex}
-                <div class="stream-target">
-                  <label for="url-{index}-{targetIndex}">URL</label>
-                  <input id="url-{index}-{targetIndex}" type="text" bind:value={target.url} placeholder="Enter URL"/>
-                  <label for="key-{index}-{targetIndex}">Key</label>
-                  <input id="key-{index}-{targetIndex}" type="text" bind:value={target.key} placeholder="Enter Key"/>
-                  <button on:click={() => removeStreamTarget(index, targetIndex)}>Remove</button>
-                </div>
-              {/each}
-              <button on:click={() => addStreamTarget(index)}>Add Stream Target</button>
-            </div>
-          </div>
-        </div>
-      {/each}
+    {#each $outputGroups as group, index}
+  <div class="output-group">
+    <div>
+      <label for="group-name-{index}">Group Name</label>
+      <input id="group-name-{index}" type="text" bind:value={group.name} placeholder="Enter group name"/>
     </div>
+
+    <div>
+      <label for="video-encoder-{index}">Video Encoder</label>
+      <input id="video-encoder-{index}" type="text" bind:value={group.videoEncoder} placeholder="Enter video encoder"/>
+    </div>
+
+    <div>
+      <label for="resolution-{index}">Resolution</label>
+      <input id="resolution-{index}" type="text" bind:value={group.resolution} placeholder="Enter resolution"/>
+    </div>
+
+    <div>
+      <label for="bitrate-{index}">Bitrate</label>
+      <input id="bitrate-{index}" type="text" bind:value={group.bitrate} placeholder="Enter bitrate"/>
+    </div>
+
+    <div>
+      <label for="fps-{index}">FPS</label>
+      <input id="fps-{index}" type="text" bind:value={group.fps} placeholder="Enter FPS"/>
+    </div>
+
+    <div>
+      <label for="audio-codec-{index}">Audio Codec</label>
+      <input id="audio-codec-{index}" type="text" bind:value={group.audioCodec} placeholder="Enter audio codec"/>
+    </div>
+
+    <div>
+      <label for="audio-bitrate-{index}">Audio Bitrate</label>
+      <input id="audio-bitrate-{index}" type="text" bind:value={group.audioBitrate} placeholder="Enter audio bitrate"/>
+    </div>
+
+    <div>
+      <label for="generatePTS-{index}">Generate PTS</label>
+      <input id="generatePTS-{index}" type="checkbox" bind:checked={group.generatePTS}/>
+    </div>
+
+    <!-- Stream Targets -->
+    <div>
+      <label for="stream-targets-{index}">Stream Targets</label>
+      <div id="stream-targets-{index}">
+        {#each group.streamTargets as target, targetIndex}
+          <div class="stream-target">
+            <label for="url-{index}-{targetIndex}">URL</label>
+            <input id="url-{index}-{targetIndex}" type="text" bind:value={target.url} placeholder="Enter URL"/>
+
+            <label for="stream-key-{index}-{targetIndex}">Stream Key</label>
+            <input id="stream-key-{index}-{targetIndex}" type="text" bind:value={target.streamKey} placeholder="Enter Key"/>
+
+            <label for="rtmp-port-{index}-{targetIndex}">RTMP Port</label>
+            <input id="rtmp-port-{index}-{targetIndex}" type="number" bind:value={target.rtmpPort} placeholder="Enter RTMP Port"/>
+
+            <button class="remove-stream-target" on:click={() => removeStreamTarget(index, targetIndex)}>Remove Stream Target</button>
+          </div>
+        {/each}
+        <button class="add-stream-target" on:click={() => addStreamTarget(index)}>Add Stream Target</button>
+      </div>
+    </div>
+
+    <button class="remove-output-group" on:click={() => removeOutputGroup(index)}>Remove Output Group</button>
+  </div>
+{/each}
+
   </section>
 </main>
 
@@ -185,6 +222,16 @@
     gap: 15px;
   }
 
+  /* Remove Output Group Button */
+  .remove-output-group {
+    background-color: #dc3545;
+    color: white;
+    padding: 10px;
+    border: none;
+    cursor: pointer;
+    border-radius: 4px;
+  }
+
   /* Input Fields */
   .output-group input {
     padding: 8px;
@@ -206,8 +253,21 @@
     padding: 10px;
   }
 
-  /* Hover effects for buttons */
-  .add-output-group:hover {
-    background-color: #0056b3;
+  .add-stream-target {
+    background-color: #28a745;
+    color: white;
+    padding: 5px 10px;
+    border: none;
+    cursor: pointer;
+    border-radius: 4px;
+  }
+
+  .remove-stream-target {
+    background-color: #dc3545;
+    color: white;
+    padding: 5px 10px;
+    border: none;
+    cursor: pointer;
+    border-radius: 4px;
   }
 </style>

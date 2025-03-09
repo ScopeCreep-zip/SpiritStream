@@ -27,6 +27,11 @@ export function addOutputGroup() {
   outputGroups.update(groups => [...groups, newGroup]);  // Add new group
 }
 
+// Function to remove an output group
+export function removeOutputGroup(groupIndex: number) {
+  outputGroups.update(groups => groups.filter((_, index) => index !== groupIndex));
+}
+
 // Function to add a stream target to an output group
 export function addStreamTarget(groupIndex: number) {
   outputGroups.update(groups => {
