@@ -66,9 +66,5 @@
     "electron": "^34.3.0",
     "electron-builder": "^24.6.0",
     "typescript": "^5.8.2"
-  },
-  "dependencies": {
-    "fastify": "^5.2.1",
-    "fastify-cors": "^6.0.3"
   }
 }

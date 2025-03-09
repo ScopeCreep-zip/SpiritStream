@@ -1,11 +1,9 @@
 import "./init";
-import { app, BrowserWindow } from "electron";
-import { FastifyServer } from "../server/FastifyServer";  
+import { app, BrowserWindow } from "electron";  
 import { Logger } from "../utils/logger";
 import * as path from "path";
 
-const logger = Logger.getInstance();
-const server = new FastifyServer();  
+const logger = Logger.getInstance();  
 
 const isDev = process.env.NODE_ENV === "development"; // Detects if running in development
 
@@ -40,12 +38,6 @@ function createMainWindow() {
 
 // Start Fastify when Electron is ready
 app.whenReady().then(() => {
-    try {
-        server.start();  
-    } catch (err) {
-        logger.error(`Fastify failed to start: ${err}`);
-        process.exit(1);
-    }
 
     createMainWindow();
 });
