@@ -1,8 +1,14 @@
 const fs = require("fs");
 const path = require("path");
 
-const sourceDirs = ["resources", "config"]; // Now copying both
+const sourceDirs = [
+  "resources",
+  "config",
+];
+
 const distRoot = path.join(__dirname, "../dist");
+const frontendSrc = path.join(__dirname, "..", "src/frontend");
+const frontendDest = path.join(distRoot, "frontend");
 
 function copyRecursiveSync(src, dest) {
   if (!fs.existsSync(dest)) {
@@ -35,3 +41,12 @@ sourceDirs.forEach((dir) => {
     console.warn(`Warning: ${dir} directory does not exist, skipping.`);
   }
 });
+
+// Copy frontend separately to dist/frontend (not dist/src/frontend)
+if (fs.existsSync(frontendSrc)) {
+  console.log(`Copying frontend from ${frontendSrc} to ${frontendDest}...`);
+  copyRecursiveSync(frontendSrc, frontendDest);
+  console.log(`frontend copied successfully.`);
+} else {
+  console.warn(`Warning: src/frontend directory does not exist, skipping.`);
+}

@@ -22,16 +22,11 @@ function createMainWindow() {
         webPreferences: {
             nodeIntegration: true, // May change if using a preload script later
         },
-        title: "MagillaStream"  
+        title: "MagillaStream"
     });
 
-    if (isDev) {
-        // Load Vite Dev Server during development
-        mainWindow.loadURL("http://localhost:5173"); // This is the Vite dev server URL
-    } else {
-        // Load Built Production Files
-        mainWindow.loadFile(path.join(__dirname, "../index.html"));
-    }
+    // Load local index.html in both development and production
+    mainWindow.loadFile(path.join(__dirname, "../frontend/index/html/index.html"));
 
     return mainWindow;
 }
