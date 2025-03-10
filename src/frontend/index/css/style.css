@@ -16,7 +16,7 @@ body {
 /* === App Container === */
 .app-container {
     display: grid;
-    grid-template-columns: 250px auto; /* Sidebar fixed, content flexible */
+    grid-template-columns: 25% 75%; /* Sidebar takes 25%, Output Groups take 75% */
     height: 100vh;
     width: 100vw; /* Ensure it spans the entire viewport width */
 }
@@ -29,7 +29,7 @@ body {
     padding: 20px;
     background-color: #222;
     color: white;
-    width: 250px;
+    width: 25vw; /* Sidebar is fixed at 25% of the total viewport */
     height: 100vh;
     box-sizing: border-box;
 }
@@ -130,20 +130,21 @@ button:hover {
     filter: brightness(1.2);
 }
 
-/* === Output Groups Section (Scrollable Horizontally) === */
+/* === Output Groups Section (Fixed 75% width, Scrollable) === */
 .output-groups {
     display: flex;  /* Ensure horizontal alignment */
     flex-wrap: nowrap;  /* Prevent groups from wrapping */
     overflow-x: auto;  /* Allow scrolling when needed */
     gap: 15px;  /* Space between groups */
-    padding: 10px;
+    padding: 0 15px; /* Ensure padding is factored in */
     background-color: #333;
     border-radius: 8px;
-    width: 100%;
+    width: calc(75vw - 30px); /* Fixed width at 75% of viewport minus padding */
     height: 100%;
+    box-sizing: border-box;
 }
 
-/* === Output Groups inside Columns (Fixed 33.3% width) === */
+/* === Output Groups inside Columns (Fixed 33.33% of .output-groups, adjusted for margin/gap) === */
 .output-group {
     background-color: #444;
     padding: 15px;
@@ -151,9 +152,9 @@ button:hover {
     display: flex;
     flex-direction: column;
     gap: 10px;
-    min-width: 33.3%; /* Each output group should take 1/3 of the parent width */
-    max-width: 33.3%; /* Prevents shrinking smaller than 1/3 */
-    flex: 0 0 33.3%; /* Ensures each takes exactly 1/3 of the available space */
+    width: calc((75vw - 60px) / 3); /* 75vw minus padding (30px) and total gaps (2 * 15px) */
+    flex: 0 0 calc((75vw - 60px) / 3); /* Prevent shrinking */
+    box-sizing: border-box;
 }
 
 /* Remove Output Group Button */
