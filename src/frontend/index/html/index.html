@@ -3,12 +3,48 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MagillaStream</title>
+    <title>Magilla Stream</title>
+    <link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
-    <h1>Electron is Running</h1>
-    <script>
-        console.log("Frontend Loaded");
-    </script>
+    <main class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <!-- Profile Management -->
+            <section class="profile-management">
+                <h2>Profile Management</h2>
+                <button class="profile-btn add">Add Profile</button>
+                <button class="profile-btn load">Load Profile</button>
+                <button class="profile-btn delete">Delete Profile</button>
+                <button class="profile-btn save">Save Profile</button>
+            </section>
+
+            <!-- Stream Settings -->
+            <section class="stream-settings">
+                <h2>Stream Settings</h2>
+                <label for="stream-url">Incoming Stream URL</label>
+                <input type="text" id="stream-url" placeholder="Enter incoming URL here...">
+
+                <div class="checkbox-group">
+                    <input type="checkbox" id="generatePTS">
+                    <label for="generatePTS">Generate PTS</label>
+                </div>
+
+                <button class="start-stream">Start Stream</button>
+                <button class="stop-stream">Stop Stream</button>
+            </section>
+        </aside>
+
+        <!-- Output Groups Section -->
+        <section class="output-groups">
+            <h2>Output Groups</h2>
+            <button id="add-output-group">Add Output Group</button>
+            <div id="output-groups-container">
+                <!-- Dynamically added output groups will go here -->
+            </div>
+        </section>
+    </main>
+
+    <script src="../js/main.js"></script>
 </body>
 </html>

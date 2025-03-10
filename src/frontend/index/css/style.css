@@ -1,0 +1,178 @@
+/* === Global Layout === */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: Arial, sans-serif;
+}
+
+body {
+    background-color: #111;
+    color: white;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+}
+
+/* === App Container === */
+.app-container {
+    display: grid;
+    grid-template-columns: 1fr 3fr; /* Sidebar takes 1/4, content 3/4 */
+    height: 100vh;
+    background-color: #111;
+}
+
+/* === Sidebar === */
+.sidebar {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    padding: 20px;
+    background-color: #222;
+    color: white;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* === Profile Management & Stream Settings === */
+.profile-management {
+    margin-bottom: 20px;
+}
+
+.stream-settings {
+    margin-top: 30px;
+    padding-top: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px; 
+}
+
+/* === Labels & Inputs === */
+label {
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+input {
+    width: calc(100% - 10px);
+    max-width: 100%;
+    padding: 8px;
+    margin: 5px 0 10px 0;
+    background-color: #333;
+    border: 1px solid #555;
+    color: white;
+    border-radius: 4px;
+}
+
+/* === Checkbox Styling === */
+.checkbox-group {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    width: 100%;
+    margin-bottom: 15px;
+}
+
+.checkbox-group input {
+    width: auto;
+    margin: 0;
+}
+
+/* === Buttons === */
+button {
+    width: calc(100% - 10px);
+    max-width: 100%;
+    padding: 10px;
+    border: none;
+    cursor: pointer;
+    border-radius: 4px;
+    font-weight: bold;
+    margin: 5px 0;
+}
+
+/* Profile Management Buttons */
+.profile-btn.add,
+.profile-btn.load { background-color: #007bff; }
+.profile-btn.delete { background-color: #dc3545; }
+.profile-btn.save { background-color: #28a745; }
+
+/* Stream Control Buttons */
+.start-stream { background-color: #28a745; margin-bottom: 2px !important; }
+.stop-stream { background-color: #dc3545; }
+
+/* Hover Effects */
+button:hover {
+    filter: brightness(1.2);
+}
+
+/* === Output Groups Section === */
+.output-groups {
+    margin-top: 20px;
+    padding: 10px;
+    background-color: #333;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* Each Output Group */
+.output-group {
+    background-color: #444;
+    padding: 15px;
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+/* Remove Output Group Button */
+.remove-output-group {
+    background-color: #dc3545;
+    color: white;
+    padding: 10px;
+    border: none;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+/* Input Fields */
+.output-group input {
+    padding: 8px;
+    margin: 5px 0;
+    background-color: #555;
+    border: 1px solid #666;
+    color: white;
+    border-radius: 4px;
+}
+
+/* Add Stream Target Button */
+.add-output-group {
+    margin-top: 15px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    cursor: pointer;
+    border-radius: 4px;
+    padding: 10px;
+}
+
+.add-stream-target {
+    background-color: #28a745;
+    color: white;
+    padding: 5px 10px;
+    border: none;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.remove-stream-target {
+    background-color: #dc3545;
+    color: white;
+    padding: 5px 10px;
+    border: none;
+    cursor: pointer;
+    border-radius: 4px;
+}

@@ -3,9 +3,7 @@ import { app, BrowserWindow } from "electron";
 import { Logger } from "../utils/logger";
 import * as path from "path";
 
-const logger = Logger.getInstance();  
-
-const isDev = process.env.NODE_ENV === "development"; // Detects if running in development
+const logger = Logger.getInstance();
 
 // Ensure main window is recreated if all windows are closed (macOS behavior)
 app.on("activate", () => {

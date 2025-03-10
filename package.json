@@ -7,7 +7,7 @@
     "clean": "node scripts/clean.js",
     "compile": "npx tsc",
     "pack": "electron-builder",
-    "build": "npm run clean && npm run compile && npm run pack",
+    "build": "npm run clean && npm run compile && npm run pack && npm run copy-resources",
     "electron": "electron dist/electron/main.js",
     "copy-resources": "node scripts/copyResources.js",
     "dev": "tsc && node scripts/copyResources.js && npm run electron",
@@ -17,25 +17,13 @@
     "extraResources": [
       {
         "from": "resources",
-        "to": "resources",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "config",
-        "to": "config",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "src/frontend",
-        "to": "frontend",
-        "filter": [
-          "**/*"
-        ]
+        "to": "resources"
       }
+    ],
+    "files": [
+      "dist/electron/**/*",
+      "config/**/*",
+      "src/frontend/**/*"
     ],
     "directories": {
       "output": "release"

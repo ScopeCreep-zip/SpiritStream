@@ -1,52 +1,45 @@
-const fs = require("fs");
-const path = require("path");
+const fs = require('fs');
+const path = require('path');
 
-const sourceDirs = [
-  "resources",
-  "config",
-];
-
-const distRoot = path.join(__dirname, "../dist");
-const frontendSrc = path.join(__dirname, "..", "src/frontend");
-const frontendDest = path.join(distRoot, "frontend");
-
-function copyRecursiveSync(src, dest) {
-  if (!fs.existsSync(dest)) {
-    fs.mkdirSync(dest, { recursive: true });
-  }
-  const entries = fs.readdirSync(src, { withFileTypes: true });
-
-  for (const entry of entries) {
-    const srcPath = path.join(src, entry.name);
-    const destPath = path.join(dest, entry.name);
-
-    if (entry.isDirectory()) {
-      copyRecursiveSync(srcPath, destPath);
-    } else {
-      fs.copyFileSync(srcPath, destPath);
+function copyFolderSync(src, dest) {
+    if (!fs.existsSync(src)) {
+        console.warn(`Warning: Source folder "${src}" does not exist. Skipping.`);
+        return;
     }
-  }
+    if (!fs.existsSync(dest)) {
+        fs.mkdirSync(dest, { recursive: true });
+    }
+    fs.readdirSync(src).forEach(file => {
+        const srcFile = path.join(src, file);
+        const destFile = path.join(dest, file);
+        if (fs.lstatSync(srcFile).isDirectory()) {
+            copyFolderSync(srcFile, destFile);
+        } else {
+            fs.copyFileSync(srcFile, destFile);
+        }
+    });
 }
 
-// Loop through each source directory
-sourceDirs.forEach((dir) => {
-  const srcDir = path.join(__dirname, "..", dir);
-  const destDir = path.join(distRoot, dir);
+console.log("Copying resources to dist/resources...");
+copyFolderSync("resources", "dist/resources");
+console.log("Resources copied successfully.");
 
-  if (fs.existsSync(srcDir)) {
-    console.log(`Copying ${dir} from ${srcDir} to ${destDir}...`);
-    copyRecursiveSync(srcDir, destDir);
-    console.log(`${dir} copied successfully.`);
-  } else {
-    console.warn(`Warning: ${dir} directory does not exist, skipping.`);
-  }
-});
+console.log("Copying config to dist/config...");
+copyFolderSync("config", "dist/config");
+console.log("Config copied successfully.");
 
-// Copy frontend separately to dist/frontend (not dist/src/frontend)
-if (fs.existsSync(frontendSrc)) {
-  console.log(`Copying frontend from ${frontendSrc} to ${frontendDest}...`);
-  copyRecursiveSync(frontendSrc, frontendDest);
-  console.log(`frontend copied successfully.`);
-} else {
-  console.warn(`Warning: src/frontend directory does not exist, skipping.`);
-}
+console.log("Copying frontend to dist/frontend...");
+copyFolderSync("src/frontend", "dist/frontend");
+console.log("Frontend copied successfully.");
+
+console.log("Copying resources to release/win-unpacked/resources...");
+copyFolderSync("resources", "release/win-unpacked/resources");
+console.log("Resources copied successfully to release.");
+
+console.log("Copying config to release/win-unpacked/config...");
+copyFolderSync("config", "release/win-unpacked/config");
+console.log("Config copied successfully to release.");
+
+console.log("Copying frontend to release/win-unpacked/frontend...");
+copyFolderSync("src/frontend", "release/win-unpacked/frontend");
+console.log("Frontend copied successfully to release.");
