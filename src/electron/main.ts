@@ -1,36 +1,21 @@
-import "./init";
-import { app, BrowserWindow } from "electron";  
-import { Logger } from "../utils/logger";
-import * as path from "path";
+const { app, BrowserWindow } = require("electron");
+const path = require("path");
 
-const logger = Logger.getInstance();
+let mainWindow;
 
-// Ensure main window is recreated if all windows are closed (macOS behavior)
-app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-        createMainWindow();
-    }
-});
-
-// Function to create the main Electron window
-function createMainWindow() {
-    const mainWindow = new BrowserWindow({
-        width: 1280,
-        height: 800,
+app.whenReady().then(() => {
+    mainWindow = new BrowserWindow({
+        width: 1200,  
+        height: 800,  
+        fullscreen: false,  // Do NOT use exclusive fullscreen
+        frame: true,        // Keep the title bar (default behavior)
+        maximizable: true,  // Allows maximizing
+        resizable: true,    // Allows resizing
         webPreferences: {
-            nodeIntegration: true, // May change if using a preload script later
+            nodeIntegration: true,
         },
-        title: "MagillaStream"
     });
 
-    // Load local index.html in both development and production
+    mainWindow.maximize(); // Start the window in maximized mode
     mainWindow.loadFile(path.join(__dirname, "../frontend/index/html/index.html"));
-
-    return mainWindow;
-}
-
-// Start Fastify when Electron is ready
-app.whenReady().then(() => {
-
-    createMainWindow();
 });

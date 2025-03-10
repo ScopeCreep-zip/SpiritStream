@@ -27,9 +27,12 @@ class StreamTarget {
     }
 }
 
-// Function to create a new output group
 function addOutputGroup() {
-    const container = document.getElementById("output-groups-container");
+    const container = document.querySelector(".output-groups");
+
+    // Remove placeholder on first add
+    const placeholder = document.getElementById("output-groups-placeholder");
+    if (placeholder) placeholder.remove();
 
     // Generate unique group index
     const groupId = outputGroups.length;
@@ -40,92 +43,37 @@ function addOutputGroup() {
     groupDiv.className = "output-group";
     groupDiv.dataset.id = groupId;
     groupDiv.innerHTML = `
-        <h3>${newGroup.name}</h3>
-
+        <h3>Output Group ${groupId + 1}</h3>
         <label>Video Encoder:</label>
         <select>
             <option>H.264</option>
             <option>H.265</option>
         </select>
-
         <label>Resolution:</label>
         <select>
             <option>1920x1080</option>
             <option>1280x720</option>
             <option>640x480</option>
         </select>
-
         <label>Bitrate:</label>
-        <input type="text" value="${newGroup.bitrate}">
-
+        <input type="text" value="4000kbps">
         <label>FPS:</label>
-        <input type="text" value="${newGroup.fps}">
-
+        <input type="text" value="30">
         <label>Audio Codec:</label>
         <select>
             <option>AAC</option>
             <option>MP3</option>
         </select>
-
         <label>Audio Bitrate:</label>
-        <input type="text" value="${newGroup.audioBitrate}">
-
+        <input type="text" value="128kbps">
         <label><input type="checkbox"> Generate PTS</label>
-
-        <div id="stream-targets-${groupId}" class="stream-targets">
-            <!-- Stream Targets will be added here -->
-        </div>
-
         <button class="add-stream-target" onclick="addStreamTarget(${groupId})">Add Stream Target</button>
         <button class="remove-output-group" onclick="removeOutputGroup(${groupId})">Remove Output Group</button>
     `;
 
-    // Add to DOM & Store in array
+    // Append new output group directly to the container (horizontal alignment)
     container.appendChild(groupDiv);
     outputGroups.push(newGroup);
-}
-
-// Function to add a new Stream Target to an Output Group
-function addStreamTarget(groupId) {
-    const targetContainer = document.getElementById(`stream-targets-${groupId}`);
-
-    // Generate unique stream target index
-    const targetIndex = outputGroups[groupId].streamTargets.length;
-    const newTarget = new StreamTarget(targetIndex);
-
-    // Create Stream Target element
-    const targetDiv = document.createElement("div");
-    targetDiv.className = "stream-target";
-    targetDiv.dataset.index = targetIndex;
-    targetDiv.innerHTML = `
-        <input type="text" placeholder="Stream URL" value="${newTarget.url}">
-        <input type="text" placeholder="Stream Key" value="${newTarget.streamKey}">
-        <input type="number" placeholder="RTMP Port" value="${newTarget.rtmpPort}">
-
-        <button class="remove-stream-target" onclick="removeStreamTarget(${groupId}, ${targetIndex})">Remove Stream Target</button>
-    `;
-
-    // Append to Output Group
-    targetContainer.appendChild(targetDiv);
-    outputGroups[groupId].streamTargets.push(newTarget);
-}
-
-// Function to remove an Output Group
-function removeOutputGroup(groupId) {
-    outputGroups = outputGroups.filter(group => group.id !== groupId);
-    document.querySelector(`.output-group[data-id="${groupId}"]`).remove();
-}
-
-// Function to remove a specific Stream Target
-function removeStreamTarget(groupId, targetIndex) {
-    // Find the correct Output Group
-    const group = outputGroups.find(g => g.id === groupId);
-    if (group) {
-        group.streamTargets = group.streamTargets.filter(target => target.id !== targetIndex);
-    }
-
-    // Remove from DOM
-    document.querySelector(`#stream-targets-${groupId} .stream-target[data-index="${targetIndex}"]`).remove();
 }
 
 // Attach event listener for adding output groups
