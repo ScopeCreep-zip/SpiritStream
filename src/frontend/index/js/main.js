@@ -2,6 +2,7 @@
 let outputGroups = [];
 
 // OutputGroup Model (JavaScript adaptation)
+// This model stores the settings for each output group including an array for stream targets.
 class OutputGroup {
     constructor(id) {
         this.id = id;
@@ -13,11 +14,11 @@ class OutputGroup {
         this.audioCodec = "AAC";
         this.audioBitrate = "128kbps";
         this.generatePTS = false;
-        this.streamTargets = [];
+        this.streamTargets = []; 
     }
 }
 
-// StreamTarget Model (JavaScript adaptation)
+// This model represents each stream target with URL, stream key, and RTMP port.
 class StreamTarget {
     constructor(id, url = "", streamKey = "", rtmpPort = 1935) {
         this.id = id;
@@ -27,6 +28,7 @@ class StreamTarget {
     }
 }
 
+// Adds a new output group to the UI and model
 function addOutputGroup() {
     const container = document.querySelector(".output-groups");
 
@@ -34,11 +36,11 @@ function addOutputGroup() {
     const placeholder = document.getElementById("output-groups-placeholder");
     if (placeholder) placeholder.remove();
 
-    // Generate unique group index
+    // Generate unique group index based on current count
     const groupId = outputGroups.length;
     const newGroup = new OutputGroup(groupId);
 
-    // Create output group element
+    // Create output group element with necessary input fields and buttons
     const groupDiv = document.createElement("div");
     groupDiv.className = "output-group";
     groupDiv.dataset.id = groupId;
@@ -69,11 +71,82 @@ function addOutputGroup() {
         <label><input type="checkbox"> Generate PTS</label>
         <button class="add-stream-target" onclick="addStreamTarget(${groupId})">Add Stream Target</button>
         <button class="remove-output-group" onclick="removeOutputGroup(${groupId})">Remove Output Group</button>
+        <div class="stream-targets-container"></div>
     `;
 
-    // Append new output group directly to the container (horizontal alignment)
+    // Append the new group to the output groups container
     container.appendChild(groupDiv);
     outputGroups.push(newGroup);
+}
+
+// Adds a new stream target to a specific output group
+function addStreamTarget(groupId) {
+    // Get the corresponding output group model
+    let group = outputGroups[groupId];
+    if (!group) return;
+
+    // Generate a unique stream target id for the group
+    const streamTargetId = group.streamTargets.length;
+    let newStreamTarget = new StreamTarget(streamTargetId);
+    group.streamTargets.push(newStreamTarget);
+
+    // Find the output group DOM element and its stream targets container
+    const groupDiv = document.querySelector(`.output-group[data-id="${groupId}"]`);
+    const targetsContainer = groupDiv.querySelector('.stream-targets-container');
+
+    // Create a new element for the stream target inputs
+    const targetDiv = document.createElement("div");
+    targetDiv.className = "stream-target";
+    targetDiv.dataset.id = streamTargetId;
+    targetDiv.innerHTML = `
+        <label>Stream Target URL:</label>
+        <input type="text" placeholder="Enter stream URL" onchange="updateStreamTargetURL(${groupId}, ${streamTargetId}, this.value)">
+        <label>Stream Key:</label>
+        <input type="text" placeholder="Enter stream key" onchange="updateStreamTargetKey(${groupId}, ${streamTargetId}, this.value)">
+        <button class="remove-stream-target" onclick="removeStreamTarget(${groupId}, ${streamTargetId})">Remove Stream Target</button>
+    `;
+    targetsContainer.appendChild(targetDiv);
+}
+
+// Update the URL of a stream target when the input changes
+function updateStreamTargetURL(groupId, targetId, value) {
+    let group = outputGroups[groupId];
+    if (group && group.streamTargets[targetId]) {
+         group.streamTargets[targetId].url = value.trim().replace(/\/+$/, "");
+    }
+}
+
+// Update the stream key of a stream target when the input changes
+function updateStreamTargetKey(groupId, targetId, value) {
+    let group = outputGroups[groupId];
+    if (group && group.streamTargets[targetId]) {
+         group.streamTargets[targetId].streamKey = value.trim();
+    }
+}
+
+// Removes a stream target from the specified output group
+function removeStreamTarget(groupId, targetId) {
+    let group = outputGroups[groupId];
+    if (!group) return;
+
+    // Update the stream targets array by filtering out the target with the matching id
+    group.streamTargets = group.streamTargets.filter(st => st.id !== targetId);
+
+    // Remove the corresponding DOM element
+    const groupDiv = document.querySelector(`.output-group[data-id="${groupId}"]`);
+    const targetDiv = groupDiv.querySelector(`.stream-target[data-id="${targetId}"]`);
+    if (targetDiv) {
+         targetDiv.remove();
+    }
+}
+
+// Removes an entire output group
+function removeOutputGroup(groupId) {
+    // Remove the output group from the model
+    outputGroups = outputGroups.filter(og => og.id !== groupId);
+    // Remove the output group element from the DOM
+    const groupDiv = document.querySelector(`.output-group[data-id="${groupId}"]`);
+    if (groupDiv) groupDiv.remove();
 }
 
 // Attach event listener for adding output groups
