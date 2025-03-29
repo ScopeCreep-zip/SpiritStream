@@ -18,18 +18,18 @@ body {
     display: grid;
     grid-template-columns: 25% 75%; /* Sidebar takes 25%, Output Groups take 75% */
     height: 100vh;
-    width: 100vw; /* Ensure it spans the entire viewport width */
+    width: 100vw;
 }
 
 /* Ensure Sidebar Takes Full Height */
 .sidebar {
     display: flex;
     flex-direction: column;
-    justify-content: space-between; /* Pushes elements apart */
+    justify-content: space-between;
     padding: 20px;
     background-color: #222;
     color: white;
-    width: 25vw; /* Sidebar is fixed at 25% of the total viewport */
+    width: 25vw;
     height: 100vh;
     box-sizing: border-box;
 }
@@ -132,19 +132,18 @@ button:hover {
 
 /* === Output Groups Section (Fixed 75% width, Scrollable) === */
 .output-groups {
-    display: flex;  /* Ensure horizontal alignment */
-    flex-wrap: nowrap;  /* Prevent groups from wrapping */
-    overflow-x: auto;  /* Allow scrolling when needed */
-    gap: 15px;  /* Space between groups */
-    padding: 0 15px; /* Ensure padding is factored in */
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
     background-color: #333;
     border-radius: 8px;
-    width: calc(75vw - 30px); /* Fixed width at 75% of viewport minus padding */
+    width: 75vw;
     height: 100%;
     box-sizing: border-box;
+    padding: 0;
 }
 
-/* === Output Groups inside Columns (Fixed 33.33% of .output-groups, adjusted for margin/gap) === */
+/* === Output Groups inside Columns (Fixed Width) === */
 .output-group {
     background-color: #444;
     padding: 15px;
@@ -152,9 +151,14 @@ button:hover {
     display: flex;
     flex-direction: column;
     gap: 10px;
-    width: calc((75vw - 60px) / 3); /* 75vw minus padding (30px) and total gaps (2 * 15px) */
-    flex: 0 0 calc((75vw - 60px) / 3); /* Prevent shrinking */
+    width: calc((75vw - 30px) / 3); /* 3 columns, 2 * 15px margin */
+    flex: 0 0 calc((75vw - 30px) / 3);
     box-sizing: border-box;
+}
+
+/* Add margin between groups but not before the first */
+.output-group:not(:first-child) {
+    margin-left: 15px;
 }
 
 /* Remove Output Group Button */
