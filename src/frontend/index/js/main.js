@@ -14,10 +14,11 @@ class OutputGroup {
         this.audioCodec = "AAC";
         this.audioBitrate = "128kbps";
         this.generatePTS = false;
-        this.streamTargets = []; 
+        this.streamTargets = []; // Array to hold stream target objects
     }
 }
 
+// StreamTarget Model (JavaScript adaptation)
 // This model represents each stream target with URL, stream key, and RTMP port.
 class StreamTarget {
     constructor(id, url = "", streamKey = "", rtmpPort = 1935) {
@@ -160,3 +161,113 @@ document.querySelector(".start-stream").addEventListener("click", () => {
 document.querySelector(".stop-stream").addEventListener("click", () => {
     alert("Stopping stream...");
 });
+
+// ================= Profile Management Modals Handling =================
+
+// Utility functions to show and hide modals
+function showModal(modalId) {
+    document.getElementById(modalId).style.display = "block";
+}
+
+function hideModal(modalId) {
+    document.getElementById(modalId).style.display = "none";
+}
+
+// Event listeners for Profile Management Buttons
+document.getElementById("add-profile-btn").addEventListener("click", function() {
+    showModal("add-profile-modal");
+});
+
+document.getElementById("load-profile-btn").addEventListener("click", function() {
+    // TODO: Populate profile list dynamically before showing modal
+    showModal("load-profile-modal");
+});
+
+document.getElementById("save-profile-btn").addEventListener("click", function() {
+    showModal("save-profile-modal");
+});
+
+document.getElementById("delete-profile-btn").addEventListener("click", function() {
+    // TODO: Ensure a profile is selected before showing delete modal
+    showModal("delete-profile-modal");
+});
+
+// Event listeners for closing modals via close buttons
+document.getElementById("add-profile-close").addEventListener("click", function() {
+    hideModal("add-profile-modal");
+});
+document.getElementById("load-profile-close").addEventListener("click", function() {
+    hideModal("load-profile-modal");
+});
+document.getElementById("save-profile-close").addEventListener("click", function() {
+    hideModal("save-profile-modal");
+});
+document.getElementById("delete-profile-close").addEventListener("click", function() {
+    hideModal("delete-profile-modal");
+});
+
+// Event listeners for cancel buttons in modals
+document.getElementById("add-profile-cancel").addEventListener("click", function() {
+    hideModal("add-profile-modal");
+});
+document.getElementById("load-profile-cancel").addEventListener("click", function() {
+    hideModal("load-profile-modal");
+});
+document.getElementById("save-profile-cancel").addEventListener("click", function() {
+    hideModal("save-profile-modal");
+});
+document.getElementById("delete-profile-cancel").addEventListener("click", function() {
+    hideModal("delete-profile-modal");
+});
+
+// Toggle password input visibility for Add Profile Modal based on encryption checkbox
+document.getElementById("enable-encryption").addEventListener("change", function() {
+    let passwordContainer = document.getElementById("add-profile-password-container");
+    if (this.checked) {
+        passwordContainer.style.display = "block";
+    } else {
+        passwordContainer.style.display = "none";
+    }
+});
+
+// Confirm action for Add Profile Modal
+document.getElementById("add-profile-confirm").addEventListener("click", function() {
+    const profileName = document.getElementById("profile-name").value;
+    const encryptionEnabled = document.getElementById("enable-encryption").checked;
+    const profilePassword = document.getElementById("profile-password").value;
+    // TODO: Call profileManager.createProfile with profileName, encryptionEnabled, and profilePassword
+    console.log("Creating profile:", profileName, encryptionEnabled, profilePassword);
+    hideModal("add-profile-modal");
+});
+
+// Confirm action for Load Profile Modal
+document.getElementById("load-profile-confirm").addEventListener("click", function() {
+    // Retrieve selected profile and password if required
+    const selectedProfileId = getSelectedProfileId(); // Placeholder function
+    const profilePassword = document.getElementById("load-profile-password").value;
+    // TODO: Call profileManager.loadProfile with selectedProfileId and profilePassword if necessary
+    console.log("Loading profile:", selectedProfileId, profilePassword);
+    hideModal("load-profile-modal");
+});
+
+// Confirm action for Save Profile Modal
+document.getElementById("save-profile-confirm").addEventListener("click", function() {
+    // TODO: Call profileManager.saveProfile for current profile
+    console.log("Saving current profile...");
+    hideModal("save-profile-modal");
+});
+
+// Confirm action for Delete Profile Modal
+document.getElementById("delete-profile-confirm").addEventListener("click", function() {
+    const selectedProfileId = getSelectedProfileId(); // Placeholder function
+    // TODO: Call profileManager.deleteProfile with selectedProfileId
+    console.log("Deleting profile:", selectedProfileId);
+    hideModal("delete-profile-modal");
+});
+
+// Placeholder utility function to get selected profile id
+function getSelectedProfileId() {
+    // This function should return the id of the currently selected profile from the Load Profile modal
+    // For now, we return a dummy value
+    return 0;
+}

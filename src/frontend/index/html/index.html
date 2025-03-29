@@ -13,10 +13,10 @@
             <!-- Profile Management -->
             <section class="profile-management">
                 <h2>Profile Management</h2>
-                <button class="profile-btn add">Add Profile</button>
-                <button class="profile-btn load">Load Profile</button>
-                <button class="profile-btn delete">Delete Profile</button>
-                <button class="profile-btn save">Save Profile</button>
+                <button id="add-profile-btn" class="profile-btn add">Add Profile</button>
+                <button id="load-profile-btn" class="profile-btn load">Load Profile</button>
+                <button id="delete-profile-btn" class="profile-btn delete">Delete Profile</button>
+                <button id="save-profile-btn" class="profile-btn save">Save Profile</button>
             </section>
 
             <!-- Stream Settings -->
@@ -44,6 +44,71 @@
                 <!-- Dynamically added output groups will go here -->
         </section>
     </main>
+
+    <!-- Modal Dialogs for Profile Management -->
+    <!-- Add Profile Modal -->
+    <div id="add-profile-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <!-- Close button for the modal -->
+            <span class="modal-close" id="add-profile-close">&times;</span>
+            <h2>Add Profile</h2>
+            <label for="profile-name">Profile Name:</label>
+            <input type="text" id="profile-name" placeholder="Enter profile name">
+            <div>
+                <label>
+                    <input type="checkbox" id="enable-encryption"> Enable Encryption
+                </label>
+            </div>
+            <!-- This container will be toggled if encryption is enabled -->
+            <div id="add-profile-password-container" style="display: none;">
+                <label for="profile-password">Password:</label>
+                <input type="password" id="profile-password" placeholder="Enter password">
+            </div>
+            <button id="add-profile-confirm">Create Profile</button>
+            <button id="add-profile-cancel">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Load Profile Modal -->
+    <div id="load-profile-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <span class="modal-close" id="load-profile-close">&times;</span>
+            <h2>Load Profile</h2>
+            <!-- The profile list will be injected dynamically here -->
+            <div id="profile-list-container">
+                <!-- List of profiles will appear here -->
+            </div>
+            <!-- If the selected profile is encrypted, show this password input -->
+            <div id="load-profile-password-container" style="display: none;">
+                <label for="load-profile-password">Password:</label>
+                <input type="password" id="load-profile-password" placeholder="Enter password">
+            </div>
+            <button id="load-profile-confirm">Load Profile</button>
+            <button id="load-profile-cancel">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Save Profile Modal -->
+    <div id="save-profile-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <span class="modal-close" id="save-profile-close">&times;</span>
+            <h2>Save Profile</h2>
+            <p>Are you sure you want to save the current profile?</p>
+            <button id="save-profile-confirm">Save Profile</button>
+            <button id="save-profile-cancel">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Delete Profile Modal -->
+    <div id="delete-profile-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <span class="modal-close" id="delete-profile-close">&times;</span>
+            <h2>Delete Profile</h2>
+            <p>Are you sure you want to delete the selected profile? This action cannot be undone.</p>
+            <button id="delete-profile-confirm">Delete Profile</button>
+            <button id="delete-profile-cancel">Cancel</button>
+        </div>
+    </div>
 
     <script src="../js/main.js"></script>
 </body>
