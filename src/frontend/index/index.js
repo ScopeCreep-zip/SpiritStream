@@ -52,6 +52,38 @@ window.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    function syncUIToState() {
+        const groupDivs = document.querySelectorAll(".output-group");
+    
+        groupDivs.forEach(groupDiv => {
+            const groupId = parseInt(groupDiv.dataset.id);
+            const group = outputGroups[groupId];
+            if (!group) return;
+    
+            const selects = groupDiv.querySelectorAll("select");
+            const inputs = groupDiv.querySelectorAll("input[type='text']");
+            const checkbox = groupDiv.querySelector("input[type='checkbox']");
+    
+            group.videoEncoder = selects[0].value;
+            group.resolution = selects[1].value;
+            group.bitrate = inputs[0].value;
+            group.fps = inputs[1].value;
+            group.audioCodec = selects[2].value;
+            group.audioBitrate = inputs[2].value;
+            group.generatePTS = checkbox.checked;
+    
+            const targetDivs = groupDiv.querySelectorAll(".stream-target");
+            targetDivs.forEach((targetDiv, tIndex) => {
+                const target = group.streamTargets[tIndex];
+                if (!target) return;
+    
+                const inputs = targetDiv.querySelectorAll("input");
+                target.url = inputs[0].value.trim().replace(/\/+$/, "");
+                target.streamKey = inputs[1].value.trim();
+            });
+        });
+    }
+
     // ========== Output Group Handling ==========
 
     function addOutputGroup() {
@@ -138,7 +170,7 @@ window.addEventListener("DOMContentLoaded", () => {
     
         targetsContainer.appendChild(targetDiv);
     }
-    
+
     function updateStreamTargetURL(groupId, targetId, value) {
         let group = outputGroups[groupId];
         if (group && group.streamTargets[targetId]) {
@@ -165,10 +197,90 @@ window.addEventListener("DOMContentLoaded", () => {
     }
 
     function removeOutputGroup(groupId) {
-        outputGroups = outputGroups.filter(og => og.id !== groupId);
-        const groupDiv = document.querySelector(`.output-group[data-id="${groupId}"]`);
+        syncUIToState(); // Capture unsaved changes before anything is removed 
+        
+        // Remove from array
+        outputGroups = outputGroups.filter(group => group.id !== groupId);
+    
+        // Remove from DOM
+        const container = document.querySelector(".output-groups");
+        const groupDiv = container.querySelector(`.output-group[data-id="${groupId}"]`);
         if (groupDiv) groupDiv.remove();
-    }
+    
+        // Clear all existing output group DOM nodes
+        container.innerHTML = "";
+    
+        // Re-render all groups from updated array with fresh IDs
+        outputGroups.forEach((group, newIndex) => {
+            group.id = newIndex; // Reindex the group
+            const groupDiv = document.createElement("div");
+            groupDiv.className = "output-group";
+            groupDiv.dataset.id = newIndex;
+    
+            groupDiv.innerHTML = `
+                <h3>Output Group ${newIndex + 1}</h3>
+                <label>Video Encoder:</label>
+                <select><option>H.264</option><option>H.265</option></select>
+                <label>Resolution:</label>
+                <select><option>1920x1080</option><option>1280x720</option><option>640x480</option></select>
+                <label>Bitrate:</label>
+                <input type="text" value="${group.bitrate}">
+                <label>FPS:</label>
+                <input type="text" value="${group.fps}">
+                <label>Audio Codec:</label>
+                <select><option>AAC</option><option>MP3</option></select>
+                <label>Audio Bitrate:</label>
+                <input type="text" value="${group.audioBitrate}">
+                <label><input type="checkbox" ${group.generatePTS ? "checked" : ""}> Generate PTS</label>
+                <div class="stream-targets-container"></div>
+                <button class="add-stream-target">Add Stream Target</button>
+                <button class="remove-output-group">Remove Output Group</button>
+            `;
+    
+            // Re-bind add/remove buttons
+            groupDiv.querySelector(".add-stream-target").addEventListener("click", () => {
+                addStreamTarget(newIndex);
+            });
+    
+            groupDiv.querySelector(".remove-output-group").addEventListener("click", () => {
+                removeOutputGroup(newIndex);
+            });
+    
+            container.appendChild(groupDiv);
+    
+            // Re-render this group's stream targets
+            const targetsContainer = groupDiv.querySelector(".stream-targets-container");
+            group.streamTargets.forEach((target, tIndex) => {
+                target.id = tIndex;
+    
+                const targetDiv = document.createElement("div");
+                targetDiv.className = "stream-target";
+                targetDiv.dataset.id = tIndex;
+    
+                targetDiv.innerHTML = `
+                    <label>Stream Target URL:</label>
+                    <input type="text" value="${target.url}">
+                    <label>Stream Key:</label>
+                    <input type="text" value="${target.streamKey}">
+                    <button class="remove-stream-target">Remove Stream Target</button>
+                `;
+    
+                const inputs = targetDiv.querySelectorAll("input");
+                inputs[0].addEventListener("change", e => {
+                    updateStreamTargetURL(newIndex, tIndex, e.target.value);
+                });
+                inputs[1].addEventListener("change", e => {
+                    updateStreamTargetKey(newIndex, tIndex, e.target.value);
+                });
+    
+                targetDiv.querySelector(".remove-stream-target").addEventListener("click", () => {
+                    removeStreamTarget(newIndex, tIndex);
+                });
+    
+                targetsContainer.appendChild(targetDiv);
+            });
+        });
+    }    
 
     // ========== Profile Dropdown ==========
 
