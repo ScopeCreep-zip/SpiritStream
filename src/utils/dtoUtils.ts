@@ -47,3 +47,30 @@ export function reconstructTheme(themeDTO?: ThemeDTO): Theme | undefined {
     themeDTO.darkMode
   );
 }
+
+// Creates a new plain OutputGroupDTO object
+export function createOutputGroupDTO(id: string, name: string): OutputGroupDTO {
+  return {
+    id,
+    name,
+    videoEncoder: "H.264",
+    resolution: "1920x1080",
+    bitrate: "4000kbps",
+    fps: "30",
+    audioCodec: "AAC",
+    audioBitrate: "128kbps",
+    generatePTS: false,
+    streamTargets: []
+  };
+}
+
+// Creates a new plain StreamTargetDTO object
+export function createStreamTargetDTO(id: string): StreamTargetDTO {
+  return {
+    id,
+    url: "",
+    streamKey: "",
+    rtmpPort: 1935,
+    normalizedPath: ""
+  };
+}

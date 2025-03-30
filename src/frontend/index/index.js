@@ -6,6 +6,23 @@ window.addEventListener("DOMContentLoaded", () => {
         console.error("profileManager not available — check preload setup.");
     }
 
+    const lastUsed = localStorage.getItem("lastUsedProfile");
+    if (lastUsed && window.electronAPI?.profileManager) {
+    window.electronAPI.profileManager
+        .loadProfile(lastUsed)
+        .then(profileDTO => {
+        if (profileDTO) {
+            console.log(`Restored profile: ${lastUsed}`);
+            applyProfileToUI(profileDTO);
+        } else {
+            console.warn("No profile loaded from localStorage reference.");
+        }
+        })
+        .catch(err => {
+        console.error("Failed to load profile from localStorage:", err);
+        });
+    }
+
     // Store output groups in an array
     let outputGroups = [];
 
@@ -35,19 +52,20 @@ window.addEventListener("DOMContentLoaded", () => {
         }
     }
 
-    // === Output Group Handling ===
+    // ========== Output Group Handling ==========
 
     function addOutputGroup() {
         const container = document.querySelector(".output-groups");
         const placeholder = document.getElementById("output-groups-placeholder");
         if (placeholder) placeholder.remove();
-
+    
         const groupId = outputGroups.length;
         const newGroup = new OutputGroup(groupId);
-
+    
         const groupDiv = document.createElement("div");
         groupDiv.className = "output-group";
         groupDiv.dataset.id = groupId;
+    
         groupDiv.innerHTML = `
             <h3>Output Group ${groupId + 1}</h3>
             <label>Video Encoder:</label>
@@ -63,11 +81,20 @@ window.addEventListener("DOMContentLoaded", () => {
             <label>Audio Bitrate:</label>
             <input type="text" value="128kbps">
             <label><input type="checkbox"> Generate PTS</label>
-            <button class="add-stream-target" onclick="addStreamTarget(${groupId})">Add Stream Target</button>
-            <button class="remove-output-group" onclick="removeOutputGroup(${groupId})">Remove Output Group</button>
             <div class="stream-targets-container"></div>
+            <button class="add-stream-target">Add Stream Target</button>
+            <button class="remove-output-group">Remove Output Group</button>
         `;
-
+    
+        // Bind dynamic button handlers
+        groupDiv.querySelector(".add-stream-target").addEventListener("click", () => {
+            addStreamTarget(groupId);
+        });
+    
+        groupDiv.querySelector(".remove-output-group").addEventListener("click", () => {
+            removeOutputGroup(groupId);
+        });
+    
         container.appendChild(groupDiv);
         outputGroups.push(newGroup);
     }
@@ -75,27 +102,43 @@ window.addEventListener("DOMContentLoaded", () => {
     function addStreamTarget(groupId) {
         let group = outputGroups[groupId];
         if (!group) return;
-
+    
         const streamTargetId = group.streamTargets.length;
         let newStreamTarget = new StreamTarget(streamTargetId);
         group.streamTargets.push(newStreamTarget);
-
+    
         const groupDiv = document.querySelector(`.output-group[data-id="${groupId}"]`);
         const targetsContainer = groupDiv.querySelector(".stream-targets-container");
-
+    
         const targetDiv = document.createElement("div");
         targetDiv.className = "stream-target";
         targetDiv.dataset.id = streamTargetId;
+    
         targetDiv.innerHTML = `
             <label>Stream Target URL:</label>
-            <input type="text" placeholder="Enter stream URL" onchange="updateStreamTargetURL(${groupId}, ${streamTargetId}, this.value)">
+            <input type="text" placeholder="Enter stream URL">
             <label>Stream Key:</label>
-            <input type="text" placeholder="Enter stream key" onchange="updateStreamTargetKey(${groupId}, ${streamTargetId}, this.value)">
-            <button class="remove-stream-target" onclick="removeStreamTarget(${groupId}, ${streamTargetId})">Remove Stream Target</button>
+            <input type="text" placeholder="Enter stream key">
+            <button class="remove-stream-target">Remove Stream Target</button>
         `;
+    
+        // Bind field handlers
+        const inputs = targetDiv.querySelectorAll("input");
+        inputs[0].addEventListener("change", e => {
+            updateStreamTargetURL(groupId, streamTargetId, e.target.value);
+        });
+        inputs[1].addEventListener("change", e => {
+            updateStreamTargetKey(groupId, streamTargetId, e.target.value);
+        });
+    
+        // Bind remove button
+        targetDiv.querySelector(".remove-stream-target").addEventListener("click", () => {
+            removeStreamTarget(groupId, streamTargetId);
+        });
+    
         targetsContainer.appendChild(targetDiv);
     }
-
+    
     function updateStreamTargetURL(groupId, targetId, value) {
         let group = outputGroups[groupId];
         if (group && group.streamTargets[targetId]) {
@@ -127,20 +170,29 @@ window.addEventListener("DOMContentLoaded", () => {
         if (groupDiv) groupDiv.remove();
     }
 
-    // === Profile Dropdown ===
+    // ========== Profile Dropdown ==========
 
     async function populateProfileDropdown() {
         const select = document.getElementById("profile-select");
         select.innerHTML = "";
-
+    
         if (!window.electronAPI?.profileManager) {
             console.error("profileManager not available — check preload setup.");
             return;
         }
-
+    
         try {
             const profiles = await window.electronAPI.profileManager.getAllProfileNames();
-
+    
+            if (profiles.length === 0) {
+                const emptyOption = document.createElement("option");
+                emptyOption.textContent = "No profiles found";
+                emptyOption.disabled = true;
+                emptyOption.selected = true;
+                select.appendChild(emptyOption);
+                return;
+            }
+    
             profiles.forEach(profile => {
                 const option = document.createElement("option");
                 option.value = profile.name;
@@ -152,13 +204,13 @@ window.addEventListener("DOMContentLoaded", () => {
         } catch (err) {
             console.error("Failed to load profiles:", err);
         }
-    }
+    }    
 
     function getSelectedProfileId() {
         return document.getElementById("profile-select").value;
     }
 
-    // === UI Event Listeners ===
+    // ========== UI Event Listeners ==========
 
     document.getElementById("add-output-group").addEventListener("click", addOutputGroup);
 
@@ -169,6 +221,7 @@ window.addEventListener("DOMContentLoaded", () => {
         alert("Stopping stream...");
     });
 
+    // Modals
     function showModal(id) {
         document.getElementById(id).style.display = "block";
     }
@@ -194,35 +247,81 @@ window.addEventListener("DOMContentLoaded", () => {
     document.getElementById("save-profile-cancel").addEventListener("click", () => hideModal("save-profile-modal"));
     document.getElementById("delete-profile-cancel").addEventListener("click", () => hideModal("delete-profile-modal"));
 
+    // Encryption toggle visibility
     document.getElementById("enable-encryption").addEventListener("change", function () {
         const container = document.getElementById("add-profile-password-container");
         container.style.display = this.checked ? "block" : "none";
     });
 
-    // Modal Confirm Buttons (currently placeholder logic)
-    document.getElementById("add-profile-confirm").addEventListener("click", function () {
-        const name = document.getElementById("profile-name").value;
-        const encrypted = document.getElementById("enable-encryption").checked;
-        const password = document.getElementById("profile-password").value;
-        console.log("Creating profile:", name, encrypted, password);
-        hideModal("add-profile-modal");
-    });
+    // Modal Confirm Buttons 
+    document.getElementById("add-profile-confirm").addEventListener("click", async function () {
+        const profileName = document.getElementById("profile-name").value;
+        const encryptionEnabled = document.getElementById("enable-encryption").checked;
+        const profilePassword = document.getElementById("profile-password").value;
+    
+        const profileDTO = {
+            id: crypto.randomUUID(), // You can use a better UUID generator later
+            name: profileName,
+            incomingURL: "", // default empty
+            outputGroups: [],
+            generatePTS: false,
+            theme: {} // or your default theme object
+        };
+    
+        try {
+            await window.electronAPI.profileManager.saveProfile(profileDTO, encryptionEnabled ? profilePassword : undefined);
+            await window.electronAPI.profileManager.saveLastUsedProfile(profileName);
+            console.log("Profile created:", profileName);
+            hideModal("add-profile-modal");
+        } catch (err) {
+            console.error("Failed to create profile:", err);
+        }
+    });    
 
-    document.getElementById("load-profile-confirm").addEventListener("click", function () {
-        const profile = getSelectedProfileId();
+    document.getElementById("load-profile-confirm").addEventListener("click", async function () {
+        const selectedProfileName = getSelectedProfileId();
         const password = document.getElementById("load-profile-password").value;
-        console.log("Loading profile:", profile, password);
-        hideModal("load-profile-modal");
-    });
+    
+        try {
+            const profileDTO = await window.electronAPI.profileManager.loadProfile(selectedProfileName, password);
+            if (!profileDTO) {
+                alert("Failed to load profile. It may be encrypted or corrupted.");
+                return;
+            }
+    
+            // TODO: Apply profileDTO to the GUI here
+            console.log("Loaded profile:", profileDTO.name);
+            hideModal("load-profile-modal");
+        } catch (err) {
+            console.error("Error loading profile:", err);
+        }
+    });    
 
-    document.getElementById("save-profile-confirm").addEventListener("click", function () {
-        console.log("Saving profile...");
-        hideModal("save-profile-modal");
-    });
+    document.getElementById("save-profile-confirm").addEventListener("click", async function () {
+        try {
+            // You'll need to gather current profile state from the UI
+            const currentProfileName = getSelectedProfileId(); // or however you're tracking it
+            const profilePassword = ""; // or prompt user if encrypted
+            const profileDTO = buildProfileFromUI(currentProfileName); // implement this
+    
+            await window.electronAPI.profileManager.saveProfile(profileDTO, profilePassword);
+            await window.electronAPI.profileManager.saveLastUsedProfile(profileDTO.name);
+            console.log("Saved profile:", profileDTO.name);
+            hideModal("save-profile-modal");
+        } catch (err) {
+            console.error("Failed to save profile:", err);
+        }
+    });    
 
-    document.getElementById("delete-profile-confirm").addEventListener("click", function () {
-        const profile = getSelectedProfileId();
-        console.log("Deleting profile:", profile);
-        hideModal("delete-profile-modal");
+    document.getElementById("delete-profile-confirm").addEventListener("click", async function () {
+        const selectedProfile = getSelectedProfileId();
+    
+        try {
+            await window.electronAPI.profileManager.deleteProfile(selectedProfile);
+            console.log("Deleted profile:", selectedProfile);
+            hideModal("delete-profile-modal");
+        } catch (err) {
+            console.error("Failed to delete profile:", err);
+        }
     });
 });
