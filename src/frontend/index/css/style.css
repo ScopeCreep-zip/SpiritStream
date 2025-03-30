@@ -200,35 +200,82 @@ button:hover {
     border-radius: 4px;
 }
 
-/* Modal overlay */
+/* Modal Overlay */
 .modal {
     display: none;              /* Hidden by default */
-    position: fixed;            
-    z-index: 1000;              
+    position: fixed;            /* Fixed position over the entire viewport */
+    z-index: 2000;              /* Ensure it sits on top */
     left: 0;
     top: 0;
-    width: 100%;                
-    height: 100%;               
-    overflow: auto;             
-    background-color: rgba(0, 0, 0, 0.4); /* Semi-transparent black background */
+    width: 100%;                /* Full width */
+    height: 100%;               /* Full height */
+    overflow: auto;             /* Enable scroll if needed */
+    background-color: rgba(17, 17, 17, 0.8); /* Semi-transparent dark overlay */
 }
 
-/* Modal content container */
+/* Modal Content Container */
 .modal-content {
-    background-color: #fff;
-    margin: 15% auto;           /* Center vertically with some top margin */
+    background-color: #222;     /* Dark background matching sidebar */
+    color: #fff;                /* White text for contrast */
+    margin: 10% auto;           /* Centered vertically with some top margin */
     padding: 20px;
-    border: 1px solid #888;
-    width: 80%;                 
-    max-width: 600px;           
-    border-radius: 8px;
-    color: #000;                
+    border: 1px solid #444;     /* Subtle border */
+    width: 80%;                 /* Responsive width */
+    max-width: 500px;           /* Maximum width */
+    border-radius: 8px;         /* Rounded corners */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); /* Soft shadow for depth */
 }
 
-/* Modal close button */
+/* Modal Close Button */
 .modal-close {
+    color: #fff;
     float: right;
     font-size: 28px;
     font-weight: bold;
     cursor: pointer;
+    margin-top: -10px;
+}
+.modal-close:hover,
+.modal-close:focus {
+    color: #bbb;
+}
+
+/* Modal Buttons */
+.modal-content button {
+    padding: 8px 12px;
+    margin: 10px 5px 0 0;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+/* Confirm buttons styled similar to save profile button */
+#add-profile-confirm,
+#load-profile-confirm,
+#save-profile-confirm,
+#delete-profile-confirm {
+    background-color: #28a745;
+    color: white;
+}
+
+/* Cancel buttons styled similar to delete profile button */
+#add-profile-cancel,
+#load-profile-cancel,
+#save-profile-cancel,
+#delete-profile-cancel {
+    background-color: #dc3545;
+    color: white;
+}
+
+/* Modal Input Fields */
+.modal-content input[type="text"],
+.modal-content input[type="password"] {
+    width: 100%;
+    padding: 8px;
+    margin: 8px 0;
+    background-color: #333;
+    border: 1px solid #555;
+    color: white;
+    border-radius: 4px;
 }
