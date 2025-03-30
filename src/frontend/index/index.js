@@ -186,15 +186,17 @@ window.addEventListener("DOMContentLoaded", () => {
     }
 
     function removeStreamTarget(groupId, targetId) {
-        let group = outputGroups[groupId];
+        syncUIToState(); // Save any edited inputs to memory before deleting
+    
+        const group = outputGroups[groupId];
         if (!group) return;
-
+    
         group.streamTargets = group.streamTargets.filter(st => st.id !== targetId);
-
+    
         const groupDiv = document.querySelector(`.output-group[data-id="${groupId}"]`);
         const targetDiv = groupDiv.querySelector(`.stream-target[data-id="${targetId}"]`);
         if (targetDiv) targetDiv.remove();
-    }
+    }    
 
     function removeOutputGroup(groupId) {
         syncUIToState(); // Capture unsaved changes before anything is removed 
