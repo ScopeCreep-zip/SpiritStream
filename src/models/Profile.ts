@@ -1,5 +1,6 @@
 import { OutputGroup } from "./OutputGroup";
 import { Theme } from "./Theme";
+import { ProfileDTO } from "../shared/interfaces";
 
 export class Profile {
   private id: string;
@@ -61,6 +62,16 @@ export class Profile {
 
   public getOutputGroupById(groupId: string): OutputGroup | undefined {
     return this.outputGroups.find(g => g.getId() === groupId);
+  }
+
+  public toDTO(): ProfileDTO {
+    return {
+      id: this.id,
+      name: this.name,
+      incomingURL: this.incomingURL,
+      outputGroups: this.outputGroups.map(g => g.toDTO()),
+      theme: this.theme?.toDTO(),
+    };
   }
 
   // Export profile as JSON

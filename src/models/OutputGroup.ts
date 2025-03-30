@@ -1,4 +1,5 @@
 import { StreamTarget } from "./StreamTarget";
+import { OutputGroupDTO } from "../shared/interfaces";
 
 export class OutputGroup {
   private id: string;
@@ -121,6 +122,21 @@ export class OutputGroup {
 
   public getStreamTargetById(targetId: string): StreamTarget | undefined {
     return this.streamTargets.find(t => t.getId() === targetId);
+  }
+
+  public toDTO(): OutputGroupDTO {
+    return {
+      id: this.id,
+      name: this.name,
+      videoEncoder: this.videoEncoder,
+      resolution: this.resolution,
+      bitrate: this.bitrate,
+      fps: this.fps,
+      audioCodec: this.audioCodec,
+      audioBitrate: this.audioBitrate,
+      generatePTS: this.generatePTS,
+      streamTargets: this.streamTargets.map(t => t.toDTO()),
+    };
   }
 
   // Export OutputGroup as JSON

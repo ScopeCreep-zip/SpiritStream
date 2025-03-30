@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Magilla Stream</title>
-    <link rel="stylesheet" href="../css/style.css">
+    <link rel="stylesheet" href="index.css">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';"> <!-- TODO: move off inline scripts -->
 </head>
 <body>
     <main class="app-container">
@@ -74,11 +75,9 @@
         <div class="modal-content">
             <span class="modal-close" id="load-profile-close">&times;</span>
             <h2>Load Profile</h2>
-            <!-- The profile list will be injected dynamically here -->
             <div id="profile-list-container">
-                <!-- List of profiles will appear here -->
+                <select id="profile-select"></select>
             </div>
-            <!-- If the selected profile is encrypted, show this password input -->
             <div id="load-profile-password-container" style="display: none;">
                 <label for="load-profile-password">Password:</label>
                 <input type="password" id="load-profile-password" placeholder="Enter password">
@@ -110,6 +109,6 @@
         </div>
     </div>
 
-    <script src="../js/main.js"></script>
+    <script src="index.js"></script>
 </body>
 </html>

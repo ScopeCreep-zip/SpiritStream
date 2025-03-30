@@ -16,6 +16,12 @@ export class ProfileManager {
   private constructor(logger: Logger, encryption: Encryption) {
     this.logger = logger;
     this.encryption = encryption;
+
+    // Ensure the profile directory exists
+    if (!fs.existsSync(PROFILE_DIR)) {
+      fs.mkdirSync(PROFILE_DIR, { recursive: true });
+      this.logger.info(`Created profile directory: ${PROFILE_DIR}`);
+    }
   }
 
   // Make getInstance() synchronous

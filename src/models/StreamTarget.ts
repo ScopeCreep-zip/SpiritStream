@@ -1,3 +1,5 @@
+import { StreamTargetDTO } from "../shared/interfaces";
+
 export class StreamTarget {
   private id: string;
   private url: string;
@@ -63,6 +65,16 @@ export class StreamTarget {
     return `${parsedUrl.protocol}//${domain}:${port}${path}/${streamKey}`;
   }
 
+  public toDTO(): StreamTargetDTO {
+    return {
+      id: this.id,
+      url: this.url,
+      streamKey: this.streamKey,
+      rtmpPort: this.rtmpPort,
+      normalizedPath: this.normalizedPath,
+    };
+  }
+  
   // Export StreamTarget as JSON, now including the normalized URL
   public export(): string {
     return JSON.stringify({

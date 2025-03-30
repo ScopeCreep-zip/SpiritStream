@@ -1,3 +1,5 @@
+import { ThemeDTO } from "../shared/interfaces";
+
 export class Theme {
   private id: string;
   private name: string;
@@ -77,6 +79,18 @@ export class Theme {
 
   public setDarkMode(enabled: boolean): void {
     this.darkMode = enabled;
+  }
+
+  public toDTO(): ThemeDTO {
+    return {
+      id: this.id,
+      name: this.name,
+      primaryColor: this.primaryColor,
+      secondaryColor: this.secondaryColor,
+      backgroundColor: this.backgroundColor,
+      textColor: this.textColor,
+      darkMode: this.darkMode,
+    };
   }
 
   // Export Theme as JSON
