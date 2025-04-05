@@ -438,4 +438,132 @@ window.addEventListener("DOMContentLoaded", () => {
             console.error("Failed to delete profile:", err);
         }
     });
+
+    // === Apply Loaded Profile to UI ===
+    function applyProfileToUI(profileDTO) {
+        // Set stream URL
+        document.getElementById("stream-url").value = profileDTO.incomingURL || "";
+
+        // Set global Generate PTS checkbox
+        document.getElementById("generatePTS").checked = !!profileDTO.generatePTS;
+
+        // Clear existing output groups
+        outputGroups = [];
+        const container = document.querySelector(".output-groups");
+        container.innerHTML = "";
+
+        if (profileDTO.outputGroups?.length > 0) {
+            profileDTO.outputGroups.forEach((groupDTO, index) => {
+                const newGroup = new OutputGroup(index);
+
+                newGroup.name = groupDTO.name;
+                newGroup.videoEncoder = groupDTO.videoEncoder;
+                newGroup.resolution = groupDTO.resolution;
+                newGroup.bitrate = groupDTO.bitrate;
+                newGroup.fps = groupDTO.fps;
+                newGroup.audioCodec = groupDTO.audioCodec;
+                newGroup.audioBitrate = groupDTO.audioBitrate;
+                newGroup.generatePTS = groupDTO.generatePTS;
+                newGroup.streamTargets = groupDTO.streamTargets.map((t, tIndex) => {
+                    return new StreamTarget(tIndex, t.url, t.streamKey, t.rtmpPort || 1935);
+                });
+
+                outputGroups.push(newGroup);
+            });
+
+            // Re-render output groups
+            outputGroups.forEach((_, idx) => {
+                addOutputGroup(); // This renders from `outputGroups` array
+            });
+
+            // After rendering, restore all the values
+            syncGroupsToUI(); // Set values inside rendered fields from state
+        }
+    }
+
+    // === Sync OutputGroup objects to UI fields ===
+    // This assumes that outputGroups already matches the DOM count
+    function syncGroupsToUI() {
+        const groupDivs = document.querySelectorAll(".output-group");
+
+        groupDivs.forEach(groupDiv => {
+            const groupId = parseInt(groupDiv.dataset.id);
+            const group = outputGroups[groupId];
+            if (!group) return;
+
+            const selects = groupDiv.querySelectorAll("select");
+            const inputs = groupDiv.querySelectorAll("input[type='text']");
+            const checkbox = groupDiv.querySelector("input[type='checkbox']");
+
+            selects[0].value = group.videoEncoder;
+            selects[1].value = group.resolution;
+            inputs[0].value = group.bitrate;
+            inputs[1].value = group.fps;
+            selects[2].value = group.audioCodec;
+            inputs[2].value = group.audioBitrate;
+            checkbox.checked = group.generatePTS;
+
+            const targetsContainer = groupDiv.querySelector(".stream-targets-container");
+            targetsContainer.innerHTML = ""; // Clear any existing
+
+            group.streamTargets.forEach((target, tIndex) => {
+                const targetDiv = document.createElement("div");
+                targetDiv.className = "stream-target";
+                targetDiv.dataset.id = tIndex;
+
+                targetDiv.innerHTML = `
+                    <label>Stream Target URL:</label>
+                    <input type="text" value="${target.url}">
+                    <label>Stream Key:</label>
+                    <input type="text" value="${target.streamKey}">
+                    <button class="remove-stream-target">Remove Stream Target</button>
+                `;
+
+                const inputs = targetDiv.querySelectorAll("input");
+                inputs[0].addEventListener("change", e => {
+                    updateStreamTargetURL(groupId, tIndex, e.target.value);
+                });
+                inputs[1].addEventListener("change", e => {
+                    updateStreamTargetKey(groupId, tIndex, e.target.value);
+                });
+
+                targetDiv.querySelector(".remove-stream-target").addEventListener("click", () => {
+                    removeStreamTarget(groupId, tIndex);
+                });
+
+                targetsContainer.appendChild(targetDiv);
+            });
+        });
+    }
+
+    // === Build Profile from UI ===
+    function buildProfileFromUI(profileName) {
+        syncUIToState(); // Make sure latest inputs are synced into outputGroups
+
+        const profile = {
+            id: crypto.randomUUID(),
+            name: profileName,
+            incomingURL: document.getElementById("stream-url").value.trim(),
+            generatePTS: document.getElementById("generatePTS").checked,
+            outputGroups: outputGroups.map(group => ({
+                name: group.name,
+                videoEncoder: group.videoEncoder,
+                resolution: group.resolution,
+                bitrate: group.bitrate,
+                fps: group.fps,
+                audioCodec: group.audioCodec,
+                audioBitrate: group.audioBitrate,
+                generatePTS: group.generatePTS,
+                streamTargets: group.streamTargets.map(target => ({
+                    id: target.id,
+                    url: target.url,
+                    streamKey: target.streamKey,
+                    rtmpPort: target.rtmpPort || 1935,
+                }))
+            })),
+            theme: { mode: "dark" } // Default for now
+        };
+
+        return profile;
+    }
 });
