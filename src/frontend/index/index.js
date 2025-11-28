@@ -59,24 +59,22 @@ window.addEventListener("DOMContentLoaded", () => {
             const groupId = parseInt(groupDiv.dataset.id);
             const group = outputGroups[groupId];
             if (!group) return;
-    
+
             const selects = groupDiv.querySelectorAll("select");
             const inputs = groupDiv.querySelectorAll("input[type='text']");
-            const checkbox = groupDiv.querySelector("input[type='checkbox']");
-    
+
             group.videoEncoder = selects[0].value;
             group.resolution = selects[1].value;
             group.bitrate = inputs[0].value;
             group.fps = inputs[1].value;
             group.audioCodec = selects[2].value;
             group.audioBitrate = inputs[2].value;
-            group.generatePTS = checkbox.checked;
-    
+
             const targetDivs = groupDiv.querySelectorAll(".stream-target");
             targetDivs.forEach((targetDiv, tIndex) => {
                 const target = group.streamTargets[tIndex];
                 if (!target) return;
-    
+
                 const inputs = targetDiv.querySelectorAll("input");
                 target.url = inputs[0].value.trim().replace(/\/+$/, "");
                 target.streamKey = inputs[1].value.trim();
@@ -112,7 +110,6 @@ window.addEventListener("DOMContentLoaded", () => {
             <select><option>AAC</option><option>MP3</option></select>
             <label>Audio Bitrate:</label>
             <input type="text" value="128kbps">
-            <label><input type="checkbox"> Generate PTS</label>
             <div class="stream-targets-container"></div>
             <button class="add-stream-target">Add Stream Target</button>
             <button class="remove-output-group">Remove Output Group</button>
@@ -233,7 +230,6 @@ window.addEventListener("DOMContentLoaded", () => {
                 <select><option>AAC</option><option>MP3</option></select>
                 <label>Audio Bitrate:</label>
                 <input type="text" value="${group.audioBitrate}">
-                <label><input type="checkbox" ${group.generatePTS ? "checked" : ""}> Generate PTS</label>
                 <div class="stream-targets-container"></div>
                 <button class="add-stream-target">Add Stream Target</button>
                 <button class="remove-output-group">Remove Output Group</button>
@@ -493,7 +489,6 @@ window.addEventListener("DOMContentLoaded", () => {
 
             const selects = groupDiv.querySelectorAll("select");
             const inputs = groupDiv.querySelectorAll("input[type='text']");
-            const checkbox = groupDiv.querySelector("input[type='checkbox']");
 
             selects[0].value = group.videoEncoder;
             selects[1].value = group.resolution;
@@ -501,7 +496,6 @@ window.addEventListener("DOMContentLoaded", () => {
             inputs[1].value = group.fps;
             selects[2].value = group.audioCodec;
             inputs[2].value = group.audioBitrate;
-            checkbox.checked = group.generatePTS;
 
             const targetsContainer = groupDiv.querySelector(".stream-targets-container");
             targetsContainer.innerHTML = ""; // Clear any existing
