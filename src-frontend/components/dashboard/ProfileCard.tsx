@@ -1,0 +1,56 @@
+import { cn } from '@/lib/cn';
+import { StreamStatus } from '@/components/ui/StreamStatus';
+
+export interface ProfileCardMeta {
+  icon: React.ReactNode;
+  label: string;
+}
+
+export interface ProfileCardProps {
+  name: string;
+  meta: ProfileCardMeta[];
+  active?: boolean;
+  onClick?: () => void;
+  actions?: React.ReactNode;
+  className?: string;
+}
+
+export function ProfileCard({
+  name,
+  meta,
+  active,
+  onClick,
+  actions,
+  className,
+}: ProfileCardProps) {
+  return (
+    <div
+      onClick={onClick}
+      className={cn(
+        'bg-[var(--bg-surface)] border-2 rounded-xl p-5',
+        'transition-all duration-150',
+        onClick && 'cursor-pointer',
+        active
+          ? 'border-[var(--primary)] bg-[var(--primary-muted)]'
+          : 'border-[var(--border-default)] hover:border-[var(--border-interactive)] hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)]',
+        className
+      )}
+    >
+      <div className="flex items-center justify-between mb-3">
+        <span className="font-semibold text-[var(--text-primary)]">{name}</span>
+        <div className="flex items-center gap-2">
+          {active && <StreamStatus status="live" label="Active" />}
+          {actions}
+        </div>
+      </div>
+      <div className="flex gap-4 text-[0.8125rem] text-[var(--text-secondary)]">
+        {meta.map((item, index) => (
+          <span key={index} className="flex items-center gap-1.5">
+            {item.icon}
+            {item.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}

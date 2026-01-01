@@ -1,0 +1,43 @@
+[package]
+name = "magillastream"
+version = "2.0.0"
+description = "MagillaStream - Multi-Destination Streaming Application"
+authors = ["MagillaStream Team"]
+license = "MIT"
+repository = "https://github.com/billboyles/magillastream"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "magillastream_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Tauri
+tauri = { version = "2", features = [] }
+tauri-plugin-log = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-dialog = "2"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Async
+tokio = { version = "1.0", features = ["full"] }
+
+# Encryption
+aes-gcm = "0.10"
+argon2 = "0.5"
+rand = "0.8"
+base64 = "0.22"
+
+# Utilities
+uuid = { version = "1.0", features = ["v4", "serde"] }
+log = "0.4"
+thiserror = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
