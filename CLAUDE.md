@@ -4,191 +4,340 @@
 
 ## Project Overview
 
-**MagillaStream** is a desktop streaming application built with Electron and TypeScript. It manages RTMP stream configurations, handles FFmpeg-based stream processing, and provides a graphical interface for multi-output streaming with profile management.
+**MagillaStream** is a desktop streaming application undergoing a complete architectural overhaul. The application manages RTMP stream configurations, handles FFmpeg-based stream processing, and provides a modern UI for multi-output streaming with profile management.
 
 **Repository**: https://github.com/billboyles/magillastream
-**Current Branch**: tauri-shift (migration in progress)
+**Current Branch**: tauri-shift (active migration)
+**Migration Status**: Full lift-and-shift in progress — NO backwards compatibility
 
-## Technology Stack
+## New Architecture (Target)
 
-| Category | Technology |
-|----------|------------|
-| Framework | Electron ^34.3.0 |
-| Language | TypeScript ^5.8.2 |
-| Runtime | Node.js |
-| Module System | CommonJS with ESNext target |
-| Build | electron-builder (24.6.0) |
-| Packaging | NSIS (Windows) |
+### Technology Stack
 
-## Architecture Overview
+| Layer | Current | Target |
+|-------|---------|--------|
+| Desktop Framework | Electron | **Tauri 2.x** |
+| Backend Language | TypeScript/Node.js | **Rust** |
+| Frontend Framework | Vanilla JS | **React 18+** |
+| Styling | Plain CSS | **Tailwind CSS v4** |
+| Build Tool | electron-builder | **Vite + Tauri** |
+| State Management | Local state | **Zustand or Jotai** |
+| Type Safety | TypeScript | **TypeScript + Rust** |
+
+### Design System
+
+The application uses a **Purple & Pink theme** with full light/dark mode support:
+
+- **Primary**: Violet (#7C3AED light / #A78BFA dark)
+- **Secondary**: Fuchsia (#C026D3 light / #E879F9 dark)
+- **Accent**: Pink (#DB2777 light / #F472B6 dark)
+- **Neutrals**: Purple-tinted gray scale
+
+All colors are WCAG 2.2 AA compliant. See `.claude/claudedocs/research/magillastream-complete-design-system.md` for complete design tokens.
+
+## Target Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     Frontend (Vanilla JS)                    │
-│                    src/frontend/index/                       │
-├─────────────────────────────────────────────────────────────┤
-│                 Preload (Context Bridge)                     │
-│                  src/electron/preload.ts                     │
-├─────────────────────────────────────────────────────────────┤
-│                     IPC Handlers                             │
-│                 src/electron/ipcHandlers.ts                  │
-├─────────────────────────────────────────────────────────────┤
-│                    Main Process                              │
-│                  src/electron/main.ts                        │
-├─────────────────────────────────────────────────────────────┤
-│                   Services Layer                             │
-│    ProfileManager │ FFmpegHandler │ Logger │ Encryption      │
-│                     src/utils/                               │
-├─────────────────────────────────────────────────────────────┤
-│                    Domain Models                             │
-│       Profile │ OutputGroup │ StreamTarget │ Theme           │
-│                    src/models/                               │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                     Frontend (React + Tailwind)                      │
+│                        src-frontend/                                 │
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │  Components │ Hooks │ Stores │ Utils │ Types                    ││
+│  └─────────────────────────────────────────────────────────────────┘│
+├─────────────────────────────────────────────────────────────────────┤
+│                     Tauri IPC Bridge                                 │
+│                   @tauri-apps/api                                    │
+├─────────────────────────────────────────────────────────────────────┤
+│                     Tauri Commands (Rust)                            │
+│                      src-tauri/src/                                  │
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │  commands/ │ services/ │ models/ │ utils/                       ││
+│  └─────────────────────────────────────────────────────────────────┘│
+├─────────────────────────────────────────────────────────────────────┤
+│                     System Integration                               │
+│              FFmpeg │ File System │ Encryption                       │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-## Directory Structure
+## Directory Structure (Target)
 
 ```
 magillastream/
-├── src/
-│   ├── electron/          # Electron main process
-│   │   ├── main.ts        # Entry point, window creation
-│   │   ├── ipcHandlers.ts # IPC event handlers
-│   │   └── preload.ts     # Context bridge for secure IPC
-│   ├── models/            # Core domain models
-│   │   ├── Profile.ts     # User streaming profile
-│   │   ├── OutputGroup.ts # Video/audio encoding group
-│   │   ├── StreamTarget.ts# RTMP destination target
-│   │   └── Theme.ts       # UI theming
-│   ├── utils/             # Utility services
-│   │   ├── profileManager.ts    # Profile persistence
-│   │   ├── ffmpegHandler.ts     # FFmpeg process management
-│   │   ├── encoderDetection.ts  # FFmpeg encoder discovery
-│   │   ├── encryption.ts        # AES-256-GCM encryption
-│   │   ├── logger.ts            # File-based logging
-│   │   ├── rendererLogger.ts    # Frontend logging bridge
-│   │   └── dtoUtils.ts          # DTO conversion utilities
-│   ├── frontend/          # UI layer (vanilla JS)
-│   │   └── index/
-│   │       ├── index.html
-│   │       ├── index.js
-│   │       └── index.css
-│   ├── shared/            # Shared interfaces
-│   │   └── interfaces.ts  # TypeScript DTOs for IPC
-│   └── types/             # Type definitions
-│       └── preload.d.ts
-├── config/
-│   └── encoders.conf      # FFmpeg encoder whitelist
-├── scripts/               # Build scripts
-├── docs/                  # Documentation
-├── .claude/               # Claude Code configuration
-│   └── claudedocs/        # Extended documentation
-└── package.json
+├── src-frontend/              # React frontend
+│   ├── components/            # React components
+│   │   ├── ui/               # Base UI components
+│   │   ├── layout/           # Layout components
+│   │   ├── profile/          # Profile management
+│   │   ├── stream/           # Streaming controls
+│   │   └── settings/         # Settings panels
+│   ├── hooks/                # Custom React hooks
+│   ├── stores/               # State management
+│   ├── lib/                  # Utilities
+│   ├── types/                # TypeScript types
+│   ├── styles/               # Global styles + Tailwind
+│   │   └── tokens.css        # Design system tokens
+│   ├── App.tsx
+│   └── main.tsx
+├── src-tauri/                 # Rust backend
+│   ├── src/
+│   │   ├── main.rs           # Tauri entry point
+│   │   ├── commands/         # Tauri commands
+│   │   │   ├── mod.rs
+│   │   │   ├── profile.rs
+│   │   │   ├── stream.rs
+│   │   │   └── system.rs
+│   │   ├── services/         # Business logic
+│   │   │   ├── mod.rs
+│   │   │   ├── profile_manager.rs
+│   │   │   ├── ffmpeg_handler.rs
+│   │   │   └── encryption.rs
+│   │   ├── models/           # Data structures
+│   │   └── utils/            # Utilities
+│   ├── Cargo.toml
+│   └── tauri.conf.json
+├── .claude/                   # Claude Code config
+│   ├── claudedocs/           # Documentation
+│   ├── commands/             # Custom commands
+│   └── rules/                # Coding standards
+├── tailwind.config.js
+├── vite.config.ts
+├── package.json
+└── tsconfig.json
 ```
 
 ## Core Domain Models
 
 ### Profile
-Top-level configuration entity containing:
-- ID, name, incoming RTMP URL
-- Array of OutputGroups
-- Optional Theme
-- Methods: `toDTO()`, `export()`, getters/setters
+Top-level configuration entity:
+- `id: string` - UUID
+- `name: string` - User-friendly name
+- `incomingUrl: string` - RTMP source URL
+- `outputGroups: OutputGroup[]` - Encoding configurations
+- `theme?: Theme` - Optional UI customization
 
 ### OutputGroup
-Encoding profile for one stream target:
-- Video encoder (H.264/H.265/NVENC/etc)
-- Resolution, bitrate, FPS
-- Audio codec, audio bitrate
-- PTS (Presentation Time Stamp) generation flag
-- Array of StreamTargets
+Encoding profile for stream targets:
+- `videoEncoder: string` - FFmpeg video codec
+- `resolution: string` - Output resolution
+- `videoBitrate: number` - Video bitrate (kbps)
+- `fps: number` - Frame rate
+- `audioCodec: string` - FFmpeg audio codec
+- `audioBitrate: number` - Audio bitrate (kbps)
+- `generatePts: boolean` - PTS timestamp generation
+- `streamTargets: StreamTarget[]` - Output destinations
 
 ### StreamTarget
 RTMP destination:
-- URL, stream key, RTMP port (default 1935)
-- Computed `normalizedPath` property for complete RTMP URL
-- Methods: `toDTO()`, `export()`
+- `url: string` - RTMP server URL
+- `streamKey: string` - Authentication key
+- `port: number` - RTMP port (default: 1935)
 
-## IPC Commands
+## Tauri Commands (Target API)
 
-### Profile Management
-- `profile:getAllProfileNames` - List profiles
-- `profile:load` - Load profile (with optional password)
-- `profile:save` - Save profile (with optional encryption)
-- `profile:delete` - Remove profile
-- `profile:getLastUsed` - Retrieve last used profile
-- `profile:saveLastUsed` - Store last used profile name
+### Profile Commands
+```rust
+#[tauri::command]
+async fn get_all_profiles() -> Result<Vec<String>, String>;
 
-### FFmpeg Operations
-- `ffmpeg:test` - Verify FFmpeg installation
-- `ffmpeg:start` - Start encoding with output groups
-- `ffmpeg:stop` - Stop encoding for a group
-- `ffmpeg:stopAll` - Stop all encoding
-- `ffmpeg:getAudioEncoders` - List available audio codecs
-- `ffmpeg:getVideoEncoders` - List available video codecs
+#[tauri::command]
+async fn load_profile(name: String, password: Option<String>) -> Result<Profile, String>;
 
-## Build Commands
+#[tauri::command]
+async fn save_profile(profile: Profile, password: Option<String>) -> Result<(), String>;
 
-```bash
-npm run clean      # Delete dist/ and release/
-npm run compile    # TypeScript compilation
-npm run pack       # electron-builder packaging
-npm run build      # Full build: clean → compile → pack → copy resources
-npm run dev        # Development: compile → copy → electron
-npm run start      # Direct Electron launch
+#[tauri::command]
+async fn delete_profile(name: String) -> Result<(), String>;
 ```
 
-## Key Design Patterns
+### Stream Commands
+```rust
+#[tauri::command]
+async fn start_stream(group: OutputGroup, incoming_url: String) -> Result<ProcessInfo, String>;
 
-1. **Singleton Pattern**: ProfileManager, FFmpegHandler, Logger, Encryption
-2. **DTO Pattern**: Data transfer objects for IPC serialization
-3. **Service Layer**: Clear separation between models and services
-4. **Factory Pattern**: dtoUtils provides reconstruction methods
-5. **Process Management**: Maps for tracking running FFmpeg instances
+#[tauri::command]
+async fn stop_stream(group_id: String) -> Result<(), String>;
 
-## Security Features
+#[tauri::command]
+async fn stop_all_streams() -> Result<(), String>;
 
-- Context isolation enabled in Electron
-- Sandbox mode enabled
-- Node integration disabled
-- AES-256-GCM for profile encryption
-- PBKDF2 key derivation with salt (100,000 iterations)
-- User data isolated in AppData/MagillaStream
+#[tauri::command]
+async fn get_available_encoders() -> Result<Encoders, String>;
+```
+
+## Frontend Component Strategy
+
+### UI Component Library
+Build from scratch using:
+- Tailwind CSS v4 with design tokens
+- CSS custom properties for theming
+- Radix UI primitives for accessibility
+- Framer Motion for animations
+
+### Core Components
+| Component | Purpose |
+|-----------|---------|
+| `Button` | All button variants (primary, secondary, ghost, destructive) |
+| `Card` | Container component with header/body/footer |
+| `Input` | Text input with labels and validation |
+| `Select` | Dropdown selection |
+| `Switch` | Toggle switches |
+| `Modal` | Dialog overlays |
+| `StreamStatus` | Live/connecting/offline/error indicator |
+| `ThemeToggle` | Light/dark mode switch |
+
+## Design Tokens
+
+Theme tokens are defined as CSS custom properties:
+
+```css
+/* Primary Colors */
+--primary: #7C3AED;           /* Light mode */
+--primary: #A78BFA;           /* Dark mode */
+
+/* Backgrounds */
+--bg-base: #FAFAFA;           /* Light */
+--bg-base: #0F0A14;           /* Dark */
+
+/* Text */
+--text-primary: #1F1A29;      /* Light */
+--text-primary: #F4F2F7;      /* Dark */
+
+/* Status */
+--status-live: #10B981;
+--status-connecting: #F59E0B;
+--status-offline: #9489A8;
+--status-error: #EF4444;
+```
+
+See full token list in design system research document.
+
+## Build Commands (Target)
+
+```bash
+# Development
+npm run dev              # Start Vite dev server + Tauri
+
+# Build
+npm run build            # Production build
+npm run tauri build      # Package for distribution
+
+# Type checking
+npm run typecheck        # Check TypeScript
+cargo check              # Check Rust
+
+# Linting
+npm run lint             # ESLint + Prettier
+cargo clippy             # Rust linting
+```
+
+## Security Model
+
+### Tauri Security (Target)
+- Capability-based permissions
+- CSP headers enforced
+- IPC allowlist configuration
+- No Node.js in renderer
+
+### Profile Encryption
+- AES-256-GCM encryption
+- Argon2id key derivation (Rust)
+- Random salt and nonce per encryption
+- Stream keys always encrypted at rest
 
 ## Coding Standards
 
-### TypeScript
+### TypeScript (Frontend)
 - Strict mode enabled
-- Use explicit types for function parameters and returns
-- Prefer interfaces over type aliases for object shapes
-- Use `readonly` for immutable properties
+- Explicit return types for functions
+- Interface over type for object shapes
+- Functional components with hooks
 
-### Naming Conventions
-- PascalCase for classes, interfaces, types
-- camelCase for variables, functions, methods
-- UPPER_SNAKE_CASE for constants
-- Prefix private class members with underscore
+### Rust (Backend)
+- Use `Result<T, E>` for error handling
+- Prefer `&str` over `String` for parameters
+- Use `#[derive]` macros appropriately
+- Document public APIs with `///`
 
-### File Organization
-- One class per file (models)
-- Related utilities grouped in single files
-- Index files for barrel exports where appropriate
+### React Components
+- One component per file
+- Props interface defined above component
+- Use `forwardRef` when exposing refs
+- Memoize expensive computations
 
-### Error Handling
-- Always use try/catch in async functions
-- Log errors with appropriate context
-- Return meaningful error messages to frontend
+### CSS/Tailwind
+- Use design tokens via `var(--token)`
+- Semantic class names for custom CSS
+- Mobile-first responsive design
+- Dark mode via `data-theme="dark"`
+
+## Documentation Guidelines
+
+**All Claude-generated documentation MUST be placed in `.claude/claudedocs/`**
+
+### Directory Structure
+
+```
+.claude/claudedocs/
+├── index.md                    # Master index (update when adding docs)
+├── architecture-new.md         # System architecture
+├── component-library.md        # React components
+├── design-system.md            # Design tokens reference
+├── tauri-migration.md          # Migration plan
+├── ui-specification.md         # UI/UX specification
+├── pages-and-views.md          # View documentation
+├── research/                   # Research & reference materials
+│   ├── *.md                    # Analysis documents
+│   └── *.html                  # Mockups, prototypes
+└── scratch/                    # Temporary working documents
+    └── *.md                    # Draft docs, notes, explorations
+```
+
+### Documentation Rules
+
+1. **Never create docs in project root** - Use `.claude/claudedocs/` exclusively
+2. **Update index.md** - Add new documents to the index with descriptions
+3. **Use `scratch/` for temporary work** - Draft analysis, exploration notes, temporary plans
+4. **Use `research/` for reference materials** - Mockups, external research, design specs
+5. **Promote scratch to root when finalized** - Move completed docs from `scratch/` to `claudedocs/`
+
+### When to Create Documentation
+
+| Scenario | Location | Filename Pattern |
+|----------|----------|------------------|
+| Planning a feature | `scratch/` | `feature-name-plan.md` |
+| Analyzing code | `scratch/` | `analysis-topic.md` |
+| API documentation | `claudedocs/` | `api-name.md` |
+| Component specs | `claudedocs/` | `component-name.md` |
+| Research/mockups | `research/` | Descriptive name |
+| Architecture decisions | `claudedocs/` | `adr-NNN-title.md` |
+
+### Document Template
+
+```markdown
+# Document Title
+
+> Brief description of document purpose
+
+## Overview
+[What this document covers]
+
+## Content
+[Main content]
+
+## Related Documents
+- [Link to related doc](./related.md)
+
+---
+*Last Updated: YYYY-MM-DD*
+```
 
 ## Extended Documentation
 
-For detailed documentation, see `.claude/claudedocs/`:
-
-@.claude/claudedocs/architecture.md
-@.claude/claudedocs/electron-ipc.md
-@.claude/claudedocs/models.md
-@.claude/claudedocs/services.md
-@.claude/claudedocs/frontend.md
-@.claude/claudedocs/security.md
-@.claude/claudedocs/build-system.md
-@.claude/claudedocs/ffmpeg-integration.md
-@.claude/claudedocs/development-workflow.md
+@.claude/claudedocs/index.md
+@.claude/claudedocs/architecture-new.md
+@.claude/claudedocs/tauri-migration.md
+@.claude/claudedocs/component-library.md
+@.claude/claudedocs/design-system.md
+@.claude/claudedocs/ui-specification.md
+@.claude/claudedocs/pages-and-views.md
+@.claude/claudedocs/research/magillastream-complete-design-system.md

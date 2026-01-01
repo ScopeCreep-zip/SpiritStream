@@ -6,118 +6,171 @@ Welcome to the MagillaStream documentation. This index provides quick access to 
 
 - [CLAUDE.md](../../CLAUDE.md) - Main project context and overview
 
-## Architecture & Design
+## Current Status
+
+**Branch**: `tauri-shift`
+**Migration**: Full lift-and-shift in progress (Electron → Tauri)
+**Compatibility**: NO backwards compatibility
+
+## New Architecture (Target)
+
+| Layer | Technology |
+|-------|------------|
+| Desktop Framework | Tauri 2.x |
+| Backend | Rust |
+| Frontend | React 18+ |
+| Styling | Tailwind CSS v4 |
+| Build Tool | Vite |
+
+## Documentation
+
+### Working Documents
+
+| Directory | Purpose |
+|-----------|---------|
+| [scratch/](./scratch/) | Temporary working documents, drafts, session notes |
+| [research/](./research/) | Reference materials, mockups, external research |
+
+### Architecture & Planning
 
 | Document | Description |
 |----------|-------------|
-| [architecture.md](./architecture.md) | System architecture, layers, and data flow |
-| [electron-ipc.md](./electron-ipc.md) | Electron IPC communication patterns |
-| [models.md](./models.md) | Domain models and DTOs |
+| [architecture-new.md](./architecture-new.md) | Target architecture with Tauri + React |
+| [tauri-migration.md](./tauri-migration.md) | Complete migration plan and checklist |
+
+### Design System
+
+| Document | Description |
+|----------|-------------|
+| [design-system.md](./design-system.md) | Design token reference guide |
+| [component-library.md](./component-library.md) | React component documentation |
+| [ui-specification.md](./ui-specification.md) | Complete UI/UX specification from mockup |
+| [pages-and-views.md](./pages-and-views.md) | All 8 views with state and Tauri commands |
+| [research/magillastream-complete-design-system.md](./research/magillastream-complete-design-system.md) | Full design system specification |
+| [research/magillastream-mockup.html](./research/magillastream-mockup.html) | Interactive HTML mockup |
+
+### Legacy (Electron)
+
+| Document | Description |
+|----------|-------------|
+| [architecture.md](./architecture.md) | Current Electron architecture |
+| [electron-ipc.md](./electron-ipc.md) | Electron IPC patterns |
+| [models.md](./models.md) | Domain model documentation |
 | [services.md](./services.md) | Service layer documentation |
-
-## Implementation
-
-| Document | Description |
-|----------|-------------|
-| [frontend.md](./frontend.md) | Frontend architecture and UI components |
+| [frontend.md](./frontend.md) | Vanilla JS frontend |
+| [security.md](./security.md) | Security implementation |
+| [build-system.md](./build-system.md) | Electron build pipeline |
 | [ffmpeg-integration.md](./ffmpeg-integration.md) | FFmpeg process management |
-| [security.md](./security.md) | Security features and best practices |
-| [build-system.md](./build-system.md) | Build pipeline and scripts |
-
-## Development
-
-| Document | Description |
-|----------|-------------|
-| [development-workflow.md](./development-workflow.md) | Development setup and workflow |
+| [development-workflow.md](./development-workflow.md) | Development setup |
 
 ## Custom Commands
-
-Available slash commands for Claude Code:
 
 | Command | Description |
 |---------|-------------|
 | `/build` | Run full build process |
 | `/dev` | Start development environment |
 | `/check-types` | Run TypeScript type checking |
-| `/add-ipc-handler` | Add new IPC handler with full integration |
-| `/add-model` | Create new domain model with DTO |
-| `/review-security` | Review code for security issues |
-| `/troubleshoot` | Diagnose common issues |
-| `/analyze` | Deep analysis of file or component |
+| `/add-ipc-handler` | Add new IPC handler |
+| `/add-model` | Create new domain model |
+| `/review-security` | Security audit |
+| `/troubleshoot` | Diagnose issues |
+| `/analyze` | Deep code analysis |
 
 ## Rules
 
-Coding standards and patterns in `.claude/rules/`:
+Coding standards in `.claude/rules/`:
 
-- **coding-standards.md** - TypeScript and general coding conventions
-- **electron-patterns.md** - Electron-specific patterns and security
+- **coding-standards.md** - TypeScript and general conventions
+- **electron-patterns.md** - Electron patterns (legacy)
 - **git-workflow.md** - Git branch and commit conventions
+
+## New Stack Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     Frontend (React + Tailwind)                      │
+│                        src-frontend/                                 │
+│  Components │ Hooks │ Stores │ Styles (Design Tokens)               │
+├─────────────────────────────────────────────────────────────────────┤
+│                     Tauri IPC Bridge                                 │
+│                   @tauri-apps/api                                    │
+├─────────────────────────────────────────────────────────────────────┤
+│                     Tauri Commands (Rust)                            │
+│                      src-tauri/src/                                  │
+│  commands/ │ services/ │ models/ │ utils/                           │
+├─────────────────────────────────────────────────────────────────────┤
+│                     System Integration                               │
+│              FFmpeg │ File System │ Encryption                       │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+## Design System Colors
+
+| Role | Light | Dark |
+|------|-------|------|
+| Primary | `#7C3AED` (Violet) | `#A78BFA` |
+| Secondary | `#C026D3` (Fuchsia) | `#E879F9` |
+| Accent | `#DB2777` (Pink) | `#F472B6` |
+| Background | `#FAFAFA` | `#0F0A14` |
+| Text | `#1F1A29` | `#F4F2F7` |
+
+## Migration Phases
+
+1. **Setup** - Initialize Tauri, Vite, React
+2. **Frontend** - Build component library with Tailwind
+3. **Backend** - Port services to Rust
+4. **Integration** - Wire frontend to Tauri commands
+5. **Build** - Configure packaging
+6. **Cleanup** - Remove Electron code
 
 ## Key Files Reference
 
-### Main Process
-- `src/electron/main.ts` - Application entry point
-- `src/electron/ipcHandlers.ts` - IPC handler registration
-- `src/electron/preload.ts` - Context bridge
-
-### Models
-- `src/models/Profile.ts` - User streaming profile
-- `src/models/OutputGroup.ts` - Encoding configuration
-- `src/models/StreamTarget.ts` - RTMP destination
-- `src/models/Theme.ts` - UI theming
-
-### Services
-- `src/utils/profileManager.ts` - Profile persistence
-- `src/utils/ffmpegHandler.ts` - FFmpeg process management
-- `src/utils/encryption.ts` - AES-256-GCM encryption
-- `src/utils/logger.ts` - Logging service
-- `src/utils/encoderDetection.ts` - FFmpeg encoder discovery
-
-### Frontend
-- `src/frontend/index/index.html` - Main UI structure
-- `src/frontend/index/index.js` - UI logic
-- `src/frontend/index/index.css` - Styling
-
-### Configuration
-- `config/encoders.conf` - FFmpeg encoder whitelist
-- `tsconfig.json` - TypeScript configuration
-- `package.json` - NPM configuration
-
-## Architecture Overview
+### Target Structure
 
 ```
-┌────────────────────────────────────────────────┐
-│                  Frontend                       │
-│              (Vanilla JS + CSS)                 │
-├────────────────────────────────────────────────┤
-│                Preload Bridge                   │
-│            (Context Isolation)                  │
-├────────────────────────────────────────────────┤
-│                IPC Handlers                     │
-├────────────────────────────────────────────────┤
-│                  Services                       │
-│  ProfileManager │ FFmpegHandler │ Logger        │
-├────────────────────────────────────────────────┤
-│               Domain Models                     │
-│  Profile │ OutputGroup │ StreamTarget           │
-└────────────────────────────────────────────────┘
+magillastream/
+├── src-frontend/           # React frontend
+│   ├── components/ui/      # Base components
+│   ├── stores/             # Zustand stores
+│   └── styles/tokens.css   # Design tokens
+├── src-tauri/              # Rust backend
+│   ├── src/commands/       # Tauri commands
+│   └── src/services/       # Business logic
+└── .claude/                # Claude Code config
+```
+
+### Current Structure (Legacy)
+
+```
+magillastream/
+├── src/
+│   ├── electron/           # Main process
+│   ├── models/             # Domain models
+│   ├── utils/              # Services
+│   └── frontend/           # Vanilla JS UI
+└── .claude/                # Claude Code config
 ```
 
 ## Common Tasks
 
-### Add a new feature
-1. Read relevant architecture docs
-2. Use `/add-model` if new data structure needed
-3. Use `/add-ipc-handler` for new backend functionality
-4. Update frontend to use new features
-5. Run `/build` to verify
+### Start Migration
 
-### Debug an issue
-1. Use `/troubleshoot` with issue type
-2. Check logs in `{userData}/logs/`
-3. Use `/analyze` on relevant files
+1. Read [tauri-migration.md](./tauri-migration.md)
+2. Install Rust and Tauri CLI
+3. Initialize Tauri project
+4. Follow phase-by-phase checklist
 
-### Security review
-1. Run `/review-security`
-2. Address any findings
-3. Update security.md if patterns change
+### Build Components
+
+1. Read [component-library.md](./component-library.md)
+2. Reference [design-system.md](./design-system.md) for tokens
+3. Use Radix UI primitives for accessibility
+4. Apply Tailwind classes with design tokens
+
+### Implement Tauri Commands
+
+1. Define Rust models matching TypeScript types
+2. Implement service logic
+3. Create command function with `#[tauri::command]`
+4. Register in `main.rs`
+5. Call from frontend via `invoke()`
