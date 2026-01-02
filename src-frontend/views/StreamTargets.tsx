@@ -95,27 +95,46 @@ export function StreamTargets() {
     );
   }
 
+  // Check if we have output groups to add targets to
+  const hasOutputGroups = current.outputGroups.length > 0;
+  const firstGroupId = hasOutputGroups ? current.outputGroups[0].id : '';
+
   if (targets.length === 0) {
     return (
-      <Card>
-        <CardBody>
-          <div className="text-center" style={{ padding: '48px 0' }}>
-            <div className="w-16 h-16 mx-auto rounded-full bg-[var(--primary-subtle)] flex items-center justify-center" style={{ marginBottom: '16px' }}>
-              <Plus className="w-8 h-8 text-[var(--primary)]" />
+      <>
+        <Card>
+          <CardBody>
+            <div className="text-center" style={{ padding: '48px 0' }}>
+              <div className="w-16 h-16 mx-auto rounded-full bg-[var(--primary-subtle)] flex items-center justify-center" style={{ marginBottom: '16px' }}>
+                <Plus className="w-8 h-8 text-[var(--primary)]" />
+              </div>
+              <h3 className="text-lg font-semibold text-[var(--text-primary)]" style={{ marginBottom: '8px' }}>
+                No Stream Targets
+              </h3>
+              <p className="text-[var(--text-secondary)]" style={{ marginBottom: '24px', maxWidth: '28rem', marginLeft: 'auto', marginRight: 'auto', textAlign: 'center' }}>
+                {hasOutputGroups
+                  ? 'Add your first streaming destination. Supports YouTube, Twitch, Kick, Facebook, and custom RTMP servers.'
+                  : 'You need to create an Output Group first before adding stream targets. Go to Output Groups to create one.'}
+              </p>
+              <Button
+                onClick={() => setCreateModalOpen(true)}
+                disabled={!hasOutputGroups}
+              >
+                <Plus className="w-4 h-4" />
+                Add Stream Target
+              </Button>
             </div>
-            <h3 className="text-lg font-semibold text-[var(--text-primary)]" style={{ marginBottom: '8px' }}>
-              No Stream Targets
-            </h3>
-            <p className="text-[var(--text-secondary)] max-w-md mx-auto" style={{ marginBottom: '24px' }}>
-              Add your first streaming destination. Supports YouTube, Twitch, Kick, Facebook, and custom RTMP servers.
-            </p>
-            <Button onClick={() => setCreateModalOpen(true)}>
-              <Plus className="w-4 h-4" />
-              Add Stream Target
-            </Button>
-          </div>
-        </CardBody>
-      </Card>
+          </CardBody>
+        </Card>
+
+        {/* Create Target Modal - must be rendered to be visible */}
+        <TargetModal
+          open={createModalOpen}
+          onClose={() => setCreateModalOpen(false)}
+          mode="create"
+          groupId={firstGroupId}
+        />
+      </>
     );
   }
 
@@ -191,15 +210,19 @@ export function StreamTargets() {
 
       {/* Add New Target Card */}
       <Card
-        className="border-2 border-dashed border-[var(--border-default)] hover:border-[var(--primary)] transition-colors cursor-pointer"
-        onClick={() => setCreateModalOpen(true)}
+        className={`border-2 border-dashed transition-colors ${
+          hasOutputGroups
+            ? 'border-[var(--border-default)] hover:border-[var(--primary)] cursor-pointer'
+            : 'border-[var(--border-muted)] opacity-50 cursor-not-allowed'
+        }`}
+        onClick={hasOutputGroups ? () => setCreateModalOpen(true) : undefined}
       >
         <CardBody className="flex flex-col items-center justify-center" style={{ padding: '48px 24px' }}>
           <div className="w-12 h-12 rounded-full bg-[var(--primary-subtle)] flex items-center justify-center" style={{ marginBottom: '12px' }}>
             <Plus className="w-6 h-6 text-[var(--primary)]" />
           </div>
           <span className="text-sm font-medium text-[var(--text-secondary)]">
-            Add New Target
+            {hasOutputGroups ? 'Add New Target' : 'Create Output Group First'}
           </span>
         </CardBody>
       </Card>
@@ -209,7 +232,7 @@ export function StreamTargets() {
         open={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
         mode="create"
-        groupId={current?.outputGroups[0]?.id || ''}
+        groupId={firstGroupId}
       />
 
       {/* Edit Target Modal */}
