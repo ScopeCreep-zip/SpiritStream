@@ -1,5 +1,29 @@
 import { create } from 'zustand';
+import { api } from '@/lib/tauri';
+import type { OutputGroup } from '@/types/profile';
 import type { StreamStats, StreamStatusType, TargetStats } from '@/types/stream';
+
+// Real-time stats from FFmpeg backend
+interface FFmpegStats {
+  groupId: string;
+  frame: number;
+  fps: number;
+  bitrate: number;
+  speed: number;
+  size: number;
+  time: number;
+  droppedFrames: number;
+  dupFrames: number;
+}
+
+// Per-group stats tracking
+interface GroupStats {
+  fps: number;
+  bitrate: number;
+  droppedFrames: number;
+  uptime: number;
+  speed: number;
+}
 
 interface StreamState {
   // State
@@ -7,19 +31,29 @@ interface StreamState {
   activeGroups: Set<string>;
   enabledTargets: Set<string>;
   stats: StreamStats;
+  groupStats: Record<string, GroupStats>;
   uptime: number;
   globalStatus: StreamStatusType;
+  error: string | null;
 
-  // Actions
+  // Async actions (Tauri integration)
+  startGroup: (group: OutputGroup, incomingUrl: string) => Promise<void>;
+  stopGroup: (groupId: string) => Promise<void>;
+  startAllGroups: (groups: OutputGroup[], incomingUrl: string) => Promise<void>;
+  stopAllGroups: () => Promise<void>;
+
+  // Sync actions
   setIsStreaming: (isStreaming: boolean) => void;
   setActiveGroup: (groupId: string, active: boolean) => void;
   toggleTarget: (targetId: string) => void;
   setTargetEnabled: (targetId: string, enabled: boolean) => void;
-  updateStats: (stats: Partial<StreamStats>) => void;
+  updateStats: (groupId: string, ffmpegStats: FFmpegStats) => void;
   updateTargetStats: (targetId: string, stats: TargetStats) => void;
+  setStreamEnded: (groupId: string) => void;
   setUptime: (uptime: number) => void;
   incrementUptime: () => void;
   setGlobalStatus: (status: StreamStatusType) => void;
+  setError: (error: string | null) => void;
   reset: () => void;
 }
 
@@ -35,8 +69,120 @@ export const useStreamStore = create<StreamState>((set, get) => ({
   activeGroups: new Set(),
   enabledTargets: new Set(),
   stats: initialStats,
+  groupStats: {},
   uptime: 0,
   globalStatus: 'offline' as StreamStatusType,
+  error: null,
+
+  // Start streaming for a single output group
+  startGroup: async (group, incomingUrl) => {
+    set({ globalStatus: 'connecting', error: null });
+    try {
+      await api.stream.start(group, incomingUrl);
+      const activeGroups = new Set(get().activeGroups);
+      activeGroups.add(group.id);
+      set({
+        activeGroups,
+        isStreaming: true,
+        globalStatus: 'live',
+      });
+    } catch (error) {
+      set({ error: String(error), globalStatus: 'error' });
+    }
+  },
+
+  // Stop streaming for a single output group
+  stopGroup: async (groupId) => {
+    try {
+      await api.stream.stop(groupId);
+      const activeGroups = new Set(get().activeGroups);
+      activeGroups.delete(groupId);
+      const isStreaming = activeGroups.size > 0;
+      set({
+        activeGroups,
+        isStreaming,
+        globalStatus: isStreaming ? 'live' : 'offline',
+      });
+    } catch (error) {
+      set({ error: String(error) });
+    }
+  },
+
+  // Start all output groups (respects enabled/disabled targets)
+  startAllGroups: async (groups, incomingUrl) => {
+    console.log('[streamStore] startAllGroups called');
+    console.log('[streamStore] groups:', groups);
+    console.log('[streamStore] incomingUrl:', incomingUrl);
+
+    set({ globalStatus: 'connecting', error: null });
+    const enabledTargets = get().enabledTargets;
+    console.log('[streamStore] enabledTargets:', [...enabledTargets]);
+
+    try {
+      let startedAny = false;
+
+      for (const group of groups) {
+        console.log('[streamStore] Processing group:', group.id, group.name);
+
+        // Filter to only enabled targets
+        const filteredTargets = group.streamTargets.filter(
+          target => enabledTargets.has(target.id)
+        );
+        console.log('[streamStore] Filtered targets:', filteredTargets.length);
+
+        // Skip groups with no enabled targets
+        if (filteredTargets.length === 0) {
+          console.log('[streamStore] Skipping group - no enabled targets');
+          continue;
+        }
+
+        // Create a modified group with only enabled targets
+        const filteredGroup = {
+          ...group,
+          streamTargets: filteredTargets,
+        };
+
+        console.log('[streamStore] Calling api.stream.start with:', filteredGroup);
+        const result = await api.stream.start(filteredGroup, incomingUrl);
+        console.log('[streamStore] api.stream.start returned:', result);
+
+        const activeGroups = new Set(get().activeGroups);
+        activeGroups.add(group.id);
+        set({ activeGroups });
+        startedAny = true;
+      }
+
+      if (!startedAny) {
+        console.log('[streamStore] No groups started - throwing error');
+        throw new Error('No enabled targets to stream to. Enable at least one target.');
+      }
+
+      console.log('[streamStore] All groups started successfully');
+      set({
+        isStreaming: true,
+        globalStatus: 'live',
+      });
+    } catch (error) {
+      console.error('[streamStore] Error:', error);
+      set({ error: String(error), globalStatus: 'error' });
+      throw error; // Re-throw so UI can catch it
+    }
+  },
+
+  // Stop all streams
+  stopAllGroups: async () => {
+    try {
+      await api.stream.stopAll();
+      set({
+        activeGroups: new Set(),
+        isStreaming: false,
+        globalStatus: 'offline',
+        uptime: 0,
+      });
+    } catch (error) {
+      set({ error: String(error) });
+    }
+  },
 
   setIsStreaming: (isStreaming) => {
     const status: StreamStatusType = isStreaming ? 'live' : 'offline';
@@ -75,8 +221,37 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     set({ enabledTargets });
   },
 
-  updateStats: (stats) => {
-    set({ stats: { ...get().stats, ...stats } });
+  updateStats: (groupId, ffmpegStats) => {
+    const currentGroupStats = get().groupStats;
+
+    // Update per-group stats
+    const newGroupStats = {
+      ...currentGroupStats,
+      [groupId]: {
+        fps: ffmpegStats.fps,
+        bitrate: ffmpegStats.bitrate,
+        droppedFrames: ffmpegStats.droppedFrames,
+        uptime: ffmpegStats.time,
+        speed: ffmpegStats.speed,
+      },
+    };
+
+    // Calculate aggregated stats
+    const allStats = Object.values(newGroupStats);
+    const totalBitrate = allStats.reduce((sum, s) => sum + s.bitrate, 0);
+    const totalDropped = allStats.reduce((sum, s) => sum + s.droppedFrames, 0);
+    const maxUptime = Math.max(...allStats.map(s => s.uptime), 0);
+
+    set({
+      groupStats: newGroupStats,
+      uptime: maxUptime,
+      stats: {
+        ...get().stats,
+        totalBitrate,
+        droppedFrames: totalDropped,
+        uptime: maxUptime,
+      },
+    });
   },
 
   updateTargetStats: (targetId, targetStats) => {
@@ -92,17 +267,38 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     });
   },
 
+  setStreamEnded: (groupId) => {
+    const activeGroups = new Set(get().activeGroups);
+    activeGroups.delete(groupId);
+
+    // Remove group stats
+    const groupStats = { ...get().groupStats };
+    delete groupStats[groupId];
+
+    const isStreaming = activeGroups.size > 0;
+    set({
+      activeGroups,
+      groupStats,
+      isStreaming,
+      globalStatus: isStreaming ? 'live' : 'offline',
+    });
+  },
+
   setUptime: (uptime) => set({ uptime }),
 
   incrementUptime: () => set({ uptime: get().uptime + 1 }),
 
   setGlobalStatus: (status: StreamStatusType) => set({ globalStatus: status }),
 
+  setError: (error) => set({ error }),
+
   reset: () => set({
     isStreaming: false,
     activeGroups: new Set(),
     stats: initialStats,
+    groupStats: {},
     uptime: 0,
     globalStatus: 'offline' as StreamStatusType,
+    error: null,
   }),
 }));

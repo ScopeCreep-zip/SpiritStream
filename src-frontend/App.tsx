@@ -21,8 +21,13 @@ import { NavSection } from '@/components/navigation/NavSection';
 import { NavItem } from '@/components/navigation/NavItem';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { Button } from '@/components/ui/Button';
+import { ToastContainer } from '@/components/ui/Toast';
+import { ProfileModal, TargetModal, OutputGroupModal } from '@/components/modals';
+import { PasswordModal } from '@/components/modals/PasswordModal';
 import { useProfileStore } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
+import { useInitialize } from '@/hooks/useInitialize';
+import { useStreamStats } from '@/hooks/useStreamStats';
 
 // Import all views
 import {
@@ -36,7 +41,7 @@ import {
   Settings,
 } from '@/views';
 
-type View = 'dashboard' | 'profiles' | 'streams' | 'encoder' | 'outputs' | 'targets' | 'logs' | 'settings';
+export type View = 'dashboard' | 'profiles' | 'streams' | 'encoder' | 'outputs' | 'targets' | 'logs' | 'settings';
 
 interface ViewMeta {
   title: string;
@@ -79,41 +84,64 @@ const viewMeta: Record<View, ViewMeta> = {
 };
 
 function App() {
+  // Initialize app - load profiles from backend
+  useInitialize();
+
+  // Listen to real-time stream stats from backend
+  useStreamStats();
+
   const [currentView, setCurrentView] = useState<View>('dashboard');
-  const { current, profiles } = useProfileStore();
-  const { isStreaming, setIsStreaming, setActiveGroup } = useStreamStore();
+  const {
+    current,
+    profiles,
+    pendingPasswordProfile,
+    passwordError,
+    submitPassword,
+    cancelPasswordPrompt,
+  } = useProfileStore();
+  const { isStreaming, startAllGroups, stopAllGroups } = useStreamStore();
+
+  // Modal state
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [targetModalOpen, setTargetModalOpen] = useState(false);
+  const [outputGroupModalOpen, setOutputGroupModalOpen] = useState(false);
 
   const { title, description } = viewMeta[currentView];
 
   // Count profiles for badge from store
   const profileCount = profiles.length;
 
-  const handleStartStreaming = () => {
-    if (!current) return;
-    setIsStreaming(true);
-    current.outputGroups.forEach(group => {
-      setActiveGroup(group.id, true);
-    });
-    // TODO: Call Tauri to actually start streams
+  // Get first output group ID for target modal (when adding from header)
+  const firstGroupId = current?.outputGroups[0]?.id || '';
+
+  const handleStartStreaming = async () => {
+    if (!current || current.outputGroups.length === 0) return;
+    await startAllGroups(current.outputGroups, current.incomingUrl);
   };
 
-  const handleStopStreaming = () => {
-    if (!current) return;
-    setIsStreaming(false);
-    current.outputGroups.forEach(group => {
-      setActiveGroup(group.id, false);
-    });
-    // TODO: Call Tauri to actually stop streams
+  const handleStopStreaming = async () => {
+    await stopAllGroups();
+  };
+
+  // Navigation handler to pass to views
+  const handleNavigate = (view: View) => {
+    setCurrentView(view);
   };
 
   const renderView = () => {
     switch (currentView) {
       case 'dashboard':
-        return <Dashboard />;
+        return (
+          <Dashboard
+            onNavigate={handleNavigate}
+            onOpenProfileModal={() => setProfileModalOpen(true)}
+            onOpenTargetModal={() => setTargetModalOpen(true)}
+          />
+        );
       case 'profiles':
         return <Profiles />;
       case 'streams':
-        return <StreamManager />;
+        return <StreamManager onNavigate={handleNavigate} />;
       case 'encoder':
         return <EncoderSettings />;
       case 'outputs':
@@ -125,7 +153,13 @@ function App() {
       case 'settings':
         return <Settings />;
       default:
-        return <Dashboard />;
+        return (
+          <Dashboard
+            onNavigate={handleNavigate}
+            onOpenProfileModal={() => setProfileModalOpen(true)}
+            onOpenTargetModal={() => setTargetModalOpen(true)}
+          />
+        );
     }
   };
 
@@ -147,19 +181,25 @@ function App() {
         );
       case 'profiles':
         return (
-          <Button onClick={() => alert('Create profile modal not yet implemented')}>
+          <Button onClick={() => setProfileModalOpen(true)}>
             New Profile
           </Button>
         );
       case 'targets':
         return (
-          <Button onClick={() => alert('Add target modal not yet implemented')}>
+          <Button
+            onClick={() => setTargetModalOpen(true)}
+            disabled={!current || current.outputGroups.length === 0}
+          >
             Add Target
           </Button>
         );
       case 'outputs':
         return (
-          <Button onClick={() => alert('Create output group modal not yet implemented')}>
+          <Button
+            onClick={() => setOutputGroupModalOpen(true)}
+            disabled={!current}
+          >
             New Output Group
           </Button>
         );
@@ -248,6 +288,38 @@ function App() {
           {renderView()}
         </ContentArea>
       </MainContent>
+
+      {/* Modals */}
+      <ProfileModal
+        open={profileModalOpen}
+        onClose={() => setProfileModalOpen(false)}
+        mode="create"
+      />
+
+      <TargetModal
+        open={targetModalOpen}
+        onClose={() => setTargetModalOpen(false)}
+        mode="create"
+        groupId={firstGroupId}
+      />
+
+      <OutputGroupModal
+        open={outputGroupModalOpen}
+        onClose={() => setOutputGroupModalOpen(false)}
+        mode="create"
+      />
+
+      <PasswordModal
+        open={!!pendingPasswordProfile}
+        onClose={cancelPasswordPrompt}
+        onSubmit={submitPassword}
+        mode="decrypt"
+        profileName={pendingPasswordProfile || undefined}
+        error={passwordError || undefined}
+      />
+
+      {/* Toast notifications */}
+      <ToastContainer />
     </AppShell>
   );
 }

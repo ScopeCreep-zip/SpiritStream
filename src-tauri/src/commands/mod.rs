@@ -4,10 +4,12 @@
 mod profile;
 mod stream;
 mod system;
+mod settings;
 
 pub use profile::*;
 pub use stream::*;
 pub use system::*;
+pub use settings::*;
 
 /// Simple greet command for testing
 #[tauri::command]

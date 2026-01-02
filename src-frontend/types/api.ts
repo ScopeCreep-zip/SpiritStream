@@ -16,6 +16,7 @@ export interface ProfileAPI {
   delete: (name: string) => TauriResult<void>;
   duplicate: (name: string, newName: string) => TauriResult<Profile>;
   setActive: (id: string) => TauriResult<void>;
+  isEncrypted: (name: string) => TauriResult<boolean>;
 }
 
 /**
@@ -48,18 +49,16 @@ export interface SystemAPI {
 }
 
 /**
- * Settings structure
+ * Settings structure (matches Rust Settings model)
  */
 export interface AppSettings {
   language: string;
   startMinimized: boolean;
   showNotifications: boolean;
   ffmpegPath: string;
-  ffmpegVersion: string;
   autoDownloadFfmpeg: boolean;
-  profileStoragePath: string;
   encryptStreamKeys: boolean;
-  appVersion: string;
+  lastProfile: string | null;
 }
 
 /**

@@ -5,12 +5,27 @@ import { Card, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { PlatformIcon } from '@/components/stream/PlatformIcon';
+import { TargetModal } from '@/components/modals';
 import { useProfileStore } from '@/stores/profileStore';
+import { toast } from '@/hooks/useToast';
 import type { Platform, StreamTarget } from '@/types/profile';
 
 export function StreamTargets() {
-  const { current, loading, error, removeStreamTarget } = useProfileStore();
+  const { current, loading, error, removeStreamTarget, saveProfile } = useProfileStore();
   const [revealedKeys, setRevealedKeys] = useState<Set<string>>(new Set());
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingTarget, setEditingTarget] = useState<{ target: StreamTarget; groupId: string } | null>(null);
+
+  const openEditModal = (target: StreamTarget & { groupId: string }) => {
+    setEditingTarget({ target, groupId: target.groupId });
+    setEditModalOpen(true);
+  };
+
+  const closeEditModal = () => {
+    setEditingTarget(null);
+    setEditModalOpen(false);
+  };
 
   // Get all stream targets from current profile
   const getAllTargets = (): Array<StreamTarget & { groupId: string }> => {
@@ -37,7 +52,12 @@ export function StreamTargets() {
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    // TODO: Show toast notification
+    toast.success('Stream key copied to clipboard');
+  };
+
+  const handleRemoveTarget = async (groupId: string, targetId: string) => {
+    removeStreamTarget(groupId, targetId);
+    await saveProfile();
   };
 
   const maskKey = (key: string): string => {
@@ -89,7 +109,7 @@ export function StreamTargets() {
             <p className="text-[var(--text-secondary)] max-w-md mx-auto" style={{ marginBottom: '24px' }}>
               Add your first streaming destination. Supports YouTube, Twitch, Kick, Facebook, and custom RTMP servers.
             </p>
-            <Button>
+            <Button onClick={() => setCreateModalOpen(true)}>
               <Plus className="w-4 h-4" />
               Add Stream Target
             </Button>
@@ -117,7 +137,7 @@ export function StreamTargets() {
                   variant="ghost"
                   size="icon"
                   aria-label="Edit target"
-                  onClick={() => alert('Edit target modal not yet implemented')}
+                  onClick={() => openEditModal(target)}
                 >
                   <Pencil className="w-4 h-4" />
                 </Button>
@@ -125,7 +145,7 @@ export function StreamTargets() {
                   variant="ghost"
                   size="icon"
                   aria-label="Delete target"
-                  onClick={() => removeStreamTarget(target.groupId, target.id)}
+                  onClick={() => handleRemoveTarget(target.groupId, target.id)}
                 >
                   <Trash2 className="w-4 h-4" />
                 </Button>
@@ -172,7 +192,7 @@ export function StreamTargets() {
       {/* Add New Target Card */}
       <Card
         className="border-2 border-dashed border-[var(--border-default)] hover:border-[var(--primary)] transition-colors cursor-pointer"
-        onClick={() => alert('Add target modal not yet implemented')}
+        onClick={() => setCreateModalOpen(true)}
       >
         <CardBody className="flex flex-col items-center justify-center" style={{ padding: '48px 24px' }}>
           <div className="w-12 h-12 rounded-full bg-[var(--primary-subtle)] flex items-center justify-center" style={{ marginBottom: '12px' }}>
@@ -183,6 +203,23 @@ export function StreamTargets() {
           </span>
         </CardBody>
       </Card>
+
+      {/* Create Target Modal */}
+      <TargetModal
+        open={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+        mode="create"
+        groupId={current?.outputGroups[0]?.id || ''}
+      />
+
+      {/* Edit Target Modal */}
+      <TargetModal
+        open={editModalOpen}
+        onClose={closeEditModal}
+        mode="edit"
+        groupId={editingTarget?.groupId || ''}
+        target={editingTarget?.target}
+      />
     </Grid>
   );
 }

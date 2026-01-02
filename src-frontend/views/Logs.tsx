@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Download, Trash2, ArrowDownToLine } from 'lucide-react';
+import { listen } from '@tauri-apps/api/event';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
@@ -7,23 +8,70 @@ import { LogConsole } from '@/components/feedback/LogConsole';
 import { LogEntry } from '@/components/feedback/LogEntry';
 import type { LogLevel, LogEntry as LogEntryType } from '@/types/stream';
 
-// Demo log entries for development
-const demoLogs: LogEntryType[] = [
-  { id: '1', timestamp: new Date(), level: 'info', message: 'MagillaStream initialized successfully' },
-  { id: '2', timestamp: new Date(), level: 'info', message: 'FFmpeg version 6.1 detected' },
-  { id: '3', timestamp: new Date(), level: 'debug', message: 'Loading profile: Gaming Stream' },
-  { id: '4', timestamp: new Date(), level: 'info', message: 'Profile loaded with 3 stream targets' },
-  { id: '5', timestamp: new Date(), level: 'warn', message: 'NVENC encoder not available, falling back to x264' },
-  { id: '6', timestamp: new Date(), level: 'info', message: 'Encoder configured: libx264, preset=balanced' },
-  { id: '7', timestamp: new Date(), level: 'debug', message: 'Audio codec: AAC, bitrate: 160kbps' },
-  { id: '8', timestamp: new Date(), level: 'info', message: 'Ready to stream' },
-];
+// Initial log entry shown on mount
+const initialLog: LogEntryType = {
+  id: '0',
+  timestamp: new Date(),
+  level: 'info',
+  message: 'Log console initialized - listening for events...',
+};
+
+// Interface for the log event payload from tauri_plugin_log
+interface TauriLogRecord {
+  level: number;
+  message: string;
+  target?: string;
+}
+
+// Map numeric log levels to our LogLevel type
+function mapLogLevel(level: number): LogLevel {
+  // log::Level values: Error=1, Warn=2, Info=3, Debug=4, Trace=5
+  switch (level) {
+    case 1:
+      return 'error';
+    case 2:
+      return 'warn';
+    case 3:
+      return 'info';
+    case 4:
+    case 5:
+    default:
+      return 'debug';
+  }
+}
+
+let logIdCounter = 1;
 
 export function Logs() {
-  const [logs, setLogs] = useState<LogEntryType[]>(demoLogs);
+  const [logs, setLogs] = useState<LogEntryType[]>([initialLog]);
   const [filter, setFilter] = useState<LogLevel | 'all'>('all');
   const [autoScroll, setAutoScroll] = useState(true);
   const consoleRef = useRef<HTMLDivElement>(null);
+
+  // Listen for log events from Tauri backend
+  useEffect(() => {
+    const setupListener = async () => {
+      // tauri_plugin_log emits on 'log://log' event
+      const unlisten = await listen<TauriLogRecord>('log://log', (event) => {
+        const { level, message } = event.payload;
+        const newLog: LogEntryType = {
+          id: String(logIdCounter++),
+          timestamp: new Date(),
+          level: mapLogLevel(level),
+          message,
+        };
+        setLogs((prev) => [...prev.slice(-999), newLog]); // Keep last 1000 logs
+      });
+
+      return unlisten;
+    };
+
+    const unlistenPromise = setupListener();
+
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, []);
 
   // Auto-scroll to bottom when new logs arrive
   useEffect(() => {

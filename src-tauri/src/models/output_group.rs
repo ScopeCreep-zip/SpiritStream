@@ -11,6 +11,10 @@ pub struct OutputGroup {
     /// Unique identifier
     pub id: String,
 
+    /// Display name for the group
+    #[serde(default)]
+    pub name: Option<String>,
+
     /// FFmpeg video codec (e.g., "libx264", "h264_nvenc")
     pub video_encoder: String,
 
@@ -41,6 +45,7 @@ impl OutputGroup {
     pub fn new() -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
+            name: None,
             video_encoder: "libx264".to_string(),
             resolution: "1920x1080".to_string(),
             video_bitrate: 6000,

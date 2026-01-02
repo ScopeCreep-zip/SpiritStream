@@ -1,4 +1,7 @@
-import { Radio, Activity, AlertTriangle, Clock, Monitor, Gauge, Target as TargetIcon } from 'lucide-react';
+import { useState } from 'react';
+import { Radio, Activity, AlertTriangle, Clock, Monitor, Gauge, Target as TargetIcon, Upload, Loader2 } from 'lucide-react';
+import { open } from '@tauri-apps/plugin-dialog';
+import { readTextFile } from '@tauri-apps/plugin-fs';
 import { StatsRow } from '@/components/dashboard/StatsRow';
 import { StatBox } from '@/components/dashboard/StatBox';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
@@ -8,18 +11,125 @@ import { StreamCard } from '@/components/dashboard/StreamCard';
 import { Button } from '@/components/ui/Button';
 import { useProfileStore } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
-import type { Platform } from '@/types/profile';
+import { formatUptime, formatBitrate } from '@/hooks/useStreamStats';
+import { toast } from '@/hooks/useToast';
+import { api } from '@/lib/tauri';
+import type { View } from '@/App';
+import type { Platform, Profile } from '@/types/profile';
 
-export function Dashboard() {
-  const { current: currentProfile, loading, error } = useProfileStore();
-  const { isStreaming, stats, uptime, globalStatus } = useStreamStore();
+interface DashboardProps {
+  onNavigate: (view: View) => void;
+  onOpenProfileModal: () => void;
+  onOpenTargetModal: () => void;
+}
 
-  // Format uptime as HH:MM:SS
-  const formatUptime = (seconds: number): string => {
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }: DashboardProps) {
+  const { current: currentProfile, loading, error, saveProfile, loadProfiles } = useProfileStore();
+  const { isStreaming, stats, uptime, globalStatus, startAllGroups, stopAllGroups } = useStreamStore();
+  const [isTesting, setIsTesting] = useState(false);
+
+  // Import profile from JSON file
+  const handleImportProfile = async () => {
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: 'Profile', extensions: ['json'] }],
+      });
+
+      if (!selected) return;
+
+      // open() returns string directly when multiple: false
+      const content = await readTextFile(selected);
+      const profile = JSON.parse(content) as Profile;
+
+      // Validate basic structure
+      if (!profile.name || !profile.outputGroups) {
+        throw new Error('Invalid profile format');
+      }
+
+      // Save imported profile
+      await api.profile.save(profile);
+      await loadProfiles();
+      toast.success(`Profile "${profile.name}" imported successfully`);
+    } catch (err) {
+      toast.error(`Failed to import profile: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
+  // Test stream configuration without actually streaming
+  const handleTestStream = async () => {
+    if (!currentProfile) {
+      toast.error('No profile selected');
+      return;
+    }
+
+    setIsTesting(true);
+    const issues: string[] = [];
+
+    try {
+      // Step 1: Test FFmpeg availability
+      toast.info('Testing FFmpeg...');
+      try {
+        const ffmpegVersion = await api.system.testFfmpeg();
+        if (!ffmpegVersion || ffmpegVersion.includes('not found')) {
+          issues.push('FFmpeg not found. Please install FFmpeg or set the path in Settings.');
+        }
+      } catch {
+        issues.push('FFmpeg not available. Please install FFmpeg.');
+      }
+
+      // Step 2: Check incoming URL
+      if (!currentProfile.incomingUrl || currentProfile.incomingUrl.trim() === '') {
+        issues.push('No incoming URL configured. Set an RTMP source URL in your profile.');
+      }
+
+      // Step 3: Check output groups
+      if (currentProfile.outputGroups.length === 0) {
+        issues.push('No output groups configured.');
+      }
+
+      // Step 4: Check stream targets
+      const allTargets = currentProfile.outputGroups.flatMap(g => g.streamTargets);
+      if (allTargets.length === 0) {
+        issues.push('No stream targets configured. Add at least one destination.');
+      } else {
+        // Check each target has required fields
+        for (const target of allTargets) {
+          if (!target.url || target.url.trim() === '') {
+            issues.push(`Target "${target.name || 'Unnamed'}" has no URL.`);
+          }
+          if (!target.streamKey || target.streamKey.trim() === '') {
+            issues.push(`Target "${target.name || 'Unnamed'}" has no stream key.`);
+          }
+        }
+      }
+
+      // Step 5: Check encoder settings
+      for (const group of currentProfile.outputGroups) {
+        if (!group.videoEncoder) {
+          issues.push(`Output group "${group.name || 'Unnamed'}" has no video encoder set.`);
+        }
+        if (!group.resolution) {
+          issues.push(`Output group "${group.name || 'Unnamed'}" has no resolution set.`);
+        }
+      }
+
+      // Report results
+      if (issues.length === 0) {
+        toast.success('All checks passed! Your streaming configuration is valid.');
+      } else {
+        // Show first 3 issues
+        const displayIssues = issues.slice(0, 3);
+        displayIssues.forEach(issue => toast.error(issue));
+        if (issues.length > 3) {
+          toast.error(`...and ${issues.length - 3} more issues`);
+        }
+      }
+    } catch (err) {
+      toast.error(`Test failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setIsTesting(false);
+    }
   };
 
   // Get all stream targets from current profile
@@ -67,7 +177,7 @@ export function Dashboard() {
         <StatBox
           icon={<Activity className="w-5 h-5" />}
           label="Total Bitrate"
-          value={stats.totalBitrate > 0 ? `${stats.totalBitrate} kbps` : '0 kbps'}
+          value={stats.totalBitrate > 0 ? formatBitrate(stats.totalBitrate) : '0 kbps'}
           change={isStreaming ? 'Active' : 'No active streams'}
         />
         <StatBox
@@ -80,7 +190,7 @@ export function Dashboard() {
         <StatBox
           icon={<Clock className="w-5 h-5" />}
           label="Uptime"
-          value={formatUptime(uptime)}
+          value={formatUptime(Math.floor(uptime))}
           change={isStreaming ? 'Live' : 'Not streaming'}
         />
       </StatsRow>
@@ -92,7 +202,7 @@ export function Dashboard() {
               <CardTitle>Active Profile</CardTitle>
               <CardDescription>Currently selected streaming configuration</CardDescription>
             </div>
-            <Button variant="ghost" size="sm">Change</Button>
+            <Button variant="ghost" size="sm" onClick={() => onNavigate('profiles')}>Change</Button>
           </CardHeader>
           <CardBody>
             {currentProfile ? (
@@ -108,7 +218,7 @@ export function Dashboard() {
             ) : (
               <div className="text-center py-8 text-[var(--text-secondary)]">
                 <p>No profile selected</p>
-                <Button variant="primary" className="mt-4">Create Profile</Button>
+                <Button variant="primary" className="mt-4" onClick={onOpenProfileModal}>Create Profile</Button>
               </div>
             )}
           </CardBody>
@@ -123,17 +233,24 @@ export function Dashboard() {
           </CardHeader>
           <CardBody>
             <Grid cols={2} gap="sm">
-              <Button variant="outline" className="justify-start">
+              <Button variant="outline" className="justify-start" onClick={onOpenProfileModal}>
                 New Profile
               </Button>
-              <Button variant="outline" className="justify-start">
+              <Button variant="outline" className="justify-start" onClick={handleImportProfile}>
+                <Upload className="w-4 h-4" />
                 Import Profile
               </Button>
-              <Button variant="outline" className="justify-start">
+              <Button variant="outline" className="justify-start" onClick={onOpenTargetModal} disabled={!currentProfile}>
                 Add Target
               </Button>
-              <Button variant="outline" className="justify-start">
-                Test Stream
+              <Button
+                variant="outline"
+                className="justify-start"
+                onClick={handleTestStream}
+                disabled={isTesting || isStreaming || !currentProfile}
+              >
+                {isTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {isTesting ? 'Testing...' : 'Test Stream'}
               </Button>
             </Grid>
           </CardBody>
@@ -146,7 +263,7 @@ export function Dashboard() {
             <CardTitle>Stream Targets</CardTitle>
             <CardDescription>Connected streaming platforms</CardDescription>
           </div>
-          <Button variant="ghost" size="sm">Manage</Button>
+          <Button variant="ghost" size="sm" onClick={() => onNavigate('targets')}>Manage</Button>
         </CardHeader>
         <CardBody>
           {targets.length > 0 ? (
@@ -168,7 +285,9 @@ export function Dashboard() {
           ) : (
             <div className="text-center py-8 text-[var(--text-secondary)]">
               <p>No stream targets configured</p>
-              <Button variant="outline" className="mt-4">Add Target</Button>
+              <Button variant="outline" className="mt-4" onClick={onOpenTargetModal} disabled={!currentProfile}>
+                Add Target
+              </Button>
             </div>
           )}
         </CardBody>

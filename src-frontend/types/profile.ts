@@ -60,6 +60,7 @@ export interface ProfileSummary {
   resolution: string;
   bitrate: number;
   targetCount: number;
+  isEncrypted?: boolean;
 }
 
 /**

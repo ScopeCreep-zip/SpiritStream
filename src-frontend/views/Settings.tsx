@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { FolderOpen, Download, Trash2, Github, BookOpen, RefreshCw } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -7,6 +7,10 @@ import { Input } from '@/components/ui/Input';
 import { Toggle } from '@/components/ui/Toggle';
 import { Grid } from '@/components/ui/Grid';
 import { Logo } from '@/components/layout/Logo';
+import { api } from '@/lib/tauri';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
+import { open as openPath } from '@tauri-apps/plugin-shell';
+import type { AppSettings } from '@/types/api';
 
 interface SettingsState {
   // General
@@ -20,46 +24,144 @@ interface SettingsState {
   // Data & Privacy
   profileStoragePath: string;
   encryptStreamKeys: boolean;
+  // UI state
+  loading: boolean;
+  saving: boolean;
 }
 
 const defaultSettings: SettingsState = {
   language: 'en',
   startMinimized: false,
   showNotifications: true,
-  ffmpegPath: '/usr/local/bin/ffmpeg',
-  ffmpegVersion: '6.1.0',
+  ffmpegPath: '',
+  ffmpegVersion: 'Detecting...',
   autoDownloadFfmpeg: true,
-  profileStoragePath: '~/Library/Application Support/MagillaStream/profiles',
-  encryptStreamKeys: true,
+  profileStoragePath: '',
+  encryptStreamKeys: false,
+  loading: true,
+  saving: false,
 };
 
 export function Settings() {
   const [settings, setSettings] = useState<SettingsState>(defaultSettings);
 
+  // Load settings on mount
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        setSettings(prev => ({ ...prev, loading: true }));
+
+        // Load settings from backend
+        const backendSettings = await api.settings.get();
+        const profilesPath = await api.settings.getProfilesPath();
+
+        // Get FFmpeg version
+        let ffmpegVersion = 'FFmpeg not found';
+        try {
+          ffmpegVersion = await api.system.testFfmpeg();
+        } catch {
+          // FFmpeg not available
+        }
+
+        setSettings({
+          language: backendSettings.language,
+          startMinimized: backendSettings.startMinimized,
+          showNotifications: backendSettings.showNotifications,
+          ffmpegPath: backendSettings.ffmpegPath,
+          autoDownloadFfmpeg: backendSettings.autoDownloadFfmpeg,
+          encryptStreamKeys: backendSettings.encryptStreamKeys,
+          ffmpegVersion,
+          profileStoragePath: profilesPath,
+          loading: false,
+          saving: false,
+        });
+      } catch (error) {
+        console.error('Failed to load settings:', error);
+        setSettings(prev => ({ ...prev, loading: false }));
+      }
+    };
+
+    loadSettings();
+  }, []);
+
+  // Save settings to backend
+  const saveSettings = useCallback(async (newSettings: Partial<SettingsState>) => {
+    const updatedSettings = { ...settings, ...newSettings };
+    setSettings(prev => ({ ...prev, ...newSettings, saving: true }));
+
+    try {
+      const backendSettings: AppSettings = {
+        language: updatedSettings.language,
+        startMinimized: updatedSettings.startMinimized,
+        showNotifications: updatedSettings.showNotifications,
+        ffmpegPath: updatedSettings.ffmpegPath,
+        autoDownloadFfmpeg: updatedSettings.autoDownloadFfmpeg,
+        encryptStreamKeys: updatedSettings.encryptStreamKeys,
+        lastProfile: null, // Preserve existing or let backend handle
+      };
+
+      await api.settings.save(backendSettings);
+    } catch (error) {
+      console.error('Failed to save settings:', error);
+    } finally {
+      setSettings(prev => ({ ...prev, saving: false }));
+    }
+  }, [settings]);
+
   const updateSetting = <K extends keyof SettingsState>(key: K, value: SettingsState[K]) => {
-    setSettings(prev => ({ ...prev, [key]: value }));
-    // TODO: Persist to Tauri backend
+    saveSettings({ [key]: value });
   };
 
-  const handleBrowseFfmpeg = () => {
-    // TODO: Open Tauri file dialog
-    console.log('Browse for FFmpeg');
+  const handleBrowseFfmpeg = async () => {
+    try {
+      const selected = await openDialog({
+        multiple: false,
+        filters: [{ name: 'FFmpeg', extensions: ['*'] }],
+      });
+      if (selected && typeof selected === 'string') {
+        saveSettings({ ffmpegPath: selected });
+      }
+    } catch (error) {
+      console.error('Failed to open file dialog:', error);
+    }
   };
 
-  const handleOpenProfileStorage = () => {
-    // TODO: Open folder in system file manager
-    console.log('Open profile storage');
+  const handleOpenProfileStorage = async () => {
+    try {
+      await openPath(settings.profileStoragePath);
+    } catch (error) {
+      console.error('Failed to open profile storage:', error);
+    }
   };
 
-  const handleExportData = () => {
-    // TODO: Export all data via Tauri
-    console.log('Export data');
+  const handleExportData = async () => {
+    try {
+      const selected = await openDialog({
+        directory: true,
+        multiple: false,
+        title: 'Select Export Location',
+      });
+      if (selected && typeof selected === 'string') {
+        await api.settings.exportData(selected);
+        alert('Data exported successfully!');
+      }
+    } catch (error) {
+      console.error('Failed to export data:', error);
+      alert('Failed to export data: ' + error);
+    }
   };
 
-  const handleClearAllData = () => {
-    // TODO: Show confirmation dialog, then clear data
-    if (confirm('Are you sure you want to clear all data? This cannot be undone.')) {
-      console.log('Clear all data');
+  const handleClearAllData = async () => {
+    if (confirm('Are you sure you want to clear all data? This action cannot be undone.')) {
+      try {
+        await api.settings.clearData();
+        alert('All data has been cleared.');
+        // Reset to defaults
+        setSettings({ ...defaultSettings, loading: false, saving: false });
+      } catch (error) {
+        console.error('Failed to clear data:', error);
+        alert('Failed to clear data: ' + error);
+      }
     }
   };
 
@@ -70,6 +172,14 @@ export function Settings() {
     { value: 'de', label: 'Deutsch' },
     { value: 'ja', label: '日本語' },
   ];
+
+  if (settings.loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-[var(--text-secondary)]">Loading settings...</div>
+      </div>
+    );
+  }
 
   return (
     <Grid cols={2}>
@@ -258,7 +368,7 @@ export function Settings() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => console.log('Open docs')}
+                onClick={() => window.open('https://github.com/billboyles/magillastream#readme', '_blank')}
               >
                 <BookOpen className="w-4 h-4" />
                 Docs
@@ -266,7 +376,7 @@ export function Settings() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => console.log('Check updates')}
+                onClick={() => window.open('https://github.com/billboyles/magillastream/releases', '_blank')}
               >
                 <RefreshCw className="w-4 h-4" />
                 Updates

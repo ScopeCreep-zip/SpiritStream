@@ -1,4 +1,5 @@
-import { Play, Square, Settings2 } from 'lucide-react';
+import { useEffect, useRef } from 'react';
+import { Play, Square, Settings2, Activity, Gauge, Clock } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Alert } from '@/components/ui/Alert';
@@ -7,36 +8,121 @@ import { OutputGroup } from '@/components/stream/OutputGroup';
 import { PlatformIcon } from '@/components/stream/PlatformIcon';
 import { useProfileStore } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
+import { formatUptime, formatBitrate } from '@/hooks/useStreamStats';
+import { toast } from '@/hooks/useToast';
+import type { View } from '@/App';
 import type { Platform } from '@/types/profile';
 
-export function StreamManager() {
+interface StreamManagerProps {
+  onNavigate: (view: View) => void;
+}
+
+export function StreamManager({ onNavigate }: StreamManagerProps) {
+  console.log('[StreamManager] Component rendering');
+
+  // Debug: Use ref to attach native DOM listener
+  const testButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    // Native DOM click handler (bypasses React)
+    const btn = testButtonRef.current;
+    if (btn) {
+      const handler = () => {
+        alert('NATIVE DOM CLICK WORKS!');
+        console.log('[StreamManager] Native DOM click fired');
+      };
+      btn.addEventListener('click', handler);
+      console.log('[StreamManager] Native click listener attached to test button');
+      return () => btn.removeEventListener('click', handler);
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleGlobalClick = (e: MouseEvent) => {
+      console.log('[StreamManager] Global click detected:', e.target);
+    };
+    document.addEventListener('click', handleGlobalClick);
+    console.log('[StreamManager] Component mounted, global click listener attached');
+    return () => document.removeEventListener('click', handleGlobalClick);
+  }, []);
+
   const { current, loading, error } = useProfileStore();
   const {
     isStreaming,
     activeGroups,
     enabledTargets,
-    setIsStreaming,
-    setActiveGroup,
+    globalStatus,
+    groupStats,
+    error: streamError,
+    startAllGroups,
+    stopAllGroups,
     setTargetEnabled,
   } = useStreamStore();
 
-  const handleStartAll = () => {
-    if (!current) return;
-    setIsStreaming(true);
-    current.outputGroups.forEach(group => {
-      setActiveGroup(group.id, true);
-    });
-    // TODO: Call Tauri to actually start streams
+  // Enable all targets by default when profile changes
+  useEffect(() => {
+    if (current) {
+      const allTargetIds = current.outputGroups.flatMap(g =>
+        g.streamTargets.map(t => t.id)
+      );
+      // Only add targets that aren't already in enabledTargets
+      allTargetIds.forEach(id => {
+        if (!enabledTargets.has(id)) {
+          setTargetEnabled(id, true);
+        }
+      });
+    }
+  }, [current?.id]); // Re-run when profile changes
+
+  const handleStartAll = async () => {
+    console.log('[StreamManager] handleStartAll called');
+    console.log('[StreamManager] current profile:', current);
+
+    if (!current) {
+      console.log('[StreamManager] No current profile');
+      return;
+    }
+
+    // Validate incoming URL
+    if (!current.incomingUrl || current.incomingUrl.trim() === '') {
+      console.log('[StreamManager] Missing incoming URL');
+      toast.error('No incoming URL configured. Set an RTMP source URL in your profile.');
+      return;
+    }
+
+    // Validate we have stream targets
+    const hasTargets = current.outputGroups.some(g => g.streamTargets.length > 0);
+    if (!hasTargets) {
+      console.log('[StreamManager] No stream targets');
+      toast.error('No stream targets configured. Add at least one destination.');
+      return;
+    }
+
+    console.log('[StreamManager] Enabled targets:', [...enabledTargets]);
+    console.log('[StreamManager] Output groups:', current.outputGroups);
+    console.log('[StreamManager] Incoming URL:', current.incomingUrl);
+
+    try {
+      console.log('[StreamManager] Calling startAllGroups...');
+      await startAllGroups(current.outputGroups, current.incomingUrl);
+      console.log('[StreamManager] startAllGroups completed successfully');
+      toast.success('Streaming started');
+    } catch (err) {
+      console.error('[StreamManager] startAllGroups failed:', err);
+      toast.error(`Failed to start streaming: ${err instanceof Error ? err.message : String(err)}`);
+    }
   };
 
-  const handleStopAll = () => {
-    if (!current) return;
-    setIsStreaming(false);
-    current.outputGroups.forEach(group => {
-      setActiveGroup(group.id, false);
-    });
-    // TODO: Call Tauri to actually stop streams
+  const handleStopAll = async () => {
+    try {
+      await stopAllGroups();
+      toast.info('Streaming stopped');
+    } catch (err) {
+      toast.error(`Failed to stop streaming: ${err instanceof Error ? err.message : String(err)}`);
+    }
   };
+
+  const isConnecting = globalStatus === 'connecting';
 
   if (loading) {
     return (
@@ -92,7 +178,13 @@ export function StreamManager() {
 
   return (
     <div className="flex flex-col" style={{ gap: '24px' }}>
-      {!isStreaming && (
+      {streamError && (
+        <Alert variant="error" title="Stream Error">
+          {streamError}
+        </Alert>
+      )}
+
+      {!isStreaming && !streamError && (
         <Alert variant="info" title="Ready to Stream">
           Configure your output groups below and click "Start All Streams" when ready.
         </Alert>
@@ -108,14 +200,57 @@ export function StreamManager() {
           </div>
         </CardHeader>
         <CardBody style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {outputGroups.map((group) => (
+          {outputGroups.map((group) => {
+            const stats = groupStats[group.id];
+            const isGroupActive = activeGroups.has(group.id);
+
+            return (
             <OutputGroup
               key={group.id}
               name={group.name || `Output Group`}
               info={getGroupInfo(group)}
               status={getGroupStatus(group.id)}
-              defaultExpanded={false}
+              defaultExpanded={isGroupActive}
             >
+              {/* Real-time stats when streaming */}
+              {isGroupActive && stats && (
+                <div className="grid grid-cols-4 gap-4 p-4 mb-4 bg-[var(--bg-muted)] rounded-lg border border-[var(--border-default)]">
+                  <div className="text-center">
+                    <div className="flex items-center justify-center gap-1 text-[var(--text-tertiary)] mb-1">
+                      <Activity className="w-3 h-3" />
+                      <span className="text-xs">FPS</span>
+                    </div>
+                    <div className="text-lg font-semibold text-[var(--text-primary)]">
+                      {stats.fps.toFixed(1)}
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="flex items-center justify-center gap-1 text-[var(--text-tertiary)] mb-1">
+                      <Gauge className="w-3 h-3" />
+                      <span className="text-xs">Bitrate</span>
+                    </div>
+                    <div className="text-lg font-semibold text-[var(--text-primary)]">
+                      {formatBitrate(stats.bitrate)}
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="flex items-center justify-center gap-1 text-[var(--text-tertiary)] mb-1">
+                      <Clock className="w-3 h-3" />
+                      <span className="text-xs">Uptime</span>
+                    </div>
+                    <div className="text-lg font-semibold text-[var(--text-primary)]">
+                      {formatUptime(stats.uptime)}
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-xs text-[var(--text-tertiary)] mb-1">Speed</div>
+                    <div className="text-lg font-semibold text-[var(--text-primary)]">
+                      {stats.speed.toFixed(2)}x
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="flex flex-col border-t border-[var(--border-muted)]" style={{ gap: '12px', paddingTop: '12px' }}>
                 {group.streamTargets.map((target) => (
                   <div
@@ -149,10 +284,18 @@ export function StreamManager() {
                 )}
               </div>
             </OutputGroup>
-          ))}
+          );
+          })}
 
           <div className="flex justify-end border-t border-[var(--border-muted)]" style={{ gap: '12px', paddingTop: '16px' }}>
-            <Button variant="outline">
+            <button
+              type="button"
+              onClick={() => alert('TEST CLICK')}
+              style={{ padding: '10px 20px', background: 'red', color: 'white', cursor: 'pointer' }}
+            >
+              TEST BUTTON
+            </button>
+            <Button variant="outline" onClick={() => onNavigate('encoder')}>
               <Settings2 className="w-4 h-4" />
               Configure
             </Button>
@@ -162,9 +305,9 @@ export function StreamManager() {
                 Stop All Streams
               </Button>
             ) : (
-              <Button onClick={handleStartAll}>
+              <Button onClick={() => { console.log('BUTTON CLICKED!'); handleStartAll(); }} disabled={isConnecting}>
                 <Play className="w-4 h-4" />
-                Start All Streams
+                {isConnecting ? 'Connecting...' : 'Start All Streams'}
               </Button>
             )}
           </div>

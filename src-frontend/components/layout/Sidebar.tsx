@@ -9,7 +9,7 @@ export function Sidebar({ children, className }: SidebarProps) {
   return (
     <aside
       className={cn(
-        'w-sidebar bg-[var(--bg-surface)] border-r border-[var(--border-default)]',
+        'w-[260px] bg-[var(--bg-surface)] border-r border-[var(--border-default)]',
         'flex flex-col fixed top-0 left-0 bottom-0 z-[100]',
         className
       )}
