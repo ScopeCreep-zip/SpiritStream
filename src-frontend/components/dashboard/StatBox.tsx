@@ -21,12 +21,13 @@ export function StatBox({
     <div
       className={cn(
         'bg-[var(--bg-surface)] border border-[var(--border-default)]',
-        'rounded-xl p-5',
+        'rounded-xl',
         className
       )}
+      style={{ padding: '20px' }}
     >
       <div className="flex items-center justify-between mb-2">
-        <span className="text-[0.8125rem] text-[var(--text-secondary)]">
+        <span className="text-small text-[var(--text-secondary)]">
           {label}
         </span>
         <span className="text-[var(--text-tertiary)]">{icon}</span>

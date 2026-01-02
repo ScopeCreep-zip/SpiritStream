@@ -43,13 +43,13 @@ export function OutputGroupCard({
   return (
     <Card className={cn('transition-all duration-150', className)}>
       <CardHeader>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center" style={{ gap: '12px' }}>
           <h3 className={cn('font-semibold text-[var(--text-primary)]')}>
             {group.name || `Output Group ${index + 1}`}
           </h3>
           <StreamStatus status={status} />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center" style={{ gap: '8px' }}>
           {onEdit && (
             <Button variant="ghost" size="icon" onClick={onEdit} aria-label="Edit output group">
               <Pencil className="w-4 h-4" />
@@ -65,8 +65,9 @@ export function OutputGroupCard({
           </Button>
         </div>
       </CardHeader>
-      <CardBody className={cn('space-y-4')}>
-        <div className={cn('grid grid-cols-2 gap-4')}>
+      <CardBody>
+        <div className="flex flex-col" style={{ gap: '16px' }}>
+        <div className={cn('grid grid-cols-2')} style={{ gap: '16px' }}>
           <Select
             label="Video Encoder"
             value={group.videoEncoder}
@@ -80,7 +81,7 @@ export function OutputGroupCard({
             options={resolutionOptions}
           />
         </div>
-        <div className={cn('grid grid-cols-3 gap-4')}>
+        <div className={cn('grid grid-cols-3')} style={{ gap: '16px' }}>
           <Input
             label="Video Bitrate (kbps)"
             type="number"
@@ -100,20 +101,21 @@ export function OutputGroupCard({
             onChange={(e) => onUpdate({ audioBitrate: parseInt(e.target.value) || 0 })}
           />
         </div>
-        <div className={cn('grid grid-cols-2 gap-4')}>
+        <div className={cn('grid grid-cols-2')} style={{ gap: '16px' }}>
           <Select
             label="Audio Codec"
             value={group.audioCodec}
             onChange={(e) => onUpdate({ audioCodec: e.target.value })}
             options={encoders.audio.map((e) => ({ value: e, label: e }))}
           />
-          <div className="flex items-end pb-1">
+          <div className="flex items-end" style={{ paddingBottom: '4px' }}>
             <Toggle
               label="Generate PTS timestamps"
               checked={group.generatePts}
               onChange={(checked) => onUpdate({ generatePts: checked })}
             />
           </div>
+        </div>
         </div>
       </CardBody>
     </Card>

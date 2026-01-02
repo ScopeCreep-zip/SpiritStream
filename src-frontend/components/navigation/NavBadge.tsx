@@ -10,10 +10,11 @@ export function NavBadge({ count, className }: NavBadgeProps) {
     <span
       className={cn(
         'bg-[var(--primary)] text-white',
-        'text-[0.6875rem] font-semibold',
-        'px-2 py-0.5 rounded-full min-w-[20px] text-center',
+        'text-tiny font-semibold',
+        'rounded-full min-w-[20px] text-center',
         className
       )}
+      style={{ padding: '2px 8px' }}
     >
       {count > 99 ? '99+' : count}
     </span>

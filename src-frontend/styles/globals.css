@@ -6,6 +6,73 @@
 /* Tailwind CSS v4 */
 @import "tailwindcss";
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   CUSTOM THEME EXTENSIONS
+   Tailwind v4 CSS-based theme configuration
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@theme {
+  /* Font sizes - generates text-small, text-tiny utilities */
+  --text-small: 0.8125rem;  /* 13px - secondary text */
+  --text-tiny: 0.6875rem;   /* 11px - captions, labels */
+
+  /* Sidebar dimensions - generates w-sidebar, ml-sidebar, etc. */
+  --spacing-sidebar: 260px;
+
+  /* Custom colors mapped to CSS variables */
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-subtle: var(--primary-subtle);
+  --color-primary-muted: var(--primary-muted);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-hover: var(--secondary-hover);
+  --color-secondary-subtle: var(--secondary-subtle);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-subtle: var(--accent-subtle);
+
+  --color-success: var(--success);
+  --color-success-subtle: var(--success-subtle);
+  --color-success-text: var(--success-text);
+
+  --color-warning: var(--warning);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-warning-text: var(--warning-text);
+
+  --color-error: var(--error);
+  --color-error-subtle: var(--error-subtle);
+  --color-error-text: var(--error-text);
+
+  /* Background colors */
+  --color-bg-base: var(--bg-base);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-bg-muted: var(--bg-muted);
+  --color-bg-sunken: var(--bg-sunken);
+  --color-bg-hover: var(--bg-hover);
+
+  /* Text colors */
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-tertiary);
+  --color-text-muted: var(--text-muted);
+
+  /* Border colors */
+  --color-border-default: var(--border-default);
+  --color-border-muted: var(--border-muted);
+  --color-border-strong: var(--border-strong);
+  --color-border-interactive: var(--border-interactive);
+
+  /* Shadow configuration */
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-xl: var(--shadow-xl);
+}
+
 /* Reset */
 *,
 *::before,

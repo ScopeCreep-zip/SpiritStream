@@ -31,11 +31,12 @@ export function StreamCard({
       onClick={onClick}
       className={cn(
         'bg-[var(--bg-surface)] border border-[var(--border-default)]',
-        'rounded-xl p-4 transition-all duration-150',
+        'rounded-xl transition-all duration-150',
         'hover:border-[var(--border-interactive)] hover:shadow-[var(--shadow-md)]',
         onClick && 'cursor-pointer',
         className
       )}
+      style={{ padding: '16px' }}
     >
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
@@ -53,7 +54,7 @@ export function StreamCard({
               <div className="text-sm font-semibold text-[var(--text-primary)]">
                 {stat.value}
               </div>
-              <div className="text-[0.6875rem] uppercase text-[var(--text-tertiary)]">
+              <div className="text-tiny uppercase text-[var(--text-tertiary)]">
                 {stat.label}
               </div>
             </div>

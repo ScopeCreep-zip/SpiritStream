@@ -35,10 +35,11 @@ export function Alert({ variant, title, children, className }: AlertProps) {
   return (
     <div
       className={cn(
-        'p-4 rounded-lg border flex gap-3 mb-4',
+        'rounded-lg border flex gap-3',
         wrapper,
         className
       )}
+      style={{ padding: '16px', marginBottom: '16px' }}
       role="alert"
     >
       <Icon className="w-5 h-5 flex-shrink-0 mt-0.5" />

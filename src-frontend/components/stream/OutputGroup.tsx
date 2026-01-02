@@ -27,17 +27,19 @@ export function OutputGroup({
     <div
       className={cn(
         'bg-[var(--bg-muted)] border border-[var(--border-default)]',
-        'rounded-xl mb-4',
+        'rounded-xl',
         className
       )}
+      style={{ marginBottom: '16px' }}
     >
       <button
         className={cn(
-          'w-full p-4 px-5 flex items-center justify-between cursor-pointer',
+          'w-full flex items-center justify-between cursor-pointer',
           'bg-transparent border-none text-left',
           'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ring-default)]',
           'focus-visible:ring-inset rounded-xl'
         )}
+        style={{ padding: '16px 20px' }}
         onClick={() => setExpanded(!expanded)}
         aria-expanded={expanded}
       >
@@ -45,7 +47,7 @@ export function OutputGroup({
           <Layers className="w-[18px] h-[18px] text-[var(--primary)]" />
           <div>
             <div className="font-semibold text-[var(--text-primary)]">{name}</div>
-            <div className="text-[0.8125rem] text-[var(--text-secondary)]">
+            <div className="text-small text-[var(--text-secondary)]">
               {info}
             </div>
           </div>
@@ -63,7 +65,7 @@ export function OutputGroup({
           />
         </div>
       </button>
-      {expanded && <div className="px-5 pb-5">{children}</div>}
+      {expanded && <div style={{ padding: '0 20px 20px 20px' }}>{children}</div>}
     </div>
   );
 }

@@ -20,10 +20,11 @@ export function Toggle({
   return (
     <label
       className={cn(
-        'inline-flex items-center gap-3 cursor-pointer',
+        'inline-flex items-center cursor-pointer',
         disabled && 'opacity-50 cursor-not-allowed',
         className
       )}
+      style={{ gap: '12px' }}
     >
       <span className="relative w-11 h-6 flex-shrink-0">
         <input

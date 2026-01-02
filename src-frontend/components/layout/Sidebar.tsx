@@ -9,7 +9,7 @@ export function Sidebar({ children, className }: SidebarProps) {
   return (
     <aside
       className={cn(
-        'w-[260px] bg-[var(--bg-surface)] border-r border-[var(--border-default)]',
+        'w-sidebar bg-[var(--bg-surface)] border-r border-[var(--border-default)]',
         'flex flex-col fixed top-0 left-0 bottom-0 z-[100]',
         className
       )}
@@ -28,10 +28,11 @@ export function SidebarHeader({ children, className }: SidebarHeaderProps) {
   return (
     <div
       className={cn(
-        'px-4 py-5 border-b border-[var(--border-muted)]',
+        'border-b border-[var(--border-muted)]',
         'flex items-center gap-3',
         className
       )}
+      style={{ padding: '20px 16px' }}
     >
       {children}
     </div>
@@ -45,7 +46,7 @@ export interface SidebarNavProps {
 
 export function SidebarNav({ children, className }: SidebarNavProps) {
   return (
-    <nav className={cn('flex-1 px-3 py-4 overflow-y-auto', className)}>
+    <nav className={cn('flex-1 overflow-y-auto', className)} style={{ padding: '16px 12px' }}>
       {children}
     </nav>
   );
@@ -58,7 +59,7 @@ export interface SidebarFooterProps {
 
 export function SidebarFooter({ children, className }: SidebarFooterProps) {
   return (
-    <div className={cn('p-4 border-t border-[var(--border-muted)]', className)}>
+    <div className={cn('border-t border-[var(--border-muted)]', className)} style={{ padding: '16px' }}>
       {children}
     </div>
   );

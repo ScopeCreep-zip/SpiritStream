@@ -51,11 +51,12 @@ export function StreamStatus({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium',
+        'inline-flex items-center gap-1.5 rounded-full text-xs font-medium',
         config.bg,
         config.text,
         className
       )}
+      style={{ padding: '4px 10px' }}
     >
       <span
         className={cn(

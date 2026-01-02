@@ -14,10 +14,10 @@ export function Logo({ size = 'md', showText = true, className }: LogoProps) {
   };
 
   return (
-    <div className={cn('flex items-center gap-3', className)}>
+    <div className={cn('flex items-center', className)} style={{ gap: '12px' }}>
       <div
         className={cn(
-          'bg-gradient-to-br from-violet-600 via-fuchsia-600 to-pink-600 rounded-[10px]',
+          'bg-gradient-to-br from-violet-600 via-fuchsia-600 to-pink-600 rounded-xl',
           'flex items-center justify-center',
           'text-white font-bold shadow-[var(--shadow-md)]',
           sizes[size]

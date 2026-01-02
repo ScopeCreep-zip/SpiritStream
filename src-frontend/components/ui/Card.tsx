@@ -29,10 +29,11 @@ export function CardHeader({ className, ...props }: CardHeaderProps) {
   return (
     <div
       className={cn(
-        'px-6 py-5 border-b border-[var(--border-muted)]',
+        'border-b border-[var(--border-muted)]',
         'flex items-center justify-between',
         className
       )}
+      style={{ padding: '20px 24px' }}
       {...props}
     />
   );
@@ -63,7 +64,7 @@ export function CardDescription({ className, ...props }: CardDescriptionProps) {
 export interface CardBodyProps extends React.HTMLAttributes<HTMLDivElement> {}
 
 export function CardBody({ className, ...props }: CardBodyProps) {
-  return <div className={cn('p-6', className)} {...props} />;
+  return <div className={className} style={{ padding: '24px' }} {...props} />;
 }
 
 export interface CardFooterProps extends React.HTMLAttributes<HTMLDivElement> {}
@@ -72,10 +73,11 @@ export function CardFooter({ className, ...props }: CardFooterProps) {
   return (
     <div
       className={cn(
-        'px-6 py-4 border-t border-[var(--border-muted)] bg-[var(--bg-muted)] rounded-b-xl',
+        'border-t border-[var(--border-muted)] bg-[var(--bg-muted)] rounded-b-xl',
         'flex justify-end gap-3',
         className
       )}
+      style={{ padding: '16px 24px' }}
       {...props}
     />
   );

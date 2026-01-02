@@ -12,10 +12,11 @@ export function Header({ title, description, children, className }: HeaderProps)
     <header
       className={cn(
         'bg-[var(--bg-surface)] border-b border-[var(--border-default)]',
-        'px-6 py-4 flex items-center justify-between',
+        'flex items-center justify-between',
         'sticky top-0 z-50',
         className
       )}
+      style={{ padding: '16px 24px' }}
     >
       <div className="flex flex-col">
         <h1 className="text-xl font-semibold text-[var(--text-primary)]">

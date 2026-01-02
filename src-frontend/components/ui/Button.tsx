@@ -8,7 +8,7 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant = 'primary', size = 'md', loading, children, disabled, ...props }, ref) => {
+  ({ className, variant = 'primary', size = 'md', loading, children, disabled, style, ...props }, ref) => {
     const variants = {
       primary: 'bg-[var(--primary)] text-white hover:bg-[var(--primary-hover)] active:bg-[var(--primary-active)]',
       secondary: 'bg-[var(--secondary)] text-white hover:opacity-90',
@@ -18,26 +18,34 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       destructive: 'bg-[var(--error)] text-white hover:opacity-90',
     };
 
-    const sizes = {
-      sm: 'h-8 px-3 text-[0.8125rem]',
-      md: 'h-10 px-4 text-sm',
-      lg: 'h-12 px-6 text-base',
-      icon: 'w-9 h-9 p-0',
+    const sizeClasses = {
+      sm: 'text-sm',
+      md: 'text-base',
+      lg: 'text-lg',
+      icon: '',
+    };
+
+    const sizeStyles: Record<string, React.CSSProperties> = {
+      sm: { height: '36px', padding: '8px 20px' },
+      md: { height: '44px', padding: '10px 24px' },
+      lg: { height: '56px', padding: '12px 40px' },
+      icon: { width: '40px', height: '40px', padding: '0' },
     };
 
     return (
       <button
         ref={ref}
         className={cn(
-          'inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-all duration-150',
+          'inline-flex items-center justify-center font-semibold rounded-lg transition-all duration-150',
           'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ring-default)]',
           'focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ring-offset)]',
           'disabled:opacity-50 disabled:cursor-not-allowed',
           'border-none cursor-pointer',
           variants[variant],
-          sizes[size],
+          sizeClasses[size],
           className
         )}
+        style={{ gap: '8px', ...sizeStyles[size], ...style }}
         disabled={disabled || loading}
         {...props}
       >

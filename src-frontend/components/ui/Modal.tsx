@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
@@ -19,29 +19,82 @@ export function Modal({
   footer,
   maxWidth = '500px',
 }: ModalProps) {
-  // Handle escape key
+  const modalRef = useRef<HTMLDivElement>(null);
+  const previousActiveElement = useRef<HTMLElement | null>(null);
+
+  // Focus trap - get all focusable elements
+  const getFocusableElements = useCallback(() => {
+    if (!modalRef.current) return [];
+    return Array.from(
+      modalRef.current.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      )
+    ).filter((el) => !el.hasAttribute('disabled'));
+  }, []);
+
+  // Handle escape key and focus trap
   useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && open) {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!open) return;
+
+      if (e.key === 'Escape') {
         onClose();
+        return;
+      }
+
+      // Focus trap with Tab key
+      if (e.key === 'Tab') {
+        const focusable = getFocusableElements();
+        if (focusable.length === 0) return;
+
+        const firstElement = focusable[0];
+        const lastElement = focusable[focusable.length - 1];
+
+        if (e.shiftKey) {
+          // Shift + Tab
+          if (document.activeElement === firstElement) {
+            e.preventDefault();
+            lastElement.focus();
+          }
+        } else {
+          // Tab
+          if (document.activeElement === lastElement) {
+            e.preventDefault();
+            firstElement.focus();
+          }
+        }
       }
     };
 
-    document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
-  }, [open, onClose]);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [open, onClose, getFocusableElements]);
 
-  // Prevent body scroll when modal is open
+  // Prevent body scroll and manage focus when modal opens/closes
   useEffect(() => {
     if (open) {
+      // Save currently focused element
+      previousActiveElement.current = document.activeElement as HTMLElement;
       document.body.style.overflow = 'hidden';
+
+      // Focus first focusable element in modal
+      requestAnimationFrame(() => {
+        const focusable = getFocusableElements();
+        if (focusable.length > 0) {
+          focusable[0].focus();
+        }
+      });
     } else {
       document.body.style.overflow = '';
+      // Restore focus to previously focused element
+      if (previousActiveElement.current) {
+        previousActiveElement.current.focus();
+      }
     }
     return () => {
       document.body.style.overflow = '';
     };
-  }, [open]);
+  }, [open, getFocusableElements]);
 
   if (!open) return null;
 
@@ -55,6 +108,7 @@ export function Modal({
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
+        ref={modalRef}
         className={cn(
           'bg-[var(--bg-surface)] rounded-xl shadow-[var(--shadow-xl)]',
           'w-full max-h-[90vh] overflow-hidden',
@@ -80,7 +134,7 @@ interface ModalHeaderProps {
 
 export function ModalHeader({ title, onClose }: ModalHeaderProps) {
   return (
-    <div className="px-6 py-5 border-b border-[var(--border-muted)] flex items-center justify-between">
+    <div className="border-b border-[var(--border-muted)] flex items-center justify-between" style={{ padding: '20px 24px' }}>
       <h3
         id="modal-title"
         className="text-lg font-semibold text-[var(--text-primary)]"
@@ -111,7 +165,7 @@ interface ModalBodyProps {
 
 export function ModalBody({ children, className }: ModalBodyProps) {
   return (
-    <div className={cn('p-6 overflow-y-auto', className)}>
+    <div className={cn('overflow-y-auto', className)} style={{ padding: '24px' }}>
       {children}
     </div>
   );
@@ -126,9 +180,10 @@ export function ModalFooter({ children, className }: ModalFooterProps) {
   return (
     <div
       className={cn(
-        'px-6 py-4 border-t border-[var(--border-muted)] flex justify-end gap-3',
+        'border-t border-[var(--border-muted)] flex justify-end gap-3',
         className
       )}
+      style={{ padding: '16px 24px' }}
     >
       {children}
     </div>

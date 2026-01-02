@@ -27,7 +27,7 @@ export function ProfileCard({
     <div
       onClick={onClick}
       className={cn(
-        'bg-[var(--bg-surface)] border-2 rounded-xl p-5',
+        'bg-[var(--bg-surface)] border-2 rounded-xl',
         'transition-all duration-150',
         onClick && 'cursor-pointer',
         active
@@ -35,6 +35,7 @@ export function ProfileCard({
           : 'border-[var(--border-default)] hover:border-[var(--border-interactive)] hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)]',
         className
       )}
+      style={{ padding: '20px' }}
     >
       <div className="flex items-center justify-between mb-3">
         <span className="font-semibold text-[var(--text-primary)]">{name}</span>
@@ -43,7 +44,7 @@ export function ProfileCard({
           {actions}
         </div>
       </div>
-      <div className="flex gap-4 text-[0.8125rem] text-[var(--text-secondary)]">
+      <div className="flex gap-4 text-small text-[var(--text-secondary)]">
         {meta.map((item, index) => (
           <span key={index} className="flex items-center gap-1.5">
             {item.icon}

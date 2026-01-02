@@ -12,7 +12,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     const inputId = id || label?.toLowerCase().replace(/\s/g, '-');
 
     return (
-      <div className="space-y-1.5">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
         {label && (
           <label
             htmlFor={inputId}
@@ -26,17 +26,18 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           id={inputId}
           type={type}
           className={cn(
-            'w-full px-3.5 py-2.5 text-sm rounded-lg transition-all duration-150',
+            'w-full text-sm rounded-lg transition-all duration-150',
             'bg-[var(--bg-sunken)] text-[var(--text-primary)]',
             'border-2 border-[var(--border-strong)]',
             'placeholder:text-[var(--text-muted)]',
             'hover:border-[var(--border-stronger)]',
             'focus:outline-none focus:border-[var(--border-interactive)]',
-            'focus:shadow-[0_0_0_3px_var(--primary-muted)]',
+            'focus:ring-[3px] focus:ring-[var(--primary-muted)]',
             'disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-[var(--bg-muted)]',
-            error && 'border-[var(--error-border)] focus:shadow-[0_0_0_3px_var(--error-subtle)]',
+            error && 'border-[var(--error-border)] focus:ring-[var(--error-subtle)]',
             className
           )}
+          style={{ padding: '10px 14px' }}
           {...props}
         />
         {helper && !error && (

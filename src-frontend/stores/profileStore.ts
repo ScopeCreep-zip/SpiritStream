@@ -13,6 +13,8 @@ interface ProfileState {
   setCurrentProfile: (profile: Profile | null) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
+  selectProfile: (id: string) => void;
+  duplicateProfile: (id: string) => void;
 
   // Profile mutations
   updateProfile: (updates: Partial<Profile>) => void;
@@ -38,6 +40,34 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   setCurrentProfile: (profile) => set({ current: profile }),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
+
+  selectProfile: (id) => {
+    // TODO: In Phase 4, this will call Tauri to load the full profile
+    // For now, create a mock full profile from the summary
+    const summary = get().profiles.find((p) => p.id === id);
+    if (summary) {
+      const mockProfile: Profile = {
+        id: summary.id,
+        name: summary.name,
+        incomingUrl: 'rtmp://localhost/live',
+        outputGroups: [],
+      };
+      set({ current: mockProfile });
+    }
+  },
+
+  duplicateProfile: (id) => {
+    // TODO: In Phase 4, this will call Tauri to duplicate the profile
+    const summary = get().profiles.find((p) => p.id === id);
+    if (summary) {
+      const newProfile: ProfileSummary = {
+        ...summary,
+        id: crypto.randomUUID(),
+        name: `${summary.name} (Copy)`,
+      };
+      set({ profiles: [...get().profiles, newProfile] });
+    }
+  },
 
   updateProfile: (updates) => {
     const current = get().current;

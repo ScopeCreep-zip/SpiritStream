@@ -68,6 +68,7 @@
     "cross-env": "^7.0.3",
     "electron": "^34.3.0",
     "electron-builder": "^24.6.0",
+    "puppeteer": "^24.34.0",
     "tailwindcss": "^4.1.18",
     "typescript": "^5.9.3",
     "vite": "^7.3.0"

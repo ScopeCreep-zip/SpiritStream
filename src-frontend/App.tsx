@@ -8,6 +8,8 @@ import {
   Target,
   FileText,
   Cog,
+  Play,
+  Square,
 } from 'lucide-react';
 
 import { AppShell } from '@/components/layout/AppShell';
@@ -19,18 +21,152 @@ import { NavSection } from '@/components/navigation/NavSection';
 import { NavItem } from '@/components/navigation/NavItem';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { Button } from '@/components/ui/Button';
-import { StatsRow } from '@/components/dashboard/StatsRow';
-import { StatBox } from '@/components/dashboard/StatBox';
-import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
-import { Grid } from '@/components/ui/Grid';
-import { ProfileCard } from '@/components/dashboard/ProfileCard';
-import { StreamCard } from '@/components/dashboard/StreamCard';
-import { Activity, AlertTriangle, Clock, Monitor, Gauge, Target as TargetIcon } from 'lucide-react';
+import { useProfileStore } from '@/stores/profileStore';
+import { useStreamStore } from '@/stores/streamStore';
+
+// Import all views
+import {
+  Dashboard,
+  Profiles,
+  StreamManager,
+  EncoderSettings,
+  OutputGroups,
+  StreamTargets,
+  Logs,
+  Settings,
+} from '@/views';
 
 type View = 'dashboard' | 'profiles' | 'streams' | 'encoder' | 'outputs' | 'targets' | 'logs' | 'settings';
 
+interface ViewMeta {
+  title: string;
+  description: string;
+}
+
+const viewMeta: Record<View, ViewMeta> = {
+  dashboard: {
+    title: 'Dashboard',
+    description: 'Overview of your streaming setup',
+  },
+  profiles: {
+    title: 'Streaming Profiles',
+    description: 'Manage your saved streaming configurations',
+  },
+  streams: {
+    title: 'Stream Manager',
+    description: 'Control your live streaming operations',
+  },
+  encoder: {
+    title: 'Encoder Settings',
+    description: 'Configure video and audio encoding parameters',
+  },
+  outputs: {
+    title: 'Output Groups',
+    description: 'Manage output configurations and encoding presets',
+  },
+  targets: {
+    title: 'Stream Targets',
+    description: 'Configure streaming destinations and platforms',
+  },
+  logs: {
+    title: 'Application Logs',
+    description: 'View real-time application events and debug information',
+  },
+  settings: {
+    title: 'Settings',
+    description: 'Configure application preferences',
+  },
+};
+
 function App() {
   const [currentView, setCurrentView] = useState<View>('dashboard');
+  const { current, profiles } = useProfileStore();
+  const { isStreaming, setIsStreaming, setActiveGroup } = useStreamStore();
+
+  const { title, description } = viewMeta[currentView];
+
+  // Count profiles for badge from store
+  const profileCount = profiles.length;
+
+  const handleStartStreaming = () => {
+    if (!current) return;
+    setIsStreaming(true);
+    current.outputGroups.forEach(group => {
+      setActiveGroup(group.id, true);
+    });
+    // TODO: Call Tauri to actually start streams
+  };
+
+  const handleStopStreaming = () => {
+    if (!current) return;
+    setIsStreaming(false);
+    current.outputGroups.forEach(group => {
+      setActiveGroup(group.id, false);
+    });
+    // TODO: Call Tauri to actually stop streams
+  };
+
+  const renderView = () => {
+    switch (currentView) {
+      case 'dashboard':
+        return <Dashboard />;
+      case 'profiles':
+        return <Profiles />;
+      case 'streams':
+        return <StreamManager />;
+      case 'encoder':
+        return <EncoderSettings />;
+      case 'outputs':
+        return <OutputGroups />;
+      case 'targets':
+        return <StreamTargets />;
+      case 'logs':
+        return <Logs />;
+      case 'settings':
+        return <Settings />;
+      default:
+        return <Dashboard />;
+    }
+  };
+
+  // Render header actions based on current view
+  const renderHeaderActions = () => {
+    switch (currentView) {
+      case 'dashboard':
+      case 'streams':
+        return isStreaming ? (
+          <Button variant="destructive" onClick={handleStopStreaming}>
+            <Square className="w-4 h-4" />
+            Stop Streaming
+          </Button>
+        ) : (
+          <Button onClick={handleStartStreaming}>
+            <Play className="w-4 h-4" />
+            Start Streaming
+          </Button>
+        );
+      case 'profiles':
+        return (
+          <Button onClick={() => alert('Create profile modal not yet implemented')}>
+            New Profile
+          </Button>
+        );
+      case 'targets':
+        return (
+          <Button onClick={() => alert('Add target modal not yet implemented')}>
+            Add Target
+          </Button>
+        );
+      case 'outputs':
+        return (
+          <Button onClick={() => alert('Create output group modal not yet implemented')}>
+            New Output Group
+          </Button>
+        );
+      default:
+        return null;
+    }
+  };
 
   return (
     <AppShell>
@@ -51,7 +187,7 @@ function App() {
               label="Profiles"
               active={currentView === 'profiles'}
               onClick={() => setCurrentView('profiles')}
-              badge={3}
+              badge={profileCount}
             />
             <NavItem
               icon={<Radio className="w-5 h-5" />}
@@ -102,132 +238,14 @@ function App() {
 
       <MainContent>
         <Header
-          title="Dashboard"
-          description="Overview of your streaming setup"
+          title={title}
+          description={description}
         >
-          <Button>Start Streaming</Button>
+          {renderHeaderActions()}
         </Header>
 
         <ContentArea>
-          <StatsRow>
-            <StatBox
-              icon={<Radio className="w-5 h-5" />}
-              label="Active Streams"
-              value={0}
-              change="Ready to start"
-            />
-            <StatBox
-              icon={<Activity className="w-5 h-5" />}
-              label="Total Bitrate"
-              value="0 kbps"
-              change="No active streams"
-            />
-            <StatBox
-              icon={<AlertTriangle className="w-5 h-5" />}
-              label="Dropped Frames"
-              value={0}
-              change="No issues"
-              changeType="positive"
-            />
-            <StatBox
-              icon={<Clock className="w-5 h-5" />}
-              label="Uptime"
-              value="00:00:00"
-              change="Not streaming"
-            />
-          </StatsRow>
-
-          <Grid cols={2} className="mb-6">
-            <Card>
-              <CardHeader>
-                <div>
-                  <CardTitle>Active Profile</CardTitle>
-                  <CardDescription>Currently selected streaming configuration</CardDescription>
-                </div>
-                <Button variant="ghost" size="sm">Change</Button>
-              </CardHeader>
-              <CardBody>
-                <ProfileCard
-                  name="Gaming Stream - High Quality"
-                  meta={[
-                    { icon: <Monitor className="w-4 h-4" />, label: '1080p60' },
-                    { icon: <Gauge className="w-4 h-4" />, label: '6000 kbps' },
-                    { icon: <TargetIcon className="w-4 h-4" />, label: '3 targets' },
-                  ]}
-                  active
-                />
-              </CardBody>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <div>
-                  <CardTitle>Quick Actions</CardTitle>
-                  <CardDescription>Common streaming operations</CardDescription>
-                </div>
-              </CardHeader>
-              <CardBody>
-                <Grid cols={2} gap="sm">
-                  <Button variant="outline" className="justify-start">
-                    New Profile
-                  </Button>
-                  <Button variant="outline" className="justify-start">
-                    Import Profile
-                  </Button>
-                  <Button variant="outline" className="justify-start">
-                    Add Target
-                  </Button>
-                  <Button variant="outline" className="justify-start">
-                    Test Stream
-                  </Button>
-                </Grid>
-              </CardBody>
-            </Card>
-          </Grid>
-
-          <Card>
-            <CardHeader>
-              <div>
-                <CardTitle>Stream Targets</CardTitle>
-                <CardDescription>Connected streaming platforms</CardDescription>
-              </div>
-              <Button variant="ghost" size="sm">Manage</Button>
-            </CardHeader>
-            <CardBody>
-              <Grid cols={3}>
-                <StreamCard
-                  platform="youtube"
-                  name="YouTube Gaming"
-                  status="offline"
-                  stats={[
-                    { label: 'Viewers', value: 0 },
-                    { label: 'Bitrate', value: '--' },
-                    { label: 'FPS', value: '--' },
-                  ]}
-                />
-                <StreamCard
-                  platform="twitch"
-                  name="Twitch"
-                  status="offline"
-                  stats={[
-                    { label: 'Viewers', value: 0 },
-                    { label: 'Bitrate', value: '--' },
-                    { label: 'FPS', value: '--' },
-                  ]}
-                />
-                <StreamCard
-                  platform="kick"
-                  name="Kick"
-                  status="offline"
-                  stats={[
-                    { label: 'Viewers', value: 0 },
-                    { label: 'Bitrate', value: '--' },
-                    { label: 'FPS', value: '--' },
-                  ]}
-                />
-              </Grid>
-            </CardBody>
-          </Card>
+          {renderView()}
         </ContentArea>
       </MainContent>
     </AppShell>
