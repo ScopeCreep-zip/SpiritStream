@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { Play, Square, Settings2, Activity, Gauge, Clock } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -12,40 +12,13 @@ import { formatUptime, formatBitrate } from '@/hooks/useStreamStats';
 import { toast } from '@/hooks/useToast';
 import type { View } from '@/App';
 import type { Platform } from '@/types/profile';
+import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValidation';
 
 interface StreamManagerProps {
   onNavigate: (view: View) => void;
 }
 
 export function StreamManager({ onNavigate }: StreamManagerProps) {
-  console.log('[StreamManager] Component rendering');
-
-  // Debug: Use ref to attach native DOM listener
-  const testButtonRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    // Native DOM click handler (bypasses React)
-    const btn = testButtonRef.current;
-    if (btn) {
-      const handler = () => {
-        alert('NATIVE DOM CLICK WORKS!');
-        console.log('[StreamManager] Native DOM click fired');
-      };
-      btn.addEventListener('click', handler);
-      console.log('[StreamManager] Native click listener attached to test button');
-      return () => btn.removeEventListener('click', handler);
-    }
-  }, []);
-
-  useEffect(() => {
-    const handleGlobalClick = (e: MouseEvent) => {
-      console.log('[StreamManager] Global click detected:', e.target);
-    };
-    document.addEventListener('click', handleGlobalClick);
-    console.log('[StreamManager] Component mounted, global click listener attached');
-    return () => document.removeEventListener('click', handleGlobalClick);
-  }, []);
-
   const { current, loading, error } = useProfileStore();
   const {
     isStreaming,
@@ -58,6 +31,8 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
     stopAllGroups,
     setTargetEnabled,
   } = useStreamStore();
+
+  const [isValidating, setIsValidating] = useState(false);
 
   // Enable all targets by default when profile changes
   useEffect(() => {
@@ -75,41 +50,33 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
   }, [current?.id]); // Re-run when profile changes
 
   const handleStartAll = async () => {
-    console.log('[StreamManager] handleStartAll called');
-    console.log('[StreamManager] current profile:', current);
-
     if (!current) {
-      console.log('[StreamManager] No current profile');
       return;
     }
 
-    // Validate incoming URL
-    if (!current.incomingUrl || current.incomingUrl.trim() === '') {
-      console.log('[StreamManager] Missing incoming URL');
-      toast.error('No incoming URL configured. Set an RTMP source URL in your profile.');
-      return;
-    }
-
-    // Validate we have stream targets
-    const hasTargets = current.outputGroups.some(g => g.streamTargets.length > 0);
-    if (!hasTargets) {
-      console.log('[StreamManager] No stream targets');
-      toast.error('No stream targets configured. Add at least one destination.');
-      return;
-    }
-
-    console.log('[StreamManager] Enabled targets:', [...enabledTargets]);
-    console.log('[StreamManager] Output groups:', current.outputGroups);
-    console.log('[StreamManager] Incoming URL:', current.incomingUrl);
+    setIsValidating(true);
 
     try {
-      console.log('[StreamManager] Calling startAllGroups...');
+      // Run comprehensive validation (including FFmpeg check)
+      const result = await validateStreamConfig(current, {
+        checkFfmpeg: true,
+        checkEnabledTargetsOnly: true,
+        enabledTargetIds: enabledTargets,
+      });
+
+      if (!result.valid) {
+        displayValidationIssues(result.issues, toast);
+        return;
+      }
+
+      // Validation passed, start streaming
       await startAllGroups(current.outputGroups, current.incomingUrl);
-      console.log('[StreamManager] startAllGroups completed successfully');
       toast.success('Streaming started');
     } catch (err) {
       console.error('[StreamManager] startAllGroups failed:', err);
       toast.error(`Failed to start streaming: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsValidating(false);
     }
   };
 
@@ -288,13 +255,6 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
           })}
 
           <div className="flex justify-end border-t border-[var(--border-muted)]" style={{ gap: '12px', paddingTop: '16px' }}>
-            <button
-              type="button"
-              onClick={() => alert('TEST CLICK')}
-              style={{ padding: '10px 20px', background: 'red', color: 'white', cursor: 'pointer' }}
-            >
-              TEST BUTTON
-            </button>
             <Button variant="outline" onClick={() => onNavigate('encoder')}>
               <Settings2 className="w-4 h-4" />
               Configure
@@ -305,9 +265,9 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
                 Stop All Streams
               </Button>
             ) : (
-              <Button onClick={() => { console.log('BUTTON CLICKED!'); handleStartAll(); }} disabled={isConnecting}>
+              <Button onClick={handleStartAll} disabled={isConnecting || isValidating}>
                 <Play className="w-4 h-4" />
-                {isConnecting ? 'Connecting...' : 'Start All Streams'}
+                {isValidating ? 'Validating...' : isConnecting ? 'Connecting...' : 'Start All Streams'}
               </Button>
             )}
           </div>

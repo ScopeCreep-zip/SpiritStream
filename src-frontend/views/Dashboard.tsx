@@ -14,6 +14,7 @@ import { useStreamStore } from '@/stores/streamStore';
 import { formatUptime, formatBitrate } from '@/hooks/useStreamStats';
 import { toast } from '@/hooks/useToast';
 import { api } from '@/lib/tauri';
+import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValidation';
 import type { View } from '@/App';
 import type { Platform, Profile } from '@/types/profile';
 
@@ -64,66 +65,19 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
     }
 
     setIsTesting(true);
-    const issues: string[] = [];
+    toast.info('Testing configuration...');
 
     try {
-      // Step 1: Test FFmpeg availability
-      toast.info('Testing FFmpeg...');
-      try {
-        const ffmpegVersion = await api.system.testFfmpeg();
-        if (!ffmpegVersion || ffmpegVersion.includes('not found')) {
-          issues.push('FFmpeg not found. Please install FFmpeg or set the path in Settings.');
-        }
-      } catch {
-        issues.push('FFmpeg not available. Please install FFmpeg.');
-      }
+      // Run comprehensive validation (test ALL targets, not just enabled)
+      const result = await validateStreamConfig(currentProfile, {
+        checkFfmpeg: true,
+        checkEnabledTargetsOnly: false,
+      });
 
-      // Step 2: Check incoming URL
-      if (!currentProfile.incomingUrl || currentProfile.incomingUrl.trim() === '') {
-        issues.push('No incoming URL configured. Set an RTMP source URL in your profile.');
-      }
-
-      // Step 3: Check output groups
-      if (currentProfile.outputGroups.length === 0) {
-        issues.push('No output groups configured.');
-      }
-
-      // Step 4: Check stream targets
-      const allTargets = currentProfile.outputGroups.flatMap(g => g.streamTargets);
-      if (allTargets.length === 0) {
-        issues.push('No stream targets configured. Add at least one destination.');
-      } else {
-        // Check each target has required fields
-        for (const target of allTargets) {
-          if (!target.url || target.url.trim() === '') {
-            issues.push(`Target "${target.name || 'Unnamed'}" has no URL.`);
-          }
-          if (!target.streamKey || target.streamKey.trim() === '') {
-            issues.push(`Target "${target.name || 'Unnamed'}" has no stream key.`);
-          }
-        }
-      }
-
-      // Step 5: Check encoder settings
-      for (const group of currentProfile.outputGroups) {
-        if (!group.videoEncoder) {
-          issues.push(`Output group "${group.name || 'Unnamed'}" has no video encoder set.`);
-        }
-        if (!group.resolution) {
-          issues.push(`Output group "${group.name || 'Unnamed'}" has no resolution set.`);
-        }
-      }
-
-      // Report results
-      if (issues.length === 0) {
+      if (result.valid) {
         toast.success('All checks passed! Your streaming configuration is valid.');
       } else {
-        // Show first 3 issues
-        const displayIssues = issues.slice(0, 3);
-        displayIssues.forEach(issue => toast.error(issue));
-        if (issues.length > 3) {
-          toast.error(`...and ${issues.length - 3} more issues`);
-        }
+        displayValidationIssues(result.issues, toast);
       }
     } catch (err) {
       toast.error(`Test failed: ${err instanceof Error ? err.message : 'Unknown error'}`);

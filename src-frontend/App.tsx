@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import {
   LayoutDashboard,
   Users,
@@ -28,6 +28,8 @@ import { useProfileStore } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
 import { useInitialize } from '@/hooks/useInitialize';
 import { useStreamStats } from '@/hooks/useStreamStats';
+import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValidation';
+import { toast } from '@/hooks/useToast';
 
 // Import all views
 import {
@@ -106,6 +108,9 @@ function App() {
   const [targetModalOpen, setTargetModalOpen] = useState(false);
   const [outputGroupModalOpen, setOutputGroupModalOpen] = useState(false);
 
+  // Streaming validation state
+  const [isValidating, setIsValidating] = useState(false);
+
   const { title, description } = viewMeta[currentView];
 
   // Count profiles for badge from store
@@ -115,8 +120,32 @@ function App() {
   const firstGroupId = current?.outputGroups[0]?.id || '';
 
   const handleStartStreaming = async () => {
-    if (!current || current.outputGroups.length === 0) return;
-    await startAllGroups(current.outputGroups, current.incomingUrl);
+    if (!current) return;
+
+    setIsValidating(true);
+
+    try {
+      // Run comprehensive validation (including FFmpeg check)
+      // Note: Header button validates ALL targets since we don't have per-target toggles here
+      const result = await validateStreamConfig(current, {
+        checkFfmpeg: true,
+        checkEnabledTargetsOnly: false,
+      });
+
+      if (!result.valid) {
+        displayValidationIssues(result.issues, toast);
+        return;
+      }
+
+      // Validation passed, start streaming
+      await startAllGroups(current.outputGroups, current.incomingUrl);
+      toast.success('Streaming started');
+    } catch (err) {
+      console.error('[App] startAllGroups failed:', err);
+      toast.error(`Failed to start streaming: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsValidating(false);
+    }
   };
 
   const handleStopStreaming = async () => {
@@ -174,9 +203,9 @@ function App() {
             Stop Streaming
           </Button>
         ) : (
-          <Button onClick={handleStartStreaming}>
+          <Button onClick={handleStartStreaming} disabled={isValidating || !current}>
             <Play className="w-4 h-4" />
-            Start Streaming
+            {isValidating ? 'Validating...' : 'Start Streaming'}
           </Button>
         );
       case 'profiles':
