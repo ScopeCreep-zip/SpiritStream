@@ -126,6 +126,20 @@ impl FFmpegHandler {
             }
         }
 
+        #[cfg(target_os = "linux")]
+        {
+            if std::path::Path::new("/usr/bin/ffmpeg").exists() {
+                return "/usr/bin/ffmpeg".to_string();
+            }
+            if std::path::Path::new("/usr/local/bin/ffmpeg").exists() {
+                return "/usr/local/bin/ffmpeg".to_string();
+            }
+            // Snap package location
+            if std::path::Path::new("/snap/bin/ffmpeg").exists() {
+                return "/snap/bin/ffmpeg".to_string();
+            }
+        }
+
         #[cfg(windows)]
         {
             // Check common Windows FFmpeg locations
@@ -134,10 +148,20 @@ impl FFmpegHandler {
             if ffmpeg_path.exists() {
                 return ffmpeg_path.to_string_lossy().to_string();
             }
+            // Also check common download location
+            let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
+            let ffmpeg_local = std::path::Path::new(&local_app_data).join("ffmpeg\\bin\\ffmpeg.exe");
+            if ffmpeg_local.exists() {
+                return ffmpeg_local.to_string_lossy().to_string();
+            }
         }
 
-        // Default
-        "ffmpeg".to_string()
+        // Default - rely on PATH
+        #[cfg(windows)]
+        { "ffmpeg.exe".to_string() }
+
+        #[cfg(not(windows))]
+        { "ffmpeg".to_string() }
     }
 
     /// Start streaming for an output group with stats monitoring

@@ -7,10 +7,23 @@ use crate::models::Encoders;
 /// Find FFmpeg path
 fn find_ffmpeg() -> String {
     // Try to find ffmpeg in PATH first
+    #[cfg(unix)]
     if let Ok(output) = Command::new("which").arg("ffmpeg").output() {
         if output.status.success() {
             if let Ok(path) = String::from_utf8(output.stdout) {
                 return path.trim().to_string();
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    if let Ok(output) = Command::new("where").arg("ffmpeg").output() {
+        if output.status.success() {
+            if let Ok(path) = String::from_utf8(output.stdout) {
+                // `where` can return multiple paths, take the first
+                if let Some(first_path) = path.lines().next() {
+                    return first_path.trim().to_string();
+                }
             }
         }
     }
@@ -26,7 +39,47 @@ fn find_ffmpeg() -> String {
         }
     }
 
-    "ffmpeg".to_string()
+    // Fallback to common locations on Linux
+    #[cfg(target_os = "linux")]
+    {
+        if std::path::Path::new("/usr/bin/ffmpeg").exists() {
+            return "/usr/bin/ffmpeg".to_string();
+        }
+        if std::path::Path::new("/usr/local/bin/ffmpeg").exists() {
+            return "/usr/local/bin/ffmpeg".to_string();
+        }
+        // Snap package location
+        if std::path::Path::new("/snap/bin/ffmpeg").exists() {
+            return "/snap/bin/ffmpeg".to_string();
+        }
+        // Flatpak location
+        if std::path::Path::new("/var/lib/flatpak/exports/bin/ffmpeg").exists() {
+            return "/var/lib/flatpak/exports/bin/ffmpeg".to_string();
+        }
+    }
+
+    // Fallback to common locations on Windows
+    #[cfg(windows)]
+    {
+        let program_files = std::env::var("ProgramFiles").unwrap_or_default();
+        let ffmpeg_path = std::path::Path::new(&program_files).join("ffmpeg\\bin\\ffmpeg.exe");
+        if ffmpeg_path.exists() {
+            return ffmpeg_path.to_string_lossy().to_string();
+        }
+        // Also check common download location
+        let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
+        let ffmpeg_local = std::path::Path::new(&local_app_data).join("ffmpeg\\bin\\ffmpeg.exe");
+        if ffmpeg_local.exists() {
+            return ffmpeg_local.to_string_lossy().to_string();
+        }
+    }
+
+    // Default - rely on PATH
+    #[cfg(windows)]
+    { "ffmpeg.exe".to_string() }
+
+    #[cfg(not(windows))]
+    { "ffmpeg".to_string() }
 }
 
 /// Get available video and audio encoders by querying FFmpeg

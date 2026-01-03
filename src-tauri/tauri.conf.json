@@ -29,12 +29,35 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "license": "../LICENSE",
+    "licenseFile": "../LICENSE",
+    "copyright": "Copyright (c) 2024-2025 MagillaStream Contributors",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "allowDowngrades": true
+    },
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      },
+      "deb": {
+        "depends": ["ffmpeg"]
+      },
+      "rpm": {
+        "depends": ["ffmpeg"]
+      }
+    },
+    "shortDescription": "Multi-destination streaming application",
+    "longDescription": "MagillaStream allows you to stream to multiple platforms simultaneously at different bitrates. Configure output groups with custom encoding settings and stream to YouTube, Twitch, Kick, Facebook, and custom RTMP servers.",
+    "category": "Video"
   }
 }
