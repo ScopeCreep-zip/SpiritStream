@@ -12,9 +12,3 @@ pub use stream::*;
 pub use system::*;
 pub use settings::*;
 pub use ffmpeg::*;
-
-/// Simple greet command for testing
-#[tauri::command]
-pub fn greet(name: &str) -> String {
-    format!("Hello, {}! Welcome to MagillaStream.", name)
-}

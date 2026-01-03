@@ -1,5 +1,5 @@
-import type { Profile, OutputGroup, StreamTarget } from './profile';
-import type { Encoders, StreamInfo } from './stream';
+import type { Profile, OutputGroup } from './profile';
+import type { Encoders } from './stream';
 
 /**
  * Tauri command result wrapper
@@ -8,44 +8,36 @@ export type TauriResult<T> = Promise<T>;
 
 /**
  * Profile API commands
+ * @see src-frontend/lib/tauri.ts for implementation
  */
 export interface ProfileAPI {
   getAll: () => TauriResult<string[]>;
   load: (name: string, password?: string) => TauriResult<Profile>;
   save: (profile: Profile, password?: string) => TauriResult<void>;
   delete: (name: string) => TauriResult<void>;
-  duplicate: (name: string, newName: string) => TauriResult<Profile>;
-  setActive: (id: string) => TauriResult<void>;
   isEncrypted: (name: string) => TauriResult<boolean>;
 }
 
 /**
  * Stream API commands
+ * @see src-frontend/lib/tauri.ts for implementation
  */
 export interface StreamAPI {
-  start: (group: OutputGroup, incomingUrl: string) => TauriResult<StreamInfo>;
+  start: (group: OutputGroup, incomingUrl: string) => TauriResult<number>;
   stop: (groupId: string) => TauriResult<void>;
   stopAll: () => TauriResult<void>;
-  getStatus: () => TauriResult<Record<string, StreamInfo>>;
-}
-
-/**
- * Target API commands
- */
-export interface TargetAPI {
-  add: (groupId: string, target: StreamTarget) => TauriResult<void>;
-  update: (groupId: string, targetId: string, target: Partial<StreamTarget>) => TauriResult<void>;
-  remove: (groupId: string, targetId: string) => TauriResult<void>;
+  getActiveCount: () => TauriResult<number>;
+  isGroupStreaming: (groupId: string) => TauriResult<boolean>;
+  getActiveGroupIds: () => TauriResult<string[]>;
 }
 
 /**
  * System API commands
+ * @see src-frontend/lib/tauri.ts for implementation
  */
 export interface SystemAPI {
   getEncoders: () => TauriResult<Encoders>;
   testFfmpeg: () => TauriResult<string>;
-  getFfmpegPath: () => TauriResult<string>;
-  getFfmpegVersion: () => TauriResult<string>;
 }
 
 /**
@@ -63,21 +55,23 @@ export interface AppSettings {
 
 /**
  * Settings API commands
+ * @see src-frontend/lib/tauri.ts for implementation
  */
 export interface SettingsAPI {
   get: () => TauriResult<AppSettings>;
   save: (settings: AppSettings) => TauriResult<void>;
-  exportData: () => TauriResult<string>;
+  getProfilesPath: () => TauriResult<string>;
+  exportData: (exportPath: string) => TauriResult<void>;
   clearData: () => TauriResult<void>;
 }
 
 /**
  * Complete API interface
+ * Note: Targets are managed via Profile mutations, not a separate API
  */
 export interface TauriAPI {
   profile: ProfileAPI;
   stream: StreamAPI;
-  target: TargetAPI;
   system: SystemAPI;
   settings: SettingsAPI;
 }

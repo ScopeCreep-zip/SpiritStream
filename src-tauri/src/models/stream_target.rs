@@ -45,16 +45,3 @@ pub enum Platform {
     Custom,
 }
 
-impl StreamTarget {
-    /// Create a new stream target
-    pub fn new(url: String, stream_key: String) -> Self {
-        Self {
-            id: uuid::Uuid::new_v4().to_string(),
-            url,
-            stream_key,
-            port: 1935,
-            platform: Platform::Custom,
-            name: String::new(),
-        }
-    }
-}

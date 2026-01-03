@@ -35,12 +35,17 @@ interface StreamState {
   uptime: number;
   globalStatus: StreamStatusType;
   error: string | null;
+  activeStreamCount: number; // Backend-verified active stream count
 
   // Async actions (Tauri integration)
   startGroup: (group: OutputGroup, incomingUrl: string) => Promise<void>;
   stopGroup: (groupId: string) => Promise<void>;
   startAllGroups: (groups: OutputGroup[], incomingUrl: string) => Promise<void>;
   stopAllGroups: () => Promise<void>;
+
+  // Backend sync actions
+  syncWithBackend: () => Promise<void>;
+  isGroupStreamingBackend: (groupId: string) => Promise<boolean>;
 
   // Sync actions
   setIsStreaming: (isStreaming: boolean) => void;
@@ -73,6 +78,39 @@ export const useStreamStore = create<StreamState>((set, get) => ({
   uptime: 0,
   globalStatus: 'offline' as StreamStatusType,
   error: null,
+  activeStreamCount: 0,
+
+  // Sync state with backend (useful on app startup or after potential desync)
+  syncWithBackend: async () => {
+    try {
+      const [activeCount, activeGroupIds] = await Promise.all([
+        api.stream.getActiveCount(),
+        api.stream.getActiveGroupIds(),
+      ]);
+
+      const activeGroups = new Set(activeGroupIds);
+      const isStreaming = activeCount > 0;
+
+      set({
+        activeStreamCount: activeCount,
+        activeGroups,
+        isStreaming,
+        globalStatus: isStreaming ? 'live' : 'offline',
+      });
+    } catch (error) {
+      console.error('[StreamStore] Failed to sync with backend:', error);
+    }
+  },
+
+  // Check if a specific group is streaming via backend
+  isGroupStreamingBackend: async (groupId: string) => {
+    try {
+      return await api.stream.isGroupStreaming(groupId);
+    } catch (error) {
+      console.error('[StreamStore] Failed to check group streaming status:', error);
+      return false;
+    }
+  },
 
   // Start streaming for a single output group
   startGroup: async (group, incomingUrl) => {
@@ -286,5 +324,6 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     uptime: 0,
     globalStatus: 'offline' as StreamStatusType,
     error: null,
+    activeStreamCount: 0,
   }),
 }));

@@ -2,7 +2,7 @@
 // Handles profile CRUD operations
 
 use tauri::State;
-use crate::models::{Profile, StreamTarget};
+use crate::models::Profile;
 use crate::services::ProfileManager;
 
 /// Get all profile names from the profiles directory
@@ -49,24 +49,4 @@ pub fn is_profile_encrypted(
     profile_manager: State<'_, ProfileManager>
 ) -> bool {
     profile_manager.is_encrypted(&name)
-}
-
-/// Create a new empty profile with the given name
-#[tauri::command]
-pub async fn create_profile(
-    name: String,
-    profile_manager: State<'_, ProfileManager>
-) -> Result<Profile, String> {
-    let profile = Profile::new(name);
-    profile_manager.save(&profile, None).await?;
-    Ok(profile)
-}
-
-/// Create a new stream target (returns a StreamTarget with generated ID)
-#[tauri::command]
-pub fn create_stream_target(
-    url: String,
-    stream_key: String,
-) -> StreamTarget {
-    StreamTarget::new(url, stream_key)
 }

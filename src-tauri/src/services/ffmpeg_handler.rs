@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -24,7 +25,15 @@ pub struct FFmpegHandler {
 }
 
 impl FFmpegHandler {
-    /// Create a new FFmpegHandler
+    /// Create a new FFmpegHandler with app data directory for bundled FFmpeg lookup
+    pub fn new_with_app_dir(app_data_dir: PathBuf) -> Self {
+        Self {
+            ffmpeg_path: Self::find_ffmpeg_with_bundled(app_data_dir),
+            processes: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    /// Create a new FFmpegHandler (legacy, without bundled FFmpeg support)
     pub fn new() -> Self {
         Self {
             ffmpeg_path: Self::find_ffmpeg(),
@@ -32,13 +41,64 @@ impl FFmpegHandler {
         }
     }
 
+    /// Normalize an RTMP URL for consistency
+    fn normalize_rtmp_url(url: &str) -> String {
+        let mut url = url.trim().to_string();
+
+        // Remove trailing slashes
+        while url.ends_with('/') {
+            url.pop();
+        }
+
+        // Ensure rtmp:// or rtmps:// prefix if missing
+        if !url.starts_with("rtmp://") && !url.starts_with("rtmps://") {
+            // Check if it looks like it should be rtmps (common rtmps ports or hosts)
+            if url.contains(":443") || url.contains("facebook.com") {
+                url = format!("rtmps://{}", url);
+            } else {
+                url = format!("rtmp://{}", url);
+            }
+        }
+
+        url
+    }
+
+    /// Find FFmpeg, checking bundled path first, then PATH/common locations
+    fn find_ffmpeg_with_bundled(app_data_dir: PathBuf) -> String {
+        // 1. Check for bundled/downloaded FFmpeg first
+        let ffmpeg_dir = app_data_dir.join("ffmpeg");
+        let binary_name = if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" };
+        let bundled_path = ffmpeg_dir.join(binary_name);
+
+        if bundled_path.exists() {
+            log::info!("Using bundled FFmpeg: {:?}", bundled_path);
+            return bundled_path.to_string_lossy().to_string();
+        }
+
+        // 2. Fall back to regular discovery
+        Self::find_ffmpeg()
+    }
+
     /// Find FFmpeg in PATH or common locations
     fn find_ffmpeg() -> String {
         // Try to find ffmpeg in PATH first
+        #[cfg(unix)]
         if let Ok(output) = Command::new("which").arg("ffmpeg").output() {
             if output.status.success() {
                 if let Ok(path) = String::from_utf8(output.stdout) {
                     return path.trim().to_string();
+                }
+            }
+        }
+
+        #[cfg(windows)]
+        if let Ok(output) = Command::new("where").arg("ffmpeg").output() {
+            if output.status.success() {
+                if let Ok(path) = String::from_utf8(output.stdout) {
+                    // `where` can return multiple paths, take the first
+                    if let Some(first_path) = path.lines().next() {
+                        return first_path.trim().to_string();
+                    }
                 }
             }
         }
@@ -51,6 +111,16 @@ impl FFmpegHandler {
             }
             if std::path::Path::new("/usr/local/bin/ffmpeg").exists() {
                 return "/usr/local/bin/ffmpeg".to_string();
+            }
+        }
+
+        #[cfg(windows)]
+        {
+            // Check common Windows FFmpeg locations
+            let program_files = std::env::var("ProgramFiles").unwrap_or_default();
+            let ffmpeg_path = std::path::Path::new(&program_files).join("ffmpeg\\bin\\ffmpeg.exe");
+            if ffmpeg_path.exists() {
+                return ffmpeg_path.to_string_lossy().to_string();
             }
         }
 
@@ -157,26 +227,6 @@ impl FFmpegHandler {
         let _ = app_handle.emit("stream_ended", &group_id);
     }
 
-    /// Start streaming without stats (for use without AppHandle)
-    pub fn start_simple(&self, group: &OutputGroup, incoming_url: &str) -> Result<u32, String> {
-        let args = self.build_args(group, incoming_url);
-
-        let child = Command::new(&self.ffmpeg_path)
-            .args(&args)
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("Failed to start FFmpeg: {}", e))?;
-
-        let pid = child.id();
-        self.processes.lock().unwrap().insert(group.id.clone(), ProcessInfo {
-            child,
-            start_time: Instant::now(),
-            group_id: group.id.clone(),
-        });
-
-        Ok(pid)
-    }
-
     /// Stop streaming for an output group
     pub fn stop(&self, group_id: &str) -> Result<(), String> {
         if let Some(mut info) = self.processes.lock().unwrap().remove(group_id) {
@@ -227,15 +277,57 @@ impl FFmpegHandler {
             "-stats".to_string(),
         ];
 
+        // Add encoder preset if specified
+        if let Some(preset) = &group.preset {
+            // Map user-friendly preset names to FFmpeg preset values
+            let ffmpeg_preset = match preset.as_str() {
+                "quality" => "slow",
+                "balanced" => "medium",
+                "performance" => "fast",
+                "low_latency" => "ultrafast",
+                _ => preset.as_str(), // Use as-is if already a valid FFmpeg preset
+            };
+            args.extend(["-preset".to_string(), ffmpeg_preset.to_string()]);
+        }
+
+        // Add rate control if specified
+        if let Some(rate_control) = &group.rate_control {
+            match rate_control.as_str() {
+                "cbr" => {
+                    // Constant bitrate: set max and min equal to target
+                    args.extend([
+                        "-maxrate".to_string(), format!("{}k", group.video_bitrate),
+                        "-minrate".to_string(), format!("{}k", group.video_bitrate),
+                        "-bufsize".to_string(), format!("{}k", group.video_bitrate * 2),
+                    ]);
+                }
+                "vbr" => {
+                    // Variable bitrate: use CRF quality mode with bitrate hint
+                    // Allow 50% overshoot, buffer at 2x bitrate
+                    args.extend([
+                        "-maxrate".to_string(), format!("{}k", (group.video_bitrate as f32 * 1.5) as u32),
+                        "-bufsize".to_string(), format!("{}k", group.video_bitrate * 2),
+                    ]);
+                }
+                "cqp" => {
+                    // Constant quality (QP mode) - only for hardware encoders
+                    // Default to QP 23 which is roughly equivalent to CRF 23
+                    args.extend(["-qp".to_string(), "23".to_string()]);
+                }
+                _ => {} // Unknown rate control, skip
+            }
+        }
+
         if group.generate_pts {
             args.extend(["-fflags".to_string(), "+genpts".to_string()]);
         }
 
         // Add output targets
         for target in &group.stream_targets {
+            let normalized_url = Self::normalize_rtmp_url(&target.url);
             args.extend([
                 "-f".to_string(), "flv".to_string(),
-                format!("{}/{}", target.url, target.stream_key),
+                format!("{}/{}", normalized_url, target.stream_key),
             ]);
         }
 

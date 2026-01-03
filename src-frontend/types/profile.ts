@@ -28,16 +28,9 @@ export interface OutputGroup {
   audioCodec: string;
   audioBitrate: number;
   generatePts: boolean;
+  preset?: string;       // e.g., "ultrafast", "fast", "medium", "slow"
+  rateControl?: string;  // e.g., "cbr", "vbr", "cqp"
   streamTargets: StreamTarget[];
-}
-
-/**
- * Theme customization
- */
-export interface Theme {
-  name: string;
-  primaryColor?: string;
-  accentColor?: string;
 }
 
 /**
@@ -48,7 +41,6 @@ export interface Profile {
   name: string;
   incomingUrl: string;
   outputGroups: OutputGroup[];
-  theme?: Theme;
 }
 
 /**

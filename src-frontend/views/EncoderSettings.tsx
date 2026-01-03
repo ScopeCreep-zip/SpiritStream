@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { Input } from '@/components/ui/Input';
 import { useProfileStore } from '@/stores/profileStore';
+import { api } from '@/lib/tauri';
+import type { Encoders } from '@/types/stream';
 
 interface EncoderFormData {
   encoder: string;
@@ -33,6 +35,30 @@ export function EncoderSettings() {
   const [formData, setFormData] = useState<EncoderFormData>(defaultSettings);
   const [isDirty, setIsDirty] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [availableEncoders, setAvailableEncoders] = useState<Encoders>({ video: [], audio: [] });
+  const [loadingEncoders, setLoadingEncoders] = useState(true);
+
+  // Fetch available encoders from backend on mount
+  useEffect(() => {
+    const fetchEncoders = async () => {
+      try {
+        setLoadingEncoders(true);
+        const encoders = await api.system.getEncoders();
+        setAvailableEncoders(encoders);
+      } catch (err) {
+        console.error('[EncoderSettings] Failed to fetch encoders:', err);
+        // Fallback to common encoders if detection fails
+        setAvailableEncoders({
+          video: ['libx264'],
+          audio: ['aac'],
+        });
+      } finally {
+        setLoadingEncoders(false);
+      }
+    };
+
+    fetchEncoders();
+  }, []);
 
   // Load settings from first output group (or selected group)
   useEffect(() => {
@@ -45,8 +71,8 @@ export function EncoderSettings() {
         setSelectedGroupId(group.id);
         setFormData({
           encoder: group.videoEncoder,
-          preset: 'balanced', // Not stored in current model
-          rateControl: 'cbr', // Not stored in current model
+          preset: group.preset || 'balanced',
+          rateControl: group.rateControl || 'cbr',
           resolution: group.resolution,
           frameRate: group.fps.toString(),
           videoBitrate: group.videoBitrate.toString(),
@@ -74,6 +100,8 @@ export function EncoderSettings() {
         resolution: formData.resolution,
         fps: parseInt(formData.frameRate),
         videoBitrate: parseInt(formData.videoBitrate),
+        preset: formData.preset,
+        rateControl: formData.rateControl,
       });
       setIsDirty(false);
     }
@@ -109,12 +137,28 @@ export function EncoderSettings() {
     );
   }
 
-  const encoderOptions = [
-    { value: 'libx264', label: t('encoder.encoders.libx264') },
-    { value: 'h264_nvenc', label: t('encoder.encoders.h264_nvenc') },
-    { value: 'h264_qsv', label: t('encoder.encoders.h264_qsv') },
-    { value: 'h264_amf', label: t('encoder.encoders.h264_amf') },
-  ];
+  // Build encoder options from detected encoders
+  const getEncoderLabel = (encoder: string): string => {
+    // Map common encoder names to user-friendly labels
+    const labels: Record<string, string> = {
+      'libx264': 'x264 (Software)',
+      'h264_nvenc': 'NVIDIA NVENC',
+      'h264_qsv': 'Intel QuickSync',
+      'h264_amf': 'AMD AMF',
+      'libx265': 'x265 (Software)',
+      'hevc_nvenc': 'NVIDIA NVENC (HEVC)',
+      'hevc_qsv': 'Intel QuickSync (HEVC)',
+      'hevc_amf': 'AMD AMF (HEVC)',
+    };
+    return labels[encoder] || encoder;
+  };
+
+  const encoderOptions = loadingEncoders
+    ? [{ value: formData.encoder, label: t('common.loading') }]
+    : availableEncoders.video.map(enc => ({
+        value: enc,
+        label: getEncoderLabel(enc),
+      }));
 
   const presetOptions = [
     { value: 'quality', label: t('encoder.presets.quality') },

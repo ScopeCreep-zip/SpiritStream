@@ -23,6 +23,7 @@ pub struct DownloadProgress {
 
 /// Errors that can occur during FFmpeg download
 #[derive(Error, Debug)]
+#[allow(dead_code)] // Some variants are only used on specific platforms
 pub enum DownloadError {
     #[error("Network error: {0}")]
     Network(#[from] reqwest::Error),
@@ -35,9 +36,6 @@ pub enum DownloadError {
 
     #[error("Download cancelled")]
     Cancelled,
-
-    #[error("Checksum verification failed")]
-    ChecksumMismatch,
 
     #[error("Archive extraction failed: {0}")]
     ExtractionFailed(String),
@@ -53,6 +51,7 @@ struct PlatformDownload {
     binary_path: &'static str,
 }
 
+#[allow(dead_code)] // Variants are used on specific platforms only
 enum ArchiveType {
     Zip,
     TarXz,

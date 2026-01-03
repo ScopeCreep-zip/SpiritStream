@@ -27,8 +27,8 @@ interface DashboardProps {
 
 export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }: DashboardProps) {
   const { t } = useTranslation();
-  const { current: currentProfile, loading, error, saveProfile, loadProfiles } = useProfileStore();
-  const { isStreaming, stats, uptime, globalStatus, startAllGroups, stopAllGroups } = useStreamStore();
+  const { current: currentProfile, loading, error, loadProfiles } = useProfileStore();
+  const { isStreaming, stats, uptime, globalStatus, activeStreamCount } = useStreamStore();
   const [isTesting, setIsTesting] = useState(false);
 
   // Import profile from JSON file
@@ -101,8 +101,8 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
 
   const targets = getAllTargets();
 
-  // Calculate active streams count
-  const activeStreamsCount = isStreaming ? targets.length : 0;
+  // Use backend-verified active stream count, fallback to local calculation
+  const displayActiveCount = activeStreamCount > 0 ? activeStreamCount : (isStreaming ? targets.length : 0);
 
   if (loading) {
     return (
@@ -126,7 +126,7 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
         <StatBox
           icon={<Radio className="w-5 h-5" />}
           label={t('dashboard.activeStreams')}
-          value={activeStreamsCount}
+          value={displayActiveCount}
           change={isStreaming ? t('status.streaming') : t('status.readyToStart')}
           changeType={isStreaming ? 'positive' : 'neutral'}
         />

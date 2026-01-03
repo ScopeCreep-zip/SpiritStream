@@ -35,8 +35,8 @@ pub fn run() {
             let profile_manager = ProfileManager::new(app_data_dir.clone());
             app.manage(profile_manager);
 
-            // Register FFmpegHandler as managed state
-            let ffmpeg_handler = FFmpegHandler::new();
+            // Register FFmpegHandler as managed state (with bundled FFmpeg support)
+            let ffmpeg_handler = FFmpegHandler::new_with_app_dir(app_data_dir.clone());
             app.manage(ffmpeg_handler);
 
             // Register SettingsManager as managed state
@@ -52,22 +52,18 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            commands::greet,
             // Profile commands
             commands::get_all_profiles,
             commands::load_profile,
             commands::save_profile,
             commands::delete_profile,
             commands::is_profile_encrypted,
-            commands::create_profile,
-            commands::create_stream_target,
             // Stream commands
             commands::start_stream,
             commands::stop_stream,
             commands::stop_all_streams,
             commands::get_active_stream_count,
             commands::is_group_streaming,
-            commands::start_stream_simple,
             commands::get_active_group_ids,
             // System commands
             commands::get_encoders,

@@ -132,6 +132,16 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         );
         set({ profiles: summaries });
       }
+
+      // Save as last used profile
+      try {
+        const settings = await api.settings.get();
+        if (settings.lastProfile !== name) {
+          await api.settings.save({ ...settings, lastProfile: name });
+        }
+      } catch (settingsError) {
+        console.warn('[ProfileStore] Failed to save last profile:', settingsError);
+      }
     } catch (error) {
       const errorMsg = String(error);
       // If password was wrong, set password error

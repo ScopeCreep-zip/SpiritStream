@@ -104,34 +104,33 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
   }, [open, mode, group]);
 
   // Create encoder options from loaded encoders with translations
+  // Use type assertion to bypass strict i18n key checking for dynamic keys
+  const tDynamic = t as (key: string, options?: { defaultValue: string }) => string;
+
   const videoEncoderOptions: SelectOption[] = encoders.video.map((enc) => {
-    // Use translation keys for known encoders, fallback to raw name
-    const translationKey = `encoder.encoders.${enc}`;
-    const translated = t(translationKey);
-    return { value: enc, label: translated !== translationKey ? translated : enc };
+    const label = tDynamic(`encoder.encoders.${enc}`, { defaultValue: enc });
+    return { value: enc, label };
   });
 
   const audioEncoderOptions: SelectOption[] = encoders.audio.map((enc) => {
-    // Use translation keys for known audio codecs
-    const translationKey = `audio.codecs.${enc}`;
-    const translated = t(translationKey);
-    return { value: enc, label: translated !== translationKey ? translated : enc };
+    const label = tDynamic(`audio.codecs.${enc}`, { defaultValue: enc });
+    return { value: enc, label };
   });
 
   // Create translated options arrays
   const resolutionOptions: SelectOption[] = RESOLUTION_VALUES.map((value) => ({
     value,
-    label: t(`encoder.resolutions.${value}`),
+    label: tDynamic(`encoder.resolutions.${value}`, { defaultValue: value }),
   }));
 
   const fpsOptions: SelectOption[] = FPS_VALUES.map((value) => ({
     value,
-    label: t(`encoder.frameRates.${value}`),
+    label: tDynamic(`encoder.frameRates.${value}`, { defaultValue: `${value} fps` }),
   }));
 
   const audioBitrateOptions: SelectOption[] = AUDIO_BITRATE_VALUES.map((value) => ({
     value,
-    label: t(`audio.bitrates.${value}`),
+    label: tDynamic(`audio.bitrates.${value}`, { defaultValue: `${value} kbps` }),
   }));
 
   const validate = (): boolean => {

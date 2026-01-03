@@ -50,16 +50,6 @@ pub fn is_group_streaming(
     ffmpeg_handler.is_streaming(&group_id)
 }
 
-/// Start streaming without real-time stats (simpler, for testing)
-#[tauri::command]
-pub async fn start_stream_simple(
-    group: OutputGroup,
-    incoming_url: String,
-    ffmpeg_handler: State<'_, FFmpegHandler>
-) -> Result<u32, String> {
-    ffmpeg_handler.start_simple(&group, &incoming_url)
-}
-
 /// Get list of active stream group IDs
 #[tauri::command]
 pub fn get_active_group_ids(

@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { Profile, OutputGroup, StreamTarget } from '@/types/profile';
+import type { Profile, OutputGroup } from '@/types/profile';
 import type { Encoders } from '@/types/stream';
 import type { AppSettings } from '@/types/api';
 
@@ -15,15 +15,10 @@ export const api = {
       invoke<void>('save_profile', { profile, password }),
     delete: (name: string) => invoke<void>('delete_profile', { name }),
     isEncrypted: (name: string) => invoke<boolean>('is_profile_encrypted', { name }),
-    create: (name: string) => invoke<Profile>('create_profile', { name }),
-    createStreamTarget: (url: string, streamKey: string) =>
-      invoke<StreamTarget>('create_stream_target', { url, streamKey }),
   },
   stream: {
     start: (group: OutputGroup, incomingUrl: string) =>
       invoke<number>('start_stream', { group, incomingUrl }),
-    startSimple: (group: OutputGroup, incomingUrl: string) =>
-      invoke<number>('start_stream_simple', { group, incomingUrl }),
     stop: (groupId: string) => invoke<void>('stop_stream', { groupId }),
     stopAll: () => invoke<void>('stop_all_streams'),
     getActiveCount: () => invoke<number>('get_active_stream_count'),
@@ -33,7 +28,6 @@ export const api = {
   system: {
     getEncoders: () => invoke<Encoders>('get_encoders'),
     testFfmpeg: () => invoke<string>('test_ffmpeg'),
-    greet: (name: string) => invoke<string>('greet', { name }),
   },
   settings: {
     get: () => invoke<AppSettings>('get_settings'),

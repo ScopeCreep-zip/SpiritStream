@@ -36,6 +36,14 @@ pub struct OutputGroup {
     /// Whether to generate PTS timestamps
     pub generate_pts: bool,
 
+    /// Encoder preset (e.g., "ultrafast", "fast", "medium", "slow")
+    #[serde(default)]
+    pub preset: Option<String>,
+
+    /// Rate control mode (e.g., "cbr", "vbr", "cqp")
+    #[serde(default)]
+    pub rate_control: Option<String>,
+
     /// Stream destinations
     pub stream_targets: Vec<StreamTarget>,
 }
@@ -53,6 +61,8 @@ impl OutputGroup {
             audio_codec: "aac".to_string(),
             audio_bitrate: 128,
             generate_pts: false,
+            preset: None,
+            rate_control: None,
             stream_targets: Vec::new(),
         }
     }
