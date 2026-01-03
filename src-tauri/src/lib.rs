@@ -53,7 +53,7 @@ pub fn run() {
             let ffmpeg_downloader = FFmpegDownloaderState(Arc::new(Mutex::new(FFmpegDownloader::new())));
             app.manage(ffmpeg_downloader);
 
-            log::info!("SpiritStream initialized. Data dir: {:?}", app_data_dir);
+            log::info!("SpiritStream initialized. Data dir: {app_data_dir:?}");
 
             Ok(())
         })
@@ -95,7 +95,7 @@ pub fn run() {
                 log::info!("Application exiting, stopping all FFmpeg processes...");
                 if let Some(handler) = app_handle.try_state::<FFmpegHandler>() {
                     if let Err(e) = handler.stop_all() {
-                        log::error!("Failed to stop FFmpeg processes: {}", e);
+                        log::error!("Failed to stop FFmpeg processes: {e}");
                     } else {
                         log::info!("All FFmpeg processes stopped successfully");
                     }

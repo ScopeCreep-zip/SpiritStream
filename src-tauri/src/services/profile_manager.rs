@@ -32,15 +32,13 @@ impl ProfileManager {
         let entries = std::fs::read_dir(&self.profiles_dir)
             .map_err(|e| e.to_string())?;
 
-        for entry in entries {
-            if let Ok(entry) = entry {
-                let path = entry.path();
-                if let Some(name) = path.file_stem() {
-                    // Accept both .json (unencrypted) and .mgs (encrypted) files
-                    let ext = path.extension().and_then(|e| e.to_str());
-                    if ext == Some("json") || ext == Some("mgs") {
-                        names.push(name.to_string_lossy().to_string());
-                    }
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(name) = path.file_stem() {
+                // Accept both .json (unencrypted) and .mgs (encrypted) files
+                let ext = path.extension().and_then(|e| e.to_str());
+                if ext == Some("json") || ext == Some("mgs") {
+                    names.push(name.to_string_lossy().to_string());
                 }
             }
         }
@@ -83,13 +81,13 @@ impl ProfileManager {
     /// If no password, will try unencrypted first, then fail if encrypted
     pub async fn load(&self, name: &str, password: Option<&str>) -> Result<Profile, String> {
         // Try encrypted file first (if password provided)
-        let encrypted_path = self.profiles_dir.join(format!("{}.mgs", name));
-        let json_path = self.profiles_dir.join(format!("{}.json", name));
+        let encrypted_path = self.profiles_dir.join(format!("{name}.mgs"));
+        let json_path = self.profiles_dir.join(format!("{name}.json"));
 
         // Check if encrypted version exists
         if encrypted_path.exists() {
             let data = std::fs::read(&encrypted_path)
-                .map_err(|e| format!("Failed to read profile: {}", e))?;
+                .map_err(|e| format!("Failed to read profile: {e}"))?;
 
             // Verify magic bytes
             if data.len() < ENCRYPTED_MAGIC.len() || &data[..ENCRYPTED_MAGIC.len()] != ENCRYPTED_MAGIC {
@@ -104,53 +102,53 @@ impl ProfileManager {
 
             // Parse JSON
             let content = String::from_utf8(decrypted)
-                .map_err(|e| format!("Invalid UTF-8 in decrypted profile: {}", e))?;
+                .map_err(|e| format!("Invalid UTF-8 in decrypted profile: {e}"))?;
 
             return serde_json::from_str(&content)
-                .map_err(|e| format!("Failed to parse profile: {}", e));
+                .map_err(|e| format!("Failed to parse profile: {e}"));
         }
 
         // Try unencrypted JSON file
         if json_path.exists() {
             let content = std::fs::read_to_string(&json_path)
-                .map_err(|e| format!("Failed to read profile: {}", e))?;
+                .map_err(|e| format!("Failed to read profile: {e}"))?;
 
             return serde_json::from_str(&content)
-                .map_err(|e| format!("Failed to parse profile: {}", e));
+                .map_err(|e| format!("Failed to parse profile: {e}"));
         }
 
-        Err(format!("Profile '{}' not found", name))
+        Err(format!("Profile '{name}' not found"))
     }
 
     /// Delete a profile by name (both encrypted and unencrypted versions)
     pub async fn delete(&self, name: &str) -> Result<(), String> {
-        let json_path = self.profiles_dir.join(format!("{}.json", name));
-        let mgs_path = self.profiles_dir.join(format!("{}.mgs", name));
+        let json_path = self.profiles_dir.join(format!("{name}.json"));
+        let mgs_path = self.profiles_dir.join(format!("{name}.mgs"));
 
         let mut deleted = false;
 
         if json_path.exists() {
             std::fs::remove_file(&json_path)
-                .map_err(|e| format!("Failed to delete profile: {}", e))?;
+                .map_err(|e| format!("Failed to delete profile: {e}"))?;
             deleted = true;
         }
 
         if mgs_path.exists() {
             std::fs::remove_file(&mgs_path)
-                .map_err(|e| format!("Failed to delete encrypted profile: {}", e))?;
+                .map_err(|e| format!("Failed to delete encrypted profile: {e}"))?;
             deleted = true;
         }
 
         if deleted {
             Ok(())
         } else {
-            Err(format!("Profile '{}' not found", name))
+            Err(format!("Profile '{name}' not found"))
         }
     }
 
     /// Check if a profile is encrypted
     pub fn is_encrypted(&self, name: &str) -> bool {
-        let mgs_path = self.profiles_dir.join(format!("{}.mgs", name));
+        let mgs_path = self.profiles_dir.join(format!("{name}.mgs"));
         mgs_path.exists()
     }
 
@@ -235,7 +233,7 @@ impl ProfileManager {
 
         // Serialize to JSON
         let content = serde_json::to_string_pretty(&profile_to_save)
-            .map_err(|e| format!("Failed to serialize profile: {}", e))?;
+            .map_err(|e| format!("Failed to serialize profile: {e}"))?;
 
         if let Some(pwd) = password {
             // Encrypt and save as .mgs file
@@ -248,7 +246,7 @@ impl ProfileManager {
 
             let path = self.profiles_dir.join(format!("{}.mgs", profile.name));
             std::fs::write(&path, data)
-                .map_err(|e| format!("Failed to write encrypted profile: {}", e))?;
+                .map_err(|e| format!("Failed to write encrypted profile: {e}"))?;
 
             // Remove unencrypted version if it exists
             let json_path = self.profiles_dir.join(format!("{}.json", profile.name));
@@ -259,7 +257,7 @@ impl ProfileManager {
             // Save as unencrypted JSON
             let path = self.profiles_dir.join(format!("{}.json", profile.name));
             std::fs::write(&path, content)
-                .map_err(|e| format!("Failed to write profile: {}", e))?;
+                .map_err(|e| format!("Failed to write profile: {e}"))?;
 
             // Remove encrypted version if it exists
             let mgs_path = self.profiles_dir.join(format!("{}.mgs", profile.name));

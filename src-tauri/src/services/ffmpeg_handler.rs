@@ -30,7 +30,7 @@ impl FFmpegHandler {
     pub fn new_with_custom_path(app_data_dir: PathBuf, custom_path: Option<String>) -> Self {
         let ffmpeg_path = match custom_path {
             Some(ref path) if !path.is_empty() && std::path::Path::new(path).exists() => {
-                log::info!("Using custom FFmpeg path from settings: {}", path);
+                log::info!("Using custom FFmpeg path from settings: {path}");
                 path.clone()
             }
             _ => {
@@ -66,9 +66,9 @@ impl FFmpegHandler {
         if !url.starts_with("rtmp://") && !url.starts_with("rtmps://") {
             // Check if it looks like it should be rtmps (common rtmps ports or hosts)
             if url.contains(":443") || url.contains("facebook.com") {
-                url = format!("rtmps://{}", url);
+                url = format!("rtmps://{url}");
             } else {
-                url = format!("rtmp://{}", url);
+                url = format!("rtmp://{url}");
             }
         }
 
@@ -83,7 +83,7 @@ impl FFmpegHandler {
         let bundled_path = ffmpeg_dir.join(binary_name);
 
         if bundled_path.exists() {
-            log::info!("Using bundled FFmpeg: {:?}", bundled_path);
+            log::info!("Using bundled FFmpeg: {bundled_path:?}");
             return bundled_path.to_string_lossy().to_string();
         }
 
@@ -179,7 +179,7 @@ impl FFmpegHandler {
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|e| format!("Failed to start FFmpeg: {}", e))?;
+            .map_err(|e| format!("Failed to start FFmpeg: {e}"))?;
 
         let pid = child.id();
         let group_id = group.id.clone();
@@ -191,7 +191,7 @@ impl FFmpegHandler {
         // Store process info
         {
             let mut processes = self.processes.lock()
-                .map_err(|e| format!("Lock poisoned: {}", e))?;
+                .map_err(|e| format!("Lock poisoned: {e}"))?;
             processes.insert(group_id.clone(), ProcessInfo {
                 child,
                 start_time: Instant::now(),
@@ -261,7 +261,7 @@ impl FFmpegHandler {
 
                 // Only log errors and warnings (not frame stats which are too verbose)
                 if line.contains("[error]") || line.contains("[warning]") {
-                    log::warn!("[FFmpeg:{}] {}", group_id, line);
+                    log::warn!("[FFmpeg:{group_id}] {line}");
                 }
             }
         }
@@ -300,7 +300,7 @@ impl FFmpegHandler {
                 Some(status) => {
                     // FFmpeg exited with error
                     let code = status.code().unwrap_or(-1);
-                    Some(format!("FFmpeg exited with code {}", code))
+                    Some(format!("FFmpeg exited with code {code}"))
                 }
                 None => {
                     // Couldn't get exit status
@@ -309,7 +309,7 @@ impl FFmpegHandler {
             };
 
             if let Some(error) = error_message {
-                log::warn!("[FFmpeg:{}] Stream error: {}", group_id, error);
+                log::warn!("[FFmpeg:{group_id}] Stream error: {error}");
                 // Emit stream_error event with group_id and error message
                 let _ = app_handle.emit("stream_error", serde_json::json!({
                     "groupId": group_id,
@@ -325,11 +325,11 @@ impl FFmpegHandler {
     /// Stop streaming for an output group
     pub fn stop(&self, group_id: &str) -> Result<(), String> {
         if let Some(mut info) = self.processes.lock()
-            .map_err(|e| format!("Lock poisoned: {}", e))?
+            .map_err(|e| format!("Lock poisoned: {e}"))?
             .remove(group_id)
         {
-            info.child.kill().map_err(|e| format!("Failed to kill FFmpeg: {}", e))?;
-            info.child.wait().map_err(|e| format!("Failed to wait for FFmpeg: {}", e))?;
+            info.child.kill().map_err(|e| format!("Failed to kill FFmpeg: {e}"))?;
+            info.child.wait().map_err(|e| format!("Failed to wait for FFmpeg: {e}"))?;
         }
         Ok(())
     }
@@ -337,7 +337,7 @@ impl FFmpegHandler {
     /// Stop all active streams
     pub fn stop_all(&self) -> Result<(), String> {
         let mut processes = self.processes.lock()
-            .map_err(|e| format!("Lock poisoned: {}", e))?;
+            .map_err(|e| format!("Lock poisoned: {e}"))?;
         for (_, mut info) in processes.drain() {
             let _ = info.child.kill();
             let _ = info.child.wait();
@@ -373,11 +373,11 @@ impl FFmpegHandler {
             let var_name = &key[2..key.len()-1];
             match std::env::var(var_name) {
                 Ok(value) => {
-                    log::debug!("Resolved stream key from env var: {}", var_name);
+                    log::debug!("Resolved stream key from env var: {var_name}");
                     value
                 }
                 Err(_) => {
-                    log::warn!("Environment variable {} not found, using literal key", var_name);
+                    log::warn!("Environment variable {var_name} not found, using literal key");
                     key.to_string()
                 }
             }
@@ -429,7 +429,7 @@ impl FFmpegHandler {
             let resolved_key = Self::resolve_stream_key(&target.stream_key);
             args.extend([
                 "-f".to_string(), group.container.format.clone(),
-                format!("{}/{}", normalized_url, resolved_key),
+                format!("{normalized_url}/{resolved_key}"),
             ]);
         }
 

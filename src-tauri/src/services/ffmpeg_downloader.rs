@@ -2,7 +2,7 @@
 // Downloads and extracts FFmpeg for the current platform
 
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -171,7 +171,7 @@ impl FFmpegDownloader {
         self.emit_progress(app_handle, 0, 0, 0.0, "starting");
 
         // Download the file
-        self.download_file(&platform.url, &temp_path, app_handle).await?;
+        self.download_file(platform.url, &temp_path, app_handle).await?;
 
         if self.is_cancelled() {
             return Err(DownloadError::Cancelled);
@@ -209,7 +209,7 @@ impl FFmpegDownloader {
         // Emit completion
         self.emit_progress(app_handle, 100, 100, 100.0, "complete");
 
-        log::info!("FFmpeg downloaded successfully to: {:?}", ffmpeg_path);
+        log::info!("FFmpeg downloaded successfully to: {ffmpeg_path:?}");
         Ok(ffmpeg_path)
     }
 
@@ -220,7 +220,7 @@ impl FFmpegDownloader {
         dest: &PathBuf,
         app_handle: &AppHandle,
     ) -> Result<(), DownloadError> {
-        log::info!("Downloading FFmpeg from: {}", url);
+        log::info!("Downloading FFmpeg from: {url}");
 
         let response = self.client
             .get(url)
@@ -253,19 +253,19 @@ impl FFmpegDownloader {
         }
 
         file.flush()?;
-        log::info!("Download complete: {} bytes", downloaded);
+        log::info!("Download complete: {downloaded} bytes");
         Ok(())
     }
 
     /// Extract archive and return path to FFmpeg binary
     fn extract_archive(
         &self,
-        archive_path: &PathBuf,
-        dest_dir: &PathBuf,
+        archive_path: &Path,
+        dest_dir: &Path,
         archive_type: &ArchiveType,
         binary_path: &str,
     ) -> Result<PathBuf, DownloadError> {
-        log::info!("Extracting archive to: {:?}", dest_dir);
+        log::info!("Extracting archive to: {dest_dir:?}");
 
         match archive_type {
             ArchiveType::Zip => self.extract_zip(archive_path, dest_dir, binary_path),
@@ -277,8 +277,8 @@ impl FFmpegDownloader {
     /// Extract ZIP archive
     fn extract_zip(
         &self,
-        archive_path: &PathBuf,
-        dest_dir: &PathBuf,
+        archive_path: &Path,
+        dest_dir: &Path,
         _binary_path: &str,
     ) -> Result<PathBuf, DownloadError> {
         let file = std::fs::File::open(archive_path)?;
@@ -301,7 +301,7 @@ impl FFmpegDownloader {
                 let mut outfile = std::fs::File::create(&dest_path)?;
                 std::io::copy(&mut file, &mut outfile)?;
 
-                log::info!("Extracted FFmpeg binary to: {:?}", dest_path);
+                log::info!("Extracted FFmpeg binary to: {dest_path:?}");
                 return Ok(dest_path);
             }
         }
@@ -318,8 +318,8 @@ impl FFmpegDownloader {
     /// Extract TAR.XZ archive
     fn extract_tar_xz(
         &self,
-        archive_path: &PathBuf,
-        dest_dir: &PathBuf,
+        archive_path: &Path,
+        dest_dir: &Path,
         _binary_path: &str,
     ) -> Result<PathBuf, DownloadError> {
         let file = std::fs::File::open(archive_path)?;
@@ -338,7 +338,7 @@ impl FFmpegDownloader {
                 let mut outfile = std::fs::File::create(&dest_path)?;
                 std::io::copy(&mut entry, &mut outfile)?;
 
-                log::info!("Extracted FFmpeg binary to: {:?}", dest_path);
+                log::info!("Extracted FFmpeg binary to: {dest_path:?}");
                 return Ok(dest_path);
             }
         }
@@ -349,8 +349,8 @@ impl FFmpegDownloader {
     /// Extract TAR.GZ archive
     fn extract_tar_gz(
         &self,
-        archive_path: &PathBuf,
-        dest_dir: &PathBuf,
+        archive_path: &Path,
+        dest_dir: &Path,
         _binary_path: &str,
     ) -> Result<PathBuf, DownloadError> {
         let file = std::fs::File::open(archive_path)?;
@@ -369,7 +369,7 @@ impl FFmpegDownloader {
                 let mut outfile = std::fs::File::create(&dest_path)?;
                 std::io::copy(&mut entry, &mut outfile)?;
 
-                log::info!("Extracted FFmpeg binary to: {:?}", dest_path);
+                log::info!("Extracted FFmpeg binary to: {dest_path:?}");
                 return Ok(dest_path);
             }
         }

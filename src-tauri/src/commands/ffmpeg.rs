@@ -22,11 +22,11 @@ pub async fn download_ffmpeg(
 
     match downloader.download(&app).await {
         Ok(path) => {
-            log::info!("FFmpeg downloaded to: {:?}", path);
+            log::info!("FFmpeg downloaded to: {path:?}");
             Ok(path.to_string_lossy().to_string())
         }
         Err(e) => {
-            log::error!("FFmpeg download failed: {}", e);
+            log::error!("FFmpeg download failed: {e}");
             Err(e.to_string())
         }
     }

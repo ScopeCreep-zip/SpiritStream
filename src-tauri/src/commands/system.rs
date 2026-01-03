@@ -91,7 +91,7 @@ pub fn get_encoders() -> Result<Encoders, String> {
     let output = Command::new(&ffmpeg_path)
         .args(["-encoders", "-hide_banner"])
         .output()
-        .map_err(|e| format!("Failed to run FFmpeg: {}", e))?;
+        .map_err(|e| format!("Failed to run FFmpeg: {e}"))?;
 
     if !output.status.success() {
         // Return default encoders if FFmpeg query fails
@@ -153,7 +153,7 @@ pub fn test_ffmpeg() -> Result<String, String> {
     let output = Command::new(&ffmpeg_path)
         .args(["-version"])
         .output()
-        .map_err(|e| format!("Failed to run FFmpeg: {}", e))?;
+        .map_err(|e| format!("Failed to run FFmpeg: {e}"))?;
 
     if !output.status.success() {
         return Err("FFmpeg returned an error".to_string());

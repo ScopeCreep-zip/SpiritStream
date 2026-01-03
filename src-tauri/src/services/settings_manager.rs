@@ -33,10 +33,10 @@ impl SettingsManager {
         // Try to read from disk
         let settings = if self.settings_path.exists() {
             let content = std::fs::read_to_string(&self.settings_path)
-                .map_err(|e| format!("Failed to read settings: {}", e))?;
+                .map_err(|e| format!("Failed to read settings: {e}"))?;
 
             serde_json::from_str(&content)
-                .map_err(|e| format!("Failed to parse settings: {}", e))?
+                .map_err(|e| format!("Failed to parse settings: {e}"))?
         } else {
             // Return defaults and save them
             let defaults = Settings::default();
@@ -69,14 +69,14 @@ impl SettingsManager {
         // Ensure parent directory exists
         if let Some(parent) = self.settings_path.parent() {
             std::fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create settings directory: {}", e))?;
+                .map_err(|e| format!("Failed to create settings directory: {e}"))?;
         }
 
         let content = serde_json::to_string_pretty(settings)
-            .map_err(|e| format!("Failed to serialize settings: {}", e))?;
+            .map_err(|e| format!("Failed to serialize settings: {e}"))?;
 
         std::fs::write(&self.settings_path, content)
-            .map_err(|e| format!("Failed to write settings: {}", e))
+            .map_err(|e| format!("Failed to write settings: {e}"))
     }
 
     /// Get the path to the profiles directory
@@ -90,13 +90,13 @@ impl SettingsManager {
     /// Export all app data to a directory
     pub fn export_data(&self, export_path: &PathBuf) -> Result<(), String> {
         std::fs::create_dir_all(export_path)
-            .map_err(|e| format!("Failed to create export directory: {}", e))?;
+            .map_err(|e| format!("Failed to create export directory: {e}"))?;
 
         // Export settings
         if self.settings_path.exists() {
             let dest = export_path.join("settings.json");
             std::fs::copy(&self.settings_path, &dest)
-                .map_err(|e| format!("Failed to export settings: {}", e))?;
+                .map_err(|e| format!("Failed to export settings: {e}"))?;
         }
 
         // Export profiles
@@ -104,14 +104,12 @@ impl SettingsManager {
         if profiles_dir.exists() {
             let export_profiles_dir = export_path.join("profiles");
             std::fs::create_dir_all(&export_profiles_dir)
-                .map_err(|e| format!("Failed to create profiles export directory: {}", e))?;
+                .map_err(|e| format!("Failed to create profiles export directory: {e}"))?;
 
-            for entry in std::fs::read_dir(&profiles_dir).map_err(|e| e.to_string())? {
-                if let Ok(entry) = entry {
-                    let dest = export_profiles_dir.join(entry.file_name());
-                    std::fs::copy(entry.path(), dest)
-                        .map_err(|e| format!("Failed to export profile: {}", e))?;
-                }
+            for entry in std::fs::read_dir(&profiles_dir).map_err(|e| e.to_string())?.flatten() {
+                let dest = export_profiles_dir.join(entry.file_name());
+                std::fs::copy(entry.path(), dest)
+                    .map_err(|e| format!("Failed to export profile: {e}"))?;
             }
         }
 
@@ -128,14 +126,14 @@ impl SettingsManager {
         // Delete settings file
         if self.settings_path.exists() {
             std::fs::remove_file(&self.settings_path)
-                .map_err(|e| format!("Failed to delete settings: {}", e))?;
+                .map_err(|e| format!("Failed to delete settings: {e}"))?;
         }
 
         // Delete profiles directory
         let profiles_dir = self.get_profiles_path();
         if profiles_dir.exists() {
             std::fs::remove_dir_all(&profiles_dir)
-                .map_err(|e| format!("Failed to delete profiles: {}", e))?;
+                .map_err(|e| format!("Failed to delete profiles: {e}"))?;
         }
 
         Ok(())
