@@ -16,7 +16,7 @@ export function NavBadge({ count, className }: NavBadgeProps) {
       )}
       style={{
         padding: '2px 8px',
-        color: '#FFFFFF',
+        color: 'var(--primary-foreground)',
       }}
     >
       {count > 99 ? '99+' : count}

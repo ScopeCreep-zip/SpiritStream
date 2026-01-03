@@ -17,18 +17,26 @@ export function Logo({ size = 'md', showText = true, className }: LogoProps) {
     <div className={cn('flex items-center', className)} style={{ gap: '12px' }}>
       <div
         className={cn(
-          'bg-gradient-to-br from-violet-600 via-fuchsia-600 to-pink-600 rounded-xl',
+          'rounded-xl',
           'flex items-center justify-center',
-          'text-white font-bold shadow-[var(--shadow-md)]',
+          'font-bold shadow-[var(--shadow-md)]',
           sizes[size]
         )}
+        style={{
+          background: 'var(--gradient-brand)',
+          color: 'var(--primary-foreground)',
+        }}
       >
         S
       </div>
       {showText && (
         <span
-          className="font-bold text-lg bg-gradient-to-r from-violet-600 via-fuchsia-600 to-pink-600 bg-clip-text"
-          style={{ WebkitTextFillColor: 'transparent' }}
+          className="font-bold text-lg bg-clip-text"
+          style={{
+            background: 'var(--gradient-brand)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+          }}
         >
           SpiritStream
         </span>
