@@ -35,8 +35,8 @@ Download the latest release for your platform from the [Releases](https://github
 #### Prerequisites
 
 - [Node.js](https://nodejs.org/) 18+
-- [Rust](https://rustup.rs/) 1.70+
-- [Tauri CLI](https://tauri.app/v2/guides/prerequisites/)
+- [Rust](https://rustup.rs/) 1.70+ (required - run `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
+- Platform-specific dependencies: See [Tauri Prerequisites](https://tauri.app/start/prerequisites/)
 
 #### Steps
 
