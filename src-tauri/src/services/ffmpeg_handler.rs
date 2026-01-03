@@ -25,14 +25,6 @@ pub struct FFmpegHandler {
 }
 
 impl FFmpegHandler {
-    /// Create a new FFmpegHandler with app data directory for bundled FFmpeg lookup
-    pub fn new_with_app_dir(app_data_dir: PathBuf) -> Self {
-        Self {
-            ffmpeg_path: Self::find_ffmpeg_with_bundled(app_data_dir),
-            processes: Arc::new(Mutex::new(HashMap::new())),
-        }
-    }
-
     /// Create FFmpegHandler with optional custom FFmpeg path from settings
     /// Falls back to auto-discovery if custom path is empty or invalid
     pub fn new_with_custom_path(app_data_dir: PathBuf, custom_path: Option<String>) -> Self {

@@ -92,47 +92,6 @@ impl ProfileManager {
         Err(format!("Profile '{}' not found", name))
     }
 
-    /// Save a profile
-    /// If password is provided, will encrypt the profile
-    pub async fn save(&self, profile: &Profile, password: Option<&str>) -> Result<(), String> {
-        // Serialize to JSON
-        let content = serde_json::to_string_pretty(profile)
-            .map_err(|e| format!("Failed to serialize profile: {}", e))?;
-
-        if let Some(pwd) = password {
-            // Encrypt and save as .mgs file
-            let encrypted = Encryption::encrypt(content.as_bytes(), pwd)?;
-
-            // Prepend magic bytes
-            let mut data = Vec::with_capacity(ENCRYPTED_MAGIC.len() + encrypted.len());
-            data.extend_from_slice(ENCRYPTED_MAGIC);
-            data.extend_from_slice(&encrypted);
-
-            let path = self.profiles_dir.join(format!("{}.mgs", profile.name));
-            std::fs::write(&path, data)
-                .map_err(|e| format!("Failed to write encrypted profile: {}", e))?;
-
-            // Remove unencrypted version if it exists
-            let json_path = self.profiles_dir.join(format!("{}.json", profile.name));
-            if json_path.exists() {
-                std::fs::remove_file(&json_path).ok();
-            }
-        } else {
-            // Save as unencrypted JSON
-            let path = self.profiles_dir.join(format!("{}.json", profile.name));
-            std::fs::write(&path, content)
-                .map_err(|e| format!("Failed to write profile: {}", e))?;
-
-            // Remove encrypted version if it exists
-            let mgs_path = self.profiles_dir.join(format!("{}.mgs", profile.name));
-            if mgs_path.exists() {
-                std::fs::remove_file(&mgs_path).ok();
-            }
-        }
-
-        Ok(())
-    }
-
     /// Delete a profile by name (both encrypted and unencrypted versions)
     pub async fn delete(&self, name: &str) -> Result<(), String> {
         let json_path = self.profiles_dir.join(format!("{}.json", name));
