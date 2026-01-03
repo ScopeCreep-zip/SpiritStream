@@ -1,7 +1,7 @@
 {
-  "name": "magillastream",
+  "name": "spiritstream",
   "version": "2.0.0",
-  "description": "MagillaStream - Multi-Destination Streaming Application",
+  "description": "SpiritStream - Multi-Destination Streaming Application",
   "type": "module",
   "scripts": {
     "dev": "tauri dev",

@@ -1,4 +1,4 @@
-// MagillaStream Models
+// SpiritStream Models
 // Data structures for the application
 
 mod profile;

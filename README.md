@@ -1,4 +1,4 @@
-# MagillaStream
+# SpiritStream
 
 Multi-destination streaming application that allows you to stream to multiple platforms simultaneously at different bitrates.
 
@@ -19,15 +19,15 @@ Run the setup script to install all prerequisites automatically:
 
 **macOS / Linux:**
 ```bash
-git clone https://github.com/billboyles/magillastream.git
-cd magillastream
+git clone https://github.com/billboyles/spiritstream.git
+cd spiritstream
 ./setup.sh
 ```
 
 **Windows (PowerShell):**
 ```powershell
-git clone https://github.com/billboyles/magillastream.git
-cd magillastream
+git clone https://github.com/billboyles/spiritstream.git
+cd spiritstream
 .\setup.ps1
 ```
 
@@ -43,13 +43,13 @@ npm run build  # Production build
 
 ## Download Pre-built Binaries
 
-Download the latest release from [Releases](https://github.com/billboyles/magillastream/releases):
+Download the latest release from [Releases](https://github.com/billboyles/spiritstream/releases):
 
 | Platform | File |
 |----------|------|
-| macOS | `MagillaStream_x.x.x_aarch64.dmg` |
-| Windows | `MagillaStream_x.x.x_x64-setup.exe` |
-| Linux | `MagillaStream_x.x.x_amd64.AppImage` or `.deb` |
+| macOS | `SpiritStream_x.x.x_aarch64.dmg` |
+| Windows | `SpiritStream_x.x.x_x64-setup.exe` |
+| Linux | `SpiritStream_x.x.x_amd64.AppImage` or `.deb` |
 
 **Note:** FFmpeg must be installed separately:
 - macOS: `brew install ffmpeg`
@@ -72,8 +72,8 @@ Download the latest release from [Releases](https://github.com/billboyles/magill
 ### Build Steps
 
 ```bash
-git clone https://github.com/billboyles/magillastream.git
-cd magillastream
+git clone https://github.com/billboyles/spiritstream.git
+cd spiritstream
 npm install
 npm run build
 ```

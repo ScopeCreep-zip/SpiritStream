@@ -1,7 +1,7 @@
 #!/bin/bash
 #
-# MagillaStream Setup Script
-# Installs all prerequisites for building and running MagillaStream
+# SpiritStream Setup Script
+# Installs all prerequisites for building and running SpiritStream
 #
 # Usage:
 #   macOS/Linux: ./setup.sh
@@ -21,7 +21,7 @@ NC='\033[0m' # No Color
 print_header() {
     echo ""
     echo -e "${BLUE}══════════════════════════════════════════════════════════════${NC}"
-    echo -e "${BLUE}  MagillaStream Setup${NC}"
+    echo -e "${BLUE}  SpiritStream Setup${NC}"
     echo -e "${BLUE}══════════════════════════════════════════════════════════════${NC}"
     echo ""
 }

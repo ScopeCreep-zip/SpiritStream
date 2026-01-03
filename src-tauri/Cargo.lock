@@ -2246,39 +2246,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c41e0c4fef86961ac6d6f8a82609f55f31b05e4fce149ac5710e439df7619ba4"
 
 [[package]]
-name = "magillastream"
-version = "2.0.0"
-dependencies = [
- "aes-gcm",
- "argon2",
- "base64 0.22.1",
- "chrono",
- "flate2",
- "futures-util",
- "hex",
- "log",
- "rand 0.8.5",
- "regex",
- "reqwest 0.11.27",
- "serde",
- "serde_json",
- "sha2",
- "tar",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-fs",
- "tauri-plugin-log",
- "tauri-plugin-shell",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "uuid",
- "xz2",
- "zip",
-]
-
-[[package]]
 name = "markup5ever"
 version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4107,6 +4074,39 @@ dependencies = [
  "gobject-sys",
  "libc",
  "system-deps",
+]
+
+[[package]]
+name = "spiritstream"
+version = "2.0.0"
+dependencies = [
+ "aes-gcm",
+ "argon2",
+ "base64 0.22.1",
+ "chrono",
+ "flate2",
+ "futures-util",
+ "hex",
+ "log",
+ "rand 0.8.5",
+ "regex",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tar",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-fs",
+ "tauri-plugin-log",
+ "tauri-plugin-shell",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "uuid",
+ "xz2",
+ "zip",
 ]
 
 [[package]]

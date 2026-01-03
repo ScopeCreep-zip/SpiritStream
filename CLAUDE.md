@@ -1,12 +1,12 @@
-# MagillaStream - Claude Code Context
+# SpiritStream - Claude Code Context
 
 > This file provides persistent context for Claude Code sessions. It is automatically loaded at session start.
 
 ## Project Overview
 
-**MagillaStream** is a desktop streaming application undergoing a complete architectural overhaul. The application manages RTMP stream configurations, handles FFmpeg-based stream processing, and provides a modern UI for multi-output streaming with profile management.
+**SpiritStream** is a desktop streaming application undergoing a complete architectural overhaul. The application manages RTMP stream configurations, handles FFmpeg-based stream processing, and provides a modern UI for multi-output streaming with profile management.
 
-**Repository**: https://github.com/billboyles/magillastream
+**Repository**: https://github.com/billboyles/spiritstream
 **Current Branch**: tauri-shift (active migration)
 **Migration Status**: Full lift-and-shift in progress — NO backwards compatibility
 
@@ -33,7 +33,7 @@ The application uses a **Purple & Pink theme** with full light/dark mode support
 - **Accent**: Pink (#DB2777 light / #F472B6 dark)
 - **Neutrals**: Purple-tinted gray scale
 
-All colors are WCAG 2.2 AA compliant. See `.claude/claudedocs/research/magillastream-complete-design-system.md` for complete design tokens.
+All colors are WCAG 2.2 AA compliant. See `.claude/claudedocs/research/spiritstream-complete-design-system.md` for complete design tokens.
 
 ## Target Architecture
 
@@ -62,7 +62,7 @@ All colors are WCAG 2.2 AA compliant. See `.claude/claudedocs/research/magillast
 ## Directory Structure (Target)
 
 ```
-magillastream/
+spiritstream/
 ├── src-frontend/              # React frontend
 │   ├── components/            # React components
 │   │   ├── ui/               # Base UI components
@@ -340,4 +340,4 @@ cargo clippy             # Rust linting
 @.claude/claudedocs/design-system.md
 @.claude/claudedocs/ui-specification.md
 @.claude/claudedocs/pages-and-views.md
-@.claude/claudedocs/research/magillastream-complete-design-system.md
+@.claude/claudedocs/research/spiritstream-complete-design-system.md

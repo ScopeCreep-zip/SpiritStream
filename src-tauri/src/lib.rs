@@ -1,4 +1,4 @@
-// MagillaStream - Tauri Backend
+// SpiritStream - Tauri Backend
 // Multi-Destination Streaming Application
 
 mod commands;
@@ -53,7 +53,7 @@ pub fn run() {
             let ffmpeg_downloader = FFmpegDownloaderState(Arc::new(Mutex::new(FFmpegDownloader::new())));
             app.manage(ffmpeg_downloader);
 
-            log::info!("MagillaStream initialized. Data dir: {:?}", app_data_dir);
+            log::info!("SpiritStream initialized. Data dir: {:?}", app_data_dir);
 
             Ok(())
         })

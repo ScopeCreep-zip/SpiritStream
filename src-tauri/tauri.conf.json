@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "MagillaStream",
+  "productName": "SpiritStream",
   "version": "2.0.0",
-  "identifier": "com.magillastream.desktop",
+  "identifier": "com.spiritstream.desktop",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "MagillaStream",
+        "title": "SpiritStream",
         "width": 1280,
         "height": 800,
         "minWidth": 1024,
@@ -31,7 +31,7 @@
     "targets": "all",
     "license": "../LICENSE",
     "licenseFile": "../LICENSE",
-    "copyright": "Copyright (c) 2024-2025 MagillaStream Contributors",
+    "copyright": "Copyright (c) 2024-2025 SpiritStream Contributors",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -57,7 +57,7 @@
       }
     },
     "shortDescription": "Multi-destination streaming application",
-    "longDescription": "MagillaStream allows you to stream to multiple platforms simultaneously at different bitrates. Configure output groups with custom encoding settings and stream to YouTube, Twitch, Kick, Facebook, and custom RTMP servers.",
+    "longDescription": "SpiritStream allows you to stream to multiple platforms simultaneously at different bitrates. Configure output groups with custom encoding settings and stream to YouTube, Twitch, Kick, Facebook, and custom RTMP servers.",
     "category": "Video"
   }
 }

@@ -1,4 +1,4 @@
-// MagillaStream Commands
+// SpiritStream Commands
 // Tauri command handlers for frontend communication
 
 mod profile;

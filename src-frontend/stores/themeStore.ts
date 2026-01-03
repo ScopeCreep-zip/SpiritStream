@@ -45,7 +45,7 @@ export const useThemeStore = create<ThemeState>()(
       },
     }),
     {
-      name: 'magillastream-theme',
+      name: 'spiritstream-theme',
       onRehydrateStorage: () => (state) => {
         if (state) {
           const resolvedTheme = resolveTheme(state.theme);

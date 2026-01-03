@@ -23,14 +23,14 @@ export function Logo({ size = 'md', showText = true, className }: LogoProps) {
           sizes[size]
         )}
       >
-        M
+        S
       </div>
       {showText && (
         <span
           className="font-bold text-lg bg-gradient-to-r from-violet-600 via-fuchsia-600 to-pink-600 bg-clip-text"
           style={{ WebkitTextFillColor: 'transparent' }}
         >
-          MagillaStream
+          SpiritStream
         </span>
       )}
     </div>

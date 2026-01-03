@@ -1,4 +1,4 @@
-// MagillaStream Services
+// SpiritStream Services
 // Business logic layer
 
 mod profile_manager;

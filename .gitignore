@@ -2,7 +2,7 @@ node_modules/
 dist/
 resources/
 release/
-magillastream-cert.pfx
+spiritstream-cert.pfx
 *.log
 *.mp4
 *.flv

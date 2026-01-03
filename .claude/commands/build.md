@@ -6,7 +6,7 @@ allowed-tools:
   - Grep
 ---
 
-Run the full build process for MagillaStream:
+Run the full build process for SpiritStream:
 
 1. First run `npm run clean` to clean previous builds
 2. Then run `npm run compile` to compile TypeScript

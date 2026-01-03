@@ -4,7 +4,7 @@ allowed-tools:
   - Bash
 ---
 
-Start MagillaStream in development mode:
+Start SpiritStream in development mode:
 
 1. Run `npm run dev` which will:
    - Compile TypeScript

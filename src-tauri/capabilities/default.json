@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "MagillaStream default capabilities",
+  "description": "SpiritStream default capabilities",
   "windows": [
     "main"
   ],
