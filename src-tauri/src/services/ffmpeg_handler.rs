@@ -159,6 +159,8 @@ impl FFmpegHandler {
 
         let mut child = Command::new(&self.ffmpeg_path)
             .args(&args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| format!("Failed to start FFmpeg: {}", e))?;
@@ -172,7 +174,8 @@ impl FFmpegHandler {
 
         // Store process info
         {
-            let mut processes = self.processes.lock().unwrap();
+            let mut processes = self.processes.lock()
+                .map_err(|e| format!("Lock poisoned: {}", e))?;
             processes.insert(group_id.clone(), ProcessInfo {
                 child,
                 start_time: Instant::now(),
@@ -213,11 +216,12 @@ impl FFmpegHandler {
         for line_result in reader.lines() {
             // Check if process is still running (was it intentionally stopped?)
             {
-                let procs = processes.lock().unwrap();
-                if !procs.contains_key(&group_id) {
-                    // Process was removed by stop() - intentional stop
-                    was_intentionally_stopped = true;
-                    break;
+                if let Ok(procs) = processes.lock() {
+                    if !procs.contains_key(&group_id) {
+                        // Process was removed by stop() - intentional stop
+                        was_intentionally_stopped = true;
+                        break;
+                    }
                 }
             }
 
@@ -239,9 +243,9 @@ impl FFmpegHandler {
                     }
                 }
 
-                // Also emit as log entry for debugging
-                if line.starts_with("frame=") || line.contains("[error]") {
-                    log::debug!("[FFmpeg:{}] {}", group_id, line);
+                // Only log errors and warnings (not frame stats which are too verbose)
+                if line.contains("[error]") || line.contains("[warning]") {
+                    log::warn!("[FFmpeg:{}] {}", group_id, line);
                 }
             }
         }
@@ -254,15 +258,16 @@ impl FFmpegHandler {
             // Process ended unexpectedly (crash, connection loss, etc.)
             // Remove from HashMap and check exit status
             let exit_status = {
-                let mut procs = processes.lock().unwrap();
-                if let Some(mut info) = procs.remove(&group_id) {
-                    // Try to get exit status
-                    match info.child.try_wait() {
-                        Ok(Some(status)) => Some(status),
-                        _ => {
-                            // Process might still be zombied, try to wait
-                            info.child.wait().ok()
+                if let Ok(mut procs) = processes.lock() {
+                    if let Some(mut info) = procs.remove(&group_id) {
+                        // Try to get exit status
+                        match info.child.try_wait() {
+                            Ok(Some(status)) => Some(status),
+                            Ok(None) => info.child.wait().ok(),  // Process still running, wait for it
+                            Err(_) => info.child.wait().ok(),    // Error checking, try to wait anyway
                         }
+                    } else {
+                        None
                     }
                 } else {
                     None
@@ -303,37 +308,46 @@ impl FFmpegHandler {
 
     /// Stop streaming for an output group
     pub fn stop(&self, group_id: &str) -> Result<(), String> {
-        if let Some(mut info) = self.processes.lock().unwrap().remove(group_id) {
-            info.child.kill().map_err(|e| format!("Failed to stop FFmpeg: {}", e))?;
+        if let Some(mut info) = self.processes.lock()
+            .map_err(|e| format!("Lock poisoned: {}", e))?
+            .remove(group_id)
+        {
+            info.child.kill().map_err(|e| format!("Failed to kill FFmpeg: {}", e))?;
+            info.child.wait().map_err(|e| format!("Failed to wait for FFmpeg: {}", e))?;
         }
         Ok(())
     }
 
     /// Stop all active streams
     pub fn stop_all(&self) -> Result<(), String> {
-        let mut processes = self.processes.lock().unwrap();
+        let mut processes = self.processes.lock()
+            .map_err(|e| format!("Lock poisoned: {}", e))?;
         for (_, mut info) in processes.drain() {
-            info.child.kill().ok();
+            let _ = info.child.kill();
+            let _ = info.child.wait();
         }
         Ok(())
     }
 
     /// Get active stream count
     pub fn active_count(&self) -> usize {
-        self.processes.lock().unwrap().len()
+        self.processes.lock()
+            .map(|procs| procs.len())
+            .unwrap_or(0)
     }
 
     /// Check if a group is streaming
     pub fn is_streaming(&self, group_id: &str) -> bool {
-        self.processes.lock().unwrap().contains_key(group_id)
+        self.processes.lock()
+            .map(|procs| procs.contains_key(group_id))
+            .unwrap_or(false)
     }
 
     /// Get list of active stream group IDs
     pub fn get_active_group_ids(&self) -> Vec<String> {
-        self.processes.lock().unwrap()
-            .values()
-            .map(|info| info.group_id.clone())
-            .collect()
+        self.processes.lock()
+            .map(|procs| procs.values().map(|info| info.group_id.clone()).collect())
+            .unwrap_or_default()
     }
 
     /// Build FFmpeg arguments for an output group

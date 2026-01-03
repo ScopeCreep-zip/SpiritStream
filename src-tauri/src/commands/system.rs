@@ -31,7 +31,7 @@ fn find_ffmpeg() -> String {
 
 /// Get available video and audio encoders by querying FFmpeg
 #[tauri::command]
-pub async fn get_encoders() -> Result<Encoders, String> {
+pub fn get_encoders() -> Result<Encoders, String> {
     let ffmpeg_path = find_ffmpeg();
 
     // Query FFmpeg for available encoders
@@ -94,7 +94,7 @@ pub async fn get_encoders() -> Result<Encoders, String> {
 
 /// Test FFmpeg installation and return version string
 #[tauri::command]
-pub async fn test_ffmpeg() -> Result<String, String> {
+pub fn test_ffmpeg() -> Result<String, String> {
     let ffmpeg_path = find_ffmpeg();
 
     let output = Command::new(&ffmpeg_path)
