@@ -366,72 +366,70 @@ impl FFmpegHandler {
             .unwrap_or_default()
     }
 
+    /// Resolve stream key - supports ${ENV_VAR} syntax
+    fn resolve_stream_key(key: &str) -> String {
+        // Check if key matches ${VAR_NAME} pattern
+        if key.starts_with("${") && key.ends_with("}") && key.len() > 3 {
+            let var_name = &key[2..key.len()-1];
+            match std::env::var(var_name) {
+                Ok(value) => {
+                    log::debug!("Resolved stream key from env var: {}", var_name);
+                    value
+                }
+                Err(_) => {
+                    log::warn!("Environment variable {} not found, using literal key", var_name);
+                    key.to_string()
+                }
+            }
+        } else {
+            key.to_string()
+        }
+    }
+
     /// Build FFmpeg arguments for an output group
     fn build_args(&self, group: &OutputGroup, incoming_url: &str) -> Vec<String> {
         let mut args = vec![
             "-i".to_string(), incoming_url.to_string(),
-            "-c:v".to_string(), group.video_encoder.clone(),
-            "-s".to_string(), group.resolution.clone(),
-            "-b:v".to_string(), format!("{}k", group.video_bitrate),
-            "-r".to_string(), group.fps.to_string(),
-            "-c:a".to_string(), group.audio_codec.clone(),
-            "-b:a".to_string(), format!("{}k", group.audio_bitrate),
+            // Video settings
+            "-c:v".to_string(), group.video.codec.clone(),
+            "-s".to_string(), group.video.resolution(),
+            "-b:v".to_string(), group.video.bitrate.clone(),
+            "-r".to_string(), group.video.fps.to_string(),
+            // Audio settings
+            "-c:a".to_string(), group.audio.codec.clone(),
+            "-b:a".to_string(), group.audio.bitrate.clone(),
+            "-ac".to_string(), group.audio.channels.to_string(),
+            "-ar".to_string(), group.audio.sample_rate.to_string(),
             // Progress output for stats parsing
             "-progress".to_string(), "pipe:2".to_string(),
             "-stats".to_string(),
         ];
 
-        // Add encoder preset if specified
-        if let Some(preset) = &group.preset {
+        // Add video encoder preset if specified
+        if let Some(preset) = &group.video.preset {
             // Map user-friendly preset names to FFmpeg preset values
             let ffmpeg_preset = match preset.as_str() {
                 "quality" => "slow",
                 "balanced" => "medium",
                 "performance" => "fast",
-                "low_latency" => "ultrafast",
+                "low_latency" | "low-latency" => "ultrafast",
                 _ => preset.as_str(), // Use as-is if already a valid FFmpeg preset
             };
             args.extend(["-preset".to_string(), ffmpeg_preset.to_string()]);
         }
 
-        // Add rate control if specified
-        if let Some(rate_control) = &group.rate_control {
-            match rate_control.as_str() {
-                "cbr" => {
-                    // Constant bitrate: set max and min equal to target
-                    args.extend([
-                        "-maxrate".to_string(), format!("{}k", group.video_bitrate),
-                        "-minrate".to_string(), format!("{}k", group.video_bitrate),
-                        "-bufsize".to_string(), format!("{}k", group.video_bitrate * 2),
-                    ]);
-                }
-                "vbr" => {
-                    // Variable bitrate: use CRF quality mode with bitrate hint
-                    // Allow 50% overshoot, buffer at 2x bitrate
-                    args.extend([
-                        "-maxrate".to_string(), format!("{}k", (group.video_bitrate as f32 * 1.5) as u32),
-                        "-bufsize".to_string(), format!("{}k", group.video_bitrate * 2),
-                    ]);
-                }
-                "cqp" => {
-                    // Constant quality (QP mode) - only for hardware encoders
-                    // Default to QP 23 which is roughly equivalent to CRF 23
-                    args.extend(["-qp".to_string(), "23".to_string()]);
-                }
-                _ => {} // Unknown rate control, skip
-            }
-        }
-
-        if group.generate_pts {
-            args.extend(["-fflags".to_string(), "+genpts".to_string()]);
+        // Add H.264 profile if specified
+        if let Some(profile) = &group.video.profile {
+            args.extend(["-profile:v".to_string(), profile.clone()]);
         }
 
         // Add output targets
         for target in &group.stream_targets {
             let normalized_url = Self::normalize_rtmp_url(&target.url);
+            let resolved_key = Self::resolve_stream_key(&target.stream_key);
             args.extend([
-                "-f".to_string(), "flv".to_string(),
-                format!("{}/{}", normalized_url, target.stream_key),
+                "-f".to_string(), group.container.format.clone(),
+                format!("{}/{}", normalized_url, resolved_key),
             ]);
         }
 

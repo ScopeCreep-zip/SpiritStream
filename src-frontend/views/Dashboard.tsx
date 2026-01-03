@@ -17,7 +17,7 @@ import { toast } from '@/hooks/useToast';
 import { api } from '@/lib/tauri';
 import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValidation';
 import type { View } from '@/App';
-import type { Platform, Profile } from '@/types/profile';
+import type { Profile } from '@/types/profile';
 
 interface DashboardProps {
   onNavigate: (view: View) => void;
@@ -93,7 +93,11 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
     if (!currentProfile) return [];
     return currentProfile.outputGroups.flatMap(group =>
       group.streamTargets.map(target => ({
-        ...target,
+        id: target.id,
+        name: target.name,
+        service: target.service,  // Using service (not platform) from new structure
+        url: target.url,
+        streamKey: target.streamKey,
         groupId: group.id,
       }))
     );
@@ -165,10 +169,11 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
               <ProfileCard
                 name={currentProfile.name}
                 meta={[
-                  { icon: <Monitor className="w-4 h-4" />, label: currentProfile.outputGroups[0]?.resolution || 'N/A' },
-                  { icon: <Gauge className="w-4 h-4" />, label: `${currentProfile.outputGroups[0]?.videoBitrate || 0} kbps` },
+                  { icon: <Monitor className="w-4 h-4" />, label: currentProfile.outputGroups[0]?.video ? `${currentProfile.outputGroups[0].video.height}p${currentProfile.outputGroups[0].video.fps}` : 'N/A' },
+                  { icon: <Gauge className="w-4 h-4" />, label: currentProfile.outputGroups[0]?.video?.bitrate || '0k' },
                   { icon: <TargetIcon className="w-4 h-4" />, label: t('dashboard.targetsCount', { count: targets.length }) },
                 ]}
+                services={[...new Set(targets.map(t => t.service))]}
                 active
               />
             ) : (
@@ -227,7 +232,7 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
               {targets.map((target) => (
                 <StreamCard
                   key={target.id}
-                  platform={target.platform as Platform}
+                  platform={target.service}
                   name={target.name}
                   status={globalStatus === 'live' ? 'live' : 'offline'}
                   stats={[

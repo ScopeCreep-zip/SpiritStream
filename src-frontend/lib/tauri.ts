@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { Profile, OutputGroup } from '@/types/profile';
+import type { Profile, ProfileSummary, OutputGroup, RtmpInput } from '@/types/profile';
 import type { Encoders } from '@/types/stream';
 import type { AppSettings } from '@/types/api';
 
@@ -9,12 +9,17 @@ import type { AppSettings } from '@/types/api';
 export const api = {
   profile: {
     getAll: () => invoke<string[]>('get_all_profiles'),
+    /** Get profile summaries with services list for displaying platform icons (Story 1.1, 4.1, 4.2) */
+    getSummaries: () => invoke<ProfileSummary[]>('get_profile_summaries'),
     load: (name: string, password?: string) =>
       invoke<Profile>('load_profile', { name, password }),
     save: (profile: Profile, password?: string) =>
       invoke<void>('save_profile', { profile, password }),
     delete: (name: string) => invoke<void>('delete_profile', { name }),
     isEncrypted: (name: string) => invoke<boolean>('is_profile_encrypted', { name }),
+    /** Validate RTMP input doesn't conflict with existing profiles (Story 2.2) */
+    validateInput: (profileId: string, input: RtmpInput) =>
+      invoke<void>('validate_input', { profileId, input }),
   },
   stream: {
     start: (group: OutputGroup, incomingUrl: string) =>

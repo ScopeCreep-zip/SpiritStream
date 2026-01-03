@@ -2,7 +2,7 @@
 // Handles profile persistence and encryption
 
 use std::path::PathBuf;
-use crate::models::Profile;
+use crate::models::{Profile, ProfileSummary, RtmpInput};
 use crate::services::Encryption;
 
 // Magic bytes to identify encrypted profiles
@@ -46,6 +46,36 @@ impl ProfileManager {
         }
 
         Ok(names)
+    }
+
+    /// Get summaries of all profiles (for list display)
+    /// Includes services list for each profile (Story 1.1, 4.1, 4.2)
+    pub async fn get_all_summaries(&self) -> Result<Vec<ProfileSummary>, String> {
+        let names = self.get_all_names().await?;
+        let mut summaries = Vec::new();
+
+        for name in names {
+            let is_encrypted = self.is_encrypted(&name);
+
+            // Try to load the profile (unencrypted profiles only for now)
+            // Encrypted profiles show minimal info
+            if let Ok(profile) = self.load(&name, None).await {
+                summaries.push(profile.to_summary(is_encrypted));
+            } else if is_encrypted {
+                // For encrypted profiles we can't read, show minimal summary
+                summaries.push(ProfileSummary {
+                    id: String::new(),
+                    name: name.clone(),
+                    resolution: "?".to_string(),
+                    bitrate: 0,
+                    target_count: 0,
+                    services: Vec::new(),
+                    is_encrypted: true,
+                });
+            }
+        }
+
+        Ok(summaries)
     }
 
     /// Load a profile by name
@@ -122,6 +152,43 @@ impl ProfileManager {
     pub fn is_encrypted(&self, name: &str) -> bool {
         let mgs_path = self.profiles_dir.join(format!("{}.mgs", name));
         mgs_path.exists()
+    }
+
+    /// Check if the RTMP input port conflicts with any existing profile
+    /// Returns Ok(()) if no conflict, or Err with conflicting profile name
+    pub async fn validate_input_conflict(
+        &self,
+        profile_id: &str,
+        input: &RtmpInput,
+    ) -> Result<(), String> {
+        let profile_names = self.get_all_names().await?;
+
+        for name in profile_names {
+            // Load each profile (try without password for unencrypted ones)
+            if let Ok(existing) = self.load(&name, None).await {
+                // Skip the profile being edited (same ID)
+                if existing.id == profile_id {
+                    continue;
+                }
+
+                // Check for port conflict on same bind address
+                // Both "0.0.0.0" and specific IPs should be checked
+                let bind_conflict = existing.input.bind_address == input.bind_address
+                    || existing.input.bind_address == "0.0.0.0"
+                    || input.bind_address == "0.0.0.0";
+
+                if bind_conflict && existing.input.port == input.port {
+                    return Err(format!(
+                        "Port {} is already in use by profile '{}'. Choose a different port.",
+                        input.port,
+                        existing.name
+                    ));
+                }
+            }
+            // Skip encrypted profiles we can't read (they might conflict but we can't check)
+        }
+
+        Ok(())
     }
 
     /// Encrypt all stream keys in a profile

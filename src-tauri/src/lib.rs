@@ -60,10 +60,12 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // Profile commands
             commands::get_all_profiles,
+            commands::get_profile_summaries,
             commands::load_profile,
             commands::save_profile,
             commands::delete_profile,
             commands::is_profile_encrypted,
+            commands::validate_input,
             // Stream commands
             commands::start_stream,
             commands::stop_stream,

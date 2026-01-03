@@ -77,13 +77,13 @@ export async function validateStreamConfig(
     }
   }
 
-  // 2. Incoming URL
-  if (!profile.incomingUrl || profile.incomingUrl.trim() === '') {
+  // 2. RTMP Input configuration
+  if (!profile.input || !profile.input.bindAddress || !profile.input.application) {
     issues.push({
       code: 'MISSING_INCOMING_URL',
       message: i18n.t('errors.noIncomingUrl'),
       severity: 'error',
-      field: 'incomingUrl',
+      field: 'input',
     });
   }
 
@@ -146,21 +146,21 @@ export async function validateStreamConfig(
       if (!hasEnabledTargets) continue;
     }
 
-    if (!group.videoEncoder || group.videoEncoder.trim() === '') {
+    if (!group.video?.codec || group.video.codec.trim() === '') {
       issues.push({
         code: 'GROUP_MISSING_ENCODER',
         message: i18n.t('errors.groupMissingEncoder', { name: groupName }),
         severity: 'error',
-        field: `group.${group.id}.videoEncoder`,
+        field: `group.${group.id}.video.codec`,
       });
     }
 
-    if (!group.resolution || group.resolution.trim() === '') {
+    if (!group.video?.width || !group.video?.height) {
       issues.push({
         code: 'GROUP_MISSING_RESOLUTION',
         message: i18n.t('errors.groupMissingResolution', { name: groupName }),
         severity: 'error',
-        field: `group.${group.id}.resolution`,
+        field: `group.${group.id}.video.resolution`,
       });
     }
   }

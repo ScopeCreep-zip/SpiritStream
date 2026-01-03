@@ -69,13 +69,15 @@ export function EncoderSettings() {
 
       if (group) {
         setSelectedGroupId(group.id);
+        // Parse bitrate from string (e.g., "6000k" -> "6000")
+        const bitrateNum = group.video.bitrate.replace(/[^0-9]/g, '') || '6000';
         setFormData({
-          encoder: group.videoEncoder,
-          preset: group.preset || 'balanced',
-          rateControl: group.rateControl || 'cbr',
-          resolution: group.resolution,
-          frameRate: group.fps.toString(),
-          videoBitrate: group.videoBitrate.toString(),
+          encoder: group.video.codec,
+          preset: group.video.preset || 'balanced',
+          rateControl: 'cbr', // Rate control not stored in new model, default to CBR
+          resolution: `${group.video.width}x${group.video.height}`,
+          frameRate: group.video.fps.toString(),
+          videoBitrate: bitrateNum,
           keyframeInterval: '2', // Not stored in current model
         });
         setIsDirty(false);
@@ -94,14 +96,24 @@ export function EncoderSettings() {
   };
 
   const handleSave = () => {
-    if (selectedGroupId) {
+    if (selectedGroupId && current) {
+      // Find current group to merge video settings
+      const currentGroup = current.outputGroups.find(g => g.id === selectedGroupId);
+      if (!currentGroup) return;
+
+      // Parse resolution into width/height
+      const [width, height] = formData.resolution.split('x').map(Number);
+
       updateOutputGroup(selectedGroupId, {
-        videoEncoder: formData.encoder,
-        resolution: formData.resolution,
-        fps: parseInt(formData.frameRate),
-        videoBitrate: parseInt(formData.videoBitrate),
-        preset: formData.preset,
-        rateControl: formData.rateControl,
+        video: {
+          ...currentGroup.video,
+          codec: formData.encoder,
+          width,
+          height,
+          fps: parseInt(formData.frameRate),
+          bitrate: `${formData.videoBitrate}k`,
+          preset: formData.preset,
+        },
       });
       setIsDirty(false);
     }

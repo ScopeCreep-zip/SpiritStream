@@ -3,11 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { Select, SelectOption } from '@/components/ui/Select';
-import { Toggle } from '@/components/ui/Toggle';
 import { Button } from '@/components/ui/Button';
 import { useProfileStore } from '@/stores/profileStore';
 import { api } from '@/lib/tauri';
-import type { OutputGroup } from '@/types/profile';
+import type { OutputGroup, VideoSettings, AudioSettings, ContainerSettings } from '@/types/profile';
 import type { Encoders } from '@/types/stream';
 
 export interface OutputGroupModalProps {
@@ -23,39 +22,55 @@ const RESOLUTION_VALUES = ['1920x1080', '1280x720', '2560x1440', '3840x2160', '8
 // Frame rate option values
 const FPS_VALUES = ['60', '30', '24', '25', '50'];
 
-// Audio bitrate option values
-const AUDIO_BITRATE_VALUES = ['320', '256', '192', '128', '96', '64'];
+// Audio bitrate option values (with 'k' suffix for new structure)
+const AUDIO_BITRATE_VALUES = ['320k', '256k', '192k', '160k', '128k', '96k', '64k'];
+
+// Audio channels options
+const AUDIO_CHANNELS_VALUES = ['1', '2', '6', '8'];
+
+// Audio sample rate options
+const AUDIO_SAMPLE_RATE_VALUES = ['48000', '44100', '32000'];
+
+// Container format options
+const CONTAINER_FORMAT_VALUES = ['flv', 'mpegts', 'mp4'];
 
 interface FormData {
   name: string;
-  videoEncoder: string;
+  // Video settings (nested)
+  videoCodec: string;
   resolution: string;
   fps: string;
   videoBitrate: string;
+  preset: string;
+  profile: string;
+  // Audio settings (nested)
   audioCodec: string;
   audioBitrate: string;
-  generatePts: boolean;
-  preset: string;
-  rateControl: string;
+  audioChannels: string;
+  audioSampleRate: string;
+  // Container settings (nested)
+  containerFormat: string;
 }
 
 // Preset option values
-const PRESET_VALUES = ['quality', 'balanced', 'performance', 'low_latency'];
+const PRESET_VALUES = ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow'];
 
-// Rate control option values
-const RATE_CONTROL_VALUES = ['cbr', 'vbr', 'cqp'];
+// Profile option values
+const PROFILE_VALUES = ['baseline', 'main', 'high'];
 
 const defaultFormData: FormData = {
   name: '',
-  videoEncoder: 'libx264',
+  videoCodec: 'libx264',
   resolution: '1920x1080',
   fps: '60',
   videoBitrate: '6000',
+  preset: 'veryfast',
+  profile: 'high',
   audioCodec: 'aac',
-  audioBitrate: '128',
-  generatePts: false,
-  preset: 'balanced',
-  rateControl: 'cbr',
+  audioBitrate: '160k',
+  audioChannels: '2',
+  audioSampleRate: '48000',
+  containerFormat: 'flv',
 };
 
 export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModalProps) {
@@ -78,7 +93,7 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
           if (mode === 'create' && enc.video.length > 0) {
             setFormData((prev) => ({
               ...prev,
-              videoEncoder: enc.video[0],
+              videoCodec: enc.video[0],
               audioCodec: enc.audio[0] || 'aac',
             }));
           }
@@ -96,17 +111,24 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
   useEffect(() => {
     if (open) {
       if (mode === 'edit' && group) {
+        // Parse video bitrate from string (e.g., "6000k" -> "6000")
+        const videoBitrate = group.video.bitrate.replace(/[^\d]/g, '') || '6000';
+        // Build resolution string from width x height
+        const resolution = `${group.video.width}x${group.video.height}`;
+
         setFormData({
           name: group.name || '',
-          videoEncoder: group.videoEncoder,
-          resolution: group.resolution,
-          fps: String(group.fps),
-          videoBitrate: String(group.videoBitrate),
-          audioCodec: group.audioCodec,
-          audioBitrate: String(group.audioBitrate),
-          generatePts: group.generatePts,
-          preset: group.preset || 'balanced',
-          rateControl: group.rateControl || 'cbr',
+          videoCodec: group.video.codec,
+          resolution,
+          fps: String(group.video.fps),
+          videoBitrate,
+          preset: group.video.preset || 'veryfast',
+          profile: group.video.profile || 'high',
+          audioCodec: group.audio.codec,
+          audioBitrate: group.audio.bitrate,
+          audioChannels: String(group.audio.channels),
+          audioSampleRate: String(group.audio.sampleRate),
+          containerFormat: group.container.format,
         });
       } else {
         setFormData(defaultFormData);
@@ -119,12 +141,12 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
   // Use type assertion to bypass strict i18n key checking for dynamic keys
   const tDynamic = t as (key: string, options?: { defaultValue: string }) => string;
 
-  const videoEncoderOptions: SelectOption[] = encoders.video.map((enc) => {
+  const videoCodecOptions: SelectOption[] = encoders.video.map((enc) => {
     const label = tDynamic(`encoder.encoders.${enc}`, { defaultValue: enc });
     return { value: enc, label };
   });
 
-  const audioEncoderOptions: SelectOption[] = encoders.audio.map((enc) => {
+  const audioCodecOptions: SelectOption[] = encoders.audio.map((enc) => {
     const label = tDynamic(`audio.codecs.${enc}`, { defaultValue: enc });
     return { value: enc, label };
   });
@@ -142,17 +164,32 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
 
   const audioBitrateOptions: SelectOption[] = AUDIO_BITRATE_VALUES.map((value) => ({
     value,
-    label: tDynamic(`audio.bitrates.${value}`, { defaultValue: `${value} kbps` }),
+    label: tDynamic(`audio.bitrates.${value}`, { defaultValue: value }),
+  }));
+
+  const audioChannelsOptions: SelectOption[] = AUDIO_CHANNELS_VALUES.map((value) => ({
+    value,
+    label: value === '1' ? 'Mono' : value === '2' ? 'Stereo' : `${value} channels`,
+  }));
+
+  const audioSampleRateOptions: SelectOption[] = AUDIO_SAMPLE_RATE_VALUES.map((value) => ({
+    value,
+    label: `${parseInt(value) / 1000} kHz`,
+  }));
+
+  const containerFormatOptions: SelectOption[] = CONTAINER_FORMAT_VALUES.map((value) => ({
+    value,
+    label: value.toUpperCase(),
   }));
 
   const presetOptions: SelectOption[] = PRESET_VALUES.map((value) => ({
     value,
-    label: tDynamic(`encoder.presets.${value}`, { defaultValue: value.charAt(0).toUpperCase() + value.slice(1).replace('_', ' ') }),
+    label: tDynamic(`encoder.presets.${value}`, { defaultValue: value.charAt(0).toUpperCase() + value.slice(1) }),
   }));
 
-  const rateControlOptions: SelectOption[] = RATE_CONTROL_VALUES.map((value) => ({
+  const profileOptions: SelectOption[] = PROFILE_VALUES.map((value) => ({
     value,
-    label: tDynamic(`encoder.rateControls.${value}`, { defaultValue: value.toUpperCase() }),
+    label: value.charAt(0).toUpperCase() + value.slice(1),
   }));
 
   const validate = (): boolean => {
@@ -176,25 +213,46 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
 
     setSaving(true);
     try {
+      // Parse resolution into width/height
+      const [width, height] = formData.resolution.split('x').map(Number);
+
+      // Build nested video settings
+      const video: VideoSettings = {
+        codec: formData.videoCodec,
+        width,
+        height,
+        fps: parseInt(formData.fps),
+        bitrate: `${formData.videoBitrate}k`,
+        preset: formData.preset,
+        profile: formData.profile,
+      };
+
+      // Build nested audio settings
+      const audio: AudioSettings = {
+        codec: formData.audioCodec,
+        bitrate: formData.audioBitrate,
+        channels: parseInt(formData.audioChannels),
+        sampleRate: parseInt(formData.audioSampleRate),
+      };
+
+      // Build nested container settings
+      const container: ContainerSettings = {
+        format: formData.containerFormat,
+      };
+
       const groupData: OutputGroup = {
         id: mode === 'edit' && group ? group.id : crypto.randomUUID(),
         name: formData.name,
-        videoEncoder: formData.videoEncoder,
-        resolution: formData.resolution,
-        fps: parseInt(formData.fps),
-        videoBitrate: parseInt(formData.videoBitrate),
-        audioCodec: formData.audioCodec,
-        audioBitrate: parseInt(formData.audioBitrate),
-        generatePts: formData.generatePts,
-        preset: formData.preset,
-        rateControl: formData.rateControl,
+        video,
+        audio,
+        container,
         streamTargets: mode === 'edit' && group ? group.streamTargets : [],
       };
 
       if (mode === 'create') {
-        addOutputGroup(groupData);
+        await addOutputGroup(groupData);
       } else if (mode === 'edit' && group) {
-        updateOutputGroup(group.id, groupData);
+        await updateOutputGroup(group.id, groupData);
       }
 
       // Save to backend
@@ -245,81 +303,113 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
           error={errors.name}
         />
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-          <Select
-            label={t('encoder.videoEncoder')}
-            value={formData.videoEncoder}
-            onChange={handleChange('videoEncoder')}
-            options={videoEncoderOptions}
-            disabled={loadingEncoders}
-          />
+        {/* Video Settings Section */}
+        <div style={{ padding: '12px', backgroundColor: 'var(--bg-muted)', borderRadius: '8px' }}>
+          <div style={{ marginBottom: '12px', fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-primary)' }}>
+            {t('modals.videoSettings')}
+          </div>
 
-          <Select
-            label={t('modals.audioCodec')}
-            value={formData.audioCodec}
-            onChange={handleChange('audioCodec')}
-            options={audioEncoderOptions}
-            disabled={loadingEncoders}
-          />
-        </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+            <Select
+              label={t('encoder.videoEncoder')}
+              value={formData.videoCodec}
+              onChange={handleChange('videoCodec')}
+              options={videoCodecOptions}
+              disabled={loadingEncoders}
+            />
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-          <Select
-            label={t('encoder.resolution')}
-            value={formData.resolution}
-            onChange={handleChange('resolution')}
-            options={resolutionOptions}
-          />
+            <Select
+              label={t('encoder.resolution')}
+              value={formData.resolution}
+              onChange={handleChange('resolution')}
+              options={resolutionOptions}
+            />
+          </div>
 
-          <Select
-            label={t('encoder.frameRate')}
-            value={formData.fps}
-            onChange={handleChange('fps')}
-            options={fpsOptions}
-          />
-        </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+            <Select
+              label={t('encoder.frameRate')}
+              value={formData.fps}
+              onChange={handleChange('fps')}
+              options={fpsOptions}
+            />
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-          <Input
-            label={t('encoder.videoBitrate')}
-            type="number"
-            placeholder="6000"
-            value={formData.videoBitrate}
-            onChange={handleChange('videoBitrate')}
-            error={errors.videoBitrate}
-            helper={t('encoder.videoBitrateHelper')}
-          />
+            <Input
+              label={t('encoder.videoBitrate')}
+              type="number"
+              placeholder="6000"
+              value={formData.videoBitrate}
+              onChange={handleChange('videoBitrate')}
+              error={errors.videoBitrate}
+            />
 
-          <Select
-            label={t('modals.audioBitrate')}
-            value={formData.audioBitrate}
-            onChange={handleChange('audioBitrate')}
-            options={audioBitrateOptions}
-          />
-        </div>
+            <Select
+              label={t('encoder.profile')}
+              value={formData.profile}
+              onChange={handleChange('profile')}
+              options={profileOptions}
+            />
+          </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
           <Select
             label={t('encoder.preset')}
             value={formData.preset}
             onChange={handleChange('preset')}
             options={presetOptions}
           />
-
-          <Select
-            label={t('encoder.rateControl')}
-            value={formData.rateControl}
-            onChange={handleChange('rateControl')}
-            options={rateControlOptions}
-          />
         </div>
 
-        <div style={{ paddingTop: '8px' }}>
-          <Toggle
-            label={t('modals.generatePts')}
-            description={t('modals.generatePtsDescription')}
-            checked={formData.generatePts}
-            onChange={(checked) => setFormData((prev) => ({ ...prev, generatePts: checked }))}
+        {/* Audio Settings Section */}
+        <div style={{ padding: '12px', backgroundColor: 'var(--bg-muted)', borderRadius: '8px' }}>
+          <div style={{ marginBottom: '12px', fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-primary)' }}>
+            {t('modals.audioSettings')}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+            <Select
+              label={t('modals.audioCodec')}
+              value={formData.audioCodec}
+              onChange={handleChange('audioCodec')}
+              options={audioCodecOptions}
+              disabled={loadingEncoders}
+            />
+
+            <Select
+              label={t('modals.audioBitrate')}
+              value={formData.audioBitrate}
+              onChange={handleChange('audioBitrate')}
+              options={audioBitrateOptions}
+            />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <Select
+              label={t('modals.audioChannels')}
+              value={formData.audioChannels}
+              onChange={handleChange('audioChannels')}
+              options={audioChannelsOptions}
+            />
+
+            <Select
+              label={t('modals.audioSampleRate')}
+              value={formData.audioSampleRate}
+              onChange={handleChange('audioSampleRate')}
+              options={audioSampleRateOptions}
+            />
+          </div>
+        </div>
+
+        {/* Container Settings Section */}
+        <div style={{ padding: '12px', backgroundColor: 'var(--bg-muted)', borderRadius: '8px' }}>
+          <div style={{ marginBottom: '12px', fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-primary)' }}>
+            {t('modals.containerSettings')}
+          </div>
+
+          <Select
+            label={t('modals.containerFormat')}
+            value={formData.containerFormat}
+            onChange={handleChange('containerFormat')}
+            options={containerFormatOptions}
           />
         </div>
       </div>

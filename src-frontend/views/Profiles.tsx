@@ -81,6 +81,7 @@ export function Profiles() {
               { icon: <Gauge className="w-4 h-4" />, label: `${profile.bitrate} kbps` },
               { icon: <Target className="w-4 h-4" />, label: t('profiles.targetsCount', { count: profile.targetCount }) },
             ]}
+            services={profile.services}
             active={current?.id === profile.id}
             onClick={() => selectProfile(profile.name)}
             actions={

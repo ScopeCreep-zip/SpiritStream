@@ -12,7 +12,6 @@ import { useStreamStore } from '@/stores/streamStore';
 import { formatUptime, formatBitrate } from '@/hooks/useStreamStats';
 import { toast } from '@/hooks/useToast';
 import type { View } from '@/App';
-import type { Platform } from '@/types/profile';
 import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValidation';
 
 interface StreamManagerProps {
@@ -72,7 +71,9 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
       }
 
       // Validation passed, start streaming
-      await startAllGroups(current.outputGroups, current.incomingUrl);
+      // Build incoming URL from structured input
+      const incomingUrl = `rtmp://${current.input.bindAddress}:${current.input.port}/${current.input.application}`;
+      await startAllGroups(current.outputGroups, incomingUrl);
       toast.success(t('toast.streamStarted'));
     } catch (err) {
       console.error('[StreamManager] startAllGroups failed:', err);
@@ -106,7 +107,10 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
       const enabledCount = group.streamTargets.filter(t => enabledTargets.has(t.id)).length;
 
       // Add video + audio bitrate for each enabled target
-      const groupBitrate = (group.videoBitrate + group.audioBitrate) * enabledCount;
+      // Parse bitrate strings (e.g., "6000k" -> 6000)
+      const videoBitrate = parseInt(group.video.bitrate.replace(/[^\d]/g, ''), 10) || 0;
+      const audioBitrate = parseInt(group.audio.bitrate.replace(/[^\d]/g, ''), 10) || 0;
+      const groupBitrate = (videoBitrate + audioBitrate) * enabledCount;
       return total + groupBitrate;
     }, 0);
   }, [current, enabledTargets]);
@@ -168,7 +172,9 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
   // Get group info string
   const getGroupInfo = (group: typeof outputGroups[0]): string => {
     const targetCount = group.streamTargets.length;
-    return `${targetCount} target${targetCount !== 1 ? 's' : ''} • ${group.resolution} • ${group.videoBitrate} kbps`;
+    const resolution = `${group.video.width}x${group.video.height}`;
+    const bitrate = group.video.bitrate.replace('k', '');
+    return `${targetCount} target${targetCount !== 1 ? 's' : ''} • ${resolution} • ${bitrate} kbps`;
   };
 
   return (
@@ -265,7 +271,7 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
                     style={{ padding: '12px' }}
                   >
                     <div className="flex items-center" style={{ gap: '12px' }}>
-                      <PlatformIcon platform={target.platform as Platform} size="sm" />
+                      <PlatformIcon platform={target.service} size="sm" />
                       <div>
                         <div className="font-medium text-sm text-[var(--text-primary)]">
                           {target.name}

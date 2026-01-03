@@ -9,7 +9,7 @@ import { PlatformIcon } from '@/components/stream/PlatformIcon';
 import { TargetModal } from '@/components/modals';
 import { useProfileStore } from '@/stores/profileStore';
 import { toast } from '@/hooks/useToast';
-import type { Platform, StreamTarget } from '@/types/profile';
+import type { StreamTarget } from '@/types/profile';
 
 export function StreamTargets() {
   const { t } = useTranslation();
@@ -147,7 +147,7 @@ export function StreamTargets() {
           <CardBody>
             <div className="flex items-start justify-between" style={{ marginBottom: '16px' }}>
               <div className="flex items-center" style={{ gap: '12px' }}>
-                <PlatformIcon platform={target.platform as Platform} size="lg" />
+                <PlatformIcon platform={target.service} size="lg" />
                 <div>
                   <h3 className="font-semibold text-[var(--text-primary)]">{target.name}</h3>
                   <p className="text-sm text-[var(--text-secondary)]">{target.url}</p>

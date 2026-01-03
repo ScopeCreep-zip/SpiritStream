@@ -1,18 +1,57 @@
 /**
- * Platform types for stream targets
+ * Platform/service types for stream targets
  */
 export type Platform = 'youtube' | 'twitch' | 'kick' | 'facebook' | 'custom';
+
+/**
+ * RTMP Input configuration - where the stream enters the system
+ */
+export interface RtmpInput {
+  type: 'rtmp';
+  bindAddress: string;   // e.g., "0.0.0.0"
+  port: number;          // e.g., 1935
+  application: string;   // e.g., "live"
+}
+
+/**
+ * Video encoding settings
+ */
+export interface VideoSettings {
+  codec: string;         // e.g., "libx264", "h264_nvenc"
+  width: number;         // e.g., 1920
+  height: number;        // e.g., 1080
+  fps: number;           // e.g., 60
+  bitrate: string;       // e.g., "6000k"
+  preset?: string;       // e.g., "veryfast", "p4"
+  profile?: string;      // e.g., "high", "main"
+}
+
+/**
+ * Audio encoding settings
+ */
+export interface AudioSettings {
+  codec: string;         // e.g., "aac"
+  bitrate: string;       // e.g., "160k"
+  channels: number;      // e.g., 2
+  sampleRate: number;    // e.g., 48000
+}
+
+/**
+ * Container/muxing settings
+ */
+export interface ContainerSettings {
+  format: string;        // e.g., "flv"
+}
 
 /**
  * Stream target - RTMP destination
  */
 export interface StreamTarget {
   id: string;
-  platform: Platform;
+  service: Platform;     // renamed from 'platform'
   name: string;
   url: string;
-  streamKey: string;
-  port: number;
+  streamKey: string;     // supports ${ENV_VAR} syntax
 }
 
 /**
@@ -20,16 +59,10 @@ export interface StreamTarget {
  */
 export interface OutputGroup {
   id: string;
-  name?: string;
-  videoEncoder: string;
-  resolution: string;
-  videoBitrate: number;
-  fps: number;
-  audioCodec: string;
-  audioBitrate: number;
-  generatePts: boolean;
-  preset?: string;       // e.g., "ultrafast", "fast", "medium", "slow"
-  rateControl?: string;  // e.g., "cbr", "vbr", "cqp"
+  name: string;
+  video: VideoSettings;
+  audio: AudioSettings;
+  container: ContainerSettings;
   streamTargets: StreamTarget[];
 }
 
@@ -39,7 +72,8 @@ export interface OutputGroup {
 export interface Profile {
   id: string;
   name: string;
-  incomingUrl: string;
+  encrypted: boolean;
+  input: RtmpInput;
   outputGroups: OutputGroup[];
 }
 
@@ -52,6 +86,7 @@ export interface ProfileSummary {
   resolution: string;
   bitrate: number;
   targetCount: number;
+  services: Platform[];  // NEW: list of configured services
   isEncrypted?: boolean;
 }
 
@@ -100,4 +135,81 @@ export const PLATFORMS: Record<Platform, {
     textColor: '#FFFFFF',
     defaultServer: '',
   },
+};
+
+/**
+ * Factory functions for creating default objects
+ */
+export const createDefaultRtmpInput = (): RtmpInput => ({
+  type: 'rtmp',
+  bindAddress: '0.0.0.0',
+  port: 1935,
+  application: 'live',
+});
+
+export const createDefaultVideoSettings = (): VideoSettings => ({
+  codec: 'libx264',
+  width: 1920,
+  height: 1080,
+  fps: 60,
+  bitrate: '6000k',
+  preset: 'veryfast',
+  profile: 'high',
+});
+
+export const createDefaultAudioSettings = (): AudioSettings => ({
+  codec: 'aac',
+  bitrate: '160k',
+  channels: 2,
+  sampleRate: 48000,
+});
+
+export const createDefaultContainerSettings = (): ContainerSettings => ({
+  format: 'flv',
+});
+
+export const createDefaultOutputGroup = (): OutputGroup => ({
+  id: crypto.randomUUID(),
+  name: 'New Output Group',
+  video: createDefaultVideoSettings(),
+  audio: createDefaultAudioSettings(),
+  container: createDefaultContainerSettings(),
+  streamTargets: [],
+});
+
+export const createDefaultStreamTarget = (service: Platform = 'custom'): StreamTarget => ({
+  id: crypto.randomUUID(),
+  service,
+  name: PLATFORMS[service].name,
+  url: PLATFORMS[service].defaultServer,
+  streamKey: '',
+});
+
+export const createDefaultProfile = (name: string = 'New Profile'): Profile => ({
+  id: crypto.randomUUID(),
+  name,
+  encrypted: false,
+  input: createDefaultRtmpInput(),
+  outputGroups: [],
+});
+
+/**
+ * Helper to format resolution string from video settings
+ */
+export const formatResolution = (video: VideoSettings): string => {
+  const height = video.height;
+  const fps = video.fps;
+  return `${height}p${fps}`;
+};
+
+/**
+ * Helper to parse bitrate string to number (in kbps)
+ */
+export const parseBitrateToKbps = (bitrate: string): number => {
+  const match = bitrate.match(/^(\d+)(k|m|K|M)?$/i);
+  if (!match) return 0;
+  const value = parseInt(match[1], 10);
+  const unit = match[2]?.toLowerCase();
+  if (unit === 'm') return value * 1000;
+  return value;
 };

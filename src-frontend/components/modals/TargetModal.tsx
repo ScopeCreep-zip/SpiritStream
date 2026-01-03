@@ -20,19 +20,17 @@ export interface TargetModalProps {
 const PLATFORM_VALUES: Platform[] = ['youtube', 'twitch', 'kick', 'facebook', 'custom'];
 
 interface FormData {
-  platform: Platform;
+  service: Platform;
   name: string;
   url: string;
   streamKey: string;
-  port: string;
 }
 
 const defaultFormData: FormData = {
-  platform: 'youtube',
+  service: 'youtube',
   name: '',
   url: platformConfig.youtube.defaultServer,
   streamKey: '',
-  port: '1935',
 };
 
 export function TargetModal({ open, onClose, mode, groupId, target }: TargetModalProps) {
@@ -48,11 +46,10 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
     if (open) {
       if (mode === 'edit' && target) {
         setFormData({
-          platform: target.platform,
+          service: target.service,
           name: target.name,
           url: target.url,
           streamKey: target.streamKey,
-          port: String(target.port),
         });
       } else {
         setFormData(defaultFormData);
@@ -62,16 +59,16 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
     }
   }, [open, mode, target]);
 
-  // Update URL when platform changes (only in create mode)
-  const handlePlatformChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newPlatform = e.target.value as Platform;
+  // Update URL when service changes (only in create mode)
+  const handleServiceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newService = e.target.value as Platform;
     setFormData((prev) => ({
       ...prev,
-      platform: newPlatform,
+      service: newService,
       // Only update URL if in create mode or URL hasn't been modified
-      url: mode === 'create' ? platformConfig[newPlatform].defaultServer : prev.url,
+      url: mode === 'create' ? platformConfig[newService].defaultServer : prev.url,
       // Update name suggestion if empty
-      name: prev.name || platformConfig[newPlatform].name,
+      name: prev.name || platformConfig[newService].name,
     }));
   };
 
@@ -92,11 +89,6 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
       newErrors.streamKey = t('validation.streamKeyRequired');
     }
 
-    const port = parseInt(formData.port);
-    if (isNaN(port) || port < 1 || port > 65535) {
-      newErrors.port = t('validation.portRange');
-    }
-
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -108,11 +100,10 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
     try {
       const targetData: StreamTarget = {
         id: mode === 'edit' && target ? target.id : crypto.randomUUID(),
-        platform: formData.platform,
+        service: formData.service,
         name: formData.name,
         url: formData.url,
         streamKey: formData.streamKey,
-        port: parseInt(formData.port),
       };
 
       if (mode === 'create') {
@@ -168,8 +159,8 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <Select
           label={t('modals.platform')}
-          value={formData.platform}
-          onChange={handlePlatformChange}
+          value={formData.service}
+          onChange={handleServiceChange}
           options={platformOptions}
         />
 
@@ -187,7 +178,7 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
           value={formData.url}
           onChange={handleChange('url')}
           error={errors.url}
-          helper={formData.platform !== 'custom' ? `${t('modals.default')}: ${platformConfig[formData.platform].defaultServer}` : undefined}
+          helper={formData.service !== 'custom' ? `${t('modals.default')}: ${platformConfig[formData.service].defaultServer}` : undefined}
         />
 
         <div style={{ position: 'relative' }}>
@@ -218,16 +209,6 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
             {showStreamKey ? t('common.hide') : t('common.show')}
           </button>
         </div>
-
-        <Input
-          label={t('modals.port')}
-          type="number"
-          placeholder="1935"
-          value={formData.port}
-          onChange={handleChange('port')}
-          error={errors.port}
-          helper={t('modals.portHelper')}
-        />
       </div>
     </Modal>
   );

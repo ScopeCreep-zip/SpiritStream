@@ -2,7 +2,7 @@
 // Handles profile CRUD operations
 
 use tauri::State;
-use crate::models::Profile;
+use crate::models::{Profile, ProfileSummary, RtmpInput};
 use crate::services::{ProfileManager, SettingsManager};
 
 /// Get all profile names from the profiles directory
@@ -11,6 +11,15 @@ pub async fn get_all_profiles(
     profile_manager: State<'_, ProfileManager>
 ) -> Result<Vec<String>, String> {
     profile_manager.get_all_names().await
+}
+
+/// Get summaries of all profiles for list display
+/// Includes services list for showing platform icons (Story 1.1, 4.1, 4.2)
+#[tauri::command]
+pub async fn get_profile_summaries(
+    profile_manager: State<'_, ProfileManager>
+) -> Result<Vec<ProfileSummary>, String> {
+    profile_manager.get_all_summaries().await
 }
 
 /// Load a profile by name
@@ -58,4 +67,15 @@ pub fn is_profile_encrypted(
     profile_manager: State<'_, ProfileManager>
 ) -> bool {
     profile_manager.is_encrypted(&name)
+}
+
+/// Validate that an RTMP input configuration doesn't conflict with existing profiles
+/// Used to prevent port conflicts in shared studio environments (Story 2.2)
+#[tauri::command]
+pub async fn validate_input(
+    profile_id: String,
+    input: RtmpInput,
+    profile_manager: State<'_, ProfileManager>,
+) -> Result<(), String> {
+    profile_manager.validate_input_conflict(&profile_id, &input).await
 }

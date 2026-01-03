@@ -1,13 +1,11 @@
-import { Pencil, Copy, Trash2 } from 'lucide-react';
+import { Pencil, Copy, Trash2, Video, Volume2, Box } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
 import { Card, CardHeader, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Select } from '@/components/ui/Select';
-import { Input } from '@/components/ui/Input';
-import { Toggle } from '@/components/ui/Toggle';
 import { StreamStatus } from '@/components/ui/StreamStatus';
 import type { OutputGroup } from '@/types/profile';
+import { formatResolution } from '@/types/profile';
 import type { StreamStatusType } from '@/types/stream';
 
 export interface OutputGroupCardProps {
@@ -25,9 +23,7 @@ export interface OutputGroupCardProps {
 export function OutputGroupCard({
   group,
   index,
-  encoders,
   status,
-  onUpdate,
   onRemove,
   onDuplicate,
   onEdit,
@@ -35,13 +31,10 @@ export function OutputGroupCard({
 }: OutputGroupCardProps) {
   const { t } = useTranslation();
 
-  const resolutionOptions = [
-    { value: '1920x1080', label: '1080p (1920x1080)' },
-    { value: '1280x720', label: '720p (1280x720)' },
-    { value: '854x480', label: '480p (854x480)' },
-    { value: '2560x1440', label: '1440p (2560x1440)' },
-    { value: '3840x2160', label: '4K (3840x2160)' },
-  ];
+  // Display summary info from nested settings
+  const videoSummary = `${formatResolution(group.video)} • ${group.video.bitrate} • ${group.video.codec}`;
+  const audioSummary = `${group.audio.codec} • ${group.audio.bitrate} • ${group.audio.channels}ch`;
+  const containerSummary = group.container.format.toUpperCase();
 
   return (
     <Card className={cn('transition-all duration-150', className)}>
@@ -69,56 +62,35 @@ export function OutputGroupCard({
         </div>
       </CardHeader>
       <CardBody>
-        <div className="flex flex-col" style={{ gap: '16px' }}>
-        <div className={cn('grid grid-cols-2')} style={{ gap: '16px' }}>
-          <Select
-            label={t('encoder.videoEncoder')}
-            value={group.videoEncoder}
-            onChange={(e) => onUpdate({ videoEncoder: e.target.value })}
-            options={encoders.video.map((e) => ({ value: e, label: e }))}
-          />
-          <Select
-            label={t('encoder.resolution')}
-            value={group.resolution}
-            onChange={(e) => onUpdate({ resolution: e.target.value })}
-            options={resolutionOptions}
-          />
-        </div>
-        <div className={cn('grid grid-cols-3')} style={{ gap: '16px' }}>
-          <Input
-            label={t('encoder.videoBitrateKbps')}
-            type="number"
-            value={group.videoBitrate}
-            onChange={(e) => onUpdate({ videoBitrate: parseInt(e.target.value) || 0 })}
-          />
-          <Input
-            label={t('encoder.fps')}
-            type="number"
-            value={group.fps}
-            onChange={(e) => onUpdate({ fps: parseInt(e.target.value) || 30 })}
-          />
-          <Input
-            label={t('encoder.audioBitrateKbps')}
-            type="number"
-            value={group.audioBitrate}
-            onChange={(e) => onUpdate({ audioBitrate: parseInt(e.target.value) || 0 })}
-          />
-        </div>
-        <div className={cn('grid grid-cols-2')} style={{ gap: '16px' }}>
-          <Select
-            label={t('encoder.audioCodec')}
-            value={group.audioCodec}
-            onChange={(e) => onUpdate({ audioCodec: e.target.value })}
-            options={encoders.audio.map((e) => ({ value: e, label: e }))}
-          />
-          <div className="flex items-end" style={{ paddingBottom: '4px' }}>
-            <Toggle
-              label={t('encoder.generatePts')}
-              checked={group.generatePts}
-              onChange={(checked) => onUpdate({ generatePts: checked })}
-            />
+        {/* Read-only display of nested settings - use Edit modal to change */}
+        <div className="flex flex-col" style={{ gap: '12px' }}>
+          {/* Video Settings Summary */}
+          <div className="flex items-center text-sm" style={{ gap: '8px' }}>
+            <Video className="w-4 h-4 text-[var(--primary)]" />
+            <span className="text-[var(--text-secondary)]">{t('outputs.video')}:</span>
+            <span className="text-[var(--text-primary)]">{videoSummary}</span>
           </div>
-        </div>
+
+          {/* Audio Settings Summary */}
+          <div className="flex items-center text-sm" style={{ gap: '8px' }}>
+            <Volume2 className="w-4 h-4 text-[var(--secondary)]" />
+            <span className="text-[var(--text-secondary)]">{t('outputs.audio')}:</span>
+            <span className="text-[var(--text-primary)]">{audioSummary}</span>
+          </div>
+
+          {/* Container Settings Summary */}
+          <div className="flex items-center text-sm" style={{ gap: '8px' }}>
+            <Box className="w-4 h-4 text-[var(--accent)]" />
+            <span className="text-[var(--text-secondary)]">{t('outputs.container')}:</span>
+            <span className="text-[var(--text-primary)]">{containerSummary}</span>
+          </div>
+
+          {/* Stream Targets Count */}
+          {group.streamTargets.length > 0 && (
+            <div className="text-xs text-[var(--text-tertiary)] pt-2 border-t border-[var(--border-muted)]">
+              {t('outputs.targetsCount', { count: group.streamTargets.length })}
+            </div>
+          )}
         </div>
       </CardBody>
     </Card>

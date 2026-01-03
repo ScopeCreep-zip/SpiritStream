@@ -20,10 +20,10 @@ pub fn start_stream(
     if group.stream_targets.is_empty() {
         return Err("At least one stream target is required".to_string());
     }
-    if group.video_encoder.is_empty() {
+    if group.video.codec.is_empty() {
         return Err("Video encoder is required".to_string());
     }
-    if group.audio_codec.is_empty() {
+    if group.audio.codec.is_empty() {
         return Err("Audio codec is required".to_string());
     }
 

@@ -1,7 +1,14 @@
 import { create } from 'zustand';
 import { api } from '@/lib/tauri';
 import i18n from '@/lib/i18n';
-import type { Profile, ProfileSummary, OutputGroup, StreamTarget } from '@/types/profile';
+import {
+  type Profile,
+  type ProfileSummary,
+  type OutputGroup,
+  type StreamTarget,
+  type Platform,
+  createDefaultProfile,
+} from '@/types/profile';
 
 interface ProfileState {
   // State
@@ -50,15 +57,42 @@ interface ProfileState {
   removeStreamTarget: (groupId: string, targetId: string) => Promise<void>;
 }
 
-// Helper to create a summary from a full profile
-const createSummary = (profile: Profile): ProfileSummary => {
+// Helper to create a summary from a full profile (using new nested structure)
+const createSummary = (profile: Profile, isEncrypted: boolean = false): ProfileSummary => {
   const firstGroup = profile.outputGroups[0];
+
+  // Build resolution string from video settings (e.g., "1080p60")
+  const resolution = firstGroup
+    ? `${firstGroup.video.height}p${firstGroup.video.fps}`
+    : '0p0';
+
+  // Parse bitrate from string (e.g., "6000k" -> 6000)
+  const bitrateStr = firstGroup?.video.bitrate || '0k';
+  const bitrate = parseInt(bitrateStr.replace(/[^\d]/g, ''), 10) || 0;
+
+  // Count all stream targets across all groups
+  const targetCount = profile.outputGroups.reduce(
+    (sum, g) => sum + g.streamTargets.length,
+    0
+  );
+
+  // Collect unique services from all targets
+  const servicesSet = new Set<Platform>();
+  for (const group of profile.outputGroups) {
+    for (const target of group.streamTargets) {
+      servicesSet.add(target.service);
+    }
+  }
+  const services = Array.from(servicesSet);
+
   return {
     id: profile.id,
     name: profile.name,
-    resolution: firstGroup?.resolution || '1920x1080',
-    bitrate: firstGroup?.videoBitrate || 6000,
-    targetCount: profile.outputGroups.reduce((sum, g) => sum + g.streamTargets.length, 0),
+    resolution,
+    bitrate,
+    targetCount,
+    services,
+    isEncrypted,
   };
 };
 
@@ -70,35 +104,12 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   pendingPasswordProfile: null,
   passwordError: null,
 
-  // Load all profile names from backend
+  // Load all profile summaries from backend (uses efficient getSummaries endpoint)
   loadProfiles: async () => {
     set({ loading: true, error: null });
     try {
-      const names = await api.profile.getAll();
-      // Load each profile to build summaries (skip encrypted ones)
-      const summaries: ProfileSummary[] = [];
-      for (const name of names) {
-        try {
-          // Check if encrypted first
-          const isEncrypted = await api.profile.isEncrypted(name);
-          if (isEncrypted) {
-            // Create placeholder summary for encrypted profiles
-            summaries.push({
-              id: name,
-              name,
-              resolution: i18n.t('common.encrypted'),
-              bitrate: 0,
-              targetCount: 0,
-              isEncrypted: true,
-            });
-          } else {
-            const profile = await api.profile.load(name);
-            summaries.push({ ...createSummary(profile), isEncrypted: false });
-          }
-        } catch {
-          console.warn(`Failed to load profile: ${name}`);
-        }
-      }
+      // Use the new getSummaries endpoint that returns all summaries with services
+      const summaries = await api.profile.getSummaries();
       set({ profiles: summaries, loading: false });
     } catch (error) {
       set({ error: String(error), loading: false });
@@ -213,19 +224,14 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     }
   },
 
-  // Create a new profile
+  // Create a new profile using the default template (new nested structure)
   createProfile: async (name) => {
-    const newProfile: Profile = {
-      id: crypto.randomUUID(),
-      name,
-      incomingUrl: 'rtmp://localhost/live',
-      outputGroups: [],
-    };
+    const newProfile = createDefaultProfile(name);
     set({ current: newProfile });
     // Save to backend
     try {
       await api.profile.save(newProfile);
-      const profiles = [...get().profiles, createSummary(newProfile)];
+      const profiles = [...get().profiles, createSummary(newProfile, false)];
       set({ profiles });
     } catch (error) {
       set({ error: String(error) });

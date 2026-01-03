@@ -105,7 +105,9 @@ function App() {
       }
 
       // Validation passed, start streaming
-      await startAllGroups(current.outputGroups, current.incomingUrl);
+      // Build incoming URL from structured input
+      const incomingUrl = `rtmp://${current.input.bindAddress}:${current.input.port}/${current.input.application}`;
+      await startAllGroups(current.outputGroups, incomingUrl);
       toast.success(t('toast.streamStarted'));
     } catch (err) {
       console.error('[App] startAllGroups failed:', err);

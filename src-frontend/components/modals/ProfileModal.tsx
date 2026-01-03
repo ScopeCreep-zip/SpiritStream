@@ -5,7 +5,12 @@ import { Input } from '@/components/ui/Input';
 import { Select, SelectOption } from '@/components/ui/Select';
 import { Button } from '@/components/ui/Button';
 import { useProfileStore } from '@/stores/profileStore';
-import type { Profile } from '@/types/profile';
+import { api } from '@/lib/tauri';
+import type { Profile, RtmpInput } from '@/types/profile';
+import {
+  createDefaultProfile,
+  createDefaultOutputGroup,
+} from '@/types/profile';
 
 export interface ProfileModalProps {
   open: boolean;
@@ -14,7 +19,7 @@ export interface ProfileModalProps {
   profile?: Profile;
 }
 
-// Resolution options
+// Resolution options with width/height values
 const RESOLUTION_OPTIONS: SelectOption[] = [
   { value: '1920x1080', label: '1080p (1920x1080)' },
   { value: '1280x720', label: '720p (1280x720)' },
@@ -34,7 +39,11 @@ const FPS_OPTIONS: SelectOption[] = [
 
 interface FormData {
   name: string;
-  incomingUrl: string;
+  // RTMP Input (structured)
+  bindAddress: string;
+  port: string;
+  application: string;
+  // Video settings for default output group
   resolution: string;
   fps: string;
   videoBitrate: string;
@@ -42,7 +51,9 @@ interface FormData {
 
 const defaultFormData: FormData = {
   name: '',
-  incomingUrl: 'rtmp://localhost/live',
+  bindAddress: '0.0.0.0',
+  port: '1935',
+  application: 'live',
   resolution: '1920x1080',
   fps: '60',
   videoBitrate: '6000',
@@ -50,7 +61,7 @@ const defaultFormData: FormData = {
 
 export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps) {
   const { t } = useTranslation();
-  const { createProfile, updateProfile, saveProfile, current } = useProfileStore();
+  const { updateProfile, saveProfile, current } = useProfileStore();
   const [formData, setFormData] = useState<FormData>(defaultFormData);
   const [errors, setErrors] = useState<Partial<FormData>>({});
   const [saving, setSaving] = useState(false);
@@ -60,12 +71,22 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
     if (open) {
       if (mode === 'edit' && profile) {
         const firstGroup = profile.outputGroups[0];
+        // Parse resolution from video settings (width x height)
+        const resolution = firstGroup?.video
+          ? `${firstGroup.video.width}x${firstGroup.video.height}`
+          : '1920x1080';
+        // Parse bitrate from string (e.g., "6000k" -> "6000")
+        const bitrateStr = firstGroup?.video?.bitrate || '6000k';
+        const videoBitrate = bitrateStr.replace(/[^\d]/g, '') || '6000';
+
         setFormData({
           name: profile.name,
-          incomingUrl: profile.incomingUrl,
-          resolution: firstGroup?.resolution || '1920x1080',
-          fps: String(firstGroup?.fps || 60),
-          videoBitrate: String(firstGroup?.videoBitrate || 6000),
+          bindAddress: profile.input.bindAddress,
+          port: String(profile.input.port),
+          application: profile.input.application,
+          resolution,
+          fps: String(firstGroup?.video?.fps || 60),
+          videoBitrate,
         });
       } else {
         setFormData(defaultFormData);
@@ -81,10 +102,20 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
       newErrors.name = t('validation.profileNameRequired');
     }
 
-    if (!formData.incomingUrl.trim()) {
-      newErrors.incomingUrl = t('validation.incomingUrlRequired');
-    } else if (!formData.incomingUrl.startsWith('rtmp://') && !formData.incomingUrl.startsWith('rtmps://')) {
-      newErrors.incomingUrl = t('validation.urlMustStartWithRtmp');
+    // Validate bind address
+    if (!formData.bindAddress.trim()) {
+      newErrors.bindAddress = t('validation.bindAddressRequired');
+    }
+
+    // Validate port
+    const port = parseInt(formData.port);
+    if (isNaN(port) || port < 1 || port > 65535) {
+      newErrors.port = t('validation.portRange');
+    }
+
+    // Validate application name
+    if (!formData.application.trim()) {
+      newErrors.application = t('validation.applicationRequired');
     }
 
     const bitrate = parseInt(formData.videoBitrate);
@@ -96,74 +127,116 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
     return Object.keys(newErrors).length === 0;
   };
 
+  // Validate port conflict with other profiles (Story 2.2)
+  const validatePortConflict = async (): Promise<boolean> => {
+    const profileId = mode === 'edit' && profile ? profile.id : '';
+    const input: RtmpInput = {
+      type: 'rtmp',
+      bindAddress: formData.bindAddress,
+      port: parseInt(formData.port),
+      application: formData.application,
+    };
+
+    try {
+      await api.profile.validateInput(profileId, input);
+      return true;
+    } catch (error) {
+      setErrors((prev) => ({ ...prev, port: String(error) }));
+      return false;
+    }
+  };
+
   const handleSave = async () => {
     if (!validate()) return;
 
     setSaving(true);
     try {
-      if (mode === 'create') {
-        // Create new profile
-        await createProfile(formData.name);
+      // Validate port conflict before saving (Story 2.2)
+      const portOk = await validatePortConflict();
+      if (!portOk) {
+        setSaving(false);
+        return;
+      }
 
-        // Update with form data (createProfile sets current)
-        updateProfile({
-          incomingUrl: formData.incomingUrl,
-          outputGroups: [{
-            id: crypto.randomUUID(),
-            name: t('outputs.defaultOutputName'),
-            videoEncoder: 'libx264',
-            resolution: formData.resolution,
-            videoBitrate: parseInt(formData.videoBitrate),
-            fps: parseInt(formData.fps),
-            audioCodec: 'aac',
-            audioBitrate: 128,
-            generatePts: false,
-            streamTargets: [],
-          }],
+      // Parse resolution into width/height
+      const [width, height] = formData.resolution.split('x').map(Number);
+
+      // Build RTMP input object
+      const input: RtmpInput = {
+        type: 'rtmp',
+        bindAddress: formData.bindAddress,
+        port: parseInt(formData.port),
+        application: formData.application,
+      };
+
+      if (mode === 'create') {
+        // Create new profile with default structure
+        const newProfile = createDefaultProfile(formData.name);
+        newProfile.input = input;
+
+        // Create default output group with video settings from form
+        const outputGroup = createDefaultOutputGroup();
+        outputGroup.name = t('outputs.defaultOutputName');
+        outputGroup.video = {
+          codec: 'libx264',
+          width,
+          height,
+          fps: parseInt(formData.fps),
+          bitrate: `${formData.videoBitrate}k`,
+          preset: 'veryfast',
+          profile: 'high',
+        };
+
+        newProfile.outputGroups = [outputGroup];
+
+        // Save to backend via store
+        await api.profile.save(newProfile);
+        // Reload profiles to update the list
+        const { loadProfiles, loadProfile } = useProfileStore.getState();
+        await loadProfiles();
+        await loadProfile(newProfile.name);
+      } else if (mode === 'edit' && current) {
+        // Update existing profile's input settings
+        const updatedInput = { ...input };
+
+        // Update first output group video settings if it exists
+        const updatedOutputGroups = current.outputGroups.map((group, index) => {
+          if (index === 0) {
+            return {
+              ...group,
+              video: {
+                ...group.video,
+                width,
+                height,
+                fps: parseInt(formData.fps),
+                bitrate: `${formData.videoBitrate}k`,
+              },
+            };
+          }
+          return group;
         });
 
-        // Save to backend
-        await saveProfile();
-      } else if (mode === 'edit' && current) {
-        // Update existing profile
+        // If no output groups, create one
+        if (updatedOutputGroups.length === 0) {
+          const outputGroup = createDefaultOutputGroup();
+          outputGroup.name = t('outputs.defaultOutputName');
+          outputGroup.video = {
+            codec: 'libx264',
+            width,
+            height,
+            fps: parseInt(formData.fps),
+            bitrate: `${formData.videoBitrate}k`,
+            preset: 'veryfast',
+            profile: 'high',
+          };
+          updatedOutputGroups.push(outputGroup);
+        }
+
         updateProfile({
           name: formData.name,
-          incomingUrl: formData.incomingUrl,
+          input: updatedInput,
+          outputGroups: updatedOutputGroups,
         });
-
-        // Update first output group if it exists, or create one if none exist
-        const firstGroup = current.outputGroups[0];
-        if (firstGroup) {
-          // Update existing first group with new encoding settings
-          updateProfile({
-            outputGroups: current.outputGroups.map((g, i) =>
-              i === 0
-                ? {
-                    ...firstGroup,
-                    resolution: formData.resolution,
-                    fps: parseInt(formData.fps),
-                    videoBitrate: parseInt(formData.videoBitrate),
-                  }
-                : g
-            ),
-          });
-        } else {
-          // Create a default output group if none exist
-          updateProfile({
-            outputGroups: [{
-              id: crypto.randomUUID(),
-              name: t('outputs.defaultOutputName'),
-              videoEncoder: 'libx264',
-              resolution: formData.resolution,
-              videoBitrate: parseInt(formData.videoBitrate),
-              fps: parseInt(formData.fps),
-              audioCodec: 'aac',
-              audioBitrate: 128,
-              generatePts: false,
-              streamTargets: [],
-            }],
-          });
-        }
 
         // Save to backend
         await saveProfile();
@@ -214,15 +287,43 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
           error={errors.name}
         />
 
-        <Input
-          label={t('modals.incomingRtmpUrl')}
-          placeholder="rtmp://localhost/live"
-          value={formData.incomingUrl}
-          onChange={handleChange('incomingUrl')}
-          error={errors.incomingUrl}
-          helper={t('modals.incomingUrlHelper')}
-        />
+        {/* RTMP Input Configuration */}
+        <div style={{ padding: '12px', backgroundColor: 'var(--bg-muted)', borderRadius: '8px' }}>
+          <div style={{ marginBottom: '12px', fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-primary)' }}>
+            {t('modals.rtmpInputSettings')}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 1fr', gap: '12px' }}>
+            <Input
+              label={t('modals.bindAddress')}
+              placeholder="0.0.0.0"
+              value={formData.bindAddress}
+              onChange={handleChange('bindAddress')}
+              error={errors.bindAddress}
+              helper={t('modals.bindAddressHelper')}
+            />
+            <Input
+              label={t('modals.port')}
+              type="number"
+              placeholder="1935"
+              value={formData.port}
+              onChange={handleChange('port')}
+              error={errors.port}
+            />
+            <Input
+              label={t('modals.application')}
+              placeholder="live"
+              value={formData.application}
+              onChange={handleChange('application')}
+              error={errors.application}
+              helper={t('modals.applicationHelper')}
+            />
+          </div>
+          <div style={{ marginTop: '8px', fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+            {t('modals.rtmpUrlPreview')}: rtmp://{formData.bindAddress}:{formData.port}/{formData.application}
+          </div>
+        </div>
 
+        {/* Default Output Settings */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
           <Select
             label={t('encoder.resolution')}

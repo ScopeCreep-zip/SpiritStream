@@ -1,6 +1,8 @@
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
 import { StreamStatus } from '@/components/ui/StreamStatus';
+import { PlatformIcon } from '@/components/stream/PlatformIcon';
+import type { Platform } from '@/types/profile';
 
 export interface ProfileCardMeta {
   icon: React.ReactNode;
@@ -13,6 +15,8 @@ export interface ProfileCardProps {
   active?: boolean;
   onClick?: () => void;
   actions?: React.ReactNode;
+  /** Services/platforms configured in this profile (Story 1.1, 4.1, 4.2) */
+  services?: Platform[];
   className?: string;
 }
 
@@ -22,6 +26,7 @@ export function ProfileCard({
   active,
   onClick,
   actions,
+  services,
   className,
 }: ProfileCardProps) {
   const { t } = useTranslation();
@@ -55,6 +60,14 @@ export function ProfileCard({
           </span>
         ))}
       </div>
+      {/* Service icons showing which platforms this profile targets (Story 1.1, 4.1, 4.2) */}
+      {services && services.length > 0 && (
+        <div className="flex gap-1.5 mt-3 pt-3 border-t border-[var(--border-muted)]">
+          {services.map((service) => (
+            <PlatformIcon key={service} platform={service} size="sm" />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

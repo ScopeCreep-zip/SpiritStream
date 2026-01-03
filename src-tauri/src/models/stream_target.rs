@@ -3,38 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
-/// A stream target represents an RTMP destination
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StreamTarget {
-    /// Unique identifier
-    pub id: String,
-
-    /// RTMP server URL
-    pub url: String,
-
-    /// Stream key (authentication)
-    pub stream_key: String,
-
-    /// RTMP port (default: 1935)
-    #[serde(default = "default_port")]
-    pub port: u16,
-
-    /// Platform type for UI display
-    #[serde(default)]
-    pub platform: Platform,
-
-    /// Display name
-    #[serde(default)]
-    pub name: String,
-}
-
-fn default_port() -> u16 {
-    1935
-}
-
-/// Supported streaming platforms
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+/// Supported streaming services/platforms
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum Platform {
     Youtube,
@@ -43,5 +13,39 @@ pub enum Platform {
     Facebook,
     #[default]
     Custom,
+}
+
+impl std::fmt::Display for Platform {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Platform::Youtube => write!(f, "youtube"),
+            Platform::Twitch => write!(f, "twitch"),
+            Platform::Kick => write!(f, "kick"),
+            Platform::Facebook => write!(f, "facebook"),
+            Platform::Custom => write!(f, "custom"),
+        }
+    }
+}
+
+/// A stream target represents an RTMP destination
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamTarget {
+    /// Unique identifier
+    pub id: String,
+
+    /// Streaming service/platform (youtube, twitch, kick, facebook, custom)
+    #[serde(default)]
+    pub service: Platform,
+
+    /// Display name
+    #[serde(default)]
+    pub name: String,
+
+    /// RTMP server URL
+    pub url: String,
+
+    /// Stream key (authentication) - supports ${ENV_VAR} syntax
+    pub stream_key: String,
 }
 
