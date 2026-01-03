@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { RotateCcw, Save } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody, CardFooter } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -27,6 +28,7 @@ const defaultSettings: EncoderFormData = {
 };
 
 export function EncoderSettings() {
+  const { t } = useTranslation();
   const { current, loading, error, updateOutputGroup } = useProfileStore();
   const [formData, setFormData] = useState<EncoderFormData>(defaultSettings);
   const [isDirty, setIsDirty] = useState(false);
@@ -80,7 +82,7 @@ export function EncoderSettings() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--text-secondary)]">Loading...</div>
+        <div className="text-[var(--text-secondary)]">{t('common.loading')}</div>
       </div>
     );
   }
@@ -88,7 +90,7 @@ export function EncoderSettings() {
   if (error) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--error-text)]">Error: {error}</div>
+        <div className="text-[var(--error-text)]">{t('common.error')}: {error}</div>
       </div>
     );
   }
@@ -99,7 +101,7 @@ export function EncoderSettings() {
         <CardBody>
           <div className="text-center py-12">
             <p className="text-[var(--text-secondary)]">
-              Please create an output group first to configure encoder settings.
+              {t('encoder.createOutputGroupFirst')}
             </p>
           </div>
         </CardBody>
@@ -108,51 +110,51 @@ export function EncoderSettings() {
   }
 
   const encoderOptions = [
-    { value: 'libx264', label: 'x264 (Software)' },
-    { value: 'h264_nvenc', label: 'NVENC (NVIDIA)' },
-    { value: 'h264_qsv', label: 'QuickSync (Intel)' },
-    { value: 'h264_amf', label: 'AMF (AMD)' },
+    { value: 'libx264', label: t('encoder.encoders.libx264') },
+    { value: 'h264_nvenc', label: t('encoder.encoders.h264_nvenc') },
+    { value: 'h264_qsv', label: t('encoder.encoders.h264_qsv') },
+    { value: 'h264_amf', label: t('encoder.encoders.h264_amf') },
   ];
 
   const presetOptions = [
-    { value: 'quality', label: 'Quality' },
-    { value: 'balanced', label: 'Balanced' },
-    { value: 'performance', label: 'Performance' },
-    { value: 'low_latency', label: 'Low Latency' },
+    { value: 'quality', label: t('encoder.presets.quality') },
+    { value: 'balanced', label: t('encoder.presets.balanced') },
+    { value: 'performance', label: t('encoder.presets.performance') },
+    { value: 'low_latency', label: t('encoder.presets.lowLatency') },
   ];
 
   const rateControlOptions = [
-    { value: 'cbr', label: 'CBR (Constant Bitrate)' },
-    { value: 'vbr', label: 'VBR (Variable Bitrate)' },
-    { value: 'cqp', label: 'CQP (Constant Quality)' },
+    { value: 'cbr', label: t('encoder.rateControls.cbr') },
+    { value: 'vbr', label: t('encoder.rateControls.vbr') },
+    { value: 'cqp', label: t('encoder.rateControls.cqp') },
   ];
 
   const resolutionOptions = [
-    { value: '3840x2160', label: '4K (3840x2160)' },
-    { value: '2560x1440', label: '1440p (2560x1440)' },
-    { value: '1920x1080', label: '1080p (1920x1080)' },
-    { value: '1280x720', label: '720p (1280x720)' },
-    { value: '854x480', label: '480p (854x480)' },
+    { value: '3840x2160', label: t('encoder.resolutions.3840x2160') },
+    { value: '2560x1440', label: t('encoder.resolutions.2560x1440') },
+    { value: '1920x1080', label: t('encoder.resolutions.1920x1080') },
+    { value: '1280x720', label: t('encoder.resolutions.1280x720') },
+    { value: '854x480', label: t('encoder.resolutions.854x480') },
   ];
 
   const frameRateOptions = [
-    { value: '60', label: '60 FPS' },
-    { value: '30', label: '30 FPS' },
-    { value: '24', label: '24 FPS' },
+    { value: '60', label: t('encoder.frameRates.60') },
+    { value: '30', label: t('encoder.frameRates.30') },
+    { value: '24', label: t('encoder.frameRates.24') },
   ];
 
   const outputGroupOptions = current.outputGroups.map(g => ({
     value: g.id,
-    label: g.name || `Output Group`,
+    label: g.name || t('encoder.defaultGroupName'),
   }));
 
   return (
     <Card>
       <CardHeader>
         <div>
-          <CardTitle>Encoder Configuration</CardTitle>
+          <CardTitle>{t('encoder.title')}</CardTitle>
           <CardDescription>
-            Configure video and audio encoding settings for your streams
+            {t('encoder.description')}
           </CardDescription>
         </div>
         {current.outputGroups.length > 1 && (
@@ -169,61 +171,61 @@ export function EncoderSettings() {
           {/* Left Column - Video Encoder */}
           <div className="flex flex-col" style={{ gap: '16px' }}>
             <h3 className="text-sm font-semibold text-[var(--text-primary)]" style={{ marginBottom: '16px' }}>
-              Video Encoder
+              {t('encoder.videoEncoder')}
             </h3>
             <Select
-              label="Encoder"
+              label={t('encoder.encoder')}
               value={formData.encoder}
               onChange={(e) => handleChange('encoder', e.target.value)}
               options={encoderOptions}
-              helper="Select your preferred hardware or software encoder"
+              helper={t('encoder.encoderHelper')}
             />
             <Select
-              label="Preset"
+              label={t('encoder.preset')}
               value={formData.preset}
               onChange={(e) => handleChange('preset', e.target.value)}
               options={presetOptions}
-              helper="Balance between quality and encoding speed"
+              helper={t('encoder.presetHelper')}
             />
             <Select
-              label="Rate Control"
+              label={t('encoder.rateControl')}
               value={formData.rateControl}
               onChange={(e) => handleChange('rateControl', e.target.value)}
               options={rateControlOptions}
-              helper="CBR recommended for streaming"
+              helper={t('encoder.rateControlHelper')}
             />
           </div>
 
           {/* Right Column - Output Settings */}
           <div className="flex flex-col" style={{ gap: '16px' }}>
             <h3 className="text-sm font-semibold text-[var(--text-primary)]" style={{ marginBottom: '16px' }}>
-              Output Settings
+              {t('encoder.outputSettings')}
             </h3>
             <Select
-              label="Resolution"
+              label={t('encoder.resolution')}
               value={formData.resolution}
               onChange={(e) => handleChange('resolution', e.target.value)}
               options={resolutionOptions}
             />
             <Select
-              label="Frame Rate"
+              label={t('encoder.frameRate')}
               value={formData.frameRate}
               onChange={(e) => handleChange('frameRate', e.target.value)}
               options={frameRateOptions}
             />
             <Input
-              label="Video Bitrate (kbps)"
+              label={t('encoder.videoBitrate')}
               type="number"
               value={formData.videoBitrate}
               onChange={(e) => handleChange('videoBitrate', e.target.value)}
-              helper="Recommended: 4500-9000 for 1080p60"
+              helper={t('encoder.videoBitrateHelper')}
             />
             <Input
-              label="Keyframe Interval (seconds)"
+              label={t('encoder.keyframeInterval')}
               type="number"
               value={formData.keyframeInterval}
               onChange={(e) => handleChange('keyframeInterval', e.target.value)}
-              helper="Most platforms require 2 seconds"
+              helper={t('encoder.keyframeIntervalHelper')}
             />
           </div>
         </div>
@@ -231,11 +233,11 @@ export function EncoderSettings() {
       <CardFooter>
         <Button variant="ghost" onClick={handleReset}>
           <RotateCcw className="w-4 h-4" />
-          Reset to Defaults
+          {t('encoder.resetDefaults')}
         </Button>
         <Button onClick={handleSave} disabled={!isDirty}>
           <Save className="w-4 h-4" />
-          Save Settings
+          {t('encoder.saveSettings')}
         </Button>
       </CardFooter>
     </Card>

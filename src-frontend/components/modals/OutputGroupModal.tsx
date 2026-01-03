@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { Select, SelectOption } from '@/components/ui/Select';
@@ -16,33 +17,14 @@ export interface OutputGroupModalProps {
   group?: OutputGroup;
 }
 
-// Resolution options
-const RESOLUTION_OPTIONS: SelectOption[] = [
-  { value: '1920x1080', label: '1080p (1920x1080)' },
-  { value: '1280x720', label: '720p (1280x720)' },
-  { value: '2560x1440', label: '1440p (2560x1440)' },
-  { value: '3840x2160', label: '4K (3840x2160)' },
-  { value: '854x480', label: '480p (854x480)' },
-];
+// Resolution option values (labels added with translation in component)
+const RESOLUTION_VALUES = ['1920x1080', '1280x720', '2560x1440', '3840x2160', '854x480'];
 
-// Frame rate options
-const FPS_OPTIONS: SelectOption[] = [
-  { value: '60', label: '60 fps' },
-  { value: '30', label: '30 fps' },
-  { value: '24', label: '24 fps' },
-  { value: '25', label: '25 fps' },
-  { value: '50', label: '50 fps' },
-];
+// Frame rate option values
+const FPS_VALUES = ['60', '30', '24', '25', '50'];
 
-// Audio bitrate options
-const AUDIO_BITRATE_OPTIONS: SelectOption[] = [
-  { value: '320', label: '320 kbps (Best)' },
-  { value: '256', label: '256 kbps' },
-  { value: '192', label: '192 kbps' },
-  { value: '128', label: '128 kbps (Standard)' },
-  { value: '96', label: '96 kbps' },
-  { value: '64', label: '64 kbps (Low)' },
-];
+// Audio bitrate option values
+const AUDIO_BITRATE_VALUES = ['320', '256', '192', '128', '96', '64'];
 
 interface FormData {
   name: string;
@@ -67,6 +49,7 @@ const defaultFormData: FormData = {
 };
 
 export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModalProps) {
+  const { t } = useTranslation();
   const { addOutputGroup, updateOutputGroup, saveProfile } = useProfileStore();
   const [formData, setFormData] = useState<FormData>(defaultFormData);
   const [errors, setErrors] = useState<Partial<FormData>>({});
@@ -120,38 +103,47 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
     }
   }, [open, mode, group]);
 
-  // Create encoder options from loaded encoders
+  // Create encoder options from loaded encoders with translations
   const videoEncoderOptions: SelectOption[] = encoders.video.map((enc) => {
-    // Provide friendly names for common encoders
-    const labels: Record<string, string> = {
-      libx264: 'x264 (Software)',
-      h264_nvenc: 'NVENC (NVIDIA)',
-      h264_videotoolbox: 'VideoToolbox (Apple)',
-      h264_qsv: 'QuickSync (Intel)',
-      h264_amf: 'AMF (AMD)',
-    };
-    return { value: enc, label: labels[enc] || enc };
+    // Use translation keys for known encoders, fallback to raw name
+    const translationKey = `encoder.encoders.${enc}`;
+    const translated = t(translationKey);
+    return { value: enc, label: translated !== translationKey ? translated : enc };
   });
 
   const audioEncoderOptions: SelectOption[] = encoders.audio.map((enc) => {
-    const labels: Record<string, string> = {
-      aac: 'AAC',
-      libmp3lame: 'MP3',
-      libopus: 'Opus',
-    };
-    return { value: enc, label: labels[enc] || enc };
+    // Use translation keys for known audio codecs
+    const translationKey = `audio.codecs.${enc}`;
+    const translated = t(translationKey);
+    return { value: enc, label: translated !== translationKey ? translated : enc };
   });
+
+  // Create translated options arrays
+  const resolutionOptions: SelectOption[] = RESOLUTION_VALUES.map((value) => ({
+    value,
+    label: t(`encoder.resolutions.${value}`),
+  }));
+
+  const fpsOptions: SelectOption[] = FPS_VALUES.map((value) => ({
+    value,
+    label: t(`encoder.frameRates.${value}`),
+  }));
+
+  const audioBitrateOptions: SelectOption[] = AUDIO_BITRATE_VALUES.map((value) => ({
+    value,
+    label: t(`audio.bitrates.${value}`),
+  }));
 
   const validate = (): boolean => {
     const newErrors: Partial<FormData> = {};
 
     if (!formData.name.trim()) {
-      newErrors.name = 'Output group name is required';
+      newErrors.name = t('validation.outputGroupNameRequired');
     }
 
     const bitrate = parseInt(formData.videoBitrate);
     if (isNaN(bitrate) || bitrate < 500 || bitrate > 50000) {
-      newErrors.videoBitrate = 'Bitrate must be between 500 and 50000 kbps';
+      newErrors.videoBitrate = t('validation.bitrateRange');
     }
 
     setErrors(newErrors);
@@ -202,7 +194,7 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
     }
   };
 
-  const title = mode === 'create' ? 'Create Output Group' : 'Edit Output Group';
+  const title = mode === 'create' ? t('modals.createOutputGroup') : t('modals.editOutputGroup');
 
   return (
     <Modal
@@ -213,18 +205,18 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={saving}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button onClick={handleSave} disabled={saving || loadingEncoders}>
-            {saving ? 'Saving...' : mode === 'create' ? 'Create Group' : 'Save Changes'}
+            {saving ? t('common.saving') : mode === 'create' ? t('modals.createGroup') : t('common.saveChanges')}
           </Button>
         </>
       }
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <Input
-          label="Output Group Name"
-          placeholder="e.g., High Quality Stream"
+          label={t('modals.outputGroupName')}
+          placeholder={t('modals.outputGroupNamePlaceholder')}
           value={formData.name}
           onChange={handleChange('name')}
           error={errors.name}
@@ -232,7 +224,7 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
           <Select
-            label="Video Encoder"
+            label={t('encoder.videoEncoder')}
             value={formData.videoEncoder}
             onChange={handleChange('videoEncoder')}
             options={videoEncoderOptions}
@@ -240,7 +232,7 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
           />
 
           <Select
-            label="Audio Codec"
+            label={t('modals.audioCodec')}
             value={formData.audioCodec}
             onChange={handleChange('audioCodec')}
             options={audioEncoderOptions}
@@ -250,43 +242,43 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
           <Select
-            label="Resolution"
+            label={t('encoder.resolution')}
             value={formData.resolution}
             onChange={handleChange('resolution')}
-            options={RESOLUTION_OPTIONS}
+            options={resolutionOptions}
           />
 
           <Select
-            label="Frame Rate"
+            label={t('encoder.frameRate')}
             value={formData.fps}
             onChange={handleChange('fps')}
-            options={FPS_OPTIONS}
+            options={fpsOptions}
           />
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
           <Input
-            label="Video Bitrate (kbps)"
+            label={t('encoder.videoBitrate')}
             type="number"
             placeholder="6000"
             value={formData.videoBitrate}
             onChange={handleChange('videoBitrate')}
             error={errors.videoBitrate}
-            helper="Recommended: 4500-6000 for 1080p60"
+            helper={t('encoder.videoBitrateHelper')}
           />
 
           <Select
-            label="Audio Bitrate"
+            label={t('modals.audioBitrate')}
             value={formData.audioBitrate}
             onChange={handleChange('audioBitrate')}
-            options={AUDIO_BITRATE_OPTIONS}
+            options={audioBitrateOptions}
           />
         </div>
 
         <div style={{ paddingTop: '8px' }}>
           <Toggle
-            label="Generate PTS Timestamps"
-            description="Add timestamp generation for compatibility with some platforms"
+            label={t('modals.generatePts')}
+            description={t('modals.generatePtsDescription')}
             checked={formData.generatePts}
             onChange={(checked) => setFormData((prev) => ({ ...prev, generatePts: checked }))}
           />

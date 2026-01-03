@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Plus, Monitor, Gauge, Target } from 'lucide-react';
 import { Grid } from '@/components/ui/Grid';
 import { ProfileCard } from '@/components/dashboard/ProfileCard';
@@ -8,6 +9,7 @@ import { ProfileModal } from '@/components/modals';
 import { useProfileStore } from '@/stores/profileStore';
 
 export function Profiles() {
+  const { t } = useTranslation();
   const { profiles, current, loading, error, selectProfile, duplicateProfile } = useProfileStore();
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -15,7 +17,7 @@ export function Profiles() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--text-secondary)]">Loading profiles...</div>
+        <div className="text-[var(--text-secondary)]">{t('profiles.loadingProfiles')}</div>
       </div>
     );
   }
@@ -23,7 +25,7 @@ export function Profiles() {
   if (error) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--error-text)]">Error: {error}</div>
+        <div className="text-[var(--error-text)]">{t('common.error')}: {error}</div>
       </div>
     );
   }
@@ -39,14 +41,14 @@ export function Profiles() {
                 <Plus className="w-8 h-8 text-[var(--primary)]" />
               </div>
               <h3 className="text-lg font-semibold text-[var(--text-primary)]" style={{ marginBottom: '8px' }}>
-                No Profiles Yet
+                {t('profiles.noProfilesYet')}
               </h3>
               <p className="text-[var(--text-secondary)] max-w-md mx-auto" style={{ marginBottom: '24px' }}>
-                Create your first streaming profile to get started. Profiles contain your encoder settings and stream targets.
+                {t('profiles.noProfilesDescription')}
               </p>
               <Button onClick={() => setCreateModalOpen(true)}>
                 <Plus className="w-4 h-4" />
-                Create Your First Profile
+                {t('profiles.createFirstProfile')}
               </Button>
             </div>
           </CardBody>
@@ -77,7 +79,7 @@ export function Profiles() {
             meta={[
               { icon: <Monitor className="w-4 h-4" />, label: profile.resolution },
               { icon: <Gauge className="w-4 h-4" />, label: `${profile.bitrate} kbps` },
-              { icon: <Target className="w-4 h-4" />, label: `${profile.targetCount} targets` },
+              { icon: <Target className="w-4 h-4" />, label: t('profiles.targetsCount', { count: profile.targetCount }) },
             ]}
             active={current?.id === profile.id}
             onClick={() => selectProfile(profile.name)}
@@ -91,7 +93,7 @@ export function Profiles() {
                     handleEdit(profile.name);
                   }}
                 >
-                  Edit
+                  {t('common.edit')}
                 </Button>
                 <Button
                   variant="ghost"
@@ -101,7 +103,7 @@ export function Profiles() {
                     duplicateProfile(profile.name);
                   }}
                 >
-                  Duplicate
+                  {t('common.duplicate')}
                 </Button>
               </div>
             }
@@ -118,7 +120,7 @@ export function Profiles() {
               <Plus className="w-6 h-6 text-[var(--primary)]" />
             </div>
             <span className="text-sm font-medium text-[var(--text-secondary)]">
-              Create New Profile
+              {t('profiles.createNewProfile')}
             </span>
           </CardBody>
         </Card>

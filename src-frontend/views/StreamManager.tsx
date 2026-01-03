@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Play, Square, Settings2, Activity, Gauge, Clock } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -19,6 +20,7 @@ interface StreamManagerProps {
 }
 
 export function StreamManager({ onNavigate }: StreamManagerProps) {
+  const { t } = useTranslation();
   const { current, loading, error } = useProfileStore();
   const {
     isStreaming,
@@ -71,10 +73,10 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
 
       // Validation passed, start streaming
       await startAllGroups(current.outputGroups, current.incomingUrl);
-      toast.success('Streaming started');
+      toast.success(t('toast.streamStarted'));
     } catch (err) {
       console.error('[StreamManager] startAllGroups failed:', err);
-      toast.error(`Failed to start streaming: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(t('toast.startFailed', { error: err instanceof Error ? err.message : String(err) }));
     } finally {
       setIsValidating(false);
     }
@@ -83,9 +85,9 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
   const handleStopAll = async () => {
     try {
       await stopAllGroups();
-      toast.info('Streaming stopped');
+      toast.info(t('toast.streamStopped'));
     } catch (err) {
-      toast.error(`Failed to stop streaming: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(t('toast.stopFailed', { error: err instanceof Error ? err.message : String(err) }));
     }
   };
 
@@ -94,7 +96,7 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--text-secondary)]">Loading...</div>
+        <div className="text-[var(--text-secondary)]">{t('common.loading')}</div>
       </div>
     );
   }
@@ -102,7 +104,7 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
   if (error) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--error-text)]">Error: {error}</div>
+        <div className="text-[var(--error-text)]">{t('common.error')}: {error}</div>
       </div>
     );
   }
@@ -113,7 +115,7 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
         <CardBody>
           <div className="text-center py-12">
             <p className="text-[var(--text-secondary)]">
-              Please select a profile first to manage streams.
+              {t('streams.selectProfileFirst')}
             </p>
           </div>
         </CardBody>
@@ -125,8 +127,8 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
 
   if (outputGroups.length === 0) {
     return (
-      <Alert variant="warning" title="No Output Groups">
-        You need to create at least one output group with stream targets before you can start streaming.
+      <Alert variant="warning" title={t('streams.noOutputGroups')}>
+        {t('streams.noOutputGroupsDescription')}
       </Alert>
     );
   }
@@ -146,23 +148,23 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
   return (
     <div className="flex flex-col" style={{ gap: '24px' }}>
       {streamError && (
-        <Alert variant="error" title="Stream Error">
+        <Alert variant="error" title={t('streams.streamError')}>
           {streamError}
         </Alert>
       )}
 
       {!isStreaming && !streamError && (
-        <Alert variant="info" title="Ready to Stream">
-          Configure your output groups below and click "Start All Streams" when ready.
+        <Alert variant="info" title={t('streams.readyToStream')}>
+          {t('streams.readyToStreamDescription')}
         </Alert>
       )}
 
       <Card>
         <CardHeader>
           <div>
-            <CardTitle>Stream Control</CardTitle>
+            <CardTitle>{t('streams.streamControl')}</CardTitle>
             <CardDescription>
-              Manage your active streams and target configurations
+              {t('streams.streamControlDescription')}
             </CardDescription>
           </div>
         </CardHeader>
@@ -174,7 +176,7 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
             return (
             <OutputGroup
               key={group.id}
-              name={group.name || `Output Group`}
+              name={group.name || t('streams.defaultGroupName')}
               info={getGroupInfo(group)}
               status={getGroupStatus(group.id)}
               defaultExpanded={isGroupActive}
@@ -185,7 +187,7 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
                   <div className="text-center">
                     <div className="flex items-center justify-center gap-1 text-[var(--text-tertiary)] mb-1">
                       <Activity className="w-3 h-3" />
-                      <span className="text-xs">FPS</span>
+                      <span className="text-xs">{t('streams.fps')}</span>
                     </div>
                     <div className="text-lg font-semibold text-[var(--text-primary)]">
                       {stats.fps.toFixed(1)}
@@ -194,7 +196,7 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
                   <div className="text-center">
                     <div className="flex items-center justify-center gap-1 text-[var(--text-tertiary)] mb-1">
                       <Gauge className="w-3 h-3" />
-                      <span className="text-xs">Bitrate</span>
+                      <span className="text-xs">{t('streams.bitrate')}</span>
                     </div>
                     <div className="text-lg font-semibold text-[var(--text-primary)]">
                       {formatBitrate(stats.bitrate)}
@@ -203,14 +205,14 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
                   <div className="text-center">
                     <div className="flex items-center justify-center gap-1 text-[var(--text-tertiary)] mb-1">
                       <Clock className="w-3 h-3" />
-                      <span className="text-xs">Uptime</span>
+                      <span className="text-xs">{t('streams.uptime')}</span>
                     </div>
                     <div className="text-lg font-semibold text-[var(--text-primary)]">
                       {formatUptime(stats.uptime)}
                     </div>
                   </div>
                   <div className="text-center">
-                    <div className="text-xs text-[var(--text-tertiary)] mb-1">Speed</div>
+                    <div className="text-xs text-[var(--text-tertiary)] mb-1">{t('streams.speed')}</div>
                     <div className="text-lg font-semibold text-[var(--text-primary)]">
                       {stats.speed.toFixed(2)}x
                     </div>
@@ -246,7 +248,7 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
 
                 {group.streamTargets.length === 0 && (
                   <div className="text-center py-4 text-[var(--text-secondary)]">
-                    No stream targets in this group
+                    {t('streams.noTargetsInGroup')}
                   </div>
                 )}
               </div>
@@ -257,17 +259,17 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
           <div className="flex justify-end border-t border-[var(--border-muted)]" style={{ gap: '12px', paddingTop: '16px' }}>
             <Button variant="outline" onClick={() => onNavigate('encoder')}>
               <Settings2 className="w-4 h-4" />
-              Configure
+              {t('streams.configure')}
             </Button>
             {isStreaming ? (
               <Button variant="destructive" onClick={handleStopAll}>
                 <Square className="w-4 h-4" />
-                Stop All Streams
+                {t('streams.stopAllStreams')}
               </Button>
             ) : (
               <Button onClick={handleStartAll} disabled={isConnecting || isValidating}>
                 <Play className="w-4 h-4" />
-                {isValidating ? 'Validating...' : isConnecting ? 'Connecting...' : 'Start All Streams'}
+                {isValidating ? t('streams.validating') : isConnecting ? t('streams.connecting') : t('streams.startAllStreams')}
               </Button>
             )}
           </div>

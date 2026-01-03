@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { FolderOpen, Download, Trash2, Github, BookOpen, RefreshCw } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -10,6 +11,7 @@ import { Logo } from '@/components/layout/Logo';
 import { api } from '@/lib/tauri';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { open as openPath } from '@tauri-apps/plugin-shell';
+import { useLanguageStore, type Language } from '@/stores/languageStore';
 import type { AppSettings } from '@/types/api';
 
 interface SettingsState {
@@ -34,7 +36,7 @@ const defaultSettings: SettingsState = {
   startMinimized: false,
   showNotifications: true,
   ffmpegPath: '',
-  ffmpegVersion: 'Detecting...',
+  ffmpegVersion: '',  // Will be translated when displayed
   autoDownloadFfmpeg: true,
   profileStoragePath: '',
   encryptStreamKeys: false,
@@ -43,6 +45,8 @@ const defaultSettings: SettingsState = {
 };
 
 export function Settings() {
+  const { t } = useTranslation();
+  const { setLanguage, initFromSettings } = useLanguageStore();
   const [settings, setSettings] = useState<SettingsState>(defaultSettings);
 
   // Load settings on mount
@@ -56,12 +60,15 @@ export function Settings() {
         const profilesPath = await api.settings.getProfilesPath();
 
         // Get FFmpeg version
-        let ffmpegVersion = 'FFmpeg not found';
+        let ffmpegVersion = '';  // Empty means not found (will be translated when displayed)
         try {
           ffmpegVersion = await api.system.testFfmpeg();
         } catch {
           // FFmpeg not available
         }
+
+        // Initialize i18n with the saved language
+        initFromSettings(backendSettings.language);
 
         setSettings({
           language: backendSettings.language,
@@ -109,6 +116,10 @@ export function Settings() {
   }, [settings]);
 
   const updateSetting = <K extends keyof SettingsState>(key: K, value: SettingsState[K]) => {
+    // If changing language, update i18n as well
+    if (key === 'language') {
+      setLanguage(value as Language);
+    }
     saveSettings({ [key]: value });
   };
 
@@ -139,28 +150,28 @@ export function Settings() {
       const selected = await openDialog({
         directory: true,
         multiple: false,
-        title: 'Select Export Location',
+        title: t('settings.selectExportLocation'),
       });
       if (selected && typeof selected === 'string') {
         await api.settings.exportData(selected);
-        alert('Data exported successfully!');
+        alert(t('toast.dataExported'));
       }
     } catch (error) {
       console.error('Failed to export data:', error);
-      alert('Failed to export data: ' + error);
+      alert(`${t('settings.exportFailed')}: ${error}`);
     }
   };
 
   const handleClearAllData = async () => {
-    if (confirm('Are you sure you want to clear all data? This action cannot be undone.')) {
+    if (confirm(t('settings.clearConfirm'))) {
       try {
         await api.settings.clearData();
-        alert('All data has been cleared.');
+        alert(t('toast.dataCleared'));
         // Reset to defaults
         setSettings({ ...defaultSettings, loading: false, saving: false });
       } catch (error) {
         console.error('Failed to clear data:', error);
-        alert('Failed to clear data: ' + error);
+        alert(`${t('settings.clearFailed')}: ${error}`);
       }
     }
   };
@@ -176,7 +187,7 @@ export function Settings() {
   if (settings.loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--text-secondary)]">Loading settings...</div>
+        <div className="text-[var(--text-secondary)]">{t('common.loading')}</div>
       </div>
     );
   }
@@ -187,15 +198,15 @@ export function Settings() {
       <Card>
         <CardHeader>
           <div>
-            <CardTitle>General Settings</CardTitle>
+            <CardTitle>{t('settings.generalSettings')}</CardTitle>
             <CardDescription>
-              Configure application preferences
+              {t('settings.generalDescription')}
             </CardDescription>
           </div>
         </CardHeader>
         <CardBody style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <Select
-            label="Language"
+            label={t('settings.language')}
             value={settings.language}
             onChange={(e) => updateSetting('language', e.target.value)}
             options={languageOptions}
@@ -203,10 +214,10 @@ export function Settings() {
           <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
             <div>
               <div className="text-sm font-medium text-[var(--text-primary)]">
-                Start Minimized
+                {t('settings.startMinimized')}
               </div>
               <div className="text-xs text-[var(--text-tertiary)]">
-                Start the app minimized to system tray
+                {t('settings.startMinimizedDescription')}
               </div>
             </div>
             <Toggle
@@ -217,10 +228,10 @@ export function Settings() {
           <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
             <div>
               <div className="text-sm font-medium text-[var(--text-primary)]">
-                Show Notifications
+                {t('settings.showNotifications')}
               </div>
               <div className="text-xs text-[var(--text-tertiary)]">
-                Display system notifications for stream events
+                {t('settings.showNotificationsDescription')}
               </div>
             </div>
             <Toggle
@@ -235,16 +246,16 @@ export function Settings() {
       <Card>
         <CardHeader>
           <div>
-            <CardTitle>FFmpeg Configuration</CardTitle>
+            <CardTitle>{t('settings.ffmpegConfig')}</CardTitle>
             <CardDescription>
-              Configure FFmpeg encoding backend
+              {t('settings.ffmpegDescription')}
             </CardDescription>
           </div>
         </CardHeader>
         <CardBody style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div className="flex flex-col" style={{ gap: '6px' }}>
             <label className="block text-sm font-medium text-[var(--text-primary)]">
-              FFmpeg Path
+              {t('settings.ffmpegPath')}
             </label>
             <div className="flex" style={{ gap: '8px' }}>
               <Input
@@ -254,23 +265,23 @@ export function Settings() {
               />
               <Button variant="outline" onClick={handleBrowseFfmpeg}>
                 <FolderOpen className="w-4 h-4" />
-                Browse
+                {t('settings.browse')}
               </Button>
             </div>
           </div>
           <Input
-            label="FFmpeg Version"
-            value={settings.ffmpegVersion}
+            label={t('settings.ffmpegVersion')}
+            value={settings.loading ? t('settings.detecting') : (settings.ffmpegVersion || t('settings.ffmpegNotFound'))}
             disabled
-            helper="Detected version of FFmpeg"
+            helper={t('settings.detectedVersion')}
           />
           <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
             <div>
               <div className="text-sm font-medium text-[var(--text-primary)]">
-                Auto-Download FFmpeg
+                {t('settings.autoDownload')}
               </div>
               <div className="text-xs text-[var(--text-tertiary)]">
-                Automatically download FFmpeg if not found
+                {t('settings.autoDownloadDescription')}
               </div>
             </div>
             <Toggle
@@ -285,16 +296,16 @@ export function Settings() {
       <Card>
         <CardHeader>
           <div>
-            <CardTitle>Data & Privacy</CardTitle>
+            <CardTitle>{t('settings.dataPrivacy')}</CardTitle>
             <CardDescription>
-              Manage your data and privacy settings
+              {t('settings.dataPrivacyDescription')}
             </CardDescription>
           </div>
         </CardHeader>
         <CardBody style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div className="flex flex-col" style={{ gap: '6px' }}>
             <label className="block text-sm font-medium text-[var(--text-primary)]">
-              Profile Storage
+              {t('settings.profileStorage')}
             </label>
             <div className="flex" style={{ gap: '8px' }}>
               <Input
@@ -304,17 +315,17 @@ export function Settings() {
               />
               <Button variant="outline" onClick={handleOpenProfileStorage}>
                 <FolderOpen className="w-4 h-4" />
-                Open
+                {t('settings.open')}
               </Button>
             </div>
           </div>
           <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
             <div>
               <div className="text-sm font-medium text-[var(--text-primary)]">
-                Encrypt Stream Keys
+                {t('settings.encryptStreamKeys')}
               </div>
               <div className="text-xs text-[var(--text-tertiary)]">
-                Encrypt stream keys at rest using AES-256
+                {t('settings.encryptStreamKeysDescription')}
               </div>
             </div>
             <Toggle
@@ -325,11 +336,11 @@ export function Settings() {
           <div className="border-t border-[var(--border-muted)] flex" style={{ paddingTop: '16px', gap: '12px' }}>
             <Button variant="outline" onClick={handleExportData}>
               <Download className="w-4 h-4" />
-              Export Data
+              {t('settings.exportData')}
             </Button>
             <Button variant="destructive" onClick={handleClearAllData}>
               <Trash2 className="w-4 h-4" />
-              Clear All Data
+              {t('settings.clearAllData')}
             </Button>
           </div>
         </CardBody>
@@ -339,9 +350,9 @@ export function Settings() {
       <Card>
         <CardHeader>
           <div>
-            <CardTitle>About</CardTitle>
+            <CardTitle>{t('settings.about')}</CardTitle>
             <CardDescription>
-              Application information
+              {t('settings.aboutDescription')}
             </CardDescription>
           </div>
         </CardHeader>
@@ -351,10 +362,10 @@ export function Settings() {
               <Logo size="lg" />
             </div>
             <div className="text-sm text-[var(--text-secondary)]" style={{ marginBottom: '4px' }}>
-              Version 2.0.0-beta
+              {t('settings.version')} 2.0.0-beta
             </div>
             <div className="text-xs text-[var(--text-tertiary)]" style={{ marginBottom: '24px' }}>
-              Multi-destination streaming made simple
+              {t('settings.tagline')}
             </div>
             <div className="flex justify-center" style={{ gap: '12px' }}>
               <Button
@@ -363,7 +374,7 @@ export function Settings() {
                 onClick={() => window.open('https://github.com/billboyles/magillastream', '_blank')}
               >
                 <Github className="w-4 h-4" />
-                GitHub
+                {t('settings.github')}
               </Button>
               <Button
                 variant="ghost"
@@ -371,7 +382,7 @@ export function Settings() {
                 onClick={() => window.open('https://github.com/billboyles/magillastream#readme', '_blank')}
               >
                 <BookOpen className="w-4 h-4" />
-                Docs
+                {t('settings.docs')}
               </Button>
               <Button
                 variant="ghost"
@@ -379,7 +390,7 @@ export function Settings() {
                 onClick={() => window.open('https://github.com/billboyles/magillastream/releases', '_blank')}
               >
                 <RefreshCw className="w-4 h-4" />
-                Updates
+                {t('settings.updates')}
               </Button>
             </div>
           </div>

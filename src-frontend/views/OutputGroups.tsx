@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
 import { Card, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -9,6 +10,7 @@ import { useStreamStore } from '@/stores/streamStore';
 import type { OutputGroup } from '@/types/profile';
 
 export function OutputGroups() {
+  const { t } = useTranslation();
   const { current, loading, error, updateOutputGroup, removeOutputGroup, addOutputGroup } = useProfileStore();
   const { activeGroups } = useStreamStore();
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -28,7 +30,7 @@ export function OutputGroups() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--text-secondary)]">Loading output groups...</div>
+        <div className="text-[var(--text-secondary)]">{t('common.loading')}</div>
       </div>
     );
   }
@@ -36,7 +38,7 @@ export function OutputGroups() {
   if (error) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--error-text)]">Error: {error}</div>
+        <div className="text-[var(--error-text)]">{t('common.error')}: {error}</div>
       </div>
     );
   }
@@ -47,7 +49,7 @@ export function OutputGroups() {
         <CardBody>
           <div className="text-center py-12">
             <p className="text-[var(--text-secondary)]">
-              Please select a profile first to manage output groups.
+              {t('outputs.selectProfileFirst')}
             </p>
           </div>
         </CardBody>
@@ -67,15 +69,14 @@ export function OutputGroups() {
                 <Plus className="w-8 h-8 text-[var(--primary)]" />
               </div>
               <h3 className="text-lg font-semibold text-[var(--text-primary)]" style={{ marginBottom: '8px' }}>
-                No Output Groups
+                {t('outputs.noOutputGroups')}
               </h3>
               <p className="text-[var(--text-secondary)] max-w-md mx-auto" style={{ marginBottom: '24px' }}>
-                Create an output group to configure encoding settings for your streams.
-                Each group can have multiple stream targets with shared encoding settings.
+                {t('outputs.noOutputGroupsDescription')}
               </p>
               <Button onClick={() => setCreateModalOpen(true)}>
                 <Plus className="w-4 h-4" />
-                Create Output Group
+                {t('outputs.createOutputGroup')}
               </Button>
             </div>
           </CardBody>
@@ -109,7 +110,7 @@ export function OutputGroups() {
       const newGroup = {
         ...group,
         id: crypto.randomUUID(),
-        name: `${group.name} (Copy)`,
+        name: `${group.name} ${t('common.copySuffix')}`,
       };
       addOutputGroup(newGroup);
     }
@@ -139,7 +140,7 @@ export function OutputGroups() {
         <CardBody className="flex items-center justify-center" style={{ padding: '32px 24px' }}>
           <Button variant="ghost">
             <Plus className="w-5 h-5" style={{ marginRight: '8px' }} />
-            Add Output Group
+            {t('outputs.addOutputGroup')}
           </Button>
         </CardBody>
       </Card>

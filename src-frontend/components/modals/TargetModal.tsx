@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { Select, SelectOption } from '@/components/ui/Select';
@@ -15,14 +16,8 @@ export interface TargetModalProps {
   target?: StreamTarget;
 }
 
-// Platform options for select
-const PLATFORM_OPTIONS: SelectOption[] = [
-  { value: 'youtube', label: 'YouTube' },
-  { value: 'twitch', label: 'Twitch' },
-  { value: 'kick', label: 'Kick' },
-  { value: 'facebook', label: 'Facebook Live' },
-  { value: 'custom', label: 'Custom RTMP' },
-];
+// Platform values (labels added with translation in component)
+const PLATFORM_VALUES: Platform[] = ['youtube', 'twitch', 'kick', 'facebook', 'custom'];
 
 interface FormData {
   platform: Platform;
@@ -41,6 +36,7 @@ const defaultFormData: FormData = {
 };
 
 export function TargetModal({ open, onClose, mode, groupId, target }: TargetModalProps) {
+  const { t } = useTranslation();
   const { addStreamTarget, updateStreamTarget, saveProfile } = useProfileStore();
   const [formData, setFormData] = useState<FormData>(defaultFormData);
   const [errors, setErrors] = useState<Partial<FormData>>({});
@@ -83,22 +79,22 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
     const newErrors: Partial<FormData> = {};
 
     if (!formData.name.trim()) {
-      newErrors.name = 'Target name is required';
+      newErrors.name = t('validation.targetNameRequired');
     }
 
     if (!formData.url.trim()) {
-      newErrors.url = 'Server URL is required';
+      newErrors.url = t('validation.serverUrlRequired');
     } else if (!formData.url.startsWith('rtmp://') && !formData.url.startsWith('rtmps://')) {
-      newErrors.url = 'URL must start with rtmp:// or rtmps://';
+      newErrors.url = t('validation.urlMustStartWithRtmp');
     }
 
     if (!formData.streamKey.trim()) {
-      newErrors.streamKey = 'Stream key is required';
+      newErrors.streamKey = t('validation.streamKeyRequired');
     }
 
     const port = parseInt(formData.port);
     if (isNaN(port) || port < 1 || port > 65535) {
-      newErrors.port = 'Port must be between 1 and 65535';
+      newErrors.port = t('validation.portRange');
     }
 
     setErrors(newErrors);
@@ -145,7 +141,13 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
     }
   };
 
-  const title = mode === 'create' ? 'Add Stream Target' : 'Edit Stream Target';
+  const title = mode === 'create' ? t('modals.addStreamTarget') : t('modals.editStreamTarget');
+
+  // Create translated platform options
+  const platformOptions: SelectOption[] = PLATFORM_VALUES.map((value) => ({
+    value,
+    label: t(`platforms.${value}`),
+  }));
 
   return (
     <Modal
@@ -155,48 +157,48 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={saving}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving...' : mode === 'create' ? 'Add Target' : 'Save Changes'}
+            {saving ? t('common.saving') : mode === 'create' ? t('modals.addTarget') : t('common.saveChanges')}
           </Button>
         </>
       }
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <Select
-          label="Platform"
+          label={t('modals.platform')}
           value={formData.platform}
           onChange={handlePlatformChange}
-          options={PLATFORM_OPTIONS}
+          options={platformOptions}
         />
 
         <Input
-          label="Target Name"
-          placeholder="e.g., YouTube Gaming"
+          label={t('modals.targetName')}
+          placeholder={t('modals.targetNamePlaceholder')}
           value={formData.name}
           onChange={handleChange('name')}
           error={errors.name}
         />
 
         <Input
-          label="Server URL"
+          label={t('modals.serverUrl')}
           placeholder="rtmp://a.rtmp.youtube.com/live2"
           value={formData.url}
           onChange={handleChange('url')}
           error={errors.url}
-          helper={formData.platform !== 'custom' ? `Default: ${platformConfig[formData.platform].defaultServer}` : undefined}
+          helper={formData.platform !== 'custom' ? `${t('modals.default')}: ${platformConfig[formData.platform].defaultServer}` : undefined}
         />
 
         <div style={{ position: 'relative' }}>
           <Input
-            label="Stream Key"
+            label={t('targets.streamKey')}
             type={showStreamKey ? 'text' : 'password'}
-            placeholder="Enter your stream key"
+            placeholder={t('modals.streamKeyPlaceholder')}
             value={formData.streamKey}
             onChange={handleChange('streamKey')}
             error={errors.streamKey}
-            helper="Your stream key is encrypted when saved"
+            helper={t('modals.streamKeyHelper')}
           />
           <button
             type="button"
@@ -213,18 +215,18 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
               padding: '4px 8px',
             }}
           >
-            {showStreamKey ? 'Hide' : 'Show'}
+            {showStreamKey ? t('common.hide') : t('common.show')}
           </button>
         </div>
 
         <Input
-          label="Port"
+          label={t('modals.port')}
           type="number"
           placeholder="1935"
           value={formData.port}
           onChange={handleChange('port')}
           error={errors.port}
-          helper="Default RTMP port is 1935"
+          helper={t('modals.portHelper')}
         />
       </div>
     </Modal>

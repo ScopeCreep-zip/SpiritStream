@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ChevronDown, Layers } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { StreamStatus } from '@/components/ui/StreamStatus';
@@ -21,6 +22,7 @@ export function OutputGroup({
   children,
   className,
 }: OutputGroupProps) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(defaultExpanded);
 
   return (
@@ -55,7 +57,7 @@ export function OutputGroup({
         <div className="flex items-center gap-3">
           <StreamStatus
             status={status}
-            label={status === 'offline' ? 'Ready' : undefined}
+            label={status === 'offline' ? t('status.ready') : undefined}
           />
           <ChevronDown
             className={cn(

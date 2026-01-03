@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Radio, Activity, AlertTriangle, Clock, Monitor, Gauge, Target as TargetIcon, Upload, Loader2 } from 'lucide-react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { readTextFile } from '@tauri-apps/plugin-fs';
@@ -25,6 +26,7 @@ interface DashboardProps {
 }
 
 export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }: DashboardProps) {
+  const { t } = useTranslation();
   const { current: currentProfile, loading, error, saveProfile, loadProfiles } = useProfileStore();
   const { isStreaming, stats, uptime, globalStatus, startAllGroups, stopAllGroups } = useStreamStore();
   const [isTesting, setIsTesting] = useState(false);
@@ -45,27 +47,27 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
 
       // Validate basic structure
       if (!profile.name || !profile.outputGroups) {
-        throw new Error('Invalid profile format');
+        throw new Error(t('errors.invalidProfileFormat'));
       }
 
       // Save imported profile
       await api.profile.save(profile);
       await loadProfiles();
-      toast.success(`Profile "${profile.name}" imported successfully`);
+      toast.success(t('toast.profileImported', { name: profile.name }));
     } catch (err) {
-      toast.error(`Failed to import profile: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      toast.error(t('toast.importFailed', { error: err instanceof Error ? err.message : t('errors.unknown') }));
     }
   };
 
   // Test stream configuration without actually streaming
   const handleTestStream = async () => {
     if (!currentProfile) {
-      toast.error('No profile selected');
+      toast.error(t('errors.noProfileSelected'));
       return;
     }
 
     setIsTesting(true);
-    toast.info('Testing configuration...');
+    toast.info(t('toast.testingConfig'));
 
     try {
       // Run comprehensive validation (test ALL targets, not just enabled)
@@ -75,12 +77,12 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
       });
 
       if (result.valid) {
-        toast.success('All checks passed! Your streaming configuration is valid.');
+        toast.success(t('toast.testPassed'));
       } else {
         displayValidationIssues(result.issues, toast);
       }
     } catch (err) {
-      toast.error(`Test failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      toast.error(t('toast.testFailed', { error: err instanceof Error ? err.message : t('errors.unknown') }));
     } finally {
       setIsTesting(false);
     }
@@ -105,7 +107,7 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--text-secondary)]">Loading...</div>
+        <div className="text-[var(--text-secondary)]">{t('common.loading')}</div>
       </div>
     );
   }
@@ -113,7 +115,7 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
   if (error) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--error-text)]">Error: {error}</div>
+        <div className="text-[var(--error-text)]">{t('common.error')}: {error}</div>
       </div>
     );
   }
@@ -123,29 +125,29 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
       <StatsRow>
         <StatBox
           icon={<Radio className="w-5 h-5" />}
-          label="Active Streams"
+          label={t('dashboard.activeStreams')}
           value={activeStreamsCount}
-          change={isStreaming ? 'Streaming' : 'Ready to start'}
+          change={isStreaming ? t('status.streaming') : t('status.readyToStart')}
           changeType={isStreaming ? 'positive' : 'neutral'}
         />
         <StatBox
           icon={<Activity className="w-5 h-5" />}
-          label="Total Bitrate"
+          label={t('dashboard.totalBitrate')}
           value={stats.totalBitrate > 0 ? formatBitrate(stats.totalBitrate) : '0 kbps'}
-          change={isStreaming ? 'Active' : 'No active streams'}
+          change={isStreaming ? t('status.active') : t('status.noActiveStreams')}
         />
         <StatBox
           icon={<AlertTriangle className="w-5 h-5" />}
-          label="Dropped Frames"
+          label={t('dashboard.droppedFrames')}
           value={stats.droppedFrames}
-          change={stats.droppedFrames === 0 ? 'No issues' : 'Check connection'}
+          change={stats.droppedFrames === 0 ? t('status.noIssues') : t('status.checkConnection')}
           changeType={stats.droppedFrames === 0 ? 'positive' : 'neutral'}
         />
         <StatBox
           icon={<Clock className="w-5 h-5" />}
-          label="Uptime"
+          label={t('dashboard.uptime')}
           value={formatUptime(Math.floor(uptime))}
-          change={isStreaming ? 'Live' : 'Not streaming'}
+          change={isStreaming ? t('status.live') : t('status.notStreaming')}
         />
       </StatsRow>
 
@@ -153,10 +155,10 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
         <Card>
           <CardHeader>
             <div>
-              <CardTitle>Active Profile</CardTitle>
-              <CardDescription>Currently selected streaming configuration</CardDescription>
+              <CardTitle>{t('dashboard.activeProfile')}</CardTitle>
+              <CardDescription>{t('dashboard.activeProfileDescription')}</CardDescription>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => onNavigate('profiles')}>Change</Button>
+            <Button variant="ghost" size="sm" onClick={() => onNavigate('profiles')}>{t('common.change')}</Button>
           </CardHeader>
           <CardBody>
             {currentProfile ? (
@@ -165,14 +167,14 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
                 meta={[
                   { icon: <Monitor className="w-4 h-4" />, label: currentProfile.outputGroups[0]?.resolution || 'N/A' },
                   { icon: <Gauge className="w-4 h-4" />, label: `${currentProfile.outputGroups[0]?.videoBitrate || 0} kbps` },
-                  { icon: <TargetIcon className="w-4 h-4" />, label: `${targets.length} targets` },
+                  { icon: <TargetIcon className="w-4 h-4" />, label: t('dashboard.targetsCount', { count: targets.length }) },
                 ]}
                 active
               />
             ) : (
               <div className="text-center py-8 text-[var(--text-secondary)]">
-                <p>No profile selected</p>
-                <Button variant="primary" className="mt-4" onClick={onOpenProfileModal}>Create Profile</Button>
+                <p>{t('dashboard.noProfileSelected')}</p>
+                <Button variant="primary" className="mt-4" onClick={onOpenProfileModal}>{t('dashboard.createProfile')}</Button>
               </div>
             )}
           </CardBody>
@@ -181,21 +183,21 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
         <Card>
           <CardHeader>
             <div>
-              <CardTitle>Quick Actions</CardTitle>
-              <CardDescription>Common streaming operations</CardDescription>
+              <CardTitle>{t('dashboard.quickActions')}</CardTitle>
+              <CardDescription>{t('dashboard.quickActionsDescription')}</CardDescription>
             </div>
           </CardHeader>
           <CardBody>
             <Grid cols={2} gap="sm">
               <Button variant="outline" className="justify-start" onClick={onOpenProfileModal}>
-                New Profile
+                {t('profiles.newProfile')}
               </Button>
               <Button variant="outline" className="justify-start" onClick={handleImportProfile}>
                 <Upload className="w-4 h-4" />
-                Import Profile
+                {t('dashboard.importProfile')}
               </Button>
               <Button variant="outline" className="justify-start" onClick={onOpenTargetModal} disabled={!currentProfile}>
-                Add Target
+                {t('targets.addTarget')}
               </Button>
               <Button
                 variant="outline"
@@ -204,7 +206,7 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
                 disabled={isTesting || isStreaming || !currentProfile}
               >
                 {isTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                {isTesting ? 'Testing...' : 'Test Stream'}
+                {isTesting ? t('dashboard.testing') : t('dashboard.testStream')}
               </Button>
             </Grid>
           </CardBody>
@@ -214,10 +216,10 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
       <Card>
         <CardHeader>
           <div>
-            <CardTitle>Stream Targets</CardTitle>
-            <CardDescription>Connected streaming platforms</CardDescription>
+            <CardTitle>{t('dashboard.streamTargets')}</CardTitle>
+            <CardDescription>{t('dashboard.streamTargetsDescription')}</CardDescription>
           </div>
-          <Button variant="ghost" size="sm" onClick={() => onNavigate('targets')}>Manage</Button>
+          <Button variant="ghost" size="sm" onClick={() => onNavigate('targets')}>{t('common.manage')}</Button>
         </CardHeader>
         <CardBody>
           {targets.length > 0 ? (
@@ -229,18 +231,18 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
                   name={target.name}
                   status={globalStatus === 'live' ? 'live' : 'offline'}
                   stats={[
-                    { label: 'Viewers', value: stats.targetStats[target.id]?.viewers || 0 },
-                    { label: 'Bitrate', value: stats.targetStats[target.id]?.bitrate || '--' },
-                    { label: 'FPS', value: stats.targetStats[target.id]?.fps || '--' },
+                    { label: t('dashboard.viewers'), value: stats.targetStats[target.id]?.viewers || 0 },
+                    { label: t('dashboard.bitrate'), value: stats.targetStats[target.id]?.bitrate || '--' },
+                    { label: t('dashboard.fps'), value: stats.targetStats[target.id]?.fps || '--' },
                   ]}
                 />
               ))}
             </Grid>
           ) : (
             <div className="text-center py-8 text-[var(--text-secondary)]">
-              <p>No stream targets configured</p>
+              <p>{t('dashboard.noStreamTargets')}</p>
               <Button variant="outline" className="mt-4" onClick={onOpenTargetModal} disabled={!currentProfile}>
-                Add Target
+                {t('targets.addTarget')}
               </Button>
             </div>
           )}

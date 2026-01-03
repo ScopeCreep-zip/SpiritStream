@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { Select, SelectOption } from '@/components/ui/Select';
@@ -48,6 +49,7 @@ const defaultFormData: FormData = {
 };
 
 export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps) {
+  const { t } = useTranslation();
   const { createProfile, updateProfile, saveProfile, current } = useProfileStore();
   const [formData, setFormData] = useState<FormData>(defaultFormData);
   const [errors, setErrors] = useState<Partial<FormData>>({});
@@ -76,18 +78,18 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
     const newErrors: Partial<FormData> = {};
 
     if (!formData.name.trim()) {
-      newErrors.name = 'Profile name is required';
+      newErrors.name = t('validation.profileNameRequired');
     }
 
     if (!formData.incomingUrl.trim()) {
-      newErrors.incomingUrl = 'Incoming URL is required';
+      newErrors.incomingUrl = t('validation.incomingUrlRequired');
     } else if (!formData.incomingUrl.startsWith('rtmp://') && !formData.incomingUrl.startsWith('rtmps://')) {
-      newErrors.incomingUrl = 'URL must start with rtmp:// or rtmps://';
+      newErrors.incomingUrl = t('validation.urlMustStartWithRtmp');
     }
 
     const bitrate = parseInt(formData.videoBitrate);
     if (isNaN(bitrate) || bitrate < 500 || bitrate > 50000) {
-      newErrors.videoBitrate = 'Bitrate must be between 500 and 50000 kbps';
+      newErrors.videoBitrate = t('validation.bitrateRange');
     }
 
     setErrors(newErrors);
@@ -108,7 +110,7 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
           incomingUrl: formData.incomingUrl,
           outputGroups: [{
             id: crypto.randomUUID(),
-            name: 'Default Output',
+            name: t('outputs.defaultOutputName'),
             videoEncoder: 'libx264',
             resolution: formData.resolution,
             videoBitrate: parseInt(formData.videoBitrate),
@@ -150,7 +152,7 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
           updateProfile({
             outputGroups: [{
               id: crypto.randomUUID(),
-              name: 'Default Output',
+              name: t('outputs.defaultOutputName'),
               videoEncoder: 'libx264',
               resolution: formData.resolution,
               videoBitrate: parseInt(formData.videoBitrate),
@@ -185,7 +187,7 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
     }
   };
 
-  const title = mode === 'create' ? 'Create New Profile' : 'Edit Profile';
+  const title = mode === 'create' ? t('modals.createNewProfile') : t('modals.editProfile');
 
   return (
     <Modal
@@ -195,42 +197,42 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={saving}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving...' : mode === 'create' ? 'Create Profile' : 'Save Changes'}
+            {saving ? t('common.saving') : mode === 'create' ? t('modals.createProfile') : t('common.saveChanges')}
           </Button>
         </>
       }
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <Input
-          label="Profile Name"
-          placeholder="e.g., Gaming Stream - High Quality"
+          label={t('modals.profileName')}
+          placeholder={t('modals.profileNamePlaceholder')}
           value={formData.name}
           onChange={handleChange('name')}
           error={errors.name}
         />
 
         <Input
-          label="Incoming RTMP URL"
+          label={t('modals.incomingRtmpUrl')}
           placeholder="rtmp://localhost/live"
           value={formData.incomingUrl}
           onChange={handleChange('incomingUrl')}
           error={errors.incomingUrl}
-          helper="The RTMP source URL from your streaming software (OBS, etc.)"
+          helper={t('modals.incomingUrlHelper')}
         />
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
           <Select
-            label="Resolution"
+            label={t('encoder.resolution')}
             value={formData.resolution}
             onChange={handleChange('resolution')}
             options={RESOLUTION_OPTIONS}
           />
 
           <Select
-            label="Frame Rate"
+            label={t('encoder.frameRate')}
             value={formData.fps}
             onChange={handleChange('fps')}
             options={FPS_OPTIONS}
@@ -238,13 +240,13 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
         </div>
 
         <Input
-          label="Video Bitrate (kbps)"
+          label={t('encoder.videoBitrate')}
           type="number"
           placeholder="6000"
           value={formData.videoBitrate}
           onChange={handleChange('videoBitrate')}
           error={errors.videoBitrate}
-          helper="Recommended: 4500-6000 for 1080p60, 2500-4000 for 720p60"
+          helper={t('encoder.videoBitrateHelper')}
         />
       </div>
     </Modal>

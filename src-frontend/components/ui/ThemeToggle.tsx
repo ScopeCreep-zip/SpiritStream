@@ -1,4 +1,5 @@
 import { Sun, Moon } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
 import { useThemeStore } from '@/stores/themeStore';
 
@@ -7,6 +8,7 @@ export interface ThemeToggleProps {
 }
 
 export function ThemeToggle({ className }: ThemeToggleProps) {
+  const { t } = useTranslation();
   const { theme, toggleTheme } = useThemeStore();
 
   return (
@@ -21,7 +23,7 @@ export function ThemeToggle({ className }: ThemeToggleProps) {
         'focus-visible:ring-offset-[var(--ring-offset)]',
         className
       )}
-      aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+      aria-label={theme === 'light' ? t('common.switchToDarkMode') : t('common.switchToLightMode')}
     >
       {theme === 'light' ? (
         <Moon className="w-5 h-5 text-[var(--text-secondary)]" />

@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Download, Trash2, ArrowDownToLine } from 'lucide-react';
 import { listen } from '@tauri-apps/api/event';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
@@ -7,14 +8,6 @@ import { Select } from '@/components/ui/Select';
 import { LogConsole } from '@/components/feedback/LogConsole';
 import { LogEntry } from '@/components/feedback/LogEntry';
 import type { LogLevel, LogEntry as LogEntryType } from '@/types/stream';
-
-// Initial log entry shown on mount
-const initialLog: LogEntryType = {
-  id: '0',
-  timestamp: new Date(),
-  level: 'info',
-  message: 'Log console initialized - listening for events...',
-};
 
 // Interface for the log event payload from tauri_plugin_log
 interface TauriLogRecord {
@@ -43,6 +36,16 @@ function mapLogLevel(level: number): LogLevel {
 let logIdCounter = 1;
 
 export function Logs() {
+  const { t } = useTranslation();
+
+  // Initial log entry - created with useMemo to include translation
+  const initialLog: LogEntryType = useMemo(() => ({
+    id: '0',
+    timestamp: new Date(),
+    level: 'info',
+    message: t('logs.initialized'),
+  }), [t]);
+
   const [logs, setLogs] = useState<LogEntryType[]>([initialLog]);
   const [filter, setFilter] = useState<LogLevel | 'all'>('all');
   const [autoScroll, setAutoScroll] = useState(true);
@@ -114,20 +117,20 @@ export function Logs() {
   };
 
   const filterOptions = [
-    { value: 'all', label: 'All Levels' },
-    { value: 'info', label: 'Info' },
-    { value: 'warn', label: 'Warning' },
-    { value: 'error', label: 'Error' },
-    { value: 'debug', label: 'Debug' },
+    { value: 'all', label: t('logs.allLevels') },
+    { value: 'info', label: t('logs.info') },
+    { value: 'warn', label: t('logs.warning') },
+    { value: 'error', label: t('logs.error') },
+    { value: 'debug', label: t('logs.debug') },
   ];
 
   return (
     <Card>
       <CardHeader>
         <div>
-          <CardTitle>Application Logs</CardTitle>
+          <CardTitle>{t('logs.title')}</CardTitle>
           <CardDescription>
-            Real-time application events and debug information
+            {t('logs.description')}
           </CardDescription>
         </div>
         <div className="flex items-center" style={{ gap: '12px' }}>
@@ -141,18 +144,18 @@ export function Logs() {
             variant={autoScroll ? "primary" : "ghost"}
             size="sm"
             onClick={() => setAutoScroll(!autoScroll)}
-            title={autoScroll ? "Auto-scroll enabled" : "Auto-scroll disabled"}
+            title={autoScroll ? t('logs.autoScrollEnabled') : t('logs.autoScrollDisabled')}
           >
             <ArrowDownToLine className="w-4 h-4" />
-            Auto-scroll
+            {t('logs.autoScroll')}
           </Button>
           <Button variant="ghost" size="sm" onClick={handleExport}>
             <Download className="w-4 h-4" />
-            Export
+            {t('common.export')}
           </Button>
           <Button variant="ghost" size="sm" onClick={handleClear}>
             <Trash2 className="w-4 h-4" />
-            Clear
+            {t('common.clear')}
           </Button>
         </div>
       </CardHeader>
@@ -161,7 +164,7 @@ export function Logs() {
           <div ref={consoleRef}>
             {filteredLogs.length === 0 ? (
               <div className="text-center text-[var(--text-secondary)]" style={{ padding: '32px 16px' }}>
-                No logs to display
+                {t('logs.noLogs')}
               </div>
             ) : (
               filteredLogs.map((log) => (

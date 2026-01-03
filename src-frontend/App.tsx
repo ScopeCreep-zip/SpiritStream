@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   LayoutDashboard,
   Users,
@@ -45,47 +46,11 @@ import {
 
 export type View = 'dashboard' | 'profiles' | 'streams' | 'encoder' | 'outputs' | 'targets' | 'logs' | 'settings';
 
-interface ViewMeta {
-  title: string;
-  description: string;
-}
-
-const viewMeta: Record<View, ViewMeta> = {
-  dashboard: {
-    title: 'Dashboard',
-    description: 'Overview of your streaming setup',
-  },
-  profiles: {
-    title: 'Streaming Profiles',
-    description: 'Manage your saved streaming configurations',
-  },
-  streams: {
-    title: 'Stream Manager',
-    description: 'Control your live streaming operations',
-  },
-  encoder: {
-    title: 'Encoder Settings',
-    description: 'Configure video and audio encoding parameters',
-  },
-  outputs: {
-    title: 'Output Groups',
-    description: 'Manage output configurations and encoding presets',
-  },
-  targets: {
-    title: 'Stream Targets',
-    description: 'Configure streaming destinations and platforms',
-  },
-  logs: {
-    title: 'Application Logs',
-    description: 'View real-time application events and debug information',
-  },
-  settings: {
-    title: 'Settings',
-    description: 'Configure application preferences',
-  },
-};
+// View meta is now handled via translations using keys like header.dashboard.title
 
 function App() {
+  const { t } = useTranslation();
+
   // Initialize app - load profiles from backend
   useInitialize();
 
@@ -111,7 +76,9 @@ function App() {
   // Streaming validation state
   const [isValidating, setIsValidating] = useState(false);
 
-  const { title, description } = viewMeta[currentView];
+  // Get title and description from translations
+  const title = t(`header.${currentView}.title`);
+  const description = t(`header.${currentView}.description`);
 
   // Count profiles for badge from store
   const profileCount = profiles.length;
@@ -139,7 +106,7 @@ function App() {
 
       // Validation passed, start streaming
       await startAllGroups(current.outputGroups, current.incomingUrl);
-      toast.success('Streaming started');
+      toast.success(t('toast.streamStarted'));
     } catch (err) {
       console.error('[App] startAllGroups failed:', err);
       toast.error(`Failed to start streaming: ${err instanceof Error ? err.message : String(err)}`);
@@ -200,18 +167,18 @@ function App() {
         return isStreaming ? (
           <Button variant="destructive" onClick={handleStopStreaming}>
             <Square className="w-4 h-4" />
-            Stop Streaming
+            {t('streams.stopStreaming')}
           </Button>
         ) : (
           <Button onClick={handleStartStreaming} disabled={isValidating || !current}>
             <Play className="w-4 h-4" />
-            {isValidating ? 'Validating...' : 'Start Streaming'}
+            {isValidating ? t('streams.validating') : t('streams.startStreaming')}
           </Button>
         );
       case 'profiles':
         return (
           <Button onClick={() => setProfileModalOpen(true)}>
-            New Profile
+            {t('profiles.newProfile')}
           </Button>
         );
       case 'targets':
@@ -220,7 +187,7 @@ function App() {
             onClick={() => setTargetModalOpen(true)}
             disabled={!current || current.outputGroups.length === 0}
           >
-            Add Target
+            {t('targets.addTarget')}
           </Button>
         );
       case 'outputs':
@@ -229,7 +196,7 @@ function App() {
             onClick={() => setOutputGroupModalOpen(true)}
             disabled={!current}
           >
-            New Output Group
+            {t('outputs.newOutputGroup')}
           </Button>
         );
       default:
@@ -244,57 +211,57 @@ function App() {
           <Logo />
         </SidebarHeader>
         <SidebarNav>
-          <NavSection title="Main">
+          <NavSection title={t('nav.main')}>
             <NavItem
               icon={<LayoutDashboard className="w-5 h-5" />}
-              label="Dashboard"
+              label={t('nav.dashboard')}
               active={currentView === 'dashboard'}
               onClick={() => setCurrentView('dashboard')}
             />
             <NavItem
               icon={<Users className="w-5 h-5" />}
-              label="Profiles"
+              label={t('nav.profiles')}
               active={currentView === 'profiles'}
               onClick={() => setCurrentView('profiles')}
               badge={profileCount}
             />
             <NavItem
               icon={<Radio className="w-5 h-5" />}
-              label="Stream Manager"
+              label={t('nav.streamManager')}
               active={currentView === 'streams'}
               onClick={() => setCurrentView('streams')}
             />
           </NavSection>
-          <NavSection title="Configuration">
+          <NavSection title={t('nav.configuration')}>
             <NavItem
               icon={<Settings2 className="w-5 h-5" />}
-              label="Encoder Settings"
+              label={t('nav.encoderSettings')}
               active={currentView === 'encoder'}
               onClick={() => setCurrentView('encoder')}
             />
             <NavItem
               icon={<Share2 className="w-5 h-5" />}
-              label="Output Groups"
+              label={t('nav.outputGroups')}
               active={currentView === 'outputs'}
               onClick={() => setCurrentView('outputs')}
             />
             <NavItem
               icon={<Target className="w-5 h-5" />}
-              label="Stream Targets"
+              label={t('nav.streamTargets')}
               active={currentView === 'targets'}
               onClick={() => setCurrentView('targets')}
             />
           </NavSection>
-          <NavSection title="System">
+          <NavSection title={t('nav.system')}>
             <NavItem
               icon={<FileText className="w-5 h-5" />}
-              label="Logs"
+              label={t('nav.logs')}
               active={currentView === 'logs'}
               onClick={() => setCurrentView('logs')}
             />
             <NavItem
               icon={<Cog className="w-5 h-5" />}
-              label="Settings"
+              label={t('nav.settings')}
               active={currentView === 'settings'}
               onClick={() => setCurrentView('settings')}
             />

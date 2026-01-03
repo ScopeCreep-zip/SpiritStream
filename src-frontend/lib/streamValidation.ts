@@ -1,4 +1,5 @@
 import { api } from '@/lib/tauri';
+import i18n from '@/lib/i18n';
 import type { Profile } from '@/types/profile';
 
 /**
@@ -63,14 +64,14 @@ export async function validateStreamConfig(
       if (!ffmpegVersion || ffmpegVersion.includes('not found')) {
         issues.push({
           code: 'FFMPEG_NOT_FOUND',
-          message: 'FFmpeg not found. Please install FFmpeg or set the path in Settings.',
+          message: i18n.t('errors.ffmpegNotFound'),
           severity: 'error',
         });
       }
     } catch {
       issues.push({
         code: 'FFMPEG_UNAVAILABLE',
-        message: 'FFmpeg not available. Please install FFmpeg.',
+        message: i18n.t('errors.ffmpegNotAvailable'),
         severity: 'error',
       });
     }
@@ -80,7 +81,7 @@ export async function validateStreamConfig(
   if (!profile.incomingUrl || profile.incomingUrl.trim() === '') {
     issues.push({
       code: 'MISSING_INCOMING_URL',
-      message: 'No incoming URL configured. Set an RTMP source URL in your profile.',
+      message: i18n.t('errors.noIncomingUrl'),
       severity: 'error',
       field: 'incomingUrl',
     });
@@ -90,7 +91,7 @@ export async function validateStreamConfig(
   if (profile.outputGroups.length === 0) {
     issues.push({
       code: 'NO_OUTPUT_GROUPS',
-      message: 'No output groups configured.',
+      message: i18n.t('errors.noOutputGroups'),
       severity: 'error',
     });
   }
@@ -106,20 +107,20 @@ export async function validateStreamConfig(
     issues.push({
       code: 'NO_STREAM_TARGETS',
       message: checkEnabledTargetsOnly
-        ? 'No stream targets enabled. Enable at least one destination.'
-        : 'No stream targets configured. Add at least one destination.',
+        ? i18n.t('errors.noTargetsEnabled')
+        : i18n.t('errors.noTargetsConfigured'),
       severity: 'error',
     });
   }
 
   // 6. Validate each target
   for (const target of targetsToValidate) {
-    const targetName = target.name || 'Unnamed';
+    const targetName = target.name || i18n.t('common.unnamed', 'Unnamed');
 
     if (!target.url || target.url.trim() === '') {
       issues.push({
         code: 'TARGET_MISSING_URL',
-        message: `Target "${targetName}" has no URL configured.`,
+        message: i18n.t('errors.targetMissingUrl', { name: targetName }),
         severity: 'error',
         field: `target.${target.id}.url`,
       });
@@ -128,7 +129,7 @@ export async function validateStreamConfig(
     if (!target.streamKey || target.streamKey.trim() === '') {
       issues.push({
         code: 'TARGET_MISSING_STREAM_KEY',
-        message: `Target "${targetName}" has no stream key configured.`,
+        message: i18n.t('errors.targetMissingKey', { name: targetName }),
         severity: 'error',
         field: `target.${target.id}.streamKey`,
       });
@@ -137,7 +138,7 @@ export async function validateStreamConfig(
 
   // 7. Validate each output group's encoder settings
   for (const group of profile.outputGroups) {
-    const groupName = group.name || 'Unnamed';
+    const groupName = group.name || i18n.t('common.unnamed', 'Unnamed');
 
     // Only validate groups that have enabled targets (if filtering)
     if (checkEnabledTargetsOnly) {
@@ -148,7 +149,7 @@ export async function validateStreamConfig(
     if (!group.videoEncoder || group.videoEncoder.trim() === '') {
       issues.push({
         code: 'GROUP_MISSING_ENCODER',
-        message: `Output group "${groupName}" has no video encoder set.`,
+        message: i18n.t('errors.groupMissingEncoder', { name: groupName }),
         severity: 'error',
         field: `group.${group.id}.videoEncoder`,
       });
@@ -157,7 +158,7 @@ export async function validateStreamConfig(
     if (!group.resolution || group.resolution.trim() === '') {
       issues.push({
         code: 'GROUP_MISSING_RESOLUTION',
-        message: `Output group "${groupName}" has no resolution set.`,
+        message: i18n.t('errors.groupMissingResolution', { name: groupName }),
         severity: 'error',
         field: `group.${group.id}.resolution`,
       });
@@ -189,6 +190,6 @@ export function displayValidationIssues(
   }
 
   if (errors.length > 3) {
-    toastFn.info(`...and ${errors.length - 3} more issues to fix`);
+    toastFn.info(i18n.t('errors.moreIssues', { count: errors.length - 3 }));
   }
 }

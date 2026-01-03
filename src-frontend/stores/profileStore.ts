@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api } from '@/lib/tauri';
+import i18n from '@/lib/i18n';
 import type { Profile, ProfileSummary, OutputGroup, StreamTarget } from '@/types/profile';
 
 interface ProfileState {
@@ -85,7 +86,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
             summaries.push({
               id: name,
               name,
-              resolution: '(encrypted)',
+              resolution: i18n.t('common.encrypted'),
               bitrate: 0,
               targetCount: 0,
               isEncrypted: true,
@@ -238,7 +239,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       const newProfile: Profile = {
         ...profile,
         id: crypto.randomUUID(),
-        name: `${profile.name} (Copy)`,
+        name: `${profile.name} ${i18n.t('common.copySuffix')}`,
       };
       await api.profile.save(newProfile);
       const profiles = [...get().profiles, createSummary(newProfile)];

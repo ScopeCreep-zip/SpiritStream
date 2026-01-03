@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
 import { StreamStatus } from '@/components/ui/StreamStatus';
 
@@ -23,6 +24,8 @@ export function ProfileCard({
   actions,
   className,
 }: ProfileCardProps) {
+  const { t } = useTranslation();
+
   return (
     <div
       onClick={onClick}
@@ -40,7 +43,7 @@ export function ProfileCard({
       <div className="flex items-center justify-between mb-3">
         <span className="font-semibold text-[var(--text-primary)]">{name}</span>
         <div className="flex items-center gap-2">
-          {active && <StreamStatus status="live" label="Active" />}
+          {active && <StreamStatus status="live" label={t('dashboard.active')} />}
           {actions}
         </div>
       </div>

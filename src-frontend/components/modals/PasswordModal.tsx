@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Modal, ModalBody, ModalFooter } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
@@ -21,6 +22,7 @@ export function PasswordModal({
   profileName,
   error,
 }: PasswordModalProps) {
+  const { t } = useTranslation();
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -41,17 +43,17 @@ export function PasswordModal({
     setLocalError('');
 
     if (!password) {
-      setLocalError('Password is required');
+      setLocalError(t('validation.passwordRequired'));
       return;
     }
 
     if (mode === 'encrypt') {
       if (password.length < 8) {
-        setLocalError('Password must be at least 8 characters');
+        setLocalError(t('validation.passwordMinLength'));
         return;
       }
       if (password !== confirmPassword) {
-        setLocalError('Passwords do not match');
+        setLocalError(t('validation.passwordsDoNotMatch'));
         return;
       }
     }
@@ -62,12 +64,12 @@ export function PasswordModal({
   const displayError = error || localError;
 
   const title = mode === 'encrypt'
-    ? 'Encrypt Profile'
-    : 'Enter Password';
+    ? t('modals.encryptProfile')
+    : t('modals.enterPassword');
 
   const description = mode === 'encrypt'
-    ? `Set a password to encrypt "${profileName || 'this profile'}". You will need this password to access the profile.`
-    : `"${profileName || 'This profile'}" is encrypted. Enter the password to unlock it.`;
+    ? t('modals.encryptDescription', { profileName: profileName || t('modals.thisProfile') })
+    : t('modals.decryptDescription', { profileName: profileName || t('modals.thisProfile') });
 
   return (
     <Modal open={open} onClose={onClose} title={title}>
@@ -83,11 +85,11 @@ export function PasswordModal({
           <div className="space-y-4">
             <div className="relative">
               <Input
-                label="Password"
+                label={t('modals.password.password')}
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder={mode === 'encrypt' ? 'Enter a strong password' : 'Enter password'}
+                placeholder={mode === 'encrypt' ? t('modals.enterStrongPassword') : t('modals.enterPassword')}
                 autoFocus
               />
               <button
@@ -101,11 +103,11 @@ export function PasswordModal({
 
             {mode === 'encrypt' && (
               <Input
-                label="Confirm Password"
+                label={t('modals.confirmPassword')}
                 type={showPassword ? 'text' : 'password'}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Confirm your password"
+                placeholder={t('modals.confirmYourPassword')}
               />
             )}
 
@@ -117,10 +119,10 @@ export function PasswordModal({
 
             {mode === 'encrypt' && (
               <div className="text-xs text-[var(--text-tertiary)]">
-                <p className="font-medium mb-1">Password requirements:</p>
+                <p className="font-medium mb-1">{t('modals.passwordRequirements')}:</p>
                 <ul className="list-disc list-inside space-y-0.5">
-                  <li>At least 8 characters</li>
-                  <li>Keep it safe - there is no recovery option</li>
+                  <li>{t('modals.passwordReq8Chars')}</li>
+                  <li>{t('modals.passwordReqNoRecovery')}</li>
                 </ul>
               </div>
             )}
@@ -129,10 +131,10 @@ export function PasswordModal({
 
         <ModalFooter>
           <Button type="button" variant="ghost" onClick={onClose}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button type="submit" variant="primary">
-            {mode === 'encrypt' ? 'Encrypt Profile' : 'Unlock'}
+            {mode === 'encrypt' ? t('modals.encryptProfile') : t('modals.unlock')}
           </Button>
         </ModalFooter>
       </form>

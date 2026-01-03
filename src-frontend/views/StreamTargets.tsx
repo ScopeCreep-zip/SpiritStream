@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Plus, Eye, EyeOff, Copy, Pencil, Trash2 } from 'lucide-react';
 import { Grid } from '@/components/ui/Grid';
 import { Card, CardBody } from '@/components/ui/Card';
@@ -11,6 +12,7 @@ import { toast } from '@/hooks/useToast';
 import type { Platform, StreamTarget } from '@/types/profile';
 
 export function StreamTargets() {
+  const { t } = useTranslation();
   const { current, loading, error, removeStreamTarget, saveProfile } = useProfileStore();
   const [revealedKeys, setRevealedKeys] = useState<Set<string>>(new Set());
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -52,7 +54,7 @@ export function StreamTargets() {
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    toast.success('Stream key copied to clipboard');
+    toast.success(t('toast.streamKeyCopied'));
   };
 
   const handleRemoveTarget = async (groupId: string, targetId: string) => {
@@ -68,7 +70,7 @@ export function StreamTargets() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--text-secondary)]">Loading targets...</div>
+        <div className="text-[var(--text-secondary)]">{t('common.loading')}</div>
       </div>
     );
   }
@@ -76,7 +78,7 @@ export function StreamTargets() {
   if (error) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--error-text)]">Error: {error}</div>
+        <div className="text-[var(--error-text)]">{t('common.error')}: {error}</div>
       </div>
     );
   }
@@ -87,7 +89,7 @@ export function StreamTargets() {
         <CardBody>
           <div className="text-center py-12">
             <p className="text-[var(--text-secondary)]">
-              Please select a profile first to manage stream targets.
+              {t('targets.selectProfileFirst')}
             </p>
           </div>
         </CardBody>
@@ -109,19 +111,19 @@ export function StreamTargets() {
                 <Plus className="w-8 h-8 text-[var(--primary)]" />
               </div>
               <h3 className="text-lg font-semibold text-[var(--text-primary)]" style={{ marginBottom: '8px' }}>
-                No Stream Targets
+                {t('targets.noStreamTargets')}
               </h3>
               <p className="text-[var(--text-secondary)]" style={{ marginBottom: '24px', maxWidth: '28rem', marginLeft: 'auto', marginRight: 'auto', textAlign: 'center' }}>
                 {hasOutputGroups
-                  ? 'Add your first streaming destination. Supports YouTube, Twitch, Kick, Facebook, and custom RTMP servers.'
-                  : 'You need to create an Output Group first before adding stream targets. Go to Output Groups to create one.'}
+                  ? t('targets.noStreamTargetsDescription')
+                  : t('targets.createOutputGroupFirst')}
               </p>
               <Button
                 onClick={() => setCreateModalOpen(true)}
                 disabled={!hasOutputGroups}
               >
                 <Plus className="w-4 h-4" />
-                Add Stream Target
+                {t('targets.addTarget')}
               </Button>
             </div>
           </CardBody>
@@ -155,7 +157,7 @@ export function StreamTargets() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  aria-label="Edit target"
+                  aria-label={t('targets.editTarget')}
                   onClick={() => openEditModal(target)}
                 >
                   <Pencil className="w-4 h-4" />
@@ -163,7 +165,7 @@ export function StreamTargets() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  aria-label="Delete target"
+                  aria-label={t('targets.deleteTarget')}
                   onClick={() => handleRemoveTarget(target.groupId, target.id)}
                 >
                   <Trash2 className="w-4 h-4" />
@@ -173,7 +175,7 @@ export function StreamTargets() {
 
             <div className="flex flex-col" style={{ gap: '6px' }}>
               <label className="block text-sm font-medium text-[var(--text-primary)]">
-                Stream Key
+                {t('targets.streamKey')}
               </label>
               <div className="flex" style={{ gap: '8px' }}>
                 <Input
@@ -186,7 +188,7 @@ export function StreamTargets() {
                   variant="ghost"
                   size="icon"
                   onClick={() => toggleKeyVisibility(target.id)}
-                  aria-label={revealedKeys.has(target.id) ? 'Hide stream key' : 'Show stream key'}
+                  aria-label={revealedKeys.has(target.id) ? t('targets.hideStreamKey') : t('targets.showStreamKey')}
                 >
                   {revealedKeys.has(target.id) ? (
                     <EyeOff className="w-4 h-4" />
@@ -198,7 +200,7 @@ export function StreamTargets() {
                   variant="ghost"
                   size="icon"
                   onClick={() => copyToClipboard(target.streamKey)}
-                  aria-label="Copy stream key"
+                  aria-label={t('targets.copyStreamKey')}
                 >
                   <Copy className="w-4 h-4" />
                 </Button>
@@ -222,7 +224,7 @@ export function StreamTargets() {
             <Plus className="w-6 h-6 text-[var(--primary)]" />
           </div>
           <span className="text-sm font-medium text-[var(--text-secondary)]">
-            {hasOutputGroups ? 'Add New Target' : 'Create Output Group First'}
+            {hasOutputGroups ? t('targets.addNewTarget') : t('targets.createOutputGroupFirst')}
           </span>
         </CardBody>
       </Card>
