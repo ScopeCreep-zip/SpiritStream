@@ -11,51 +11,74 @@ Multi-destination streaming application that allows you to stream to multiple pl
 - Real-time stream statistics
 - Cross-platform: macOS, Windows, Linux
 
-## Requirements
+## Quick Start
 
-- **FFmpeg** must be installed on your system
-  - macOS: `brew install ffmpeg`
-  - Windows: Download from [ffmpeg.org](https://ffmpeg.org/download.html) or use `winget install ffmpeg`
-  - Linux: `sudo apt install ffmpeg` (Debian/Ubuntu) or `sudo dnf install ffmpeg` (Fedora)
+### One-Command Setup
 
-## Installation
+Run the setup script to install all prerequisites automatically:
 
-### Download Pre-built Binaries
+**macOS / Linux:**
+```bash
+git clone https://github.com/billboyles/magillastream.git
+cd magillastream
+./setup.sh
+```
 
-Download the latest release for your platform from the [Releases](https://github.com/billboyles/magillastream/releases) page:
+**Windows (PowerShell):**
+```powershell
+git clone https://github.com/billboyles/magillastream.git
+cd magillastream
+.\setup.ps1
+```
+
+The setup script installs: Rust, FFmpeg, platform build tools, and npm dependencies.
+
+After setup completes, restart your terminal and run:
+```bash
+npm run dev    # Development mode
+npm run build  # Production build
+```
+
+---
+
+## Download Pre-built Binaries
+
+Download the latest release from [Releases](https://github.com/billboyles/magillastream/releases):
 
 | Platform | File |
 |----------|------|
-| macOS | `MagillaStream_x.x.x_aarch64.dmg` or `MagillaStream.app` |
+| macOS | `MagillaStream_x.x.x_aarch64.dmg` |
 | Windows | `MagillaStream_x.x.x_x64-setup.exe` |
 | Linux | `MagillaStream_x.x.x_amd64.AppImage` or `.deb` |
 
-### Build from Source
+**Note:** FFmpeg must be installed separately:
+- macOS: `brew install ffmpeg`
+- Windows: `winget install ffmpeg`
+- Linux: `sudo apt install ffmpeg`
 
-#### Prerequisites
+---
 
-- [Node.js](https://nodejs.org/) 18+
-- [Rust](https://rustup.rs/) 1.70+ (required - run `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
-- Platform-specific dependencies: See [Tauri Prerequisites](https://tauri.app/start/prerequisites/)
+## Manual Build from Source
 
-#### Steps
+### Prerequisites
+
+| Requirement | Installation |
+|-------------|--------------|
+| Node.js 18+ | [nodejs.org](https://nodejs.org/) |
+| Rust 1.70+ | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
+| FFmpeg | See above |
+| Platform tools | [Tauri Prerequisites](https://tauri.app/start/prerequisites/) |
+
+### Build Steps
 
 ```bash
-# Clone the repository
 git clone https://github.com/billboyles/magillastream.git
 cd magillastream
-
-# Install dependencies
 npm install
-
-# Development mode
-npm run dev
-
-# Production build
 npm run build
 ```
 
-Build output will be in `src-tauri/target/release/bundle/`.
+Build output: `src-tauri/target/release/bundle/`
 
 ## Usage
 
