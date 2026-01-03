@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/Input';
 import { Toggle } from '@/components/ui/Toggle';
 import { Grid } from '@/components/ui/Grid';
 import { Logo } from '@/components/layout/Logo';
+import { FFmpegDownloadProgress } from '@/components/settings/FFmpegDownloadProgress';
 import { api } from '@/lib/tauri';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { open as openPath } from '@tauri-apps/plugin-shell';
@@ -275,19 +276,29 @@ export function Settings() {
             disabled
             helper={t('settings.detectedVersion')}
           />
-          <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
-            <div>
-              <div className="text-sm font-medium text-[var(--text-primary)]">
-                {t('settings.autoDownload')}
+
+          {/* FFmpeg Status Section */}
+          <div className="border-t border-[var(--border-muted)]" style={{ paddingTop: '16px' }}>
+            {settings.ffmpegVersion ? (
+              <div className="flex items-center gap-2 text-sm text-[var(--success-text)]">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>{t('settings.ffmpegInstalled')}</span>
               </div>
-              <div className="text-xs text-[var(--text-tertiary)]">
-                {t('settings.autoDownloadDescription')}
-              </div>
-            </div>
-            <Toggle
-              checked={settings.autoDownloadFfmpeg}
-              onChange={(checked) => updateSetting('autoDownloadFfmpeg', checked)}
-            />
+            ) : (
+              <FFmpegDownloadProgress
+                onComplete={(path) => {
+                  saveSettings({ ffmpegPath: path });
+                  // Refresh FFmpeg version
+                  api.system.testFfmpeg().then(version => {
+                    setSettings(prev => ({ ...prev, ffmpegVersion: version }));
+                  }).catch(() => {
+                    // Ignore errors
+                  });
+                }}
+              />
+            )}
           </div>
         </CardBody>
       </Card>

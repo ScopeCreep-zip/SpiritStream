@@ -30,14 +30,6 @@ export const api = {
     isGroupStreaming: (groupId: string) => invoke<boolean>('is_group_streaming', { groupId }),
     getActiveGroupIds: () => invoke<string[]>('get_active_group_ids'),
   },
-  target: {
-    add: (groupId: string, target: StreamTarget) =>
-      invoke<void>('add_stream_target', { groupId, target }),
-    update: (groupId: string, targetId: string, target: Partial<StreamTarget>) =>
-      invoke<void>('update_stream_target', { groupId, targetId, target }),
-    remove: (groupId: string, targetId: string) =>
-      invoke<void>('remove_stream_target', { groupId, targetId }),
-  },
   system: {
     getEncoders: () => invoke<Encoders>('get_encoders'),
     testFfmpeg: () => invoke<string>('test_ffmpeg'),

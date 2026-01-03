@@ -302,7 +302,10 @@
     "tagline": "Multi-destination streaming made simple",
     "github": "GitHub",
     "docs": "Docs",
-    "updates": "Updates"
+    "updates": "Updates",
+    "ffmpegInstalled": "FFmpeg is installed and ready",
+    "downloadFFmpeg": "Download FFmpeg",
+    "retryDownload": "Retry Download"
   },
   "modals": {
     "createNewProfile": "Create New Profile",

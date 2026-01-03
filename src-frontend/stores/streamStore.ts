@@ -110,29 +110,20 @@ export const useStreamStore = create<StreamState>((set, get) => ({
 
   // Start all output groups (respects enabled/disabled targets)
   startAllGroups: async (groups, incomingUrl) => {
-    console.log('[streamStore] startAllGroups called');
-    console.log('[streamStore] groups:', groups);
-    console.log('[streamStore] incomingUrl:', incomingUrl);
-
     set({ globalStatus: 'connecting', error: null });
     const enabledTargets = get().enabledTargets;
-    console.log('[streamStore] enabledTargets:', [...enabledTargets]);
 
     try {
       let startedAny = false;
 
       for (const group of groups) {
-        console.log('[streamStore] Processing group:', group.id, group.name);
-
         // Filter to only enabled targets
         const filteredTargets = group.streamTargets.filter(
           target => enabledTargets.has(target.id)
         );
-        console.log('[streamStore] Filtered targets:', filteredTargets.length);
 
         // Skip groups with no enabled targets
         if (filteredTargets.length === 0) {
-          console.log('[streamStore] Skipping group - no enabled targets');
           continue;
         }
 
@@ -142,9 +133,7 @@ export const useStreamStore = create<StreamState>((set, get) => ({
           streamTargets: filteredTargets,
         };
 
-        console.log('[streamStore] Calling api.stream.start with:', filteredGroup);
-        const result = await api.stream.start(filteredGroup, incomingUrl);
-        console.log('[streamStore] api.stream.start returned:', result);
+        await api.stream.start(filteredGroup, incomingUrl);
 
         const activeGroups = new Set(get().activeGroups);
         activeGroups.add(group.id);
@@ -153,17 +142,14 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       }
 
       if (!startedAny) {
-        console.log('[streamStore] No groups started - throwing error');
         throw new Error('No enabled targets to stream to. Enable at least one target.');
       }
 
-      console.log('[streamStore] All groups started successfully');
       set({
         isStreaming: true,
         globalStatus: 'live',
       });
     } catch (error) {
-      console.error('[streamStore] Error:', error);
       set({ error: String(error), globalStatus: 'error' });
       throw error; // Re-throw so UI can catch it
     }

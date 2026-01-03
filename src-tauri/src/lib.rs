@@ -5,8 +5,11 @@ mod commands;
 mod models;
 mod services;
 
+use std::sync::Arc;
 use tauri::Manager;
-use services::{ProfileManager, FFmpegHandler, SettingsManager};
+use tokio::sync::Mutex;
+use services::{ProfileManager, FFmpegHandler, FFmpegDownloader, SettingsManager};
+use commands::FFmpegDownloaderState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -40,6 +43,10 @@ pub fn run() {
             let settings_manager = SettingsManager::new(app_data_dir.clone());
             app.manage(settings_manager);
 
+            // Register FFmpegDownloader as managed state
+            let ffmpeg_downloader = FFmpegDownloaderState(Arc::new(Mutex::new(FFmpegDownloader::new())));
+            app.manage(ffmpeg_downloader);
+
             log::info!("MagillaStream initialized. Data dir: {:?}", app_data_dir);
 
             Ok(())
@@ -71,6 +78,10 @@ pub fn run() {
             commands::get_profiles_path,
             commands::export_data,
             commands::clear_data,
+            // FFmpeg download commands
+            commands::download_ffmpeg,
+            commands::cancel_ffmpeg_download,
+            commands::get_bundled_ffmpeg_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

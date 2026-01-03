@@ -36,18 +36,18 @@ interface ProfileState {
   selectProfile: (name: string) => Promise<void>;
   duplicateProfile: (name: string) => Promise<void>;
 
-  // Profile mutations (local state updates, auto-save)
-  updateProfile: (updates: Partial<Profile>) => void;
+  // Profile mutations (local state updates + auto-save)
+  updateProfile: (updates: Partial<Profile>) => Promise<void>;
 
-  // Output group mutations
-  addOutputGroup: (group: OutputGroup) => void;
-  updateOutputGroup: (groupId: string, updates: Partial<OutputGroup>) => void;
-  removeOutputGroup: (groupId: string) => void;
+  // Output group mutations (auto-save)
+  addOutputGroup: (group: OutputGroup) => Promise<void>;
+  updateOutputGroup: (groupId: string, updates: Partial<OutputGroup>) => Promise<void>;
+  removeOutputGroup: (groupId: string) => Promise<void>;
 
-  // Stream target mutations
-  addStreamTarget: (groupId: string, target: StreamTarget) => void;
-  updateStreamTarget: (groupId: string, targetId: string, updates: Partial<StreamTarget>) => void;
-  removeStreamTarget: (groupId: string, targetId: string) => void;
+  // Stream target mutations (auto-save)
+  addStreamTarget: (groupId: string, target: StreamTarget) => Promise<void>;
+  updateStreamTarget: (groupId: string, targetId: string, updates: Partial<StreamTarget>) => Promise<void>;
+  removeStreamTarget: (groupId: string, targetId: string) => Promise<void>;
 }
 
 // Helper to create a summary from a full profile
@@ -249,14 +249,15 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     }
   },
 
-  updateProfile: (updates) => {
+  updateProfile: async (updates) => {
     const current = get().current;
     if (current) {
       set({ current: { ...current, ...updates } });
+      await get().saveProfile();
     }
   },
 
-  addOutputGroup: (group) => {
+  addOutputGroup: async (group) => {
     const current = get().current;
     if (current) {
       set({
@@ -265,10 +266,11 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
           outputGroups: [...current.outputGroups, group],
         },
       });
+      await get().saveProfile();
     }
   },
 
-  updateOutputGroup: (groupId, updates) => {
+  updateOutputGroup: async (groupId, updates) => {
     const current = get().current;
     if (current) {
       set({
@@ -279,10 +281,11 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
           ),
         },
       });
+      await get().saveProfile();
     }
   },
 
-  removeOutputGroup: (groupId) => {
+  removeOutputGroup: async (groupId) => {
     const current = get().current;
     if (current) {
       set({
@@ -291,10 +294,11 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
           outputGroups: current.outputGroups.filter((g) => g.id !== groupId),
         },
       });
+      await get().saveProfile();
     }
   },
 
-  addStreamTarget: (groupId, target) => {
+  addStreamTarget: async (groupId, target) => {
     const current = get().current;
     if (current) {
       set({
@@ -307,10 +311,11 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
           ),
         },
       });
+      await get().saveProfile();
     }
   },
 
-  updateStreamTarget: (groupId, targetId, updates) => {
+  updateStreamTarget: async (groupId, targetId, updates) => {
     const current = get().current;
     if (current) {
       set({
@@ -328,10 +333,11 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
           ),
         },
       });
+      await get().saveProfile();
     }
   },
 
-  removeStreamTarget: (groupId, targetId) => {
+  removeStreamTarget: async (groupId, targetId) => {
     const current = get().current;
     if (current) {
       set({
@@ -344,6 +350,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
           ),
         },
       });
+      await get().saveProfile();
     }
   },
 }));
