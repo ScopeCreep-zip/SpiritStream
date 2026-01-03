@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
 import { Card, CardBody } from '@/components/ui/Card';
@@ -7,7 +7,9 @@ import { OutputGroupCard } from '@/components/stream/OutputGroupCard';
 import { OutputGroupModal } from '@/components/modals';
 import { useProfileStore } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
+import { api } from '@/lib/tauri';
 import type { OutputGroup } from '@/types/profile';
+import type { Encoders } from '@/types/stream';
 
 export function OutputGroups() {
   const { t } = useTranslation();
@@ -16,6 +18,14 @@ export function OutputGroups() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState<OutputGroup | null>(null);
+  const [encoders, setEncoders] = useState<Encoders>({ video: ['libx264'], audio: ['aac'] });
+
+  // Fetch available encoders from backend
+  useEffect(() => {
+    api.system.getEncoders()
+      .then(setEncoders)
+      .catch((err) => console.error('Failed to load encoders:', err));
+  }, []);
 
   const openEditModal = (group: OutputGroup) => {
     setEditingGroup(group);
@@ -96,12 +106,6 @@ export function OutputGroups() {
   const getGroupStatus = (groupId: string): 'live' | 'connecting' | 'offline' | 'error' => {
     if (activeGroups.has(groupId)) return 'live';
     return 'offline';
-  };
-
-  // Placeholder encoders (would come from Tauri in Phase 4)
-  const encoders = {
-    video: ['libx264', 'h264_nvenc', 'h264_qsv', 'h264_amf'],
-    audio: ['aac', 'libmp3lame', 'libopus'],
   };
 
   const duplicateGroup = (groupId: string) => {

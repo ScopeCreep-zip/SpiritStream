@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Play, Square, Settings2, Activity, Gauge, Clock } from 'lucide-react';
+import { Play, Square, Settings2, Activity, Gauge, Clock, Upload } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Alert } from '@/components/ui/Alert';
@@ -93,6 +93,32 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
 
   const isConnecting = globalStatus === 'connecting';
 
+  // Calculate total bandwidth for enabled groups
+  const totalBandwidth = useMemo(() => {
+    if (!current) return 0;
+
+    return current.outputGroups.reduce((total, group) => {
+      // Check if any targets in this group are enabled
+      const hasEnabledTargets = group.streamTargets.some(t => enabledTargets.has(t.id));
+      if (!hasEnabledTargets) return total;
+
+      // Count enabled targets in this group (each target needs the full bitrate)
+      const enabledCount = group.streamTargets.filter(t => enabledTargets.has(t.id)).length;
+
+      // Add video + audio bitrate for each enabled target
+      const groupBitrate = (group.videoBitrate + group.audioBitrate) * enabledCount;
+      return total + groupBitrate;
+    }, 0);
+  }, [current, enabledTargets]);
+
+  // Format bandwidth for display
+  const formatTotalBandwidth = (kbps: number): string => {
+    if (kbps >= 1000) {
+      return `${(kbps / 1000).toFixed(1)} Mbps`;
+    }
+    return `${kbps} kbps`;
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -167,6 +193,17 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
               {t('streams.streamControlDescription')}
             </CardDescription>
           </div>
+          {totalBandwidth > 0 && (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--bg-muted)] rounded-lg border border-[var(--border-default)]">
+              <Upload className="w-4 h-4 text-[var(--text-tertiary)]" />
+              <div className="text-sm">
+                <span className="text-[var(--text-tertiary)]">{t('streams.totalBandwidth')}:</span>
+                <span className="font-semibold text-[var(--text-primary)] ml-1">
+                  {formatTotalBandwidth(totalBandwidth)}
+                </span>
+              </div>
+            </div>
+          )}
         </CardHeader>
         <CardBody style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {outputGroups.map((group) => {

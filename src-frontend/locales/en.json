@@ -126,7 +126,8 @@
     "defaultGroupName": "Output Group",
     "uptime": "Uptime",
     "bitrate": "Bitrate",
-    "fps": "FPS"
+    "fps": "FPS",
+    "totalBandwidth": "Total Upload"
   },
   "encoder": {
     "title": "Encoder Configuration",
@@ -168,7 +169,8 @@
       "quality": "Quality",
       "balanced": "Balanced",
       "performance": "Performance",
-      "lowLatency": "Low Latency"
+      "lowLatency": "Low Latency",
+      "low_latency": "Low Latency"
     },
     "rateControls": {
       "cbr": "CBR (Constant Bitrate)",

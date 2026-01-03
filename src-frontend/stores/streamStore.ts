@@ -55,6 +55,7 @@ interface StreamState {
   updateStats: (groupId: string, ffmpegStats: FFmpegStats) => void;
   updateTargetStats: (targetId: string, stats: TargetStats) => void;
   setStreamEnded: (groupId: string) => void;
+  setStreamError: (groupId: string, error: string) => void;
   setUptime: (uptime: number) => void;
   incrementUptime: () => void;
   setGlobalStatus: (status: StreamStatusType) => void;
@@ -305,6 +306,24 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       groupStats,
       isStreaming,
       globalStatus: isStreaming ? 'live' : 'offline',
+    });
+  },
+
+  setStreamError: (groupId, error) => {
+    const activeGroups = new Set(get().activeGroups);
+    activeGroups.delete(groupId);
+
+    // Remove group stats
+    const groupStats = { ...get().groupStats };
+    delete groupStats[groupId];
+
+    const isStreaming = activeGroups.size > 0;
+    set({
+      activeGroups,
+      groupStats,
+      isStreaming,
+      globalStatus: isStreaming ? 'live' : 'error',
+      error: `Stream error (${groupId}): ${error}`,
     });
   },
 

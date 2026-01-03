@@ -33,6 +33,26 @@ impl FFmpegHandler {
         }
     }
 
+    /// Create FFmpegHandler with optional custom FFmpeg path from settings
+    /// Falls back to auto-discovery if custom path is empty or invalid
+    pub fn new_with_custom_path(app_data_dir: PathBuf, custom_path: Option<String>) -> Self {
+        let ffmpeg_path = match custom_path {
+            Some(ref path) if !path.is_empty() && std::path::Path::new(path).exists() => {
+                log::info!("Using custom FFmpeg path from settings: {}", path);
+                path.clone()
+            }
+            _ => {
+                log::info!("Using auto-detected FFmpeg path");
+                Self::find_ffmpeg_with_bundled(app_data_dir)
+            }
+        };
+
+        Self {
+            ffmpeg_path,
+            processes: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
     /// Create a new FFmpegHandler (legacy, without bundled FFmpeg support)
     pub fn new() -> Self {
         Self {
@@ -188,12 +208,15 @@ impl FFmpegHandler {
         let mut stats = StreamStats::new(group_id.clone());
         let mut last_emit = Instant::now();
         let emit_interval = Duration::from_millis(1000); // Emit every second
+        let mut was_intentionally_stopped = false;
 
         for line_result in reader.lines() {
-            // Check if process is still running
+            // Check if process is still running (was it intentionally stopped?)
             {
                 let procs = processes.lock().unwrap();
                 if !procs.contains_key(&group_id) {
+                    // Process was removed by stop() - intentional stop
+                    was_intentionally_stopped = true;
                     break;
                 }
             }
@@ -223,8 +246,59 @@ impl FFmpegHandler {
             }
         }
 
-        // Process ended, emit final status
-        let _ = app_handle.emit("stream_ended", &group_id);
+        // Process ended - check if it was intentional or a crash
+        if was_intentionally_stopped {
+            // Intentional stop via stop() - process already removed
+            let _ = app_handle.emit("stream_ended", &group_id);
+        } else {
+            // Process ended unexpectedly (crash, connection loss, etc.)
+            // Remove from HashMap and check exit status
+            let exit_status = {
+                let mut procs = processes.lock().unwrap();
+                if let Some(mut info) = procs.remove(&group_id) {
+                    // Try to get exit status
+                    match info.child.try_wait() {
+                        Ok(Some(status)) => Some(status),
+                        _ => {
+                            // Process might still be zombied, try to wait
+                            info.child.wait().ok()
+                        }
+                    }
+                } else {
+                    None
+                }
+            };
+
+            // Determine if this was a crash or normal exit
+            let error_message = match exit_status {
+                Some(status) if status.success() => {
+                    // FFmpeg exited cleanly (exit code 0)
+                    // This might happen if the input stream ended
+                    None
+                }
+                Some(status) => {
+                    // FFmpeg exited with error
+                    let code = status.code().unwrap_or(-1);
+                    Some(format!("FFmpeg exited with code {}", code))
+                }
+                None => {
+                    // Couldn't get exit status
+                    Some("FFmpeg process terminated unexpectedly".to_string())
+                }
+            };
+
+            if let Some(error) = error_message {
+                log::warn!("[FFmpeg:{}] Stream error: {}", group_id, error);
+                // Emit stream_error event with group_id and error message
+                let _ = app_handle.emit("stream_error", serde_json::json!({
+                    "groupId": group_id,
+                    "error": error
+                }));
+            } else {
+                // Clean exit (input ended)
+                let _ = app_handle.emit("stream_ended", &group_id);
+            }
+        }
     }
 
     /// Stop streaming for an output group

@@ -6,7 +6,7 @@ mod models;
 mod services;
 
 use std::sync::Arc;
-use tauri::Manager;
+use tauri::{Manager, RunEvent};
 use tokio::sync::Mutex;
 use services::{ProfileManager, FFmpegHandler, FFmpegDownloader, SettingsManager};
 use commands::FFmpegDownloaderState;
@@ -35,12 +35,18 @@ pub fn run() {
             let profile_manager = ProfileManager::new(app_data_dir.clone());
             app.manage(profile_manager);
 
-            // Register FFmpegHandler as managed state (with bundled FFmpeg support)
-            let ffmpeg_handler = FFmpegHandler::new_with_app_dir(app_data_dir.clone());
+            // Register SettingsManager as managed state (load early to get custom FFmpeg path)
+            let settings_manager = SettingsManager::new(app_data_dir.clone());
+
+            // Load settings to get custom ffmpeg_path if configured
+            let custom_ffmpeg_path = settings_manager.load()
+                .ok()
+                .and_then(|s| if s.ffmpeg_path.is_empty() { None } else { Some(s.ffmpeg_path) });
+
+            // Register FFmpegHandler with custom path from settings (falls back to auto-discovery)
+            let ffmpeg_handler = FFmpegHandler::new_with_custom_path(app_data_dir.clone(), custom_ffmpeg_path);
             app.manage(ffmpeg_handler);
 
-            // Register SettingsManager as managed state
-            let settings_manager = SettingsManager::new(app_data_dir.clone());
             app.manage(settings_manager);
 
             // Register FFmpegDownloader as managed state
@@ -79,6 +85,19 @@ pub fn run() {
             commands::cancel_ffmpeg_download,
             commands::get_bundled_ffmpeg_path,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // Clean up FFmpeg processes on app exit
+            if let RunEvent::Exit = event {
+                log::info!("Application exiting, stopping all FFmpeg processes...");
+                if let Some(handler) = app_handle.try_state::<FFmpegHandler>() {
+                    if let Err(e) = handler.stop_all() {
+                        log::error!("Failed to stop FFmpeg processes: {}", e);
+                    } else {
+                        log::info!("All FFmpeg processes stopped successfully");
+                    }
+                }
+            }
+        });
 }

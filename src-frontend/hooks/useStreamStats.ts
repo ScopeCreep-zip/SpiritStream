@@ -18,15 +18,24 @@ export interface StreamStats {
 }
 
 /**
+ * Stream error from FFmpeg crash
+ */
+export interface StreamError {
+  groupId: string;
+  error: string;
+}
+
+/**
  * Hook to listen to real-time stream statistics from the Rust backend
  */
 export function useStreamStats() {
-  const { updateStats, setStreamEnded } = useStreamStore();
+  const { updateStats, setStreamEnded, setStreamError } = useStreamStore();
 
   // Set up event listeners
   useEffect(() => {
     let unlistenStats: UnlistenFn | null = null;
     let unlistenEnded: UnlistenFn | null = null;
+    let unlistenError: UnlistenFn | null = null;
 
     const setupListeners = async () => {
       // Listen for stream stats updates
@@ -34,9 +43,14 @@ export function useStreamStats() {
         updateStats(event.payload.groupId, event.payload);
       });
 
-      // Listen for stream ended events
+      // Listen for stream ended events (clean exit)
       unlistenEnded = await listen<string>('stream_ended', (event) => {
         setStreamEnded(event.payload);
+      });
+
+      // Listen for stream error events (crash/unexpected exit)
+      unlistenError = await listen<StreamError>('stream_error', (event) => {
+        setStreamError(event.payload.groupId, event.payload.error);
       });
     };
 
@@ -46,8 +60,9 @@ export function useStreamStats() {
     return () => {
       if (unlistenStats) unlistenStats();
       if (unlistenEnded) unlistenEnded();
+      if (unlistenError) unlistenError();
     };
-  }, [updateStats, setStreamEnded]);
+  }, [updateStats, setStreamEnded, setStreamError]);
 
   return null;
 }

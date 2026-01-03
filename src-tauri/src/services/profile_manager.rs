@@ -11,6 +11,7 @@ const ENCRYPTED_MAGIC: &[u8] = b"MGLA";
 /// Manages profile storage and retrieval
 pub struct ProfileManager {
     profiles_dir: PathBuf,
+    app_data_dir: PathBuf,
 }
 
 impl ProfileManager {
@@ -18,7 +19,10 @@ impl ProfileManager {
     pub fn new(app_data_dir: PathBuf) -> Self {
         let profiles_dir = app_data_dir.join("profiles");
         std::fs::create_dir_all(&profiles_dir).ok();
-        Self { profiles_dir }
+        Self {
+            profiles_dir,
+            app_data_dir,
+        }
     }
 
     /// Get all profile names from the profiles directory
@@ -159,5 +163,95 @@ impl ProfileManager {
     pub fn is_encrypted(&self, name: &str) -> bool {
         let mgs_path = self.profiles_dir.join(format!("{}.mgs", name));
         mgs_path.exists()
+    }
+
+    /// Encrypt all stream keys in a profile
+    fn encrypt_stream_keys(&self, profile: &mut Profile) -> Result<(), String> {
+        for group in &mut profile.output_groups {
+            for target in &mut group.stream_targets {
+                // Skip if already encrypted or empty
+                if !target.stream_key.is_empty() && !Encryption::is_stream_key_encrypted(&target.stream_key) {
+                    target.stream_key = Encryption::encrypt_stream_key(&target.stream_key, &self.app_data_dir)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Decrypt all stream keys in a profile
+    fn decrypt_stream_keys(&self, profile: &mut Profile) -> Result<(), String> {
+        for group in &mut profile.output_groups {
+            for target in &mut group.stream_targets {
+                // Only decrypt if encrypted
+                if Encryption::is_stream_key_encrypted(&target.stream_key) {
+                    target.stream_key = Encryption::decrypt_stream_key(&target.stream_key, &self.app_data_dir)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Save a profile with optional stream key encryption
+    /// encrypt_keys: Whether to encrypt individual stream keys (based on settings)
+    pub async fn save_with_key_encryption(
+        &self,
+        profile: &Profile,
+        password: Option<&str>,
+        encrypt_keys: bool,
+    ) -> Result<(), String> {
+        // Clone the profile so we can modify it
+        let mut profile_to_save = profile.clone();
+
+        // Encrypt stream keys if the setting is enabled
+        if encrypt_keys {
+            self.encrypt_stream_keys(&mut profile_to_save)?;
+        }
+
+        // Serialize to JSON
+        let content = serde_json::to_string_pretty(&profile_to_save)
+            .map_err(|e| format!("Failed to serialize profile: {}", e))?;
+
+        if let Some(pwd) = password {
+            // Encrypt and save as .mgs file
+            let encrypted = Encryption::encrypt(content.as_bytes(), pwd)?;
+
+            // Prepend magic bytes
+            let mut data = Vec::with_capacity(ENCRYPTED_MAGIC.len() + encrypted.len());
+            data.extend_from_slice(ENCRYPTED_MAGIC);
+            data.extend_from_slice(&encrypted);
+
+            let path = self.profiles_dir.join(format!("{}.mgs", profile.name));
+            std::fs::write(&path, data)
+                .map_err(|e| format!("Failed to write encrypted profile: {}", e))?;
+
+            // Remove unencrypted version if it exists
+            let json_path = self.profiles_dir.join(format!("{}.json", profile.name));
+            if json_path.exists() {
+                std::fs::remove_file(&json_path).ok();
+            }
+        } else {
+            // Save as unencrypted JSON
+            let path = self.profiles_dir.join(format!("{}.json", profile.name));
+            std::fs::write(&path, content)
+                .map_err(|e| format!("Failed to write profile: {}", e))?;
+
+            // Remove encrypted version if it exists
+            let mgs_path = self.profiles_dir.join(format!("{}.mgs", profile.name));
+            if mgs_path.exists() {
+                std::fs::remove_file(&mgs_path).ok();
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Load a profile and always decrypt stream keys (if they were encrypted)
+    pub async fn load_with_key_decryption(&self, name: &str, password: Option<&str>) -> Result<Profile, String> {
+        let mut profile = self.load(name, password).await?;
+
+        // Always try to decrypt stream keys (they'll be returned as-is if not encrypted)
+        self.decrypt_stream_keys(&mut profile)?;
+
+        Ok(profile)
     }
 }

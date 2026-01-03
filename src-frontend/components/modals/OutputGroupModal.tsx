@@ -35,7 +35,15 @@ interface FormData {
   audioCodec: string;
   audioBitrate: string;
   generatePts: boolean;
+  preset: string;
+  rateControl: string;
 }
+
+// Preset option values
+const PRESET_VALUES = ['quality', 'balanced', 'performance', 'low_latency'];
+
+// Rate control option values
+const RATE_CONTROL_VALUES = ['cbr', 'vbr', 'cqp'];
 
 const defaultFormData: FormData = {
   name: '',
@@ -46,6 +54,8 @@ const defaultFormData: FormData = {
   audioCodec: 'aac',
   audioBitrate: '128',
   generatePts: false,
+  preset: 'balanced',
+  rateControl: 'cbr',
 };
 
 export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModalProps) {
@@ -95,6 +105,8 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
           audioCodec: group.audioCodec,
           audioBitrate: String(group.audioBitrate),
           generatePts: group.generatePts,
+          preset: group.preset || 'balanced',
+          rateControl: group.rateControl || 'cbr',
         });
       } else {
         setFormData(defaultFormData);
@@ -133,6 +145,16 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
     label: tDynamic(`audio.bitrates.${value}`, { defaultValue: `${value} kbps` }),
   }));
 
+  const presetOptions: SelectOption[] = PRESET_VALUES.map((value) => ({
+    value,
+    label: tDynamic(`encoder.presets.${value}`, { defaultValue: value.charAt(0).toUpperCase() + value.slice(1).replace('_', ' ') }),
+  }));
+
+  const rateControlOptions: SelectOption[] = RATE_CONTROL_VALUES.map((value) => ({
+    value,
+    label: tDynamic(`encoder.rateControls.${value}`, { defaultValue: value.toUpperCase() }),
+  }));
+
   const validate = (): boolean => {
     const newErrors: Partial<FormData> = {};
 
@@ -164,6 +186,8 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
         audioCodec: formData.audioCodec,
         audioBitrate: parseInt(formData.audioBitrate),
         generatePts: formData.generatePts,
+        preset: formData.preset,
+        rateControl: formData.rateControl,
         streamTargets: mode === 'edit' && group ? group.streamTargets : [],
       };
 
@@ -271,6 +295,22 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
             value={formData.audioBitrate}
             onChange={handleChange('audioBitrate')}
             options={audioBitrateOptions}
+          />
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+          <Select
+            label={t('encoder.preset')}
+            value={formData.preset}
+            onChange={handleChange('preset')}
+            options={presetOptions}
+          />
+
+          <Select
+            label={t('encoder.rateControl')}
+            value={formData.rateControl}
+            onChange={handleChange('rateControl')}
+            options={rateControlOptions}
           />
         </div>
 
