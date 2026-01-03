@@ -69,13 +69,13 @@
      ───────────────────────────────────────────────────────────────────────── */
 
   /* === BACKGROUNDS === */
-  --bg-base: #FAFAFA;
-  --bg-surface: #FFFFFF;
-  --bg-surface-secondary: #FAF9FB;
-  --bg-elevated: #FFFFFF;
-  --bg-muted: #F4F2F7;
-  --bg-sunken: #EFECF3;
-  --bg-canvas: #E9E5EF;
+  --bg-base: #FAF8F5;              /* Warm cream base */
+  --bg-surface: #FFFDF9;           /* Warm off-white for cards */
+  --bg-surface-secondary: #FBF9F6;
+  --bg-elevated: #FFFEFB;          /* Slightly warmer for dropdowns */
+  --bg-muted: #F6F3EF;             /* Warm muted backgrounds */
+  --bg-sunken: #F2EFE9;            /* Warm sunken for inputs */
+  --bg-canvas: #EDE9E3;            /* Warm canvas for sidebars */
 
   /* Overlay backgrounds */
   --bg-overlay: rgba(31, 26, 41, 0.5);
@@ -123,17 +123,17 @@
   --accent-foreground: #FFFFFF;
 
   /* === BORDERS === */
-  --border-default: #E9E5EF;
-  --border-muted: #F4F2F7;
+  --border-default: #E8E4DD;         /* Warm default border */
+  --border-muted: #F3F0EA;           /* Warm subtle border */
   --border-strong: #D8D1E2;
   --border-stronger: #B8AECA;
   --border-interactive: #7C3AED;
   --border-interactive-hover: #6D28D9;
-  --border-disabled: #E9E5EF;
+  --border-disabled: #E8E4DD;
 
   /* === FOCUS & RING === */
   --ring-default: #7C3AED;
-  --ring-offset: #FFFFFF;
+  --ring-offset: #FFFDF9;            /* Match surface color */
   --ring-width: 3px;
   --ring-offset-width: 2px;
 
@@ -207,12 +207,12 @@
   /* === GRADIENTS === */
   --gradient-brand: linear-gradient(135deg, #7C3AED 0%, #C026D3 50%, #DB2777 100%);
   --gradient-brand-subtle: linear-gradient(135deg, #EDE9FE 0%, #FAE8FF 50%, #FCE7F3 100%);
-  --gradient-surface: linear-gradient(180deg, #FFFFFF 0%, #FAF9FB 100%);
+  --gradient-surface: linear-gradient(180deg, #FFFDF9 0%, #FBF9F6 100%);
 
   /* === SCROLLBAR === */
-  --scrollbar-track: #F4F2F7;
-  --scrollbar-thumb: #D8D1E2;
-  --scrollbar-thumb-hover: #B8AECA;
+  --scrollbar-track: #F6F3EF;        /* Warm scrollbar track */
+  --scrollbar-thumb: #D8D3C9;        /* Warm scrollbar thumb */
+  --scrollbar-thumb-hover: #C5BFB3;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
