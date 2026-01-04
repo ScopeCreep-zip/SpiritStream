@@ -5,7 +5,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, State};
 use tokio::sync::Mutex;
 
-use crate::services::FFmpegDownloader;
+use crate::services::{FFmpegDownloader, FFmpegVersionInfo};
 
 /// State wrapper for the FFmpeg downloader
 pub struct FFmpegDownloaderState(pub Arc<Mutex<FFmpegDownloader>>);
@@ -52,4 +52,28 @@ pub fn get_bundled_ffmpeg_path(app: AppHandle) -> Result<Option<String>, String>
         Some(path) => Ok(Some(path.to_string_lossy().to_string())),
         None => Ok(None),
     }
+}
+
+/// Check for FFmpeg updates
+/// Compares installed version against latest available version
+#[tauri::command]
+pub async fn check_ffmpeg_update(
+    installed_version: Option<String>,
+    state: State<'_, FFmpegDownloaderState>,
+) -> Result<FFmpegVersionInfo, String> {
+    log::info!("Checking for FFmpeg updates...");
+
+    let downloader = state.0.lock().await;
+    let version_info = downloader
+        .check_version_status(installed_version.as_deref())
+        .await;
+
+    log::info!(
+        "FFmpeg version check: installed={:?}, latest={:?}, update_available={}",
+        version_info.installed_version,
+        version_info.latest_version,
+        version_info.update_available
+    );
+
+    Ok(version_info)
 }

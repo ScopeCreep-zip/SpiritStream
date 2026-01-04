@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
+import type { FFmpegVersionInfo } from '@/types/api';
 
 /**
  * Download progress information from the backend
@@ -25,12 +26,18 @@ export interface FFmpegDownloadState {
   error: string | null;
   /** Path to the downloaded FFmpeg binary */
   ffmpegPath: string | null;
+  /** Version info including update availability */
+  versionInfo: FFmpegVersionInfo | null;
+  /** Whether version check is in progress */
+  isCheckingVersion: boolean;
   /** Start the FFmpeg download */
   startDownload: () => Promise<void>;
   /** Cancel the current download */
   cancelDownload: () => Promise<void>;
   /** Check for an existing bundled FFmpeg */
   checkBundledFFmpeg: () => Promise<string | null>;
+  /** Check for FFmpeg updates */
+  checkForUpdates: (installedVersion?: string) => Promise<FFmpegVersionInfo | null>;
 }
 
 /**
@@ -58,6 +65,8 @@ export function useFFmpegDownload(): FFmpegDownloadState {
   const [isDownloading, setIsDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ffmpegPath, setFFmpegPath] = useState<string | null>(null);
+  const [versionInfo, setVersionInfo] = useState<FFmpegVersionInfo | null>(null);
+  const [isCheckingVersion, setIsCheckingVersion] = useState(false);
 
   // Listen to download progress events
   useEffect(() => {
@@ -140,6 +149,26 @@ export function useFFmpegDownload(): FFmpegDownloadState {
     }
   }, []);
 
+  // Check for FFmpeg updates
+  const checkForUpdates = useCallback(
+    async (installedVersion?: string): Promise<FFmpegVersionInfo | null> => {
+      setIsCheckingVersion(true);
+      try {
+        const info = await invoke<FFmpegVersionInfo>('check_ffmpeg_update', {
+          installedVersion,
+        });
+        setVersionInfo(info);
+        return info;
+      } catch (err) {
+        console.error('Failed to check for FFmpeg updates:', err);
+        return null;
+      } finally {
+        setIsCheckingVersion(false);
+      }
+    },
+    []
+  );
+
   // Check for existing bundled FFmpeg on mount
   useEffect(() => {
     checkBundledFFmpeg();
@@ -150,9 +179,12 @@ export function useFFmpegDownload(): FFmpegDownloadState {
     isDownloading,
     error,
     ffmpegPath,
+    versionInfo,
+    isCheckingVersion,
     startDownload,
     cancelDownload,
     checkBundledFFmpeg,
+    checkForUpdates,
   };
 }
 

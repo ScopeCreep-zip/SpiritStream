@@ -102,6 +102,7 @@ pub fn run() {
             commands::download_ffmpeg,
             commands::cancel_ffmpeg_download,
             commands::get_bundled_ffmpeg_path,
+            commands::check_ffmpeg_update,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

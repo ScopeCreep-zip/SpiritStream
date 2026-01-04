@@ -301,39 +301,21 @@ export function Settings() {
 
           {/* FFmpeg Status Section */}
           <div className="border-t border-[var(--border-muted)]" style={{ paddingTop: '16px' }}>
-            {settings.ffmpegVersion ? (
-              <div className="flex items-center gap-2 text-sm text-[var(--success-text)]">
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-                <span>{t('settings.ffmpegInstalled')}</span>
-              </div>
-            ) : (
-              <FFmpegDownloadProgress
-                onComplete={(path: string) => {
-                  saveSettings({ ffmpegPath: path });
-                  // Refresh FFmpeg version
-                  api.system
-                    .testFfmpeg()
-                    .then((version: string) => {
-                      setSettings((prev) => ({ ...prev, ffmpegVersion: version }));
-                    })
-                    .catch(() => {
-                      // Ignore errors
-                    });
-                }}
-              />
-            )}
+            <FFmpegDownloadProgress
+              installedVersion={settings.ffmpegVersion || undefined}
+              onComplete={(path: string) => {
+                saveSettings({ ffmpegPath: path });
+                // Refresh FFmpeg version
+                api.system
+                  .testFfmpeg()
+                  .then((version: string) => {
+                    setSettings((prev) => ({ ...prev, ffmpegVersion: version }));
+                  })
+                  .catch(() => {
+                    // Ignore errors
+                  });
+              }}
+            />
           </div>
         </CardBody>
       </Card>

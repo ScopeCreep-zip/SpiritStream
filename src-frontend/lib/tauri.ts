@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { Profile, ProfileSummary, OutputGroup, RtmpInput } from '@/types/profile';
 import type { Encoders } from '@/types/stream';
-import type { AppSettings } from '@/types/api';
+import type { AppSettings, FFmpegVersionInfo } from '@/types/api';
 
 /**
  * Type-safe Tauri API wrapper
@@ -33,6 +33,8 @@ export const api = {
     getEncoders: () => invoke<Encoders>('get_encoders'),
     testFfmpeg: () => invoke<string>('test_ffmpeg'),
     getFfmpegPath: () => invoke<string | null>('get_bundled_ffmpeg_path'),
+    checkFfmpegUpdate: (installedVersion?: string) =>
+      invoke<FFmpegVersionInfo>('check_ffmpeg_update', { installedVersion }),
   },
   settings: {
     get: () => invoke<AppSettings>('get_settings'),

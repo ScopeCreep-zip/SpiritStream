@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use futures_util::StreamExt;
 use reqwest::Client;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 use crate::services::SettingsManager;
 use thiserror::Error;
@@ -21,6 +21,19 @@ pub struct DownloadProgress {
     pub percent: f64,
     pub phase: String,
     pub message: Option<String>,
+}
+
+/// Version information for FFmpeg
+#[derive(Debug, Clone, Serialize)]
+pub struct FFmpegVersionInfo {
+    /// Currently installed version (None if not installed)
+    pub installed_version: Option<String>,
+    /// Latest available version for download
+    pub latest_version: Option<String>,
+    /// Whether an update is available
+    pub update_available: bool,
+    /// Human-readable status message
+    pub status: String,
 }
 
 /// Errors that can occur during FFmpeg download
@@ -672,6 +685,174 @@ exit /b %errorlevel%
             Some(system_path)
         } else {
             None
+        }
+    }
+
+    /// Get the latest available FFmpeg version from the download source
+    pub async fn get_latest_version(&self) -> Result<String, DownloadError> {
+        #[cfg(target_os = "macos")]
+        {
+            // evermeet.cx provides a JSON API for version info
+            #[derive(Deserialize)]
+            struct EvermeetRelease {
+                version: String,
+            }
+
+            let response = self.client
+                .get("https://evermeet.cx/ffmpeg/info/ffmpeg/release")
+                .send()
+                .await?
+                .error_for_status()?;
+
+            let release: EvermeetRelease = response.json().await?;
+            Ok(release.version)
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            // gyan.dev release page - check via HEAD request and parse filename
+            // The release URL redirects to a file like ffmpeg-7.1-essentials_build.zip
+            let response = self.client
+                .head("https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip")
+                .send()
+                .await?;
+
+            // Try to get version from final URL after redirects
+            let final_url = response.url().to_string();
+
+            // Parse version from URL (e.g., "ffmpeg-7.1-essentials_build.zip")
+            if let Some(version) = Self::extract_version_from_url(&final_url) {
+                return Ok(version);
+            }
+
+            // Fallback: fetch the version info page
+            let version_response = self.client
+                .get("https://www.gyan.dev/ffmpeg/builds/release-version")
+                .send()
+                .await?
+                .text()
+                .await?;
+
+            // The page typically contains just the version number
+            let version = version_response.trim().to_string();
+            if !version.is_empty() && version.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+                return Ok(version);
+            }
+
+            Err(DownloadError::ExtractionFailed("Could not determine latest version".to_string()))
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            // johnvansickle releases - check the release info
+            let response = self.client
+                .get("https://johnvansickle.com/ffmpeg/release-readme.txt")
+                .send()
+                .await?
+                .text()
+                .await?;
+
+            // Parse version from readme (usually contains "version: X.X" or similar)
+            for line in response.lines() {
+                let line_lower = line.to_lowercase();
+                if line_lower.contains("version") {
+                    if let Some(version) = Self::extract_version_from_text(line) {
+                        return Ok(version);
+                    }
+                }
+            }
+
+            // Fallback: check the builds page
+            let builds_response = self.client
+                .get("https://johnvansickle.com/ffmpeg/builds/")
+                .send()
+                .await?
+                .text()
+                .await?;
+
+            // Look for version pattern in the HTML
+            if let Some(version) = Self::extract_version_from_text(&builds_response) {
+                return Ok(version);
+            }
+
+            Err(DownloadError::ExtractionFailed("Could not determine latest version".to_string()))
+        }
+
+        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+        {
+            Err(DownloadError::UnsupportedPlatform("Version check not supported".to_string()))
+        }
+    }
+
+    /// Extract version number from a URL string
+    #[allow(dead_code)] // Used only on specific platforms
+    fn extract_version_from_url(url: &str) -> Option<String> {
+        // Look for patterns like "ffmpeg-7.1" or "ffmpeg-7.1.2"
+        let re = regex::Regex::new(r"ffmpeg[_-](\d+\.\d+(?:\.\d+)?)").ok()?;
+        re.captures(url)
+            .and_then(|caps| caps.get(1))
+            .map(|m| m.as_str().to_string())
+    }
+
+    /// Extract version number from text content
+    #[allow(dead_code)] // Used only on specific platforms
+    fn extract_version_from_text(text: &str) -> Option<String> {
+        // Look for version patterns like "7.1" or "7.1.2" or "version 7.1"
+        let re = regex::Regex::new(r"(?:version[:\s]+)?(\d+\.\d+(?:\.\d+)?)").ok()?;
+        re.captures(text)
+            .and_then(|caps| caps.get(1))
+            .map(|m| m.as_str().to_string())
+    }
+
+    /// Parse version string to comparable tuple
+    fn parse_version(version: &str) -> Option<(u32, u32, u32)> {
+        let parts: Vec<&str> = version.split('.').collect();
+        if parts.is_empty() {
+            return None;
+        }
+
+        let major = parts.first()?.parse().ok()?;
+        let minor = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+        let patch = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
+
+        Some((major, minor, patch))
+    }
+
+    /// Compare two version strings
+    /// Returns true if `latest` is newer than `installed`
+    pub fn is_newer_version(installed: &str, latest: &str) -> bool {
+        let installed_parsed = Self::parse_version(installed);
+        let latest_parsed = Self::parse_version(latest);
+
+        match (installed_parsed, latest_parsed) {
+            (Some(inst), Some(lat)) => lat > inst,
+            _ => false,
+        }
+    }
+
+    /// Check FFmpeg version status and determine if update is available
+    pub async fn check_version_status(&self, installed_version: Option<&str>) -> FFmpegVersionInfo {
+        let latest = self.get_latest_version().await.ok();
+
+        let update_available = match (&installed_version, &latest) {
+            (Some(inst), Some(lat)) => Self::is_newer_version(inst, lat),
+            (None, Some(_)) => true, // Not installed, latest available
+            _ => false,
+        };
+
+        let status = match (&installed_version, &latest, update_available) {
+            (Some(v), _, false) => format!("FFmpeg {} is up to date", v),
+            (Some(v), Some(l), true) => format!("Update available: {} → {}", v, l),
+            (None, Some(l), _) => format!("FFmpeg not installed (latest: {})", l),
+            (None, None, _) => "FFmpeg not installed".to_string(),
+            (Some(v), None, _) => format!("FFmpeg {} installed (unable to check for updates)", v),
+        };
+
+        FFmpegVersionInfo {
+            installed_version: installed_version.map(|s| s.to_string()),
+            latest_version: latest,
+            update_available,
+            status,
         }
     }
 }

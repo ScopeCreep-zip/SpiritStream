@@ -54,6 +54,20 @@ export interface AppSettings {
 }
 
 /**
+ * FFmpeg version information
+ */
+export interface FFmpegVersionInfo {
+  /** Currently installed version (null if not installed) */
+  installed_version: string | null;
+  /** Latest available version for download */
+  latest_version: string | null;
+  /** Whether an update is available */
+  update_available: boolean;
+  /** Human-readable status message */
+  status: string;
+}
+
+/**
  * Settings API commands
  * @see src-frontend/lib/tauri.ts for implementation
  */

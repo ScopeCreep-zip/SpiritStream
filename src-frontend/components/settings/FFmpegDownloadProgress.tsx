@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
-import { Download, X, CheckCircle, AlertCircle, Loader2, ShieldCheck } from 'lucide-react';
+import { useEffect } from 'react';
+import { Download, X, CheckCircle, AlertCircle, Loader2, ShieldCheck, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/cn';
 import {
@@ -16,6 +17,8 @@ interface FFmpegDownloadProgressProps {
   showDownloadButton?: boolean;
   /** Class name for the container */
   className?: string;
+  /** Currently installed FFmpeg version (for update checking) */
+  installedVersion?: string;
 }
 
 /**
@@ -27,10 +30,27 @@ export function FFmpegDownloadProgress({
   onComplete,
   showDownloadButton = true,
   className,
+  installedVersion,
 }: FFmpegDownloadProgressProps) {
   const { t } = useTranslation();
-  const { progress, isDownloading, error, ffmpegPath, startDownload, cancelDownload } =
-    useFFmpegDownload();
+  const {
+    progress,
+    isDownloading,
+    error,
+    ffmpegPath,
+    versionInfo,
+    isCheckingVersion,
+    startDownload,
+    cancelDownload,
+    checkForUpdates,
+  } = useFFmpegDownload();
+
+  // Check for updates when we have an installed version
+  useEffect(() => {
+    if (installedVersion && ffmpegPath) {
+      checkForUpdates(installedVersion);
+    }
+  }, [installedVersion, ffmpegPath, checkForUpdates]);
 
   const handleDownload = async () => {
     try {
@@ -45,10 +65,51 @@ export function FFmpegDownloadProgress({
 
   // If FFmpeg is already installed
   if (ffmpegPath && !isDownloading) {
+    const hasUpdate = versionInfo?.update_available ?? false;
+    const displayVersion = installedVersion || versionInfo?.installed_version;
+
     return (
-      <div className={cn('flex items-center gap-2 text-sm text-[var(--success-text)]', className)}>
-        <CheckCircle className="w-4 h-4" />
-        <span>{t('settings.ffmpegInstalled')}</span>
+      <div className={cn('space-y-2', className)}>
+        <div className="flex items-center gap-2 text-sm text-[var(--success-text)]">
+          <CheckCircle className="w-4 h-4" />
+          <span>
+            {t('settings.ffmpegInstalled')}
+            {displayVersion && (
+              <span className="text-[var(--text-secondary)]">
+                {' '}(v{displayVersion.replace(/^ffmpeg\s+version\s+/i, '').split(' ')[0]})
+              </span>
+            )}
+          </span>
+        </div>
+
+        {/* Update available notification */}
+        {hasUpdate && versionInfo && (
+          <div className="flex items-center justify-between gap-3 p-3 rounded-lg bg-[var(--warning-subtle)] border border-[var(--warning-border)]">
+            <div className="flex items-center gap-2">
+              <RefreshCw className="w-4 h-4 text-[var(--warning-text)]" />
+              <div className="text-sm">
+                <span className="font-medium text-[var(--warning-text)]">
+                  {t('settings.updateAvailable')}
+                </span>
+                <span className="text-[var(--text-secondary)] ml-2">
+                  {versionInfo.installed_version} → {versionInfo.latest_version}
+                </span>
+              </div>
+            </div>
+            <Button variant="outline" size="sm" onClick={handleDownload}>
+              <Download className="w-4 h-4" />
+              {t('settings.updateFFmpeg')}
+            </Button>
+          </div>
+        )}
+
+        {/* Checking for updates indicator */}
+        {isCheckingVersion && (
+          <div className="flex items-center gap-2 text-xs text-[var(--text-tertiary)]">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            <span>{t('settings.checkingForUpdates')}</span>
+          </div>
+        )}
       </div>
     );
   }
