@@ -373,11 +373,15 @@ impl FFmpegHandler {
             let var_name = &key[2..key.len()-1];
             match std::env::var(var_name) {
                 Ok(value) => {
-                    log::debug!("Resolved stream key from env var: {var_name}");
+                    // Security: Do not log the variable name to prevent revealing
+                    // which environment variables contain sensitive credentials
+                    log::debug!("Resolved stream key from environment variable");
                     value
                 }
                 Err(_) => {
-                    log::warn!("Environment variable {var_name} not found, using literal key");
+                    // Security: Do not log the variable name to prevent revealing
+                    // credential-related configuration details
+                    log::warn!("Environment variable not found for stream key, check your configuration");
                     key.to_string()
                 }
             }

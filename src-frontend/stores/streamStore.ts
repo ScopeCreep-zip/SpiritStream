@@ -157,8 +157,8 @@ export const useStreamStore = create<StreamState>((set, get) => ({
 
       for (const group of groups) {
         // Filter to only enabled targets
-        const filteredTargets = group.streamTargets.filter(
-          target => enabledTargets.has(target.id)
+        const filteredTargets = group.streamTargets.filter((target) =>
+          enabledTargets.has(target.id)
         );
 
         // Skip groups with no enabled targets
@@ -265,7 +265,7 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     const allStats = Object.values(newGroupStats);
     const totalBitrate = allStats.reduce((sum, s) => sum + s.bitrate, 0);
     const totalDropped = allStats.reduce((sum, s) => sum + s.droppedFrames, 0);
-    const maxUptime = Math.max(...allStats.map(s => s.uptime), 0);
+    const maxUptime = Math.max(...allStats.map((s) => s.uptime), 0);
 
     set({
       groupStats: newGroupStats,
@@ -335,14 +335,15 @@ export const useStreamStore = create<StreamState>((set, get) => ({
 
   setError: (error) => set({ error }),
 
-  reset: () => set({
-    isStreaming: false,
-    activeGroups: new Set(),
-    stats: initialStats,
-    groupStats: {},
-    uptime: 0,
-    globalStatus: 'offline' as StreamStatusType,
-    error: null,
-    activeStreamCount: 0,
-  }),
+  reset: () =>
+    set({
+      isStreaming: false,
+      activeGroups: new Set(),
+      stats: initialStats,
+      groupStats: {},
+      uptime: 0,
+      globalStatus: 'offline' as StreamStatusType,
+      error: null,
+      activeStreamCount: 0,
+    }),
 }));

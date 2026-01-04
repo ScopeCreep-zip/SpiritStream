@@ -53,7 +53,17 @@ interface FormData {
 }
 
 // Preset option values
-const PRESET_VALUES = ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium', 'slow', 'slower', 'veryslow'];
+const PRESET_VALUES = [
+  'ultrafast',
+  'superfast',
+  'veryfast',
+  'faster',
+  'fast',
+  'medium',
+  'slow',
+  'slower',
+  'veryslow',
+];
 
 // Profile option values
 const PROFILE_VALUES = ['baseline', 'main', 'high'];
@@ -75,7 +85,7 @@ const defaultFormData: FormData = {
 
 export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModalProps) {
   const { t } = useTranslation();
-  const { addOutputGroup, updateOutputGroup, saveProfile } = useProfileStore();
+  const { addOutputGroup, updateOutputGroup } = useProfileStore();
   const [formData, setFormData] = useState<FormData>(defaultFormData);
   const [errors, setErrors] = useState<Partial<FormData>>({});
   const [saving, setSaving] = useState(false);
@@ -86,7 +96,8 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
   useEffect(() => {
     if (open) {
       setLoadingEncoders(true);
-      api.system.getEncoders()
+      api.system
+        .getEncoders()
         .then((enc) => {
           setEncoders(enc);
           // If no encoder set yet, use first available
@@ -184,7 +195,9 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
 
   const presetOptions: SelectOption[] = PRESET_VALUES.map((value) => ({
     value,
-    label: tDynamic(`encoder.presets.${value}`, { defaultValue: value.charAt(0).toUpperCase() + value.slice(1) }),
+    label: tDynamic(`encoder.presets.${value}`, {
+      defaultValue: value.charAt(0).toUpperCase() + value.slice(1),
+    }),
   }));
 
   const profileOptions: SelectOption[] = PROFILE_VALUES.map((value) => ({
@@ -254,9 +267,7 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
       } else if (mode === 'edit' && group) {
         await updateOutputGroup(group.id, groupData);
       }
-
-      // Save to backend
-      await saveProfile();
+      // Note: saveProfile() is called internally by the store functions
       onClose();
     } catch (error) {
       setErrors({ name: String(error) });
@@ -265,15 +276,14 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
     }
   };
 
-  const handleChange = (field: keyof FormData) => (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
-  ) => {
-    setFormData((prev) => ({ ...prev, [field]: e.target.value }));
-    // Clear error when user starts typing
-    if (errors[field]) {
-      setErrors((prev) => ({ ...prev, [field]: undefined }));
-    }
-  };
+  const handleChange =
+    (field: keyof FormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+      setFormData((prev) => ({ ...prev, [field]: e.target.value }));
+      // Clear error when user starts typing
+      if (errors[field]) {
+        setErrors((prev) => ({ ...prev, [field]: undefined }));
+      }
+    };
 
   const title = mode === 'create' ? t('modals.createOutputGroup') : t('modals.editOutputGroup');
 
@@ -289,7 +299,11 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
             {t('common.cancel')}
           </Button>
           <Button onClick={handleSave} disabled={saving || loadingEncoders}>
-            {saving ? t('common.saving') : mode === 'create' ? t('modals.createGroup') : t('common.saveChanges')}
+            {saving
+              ? t('common.saving')
+              : mode === 'create'
+                ? t('modals.createGroup')
+                : t('common.saveChanges')}
           </Button>
         </>
       }
@@ -305,11 +319,25 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
 
         {/* Video Settings Section */}
         <div style={{ padding: '12px', backgroundColor: 'var(--bg-muted)', borderRadius: '8px' }}>
-          <div style={{ marginBottom: '12px', fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-primary)' }}>
+          <div
+            style={{
+              marginBottom: '12px',
+              fontSize: '0.875rem',
+              fontWeight: 500,
+              color: 'var(--text-primary)',
+            }}
+          >
             {t('modals.videoSettings')}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '12px',
+              marginBottom: '12px',
+            }}
+          >
             <Select
               label={t('encoder.videoEncoder')}
               value={formData.videoCodec}
@@ -326,7 +354,14 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
             />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr 1fr',
+              gap: '12px',
+              marginBottom: '12px',
+            }}
+          >
             <Select
               label={t('encoder.frameRate')}
               value={formData.fps}
@@ -361,11 +396,25 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
 
         {/* Audio Settings Section */}
         <div style={{ padding: '12px', backgroundColor: 'var(--bg-muted)', borderRadius: '8px' }}>
-          <div style={{ marginBottom: '12px', fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-primary)' }}>
+          <div
+            style={{
+              marginBottom: '12px',
+              fontSize: '0.875rem',
+              fontWeight: 500,
+              color: 'var(--text-primary)',
+            }}
+          >
             {t('modals.audioSettings')}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '12px',
+              marginBottom: '12px',
+            }}
+          >
             <Select
               label={t('modals.audioCodec')}
               value={formData.audioCodec}
@@ -401,7 +450,14 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
 
         {/* Container Settings Section */}
         <div style={{ padding: '12px', backgroundColor: 'var(--bg-muted)', borderRadius: '8px' }}>
-          <div style={{ marginBottom: '12px', fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-primary)' }}>
+          <div
+            style={{
+              marginBottom: '12px',
+              fontSize: '0.875rem',
+              fontWeight: 500,
+              color: 'var(--text-primary)',
+            }}
+          >
             {t('modals.containerSettings')}
           </div>
 

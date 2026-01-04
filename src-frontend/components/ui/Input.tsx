@@ -1,4 +1,4 @@
-import { forwardRef } from 'react';
+import { forwardRef, useId } from 'react';
 import { cn } from '@/lib/cn';
 
 export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
@@ -9,15 +9,16 @@ export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> 
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
   ({ className, label, error, helper, id, type = 'text', ...props }, ref) => {
-    const inputId = id || label?.toLowerCase().replace(/\s/g, '-');
+    const generatedId = useId();
+    const inputId = id || generatedId;
+    const helperId = helper && !error ? `${inputId}-helper` : undefined;
+    const errorId = error ? `${inputId}-error` : undefined;
+    const describedBy = errorId || helperId;
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
         {label && (
-          <label
-            htmlFor={inputId}
-            className="block text-sm font-medium text-[var(--text-primary)]"
-          >
+          <label htmlFor={inputId} className="block text-sm font-medium text-[var(--text-primary)]">
             {label}
           </label>
         )}
@@ -25,6 +26,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           ref={ref}
           id={inputId}
           type={type}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={describedBy}
           className={cn(
             'w-full text-sm rounded-lg transition-all duration-150',
             'bg-[var(--bg-sunken)] text-[var(--text-primary)]',
@@ -41,10 +44,14 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           {...props}
         />
         {helper && !error && (
-          <p className="text-xs text-[var(--text-tertiary)]">{helper}</p>
+          <p id={helperId} className="text-xs text-[var(--text-tertiary)]">
+            {helper}
+          </p>
         )}
         {error && (
-          <p className="text-xs text-[var(--error-text)]">{error}</p>
+          <p id={errorId} className="text-xs text-[var(--error-text)]" role="alert">
+            {error}
+          </p>
         )}
       </div>
     );

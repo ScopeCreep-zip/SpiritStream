@@ -6,9 +6,5 @@ export interface AppShellProps {
 }
 
 export function AppShell({ children, className }: AppShellProps) {
-  return (
-    <div className={cn('flex min-h-screen bg-[var(--bg-base)]', className)}>
-      {children}
-    </div>
-  );
+  return <div className={cn('flex min-h-screen bg-[var(--bg-base)]', className)}>{children}</div>;
 }

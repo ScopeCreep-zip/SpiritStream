@@ -27,11 +27,7 @@ export interface SidebarHeaderProps {
 export function SidebarHeader({ children, className }: SidebarHeaderProps) {
   return (
     <div
-      className={cn(
-        'border-b border-[var(--border-muted)]',
-        'flex items-center gap-3',
-        className
-      )}
+      className={cn('border-b border-[var(--border-muted)]', 'flex items-center gap-3', className)}
       style={{ padding: '20px 16px' }}
     >
       {children}
@@ -59,7 +55,10 @@ export interface SidebarFooterProps {
 
 export function SidebarFooter({ children, className }: SidebarFooterProps) {
   return (
-    <div className={cn('border-t border-[var(--border-muted)]', className)} style={{ padding: '16px' }}>
+    <div
+      className={cn('border-t border-[var(--border-muted)]', className)}
+      style={{ padding: '16px' }}
+    >
       {children}
     </div>
   );

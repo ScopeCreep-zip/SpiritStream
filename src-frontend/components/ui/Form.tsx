@@ -11,10 +11,7 @@ export interface FormLabelProps extends React.LabelHTMLAttributes<HTMLLabelEleme
 export function FormLabel({ className, ...props }: FormLabelProps) {
   return (
     <label
-      className={cn(
-        'block text-sm font-medium text-[var(--text-primary)]',
-        className
-      )}
+      className={cn('block text-sm font-medium text-[var(--text-primary)]', className)}
       style={{ marginBottom: '6px' }}
       {...props}
     />
@@ -57,10 +54,6 @@ export function FormRow({ className, cols = 2, ...props }: FormRowProps) {
   };
 
   return (
-    <div
-      className={cn('grid', colStyles[cols], className)}
-      style={{ gap: '16px' }}
-      {...props}
-    />
+    <div className={cn('grid', colStyles[cols], className)} style={{ gap: '16px' }} {...props} />
   );
 }

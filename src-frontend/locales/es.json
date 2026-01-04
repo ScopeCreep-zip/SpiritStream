@@ -82,7 +82,13 @@
     "bitrate": "Tasa de Bits",
     "fps": "FPS",
     "targetsCount": "{{count}} destinos",
-    "noStreamTargets": "No hay destinos de transmisión configurados"
+    "noStreamTargets": "No hay destinos de transmisión configurados",
+    "outputGroups": "Grupos de Salida",
+    "outputGroupsDescription": "Tus grupos de salida configurados",
+    "noOutputGroups": "No hay grupos de salida configurados",
+    "encoderSettings": "Ajustes del Codificador",
+    "encoderSettingsDescription": "Configuraciones de codificador para cada salida",
+    "noEncoderSettings": "Sin configuraciones de codificador"
   },
   "profiles": {
     "newProfile": "Nuevo Perfil",
@@ -131,6 +137,16 @@
   "encoder": {
     "title": "Configuración del Codificador",
     "description": "Configura los parámetros de codificación de video y audio",
+    "noEncoders": "Sin Configuraciones de Codificador",
+    "noEncodersDescription": "Crea tu primera configuración de codificador para definir los ajustes de codificación de video y audio para tus transmisiones.",
+    "addEncoder": "Añadir Codificador",
+    "selectProfileFirst": "Selecciona un perfil primero",
+    "defaultEncoderName": "Codificador",
+    "audio": "Audio",
+    "bitrate": "Tasa de Bits",
+    "edit": "Editar",
+    "duplicate": "Duplicar",
+    "remove": "Eliminar",
     "videoEncoder": "Codificador de Video",
     "videoEncoderSettings": "Ajustes del Codificador de Video",
     "outputSettings": "Ajustes de Salida",
@@ -224,7 +240,13 @@
     "duplicate": "Duplicar",
     "editGroup": "Editar grupo de salida",
     "duplicateGroup": "Duplicar grupo de salida",
-    "removeGroup": "Eliminar grupo de salida"
+    "removeGroup": "Eliminar grupo de salida",
+    "noTargets": "Sin destinos",
+    "addTarget": "Añadir Destino",
+    "video": "Video",
+    "audio": "Audio",
+    "container": "Contenedor",
+    "targetsCount": "{{count}} destinos"
   },
   "targets": {
     "addTarget": "Añadir Destino",
@@ -336,6 +358,14 @@
     "audioBitrate": "Tasa de Bits de Audio",
     "generatePts": "Generar PTS",
     "generatePtsDescription": "Generar marcas de tiempo de presentación para la transmisión",
+    "outputGroupLabel": "Grupo de Salida",
+    "noOutputGroupsAvailable": "No hay grupos de salida disponibles. Crea uno primero.",
+    "videoSettings": "Configuración de Video",
+    "audioSettings": "Configuración de Audio",
+    "containerSettings": "Configuración del Contenedor",
+    "containerFormat": "Formato del Contenedor",
+    "audioChannels": "Canales",
+    "audioSampleRate": "Frecuencia de Muestreo",
     "encryptProfile": "Encriptar Perfil",
     "enterPassword": "Introducir Contraseña",
     "encryptDescription": "Establece una contraseña para encriptar \"{{profileName}}\". Necesitarás esta contraseña para acceder al perfil.",
@@ -441,6 +471,10 @@
     "retry": "Reintentar",
     "show": "Mostrar",
     "hide": "Ocultar",
+    "showPassword": "Mostrar contraseña",
+    "hidePassword": "Ocultar contraseña",
+    "showStreamKey": "Mostrar clave de transmisión",
+    "hideStreamKey": "Ocultar clave de transmisión",
     "copy": "Copiar",
     "copied": "¡Copiado!",
     "export": "Exportar",
@@ -505,6 +539,8 @@
     "dataCleared": "Todos los datos han sido borrados",
     "testPassed": "¡Todas las comprobaciones pasaron! Tu configuración de transmisión es válida.",
     "configTesting": "Probando configuración...",
-    "streamKeyCopied": "Clave de transmisión copiada al portapapeles"
+    "streamKeyCopied": "Clave de transmisión copiada al portapapeles",
+    "groupDuplicated": "Grupo de salida \"{{name}}\" duplicado",
+    "groupRemoved": "Grupo de salida eliminado"
   }
 }

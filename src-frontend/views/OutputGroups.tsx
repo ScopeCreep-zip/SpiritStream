@@ -4,7 +4,7 @@ import { Plus } from 'lucide-react';
 import { Card, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { OutputGroupCard } from '@/components/stream/OutputGroupCard';
-import { OutputGroupModal } from '@/components/modals';
+import { OutputGroupModal, TargetModal } from '@/components/modals';
 import { useProfileStore } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
 import { api } from '@/lib/tauri';
@@ -13,16 +13,20 @@ import type { Encoders } from '@/types/stream';
 
 export function OutputGroups() {
   const { t } = useTranslation();
-  const { current, loading, error, updateOutputGroup, removeOutputGroup, addOutputGroup } = useProfileStore();
+  const { current, loading, error, updateOutputGroup, removeOutputGroup, addOutputGroup } =
+    useProfileStore();
   const { activeGroups } = useStreamStore();
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState<OutputGroup | null>(null);
   const [encoders, setEncoders] = useState<Encoders>({ video: ['libx264'], audio: ['aac'] });
+  const [addTargetModalOpen, setAddTargetModalOpen] = useState(false);
+  const [addTargetGroupId, setAddTargetGroupId] = useState<string>('');
 
   // Fetch available encoders from backend
   useEffect(() => {
-    api.system.getEncoders()
+    api.system
+      .getEncoders()
       .then(setEncoders)
       .catch((err) => console.error('Failed to load encoders:', err));
   }, []);
@@ -37,6 +41,16 @@ export function OutputGroups() {
     setEditModalOpen(false);
   };
 
+  const openAddTargetModal = (groupId: string) => {
+    setAddTargetGroupId(groupId);
+    setAddTargetModalOpen(true);
+  };
+
+  const closeAddTargetModal = () => {
+    setAddTargetGroupId('');
+    setAddTargetModalOpen(false);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -48,7 +62,9 @@ export function OutputGroups() {
   if (error) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--error-text)]">{t('common.error')}: {error}</div>
+        <div className="text-[var(--error-text)]">
+          {t('common.error')}: {error}
+        </div>
       </div>
     );
   }
@@ -58,9 +74,7 @@ export function OutputGroups() {
       <Card>
         <CardBody>
           <div className="text-center py-12">
-            <p className="text-[var(--text-secondary)]">
-              {t('outputs.selectProfileFirst')}
-            </p>
+            <p className="text-[var(--text-secondary)]">{t('outputs.selectProfileFirst')}</p>
           </div>
         </CardBody>
       </Card>
@@ -75,13 +89,22 @@ export function OutputGroups() {
         <Card>
           <CardBody>
             <div className="text-center" style={{ padding: '48px 0' }}>
-              <div className="w-16 h-16 mx-auto rounded-full bg-[var(--primary-subtle)] flex items-center justify-center" style={{ marginBottom: '16px' }}>
+              <div
+                className="w-16 h-16 mx-auto rounded-full bg-[var(--primary-subtle)] flex items-center justify-center"
+                style={{ marginBottom: '16px' }}
+              >
                 <Plus className="w-8 h-8 text-[var(--primary)]" />
               </div>
-              <h3 className="text-lg font-semibold text-[var(--text-primary)]" style={{ marginBottom: '8px' }}>
+              <h3
+                className="text-lg font-semibold text-[var(--text-primary)]"
+                style={{ marginBottom: '8px' }}
+              >
                 {t('outputs.noOutputGroups')}
               </h3>
-              <p className="text-[var(--text-secondary)] max-w-md mx-auto" style={{ marginBottom: '24px' }}>
+              <p
+                className="text-[var(--text-secondary)] max-w-md mx-auto"
+                style={{ marginBottom: '24px' }}
+              >
                 {t('outputs.noOutputGroupsDescription')}
               </p>
               <Button onClick={() => setCreateModalOpen(true)}>
@@ -109,7 +132,7 @@ export function OutputGroups() {
   };
 
   const duplicateGroup = (groupId: string) => {
-    const group = outputGroups.find(g => g.id === groupId);
+    const group = outputGroups.find((g) => g.id === groupId);
     if (group) {
       const newGroup = {
         ...group,
@@ -133,6 +156,7 @@ export function OutputGroups() {
           onRemove={() => removeOutputGroup(group.id)}
           onDuplicate={() => duplicateGroup(group.id)}
           onEdit={() => openEditModal(group)}
+          onAddTarget={() => openAddTargetModal(group.id)}
         />
       ))}
 
@@ -162,6 +186,14 @@ export function OutputGroups() {
         onClose={closeEditModal}
         mode="edit"
         group={editingGroup || undefined}
+      />
+
+      {/* Add Target Modal */}
+      <TargetModal
+        open={addTargetModalOpen}
+        onClose={closeAddTargetModal}
+        mode="create"
+        groupId={addTargetGroupId}
       />
     </div>
   );

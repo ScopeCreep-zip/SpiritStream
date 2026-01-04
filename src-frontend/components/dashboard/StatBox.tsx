@@ -27,21 +27,15 @@ export function StatBox({
       style={{ padding: '20px' }}
     >
       <div className="flex items-center justify-between mb-2">
-        <span className="text-small text-[var(--text-secondary)]">
-          {label}
-        </span>
+        <span className="text-small text-[var(--text-secondary)]">{label}</span>
         <span className="text-[var(--text-tertiary)]">{icon}</span>
       </div>
-      <div className="text-2xl font-bold text-[var(--text-primary)]">
-        {value}
-      </div>
+      <div className="text-2xl font-bold text-[var(--text-primary)]">{value}</div>
       {change && (
         <div
           className={cn(
             'text-xs mt-1',
-            changeType === 'positive'
-              ? 'text-[var(--success-text)]'
-              : 'text-[var(--text-tertiary)]'
+            changeType === 'positive' ? 'text-[var(--success-text)]' : 'text-[var(--text-tertiary)]'
           )}
         >
           {change}

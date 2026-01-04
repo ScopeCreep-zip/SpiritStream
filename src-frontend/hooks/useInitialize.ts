@@ -19,10 +19,7 @@ export function useInitialize() {
       initialized.current = true;
 
       // Load profiles and sync stream state in parallel
-      Promise.all([
-        loadProfiles(),
-        syncWithBackend(),
-      ])
+      Promise.all([loadProfiles(), syncWithBackend()])
         .then(async () => {
           // After profiles are loaded, try to restore last used profile
           try {

@@ -34,11 +34,7 @@ export function Alert({ variant, title, children, className }: AlertProps) {
 
   return (
     <div
-      className={cn(
-        'rounded-lg border flex gap-3',
-        wrapper,
-        className
-      )}
+      className={cn('rounded-lg border flex gap-3', wrapper, className)}
       style={{ padding: '16px', marginBottom: '16px' }}
       role="alert"
     >

@@ -5,7 +5,13 @@ export interface GridProps extends React.HTMLAttributes<HTMLDivElement> {
   gap?: 'sm' | 'md' | 'lg';
 }
 
-export function Grid({ cols = 2, gap = 'md', className, style, ...props }: GridProps & { style?: React.CSSProperties }) {
+export function Grid({
+  cols = 2,
+  gap = 'md',
+  className,
+  style,
+  ...props
+}: GridProps & { style?: React.CSSProperties }) {
   const colStyles = {
     1: 'grid-cols-1',
     2: 'grid-cols-2 max-lg:grid-cols-1',

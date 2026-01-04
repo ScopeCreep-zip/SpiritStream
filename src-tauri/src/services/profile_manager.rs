@@ -8,6 +8,31 @@ use crate::services::Encryption;
 // Magic bytes to identify encrypted profiles
 const ENCRYPTED_MAGIC: &[u8] = b"MGLA";
 
+/// Validate profile name to prevent path traversal attacks
+fn validate_profile_name(name: &str) -> Result<(), String> {
+    // No empty names
+    if name.is_empty() {
+        return Err("Profile name cannot be empty".to_string());
+    }
+    // No path separators
+    if name.contains('/') || name.contains('\\') {
+        return Err("Profile name cannot contain path separators".to_string());
+    }
+    // No path traversal
+    if name.contains("..") {
+        return Err("Profile name cannot contain '..'".to_string());
+    }
+    // Only alphanumeric, underscore, hyphen, and space
+    if !name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == ' ') {
+        return Err("Profile name can only contain letters, numbers, spaces, underscores, and hyphens".to_string());
+    }
+    // Reasonable length limit
+    if name.len() > 100 {
+        return Err("Profile name too long (max 100 characters)".to_string());
+    }
+    Ok(())
+}
+
 /// Manages profile storage and retrieval
 pub struct ProfileManager {
     profiles_dir: PathBuf,
@@ -80,6 +105,9 @@ impl ProfileManager {
     /// If password is provided, will attempt to decrypt
     /// If no password, will try unencrypted first, then fail if encrypted
     pub async fn load(&self, name: &str, password: Option<&str>) -> Result<Profile, String> {
+        // Validate profile name to prevent path traversal attacks
+        validate_profile_name(name)?;
+
         // Try encrypted file first (if password provided)
         let encrypted_path = self.profiles_dir.join(format!("{name}.mgs"));
         let json_path = self.profiles_dir.join(format!("{name}.json"));
@@ -122,6 +150,9 @@ impl ProfileManager {
 
     /// Delete a profile by name (both encrypted and unencrypted versions)
     pub async fn delete(&self, name: &str) -> Result<(), String> {
+        // Validate profile name to prevent path traversal attacks
+        validate_profile_name(name)?;
+
         let json_path = self.profiles_dir.join(format!("{name}.json"));
         let mgs_path = self.profiles_dir.join(format!("{name}.mgs"));
 
@@ -147,7 +178,14 @@ impl ProfileManager {
     }
 
     /// Check if a profile is encrypted
+    /// Returns false for invalid profile names (fails safely)
     pub fn is_encrypted(&self, name: &str) -> bool {
+        // Validate profile name to prevent path traversal attacks
+        // For this method, we return false for invalid names (fail safely)
+        if validate_profile_name(name).is_err() {
+            return false;
+        }
+
         let mgs_path = self.profiles_dir.join(format!("{name}.mgs"));
         mgs_path.exists()
     }
@@ -223,6 +261,9 @@ impl ProfileManager {
         password: Option<&str>,
         encrypt_keys: bool,
     ) -> Result<(), String> {
+        // Validate profile name to prevent path traversal attacks
+        validate_profile_name(&profile.name)?;
+
         // Clone the profile so we can modify it
         let mut profile_to_save = profile.clone();
 

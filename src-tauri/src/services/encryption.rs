@@ -100,6 +100,15 @@ impl Encryption {
                 return Err("Invalid machine key file".to_string());
             }
 
+            // Ensure restrictive permissions on existing key file
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let perms = std::fs::Permissions::from_mode(0o600);
+                std::fs::set_permissions(&key_file, perms)
+                    .map_err(|e| format!("Failed to set key file permissions: {e}"))?;
+            }
+
             let mut key = [0u8; KEY_LEN];
             key.copy_from_slice(&key_data);
             Ok(key)
@@ -111,6 +120,15 @@ impl Encryption {
             // Save it
             std::fs::write(&key_file, key)
                 .map_err(|e| format!("Failed to save machine key: {e}"))?;
+
+            // Set restrictive permissions on the new key file
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let perms = std::fs::Permissions::from_mode(0o600);
+                std::fs::set_permissions(&key_file, perms)
+                    .map_err(|e| format!("Failed to set key file permissions: {e}"))?;
+            }
 
             Ok(key)
         }

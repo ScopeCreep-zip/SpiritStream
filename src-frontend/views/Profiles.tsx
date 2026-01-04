@@ -25,7 +25,9 @@ export function Profiles() {
   if (error) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--error-text)]">{t('common.error')}: {error}</div>
+        <div className="text-[var(--error-text)]">
+          {t('common.error')}: {error}
+        </div>
       </div>
     );
   }
@@ -37,13 +39,22 @@ export function Profiles() {
         <Card>
           <CardBody>
             <div className="text-center" style={{ padding: '48px 0' }}>
-              <div className="w-16 h-16 mx-auto rounded-full bg-[var(--primary-subtle)] flex items-center justify-center" style={{ marginBottom: '16px' }}>
+              <div
+                className="w-16 h-16 mx-auto rounded-full bg-[var(--primary-subtle)] flex items-center justify-center"
+                style={{ marginBottom: '16px' }}
+              >
                 <Plus className="w-8 h-8 text-[var(--primary)]" />
               </div>
-              <h3 className="text-lg font-semibold text-[var(--text-primary)]" style={{ marginBottom: '8px' }}>
+              <h3
+                className="text-lg font-semibold text-[var(--text-primary)]"
+                style={{ marginBottom: '8px' }}
+              >
                 {t('profiles.noProfilesYet')}
               </h3>
-              <p className="text-[var(--text-secondary)] max-w-md mx-auto" style={{ marginBottom: '24px' }}>
+              <p
+                className="text-[var(--text-secondary)] max-w-md mx-auto"
+                style={{ marginBottom: '24px' }}
+              >
                 {t('profiles.noProfilesDescription')}
               </p>
               <Button onClick={() => setCreateModalOpen(true)}>
@@ -79,7 +90,10 @@ export function Profiles() {
             meta={[
               { icon: <Monitor className="w-4 h-4" />, label: profile.resolution },
               { icon: <Gauge className="w-4 h-4" />, label: `${profile.bitrate} kbps` },
-              { icon: <Target className="w-4 h-4" />, label: t('profiles.targetsCount', { count: profile.targetCount }) },
+              {
+                icon: <Target className="w-4 h-4" />,
+                label: t('profiles.targetsCount', { count: profile.targetCount }),
+              },
             ]}
             services={profile.services}
             active={current?.id === profile.id}
@@ -116,8 +130,14 @@ export function Profiles() {
           className="border-2 border-dashed border-[var(--border-default)] hover:border-[var(--primary)] transition-colors cursor-pointer"
           onClick={() => setCreateModalOpen(true)}
         >
-          <CardBody className="flex flex-col items-center justify-center" style={{ padding: '48px 24px' }}>
-            <div className="w-12 h-12 rounded-full bg-[var(--primary-subtle)] flex items-center justify-center" style={{ marginBottom: '12px' }}>
+          <CardBody
+            className="flex flex-col items-center justify-center"
+            style={{ padding: '48px 24px' }}
+          >
+            <div
+              className="w-12 h-12 rounded-full bg-[var(--primary-subtle)] flex items-center justify-center"
+              style={{ marginBottom: '12px' }}
+            >
               <Plus className="w-6 h-6 text-[var(--primary)]" />
             </div>
             <span className="text-sm font-medium text-[var(--text-secondary)]">

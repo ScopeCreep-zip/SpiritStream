@@ -82,7 +82,13 @@
     "bitrate": "Bitrate",
     "fps": "FPS",
     "targetsCount": "{{count}} targets",
-    "noStreamTargets": "No stream targets configured"
+    "noStreamTargets": "No stream targets configured",
+    "outputGroups": "Output Groups",
+    "outputGroupsDescription": "Your configured output groups",
+    "noOutputGroups": "No output groups configured",
+    "encoderSettings": "Encoder Settings",
+    "encoderSettingsDescription": "Encoder configurations for each output",
+    "noEncoderSettings": "No encoder configurations"
   },
   "profiles": {
     "newProfile": "New Profile",
@@ -132,6 +138,16 @@
   "encoder": {
     "title": "Encoder Configuration",
     "description": "Configure video and audio encoding parameters",
+    "noEncoders": "No Encoder Configurations",
+    "noEncodersDescription": "Create your first encoder configuration to define video and audio encoding settings for your streams.",
+    "addEncoder": "Add Encoder",
+    "selectProfileFirst": "Select a profile first",
+    "defaultEncoderName": "Encoder",
+    "audio": "Audio",
+    "bitrate": "Bitrate",
+    "edit": "Edit",
+    "duplicate": "Duplicate",
+    "remove": "Remove",
     "videoEncoder": "Video Encoder",
     "videoEncoderSettings": "Video Encoder Settings",
     "outputSettings": "Output Settings",
@@ -248,7 +264,9 @@
     "duplicate": "Duplicate",
     "editGroup": "Edit output group",
     "duplicateGroup": "Duplicate output group",
-    "removeGroup": "Remove output group"
+    "removeGroup": "Remove output group",
+    "noTargets": "No targets",
+    "addTarget": "Add Target"
   },
   "targets": {
     "addTarget": "Add Target",
@@ -364,6 +382,8 @@
     "audioSettings": "Audio Settings",
     "containerSettings": "Container Settings",
     "containerFormat": "Container Format",
+    "outputGroupLabel": "Output Group",
+    "noOutputGroupsAvailable": "No output groups available. Create one first.",
     "rtmpInputSettings": "RTMP Input Settings",
     "bindAddress": "Bind Address",
     "bindAddressHelper": "0.0.0.0 listens on all interfaces",
@@ -477,6 +497,10 @@
     "retry": "Retry",
     "show": "Show",
     "hide": "Hide",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
+    "showStreamKey": "Show stream key",
+    "hideStreamKey": "Hide stream key",
     "copy": "Copy",
     "copied": "Copied!",
     "export": "Export",
@@ -553,6 +577,8 @@
     "dataCleared": "All data has been cleared",
     "testPassed": "All checks passed! Your streaming configuration is valid.",
     "configTesting": "Testing configuration...",
-    "streamKeyCopied": "Stream key copied to clipboard"
+    "streamKeyCopied": "Stream key copied to clipboard",
+    "groupDuplicated": "Output group \"{{name}}\" duplicated",
+    "groupRemoved": "Output group removed"
   }
 }

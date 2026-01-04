@@ -12,6 +12,7 @@ import { useStreamStore } from '@/stores/streamStore';
 import { formatUptime, formatBitrate } from '@/hooks/useStreamStats';
 import { toast } from '@/hooks/useToast';
 import type { View } from '@/App';
+import type { OutputGroup as OutputGroupType, StreamTarget } from '@/types/profile';
 import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValidation';
 
 interface StreamManagerProps {
@@ -38,17 +39,18 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
   // Enable all targets by default when profile changes
   useEffect(() => {
     if (current) {
-      const allTargetIds = current.outputGroups.flatMap(g =>
-        g.streamTargets.map(t => t.id)
-      );
+      const allTargetIds = current.outputGroups.flatMap((g) => g.streamTargets.map((t) => t.id));
       // Only add targets that aren't already in enabledTargets
-      allTargetIds.forEach(id => {
+      allTargetIds.forEach((id) => {
         if (!enabledTargets.has(id)) {
           setTargetEnabled(id, true);
         }
       });
     }
-  }, [current?.id]); // Re-run when profile changes
+    // Only re-run when profile ID changes, not on every target enable/disable
+    // current/enabledTargets/setTargetEnabled are intentionally excluded
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current?.id]);
 
   const handleStartAll = async () => {
     if (!current) {
@@ -77,7 +79,9 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
       toast.success(t('toast.streamStarted'));
     } catch (err) {
       console.error('[StreamManager] startAllGroups failed:', err);
-      toast.error(t('toast.startFailed', { error: err instanceof Error ? err.message : String(err) }));
+      toast.error(
+        t('toast.startFailed', { error: err instanceof Error ? err.message : String(err) })
+      );
     } finally {
       setIsValidating(false);
     }
@@ -88,7 +92,9 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
       await stopAllGroups();
       toast.info(t('toast.streamStopped'));
     } catch (err) {
-      toast.error(t('toast.stopFailed', { error: err instanceof Error ? err.message : String(err) }));
+      toast.error(
+        t('toast.stopFailed', { error: err instanceof Error ? err.message : String(err) })
+      );
     }
   };
 
@@ -98,13 +104,17 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
   const totalBandwidth = useMemo(() => {
     if (!current) return 0;
 
-    return current.outputGroups.reduce((total, group) => {
+    return current.outputGroups.reduce((total: number, group: OutputGroupType) => {
       // Check if any targets in this group are enabled
-      const hasEnabledTargets = group.streamTargets.some(t => enabledTargets.has(t.id));
+      const hasEnabledTargets = group.streamTargets.some((t: StreamTarget) =>
+        enabledTargets.has(t.id)
+      );
       if (!hasEnabledTargets) return total;
 
       // Count enabled targets in this group (each target needs the full bitrate)
-      const enabledCount = group.streamTargets.filter(t => enabledTargets.has(t.id)).length;
+      const enabledCount = group.streamTargets.filter((t: StreamTarget) =>
+        enabledTargets.has(t.id)
+      ).length;
 
       // Add video + audio bitrate for each enabled target
       // Parse bitrate strings (e.g., "6000k" -> 6000)
@@ -134,7 +144,9 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
   if (error) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--error-text)]">{t('common.error')}: {error}</div>
+        <div className="text-[var(--error-text)]">
+          {t('common.error')}: {error}
+        </div>
       </div>
     );
   }
@@ -144,9 +156,7 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
       <Card>
         <CardBody>
           <div className="text-center py-12">
-            <p className="text-[var(--text-secondary)]">
-              {t('streams.selectProfileFirst')}
-            </p>
+            <p className="text-[var(--text-secondary)]">{t('streams.selectProfileFirst')}</p>
           </div>
         </CardBody>
       </Card>
@@ -170,7 +180,7 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
   };
 
   // Get group info string
-  const getGroupInfo = (group: typeof outputGroups[0]): string => {
+  const getGroupInfo = (group: (typeof outputGroups)[0]): string => {
     const targetCount = group.streamTargets.length;
     const resolution = `${group.video.width}x${group.video.height}`;
     const bitrate = group.video.bitrate.replace('k', '');
@@ -195,9 +205,7 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
         <CardHeader>
           <div>
             <CardTitle>{t('streams.streamControl')}</CardTitle>
-            <CardDescription>
-              {t('streams.streamControlDescription')}
-            </CardDescription>
+            <CardDescription>{t('streams.streamControlDescription')}</CardDescription>
           </div>
           {totalBandwidth > 0 && (
             <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--bg-muted)] rounded-lg border border-[var(--border-default)]">
@@ -212,94 +220,100 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
           )}
         </CardHeader>
         <CardBody style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {outputGroups.map((group) => {
+          {outputGroups.map((group: OutputGroupType) => {
             const stats = groupStats[group.id];
             const isGroupActive = activeGroups.has(group.id);
 
             return (
-            <OutputGroup
-              key={group.id}
-              name={group.name || t('streams.defaultGroupName')}
-              info={getGroupInfo(group)}
-              status={getGroupStatus(group.id)}
-              defaultExpanded={isGroupActive}
-            >
-              {/* Real-time stats when streaming */}
-              {isGroupActive && stats && (
-                <div className="grid grid-cols-4 gap-4 p-4 mb-4 bg-[var(--bg-muted)] rounded-lg border border-[var(--border-default)]">
-                  <div className="text-center">
-                    <div className="flex items-center justify-center gap-1 text-[var(--text-tertiary)] mb-1">
-                      <Activity className="w-3 h-3" />
-                      <span className="text-xs">{t('streams.fps')}</span>
-                    </div>
-                    <div className="text-lg font-semibold text-[var(--text-primary)]">
-                      {stats.fps.toFixed(1)}
-                    </div>
-                  </div>
-                  <div className="text-center">
-                    <div className="flex items-center justify-center gap-1 text-[var(--text-tertiary)] mb-1">
-                      <Gauge className="w-3 h-3" />
-                      <span className="text-xs">{t('streams.bitrate')}</span>
-                    </div>
-                    <div className="text-lg font-semibold text-[var(--text-primary)]">
-                      {formatBitrate(stats.bitrate)}
-                    </div>
-                  </div>
-                  <div className="text-center">
-                    <div className="flex items-center justify-center gap-1 text-[var(--text-tertiary)] mb-1">
-                      <Clock className="w-3 h-3" />
-                      <span className="text-xs">{t('streams.uptime')}</span>
-                    </div>
-                    <div className="text-lg font-semibold text-[var(--text-primary)]">
-                      {formatUptime(stats.uptime)}
-                    </div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-xs text-[var(--text-tertiary)] mb-1">{t('streams.speed')}</div>
-                    <div className="text-lg font-semibold text-[var(--text-primary)]">
-                      {stats.speed.toFixed(2)}x
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex flex-col border-t border-[var(--border-muted)]" style={{ gap: '12px', paddingTop: '12px' }}>
-                {group.streamTargets.map((target) => (
-                  <div
-                    key={target.id}
-                    className="flex items-center justify-between rounded-lg bg-[var(--bg-surface)] border border-[var(--border-default)]"
-                    style={{ padding: '12px' }}
-                  >
-                    <div className="flex items-center" style={{ gap: '12px' }}>
-                      <PlatformIcon platform={target.service} size="sm" />
-                      <div>
-                        <div className="font-medium text-sm text-[var(--text-primary)]">
-                          {target.name}
-                        </div>
-                        <div className="text-xs text-[var(--text-tertiary)]">
-                          {target.url}
-                        </div>
+              <OutputGroup
+                key={group.id}
+                name={group.name || t('streams.defaultGroupName')}
+                info={getGroupInfo(group)}
+                status={getGroupStatus(group.id)}
+                defaultExpanded={isGroupActive}
+              >
+                {/* Real-time stats when streaming */}
+                {isGroupActive && stats && (
+                  <div className="grid grid-cols-4 gap-4 p-4 mb-4 bg-[var(--bg-muted)] rounded-lg border border-[var(--border-default)]">
+                    <div className="text-center">
+                      <div className="flex items-center justify-center gap-1 text-[var(--text-tertiary)] mb-1">
+                        <Activity className="w-3 h-3" />
+                        <span className="text-xs">{t('streams.fps')}</span>
+                      </div>
+                      <div className="text-lg font-semibold text-[var(--text-primary)]">
+                        {stats.fps.toFixed(1)}
                       </div>
                     </div>
-                    <Toggle
-                      checked={enabledTargets.has(target.id)}
-                      onChange={(checked) => setTargetEnabled(target.id, checked)}
-                      disabled={isStreaming}
-                    />
-                  </div>
-                ))}
-
-                {group.streamTargets.length === 0 && (
-                  <div className="text-center py-4 text-[var(--text-secondary)]">
-                    {t('streams.noTargetsInGroup')}
+                    <div className="text-center">
+                      <div className="flex items-center justify-center gap-1 text-[var(--text-tertiary)] mb-1">
+                        <Gauge className="w-3 h-3" />
+                        <span className="text-xs">{t('streams.bitrate')}</span>
+                      </div>
+                      <div className="text-lg font-semibold text-[var(--text-primary)]">
+                        {formatBitrate(stats.bitrate)}
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <div className="flex items-center justify-center gap-1 text-[var(--text-tertiary)] mb-1">
+                        <Clock className="w-3 h-3" />
+                        <span className="text-xs">{t('streams.uptime')}</span>
+                      </div>
+                      <div className="text-lg font-semibold text-[var(--text-primary)]">
+                        {formatUptime(stats.uptime)}
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-xs text-[var(--text-tertiary)] mb-1">
+                        {t('streams.speed')}
+                      </div>
+                      <div className="text-lg font-semibold text-[var(--text-primary)]">
+                        {stats.speed.toFixed(2)}x
+                      </div>
+                    </div>
                   </div>
                 )}
-              </div>
-            </OutputGroup>
-          );
+
+                <div
+                  className="flex flex-col border-t border-[var(--border-muted)]"
+                  style={{ gap: '12px', paddingTop: '12px' }}
+                >
+                  {group.streamTargets.map((target: StreamTarget) => (
+                    <div
+                      key={target.id}
+                      className="flex items-center justify-between rounded-lg bg-[var(--bg-surface)] border border-[var(--border-default)]"
+                      style={{ padding: '12px' }}
+                    >
+                      <div className="flex items-center" style={{ gap: '12px' }}>
+                        <PlatformIcon platform={target.service} size="sm" />
+                        <div>
+                          <div className="font-medium text-sm text-[var(--text-primary)]">
+                            {target.name}
+                          </div>
+                          <div className="text-xs text-[var(--text-tertiary)]">{target.url}</div>
+                        </div>
+                      </div>
+                      <Toggle
+                        checked={enabledTargets.has(target.id)}
+                        onChange={(checked: boolean) => setTargetEnabled(target.id, checked)}
+                        disabled={isStreaming}
+                      />
+                    </div>
+                  ))}
+
+                  {group.streamTargets.length === 0 && (
+                    <div className="text-center py-4 text-[var(--text-secondary)]">
+                      {t('streams.noTargetsInGroup')}
+                    </div>
+                  )}
+                </div>
+              </OutputGroup>
+            );
           })}
 
-          <div className="flex justify-end border-t border-[var(--border-muted)]" style={{ gap: '12px', paddingTop: '16px' }}>
+          <div
+            className="flex justify-end border-t border-[var(--border-muted)]"
+            style={{ gap: '12px', paddingTop: '16px' }}
+          >
             <Button variant="outline" onClick={() => onNavigate('encoder')}>
               <Settings2 className="w-4 h-4" />
               {t('streams.configure')}
@@ -312,7 +326,11 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
             ) : (
               <Button onClick={handleStartAll} disabled={isConnecting || isValidating}>
                 <Play className="w-4 h-4" />
-                {isValidating ? t('streams.validating') : isConnecting ? t('streams.connecting') : t('streams.startAllStreams')}
+                {isValidating
+                  ? t('streams.validating')
+                  : isConnecting
+                    ? t('streams.connecting')
+                    : t('streams.startAllStreams')}
               </Button>
             )}
           </div>

@@ -1,8 +1,12 @@
 {
-  "name": "spiritstream",
+  "name": "@billboyles/spiritstream",
   "version": "0.1.0",
   "description": "SpiritStream - Multi-Destination Streaming Application",
+  "private": false,
   "type": "module",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",
@@ -12,26 +16,63 @@
     "vite:build": "vite build",
     "vite:preview": "vite preview",
     "typecheck": "tsc -p tsconfig.frontend.json --noEmit",
-    "check": "cargo check --manifest-path src-tauri/Cargo.toml"
+    "check": "cargo check --manifest-path src-tauri/Cargo.toml",
+    "lint": "eslint src-frontend --ext .ts,.tsx",
+    "lint:fix": "eslint src-frontend --ext .ts,.tsx --fix",
+    "format": "prettier --write \"src-frontend/**/*.{ts,tsx,css,json}\"",
+    "format:check": "prettier --check \"src-frontend/**/*.{ts,tsx,css,json}\""
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/billboyles/magillastream.git"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "streaming",
+    "rtmp",
+    "ffmpeg",
+    "tauri",
+    "multi-stream",
+    "broadcast",
+    "obs-alternative",
+    "desktop-app"
+  ],
+  "author": "SpiritStream Contributors",
   "license": "ISC",
+  "files": [
+    "dist",
+    "src-frontend",
+    "src-tauri/src",
+    "src-tauri/Cargo.toml",
+    "src-tauri/tauri.conf.json",
+    "src-tauri/icons",
+    "src-tauri/build.rs",
+    "config",
+    "vite.config.ts",
+    "tsconfig.frontend.json",
+    "tsconfig.node.json",
+    "index.html",
+    "README.md",
+    "LICENSE"
+  ],
   "bugs": {
     "url": "https://github.com/billboyles/magillastream/issues"
   },
   "homepage": "https://github.com/billboyles/magillastream#readme",
   "devDependencies": {
+    "@eslint/js": "^9.39.2",
     "@tailwindcss/vite": "^4.1.18",
     "@tauri-apps/cli": "^2.9.6",
     "@types/node": "^22.13.9",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
+    "@typescript-eslint/eslint-plugin": "^8.51.0",
+    "@typescript-eslint/parser": "^8.51.0",
     "@vitejs/plugin-react": "^5.1.2",
+    "eslint": "^9.39.2",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^17.0.0",
+    "prettier": "^3.4.0",
     "tailwindcss": "^4.1.18",
     "typescript": "^5.9.3",
     "vite": "^7.3.0"

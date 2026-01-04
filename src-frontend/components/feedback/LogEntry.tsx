@@ -23,14 +23,13 @@ const levelLabels: Record<LogLevel, string> = {
 
 export function LogEntry({ time, level, message }: LogEntryProps) {
   return (
-    <div className="flex border-b border-[var(--border-muted)] last:border-b-0" style={{ padding: '6px 12px', gap: '12px' }}>
+    <div
+      className="flex border-b border-[var(--border-muted)] last:border-b-0"
+      style={{ padding: '6px 12px', gap: '12px' }}
+    >
       <span className="text-[var(--text-muted)] whitespace-nowrap">{time}</span>
-      <span className={cn('font-semibold w-12', levelStyles[level])}>
-        {levelLabels[level]}
-      </span>
-      <span className="text-[var(--text-primary)] break-words flex-1">
-        {message}
-      </span>
+      <span className={cn('font-semibold w-12', levelStyles[level])}>{levelLabels[level]}</span>
+      <span className="text-[var(--text-primary)] break-words flex-1">{message}</span>
     </div>
   );
 }

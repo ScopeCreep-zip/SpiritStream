@@ -11,14 +11,7 @@ export interface ModalProps {
   maxWidth?: string;
 }
 
-export function Modal({
-  open,
-  onClose,
-  title,
-  children,
-  footer,
-  maxWidth = '500px',
-}: ModalProps) {
+export function Modal({ open, onClose, title, children, footer, maxWidth = '500px' }: ModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
   const previousActiveElement = useRef<HTMLElement | null>(null);
 
@@ -134,11 +127,11 @@ interface ModalHeaderProps {
 
 export function ModalHeader({ title, onClose }: ModalHeaderProps) {
   return (
-    <div className="border-b border-[var(--border-muted)] flex items-center justify-between" style={{ padding: '20px 24px' }}>
-      <h3
-        id="modal-title"
-        className="text-lg font-semibold text-[var(--text-primary)]"
-      >
+    <div
+      className="border-b border-[var(--border-muted)] flex items-center justify-between"
+      style={{ padding: '20px 24px' }}
+    >
+      <h3 id="modal-title" className="text-lg font-semibold text-[var(--text-primary)]">
         {title}
       </h3>
       <button
@@ -179,10 +172,7 @@ interface ModalFooterProps {
 export function ModalFooter({ children, className }: ModalFooterProps) {
   return (
     <div
-      className={cn(
-        'border-t border-[var(--border-muted)] flex justify-end gap-3',
-        className
-      )}
+      className={cn('border-t border-[var(--border-muted)] flex justify-end gap-3', className)}
       style={{ padding: '16px 24px' }}
     >
       {children}

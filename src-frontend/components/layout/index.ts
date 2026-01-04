@@ -11,4 +11,9 @@ export {
 } from './Sidebar';
 export { Logo, type LogoProps } from './Logo';
 export { Header, type HeaderProps } from './Header';
-export { MainContent, ContentArea, type MainContentProps, type ContentAreaProps } from './MainContent';
+export {
+  MainContent,
+  ContentArea,
+  type MainContentProps,
+  type ContentAreaProps,
+} from './MainContent';

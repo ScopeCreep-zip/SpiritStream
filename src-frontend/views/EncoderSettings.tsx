@@ -1,124 +1,26 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { RotateCcw, Save } from 'lucide-react';
-import { Card, CardHeader, CardTitle, CardDescription, CardBody, CardFooter } from '@/components/ui/Card';
+import { Plus, Cpu } from 'lucide-react';
+import { Card, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Select } from '@/components/ui/Select';
-import { Input } from '@/components/ui/Input';
+import { EncoderCard } from '@/components/encoder';
+import { OutputGroupModal } from '@/components/modals';
 import { useProfileStore } from '@/stores/profileStore';
-import { api } from '@/lib/tauri';
-import type { Encoders } from '@/types/stream';
-
-interface EncoderFormData {
-  encoder: string;
-  preset: string;
-  rateControl: string;
-  resolution: string;
-  frameRate: string;
-  videoBitrate: string;
-  keyframeInterval: string;
-}
-
-const defaultSettings: EncoderFormData = {
-  encoder: 'libx264',
-  preset: 'balanced',
-  rateControl: 'cbr',
-  resolution: '1920x1080',
-  frameRate: '60',
-  videoBitrate: '6000',
-  keyframeInterval: '2',
-};
+import { useStreamStore } from '@/stores/streamStore';
+import type { OutputGroup } from '@/types/profile';
 
 export function EncoderSettings() {
   const { t } = useTranslation();
-  const { current, loading, error, updateOutputGroup } = useProfileStore();
-  const [formData, setFormData] = useState<EncoderFormData>(defaultSettings);
-  const [isDirty, setIsDirty] = useState(false);
-  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
-  const [availableEncoders, setAvailableEncoders] = useState<Encoders>({ video: [], audio: [] });
-  const [loadingEncoders, setLoadingEncoders] = useState(true);
+  const tDynamic = t as (key: string, options?: { defaultValue?: string }) => string;
 
-  // Fetch available encoders from backend on mount
-  useEffect(() => {
-    const fetchEncoders = async () => {
-      try {
-        setLoadingEncoders(true);
-        const encoders = await api.system.getEncoders();
-        setAvailableEncoders(encoders);
-      } catch (err) {
-        console.error('[EncoderSettings] Failed to fetch encoders:', err);
-        // Fallback to common encoders if detection fails
-        setAvailableEncoders({
-          video: ['libx264'],
-          audio: ['aac'],
-        });
-      } finally {
-        setLoadingEncoders(false);
-      }
-    };
+  const { current, loading, error, addOutputGroup, removeOutputGroup } = useProfileStore();
+  const { activeGroups } = useStreamStore();
 
-    fetchEncoders();
-  }, []);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingGroup, setEditingGroup] = useState<OutputGroup | null>(null);
 
-  // Load settings from first output group (or selected group)
-  useEffect(() => {
-    if (current && current.outputGroups.length > 0) {
-      const group = selectedGroupId
-        ? current.outputGroups.find(g => g.id === selectedGroupId)
-        : current.outputGroups[0];
-
-      if (group) {
-        setSelectedGroupId(group.id);
-        // Parse bitrate from string (e.g., "6000k" -> "6000")
-        const bitrateNum = group.video.bitrate.replace(/[^0-9]/g, '') || '6000';
-        setFormData({
-          encoder: group.video.codec,
-          preset: group.video.preset || 'balanced',
-          rateControl: 'cbr', // Rate control not stored in new model, default to CBR
-          resolution: `${group.video.width}x${group.video.height}`,
-          frameRate: group.video.fps.toString(),
-          videoBitrate: bitrateNum,
-          keyframeInterval: '2', // Not stored in current model
-        });
-        setIsDirty(false);
-      }
-    }
-  }, [current, selectedGroupId]);
-
-  const handleChange = (field: keyof EncoderFormData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-    setIsDirty(true);
-  };
-
-  const handleReset = () => {
-    setFormData(defaultSettings);
-    setIsDirty(true);
-  };
-
-  const handleSave = () => {
-    if (selectedGroupId && current) {
-      // Find current group to merge video settings
-      const currentGroup = current.outputGroups.find(g => g.id === selectedGroupId);
-      if (!currentGroup) return;
-
-      // Parse resolution into width/height
-      const [width, height] = formData.resolution.split('x').map(Number);
-
-      updateOutputGroup(selectedGroupId, {
-        video: {
-          ...currentGroup.video,
-          codec: formData.encoder,
-          width,
-          height,
-          fps: parseInt(formData.frameRate),
-          bitrate: `${formData.videoBitrate}k`,
-          preset: formData.preset,
-        },
-      });
-      setIsDirty(false);
-    }
-  };
-
+  // Loading state
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -127,21 +29,25 @@ export function EncoderSettings() {
     );
   }
 
+  // Error state
   if (error) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--error-text)]">{t('common.error')}: {error}</div>
+        <div className="text-[var(--error-text)]">
+          {t('common.error')}: {error}
+        </div>
       </div>
     );
   }
 
-  if (!current || current.outputGroups.length === 0) {
+  // No profile selected
+  if (!current) {
     return (
       <Card>
         <CardBody>
           <div className="text-center py-12">
             <p className="text-[var(--text-secondary)]">
-              {t('encoder.createOutputGroupFirst')}
+              {tDynamic('encoder.selectProfileFirst', { defaultValue: 'Select a profile first' })}
             </p>
           </div>
         </CardBody>
@@ -149,153 +55,128 @@ export function EncoderSettings() {
     );
   }
 
-  // Build encoder options from detected encoders
-  const getEncoderLabel = (encoder: string): string => {
-    // Map common encoder names to user-friendly labels
-    const labels: Record<string, string> = {
-      'libx264': 'x264 (Software)',
-      'h264_nvenc': 'NVIDIA NVENC',
-      'h264_qsv': 'Intel QuickSync',
-      'h264_amf': 'AMD AMF',
-      'libx265': 'x265 (Software)',
-      'hevc_nvenc': 'NVIDIA NVENC (HEVC)',
-      'hevc_qsv': 'Intel QuickSync (HEVC)',
-      'hevc_amf': 'AMD AMF (HEVC)',
-    };
-    return labels[encoder] || encoder;
+  const outputGroups = current.outputGroups;
+
+  // Get status for each group
+  const getGroupStatus = (groupId: string): 'live' | 'connecting' | 'offline' | 'error' => {
+    if (activeGroups.has(groupId)) return 'live';
+    return 'offline';
   };
 
-  const encoderOptions = loadingEncoders
-    ? [{ value: formData.encoder, label: t('common.loading') }]
-    : availableEncoders.video.map(enc => ({
-        value: enc,
-        label: getEncoderLabel(enc),
-      }));
+  // Duplicate a group
+  const duplicateGroup = (group: OutputGroup) => {
+    const newGroup: OutputGroup = {
+      ...group,
+      id: crypto.randomUUID(),
+      name: `${group.name} ${tDynamic('common.copySuffix', { defaultValue: '(Copy)' })}`,
+      // Deep clone nested objects
+      video: { ...group.video },
+      audio: { ...group.audio },
+      container: { ...group.container },
+      streamTargets: group.streamTargets.map((t) => ({ ...t, id: crypto.randomUUID() })),
+    };
+    addOutputGroup(newGroup);
+  };
 
-  const presetOptions = [
-    { value: 'quality', label: t('encoder.presets.quality') },
-    { value: 'balanced', label: t('encoder.presets.balanced') },
-    { value: 'performance', label: t('encoder.presets.performance') },
-    { value: 'low_latency', label: t('encoder.presets.lowLatency') },
-  ];
+  // Open edit modal
+  const openEditModal = (group: OutputGroup) => {
+    setEditingGroup(group);
+    setEditModalOpen(true);
+  };
 
-  const rateControlOptions = [
-    { value: 'cbr', label: t('encoder.rateControls.cbr') },
-    { value: 'vbr', label: t('encoder.rateControls.vbr') },
-    { value: 'cqp', label: t('encoder.rateControls.cqp') },
-  ];
+  // Close edit modal
+  const closeEditModal = () => {
+    setEditingGroup(null);
+    setEditModalOpen(false);
+  };
 
-  const resolutionOptions = [
-    { value: '3840x2160', label: t('encoder.resolutions.3840x2160') },
-    { value: '2560x1440', label: t('encoder.resolutions.2560x1440') },
-    { value: '1920x1080', label: t('encoder.resolutions.1920x1080') },
-    { value: '1280x720', label: t('encoder.resolutions.1280x720') },
-    { value: '854x480', label: t('encoder.resolutions.854x480') },
-  ];
+  // Empty state
+  if (outputGroups.length === 0) {
+    return (
+      <>
+        <Card>
+          <CardBody>
+            <div className="text-center" style={{ padding: '48px 0' }}>
+              <div
+                className="w-16 h-16 mx-auto rounded-full bg-[var(--primary-subtle)] flex items-center justify-center"
+                style={{ marginBottom: '16px' }}
+              >
+                <Cpu className="w-8 h-8 text-[var(--primary)]" />
+              </div>
+              <h3
+                className="text-lg font-semibold text-[var(--text-primary)]"
+                style={{ marginBottom: '8px' }}
+              >
+                {tDynamic('encoder.noEncoders', { defaultValue: 'No Encoder Configurations' })}
+              </h3>
+              <p
+                className="text-[var(--text-secondary)] max-w-md mx-auto"
+                style={{ marginBottom: '24px' }}
+              >
+                {tDynamic('encoder.noEncodersDescription', {
+                  defaultValue:
+                    'Create your first encoder configuration to define video and audio encoding settings for your streams.',
+                })}
+              </p>
+              <Button onClick={() => setCreateModalOpen(true)}>
+                <Plus className="w-4 h-4" />
+                {tDynamic('encoder.addEncoder', { defaultValue: 'Add Encoder' })}
+              </Button>
+            </div>
+          </CardBody>
+        </Card>
 
-  const frameRateOptions = [
-    { value: '60', label: t('encoder.frameRates.60') },
-    { value: '30', label: t('encoder.frameRates.30') },
-    { value: '24', label: t('encoder.frameRates.24') },
-  ];
-
-  const outputGroupOptions = current.outputGroups.map(g => ({
-    value: g.id,
-    label: g.name || t('encoder.defaultGroupName'),
-  }));
+        {/* Create Modal */}
+        <OutputGroupModal
+          open={createModalOpen}
+          onClose={() => setCreateModalOpen(false)}
+          mode="create"
+        />
+      </>
+    );
+  }
 
   return (
-    <Card>
-      <CardHeader>
-        <div>
-          <CardTitle>{t('encoder.title')}</CardTitle>
-          <CardDescription>
-            {t('encoder.description')}
-          </CardDescription>
-        </div>
-        {current.outputGroups.length > 1 && (
-          <Select
-            value={selectedGroupId || ''}
-            onChange={(e) => setSelectedGroupId(e.target.value)}
-            options={outputGroupOptions}
-            className="w-48"
-          />
-        )}
-      </CardHeader>
-      <CardBody>
-        <div className="grid grid-cols-2" style={{ gap: '24px' }}>
-          {/* Left Column - Video Encoder */}
-          <div className="flex flex-col" style={{ gap: '16px' }}>
-            <h3 className="text-sm font-semibold text-[var(--text-primary)]" style={{ marginBottom: '16px' }}>
-              {t('encoder.videoEncoder')}
-            </h3>
-            <Select
-              label={t('encoder.encoder')}
-              value={formData.encoder}
-              onChange={(e) => handleChange('encoder', e.target.value)}
-              options={encoderOptions}
-              helper={t('encoder.encoderHelper')}
-            />
-            <Select
-              label={t('encoder.preset')}
-              value={formData.preset}
-              onChange={(e) => handleChange('preset', e.target.value)}
-              options={presetOptions}
-              helper={t('encoder.presetHelper')}
-            />
-            <Select
-              label={t('encoder.rateControl')}
-              value={formData.rateControl}
-              onChange={(e) => handleChange('rateControl', e.target.value)}
-              options={rateControlOptions}
-              helper={t('encoder.rateControlHelper')}
-            />
-          </div>
+    <div className="flex flex-col" style={{ gap: '16px' }}>
+      {/* Encoder Cards */}
+      {outputGroups.map((group) => (
+        <EncoderCard
+          key={group.id}
+          group={group}
+          status={getGroupStatus(group.id)}
+          onEdit={() => openEditModal(group)}
+          onDuplicate={() => duplicateGroup(group)}
+          onRemove={() => removeOutputGroup(group.id)}
+        />
+      ))}
 
-          {/* Right Column - Output Settings */}
-          <div className="flex flex-col" style={{ gap: '16px' }}>
-            <h3 className="text-sm font-semibold text-[var(--text-primary)]" style={{ marginBottom: '16px' }}>
-              {t('encoder.outputSettings')}
-            </h3>
-            <Select
-              label={t('encoder.resolution')}
-              value={formData.resolution}
-              onChange={(e) => handleChange('resolution', e.target.value)}
-              options={resolutionOptions}
-            />
-            <Select
-              label={t('encoder.frameRate')}
-              value={formData.frameRate}
-              onChange={(e) => handleChange('frameRate', e.target.value)}
-              options={frameRateOptions}
-            />
-            <Input
-              label={t('encoder.videoBitrate')}
-              type="number"
-              value={formData.videoBitrate}
-              onChange={(e) => handleChange('videoBitrate', e.target.value)}
-              helper={t('encoder.videoBitrateHelper')}
-            />
-            <Input
-              label={t('encoder.keyframeInterval')}
-              type="number"
-              value={formData.keyframeInterval}
-              onChange={(e) => handleChange('keyframeInterval', e.target.value)}
-              helper={t('encoder.keyframeIntervalHelper')}
-            />
-          </div>
-        </div>
-      </CardBody>
-      <CardFooter>
-        <Button variant="ghost" onClick={handleReset}>
-          <RotateCcw className="w-4 h-4" />
-          {t('encoder.resetDefaults')}
-        </Button>
-        <Button onClick={handleSave} disabled={!isDirty}>
-          <Save className="w-4 h-4" />
-          {t('encoder.saveSettings')}
-        </Button>
-      </CardFooter>
-    </Card>
+      {/* Add New Encoder Card */}
+      <Card
+        className="border-2 border-dashed border-[var(--border-default)] hover:border-[var(--primary)] transition-colors cursor-pointer"
+        onClick={() => setCreateModalOpen(true)}
+      >
+        <CardBody className="flex items-center justify-center" style={{ padding: '32px 24px' }}>
+          <Button variant="ghost">
+            <Plus className="w-5 h-5" style={{ marginRight: '8px' }} />
+            {tDynamic('encoder.addEncoder', { defaultValue: 'Add Encoder' })}
+          </Button>
+        </CardBody>
+      </Card>
+
+      {/* Create Modal */}
+      <OutputGroupModal
+        open={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+        mode="create"
+      />
+
+      {/* Edit Modal */}
+      <OutputGroupModal
+        open={editModalOpen}
+        onClose={closeEditModal}
+        mode="edit"
+        group={editingGroup || undefined}
+      />
+    </div>
   );
 }

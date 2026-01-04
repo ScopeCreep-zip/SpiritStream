@@ -1,4 +1,4 @@
-import { forwardRef } from 'react';
+import { forwardRef, useId } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
@@ -17,7 +17,11 @@ export interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElemen
 
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(
   ({ className, label, error, helper, options, id, ...props }, ref) => {
-    const selectId = id || label?.toLowerCase().replace(/\s/g, '-');
+    const generatedId = useId();
+    const selectId = id || generatedId;
+    const helperId = helper && !error ? `${selectId}-helper` : undefined;
+    const errorId = error ? `${selectId}-error` : undefined;
+    const describedBy = errorId || helperId;
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -33,6 +37,8 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
           <select
             ref={ref}
             id={selectId}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={describedBy}
             className={cn(
               'w-full text-sm rounded-lg transition-all duration-150',
               'bg-[var(--bg-sunken)] text-[var(--text-primary)]',
@@ -49,24 +55,25 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             {...props}
           >
             {options.map((option) => (
-              <option
-                key={option.value}
-                value={option.value}
-                disabled={option.disabled}
-              >
+              <option key={option.value} value={option.value} disabled={option.disabled}>
                 {option.label}
               </option>
             ))}
           </select>
           <ChevronDown
             className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-tertiary)] pointer-events-none"
+            aria-hidden="true"
           />
         </div>
         {helper && !error && (
-          <p className="text-xs text-[var(--text-tertiary)]">{helper}</p>
+          <p id={helperId} className="text-xs text-[var(--text-tertiary)]">
+            {helper}
+          </p>
         )}
         {error && (
-          <p className="text-xs text-[var(--error-text)]">{error}</p>
+          <p id={errorId} className="text-xs text-[var(--error-text)]" role="alert">
+            {error}
+          </p>
         )}
       </div>
     );

@@ -82,7 +82,13 @@
     "bitrate": "ビットレート",
     "fps": "FPS",
     "targetsCount": "{{count}}件の配信先",
-    "noStreamTargets": "配信先が設定されていません"
+    "noStreamTargets": "配信先が設定されていません",
+    "outputGroups": "出力グループ",
+    "outputGroupsDescription": "設定済みの出力グループ",
+    "noOutputGroups": "出力グループが設定されていません",
+    "encoderSettings": "エンコーダー設定",
+    "encoderSettingsDescription": "各出力のエンコーダー設定",
+    "noEncoderSettings": "エンコーダー設定がありません"
   },
   "profiles": {
     "newProfile": "新規プロファイル",
@@ -131,6 +137,17 @@
   "encoder": {
     "title": "エンコーダー設定",
     "description": "映像・音声エンコードのパラメーターを設定",
+    "noEncoders": "エンコーダー設定なし",
+    "noEncodersDescription": "最初のエンコーダー設定を作成して、ストリームの映像・音声エンコード設定を定義しましょう。",
+    "addEncoder": "エンコーダーを追加",
+    "selectProfileFirst": "最初にプロファイルを選択してください",
+    "defaultEncoderName": "エンコーダー",
+    "audio": "音声",
+    "bitrate": "ビットレート",
+    "edit": "編集",
+    "duplicate": "複製",
+    "remove": "削除",
+    "fps": "FPS",
     "videoEncoder": "映像エンコーダー",
     "videoEncoderSettings": "映像エンコーダー設定",
     "outputSettings": "出力設定",
@@ -224,7 +241,13 @@
     "defaultGroupName": "出力グループ {{number}}",
     "editGroup": "出力グループを編集",
     "duplicateGroup": "出力グループを複製",
-    "removeGroup": "出力グループを削除"
+    "removeGroup": "出力グループを削除",
+    "noTargets": "配信先なし",
+    "addTarget": "配信先を追加",
+    "video": "映像",
+    "audio": "音声",
+    "container": "コンテナ",
+    "targetsCount": "{{count}}件の配信先"
   },
   "targets": {
     "addTarget": "配信先を追加",
@@ -331,6 +354,14 @@
     "audioBitrate": "音声ビットレート",
     "generatePts": "PTS生成",
     "generatePtsDescription": "ストリームのプレゼンテーションタイムスタンプを生成",
+    "outputGroupLabel": "出力グループ",
+    "noOutputGroupsAvailable": "利用可能な出力グループがありません。まず作成してください。",
+    "videoSettings": "映像設定",
+    "audioSettings": "音声設定",
+    "containerSettings": "コンテナ設定",
+    "containerFormat": "コンテナフォーマット",
+    "audioChannels": "チャンネル",
+    "audioSampleRate": "サンプルレート",
     "encryptProfile": "プロファイルを暗号化",
     "enterPassword": "パスワードを入力",
     "encryptDescription": "「{{profileName}}」を暗号化するパスワードを設定してください。このプロファイルにアクセスするにはパスワードが必要になります。",
@@ -436,6 +467,10 @@
     "retry": "再試行",
     "show": "表示",
     "hide": "非表示",
+    "showPassword": "パスワードを表示",
+    "hidePassword": "パスワードを非表示",
+    "showStreamKey": "ストリームキーを表示",
+    "hideStreamKey": "ストリームキーを非表示",
     "copy": "コピー",
     "copied": "コピーしました！",
     "export": "エクスポート",
@@ -500,6 +535,8 @@
     "streamKeyCopied": "ストリームキーをコピーしました",
     "importFailed": "プロファイルのインポートに失敗しました",
     "testFailed": "配信テストに失敗しました",
-    "testingConfig": "配信設定をテスト中..."
+    "testingConfig": "配信設定をテスト中...",
+    "groupDuplicated": "出力グループ「{{name}}」を複製しました",
+    "groupRemoved": "出力グループを削除しました"
   }
 }

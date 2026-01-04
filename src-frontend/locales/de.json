@@ -82,7 +82,13 @@
     "bitrate": "Bitrate",
     "fps": "FPS",
     "targetsCount": "{{count}} Ziele",
-    "noStreamTargets": "Keine Stream-Ziele konfiguriert"
+    "noStreamTargets": "Keine Stream-Ziele konfiguriert",
+    "outputGroups": "Ausgabegruppen",
+    "outputGroupsDescription": "Ihre konfigurierten Ausgabegruppen",
+    "noOutputGroups": "Keine Ausgabegruppen konfiguriert",
+    "encoderSettings": "Encoder-Einstellungen",
+    "encoderSettingsDescription": "Encoder-Konfigurationen für jede Ausgabe",
+    "noEncoderSettings": "Keine Encoder-Konfigurationen"
   },
   "profiles": {
     "newProfile": "Neues Profil",
@@ -131,6 +137,16 @@
   "encoder": {
     "title": "Encoder-Konfiguration",
     "description": "Konfigurieren Sie Video- und Audio-Encoding-Parameter",
+    "noEncoders": "Keine Encoder-Konfigurationen",
+    "noEncodersDescription": "Erstellen Sie Ihre erste Encoder-Konfiguration, um Video- und Audio-Encoding-Einstellungen für Ihre Streams festzulegen.",
+    "addEncoder": "Encoder hinzufügen",
+    "selectProfileFirst": "Wählen Sie zuerst ein Profil aus",
+    "defaultEncoderName": "Encoder",
+    "audio": "Audio",
+    "bitrate": "Bitrate",
+    "edit": "Bearbeiten",
+    "duplicate": "Duplizieren",
+    "remove": "Entfernen",
     "videoEncoder": "Video-Encoder",
     "videoEncoderSettings": "Video-Encoder-Einstellungen",
     "outputSettings": "Ausgabe-Einstellungen",
@@ -224,7 +240,13 @@
     "defaultGroupName": "Ausgabegruppe {{number}}",
     "editGroup": "Ausgabegruppe bearbeiten",
     "duplicateGroup": "Ausgabegruppe duplizieren",
-    "removeGroup": "Ausgabegruppe entfernen"
+    "removeGroup": "Ausgabegruppe entfernen",
+    "noTargets": "Keine Ziele",
+    "addTarget": "Ziel hinzufügen",
+    "video": "Video",
+    "audio": "Audio",
+    "container": "Container",
+    "targetsCount": "{{count}} Ziele"
   },
   "targets": {
     "addTarget": "Ziel hinzufügen",
@@ -331,6 +353,14 @@
     "audioBitrate": "Audio-Bitrate",
     "generatePts": "PTS generieren",
     "generatePtsDescription": "Präsentationszeitstempel für den Stream generieren",
+    "outputGroupLabel": "Ausgabegruppe",
+    "noOutputGroupsAvailable": "Keine Ausgabegruppen verfügbar. Erstellen Sie zuerst eine.",
+    "videoSettings": "Video-Einstellungen",
+    "audioSettings": "Audio-Einstellungen",
+    "containerSettings": "Container-Einstellungen",
+    "containerFormat": "Container-Format",
+    "audioChannels": "Kanäle",
+    "audioSampleRate": "Abtastrate",
     "encryptProfile": "Profil verschlüsseln",
     "enterPassword": "Passwort eingeben",
     "encryptDescription": "Legen Sie ein Passwort fest, um \"{{profileName}}\" zu verschlüsseln. Sie benötigen dieses Passwort, um auf das Profil zuzugreifen.",
@@ -436,6 +466,10 @@
     "retry": "Erneut versuchen",
     "show": "Anzeigen",
     "hide": "Verbergen",
+    "showPassword": "Passwort anzeigen",
+    "hidePassword": "Passwort verbergen",
+    "showStreamKey": "Stream-Schlüssel anzeigen",
+    "hideStreamKey": "Stream-Schlüssel verbergen",
     "copy": "Kopieren",
     "copied": "Kopiert!",
     "export": "Exportieren",
@@ -500,6 +534,8 @@
     "streamKeyCopied": "Stream-Schlüssel in die Zwischenablage kopiert",
     "importFailed": "Profilimport fehlgeschlagen",
     "testFailed": "Stream-Test fehlgeschlagen",
-    "testingConfig": "Streaming-Konfiguration wird getestet..."
+    "testingConfig": "Streaming-Konfiguration wird getestet...",
+    "groupDuplicated": "Ausgabegruppe \"{{name}}\" dupliziert",
+    "groupRemoved": "Ausgabegruppe entfernt"
   }
 }

@@ -19,18 +19,12 @@ export function Header({ title, description, children, className }: HeaderProps)
       style={{ padding: '16px 24px' }}
     >
       <div className="flex flex-col">
-        <h1 className="text-xl font-semibold text-[var(--text-primary)]">
-          {title}
-        </h1>
+        <h1 className="text-xl font-semibold text-[var(--text-primary)]">{title}</h1>
         {description && (
-          <p className="text-sm text-[var(--text-secondary)] mt-0.5">
-            {description}
-          </p>
+          <p className="text-sm text-[var(--text-secondary)] mt-0.5">{description}</p>
         )}
       </div>
-      {children && (
-        <div className="flex items-center gap-3">{children}</div>
-      )}
+      {children && <div className="flex items-center gap-3">{children}</div>}
     </header>
   );
 }

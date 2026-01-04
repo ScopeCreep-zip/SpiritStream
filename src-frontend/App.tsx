@@ -44,7 +44,15 @@ import {
   Settings,
 } from '@/views';
 
-export type View = 'dashboard' | 'profiles' | 'streams' | 'encoder' | 'outputs' | 'targets' | 'logs' | 'settings';
+export type View =
+  | 'dashboard'
+  | 'profiles'
+  | 'streams'
+  | 'encoder'
+  | 'outputs'
+  | 'targets'
+  | 'logs'
+  | 'settings';
 
 // View meta is now handled via translations using keys like header.dashboard.title
 
@@ -179,9 +187,7 @@ function App() {
         );
       case 'profiles':
         return (
-          <Button onClick={() => setProfileModalOpen(true)}>
-            {t('profiles.newProfile')}
-          </Button>
+          <Button onClick={() => setProfileModalOpen(true)}>{t('profiles.newProfile')}</Button>
         );
       case 'targets':
         return (
@@ -194,10 +200,7 @@ function App() {
         );
       case 'outputs':
         return (
-          <Button
-            onClick={() => setOutputGroupModalOpen(true)}
-            disabled={!current}
-          >
+          <Button onClick={() => setOutputGroupModalOpen(true)} disabled={!current}>
             {t('outputs.newOutputGroup')}
           </Button>
         );
@@ -275,16 +278,11 @@ function App() {
       </Sidebar>
 
       <MainContent>
-        <Header
-          title={title}
-          description={description}
-        >
+        <Header title={title} description={description}>
           {renderHeaderActions()}
         </Header>
 
-        <ContentArea>
-          {renderView()}
-        </ContentArea>
+        <ContentArea>{renderView()}</ContentArea>
       </MainContent>
 
       {/* Modals */}

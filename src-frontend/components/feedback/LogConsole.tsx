@@ -6,11 +6,7 @@ export interface LogConsoleProps {
   className?: string;
 }
 
-export function LogConsole({
-  children,
-  maxHeight = '300px',
-  className,
-}: LogConsoleProps) {
+export function LogConsole({ children, maxHeight = '300px', className }: LogConsoleProps) {
   return (
     <div
       className={cn(

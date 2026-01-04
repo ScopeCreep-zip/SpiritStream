@@ -63,13 +63,12 @@ export function PasswordModal({
 
   const displayError = error || localError;
 
-  const title = mode === 'encrypt'
-    ? t('modals.encryptProfile')
-    : t('modals.enterPassword');
+  const title = mode === 'encrypt' ? t('modals.encryptProfile') : t('modals.enterPassword');
 
-  const description = mode === 'encrypt'
-    ? t('modals.encryptDescription', { profileName: profileName || t('modals.thisProfile') })
-    : t('modals.decryptDescription', { profileName: profileName || t('modals.thisProfile') });
+  const description =
+    mode === 'encrypt'
+      ? t('modals.encryptDescription', { profileName: profileName || t('modals.thisProfile') })
+      : t('modals.decryptDescription', { profileName: profileName || t('modals.thisProfile') });
 
   return (
     <Modal open={open} onClose={onClose} title={title}>
@@ -77,9 +76,7 @@ export function PasswordModal({
         <ModalBody>
           <div className="flex items-center gap-3 mb-4 p-3 bg-[var(--bg-muted)] rounded-lg">
             <Lock className="w-5 h-5 text-[var(--primary)]" />
-            <p className="text-sm text-[var(--text-secondary)]">
-              {description}
-            </p>
+            <p className="text-sm text-[var(--text-secondary)]">{description}</p>
           </div>
 
           <div className="space-y-4">
@@ -89,15 +86,24 @@ export function PasswordModal({
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder={mode === 'encrypt' ? t('modals.enterStrongPassword') : t('modals.enterPassword')}
+                placeholder={
+                  mode === 'encrypt' ? t('modals.enterStrongPassword') : t('modals.enterPassword')
+                }
                 autoFocus
+                autoComplete="off"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? t('common.hidePassword') : t('common.showPassword')}
+                aria-pressed={showPassword}
                 className="absolute right-3 top-[34px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
               >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showPassword ? (
+                  <EyeOff className="w-4 h-4" aria-hidden="true" />
+                ) : (
+                  <Eye className="w-4 h-4" aria-hidden="true" />
+                )}
               </button>
             </div>
 

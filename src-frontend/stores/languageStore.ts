@@ -20,9 +20,7 @@ export const useLanguageStore = create<LanguageStore>((set) => ({
   initFromSettings: (lang: string) => {
     // Validate the language is supported
     const supportedLanguages: Language[] = ['en', 'es', 'fr', 'de', 'ja'];
-    const validLang = supportedLanguages.includes(lang as Language)
-      ? (lang as Language)
-      : 'en';
+    const validLang = supportedLanguages.includes(lang as Language) ? (lang as Language) : 'en';
 
     i18n.changeLanguage(validLang);
     set({ language: validLang });

@@ -37,7 +37,7 @@ const defaultSettings: SettingsState = {
   startMinimized: false,
   showNotifications: true,
   ffmpegPath: '',
-  ffmpegVersion: '',  // Will be translated when displayed
+  ffmpegVersion: '', // Will be translated when displayed
   autoDownloadFfmpeg: true,
   profileStoragePath: '',
   encryptStreamKeys: false,
@@ -54,14 +54,14 @@ export function Settings() {
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        setSettings(prev => ({ ...prev, loading: true }));
+        setSettings((prev) => ({ ...prev, loading: true }));
 
         // Load settings from backend
         const backendSettings = await api.settings.get();
         const profilesPath = await api.settings.getProfilesPath();
 
         // Get FFmpeg version
-        let ffmpegVersion = '';  // Empty means not found (will be translated when displayed)
+        let ffmpegVersion = ''; // Empty means not found (will be translated when displayed)
         try {
           ffmpegVersion = await api.system.testFfmpeg();
         } catch {
@@ -85,36 +85,41 @@ export function Settings() {
         });
       } catch (error) {
         console.error('Failed to load settings:', error);
-        setSettings(prev => ({ ...prev, loading: false }));
+        setSettings((prev) => ({ ...prev, loading: false }));
       }
     };
 
     loadSettings();
+    // initFromSettings is stable (from Zustand store), intentionally excluded
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Save settings to backend
-  const saveSettings = useCallback(async (newSettings: Partial<SettingsState>) => {
-    const updatedSettings = { ...settings, ...newSettings };
-    setSettings(prev => ({ ...prev, ...newSettings, saving: true }));
+  const saveSettings = useCallback(
+    async (newSettings: Partial<SettingsState>) => {
+      const updatedSettings = { ...settings, ...newSettings };
+      setSettings((prev) => ({ ...prev, ...newSettings, saving: true }));
 
-    try {
-      const backendSettings: AppSettings = {
-        language: updatedSettings.language,
-        startMinimized: updatedSettings.startMinimized,
-        showNotifications: updatedSettings.showNotifications,
-        ffmpegPath: updatedSettings.ffmpegPath,
-        autoDownloadFfmpeg: updatedSettings.autoDownloadFfmpeg,
-        encryptStreamKeys: updatedSettings.encryptStreamKeys,
-        lastProfile: null, // Preserve existing or let backend handle
-      };
+      try {
+        const backendSettings: AppSettings = {
+          language: updatedSettings.language,
+          startMinimized: updatedSettings.startMinimized,
+          showNotifications: updatedSettings.showNotifications,
+          ffmpegPath: updatedSettings.ffmpegPath,
+          autoDownloadFfmpeg: updatedSettings.autoDownloadFfmpeg,
+          encryptStreamKeys: updatedSettings.encryptStreamKeys,
+          lastProfile: null, // Preserve existing or let backend handle
+        };
 
-      await api.settings.save(backendSettings);
-    } catch (error) {
-      console.error('Failed to save settings:', error);
-    } finally {
-      setSettings(prev => ({ ...prev, saving: false }));
-    }
-  }, [settings]);
+        await api.settings.save(backendSettings);
+      } catch (error) {
+        console.error('Failed to save settings:', error);
+      } finally {
+        setSettings((prev) => ({ ...prev, saving: false }));
+      }
+    },
+    [settings]
+  );
 
   const updateSetting = <K extends keyof SettingsState>(key: K, value: SettingsState[K]) => {
     // If changing language, update i18n as well
@@ -200,16 +205,18 @@ export function Settings() {
         <CardHeader>
           <div>
             <CardTitle>{t('settings.generalSettings')}</CardTitle>
-            <CardDescription>
-              {t('settings.generalDescription')}
-            </CardDescription>
+            <CardDescription>{t('settings.generalDescription')}</CardDescription>
           </div>
         </CardHeader>
-        <CardBody style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <CardBody
+          style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}
+        >
           <Select
             label={t('settings.language')}
             value={settings.language}
-            onChange={(e) => updateSetting('language', e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+              updateSetting('language', e.target.value)
+            }
             options={languageOptions}
           />
           <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
@@ -223,7 +230,7 @@ export function Settings() {
             </div>
             <Toggle
               checked={settings.startMinimized}
-              onChange={(checked) => updateSetting('startMinimized', checked)}
+              onChange={(checked: boolean) => updateSetting('startMinimized', checked)}
             />
           </div>
           <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
@@ -237,7 +244,7 @@ export function Settings() {
             </div>
             <Toggle
               checked={settings.showNotifications}
-              onChange={(checked) => updateSetting('showNotifications', checked)}
+              onChange={(checked: boolean) => updateSetting('showNotifications', checked)}
             />
           </div>
         </CardBody>
@@ -248,12 +255,12 @@ export function Settings() {
         <CardHeader>
           <div>
             <CardTitle>{t('settings.ffmpegConfig')}</CardTitle>
-            <CardDescription>
-              {t('settings.ffmpegDescription')}
-            </CardDescription>
+            <CardDescription>{t('settings.ffmpegDescription')}</CardDescription>
           </div>
         </CardHeader>
-        <CardBody style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <CardBody
+          style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}
+        >
           <div className="flex flex-col" style={{ gap: '6px' }}>
             <label className="block text-sm font-medium text-[var(--text-primary)]">
               {t('settings.ffmpegPath')}
@@ -261,7 +268,9 @@ export function Settings() {
             <div className="flex" style={{ gap: '8px' }}>
               <Input
                 value={settings.ffmpegPath}
-                onChange={(e) => updateSetting('ffmpegPath', e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  updateSetting('ffmpegPath', e.target.value)
+                }
                 className="flex-1"
               />
               <Button variant="outline" onClick={handleBrowseFfmpeg}>
@@ -272,7 +281,11 @@ export function Settings() {
           </div>
           <Input
             label={t('settings.ffmpegVersion')}
-            value={settings.loading ? t('settings.detecting') : (settings.ffmpegVersion || t('settings.ffmpegNotFound'))}
+            value={
+              settings.loading
+                ? t('settings.detecting')
+                : settings.ffmpegVersion || t('settings.ffmpegNotFound')
+            }
             disabled
             helper={t('settings.detectedVersion')}
           />
@@ -281,21 +294,34 @@ export function Settings() {
           <div className="border-t border-[var(--border-muted)]" style={{ paddingTop: '16px' }}>
             {settings.ffmpegVersion ? (
               <div className="flex items-center gap-2 text-sm text-[var(--success-text)]">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
                 </svg>
                 <span>{t('settings.ffmpegInstalled')}</span>
               </div>
             ) : (
               <FFmpegDownloadProgress
-                onComplete={(path) => {
+                onComplete={(path: string) => {
                   saveSettings({ ffmpegPath: path });
                   // Refresh FFmpeg version
-                  api.system.testFfmpeg().then(version => {
-                    setSettings(prev => ({ ...prev, ffmpegVersion: version }));
-                  }).catch(() => {
-                    // Ignore errors
-                  });
+                  api.system
+                    .testFfmpeg()
+                    .then((version: string) => {
+                      setSettings((prev) => ({ ...prev, ffmpegVersion: version }));
+                    })
+                    .catch(() => {
+                      // Ignore errors
+                    });
                 }}
               />
             )}
@@ -308,12 +334,12 @@ export function Settings() {
         <CardHeader>
           <div>
             <CardTitle>{t('settings.dataPrivacy')}</CardTitle>
-            <CardDescription>
-              {t('settings.dataPrivacyDescription')}
-            </CardDescription>
+            <CardDescription>{t('settings.dataPrivacyDescription')}</CardDescription>
           </div>
         </CardHeader>
-        <CardBody style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <CardBody
+          style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}
+        >
           <div className="flex flex-col" style={{ gap: '6px' }}>
             <label className="block text-sm font-medium text-[var(--text-primary)]">
               {t('settings.profileStorage')}
@@ -341,10 +367,13 @@ export function Settings() {
             </div>
             <Toggle
               checked={settings.encryptStreamKeys}
-              onChange={(checked) => updateSetting('encryptStreamKeys', checked)}
+              onChange={(checked: boolean) => updateSetting('encryptStreamKeys', checked)}
             />
           </div>
-          <div className="border-t border-[var(--border-muted)] flex" style={{ paddingTop: '16px', gap: '12px' }}>
+          <div
+            className="border-t border-[var(--border-muted)] flex"
+            style={{ paddingTop: '16px', gap: '12px' }}
+          >
             <Button variant="outline" onClick={handleExportData}>
               <Download className="w-4 h-4" />
               {t('settings.exportData')}
@@ -362,9 +391,7 @@ export function Settings() {
         <CardHeader>
           <div>
             <CardTitle>{t('settings.about')}</CardTitle>
-            <CardDescription>
-              {t('settings.aboutDescription')}
-            </CardDescription>
+            <CardDescription>{t('settings.aboutDescription')}</CardDescription>
           </div>
         </CardHeader>
         <CardBody>
@@ -390,7 +417,9 @@ export function Settings() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => window.open('https://github.com/billboyles/magillastream#readme', '_blank')}
+                onClick={() =>
+                  window.open('https://github.com/billboyles/magillastream#readme', '_blank')
+                }
               >
                 <BookOpen className="w-4 h-4" />
                 {t('settings.docs')}
@@ -398,7 +427,9 @@ export function Settings() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => window.open('https://github.com/billboyles/magillastream/releases', '_blank')}
+                onClick={() =>
+                  window.open('https://github.com/billboyles/magillastream/releases', '_blank')
+                }
               >
                 <RefreshCw className="w-4 h-4" />
                 {t('settings.updates')}

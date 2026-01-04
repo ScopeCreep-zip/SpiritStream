@@ -36,12 +36,7 @@ const statusStyles = {
   },
 };
 
-export function StreamStatus({
-  status,
-  label,
-  showPulse = true,
-  className,
-}: StreamStatusProps) {
+export function StreamStatus({ status, label, showPulse = true, className }: StreamStatusProps) {
   const { t } = useTranslation();
   const styles = statusStyles[status];
   const shouldPulse = showPulse && styles.pulse;
@@ -65,11 +60,7 @@ export function StreamStatus({
       style={{ padding: '4px 10px' }}
     >
       <span
-        className={cn(
-          'w-1.5 h-1.5 rounded-full',
-          styles.dot,
-          shouldPulse && 'animate-pulse'
-        )}
+        className={cn('w-1.5 h-1.5 rounded-full', styles.dot, shouldPulse && 'animate-pulse')}
       />
       {label || defaultLabels[status]}
     </span>

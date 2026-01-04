@@ -49,9 +49,7 @@ export function OutputGroup({
           <Layers className="w-[18px] h-[18px] text-[var(--primary)]" />
           <div>
             <div className="font-semibold text-[var(--text-primary)]">{name}</div>
-            <div className="text-small text-[var(--text-secondary)]">
-              {info}
-            </div>
+            <div className="text-small text-[var(--text-secondary)]">{info}</div>
           </div>
         </div>
         <div className="flex items-center gap-3">

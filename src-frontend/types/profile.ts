@@ -8,39 +8,39 @@ export type Platform = 'youtube' | 'twitch' | 'kick' | 'facebook' | 'custom';
  */
 export interface RtmpInput {
   type: 'rtmp';
-  bindAddress: string;   // e.g., "0.0.0.0"
-  port: number;          // e.g., 1935
-  application: string;   // e.g., "live"
+  bindAddress: string; // e.g., "0.0.0.0"
+  port: number; // e.g., 1935
+  application: string; // e.g., "live"
 }
 
 /**
  * Video encoding settings
  */
 export interface VideoSettings {
-  codec: string;         // e.g., "libx264", "h264_nvenc"
-  width: number;         // e.g., 1920
-  height: number;        // e.g., 1080
-  fps: number;           // e.g., 60
-  bitrate: string;       // e.g., "6000k"
-  preset?: string;       // e.g., "veryfast", "p4"
-  profile?: string;      // e.g., "high", "main"
+  codec: string; // e.g., "libx264", "h264_nvenc"
+  width: number; // e.g., 1920
+  height: number; // e.g., 1080
+  fps: number; // e.g., 60
+  bitrate: string; // e.g., "6000k"
+  preset?: string; // e.g., "veryfast", "p4"
+  profile?: string; // e.g., "high", "main"
 }
 
 /**
  * Audio encoding settings
  */
 export interface AudioSettings {
-  codec: string;         // e.g., "aac"
-  bitrate: string;       // e.g., "160k"
-  channels: number;      // e.g., 2
-  sampleRate: number;    // e.g., 48000
+  codec: string; // e.g., "aac"
+  bitrate: string; // e.g., "160k"
+  channels: number; // e.g., 2
+  sampleRate: number; // e.g., 48000
 }
 
 /**
  * Container/muxing settings
  */
 export interface ContainerSettings {
-  format: string;        // e.g., "flv"
+  format: string; // e.g., "flv"
 }
 
 /**
@@ -48,10 +48,10 @@ export interface ContainerSettings {
  */
 export interface StreamTarget {
   id: string;
-  service: Platform;     // renamed from 'platform'
+  service: Platform; // renamed from 'platform'
   name: string;
   url: string;
-  streamKey: string;     // supports ${ENV_VAR} syntax
+  streamKey: string; // supports ${ENV_VAR} syntax
 }
 
 /**
@@ -86,20 +86,23 @@ export interface ProfileSummary {
   resolution: string;
   bitrate: number;
   targetCount: number;
-  services: Platform[];  // NEW: list of configured services
+  services: Platform[]; // NEW: list of configured services
   isEncrypted?: boolean;
 }
 
 /**
  * Platform configuration constants
  */
-export const PLATFORMS: Record<Platform, {
-  name: string;
-  abbreviation: string;
-  color: string;
-  textColor: string;
-  defaultServer: string;
-}> = {
+export const PLATFORMS: Record<
+  Platform,
+  {
+    name: string;
+    abbreviation: string;
+    color: string;
+    textColor: string;
+    defaultServer: string;
+  }
+> = {
   youtube: {
     name: 'YouTube',
     abbreviation: 'YT',

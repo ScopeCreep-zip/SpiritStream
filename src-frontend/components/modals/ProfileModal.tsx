@@ -7,10 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { useProfileStore } from '@/stores/profileStore';
 import { api } from '@/lib/tauri';
 import type { Profile, RtmpInput } from '@/types/profile';
-import {
-  createDefaultProfile,
-  createDefaultOutputGroup,
-} from '@/types/profile';
+import { createDefaultProfile, createDefaultOutputGroup } from '@/types/profile';
 
 export interface ProfileModalProps {
   open: boolean;
@@ -250,15 +247,14 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
     }
   };
 
-  const handleChange = (field: keyof FormData) => (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
-  ) => {
-    setFormData((prev) => ({ ...prev, [field]: e.target.value }));
-    // Clear error when user starts typing
-    if (errors[field]) {
-      setErrors((prev) => ({ ...prev, [field]: undefined }));
-    }
-  };
+  const handleChange =
+    (field: keyof FormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+      setFormData((prev) => ({ ...prev, [field]: e.target.value }));
+      // Clear error when user starts typing
+      if (errors[field]) {
+        setErrors((prev) => ({ ...prev, [field]: undefined }));
+      }
+    };
 
   const title = mode === 'create' ? t('modals.createNewProfile') : t('modals.editProfile');
 
@@ -273,7 +269,11 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
             {t('common.cancel')}
           </Button>
           <Button onClick={handleSave} disabled={saving}>
-            {saving ? t('common.saving') : mode === 'create' ? t('modals.createProfile') : t('common.saveChanges')}
+            {saving
+              ? t('common.saving')
+              : mode === 'create'
+                ? t('modals.createProfile')
+                : t('common.saveChanges')}
           </Button>
         </>
       }
@@ -289,7 +289,14 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
 
         {/* RTMP Input Configuration */}
         <div style={{ padding: '12px', backgroundColor: 'var(--bg-muted)', borderRadius: '8px' }}>
-          <div style={{ marginBottom: '12px', fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-primary)' }}>
+          <div
+            style={{
+              marginBottom: '12px',
+              fontSize: '0.875rem',
+              fontWeight: 500,
+              color: 'var(--text-primary)',
+            }}
+          >
             {t('modals.rtmpInputSettings')}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 1fr', gap: '12px' }}>
@@ -319,7 +326,8 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
             />
           </div>
           <div style={{ marginTop: '8px', fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
-            {t('modals.rtmpUrlPreview')}: rtmp://{formData.bindAddress}:{formData.port}/{formData.application}
+            {t('modals.rtmpUrlPreview')}: rtmp://{formData.bindAddress}:{formData.port}/
+            {formData.application}
           </div>
         </div>
 

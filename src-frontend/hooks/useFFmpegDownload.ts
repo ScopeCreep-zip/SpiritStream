@@ -70,7 +70,7 @@ export function useFFmpegDownload(): FFmpegDownloadState {
         if (event.payload.phase === 'complete') {
           setIsDownloading(false);
           // Check for the bundled path
-          checkBundledFFmpeg().then(path => {
+          checkBundledFFmpeg().then((path) => {
             if (path) setFFmpegPath(path);
           });
         }
@@ -82,6 +82,8 @@ export function useFFmpegDownload(): FFmpegDownloadState {
     return () => {
       if (unlistenProgress) unlistenProgress();
     };
+    // checkBundledFFmpeg is intentionally excluded - we only want to set up the listener once
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Check for an existing bundled FFmpeg

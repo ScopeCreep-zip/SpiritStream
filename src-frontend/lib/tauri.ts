@@ -11,8 +11,7 @@ export const api = {
     getAll: () => invoke<string[]>('get_all_profiles'),
     /** Get profile summaries with services list for displaying platform icons (Story 1.1, 4.1, 4.2) */
     getSummaries: () => invoke<ProfileSummary[]>('get_profile_summaries'),
-    load: (name: string, password?: string) =>
-      invoke<Profile>('load_profile', { name, password }),
+    load: (name: string, password?: string) => invoke<Profile>('load_profile', { name, password }),
     save: (profile: Profile, password?: string) =>
       invoke<void>('save_profile', { profile, password }),
     delete: (name: string) => invoke<void>('delete_profile', { name }),

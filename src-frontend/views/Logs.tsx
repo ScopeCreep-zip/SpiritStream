@@ -39,12 +39,15 @@ export function Logs() {
   const { t } = useTranslation();
 
   // Initial log entry - created with useMemo to include translation
-  const initialLog: LogEntryType = useMemo(() => ({
-    id: '0',
-    timestamp: new Date(),
-    level: 'info',
-    message: t('logs.initialized'),
-  }), [t]);
+  const initialLog: LogEntryType = useMemo(
+    () => ({
+      id: '0',
+      timestamp: new Date(),
+      level: 'info',
+      message: t('logs.initialized'),
+    }),
+    [t]
+  );
 
   const [logs, setLogs] = useState<LogEntryType[]>([initialLog]);
   const [filter, setFilter] = useState<LogLevel | 'all'>('all');
@@ -84,9 +87,7 @@ export function Logs() {
   }, [logs, autoScroll]);
 
   // Filter logs based on selected level
-  const filteredLogs = filter === 'all'
-    ? logs
-    : logs.filter(log => log.level === filter);
+  const filteredLogs = filter === 'all' ? logs : logs.filter((log) => log.level === filter);
 
   // Format timestamp for display
   const formatTime = (date: Date): string => {
@@ -100,7 +101,7 @@ export function Logs() {
 
   const handleExport = () => {
     const content = logs
-      .map(log => `[${formatTime(log.timestamp)}] [${log.level.toUpperCase()}] ${log.message}`)
+      .map((log) => `[${formatTime(log.timestamp)}] [${log.level.toUpperCase()}] ${log.message}`)
       .join('\n');
 
     const blob = new Blob([content], { type: 'text/plain' });
@@ -129,9 +130,7 @@ export function Logs() {
       <CardHeader>
         <div>
           <CardTitle>{t('logs.title')}</CardTitle>
-          <CardDescription>
-            {t('logs.description')}
-          </CardDescription>
+          <CardDescription>{t('logs.description')}</CardDescription>
         </div>
         <div className="flex items-center" style={{ gap: '12px' }}>
           <Select
@@ -141,7 +140,7 @@ export function Logs() {
             className="w-32"
           />
           <Button
-            variant={autoScroll ? "primary" : "ghost"}
+            variant={autoScroll ? 'primary' : 'ghost'}
             size="sm"
             onClick={() => setAutoScroll(!autoScroll)}
             title={autoScroll ? t('logs.autoScrollEnabled') : t('logs.autoScrollDisabled')}
@@ -163,7 +162,10 @@ export function Logs() {
         <LogConsole maxHeight="500px">
           <div ref={consoleRef}>
             {filteredLogs.length === 0 ? (
-              <div className="text-center text-[var(--text-secondary)]" style={{ padding: '32px 16px' }}>
+              <div
+                className="text-center text-[var(--text-secondary)]"
+                style={{ padding: '32px 16px' }}
+              >
                 {t('logs.noLogs')}
               </div>
             ) : (

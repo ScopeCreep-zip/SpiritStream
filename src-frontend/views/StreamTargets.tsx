@@ -13,11 +13,14 @@ import type { StreamTarget } from '@/types/profile';
 
 export function StreamTargets() {
   const { t } = useTranslation();
-  const { current, loading, error, removeStreamTarget, saveProfile } = useProfileStore();
+  const { current, loading, error, removeStreamTarget } = useProfileStore();
   const [revealedKeys, setRevealedKeys] = useState<Set<string>>(new Set());
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
-  const [editingTarget, setEditingTarget] = useState<{ target: StreamTarget; groupId: string } | null>(null);
+  const [editingTarget, setEditingTarget] = useState<{
+    target: StreamTarget;
+    groupId: string;
+  } | null>(null);
 
   const openEditModal = (target: StreamTarget & { groupId: string }) => {
     setEditingTarget({ target, groupId: target.groupId });
@@ -32,8 +35,8 @@ export function StreamTargets() {
   // Get all stream targets from current profile
   const getAllTargets = (): Array<StreamTarget & { groupId: string }> => {
     if (!current) return [];
-    return current.outputGroups.flatMap(group =>
-      group.streamTargets.map(target => ({
+    return current.outputGroups.flatMap((group) =>
+      group.streamTargets.map((target) => ({
         ...target,
         groupId: group.id,
       }))
@@ -58,8 +61,8 @@ export function StreamTargets() {
   };
 
   const handleRemoveTarget = async (groupId: string, targetId: string) => {
-    removeStreamTarget(groupId, targetId);
-    await saveProfile();
+    await removeStreamTarget(groupId, targetId);
+    // Note: saveProfile() is called internally by removeStreamTarget
   };
 
   const maskKey = (key: string): string => {
@@ -78,7 +81,9 @@ export function StreamTargets() {
   if (error) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--error-text)]">{t('common.error')}: {error}</div>
+        <div className="text-[var(--error-text)]">
+          {t('common.error')}: {error}
+        </div>
       </div>
     );
   }
@@ -88,9 +93,7 @@ export function StreamTargets() {
       <Card>
         <CardBody>
           <div className="text-center py-12">
-            <p className="text-[var(--text-secondary)]">
-              {t('targets.selectProfileFirst')}
-            </p>
+            <p className="text-[var(--text-secondary)]">{t('targets.selectProfileFirst')}</p>
           </div>
         </CardBody>
       </Card>
@@ -107,21 +110,33 @@ export function StreamTargets() {
         <Card>
           <CardBody>
             <div className="text-center" style={{ padding: '48px 0' }}>
-              <div className="w-16 h-16 mx-auto rounded-full bg-[var(--primary-subtle)] flex items-center justify-center" style={{ marginBottom: '16px' }}>
+              <div
+                className="w-16 h-16 mx-auto rounded-full bg-[var(--primary-subtle)] flex items-center justify-center"
+                style={{ marginBottom: '16px' }}
+              >
                 <Plus className="w-8 h-8 text-[var(--primary)]" />
               </div>
-              <h3 className="text-lg font-semibold text-[var(--text-primary)]" style={{ marginBottom: '8px' }}>
+              <h3
+                className="text-lg font-semibold text-[var(--text-primary)]"
+                style={{ marginBottom: '8px' }}
+              >
                 {t('targets.noStreamTargets')}
               </h3>
-              <p className="text-[var(--text-secondary)]" style={{ marginBottom: '24px', maxWidth: '28rem', marginLeft: 'auto', marginRight: 'auto', textAlign: 'center' }}>
+              <p
+                className="text-[var(--text-secondary)]"
+                style={{
+                  marginBottom: '24px',
+                  maxWidth: '28rem',
+                  marginLeft: 'auto',
+                  marginRight: 'auto',
+                  textAlign: 'center',
+                }}
+              >
                 {hasOutputGroups
                   ? t('targets.noStreamTargetsDescription')
                   : t('targets.createOutputGroupFirst')}
               </p>
-              <Button
-                onClick={() => setCreateModalOpen(true)}
-                disabled={!hasOutputGroups}
-              >
+              <Button onClick={() => setCreateModalOpen(true)} disabled={!hasOutputGroups}>
                 <Plus className="w-4 h-4" />
                 {t('targets.addTarget')}
               </Button>
@@ -188,7 +203,11 @@ export function StreamTargets() {
                   variant="ghost"
                   size="icon"
                   onClick={() => toggleKeyVisibility(target.id)}
-                  aria-label={revealedKeys.has(target.id) ? t('targets.hideStreamKey') : t('targets.showStreamKey')}
+                  aria-label={
+                    revealedKeys.has(target.id)
+                      ? t('targets.hideStreamKey')
+                      : t('targets.showStreamKey')
+                  }
                 >
                   {revealedKeys.has(target.id) ? (
                     <EyeOff className="w-4 h-4" />
@@ -219,8 +238,14 @@ export function StreamTargets() {
         }`}
         onClick={hasOutputGroups ? () => setCreateModalOpen(true) : undefined}
       >
-        <CardBody className="flex flex-col items-center justify-center" style={{ padding: '48px 24px' }}>
-          <div className="w-12 h-12 rounded-full bg-[var(--primary-subtle)] flex items-center justify-center" style={{ marginBottom: '12px' }}>
+        <CardBody
+          className="flex flex-col items-center justify-center"
+          style={{ padding: '48px 24px' }}
+        >
+          <div
+            className="w-12 h-12 rounded-full bg-[var(--primary-subtle)] flex items-center justify-center"
+            style={{ marginBottom: '12px' }}
+          >
             <Plus className="w-6 h-6 text-[var(--primary)]" />
           </div>
           <span className="text-sm font-medium text-[var(--text-secondary)]">

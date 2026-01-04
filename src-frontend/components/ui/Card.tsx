@@ -8,7 +8,8 @@ export function Card({ className, variant = 'default', ...props }: CardProps) {
   const variants = {
     default: 'bg-[var(--bg-surface)] shadow-[var(--shadow-sm)]',
     elevated: 'bg-[var(--bg-elevated)] shadow-[var(--shadow-md)]',
-    interactive: 'bg-[var(--bg-surface)] shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)] hover:border-[var(--border-interactive)] cursor-pointer transition-all',
+    interactive:
+      'bg-[var(--bg-surface)] shadow-[var(--shadow-sm)] hover:shadow-[var(--shadow-md)] hover:border-[var(--border-interactive)] cursor-pointer transition-all',
   };
 
   return (
@@ -53,12 +54,7 @@ export function CardTitle({ className, ...props }: CardTitleProps) {
 export interface CardDescriptionProps extends React.HTMLAttributes<HTMLParagraphElement> {}
 
 export function CardDescription({ className, ...props }: CardDescriptionProps) {
-  return (
-    <p
-      className={cn('text-sm text-[var(--text-secondary)] mt-1', className)}
-      {...props}
-    />
-  );
+  return <p className={cn('text-sm text-[var(--text-secondary)] mt-1', className)} {...props} />;
 }
 
 export interface CardBodyProps extends React.HTMLAttributes<HTMLDivElement> {}

@@ -18,14 +18,7 @@ export interface StreamCardProps {
   className?: string;
 }
 
-export function StreamCard({
-  platform,
-  name,
-  status,
-  stats,
-  onClick,
-  className,
-}: StreamCardProps) {
+export function StreamCard({ platform, name, status, stats, onClick, className }: StreamCardProps) {
   return (
     <div
       onClick={onClick}
@@ -41,9 +34,7 @@ export function StreamCard({
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <PlatformIcon platform={platform} />
-          <span className="font-semibold text-sm text-[var(--text-primary)]">
-            {name}
-          </span>
+          <span className="font-semibold text-sm text-[var(--text-primary)]">{name}</span>
         </div>
         <StreamStatus status={status} />
       </div>
@@ -51,12 +42,8 @@ export function StreamCard({
         <div className="grid grid-cols-3 gap-3 pt-3 border-t border-[var(--border-muted)]">
           {stats.map((stat, index) => (
             <div key={index} className="text-center">
-              <div className="text-sm font-semibold text-[var(--text-primary)]">
-                {stat.value}
-              </div>
-              <div className="text-tiny uppercase text-[var(--text-tertiary)]">
-                {stat.label}
-              </div>
+              <div className="text-sm font-semibold text-[var(--text-primary)]">{stat.value}</div>
+              <div className="text-tiny uppercase text-[var(--text-tertiary)]">{stat.label}</div>
             </div>
           ))}
         </div>

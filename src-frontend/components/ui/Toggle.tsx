@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { cn } from '@/lib/cn';
 
 export interface ToggleProps {
@@ -7,6 +8,7 @@ export interface ToggleProps {
   label?: string;
   description?: string;
   className?: string;
+  id?: string;
 }
 
 export function Toggle({
@@ -16,7 +18,12 @@ export function Toggle({
   label,
   description,
   className,
+  id,
 }: ToggleProps) {
+  const generatedId = useId();
+  const toggleId = id || generatedId;
+  const descriptionId = description ? `${toggleId}-description` : undefined;
+
   return (
     <label
       className={cn(
@@ -29,10 +36,14 @@ export function Toggle({
       <span className="relative w-11 h-6 flex-shrink-0">
         <input
           type="checkbox"
+          id={toggleId}
           checked={checked}
           onChange={(e) => onChange?.(e.target.checked)}
           disabled={disabled}
           className="sr-only peer"
+          role="switch"
+          aria-checked={checked}
+          aria-describedby={descriptionId}
         />
         <span
           className={cn(
@@ -54,13 +65,9 @@ export function Toggle({
       </span>
       {(label || description) && (
         <div className="flex flex-col">
-          {label && (
-            <span className="text-sm font-medium text-[var(--text-primary)]">
-              {label}
-            </span>
-          )}
+          {label && <span className="text-sm font-medium text-[var(--text-primary)]">{label}</span>}
           {description && (
-            <span className="text-xs text-[var(--text-tertiary)]">
+            <span id={descriptionId} className="text-xs text-[var(--text-tertiary)]">
               {description}
             </span>
           )}

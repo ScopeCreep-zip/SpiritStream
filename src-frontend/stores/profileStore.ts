@@ -18,8 +18,8 @@ interface ProfileState {
   error: string | null;
 
   // Encryption state
-  pendingPasswordProfile: string | null;  // Profile name awaiting password
-  passwordError: string | null;           // Error from failed password attempt
+  pendingPasswordProfile: string | null; // Profile name awaiting password
+  passwordError: string | null; // Error from failed password attempt
 
   // Async actions (Tauri integration)
   loadProfiles: () => Promise<void>;
@@ -53,8 +53,13 @@ interface ProfileState {
 
   // Stream target mutations (auto-save)
   addStreamTarget: (groupId: string, target: StreamTarget) => Promise<void>;
-  updateStreamTarget: (groupId: string, targetId: string, updates: Partial<StreamTarget>) => Promise<void>;
+  updateStreamTarget: (
+    groupId: string,
+    targetId: string,
+    updates: Partial<StreamTarget>
+  ) => Promise<void>;
   removeStreamTarget: (groupId: string, targetId: string) => Promise<void>;
+  moveStreamTarget: (fromGroupId: string, toGroupId: string, targetId: string) => Promise<void>;
 }
 
 // Helper to create a summary from a full profile (using new nested structure)
@@ -62,19 +67,14 @@ const createSummary = (profile: Profile, isEncrypted: boolean = false): ProfileS
   const firstGroup = profile.outputGroups[0];
 
   // Build resolution string from video settings (e.g., "1080p60")
-  const resolution = firstGroup
-    ? `${firstGroup.video.height}p${firstGroup.video.fps}`
-    : '0p0';
+  const resolution = firstGroup ? `${firstGroup.video.height}p${firstGroup.video.fps}` : '0p0';
 
   // Parse bitrate from string (e.g., "6000k" -> 6000)
   const bitrateStr = firstGroup?.video.bitrate || '0k';
   const bitrate = parseInt(bitrateStr.replace(/[^\d]/g, ''), 10) || 0;
 
   // Count all stream targets across all groups
-  const targetCount = profile.outputGroups.reduce(
-    (sum, g) => sum + g.streamTargets.length,
-    0
-  );
+  const targetCount = profile.outputGroups.reduce((sum, g) => sum + g.streamTargets.length, 0);
 
   // Collect unique services from all targets
   const servicesSet = new Set<Platform>();
@@ -179,11 +179,12 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     await get().loadProfile(name, password);
   },
 
-  cancelPasswordPrompt: () => set({
-    pendingPasswordProfile: null,
-    passwordError: null,
-    loading: false
-  }),
+  cancelPasswordPrompt: () =>
+    set({
+      pendingPasswordProfile: null,
+      passwordError: null,
+      loading: false,
+    }),
 
   // Save the current profile to backend
   saveProfile: async (password) => {
@@ -321,9 +322,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         current: {
           ...current,
           outputGroups: current.outputGroups.map((g) =>
-            g.id === groupId
-              ? { ...g, streamTargets: [...g.streamTargets, target] }
-              : g
+            g.id === groupId ? { ...g, streamTargets: [...g.streamTargets, target] } : g
           ),
         },
       });
@@ -368,5 +367,35 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       });
       await get().saveProfile();
     }
+  },
+
+  moveStreamTarget: async (fromGroupId, toGroupId, targetId) => {
+    const current = get().current;
+    if (!current || fromGroupId === toGroupId) return;
+
+    // Find the target in the source group
+    const sourceGroup = current.outputGroups.find((g: OutputGroup) => g.id === fromGroupId);
+    const target = sourceGroup?.streamTargets.find((t: StreamTarget) => t.id === targetId);
+    if (!target) return;
+
+    // Remove from source group and add to destination group
+    set({
+      current: {
+        ...current,
+        outputGroups: current.outputGroups.map((g: OutputGroup) => {
+          if (g.id === fromGroupId) {
+            return {
+              ...g,
+              streamTargets: g.streamTargets.filter((t: StreamTarget) => t.id !== targetId),
+            };
+          }
+          if (g.id === toGroupId) {
+            return { ...g, streamTargets: [...g.streamTargets, target] };
+          }
+          return g;
+        }),
+      },
+    });
+    await get().saveProfile();
   },
 }));

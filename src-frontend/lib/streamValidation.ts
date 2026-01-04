@@ -97,9 +97,9 @@ export async function validateStreamConfig(
   }
 
   // 4. Get targets to validate (optionally filtered by enabled)
-  const allTargets = profile.outputGroups.flatMap(g => g.streamTargets);
+  const allTargets = profile.outputGroups.flatMap((g) => g.streamTargets);
   const targetsToValidate = checkEnabledTargetsOnly
-    ? allTargets.filter(t => enabledTargetIds.has(t.id))
+    ? allTargets.filter((t) => enabledTargetIds.has(t.id))
     : allTargets;
 
   // 5. At least one target exists
@@ -142,7 +142,7 @@ export async function validateStreamConfig(
 
     // Only validate groups that have enabled targets (if filtering)
     if (checkEnabledTargetsOnly) {
-      const hasEnabledTargets = group.streamTargets.some(t => enabledTargetIds.has(t.id));
+      const hasEnabledTargets = group.streamTargets.some((t) => enabledTargetIds.has(t.id));
       if (!hasEnabledTargets) continue;
     }
 
@@ -166,7 +166,7 @@ export async function validateStreamConfig(
   }
 
   return {
-    valid: issues.filter(i => i.severity === 'error').length === 0,
+    valid: issues.filter((i) => i.severity === 'error').length === 0,
     issues,
   };
 }
@@ -182,7 +182,7 @@ export function displayValidationIssues(
     info: (msg: string) => void;
   }
 ): void {
-  const errors = issues.filter(i => i.severity === 'error');
+  const errors = issues.filter((i) => i.severity === 'error');
   const displayCount = Math.min(errors.length, 3);
 
   for (let i = 0; i < displayCount; i++) {

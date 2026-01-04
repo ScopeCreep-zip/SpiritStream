@@ -2,7 +2,12 @@ import { useTranslation } from 'react-i18next';
 import { Download, X, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/cn';
-import { useFFmpegDownload, formatBytes, getPhaseLabel, type DownloadProgress } from '@/hooks/useFFmpegDownload';
+import {
+  useFFmpegDownload,
+  formatBytes,
+  getPhaseLabel,
+  type DownloadProgress,
+} from '@/hooks/useFFmpegDownload';
 
 interface FFmpegDownloadProgressProps {
   /** Callback when download completes successfully */
@@ -24,14 +29,8 @@ export function FFmpegDownloadProgress({
   className,
 }: FFmpegDownloadProgressProps) {
   const { t } = useTranslation();
-  const {
-    progress,
-    isDownloading,
-    error,
-    ffmpegPath,
-    startDownload,
-    cancelDownload,
-  } = useFFmpegDownload();
+  const { progress, isDownloading, error, ffmpegPath, startDownload, cancelDownload } =
+    useFFmpegDownload();
 
   const handleDownload = async () => {
     try {
@@ -99,12 +98,7 @@ export function FFmpegDownloadProgress({
   // Default: show download button
   if (showDownloadButton) {
     return (
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={handleDownload}
-        className={className}
-      >
+      <Button variant="outline" size="sm" onClick={handleDownload} className={className}>
         <Download className="w-4 h-4" />
         {t('settings.downloadFFmpeg')}
       </Button>

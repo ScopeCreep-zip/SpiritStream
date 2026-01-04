@@ -1,6 +1,16 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Radio, Activity, AlertTriangle, Clock, Monitor, Gauge, Target as TargetIcon, Upload, Loader2 } from 'lucide-react';
+import {
+  Radio,
+  Activity,
+  AlertTriangle,
+  Clock,
+  Monitor,
+  Gauge,
+  Target as TargetIcon,
+  Upload,
+  Loader2,
+} from 'lucide-react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { readTextFile } from '@tauri-apps/plugin-fs';
 import { StatsRow } from '@/components/dashboard/StatsRow';
@@ -9,6 +19,8 @@ import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/compon
 import { Grid } from '@/components/ui/Grid';
 import { ProfileCard } from '@/components/dashboard/ProfileCard';
 import { StreamCard } from '@/components/dashboard/StreamCard';
+import { OutputGroupCard } from '@/components/stream/OutputGroupCard';
+import { EncoderCard } from '@/components/encoder/EncoderCard';
 import { Button } from '@/components/ui/Button';
 import { useProfileStore } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
@@ -17,7 +29,7 @@ import { toast } from '@/hooks/useToast';
 import { api } from '@/lib/tauri';
 import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValidation';
 import type { View } from '@/App';
-import type { Profile } from '@/types/profile';
+import type { Profile, OutputGroup } from '@/types/profile';
 
 interface DashboardProps {
   onNavigate: (view: View) => void;
@@ -27,9 +39,40 @@ interface DashboardProps {
 
 export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }: DashboardProps) {
   const { t } = useTranslation();
-  const { current: currentProfile, loading, error, loadProfiles } = useProfileStore();
+  const {
+    current: currentProfile,
+    loading,
+    error,
+    loadProfiles,
+    addOutputGroup,
+    removeOutputGroup,
+  } = useProfileStore();
   const { isStreaming, stats, uptime, globalStatus, activeStreamCount } = useStreamStore();
   const [isTesting, setIsTesting] = useState(false);
+
+  // Get output groups from current profile
+  const outputGroups = currentProfile?.outputGroups ?? [];
+
+  // Handle duplicating an output group
+  const handleDuplicateGroup = async (group: OutputGroup) => {
+    const duplicatedGroup: OutputGroup = {
+      ...group,
+      id: crypto.randomUUID(),
+      name: `${group.name} (Copy)`,
+      streamTargets: group.streamTargets.map((target) => ({
+        ...target,
+        id: crypto.randomUUID(),
+      })),
+    };
+    await addOutputGroup(duplicatedGroup);
+    toast.success(t('toast.groupDuplicated', { name: group.name }));
+  };
+
+  // Handle removing an output group
+  const handleRemoveGroup = async (groupId: string) => {
+    await removeOutputGroup(groupId);
+    toast.success(t('toast.groupRemoved'));
+  };
 
   // Import profile from JSON file
   const handleImportProfile = async () => {
@@ -55,7 +98,9 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
       await loadProfiles();
       toast.success(t('toast.profileImported', { name: profile.name }));
     } catch (err) {
-      toast.error(t('toast.importFailed', { error: err instanceof Error ? err.message : t('errors.unknown') }));
+      toast.error(
+        t('toast.importFailed', { error: err instanceof Error ? err.message : t('errors.unknown') })
+      );
     }
   };
 
@@ -82,7 +127,9 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
         displayValidationIssues(result.issues, toast);
       }
     } catch (err) {
-      toast.error(t('toast.testFailed', { error: err instanceof Error ? err.message : t('errors.unknown') }));
+      toast.error(
+        t('toast.testFailed', { error: err instanceof Error ? err.message : t('errors.unknown') })
+      );
     } finally {
       setIsTesting(false);
     }
@@ -91,11 +138,11 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
   // Get all stream targets from current profile
   const getAllTargets = () => {
     if (!currentProfile) return [];
-    return currentProfile.outputGroups.flatMap(group =>
-      group.streamTargets.map(target => ({
+    return currentProfile.outputGroups.flatMap((group) =>
+      group.streamTargets.map((target) => ({
         id: target.id,
         name: target.name,
-        service: target.service,  // Using service (not platform) from new structure
+        service: target.service, // Using service (not platform) from new structure
         url: target.url,
         streamKey: target.streamKey,
         groupId: group.id,
@@ -106,7 +153,8 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
   const targets = getAllTargets();
 
   // Use backend-verified active stream count, fallback to local calculation
-  const displayActiveCount = activeStreamCount > 0 ? activeStreamCount : (isStreaming ? targets.length : 0);
+  const displayActiveCount =
+    activeStreamCount > 0 ? activeStreamCount : isStreaming ? targets.length : 0;
 
   if (loading) {
     return (
@@ -119,7 +167,9 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
   if (error) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--error-text)]">{t('common.error')}: {error}</div>
+        <div className="text-[var(--error-text)]">
+          {t('common.error')}: {error}
+        </div>
       </div>
     );
   }
@@ -162,24 +212,39 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
               <CardTitle>{t('dashboard.activeProfile')}</CardTitle>
               <CardDescription>{t('dashboard.activeProfileDescription')}</CardDescription>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => onNavigate('profiles')}>{t('common.change')}</Button>
+            <Button variant="ghost" size="sm" onClick={() => onNavigate('profiles')}>
+              {t('common.change')}
+            </Button>
           </CardHeader>
           <CardBody>
             {currentProfile ? (
               <ProfileCard
                 name={currentProfile.name}
                 meta={[
-                  { icon: <Monitor className="w-4 h-4" />, label: currentProfile.outputGroups[0]?.video ? `${currentProfile.outputGroups[0].video.height}p${currentProfile.outputGroups[0].video.fps}` : 'N/A' },
-                  { icon: <Gauge className="w-4 h-4" />, label: currentProfile.outputGroups[0]?.video?.bitrate || '0k' },
-                  { icon: <TargetIcon className="w-4 h-4" />, label: t('dashboard.targetsCount', { count: targets.length }) },
+                  {
+                    icon: <Monitor className="w-4 h-4" />,
+                    label: currentProfile.outputGroups[0]?.video
+                      ? `${currentProfile.outputGroups[0].video.height}p${currentProfile.outputGroups[0].video.fps}`
+                      : 'N/A',
+                  },
+                  {
+                    icon: <Gauge className="w-4 h-4" />,
+                    label: currentProfile.outputGroups[0]?.video?.bitrate || '0k',
+                  },
+                  {
+                    icon: <TargetIcon className="w-4 h-4" />,
+                    label: t('dashboard.targetsCount', { count: targets.length }),
+                  },
                 ]}
-                services={[...new Set(targets.map(t => t.service))]}
+                services={[...new Set(targets.map((t) => t.service))]}
                 active
               />
             ) : (
               <div className="text-center py-8 text-[var(--text-secondary)]">
                 <p>{t('dashboard.noProfileSelected')}</p>
-                <Button variant="primary" className="mt-4" onClick={onOpenProfileModal}>{t('dashboard.createProfile')}</Button>
+                <Button variant="primary" className="mt-4" onClick={onOpenProfileModal}>
+                  {t('dashboard.createProfile')}
+                </Button>
               </div>
             )}
           </CardBody>
@@ -201,7 +266,12 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
                 <Upload className="w-4 h-4" />
                 {t('dashboard.importProfile')}
               </Button>
-              <Button variant="outline" className="justify-start" onClick={onOpenTargetModal} disabled={!currentProfile}>
+              <Button
+                variant="outline"
+                className="justify-start"
+                onClick={onOpenTargetModal}
+                disabled={!currentProfile}
+              >
                 {t('targets.addTarget')}
               </Button>
               <Button
@@ -224,7 +294,9 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
             <CardTitle>{t('dashboard.streamTargets')}</CardTitle>
             <CardDescription>{t('dashboard.streamTargetsDescription')}</CardDescription>
           </div>
-          <Button variant="ghost" size="sm" onClick={() => onNavigate('targets')}>{t('common.manage')}</Button>
+          <Button variant="ghost" size="sm" onClick={() => onNavigate('targets')}>
+            {t('common.manage')}
+          </Button>
         </CardHeader>
         <CardBody>
           {targets.length > 0 ? (
@@ -236,8 +308,14 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
                   name={target.name}
                   status={globalStatus === 'live' ? 'live' : 'offline'}
                   stats={[
-                    { label: t('dashboard.viewers'), value: stats.targetStats[target.id]?.viewers || 0 },
-                    { label: t('dashboard.bitrate'), value: stats.targetStats[target.id]?.bitrate || '--' },
+                    {
+                      label: t('dashboard.viewers'),
+                      value: stats.targetStats[target.id]?.viewers || 0,
+                    },
+                    {
+                      label: t('dashboard.bitrate'),
+                      value: stats.targetStats[target.id]?.bitrate || '--',
+                    },
                     { label: t('dashboard.fps'), value: stats.targetStats[target.id]?.fps || '--' },
                   ]}
                 />
@@ -246,8 +324,98 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
           ) : (
             <div className="text-center py-8 text-[var(--text-secondary)]">
               <p>{t('dashboard.noStreamTargets')}</p>
-              <Button variant="outline" className="mt-4" onClick={onOpenTargetModal} disabled={!currentProfile}>
+              <Button
+                variant="outline"
+                className="mt-4"
+                onClick={onOpenTargetModal}
+                disabled={!currentProfile}
+              >
                 {t('targets.addTarget')}
+              </Button>
+            </div>
+          )}
+        </CardBody>
+      </Card>
+
+      {/* Output Groups Section */}
+      <Card style={{ marginTop: '24px' }}>
+        <CardHeader>
+          <div>
+            <CardTitle>{t('dashboard.outputGroups')}</CardTitle>
+            <CardDescription>{t('dashboard.outputGroupsDescription')}</CardDescription>
+          </div>
+          <Button variant="ghost" size="sm" onClick={() => onNavigate('outputs')}>
+            {t('common.manage')}
+          </Button>
+        </CardHeader>
+        <CardBody>
+          {outputGroups.length > 0 ? (
+            <Grid cols={2}>
+              {outputGroups.map((group, index) => (
+                <OutputGroupCard
+                  key={group.id}
+                  group={group}
+                  index={index}
+                  encoders={{ video: [], audio: [] }}
+                  status={globalStatus === 'live' ? 'live' : 'offline'}
+                  onUpdate={() => {}}
+                  onEdit={() => onNavigate('outputs')}
+                  onDuplicate={() => handleDuplicateGroup(group)}
+                  onRemove={() => handleRemoveGroup(group.id)}
+                />
+              ))}
+            </Grid>
+          ) : (
+            <div className="text-center py-8 text-[var(--text-secondary)]">
+              <p>{t('dashboard.noOutputGroups')}</p>
+              <Button
+                variant="outline"
+                className="mt-4"
+                onClick={() => onNavigate('outputs')}
+                disabled={!currentProfile}
+              >
+                {t('outputs.newOutputGroup')}
+              </Button>
+            </div>
+          )}
+        </CardBody>
+      </Card>
+
+      {/* Encoder Settings Section */}
+      <Card style={{ marginTop: '24px' }}>
+        <CardHeader>
+          <div>
+            <CardTitle>{t('dashboard.encoderSettings')}</CardTitle>
+            <CardDescription>{t('dashboard.encoderSettingsDescription')}</CardDescription>
+          </div>
+          <Button variant="ghost" size="sm" onClick={() => onNavigate('encoder')}>
+            {t('common.manage')}
+          </Button>
+        </CardHeader>
+        <CardBody>
+          {outputGroups.length > 0 ? (
+            <Grid cols={2}>
+              {outputGroups.map((group) => (
+                <EncoderCard
+                  key={group.id}
+                  group={group}
+                  status={globalStatus === 'live' ? 'live' : 'offline'}
+                  onEdit={() => onNavigate('encoder')}
+                  onDuplicate={() => handleDuplicateGroup(group)}
+                  onRemove={() => handleRemoveGroup(group.id)}
+                />
+              ))}
+            </Grid>
+          ) : (
+            <div className="text-center py-8 text-[var(--text-secondary)]">
+              <p>{t('dashboard.noEncoderSettings')}</p>
+              <Button
+                variant="outline"
+                className="mt-4"
+                onClick={() => onNavigate('encoder')}
+                disabled={!currentProfile}
+              >
+                {t('encoder.addEncoder')}
               </Button>
             </div>
           )}

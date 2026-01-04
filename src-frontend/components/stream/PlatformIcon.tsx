@@ -17,9 +17,10 @@ export function PlatformIcon({ platform, size = 'md', className }: PlatformIconP
   const platformConfig = PLATFORMS[platform];
 
   // Use the color from PLATFORMS constant, handling CSS variables for custom
-  const bgStyle = platform === 'custom'
-    ? { backgroundColor: 'var(--primary)' }
-    : { backgroundColor: platformConfig.color };
+  const bgStyle =
+    platform === 'custom'
+      ? { backgroundColor: 'var(--primary)' }
+      : { backgroundColor: platformConfig.color };
 
   return (
     <div

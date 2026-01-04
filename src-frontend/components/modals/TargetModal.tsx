@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/Input';
 import { Select, SelectOption } from '@/components/ui/Select';
 import { Button } from '@/components/ui/Button';
 import { useProfileStore } from '@/stores/profileStore';
-import type { StreamTarget, Platform } from '@/types/profile';
+import type { StreamTarget, Platform, OutputGroup } from '@/types/profile';
 import { PLATFORMS as platformConfig } from '@/types/profile';
 
 export interface TargetModalProps {
@@ -35,11 +35,16 @@ const defaultFormData: FormData = {
 
 export function TargetModal({ open, onClose, mode, groupId, target }: TargetModalProps) {
   const { t } = useTranslation();
-  const { addStreamTarget, updateStreamTarget, saveProfile } = useProfileStore();
+  const { current, addStreamTarget, updateStreamTarget, moveStreamTarget } = useProfileStore();
   const [formData, setFormData] = useState<FormData>(defaultFormData);
   const [errors, setErrors] = useState<Partial<FormData>>({});
   const [saving, setSaving] = useState(false);
   const [showStreamKey, setShowStreamKey] = useState(false);
+  const [selectedGroupId, setSelectedGroupId] = useState(groupId);
+  const [originalGroupId, setOriginalGroupId] = useState(groupId);
+
+  // Get output groups from current profile
+  const outputGroups = current?.outputGroups ?? [];
 
   // Initialize form data when modal opens or target changes
   useEffect(() => {
@@ -54,10 +59,12 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
       } else {
         setFormData(defaultFormData);
       }
+      setSelectedGroupId(groupId);
+      setOriginalGroupId(groupId);
       setErrors({});
       setShowStreamKey(false);
     }
-  }, [open, mode, target]);
+  }, [open, mode, target, groupId]);
 
   // Update URL when service changes (only in create mode)
   const handleServiceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -107,13 +114,16 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
       };
 
       if (mode === 'create') {
-        addStreamTarget(groupId, targetData);
+        await addStreamTarget(selectedGroupId, targetData);
       } else if (mode === 'edit' && target) {
-        updateStreamTarget(groupId, target.id, targetData);
+        // Check if the group changed - if so, move the target first
+        if (selectedGroupId !== originalGroupId) {
+          await moveStreamTarget(originalGroupId, selectedGroupId, target.id);
+        }
+        // Now update the target data in its current group
+        await updateStreamTarget(selectedGroupId, target.id, targetData);
       }
-
-      // Save to backend
-      await saveProfile();
+      // Note: saveProfile() is called internally by the store functions
       onClose();
     } catch (error) {
       setErrors({ name: String(error) });
@@ -122,22 +132,30 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
     }
   };
 
-  const handleChange = (field: keyof FormData) => (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
-  ) => {
-    setFormData((prev) => ({ ...prev, [field]: e.target.value }));
-    // Clear error when user starts typing
-    if (errors[field]) {
-      setErrors((prev) => ({ ...prev, [field]: undefined }));
-    }
-  };
+  const handleChange =
+    (field: keyof FormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+      setFormData((prev) => ({ ...prev, [field]: e.target.value }));
+      // Clear error when user starts typing
+      if (errors[field]) {
+        setErrors((prev) => ({ ...prev, [field]: undefined }));
+      }
+    };
 
   const title = mode === 'create' ? t('modals.addStreamTarget') : t('modals.editStreamTarget');
+
+  // Type assertion for dynamic translation keys
+  const tDynamic = t as (key: string, options?: { defaultValue?: string }) => string;
 
   // Create translated platform options
   const platformOptions: SelectOption[] = PLATFORM_VALUES.map((value) => ({
     value,
     label: t(`platforms.${value}`),
+  }));
+
+  // Create output group options
+  const outputGroupOptions: SelectOption[] = outputGroups.map((group: OutputGroup) => ({
+    value: group.id,
+    label: group.name,
   }));
 
   return (
@@ -150,13 +168,33 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
           <Button variant="ghost" onClick={onClose} disabled={saving}>
             {t('common.cancel')}
           </Button>
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? t('common.saving') : mode === 'create' ? t('modals.addTarget') : t('common.saveChanges')}
+          <Button onClick={handleSave} disabled={saving || outputGroups.length === 0}>
+            {saving
+              ? t('common.saving')
+              : mode === 'create'
+                ? t('modals.addTarget')
+                : t('common.saveChanges')}
           </Button>
         </>
       }
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {/* Output Group Selector */}
+        <Select
+          label={t('modals.outputGroupLabel')}
+          value={selectedGroupId}
+          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedGroupId(e.target.value)}
+          options={outputGroupOptions}
+          disabled={outputGroups.length === 0}
+          helper={
+            outputGroups.length === 0
+              ? tDynamic('modals.noOutputGroupsAvailable', {
+                  defaultValue: 'No output groups available. Create one first.',
+                })
+              : undefined
+          }
+        />
+
         <Select
           label={t('modals.platform')}
           value={formData.service}
@@ -178,7 +216,11 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
           value={formData.url}
           onChange={handleChange('url')}
           error={errors.url}
-          helper={formData.service !== 'custom' ? `${t('modals.default')}: ${platformConfig[formData.service].defaultServer}` : undefined}
+          helper={
+            formData.service !== 'custom'
+              ? `${t('modals.default')}: ${platformConfig[formData.service].defaultServer}`
+              : undefined
+          }
         />
 
         <div style={{ position: 'relative' }}>
@@ -190,10 +232,13 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
             onChange={handleChange('streamKey')}
             error={errors.streamKey}
             helper={t('modals.streamKeyHelper')}
+            autoComplete="off"
           />
           <button
             type="button"
             onClick={() => setShowStreamKey(!showStreamKey)}
+            aria-label={showStreamKey ? t('common.hideStreamKey') : t('common.showStreamKey')}
+            aria-pressed={showStreamKey}
             style={{
               position: 'absolute',
               right: '12px',

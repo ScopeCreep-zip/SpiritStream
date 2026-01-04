@@ -10,14 +10,7 @@ export interface NavItemProps {
   className?: string;
 }
 
-export function NavItem({
-  icon,
-  label,
-  active,
-  badge,
-  onClick,
-  className,
-}: NavItemProps) {
+export function NavItem({ icon, label, active, badge, onClick, className }: NavItemProps) {
   return (
     <button
       onClick={onClick}

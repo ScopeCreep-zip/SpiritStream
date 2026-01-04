@@ -8,9 +8,71 @@
   "permissions": [
     "core:default",
     "fs:default",
-    "fs:allow-app-read",
-    "fs:allow-app-write",
-    "fs:allow-read",
+    {
+      "identifier": "fs:allow-read-text-file",
+      "allow": [
+        { "path": "$APPDATA/profiles/**" },
+        { "path": "$APPDATA/settings.json" },
+        { "path": "$APPDATA/ffmpeg/**" },
+        { "path": "$APPDATA/.stream_key" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-write-text-file",
+      "allow": [
+        { "path": "$APPDATA/profiles/**" },
+        { "path": "$APPDATA/settings.json" },
+        { "path": "$APPDATA/ffmpeg/**" },
+        { "path": "$APPDATA/.stream_key" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-read-file",
+      "allow": [
+        { "path": "$APPDATA/profiles/**" },
+        { "path": "$APPDATA/settings.json" },
+        { "path": "$APPDATA/ffmpeg/**" },
+        { "path": "$APPDATA/.stream_key" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-write-file",
+      "allow": [
+        { "path": "$APPDATA/profiles/**" },
+        { "path": "$APPDATA/settings.json" },
+        { "path": "$APPDATA/ffmpeg/**" },
+        { "path": "$APPDATA/.stream_key" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-exists",
+      "allow": [
+        { "path": "$APPDATA/profiles/**" },
+        { "path": "$APPDATA/settings.json" },
+        { "path": "$APPDATA/ffmpeg/**" },
+        { "path": "$APPDATA/.stream_key" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-mkdir",
+      "allow": [
+        { "path": "$APPDATA/profiles/**" },
+        { "path": "$APPDATA/ffmpeg/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-remove",
+      "allow": [
+        { "path": "$APPDATA/profiles/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-read-dir",
+      "allow": [
+        { "path": "$APPDATA/profiles/**" },
+        { "path": "$APPDATA/ffmpeg/**" }
+      ]
+    },
     "shell:default",
     "shell:allow-spawn",
     "dialog:default",

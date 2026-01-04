@@ -1,4 +1,4 @@
-import { Pencil, Copy, Trash2, Video, Volume2, Box } from 'lucide-react';
+import { Pencil, Copy, Trash2, Video, Volume2, Box, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
 import { Card, CardHeader, CardBody } from '@/components/ui/Card';
@@ -17,6 +17,7 @@ export interface OutputGroupCardProps {
   onRemove: () => void;
   onDuplicate?: () => void;
   onEdit?: () => void;
+  onAddTarget?: () => void;
   className?: string;
 }
 
@@ -27,9 +28,15 @@ export function OutputGroupCard({
   onRemove,
   onDuplicate,
   onEdit,
+  onAddTarget,
   className,
 }: OutputGroupCardProps) {
   const { t } = useTranslation();
+  // Type assertion for dynamic translation keys
+  const tDynamic = t as (
+    key: string,
+    options?: { defaultValue?: string; count?: number }
+  ) => string;
 
   // Display summary info from nested settings
   const videoSummary = `${formatResolution(group.video)} • ${group.video.bitrate} • ${group.video.codec}`;
@@ -47,16 +54,31 @@ export function OutputGroupCard({
         </div>
         <div className="flex items-center" style={{ gap: '8px' }}>
           {onEdit && (
-            <Button variant="ghost" size="icon" onClick={onEdit} aria-label={t('outputs.editGroup')}>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onEdit}
+              aria-label={t('outputs.editGroup')}
+            >
               <Pencil className="w-4 h-4" />
             </Button>
           )}
           {onDuplicate && (
-            <Button variant="ghost" size="icon" onClick={onDuplicate} aria-label={t('outputs.duplicateGroup')}>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onDuplicate}
+              aria-label={t('outputs.duplicateGroup')}
+            >
               <Copy className="w-4 h-4" />
             </Button>
           )}
-          <Button variant="ghost" size="icon" onClick={onRemove} aria-label={t('outputs.removeGroup')}>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onRemove}
+            aria-label={t('outputs.removeGroup')}
+          >
             <Trash2 className="w-4 h-4" />
           </Button>
         </div>
@@ -85,12 +107,28 @@ export function OutputGroupCard({
             <span className="text-[var(--text-primary)]">{containerSummary}</span>
           </div>
 
-          {/* Stream Targets Count */}
-          {group.streamTargets.length > 0 && (
-            <div className="text-xs text-[var(--text-tertiary)] pt-2 border-t border-[var(--border-muted)]">
-              {t('outputs.targetsCount', { count: group.streamTargets.length })}
+          {/* Stream Targets Section */}
+          <div className="flex items-center justify-between pt-2 border-t border-[var(--border-muted)]">
+            <div className="text-xs text-[var(--text-tertiary)]">
+              {group.streamTargets.length > 0
+                ? tDynamic('outputs.targetsCount', {
+                    count: group.streamTargets.length,
+                    defaultValue: `${group.streamTargets.length} targets`,
+                  })
+                : tDynamic('outputs.noTargets', { defaultValue: 'No targets' })}
             </div>
-          )}
+            {onAddTarget && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onAddTarget}
+                aria-label={tDynamic('outputs.addTarget', { defaultValue: 'Add Target' })}
+              >
+                <Plus className="w-3 h-3" style={{ marginRight: '4px' }} />
+                {tDynamic('outputs.addTarget', { defaultValue: 'Add Target' })}
+              </Button>
+            )}
+          </div>
         </div>
       </CardBody>
     </Card>
