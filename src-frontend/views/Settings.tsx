@@ -145,7 +145,16 @@ export function Settings() {
         filters: [{ name: 'FFmpeg', extensions: ['*'] }],
       });
       if (selected && typeof selected === 'string') {
-        saveSettings({ ffmpegPath: selected });
+        // Validate the selected path before saving
+        try {
+          const version = await api.system.validateFfmpegPath(selected);
+          // Path is valid, save it and update version
+          saveSettings({ ffmpegPath: selected });
+          setSettings((prev) => ({ ...prev, ffmpegVersion: version }));
+        } catch (validationError) {
+          // Show error to user
+          alert(`${t('settings.invalidFfmpegPath')}: ${validationError}`);
+        }
       }
     } catch (error) {
       console.error('Failed to open file dialog:', error);

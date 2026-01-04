@@ -135,6 +135,11 @@ export function FFmpegDownloadProgress({
   // If downloading
   if (isDownloading && progress) {
     const isRequestingPermission = progress.phase === 'requesting_permission';
+    // Show elevation hint during extraction, verification, and permission phases
+    const showElevationHint =
+      progress.phase === 'extracting' ||
+      progress.phase === 'verifying' ||
+      progress.phase === 'requesting_permission';
 
     return (
       <div className={cn('space-y-3', className)}>
@@ -155,11 +160,19 @@ export function FFmpegDownloadProgress({
           )}
         </div>
 
-        {isRequestingPermission ? (
-          <p className="text-xs text-[var(--text-tertiary)]">
-            {t('settings.elevationPromptHint')}
-          </p>
-        ) : (
+        {/* Show elevation hint early so user has time to read it */}
+        {showElevationHint && (
+          <div className="p-3 rounded-lg bg-[var(--primary-muted)] border border-[var(--primary-subtle)]">
+            <div className="flex items-start gap-2">
+              <ShieldCheck className="w-4 h-4 text-[var(--primary)] mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-[var(--text-secondary)]">
+                {t('settings.elevationPromptHint')}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {!showElevationHint && (
           <ProgressBar
             percent={progress.percent}
             downloaded={progress.downloaded}

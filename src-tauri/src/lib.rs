@@ -92,6 +92,7 @@ pub fn run() {
             // System commands
             commands::get_encoders,
             commands::test_ffmpeg,
+            commands::validate_ffmpeg_path,
             // Settings commands
             commands::get_settings,
             commands::save_settings,

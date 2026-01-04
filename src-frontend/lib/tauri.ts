@@ -35,6 +35,8 @@ export const api = {
     getFfmpegPath: () => invoke<string | null>('get_bundled_ffmpeg_path'),
     checkFfmpegUpdate: (installedVersion?: string) =>
       invoke<FFmpegVersionInfo>('check_ffmpeg_update', { installedVersion }),
+    /** Validate a custom FFmpeg path before saving */
+    validateFfmpegPath: (path: string) => invoke<string>('validate_ffmpeg_path', { path }),
   },
   settings: {
     get: () => invoke<AppSettings>('get_settings'),

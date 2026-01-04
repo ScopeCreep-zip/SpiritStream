@@ -353,6 +353,7 @@
     "docs": "Docs",
     "updates": "Updates",
     "ffmpegInstalled": "FFmpeg is installed and ready",
+    "invalidFfmpegPath": "Invalid FFmpeg path",
     "downloadFFmpeg": "Download FFmpeg",
     "updateFFmpeg": "Update FFmpeg",
     "retryDownload": "Retry Download",

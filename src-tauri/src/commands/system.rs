@@ -170,3 +170,47 @@ pub fn test_ffmpeg() -> Result<String, String> {
 
     Ok(version_line)
 }
+
+/// Validate a specific FFmpeg path and return version if valid
+#[tauri::command]
+pub fn validate_ffmpeg_path(path: String) -> Result<String, String> {
+    use std::path::Path;
+
+    let path_obj = Path::new(&path);
+
+    // Check if path exists
+    if !path_obj.exists() {
+        return Err("Path does not exist".to_string());
+    }
+
+    // Check if it's a file (not a directory)
+    if !path_obj.is_file() {
+        return Err("Path is not a file".to_string());
+    }
+
+    // Try to run it with -version to verify it's actually FFmpeg
+    let output = Command::new(&path)
+        .args(["-version"])
+        .output()
+        .map_err(|e| format!("Failed to execute: {e}"))?;
+
+    if !output.status.success() {
+        return Err("File is not a valid FFmpeg executable".to_string());
+    }
+
+    let version_output = String::from_utf8_lossy(&output.stdout);
+
+    // Verify this is actually FFmpeg by checking for "ffmpeg" in output
+    if !version_output.to_lowercase().contains("ffmpeg") {
+        return Err("File is not FFmpeg".to_string());
+    }
+
+    // Extract the first line which contains the version
+    let version_line = version_output
+        .lines()
+        .next()
+        .unwrap_or("Unknown version")
+        .to_string();
+
+    Ok(version_line)
+}
