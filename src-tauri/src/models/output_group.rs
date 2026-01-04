@@ -5,10 +5,12 @@ use serde::{Deserialize, Serialize};
 use crate::models::StreamTarget;
 
 /// Video encoding settings
+/// Default uses "copy" for passthrough (no re-encoding)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VideoSettings {
-    /// FFmpeg video codec (e.g., "libx264", "h264_nvenc")
+    /// FFmpeg video codec (e.g., "libx264", "h264_nvenc", "copy")
+    /// Use "copy" for passthrough mode where FFmpeg acts as an RTMP relay
     pub codec: String,
 
     /// Output width in pixels
@@ -35,13 +37,13 @@ pub struct VideoSettings {
 impl Default for VideoSettings {
     fn default() -> Self {
         Self {
-            codec: "libx264".to_string(),
-            width: 1920,
-            height: 1080,
-            fps: 60,
-            bitrate: "6000k".to_string(),
-            preset: Some("veryfast".to_string()),
-            profile: Some("high".to_string()),
+            codec: "copy".to_string(),
+            width: 0,
+            height: 0,
+            fps: 0,
+            bitrate: "0k".to_string(),
+            preset: None,
+            profile: None,
         }
     }
 }
@@ -54,10 +56,12 @@ impl VideoSettings {
 }
 
 /// Audio encoding settings
+/// Default uses "copy" for passthrough (no re-encoding)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioSettings {
-    /// FFmpeg audio codec (e.g., "aac", "libmp3lame")
+    /// FFmpeg audio codec (e.g., "aac", "libmp3lame", "copy")
+    /// Use "copy" for passthrough mode where FFmpeg acts as an RTMP relay
     pub codec: String,
 
     /// Bitrate with unit (e.g., "160k", "192k")
@@ -73,10 +77,10 @@ pub struct AudioSettings {
 impl Default for AudioSettings {
     fn default() -> Self {
         Self {
-            codec: "aac".to_string(),
-            bitrate: "160k".to_string(),
-            channels: 2,
-            sample_rate: 48000,
+            codec: "copy".to_string(),
+            bitrate: "0k".to_string(),
+            channels: 0,
+            sample_rate: 0,
         }
     }
 }
@@ -107,6 +111,10 @@ pub struct OutputGroup {
     /// Display name for the group
     pub name: String,
 
+    /// Whether this is the default passthrough group (immutable)
+    #[serde(default)]
+    pub is_default: bool,
+
     /// Video encoding settings
     pub video: VideoSettings,
 
@@ -121,13 +129,27 @@ pub struct OutputGroup {
 }
 
 impl OutputGroup {
-    /// Create a new output group with default settings
+    /// Create a new output group with default settings (for custom encoding)
     pub fn new() -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             name: "New Output Group".to_string(),
+            is_default: false,
             video: VideoSettings::default(),
             audio: AudioSettings::default(),
+            container: ContainerSettings::default(),
+            stream_targets: Vec::new(),
+        }
+    }
+
+    /// Create the default passthrough output group (immutable, always uses copy mode)
+    pub fn new_default() -> Self {
+        Self {
+            id: "default".to_string(),
+            name: "Passthrough (Default)".to_string(),
+            is_default: true,
+            video: VideoSettings::default(),  // Uses "copy" codec
+            audio: AudioSettings::default(),  // Uses "copy" codec
             container: ContainerSettings::default(),
             stream_targets: Vec::new(),
         }

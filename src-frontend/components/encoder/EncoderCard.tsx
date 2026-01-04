@@ -10,7 +10,7 @@ import type { StreamStatusType } from '@/types/stream';
 export interface EncoderCardProps {
   group: OutputGroup;
   status: StreamStatusType;
-  onEdit: () => void;
+  onEdit?: () => void;
   onDuplicate: () => void;
   onRemove: () => void;
   className?: string;
@@ -19,7 +19,10 @@ export interface EncoderCardProps {
 /**
  * Get a human-readable label for an encoder codec
  */
-function getEncoderLabel(codec: string): { label: string; type: 'software' | 'hardware' } {
+function getEncoderLabel(codec: string): { label: string; type: 'software' | 'hardware' | 'passthrough' } {
+  if (codec === 'copy') {
+    return { label: 'Passthrough', type: 'passthrough' };
+  }
   const encoders: Record<string, { label: string; type: 'software' | 'hardware' }> = {
     libx264: { label: 'x264', type: 'software' },
     libx265: { label: 'x265', type: 'software' },
@@ -73,13 +76,16 @@ export function EncoderCard({
   const { t } = useTranslation();
   const tDynamic = t as (key: string, options?: { defaultValue?: string }) => string;
 
+  const isPassthrough = group.video.codec === 'copy' && group.audio.codec === 'copy';
+  const isDefaultGroup = group.isDefault === true;
+
   const encoder = getEncoderLabel(group.video.codec);
-  const resolution = `${group.video.width}×${group.video.height}`;
-  const bitrate = group.video.bitrate;
-  const fps = `${group.video.fps} fps`;
+  const resolution = isPassthrough ? 'Source' : `${group.video.width}×${group.video.height}`;
+  const bitrate = isPassthrough ? 'Source' : group.video.bitrate;
+  const fps = isPassthrough ? 'Source' : `${group.video.fps} fps`;
   const preset = getPresetLabel(group.video.preset);
   const profile = group.video.profile?.toUpperCase() || '—';
-  const audioSummary = `${group.audio.codec.toUpperCase()} @ ${group.audio.bitrate}`;
+  const audioSummary = isPassthrough ? 'Source' : `${group.audio.codec.toUpperCase()} @ ${group.audio.bitrate}`;
 
   return (
     <Card className={cn('transition-all duration-150', className)}>
@@ -91,9 +97,11 @@ export function EncoderCard({
             <div
               className={cn(
                 'w-10 h-10 rounded-lg flex items-center justify-center',
-                encoder.type === 'hardware'
-                  ? 'bg-[var(--success-subtle)] text-[var(--success-text)]'
-                  : 'bg-[var(--primary-subtle)] text-[var(--primary)]'
+                encoder.type === 'passthrough'
+                  ? 'bg-[var(--bg-muted)] text-[var(--text-secondary)]'
+                  : encoder.type === 'hardware'
+                    ? 'bg-[var(--success-subtle)] text-[var(--success-text)]'
+                    : 'bg-[var(--primary-subtle)] text-[var(--primary)]'
               )}
             >
               <Cpu className="w-5 h-5" />
@@ -101,13 +109,20 @@ export function EncoderCard({
             <div>
               <h3 className="font-semibold text-[var(--text-primary)]">
                 {group.name || tDynamic('encoder.defaultEncoderName', { defaultValue: 'Encoder' })}
+                {isDefaultGroup && (
+                  <span className="ml-2 text-xs font-normal text-[var(--text-tertiary)]">
+                    ({tDynamic('encoder.readonly', { defaultValue: 'Read-only' })})
+                  </span>
+                )}
               </h3>
               <p className="text-sm text-[var(--text-secondary)]">
                 {encoder.label}
-                <span className="text-[var(--text-tertiary)]">
-                  {' '}
-                  ({encoder.type === 'hardware' ? 'Hardware' : 'Software'})
-                </span>
+                {encoder.type !== 'passthrough' && (
+                  <span className="text-[var(--text-tertiary)]">
+                    {' '}
+                    ({encoder.type === 'hardware' ? 'Hardware' : 'Software'})
+                  </span>
+                )}
               </p>
             </div>
           </div>
@@ -170,30 +185,39 @@ export function EncoderCard({
             )}
           </div>
           <div className="flex items-center" style={{ gap: '4px' }}>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onEdit}
-              aria-label={tDynamic('encoder.edit', { defaultValue: 'Edit' })}
-            >
-              <Pencil className="w-4 h-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onDuplicate}
-              aria-label={tDynamic('encoder.duplicate', { defaultValue: 'Duplicate' })}
-            >
-              <Copy className="w-4 h-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onRemove}
-              aria-label={tDynamic('encoder.remove', { defaultValue: 'Remove' })}
-            >
-              <Trash2 className="w-4 h-4" />
-            </Button>
+            {!isDefaultGroup && onEdit && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onEdit}
+                  aria-label={tDynamic('encoder.edit', { defaultValue: 'Edit' })}
+                >
+                  <Pencil className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onDuplicate}
+                  aria-label={tDynamic('encoder.duplicate', { defaultValue: 'Duplicate' })}
+                >
+                  <Copy className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={onRemove}
+                  aria-label={tDynamic('encoder.remove', { defaultValue: 'Remove' })}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </>
+            )}
+            {isDefaultGroup && (
+              <span className="text-xs text-[var(--text-tertiary)] italic px-2">
+                {tDynamic('encoder.defaultPassthrough', { defaultValue: 'Default RTMP relay - cannot be edited or deleted' })}
+              </span>
+            )}
           </div>
         </div>
       </CardBody>

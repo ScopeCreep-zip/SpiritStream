@@ -3,13 +3,12 @@ import { useTranslation } from 'react-i18next';
 import { Lock, Eye, EyeOff } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
-import { Select, SelectOption } from '@/components/ui/Select';
 import { Button } from '@/components/ui/Button';
 import { Toggle } from '@/components/ui/Toggle';
 import { useProfileStore } from '@/stores/profileStore';
 import { api } from '@/lib/tauri';
 import type { Profile, RtmpInput } from '@/types/profile';
-import { createDefaultProfile, createDefaultOutputGroup } from '@/types/profile';
+import { createDefaultProfile } from '@/types/profile';
 
 export interface ProfileModalProps {
   open: boolean;
@@ -18,34 +17,12 @@ export interface ProfileModalProps {
   profile?: Profile;
 }
 
-// Resolution options with width/height values
-const RESOLUTION_OPTIONS: SelectOption[] = [
-  { value: '1920x1080', label: '1080p (1920x1080)' },
-  { value: '1280x720', label: '720p (1280x720)' },
-  { value: '2560x1440', label: '1440p (2560x1440)' },
-  { value: '3840x2160', label: '4K (3840x2160)' },
-  { value: '854x480', label: '480p (854x480)' },
-];
-
-// Frame rate options
-const FPS_OPTIONS: SelectOption[] = [
-  { value: '60', label: '60 fps' },
-  { value: '30', label: '30 fps' },
-  { value: '24', label: '24 fps' },
-  { value: '25', label: '25 fps' },
-  { value: '50', label: '50 fps' },
-];
-
 interface FormData {
   name: string;
   // RTMP Input (structured)
   bindAddress: string;
   port: string;
   application: string;
-  // Video settings for default output group
-  resolution: string;
-  fps: string;
-  videoBitrate: string;
   // Password protection
   usePassword: boolean;
   password: string;
@@ -57,9 +34,6 @@ const defaultFormData: FormData = {
   bindAddress: '0.0.0.0',
   port: '1935',
   application: 'live',
-  resolution: '1920x1080',
-  fps: '60',
-  videoBitrate: '6000',
   usePassword: false,
   password: '',
   confirmPassword: '',
@@ -67,6 +41,7 @@ const defaultFormData: FormData = {
 
 export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps) {
   const { t } = useTranslation();
+  const tDynamic = t as (key: string, options?: { defaultValue?: string }) => string;
   const { updateProfile, saveProfile, current } = useProfileStore();
   const [formData, setFormData] = useState<FormData>(defaultFormData);
   const [errors, setErrors] = useState<Partial<FormData>>({});
@@ -77,23 +52,11 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
   useEffect(() => {
     if (open) {
       if (mode === 'edit' && profile) {
-        const firstGroup = profile.outputGroups[0];
-        // Parse resolution from video settings (width x height)
-        const resolution = firstGroup?.video
-          ? `${firstGroup.video.width}x${firstGroup.video.height}`
-          : '1920x1080';
-        // Parse bitrate from string (e.g., "6000k" -> "6000")
-        const bitrateStr = firstGroup?.video?.bitrate || '6000k';
-        const videoBitrate = bitrateStr.replace(/[^\d]/g, '') || '6000';
-
         setFormData({
           name: profile.name,
           bindAddress: profile.input.bindAddress,
           port: String(profile.input.port),
           application: profile.input.application,
-          resolution,
-          fps: String(firstGroup?.video?.fps || 60),
-          videoBitrate,
           usePassword: false,
           password: '',
           confirmPassword: '',
@@ -126,11 +89,6 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
     // Validate application name
     if (!formData.application.trim()) {
       newErrors.application = t('validation.applicationRequired');
-    }
-
-    const bitrate = parseInt(formData.videoBitrate);
-    if (isNaN(bitrate) || bitrate < 500 || bitrate > 50000) {
-      newErrors.videoBitrate = t('validation.bitrateRange');
     }
 
     // Validate password when protection is enabled
@@ -180,9 +138,6 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
         return;
       }
 
-      // Parse resolution into width/height
-      const [width, height] = formData.resolution.split('x').map(Number);
-
       // Build RTMP input object
       const input: RtmpInput = {
         type: 'rtmp',
@@ -192,24 +147,10 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
       };
 
       if (mode === 'create') {
-        // Create new profile with default structure
+        // Create new profile with default passthrough group
+        // The default profile factory already includes the passthrough output group
         const newProfile = createDefaultProfile(formData.name);
         newProfile.input = input;
-
-        // Create default output group with video settings from form
-        const outputGroup = createDefaultOutputGroup();
-        outputGroup.name = t('outputs.defaultOutputName');
-        outputGroup.video = {
-          codec: 'libx264',
-          width,
-          height,
-          fps: parseInt(formData.fps),
-          bitrate: `${formData.videoBitrate}k`,
-          preset: 'veryfast',
-          profile: 'high',
-        };
-
-        newProfile.outputGroups = [outputGroup];
 
         // Save to backend via store (with password if enabled)
         const password = formData.usePassword ? formData.password : undefined;
@@ -220,46 +161,11 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
         // Load profile (will require password if encrypted)
         await loadProfile(newProfile.name, password);
       } else if (mode === 'edit' && current) {
-        // Update existing profile's input settings
-        const updatedInput = { ...input };
-
-        // Update first output group video settings if it exists
-        const updatedOutputGroups = current.outputGroups.map((group, index) => {
-          if (index === 0) {
-            return {
-              ...group,
-              video: {
-                ...group.video,
-                width,
-                height,
-                fps: parseInt(formData.fps),
-                bitrate: `${formData.videoBitrate}k`,
-              },
-            };
-          }
-          return group;
-        });
-
-        // If no output groups, create one
-        if (updatedOutputGroups.length === 0) {
-          const outputGroup = createDefaultOutputGroup();
-          outputGroup.name = t('outputs.defaultOutputName');
-          outputGroup.video = {
-            codec: 'libx264',
-            width,
-            height,
-            fps: parseInt(formData.fps),
-            bitrate: `${formData.videoBitrate}k`,
-            preset: 'veryfast',
-            profile: 'high',
-          };
-          updatedOutputGroups.push(outputGroup);
-        }
-
+        // Update existing profile's name and input settings only
+        // Do NOT modify output groups - those are configured separately
         updateProfile({
           name: formData.name,
-          input: updatedInput,
-          outputGroups: updatedOutputGroups,
+          input,
         });
 
         // Save to backend
@@ -356,34 +262,20 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
             {t('modals.rtmpUrlPreview')}: rtmp://{formData.bindAddress}:{formData.port}/
             {formData.application}
           </div>
+          <div style={{
+            marginTop: '8px',
+            padding: '8px',
+            backgroundColor: 'var(--bg-base)',
+            borderRadius: '4px',
+            fontSize: '0.75rem',
+            color: 'var(--text-secondary)',
+            lineHeight: '1.5'
+          }}>
+            {tDynamic('modals.profileExplanation', {
+              defaultValue: 'Configure your streaming software (OBS, etc.) to send to this RTMP URL. Encoding settings are configured in your streaming software, not in the profile. Use output groups to re-encode to different settings for different platforms.'
+            })}
+          </div>
         </div>
-
-        {/* Default Output Settings */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-          <Select
-            label={t('encoder.resolution')}
-            value={formData.resolution}
-            onChange={handleChange('resolution')}
-            options={RESOLUTION_OPTIONS}
-          />
-
-          <Select
-            label={t('encoder.frameRate')}
-            value={formData.fps}
-            onChange={handleChange('fps')}
-            options={FPS_OPTIONS}
-          />
-        </div>
-
-        <Input
-          label={t('encoder.videoBitrate')}
-          type="number"
-          placeholder="6000"
-          value={formData.videoBitrate}
-          onChange={handleChange('videoBitrate')}
-          error={errors.videoBitrate}
-          helper={t('encoder.videoBitrateHelper')}
-        />
 
         {/* Password Protection (only for create mode) */}
         {mode === 'create' && (

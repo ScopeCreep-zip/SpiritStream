@@ -3,7 +3,6 @@
 
 use std::process::Command;
 use crate::models::Encoders;
-use regex::Regex;
 
 /// Find FFmpeg path
 fn find_ffmpeg() -> String {

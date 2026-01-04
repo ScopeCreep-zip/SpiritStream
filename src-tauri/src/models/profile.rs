@@ -60,13 +60,19 @@ impl Profile {
     pub fn to_summary(&self, is_encrypted: bool) -> ProfileSummary {
         // Get resolution and bitrate from first output group if available
         let (resolution, bitrate) = self.output_groups.first().map(|g| {
-            let res = format!("{}p{}", g.video.height, g.video.fps);
-            let bitrate = g.video.bitrate
-                .trim_end_matches(|c: char| !c.is_numeric())
-                .parse::<u32>()
-                .unwrap_or(0);
-            (res, bitrate)
-        }).unwrap_or_else(|| ("0p0".to_string(), 0));
+            // Check if this is a copy (passthrough) output group
+            if g.video.codec == "copy" {
+                // For copy mode, show "Passthrough" instead of resolution
+                ("Passthrough".to_string(), 0)
+            } else {
+                let res = format!("{}p{}", g.video.height, g.video.fps);
+                let bitrate = g.video.bitrate
+                    .trim_end_matches(|c: char| !c.is_numeric())
+                    .parse::<u32>()
+                    .unwrap_or(0);
+                (res, bitrate)
+            }
+        }).unwrap_or_else(|| ("None".to_string(), 0));
 
         // Count total targets across all output groups
         let target_count = self.output_groups

@@ -69,6 +69,7 @@ export function EncoderSettings() {
       ...group,
       id: crypto.randomUUID(),
       name: `${group.name} ${tDynamic('common.copySuffix', { defaultValue: '(Copy)' })}`,
+      isDefault: false, // Duplicates are never default groups
       // Deep clone nested objects
       video: { ...group.video },
       audio: { ...group.audio },
@@ -144,7 +145,7 @@ export function EncoderSettings() {
           key={group.id}
           group={group}
           status={getGroupStatus(group.id)}
-          onEdit={() => openEditModal(group)}
+          onEdit={group.isDefault ? undefined : () => openEditModal(group)}
           onDuplicate={() => duplicateGroup(group)}
           onRemove={() => removeOutputGroup(group.id)}
         />

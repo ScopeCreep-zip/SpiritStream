@@ -335,6 +335,13 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   removeOutputGroup: async (groupId) => {
     const current = get().current;
     if (current) {
+      // Prevent deletion of the default passthrough group
+      const groupToDelete = current.outputGroups.find((g) => g.id === groupId);
+      if (groupToDelete?.isDefault) {
+        console.warn('Cannot delete the default passthrough output group');
+        return;
+      }
+
       set({
         current: {
           ...current,

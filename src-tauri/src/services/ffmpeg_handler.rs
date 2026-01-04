@@ -329,8 +329,10 @@ impl FFmpegHandler {
     fn build_args(&self, group: &OutputGroup, incoming_url: &str) -> Vec<String> {
         let mut args = vec!["-i".to_string(), incoming_url.to_string()];
 
-        // Determine if we can use stream copy (passthrough)
-        // For now, we check if codec, resolution, fps, bitrate, audio codec, bitrate, channels, and sample rate match a special value "copy" or a future input descriptor
+        // Determine if we should use stream copy (passthrough mode)
+        // When both video and audio codecs are set to "copy", FFmpeg acts as a pure
+        // RTMP relay server, accepting the incoming stream and forwarding it to outputs
+        // without re-encoding. This is the default behavior and most efficient mode.
         let use_stream_copy = group.video.codec == "copy"
             && group.audio.codec == "copy";
 

@@ -155,7 +155,10 @@ export async function validateStreamConfig(
       });
     }
 
-    if (!group.video?.width || !group.video?.height) {
+    // Skip resolution validation for passthrough mode (codec: "copy")
+    // Passthrough mode doesn't re-encode, so resolution is not needed
+    const isPassthrough = group.video?.codec === 'copy' && group.audio?.codec === 'copy';
+    if (!isPassthrough && (!group.video?.width || !group.video?.height)) {
       issues.push({
         code: 'GROUP_MISSING_RESOLUTION',
         message: i18n.t('errors.groupMissingResolution', { name: groupName }),

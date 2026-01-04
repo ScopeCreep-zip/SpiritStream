@@ -138,6 +138,7 @@ export function OutputGroups() {
         ...group,
         id: crypto.randomUUID(),
         name: `${group.name} ${t('common.copySuffix')}`,
+        isDefault: false, // Duplicates are never default groups
       };
       addOutputGroup(newGroup);
     }
@@ -154,8 +155,8 @@ export function OutputGroups() {
           status={getGroupStatus(group.id)}
           onUpdate={(updates) => updateOutputGroup(group.id, updates)}
           onRemove={() => removeOutputGroup(group.id)}
-          onDuplicate={() => duplicateGroup(group.id)}
-          onEdit={() => openEditModal(group)}
+          onDuplicate={group.isDefault ? undefined : () => duplicateGroup(group.id)}
+          onEdit={group.isDefault ? undefined : () => openEditModal(group)}
           onAddTarget={() => openAddTargetModal(group.id)}
         />
       ))}

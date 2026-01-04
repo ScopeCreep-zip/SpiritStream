@@ -92,6 +92,15 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
   const [encoders, setEncoders] = useState<Encoders>({ video: ['libx264'], audio: ['aac'] });
   const [loadingEncoders, setLoadingEncoders] = useState(false);
 
+  // Check if trying to edit the default (immutable) group
+  const isDefaultGroup = mode === 'edit' && group?.isDefault === true;
+
+  // If trying to edit default group, close modal immediately and return null
+  if (isDefaultGroup && open) {
+    setTimeout(() => onClose(), 0);
+    return null;
+  }
+
   // Load available encoders when modal opens
   useEffect(() => {
     if (open) {
@@ -309,6 +318,22 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
       }
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {/* Info message explaining custom output groups */}
+        {mode === 'create' && (
+          <div style={{
+            padding: '12px',
+            backgroundColor: 'var(--primary-muted)',
+            borderRadius: '8px',
+            fontSize: '0.875rem',
+            color: 'var(--text-secondary)',
+            lineHeight: '1.5'
+          }}>
+            {tDynamic('modals.outputGroupExplanation', {
+              defaultValue: 'Custom output groups re-encode your incoming stream to different settings. Use these when you need to send different quality streams to different platforms. The default passthrough group relays your stream as-is without re-encoding.'
+            })}
+          </div>
+        )}
+
         <Input
           label={t('modals.outputGroupName')}
           placeholder={t('modals.outputGroupNamePlaceholder')}

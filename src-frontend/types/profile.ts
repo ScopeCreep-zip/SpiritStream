@@ -60,6 +60,7 @@ export interface StreamTarget {
 export interface OutputGroup {
   id: string;
   name: string;
+  isDefault?: boolean; // True for the immutable passthrough group
   video: VideoSettings;
   audio: AudioSettings;
   container: ContainerSettings;
@@ -151,20 +152,20 @@ export const createDefaultRtmpInput = (): RtmpInput => ({
 });
 
 export const createDefaultVideoSettings = (): VideoSettings => ({
-  codec: 'libx264',
-  width: 1920,
-  height: 1080,
-  fps: 60,
-  bitrate: '6000k',
-  preset: 'veryfast',
-  profile: 'high',
+  codec: 'copy',
+  width: 0,
+  height: 0,
+  fps: 0,
+  bitrate: '0k',
+  preset: undefined,
+  profile: undefined,
 });
 
 export const createDefaultAudioSettings = (): AudioSettings => ({
-  codec: 'aac',
-  bitrate: '160k',
-  channels: 2,
-  sampleRate: 48000,
+  codec: 'copy',
+  bitrate: '0k',
+  channels: 0,
+  sampleRate: 0,
 });
 
 export const createDefaultContainerSettings = (): ContainerSettings => ({
@@ -174,8 +175,19 @@ export const createDefaultContainerSettings = (): ContainerSettings => ({
 export const createDefaultOutputGroup = (): OutputGroup => ({
   id: crypto.randomUUID(),
   name: 'New Output Group',
+  isDefault: false,
   video: createDefaultVideoSettings(),
   audio: createDefaultAudioSettings(),
+  container: createDefaultContainerSettings(),
+  streamTargets: [],
+});
+
+export const createPassthroughOutputGroup = (): OutputGroup => ({
+  id: 'default',
+  name: 'Passthrough (Default)',
+  isDefault: true,
+  video: createDefaultVideoSettings(), // codec: 'copy'
+  audio: createDefaultAudioSettings(), // codec: 'copy'
   container: createDefaultContainerSettings(),
   streamTargets: [],
 });
@@ -193,13 +205,17 @@ export const createDefaultProfile = (name: string = 'New Profile'): Profile => (
   name,
   encrypted: false,
   input: createDefaultRtmpInput(),
-  outputGroups: [],
+  outputGroups: [createPassthroughOutputGroup()], // Always include default passthrough group
 });
 
 /**
  * Helper to format resolution string from video settings
  */
 export const formatResolution = (video: VideoSettings): string => {
+  // Check if this is copy/passthrough mode
+  if (video.codec === 'copy' || video.height === 0) {
+    return 'Passthrough';
+  }
   const height = video.height;
   const fps = video.fps;
   return `${height}p${fps}`;
