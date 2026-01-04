@@ -8,7 +8,9 @@ use std::sync::Arc;
 
 use futures_util::StreamExt;
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+#[cfg(target_os = "macos")]
+use serde::Deserialize;
 use tauri::{AppHandle, Emitter, Manager};
 use crate::services::SettingsManager;
 use thiserror::Error;
@@ -669,10 +671,10 @@ exit /b %errorlevel%
                 if !settings.ffmpeg_path.is_empty() {
                     let custom_path = PathBuf::from(&settings.ffmpeg_path);
                     if custom_path.exists() {
-                        log::debug!("Using custom FFmpeg path from settings: {:?}", custom_path);
+                        log::debug!("Using custom FFmpeg path from settings: {custom_path:?}");
                         return Some(custom_path);
                     } else {
-                        log::warn!("Custom FFmpeg path in settings does not exist: {:?}", custom_path);
+                        log::warn!("Custom FFmpeg path in settings does not exist: {custom_path:?}");
                     }
                 }
             }
@@ -681,7 +683,7 @@ exit /b %errorlevel%
         // Fall back to system install location
         let system_path = Self::get_system_install_path();
         if system_path.exists() {
-            log::debug!("Using system FFmpeg path: {:?}", system_path);
+            log::debug!("Using system FFmpeg path: {system_path:?}");
             Some(system_path)
         } else {
             None
@@ -841,11 +843,11 @@ exit /b %errorlevel%
         };
 
         let status = match (&installed_version, &latest, update_available) {
-            (Some(v), _, false) => format!("FFmpeg {} is up to date", v),
-            (Some(v), Some(l), true) => format!("Update available: {} → {}", v, l),
-            (None, Some(l), _) => format!("FFmpeg not installed (latest: {})", l),
+            (Some(v), _, false) => format!("FFmpeg {v} is up to date"),
+            (Some(v), Some(l), true) => format!("Update available: {v} → {l}"),
+            (None, Some(l), _) => format!("FFmpeg not installed (latest: {l})"),
             (None, None, _) => "FFmpeg not installed".to_string(),
-            (Some(v), None, _) => format!("FFmpeg {} installed (unable to check for updates)", v),
+            (Some(v), None, _) => format!("FFmpeg {v} installed (unable to check for updates)"),
         };
 
         FFmpegVersionInfo {
