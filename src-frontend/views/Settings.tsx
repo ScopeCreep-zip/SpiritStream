@@ -400,7 +400,7 @@ export function Settings() {
               <Logo size="lg" />
             </div>
             <div className="text-sm text-[var(--text-secondary)]" style={{ marginBottom: '4px' }}>
-              {t('settings.version')} 2.0.0-beta
+              {t('settings.version')} 0.1.0
             </div>
             <div className="text-xs text-[var(--text-tertiary)]" style={{ marginBottom: '24px' }}>
               {t('settings.tagline')}
