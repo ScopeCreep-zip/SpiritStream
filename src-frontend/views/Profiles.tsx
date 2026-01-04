@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Monitor, Gauge, Target, Lock, Unlock } from 'lucide-react';
+import { Plus, Monitor, Gauge, Target, Lock, Unlock, Trash2 } from 'lucide-react';
 import { Grid } from '@/components/ui/Grid';
 import { ProfileCard } from '@/components/dashboard/ProfileCard';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody } from '@/components/ui/Card';
+import { Modal } from '@/components/ui/Modal';
 import { ProfileModal, PasswordModal } from '@/components/modals';
 import { useProfileStore } from '@/stores/profileStore';
 import { api } from '@/lib/tauri';
@@ -12,7 +13,7 @@ import { cn } from '@/lib/cn';
 
 export function Profiles() {
   const { t } = useTranslation();
-  const { profiles, current, loading, error, selectProfile, duplicateProfile, loadProfiles, unlockProfile } = useProfileStore();
+  const { profiles, current, loading, error, selectProfile, duplicateProfile, deleteProfile, loadProfiles, unlockProfile } = useProfileStore();
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
 
@@ -20,6 +21,10 @@ export function Profiles() {
   const [encryptModalOpen, setEncryptModalOpen] = useState(false);
   const [encryptingProfileName, setEncryptingProfileName] = useState<string | null>(null);
   const [encryptError, setEncryptError] = useState<string | undefined>();
+
+  // Delete confirmation state
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deletingProfileName, setDeletingProfileName] = useState<string | null>(null);
 
   // Track which encrypted profiles have been unlocked (password entered) in this session
   const [unlockedProfiles, setUnlockedProfiles] = useState<Set<string>>(new Set());
@@ -106,6 +111,25 @@ export function Profiles() {
     unlockProfile(profileName);
   };
 
+  // Handle delete profile
+  const handleDeleteClick = (profileName: string) => {
+    setDeletingProfileName(profileName);
+    setDeleteModalOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (deletingProfileName) {
+      await deleteProfile(deletingProfileName);
+      setDeleteModalOpen(false);
+      setDeletingProfileName(null);
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteModalOpen(false);
+    setDeletingProfileName(null);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -174,7 +198,7 @@ export function Profiles() {
 
   return (
     <>
-      <Grid cols={3} onClick={handleClickAway}>
+      <Grid cols={2} onClick={handleClickAway}>
         {profiles.map((profile) => (
           <ProfileCard
             key={profile.id}
@@ -211,6 +235,18 @@ export function Profiles() {
                   }}
                 >
                   {t('common.duplicate')}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteClick(profile.name);
+                  }}
+                  title={t('common.delete')}
+                  className="text-[var(--error-text)] hover:bg-[var(--error-subtle)]"
+                >
+                  <Trash2 className="w-4 h-4" />
                 </Button>
                 {(() => {
                   // Check if this encrypted profile has been unlocked in this session
@@ -312,6 +348,27 @@ export function Profiles() {
         profileName={encryptingProfileName || undefined}
         error={encryptError}
       />
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        open={deleteModalOpen}
+        onClose={handleDeleteCancel}
+        title={t('profiles.deleteProfile')}
+        footer={
+          <>
+            <Button variant="ghost" onClick={handleDeleteCancel}>
+              {t('common.cancel')}
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteConfirm}>
+              {t('common.delete')}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-[var(--text-secondary)]">
+          {t('profiles.deleteConfirmation', { name: deletingProfileName })}
+        </p>
+      </Modal>
     </>
   );
 }

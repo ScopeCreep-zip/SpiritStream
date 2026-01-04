@@ -106,6 +106,8 @@
     "edit": "Edit",
     "duplicate": "Duplicate",
     "delete": "Delete",
+    "deleteProfile": "Delete Profile",
+    "deleteConfirmation": "Are you sure you want to delete \"{{name}}\"? This action cannot be undone.",
     "confirmDelete": "Are you sure you want to delete this profile?",
     "selectProfile": "Select Profile",
     "passwordProtected": "Password protected",
