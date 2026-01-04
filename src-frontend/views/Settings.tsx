@@ -412,7 +412,7 @@ export function Settings() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => window.open('https://github.com/billboyles/magillastream', '_blank')}
+                onClick={() => window.open('https://github.com/ScopeCreep-zip/SpiritStream', '_blank')}
               >
                 <Github className="w-4 h-4" />
                 {t('settings.github')}
@@ -421,7 +421,7 @@ export function Settings() {
                 variant="ghost"
                 size="sm"
                 onClick={() =>
-                  window.open('https://github.com/billboyles/magillastream#readme', '_blank')
+                  window.open('https://github.com/ScopeCreep-zip/SpiritStream#readme', '_blank')
                 }
               >
                 <BookOpen className="w-4 h-4" />
@@ -431,7 +431,7 @@ export function Settings() {
                 variant="ghost"
                 size="sm"
                 onClick={() =>
-                  window.open('https://github.com/billboyles/magillastream/releases', '_blank')
+                  window.open('https://github.com/ScopeCreep-zip/SpiritStream/releases', '_blank')
                 }
               >
                 <RefreshCw className="w-4 h-4" />

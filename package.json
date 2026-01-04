@@ -1,5 +1,5 @@
 {
-  "name": "@billboyles/spiritstream",
+  "name": "@scopecreep-zip/spiritstream",
   "version": "0.1.0",
   "description": "SpiritStream - Multi-Destination Streaming Application",
   "private": false,
@@ -24,7 +24,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/billboyles/magillastream.git"
+    "url": "git+https://github.com/ScopeCreep-zip/SpiritStream.git"
   },
   "keywords": [
     "streaming",
@@ -55,9 +55,9 @@
     "LICENSE"
   ],
   "bugs": {
-    "url": "https://github.com/billboyles/magillastream/issues"
+    "url": "https://github.com/ScopeCreep-zip/SpiritStream/issues"
   },
-  "homepage": "https://github.com/billboyles/magillastream#readme",
+  "homepage": "https://github.com/ScopeCreep-zip/SpiritStream#readme",
   "devDependencies": {
     "@eslint/js": "^9.39.2",
     "@tailwindcss/vite": "^4.1.18",
