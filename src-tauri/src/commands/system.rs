@@ -3,6 +3,7 @@
 
 use std::process::Command;
 use crate::models::Encoders;
+use regex::Regex;
 
 /// Find FFmpeg path
 fn find_ffmpeg() -> String {
@@ -82,55 +83,101 @@ fn find_ffmpeg() -> String {
     { "ffmpeg".to_string() }
 }
 
-/// Get available video and audio encoders by querying FFmpeg
+/// Get available video and audio encoders by querying FFmpeg and hardware
 #[tauri::command]
 pub fn get_encoders() -> Result<Encoders, String> {
     let ffmpeg_path = find_ffmpeg();
-
-    // Query FFmpeg for available encoders
     let output = Command::new(&ffmpeg_path)
         .args(["-encoders", "-hide_banner"])
         .output()
         .map_err(|e| format!("Failed to run FFmpeg: {e}"))?;
-
     if !output.status.success() {
-        // Return default encoders if FFmpeg query fails
         return Ok(Encoders {
             video: vec!["libx264".to_string()],
             audio: vec!["aac".to_string()],
         });
     }
-
     let encoder_list = String::from_utf8_lossy(&output.stdout);
 
-    // Common video encoders to look for
-    let video_encoder_names = [
-        ("libx264", "x264 (Software)"),
-        ("h264_nvenc", "NVENC (NVIDIA)"),
-        ("h264_videotoolbox", "VideoToolbox (Apple)"),
-        ("h264_qsv", "QuickSync (Intel)"),
-        ("h264_amf", "AMF (AMD)"),
-    ];
+    // Detect hardware
+    let mut has_nvidia = false;
+    let mut has_amd = false;
+    let mut has_intel = false;
 
-    // Common audio encoders to look for
-    let audio_encoder_names = [
-        ("aac", "AAC"),
-        ("libmp3lame", "MP3"),
-        ("libopus", "Opus"),
-    ];
-
-    let mut video = Vec::new();
-    let mut audio = Vec::new();
-
-    for (name, _label) in video_encoder_names {
-        if encoder_list.contains(name) {
-            video.push(name.to_string());
+    #[cfg(windows)]
+    {
+        if let Ok(output) = Command::new("wmic").args(["path", "win32_VideoController", "get", "name"]).output() {
+            if let Ok(gpu_list) = String::from_utf8(output.stdout) {
+                let gpu_list = gpu_list.to_lowercase();
+                if gpu_list.contains("nvidia") { has_nvidia = true; }
+                if gpu_list.contains("amd") || gpu_list.contains("radeon") { has_amd = true; }
+                if gpu_list.contains("intel") { has_intel = true; }
+            }
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(output) = Command::new("lspci").output() {
+            if let Ok(gpu_list) = String::from_utf8(output.stdout) {
+                let gpu_list = gpu_list.to_lowercase();
+                if gpu_list.contains("nvidia") { has_nvidia = true; }
+                if gpu_list.contains("amd") || gpu_list.contains("radeon") { has_amd = true; }
+                if gpu_list.contains("intel") { has_intel = true; }
+            }
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(output) = Command::new("system_profiler").args(["SPDisplaysDataType"]).output() {
+            if let Ok(gpu_list) = String::from_utf8(output.stdout) {
+                let gpu_list = gpu_list.to_lowercase();
+                if gpu_list.contains("nvidia") { has_nvidia = true; }
+                if gpu_list.contains("amd") || gpu_list.contains("radeon") { has_amd = true; }
+                if gpu_list.contains("intel") { has_intel = true; }
+            }
         }
     }
 
-    for (name, _label) in audio_encoder_names {
-        if encoder_list.contains(name) {
-            audio.push(name.to_string());
+    // Capability table for advanced filtering (expand as needed)
+    // For now, we only filter by vendor, but you can add model-specific logic here
+    let mut video = Vec::new();
+    let mut audio = Vec::new();
+
+    // Video encoders: (ffmpeg_name, vendor, codec)
+    let video_encoder_table = [
+        ("libx264", None),
+        ("h264_nvenc", Some("nvidia")),
+        ("hevc_nvenc", Some("nvidia")),
+        ("av1_nvenc", Some("nvidia")),
+        ("h264_amf", Some("amd")),
+        ("hevc_amf", Some("amd")),
+        ("av1_amf", Some("amd")),
+        ("h264_qsv", Some("intel")),
+        ("hevc_qsv", Some("intel")),
+        ("av1_qsv", Some("intel")),
+        ("h264_videotoolbox", Some("apple")),
+        ("hevc_videotoolbox", Some("apple")),
+        ("av1_videotoolbox", Some("apple")),
+    ];
+
+    for (name, vendor) in video_encoder_table.iter() {
+        if encoder_list.contains(*name) {
+            match *vendor {
+                None => video.push((*name).to_string()),
+                Some("nvidia") if has_nvidia => video.push((*name).to_string()),
+                Some("amd") if has_amd => video.push((*name).to_string()),
+                Some("intel") if has_intel => video.push((*name).to_string()),
+                Some("apple") if cfg!(target_os = "macos") => video.push((*name).to_string()),
+                _ => {},
+            }
+        }
+    }
+
+    // Audio encoders: always available if present in ffmpeg
+    let audio_encoder_names = ["aac", "libmp3lame", "libopus"];
+    for name in audio_encoder_names.iter() {
+        if encoder_list.contains(*name) {
+            audio.push((*name).to_string());
         }
     }
 
