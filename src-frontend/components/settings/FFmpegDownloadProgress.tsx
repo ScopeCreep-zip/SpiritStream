@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Download, X, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { Download, X, CheckCircle, AlertCircle, Loader2, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/cn';
 import {
@@ -73,24 +73,39 @@ export function FFmpegDownloadProgress({
 
   // If downloading
   if (isDownloading && progress) {
+    const isRequestingPermission = progress.phase === 'requesting_permission';
+
     return (
       <div className={cn('space-y-3', className)}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            <span>{getPhaseLabel(progress.phase)}</span>
+            {isRequestingPermission ? (
+              <ShieldCheck className="w-4 h-4 text-[var(--primary)]" />
+            ) : (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            )}
+            <span>{progress.message || getPhaseLabel(progress.phase)}</span>
           </div>
-          <Button variant="ghost" size="icon" onClick={cancelDownload}>
-            <X className="w-4 h-4" />
-          </Button>
+          {/* Hide cancel button during permission request */}
+          {!isRequestingPermission && (
+            <Button variant="ghost" size="icon" onClick={cancelDownload}>
+              <X className="w-4 h-4" />
+            </Button>
+          )}
         </div>
 
-        <ProgressBar
-          percent={progress.percent}
-          downloaded={progress.downloaded}
-          total={progress.total}
-          phase={progress.phase}
-        />
+        {isRequestingPermission ? (
+          <p className="text-xs text-[var(--text-tertiary)]">
+            {t('settings.elevationPromptHint')}
+          </p>
+        ) : (
+          <ProgressBar
+            percent={progress.percent}
+            downloaded={progress.downloaded}
+            total={progress.total}
+            phase={progress.phase}
+          />
+        )}
       </div>
     );
   }

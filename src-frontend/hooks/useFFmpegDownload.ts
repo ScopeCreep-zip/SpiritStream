@@ -9,7 +9,8 @@ export interface DownloadProgress {
   downloaded: number;
   total: number;
   percent: number;
-  phase: 'starting' | 'downloading' | 'extracting' | 'verifying' | 'complete';
+  phase: 'starting' | 'downloading' | 'extracting' | 'verifying' | 'requesting_permission' | 'complete' | 'elevation_denied' | 'error';
+  message?: string;
 }
 
 /**
@@ -66,13 +67,20 @@ export function useFFmpegDownload(): FFmpegDownloadState {
       unlistenProgress = await listen<DownloadProgress>('ffmpeg_download_progress', (event) => {
         setProgress(event.payload);
 
-        // If download is complete, update the path
+        // Handle completion states
         if (event.payload.phase === 'complete') {
           setIsDownloading(false);
+          setError(null);
           // Check for the bundled path
           checkBundledFFmpeg().then((path) => {
             if (path) setFFmpegPath(path);
           });
+        } else if (event.payload.phase === 'elevation_denied') {
+          setIsDownloading(false);
+          setError(event.payload.message || 'Permission denied');
+        } else if (event.payload.phase === 'error') {
+          setIsDownloading(false);
+          setError(event.payload.message || 'Installation failed');
         }
       });
     };
@@ -161,8 +169,14 @@ export function getPhaseLabel(phase: DownloadProgress['phase']): string {
       return 'Extracting...';
     case 'verifying':
       return 'Verifying...';
+    case 'requesting_permission':
+      return 'Requesting permission...';
     case 'complete':
       return 'Complete!';
+    case 'elevation_denied':
+      return 'Permission denied';
+    case 'error':
+      return 'Error';
     default:
       return 'Processing...';
   }

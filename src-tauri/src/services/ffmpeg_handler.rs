@@ -75,93 +75,28 @@ impl FFmpegHandler {
         url
     }
 
-    /// Find FFmpeg, checking bundled path first, then PATH/common locations
-    fn find_ffmpeg_with_bundled(app_data_dir: PathBuf) -> String {
-        // 1. Check for bundled/downloaded FFmpeg first
-        let ffmpeg_dir = app_data_dir.join("ffmpeg");
-        let binary_name = if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" };
-        let bundled_path = ffmpeg_dir.join(binary_name);
+    /// Find FFmpeg at the system install location (where we download to)
+    /// Only checks the standard system path - no PATH searching or common location fallbacks
+    fn find_ffmpeg_with_bundled(_app_data_dir: PathBuf) -> String {
+        use crate::services::FFmpegDownloader;
 
-        if bundled_path.exists() {
-            log::info!("Using bundled FFmpeg: {bundled_path:?}");
-            return bundled_path.to_string_lossy().to_string();
+        // Check the system install path (where we download FFmpeg to)
+        let system_path = FFmpegDownloader::get_system_install_path();
+        if system_path.exists() {
+            log::info!("Using system FFmpeg: {system_path:?}");
+            return system_path.to_string_lossy().to_string();
         }
 
-        // 2. Fall back to regular discovery
-        Self::find_ffmpeg()
+        // No FFmpeg found - return the expected path anyway
+        // This will cause FFmpeg commands to fail with a clear error
+        log::warn!("FFmpeg not found at system location: {system_path:?}");
+        system_path.to_string_lossy().to_string()
     }
 
-    /// Find FFmpeg in PATH or common locations
+    /// Legacy find_ffmpeg - now just delegates to system path check
     fn find_ffmpeg() -> String {
-        // Try to find ffmpeg in PATH first
-        #[cfg(unix)]
-        if let Ok(output) = Command::new("which").arg("ffmpeg").output() {
-            if output.status.success() {
-                if let Ok(path) = String::from_utf8(output.stdout) {
-                    return path.trim().to_string();
-                }
-            }
-        }
-
-        #[cfg(windows)]
-        if let Ok(output) = Command::new("where").arg("ffmpeg").output() {
-            if output.status.success() {
-                if let Ok(path) = String::from_utf8(output.stdout) {
-                    // `where` can return multiple paths, take the first
-                    if let Some(first_path) = path.lines().next() {
-                        return first_path.trim().to_string();
-                    }
-                }
-            }
-        }
-
-        // Fallback to common locations
-        #[cfg(target_os = "macos")]
-        {
-            if std::path::Path::new("/opt/homebrew/bin/ffmpeg").exists() {
-                return "/opt/homebrew/bin/ffmpeg".to_string();
-            }
-            if std::path::Path::new("/usr/local/bin/ffmpeg").exists() {
-                return "/usr/local/bin/ffmpeg".to_string();
-            }
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            if std::path::Path::new("/usr/bin/ffmpeg").exists() {
-                return "/usr/bin/ffmpeg".to_string();
-            }
-            if std::path::Path::new("/usr/local/bin/ffmpeg").exists() {
-                return "/usr/local/bin/ffmpeg".to_string();
-            }
-            // Snap package location
-            if std::path::Path::new("/snap/bin/ffmpeg").exists() {
-                return "/snap/bin/ffmpeg".to_string();
-            }
-        }
-
-        #[cfg(windows)]
-        {
-            // Check common Windows FFmpeg locations
-            let program_files = std::env::var("ProgramFiles").unwrap_or_default();
-            let ffmpeg_path = std::path::Path::new(&program_files).join("ffmpeg\\bin\\ffmpeg.exe");
-            if ffmpeg_path.exists() {
-                return ffmpeg_path.to_string_lossy().to_string();
-            }
-            // Also check common download location
-            let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
-            let ffmpeg_local = std::path::Path::new(&local_app_data).join("ffmpeg\\bin\\ffmpeg.exe");
-            if ffmpeg_local.exists() {
-                return ffmpeg_local.to_string_lossy().to_string();
-            }
-        }
-
-        // Default - rely on PATH
-        #[cfg(windows)]
-        { "ffmpeg.exe".to_string() }
-
-        #[cfg(not(windows))]
-        { "ffmpeg".to_string() }
+        use crate::services::FFmpegDownloader;
+        FFmpegDownloader::get_system_install_path().to_string_lossy().to_string()
     }
 
     /// Start streaming for an output group with stats monitoring
