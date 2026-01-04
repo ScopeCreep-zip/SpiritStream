@@ -327,7 +327,7 @@ impl FFmpegHandler {
 
     /// Build FFmpeg arguments for an output group
     fn build_args(&self, group: &OutputGroup, incoming_url: &str) -> Vec<String> {
-        let mut args = vec!["-i".to_string(), incoming_url.to_string()];
+        let mut args = vec!["-listen".to_string(), "1".to_string(), "-i".to_string(), incoming_url.to_string()];
 
         // Determine if we should use stream copy (passthrough mode)
         // When both video and audio codecs are set to "copy", FFmpeg acts as a pure
