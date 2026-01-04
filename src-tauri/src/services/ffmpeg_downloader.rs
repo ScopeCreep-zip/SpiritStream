@@ -202,27 +202,44 @@ impl FFmpegDownloader {
         let target_dir = target_path.parent()
             .ok_or_else(|| DownloadError::InstallationFailed("Invalid target path".to_string()))?;
 
-        // PowerShell script to create directory and copy file with UAC elevation
-        let ps_script = format!(
-            r#"New-Item -ItemType Directory -Force -Path '{}' | Out-Null; Copy-Item -Path '{}' -Destination '{}' -Force"#,
+        // Create a temporary batch script with a descriptive name
+        // This makes UAC show "Install-FFmpeg-MagillaStream.bat" instead of generic "powershell"
+        let temp_script_dir = std::env::temp_dir();
+        let batch_path = temp_script_dir.join("Install-FFmpeg-MagillaStream.bat");
+
+        let batch_content = format!(
+            r#"@echo off
+:: MagillaStream FFmpeg Installer
+:: This script installs FFmpeg to Program Files
+if not exist "{}" mkdir "{}"
+copy /Y "{}" "{}"
+exit /b %errorlevel%
+"#,
+            target_dir.display(),
             target_dir.display(),
             temp_path.display(),
             target_path.display()
         );
 
+        std::fs::write(&batch_path, &batch_content)
+            .map_err(|e| DownloadError::InstallationFailed(format!("Failed to create installer script: {e}")))?;
+
         log::info!("Requesting Windows UAC elevation to install FFmpeg");
 
-        // Use Start-Process with -Verb RunAs to trigger UAC prompt
+        // Use cmd to run the batch file with elevation - UAC will show the batch file name
         let output = Command::new("powershell")
             .args([
                 "-Command",
                 &format!(
-                    "Start-Process powershell -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '-NoProfile -Command {}' -PassThru | Out-Null",
-                    ps_script.replace('\'', "''").replace('"', "\\\"")
+                    "Start-Process cmd -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '/c \"{}\"'",
+                    batch_path.display()
                 )
             ])
             .output()
             .map_err(|e| DownloadError::ElevationFailed(e.to_string()))?;
+
+        // Clean up the batch file
+        let _ = std::fs::remove_file(&batch_path);
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);

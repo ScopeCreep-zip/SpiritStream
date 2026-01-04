@@ -60,10 +60,16 @@ export function Settings() {
         const backendSettings = await api.settings.get();
         const profilesPath = await api.settings.getProfilesPath();
 
-        // Get FFmpeg version
+        // Get FFmpeg version and path
         let ffmpegVersion = ''; // Empty means not found (will be translated when displayed)
+        let detectedFfmpegPath = '';
         try {
           ffmpegVersion = await api.system.testFfmpeg();
+          // Get the detected path (either custom from settings or system install location)
+          const path = await api.system.getFfmpegPath();
+          if (path) {
+            detectedFfmpegPath = path;
+          }
         } catch {
           // FFmpeg not available
         }
@@ -71,11 +77,14 @@ export function Settings() {
         // Initialize i18n with the saved language
         initFromSettings(backendSettings.language);
 
+        // Use detected path if available, otherwise fall back to saved settings path
+        const ffmpegPath = detectedFfmpegPath || backendSettings.ffmpegPath;
+
         setSettings({
           language: backendSettings.language,
           startMinimized: backendSettings.startMinimized,
           showNotifications: backendSettings.showNotifications,
-          ffmpegPath: backendSettings.ffmpegPath,
+          ffmpegPath,
           autoDownloadFfmpeg: backendSettings.autoDownloadFfmpeg,
           encryptStreamKeys: backendSettings.encryptStreamKeys,
           ffmpegVersion,

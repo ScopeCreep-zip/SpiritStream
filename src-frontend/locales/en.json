@@ -357,7 +357,7 @@
     "retryDownload": "Retry Download",
     "elevationDenied": "Permission denied",
     "elevationDeniedDescription": "Administrator permission is required to install FFmpeg. You can try again and grant permission when prompted.",
-    "elevationPromptHint": "Please authorize the installation when prompted by your system."
+    "elevationPromptHint": "A system dialog will appear asking for administrator permission. On Windows, click 'Yes' on the User Account Control prompt to install FFmpeg."
   },
   "modals": {
     "createNewProfile": "Create New Profile",

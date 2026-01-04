@@ -32,6 +32,7 @@ export const api = {
   system: {
     getEncoders: () => invoke<Encoders>('get_encoders'),
     testFfmpeg: () => invoke<string>('test_ffmpeg'),
+    getFfmpegPath: () => invoke<string | null>('get_bundled_ffmpeg_path'),
   },
   settings: {
     get: () => invoke<AppSettings>('get_settings'),
