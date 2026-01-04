@@ -1,18 +1,110 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Monitor, Gauge, Target } from 'lucide-react';
+import { Plus, Monitor, Gauge, Target, Lock, Unlock } from 'lucide-react';
 import { Grid } from '@/components/ui/Grid';
 import { ProfileCard } from '@/components/dashboard/ProfileCard';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody } from '@/components/ui/Card';
-import { ProfileModal } from '@/components/modals';
+import { ProfileModal, PasswordModal } from '@/components/modals';
 import { useProfileStore } from '@/stores/profileStore';
+import { api } from '@/lib/tauri';
+import { cn } from '@/lib/cn';
 
 export function Profiles() {
   const { t } = useTranslation();
-  const { profiles, current, loading, error, selectProfile, duplicateProfile } = useProfileStore();
+  const { profiles, current, loading, error, selectProfile, duplicateProfile, loadProfiles, unlockProfile } = useProfileStore();
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+
+  // Encryption modal state
+  const [encryptModalOpen, setEncryptModalOpen] = useState(false);
+  const [encryptingProfileName, setEncryptingProfileName] = useState<string | null>(null);
+  const [encryptError, setEncryptError] = useState<string | undefined>();
+
+  // Track which encrypted profiles have been unlocked (password entered) in this session
+  const [unlockedProfiles, setUnlockedProfiles] = useState<Set<string>>(new Set());
+
+  // Detect when an encrypted profile is successfully loaded (password was entered)
+  useEffect(() => {
+    const unsubscribe = useProfileStore.subscribe((state, prevState) => {
+      // If current profile changed and new one is loaded
+      if (state.current && state.current !== prevState.current) {
+        const profileName = state.current.name;
+        const profileSummary = state.profiles.find(p => p.name === profileName);
+
+        // If this profile is encrypted, mark it as unlocked in session
+        if (profileSummary?.isEncrypted) {
+          setUnlockedProfiles(prev => new Set(prev).add(profileName));
+        }
+      }
+
+      // If encryption was removed (pendingUnlock flow completed), also mark as unlocked
+      if (prevState.pendingUnlock && !state.pendingUnlock && state.current) {
+        setUnlockedProfiles(prev => new Set(prev).add(state.current!.name));
+      }
+    });
+    return unsubscribe;
+  }, []);
+
+  // Clear unlocked state when clicking outside profile cards
+  const handleClickAway = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget && unlockedProfiles.size > 0) {
+      setUnlockedProfiles(new Set());
+    }
+  };
+
+  // Clear unlocked state for other profiles when selecting a different one
+  const handleProfileClick = (profileName: string) => {
+    // Keep only the newly selected profile in unlocked set (if it was unlocked)
+    if (unlockedProfiles.has(profileName)) {
+      setUnlockedProfiles(new Set([profileName]));
+    } else {
+      setUnlockedProfiles(new Set());
+    }
+    selectProfile(profileName);
+  };
+
+  // Handle locking a profile with password
+  const handleLockProfile = (profileName: string) => {
+    // Clear from unlocked set when re-locking
+    setUnlockedProfiles(prev => {
+      const next = new Set(prev);
+      next.delete(profileName);
+      return next;
+    });
+    setEncryptingProfileName(profileName);
+    setEncryptError(undefined);
+    setEncryptModalOpen(true);
+  };
+
+  // Handle password submission for encrypting
+  const handleEncryptSubmit = async (password: string) => {
+    if (!encryptingProfileName) return;
+
+    setEncryptError(undefined);
+
+    try {
+      // Load the profile first (it should already be loaded if user clicked on it)
+      const profile = await api.profile.load(encryptingProfileName);
+      // Save with password to encrypt it
+      await api.profile.save(profile, password);
+      // Reload profiles to update the list with encryption status
+      await loadProfiles();
+      setEncryptModalOpen(false);
+      setEncryptingProfileName(null);
+    } catch (err) {
+      setEncryptError(String(err));
+    }
+  };
+
+  // Handle removing password protection
+  const handleUnlockProfile = (profileName: string) => {
+    // Use the store's unlockProfile function which:
+    // 1. Sets pendingUnlock flag
+    // 2. Triggers password modal
+    // 3. After successful password entry, saves without password to remove encryption
+    unlockProfile(profileName);
+  };
 
   if (loading) {
     return (
@@ -82,7 +174,7 @@ export function Profiles() {
 
   return (
     <>
-      <Grid cols={3}>
+      <Grid cols={3} onClick={handleClickAway}>
         {profiles.map((profile) => (
           <ProfileCard
             key={profile.id}
@@ -97,7 +189,7 @@ export function Profiles() {
             ]}
             services={profile.services}
             active={current?.id === profile.id}
-            onClick={() => selectProfile(profile.name)}
+            onClick={() => handleProfileClick(profile.name)}
             actions={
               <div className="flex" style={{ gap: '4px' }}>
                 <Button
@@ -120,6 +212,51 @@ export function Profiles() {
                 >
                   {t('common.duplicate')}
                 </Button>
+                {(() => {
+                  // Check if this encrypted profile has been unlocked in this session
+                  const isUnlocked = unlockedProfiles.has(profile.name);
+                  // Show Lock icon only if encrypted AND not unlocked in session
+                  const showLocked = profile.isEncrypted && !isUnlocked;
+
+                  return showLocked ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        selectProfile(profile.name); // This will trigger password modal
+                      }}
+                      title={t('profiles.enterPassword')}
+                    >
+                      <Lock className="w-4 h-4 transition-transform duration-300" />
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        // If unlocked (was encrypted), clicking can remove encryption or re-lock
+                        // If not encrypted, clicking adds encryption
+                        if (isUnlocked && profile.isEncrypted) {
+                          handleUnlockProfile(profile.name); // Remove encryption entirely
+                        } else {
+                          handleLockProfile(profile.name); // Add encryption
+                        }
+                      }}
+                      title={isUnlocked && profile.isEncrypted
+                        ? t('profiles.removePassword')
+                        : t('profiles.addPassword')}
+                    >
+                      <Unlock
+                        className={cn(
+                          "w-4 h-4 transition-all duration-300",
+                          isUnlocked && "text-[var(--success)] scale-110"
+                        )}
+                      />
+                    </Button>
+                  );
+                })()}
               </div>
             }
           />
@@ -132,15 +269,15 @@ export function Profiles() {
         >
           <CardBody
             className="flex flex-col items-center justify-center"
-            style={{ padding: '48px 24px' }}
+            style={{ padding: '56px 28px' }}
           >
             <div
-              className="w-12 h-12 rounded-full bg-[var(--primary-subtle)] flex items-center justify-center"
-              style={{ marginBottom: '12px' }}
+              className="w-14 h-14 rounded-full bg-[var(--primary-subtle)] flex items-center justify-center"
+              style={{ marginBottom: '16px' }}
             >
-              <Plus className="w-6 h-6 text-[var(--primary)]" />
+              <Plus className="w-7 h-7 text-[var(--primary)]" />
             </div>
-            <span className="text-sm font-medium text-[var(--text-secondary)]">
+            <span className="text-base font-medium text-[var(--text-secondary)]">
               {t('profiles.createNewProfile')}
             </span>
           </CardBody>
@@ -160,6 +297,20 @@ export function Profiles() {
         onClose={() => setEditModalOpen(false)}
         mode="edit"
         profile={current || undefined}
+      />
+
+      {/* Encrypt Profile Modal */}
+      <PasswordModal
+        open={encryptModalOpen}
+        onClose={() => {
+          setEncryptModalOpen(false);
+          setEncryptingProfileName(null);
+          setEncryptError(undefined);
+        }}
+        onSubmit={handleEncryptSubmit}
+        mode="encrypt"
+        profileName={encryptingProfileName || undefined}
+        error={encryptError}
       />
     </>
   );

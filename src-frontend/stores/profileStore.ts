@@ -20,6 +20,7 @@ interface ProfileState {
   // Encryption state
   pendingPasswordProfile: string | null; // Profile name awaiting password
   passwordError: string | null; // Error from failed password attempt
+  pendingUnlock: boolean; // True if we're unlocking (removing password) rather than just loading
 
   // Async actions (Tauri integration)
   loadProfiles: () => Promise<void>;
@@ -34,6 +35,7 @@ interface ProfileState {
   clearPasswordError: () => void;
   submitPassword: (password: string) => Promise<void>;
   cancelPasswordPrompt: () => void;
+  unlockProfile: (name: string) => void; // Start unlock flow (prompts for password, then removes encryption)
 
   // Sync actions
   setProfiles: (profiles: ProfileSummary[]) => void;
@@ -103,6 +105,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   error: null,
   pendingPasswordProfile: null,
   passwordError: null,
+  pendingUnlock: false,
 
   // Load all profile summaries from backend (uses efficient getSummaries endpoint)
   loadProfiles: async () => {
@@ -175,16 +178,43 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
 
   submitPassword: async (password) => {
     const name = get().pendingPasswordProfile;
+    const isUnlocking = get().pendingUnlock;
     if (!name) return;
+
+    // Load the profile with the password
     await get().loadProfile(name, password);
+
+    // If we were unlocking and profile loaded successfully, save without password to remove encryption
+    if (isUnlocking && get().current && !get().passwordError) {
+      try {
+        const profile = get().current!;
+        await api.profile.save(profile); // No password = unencrypted
+        // Reload profiles to update encryption status
+        await get().loadProfiles();
+        set({ pendingUnlock: false });
+      } catch (error) {
+        console.error('[ProfileStore] Failed to remove encryption:', error);
+        set({ error: String(error), pendingUnlock: false });
+      }
+    }
   },
 
   cancelPasswordPrompt: () =>
     set({
       pendingPasswordProfile: null,
       passwordError: null,
+      pendingUnlock: false,
       loading: false,
     }),
+
+  // Start unlock flow - prompts for password, then removes encryption
+  unlockProfile: (name) => {
+    set({
+      pendingPasswordProfile: name,
+      pendingUnlock: true,
+      passwordError: null,
+    });
+  },
 
   // Save the current profile to backend
   saveProfile: async (password) => {

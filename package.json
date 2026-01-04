@@ -73,6 +73,7 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "globals": "^17.0.0",
     "prettier": "^3.4.0",
+    "puppeteer": "^24.34.0",
     "tailwindcss": "^4.1.18",
     "typescript": "^5.9.3",
     "vite": "^7.3.0"

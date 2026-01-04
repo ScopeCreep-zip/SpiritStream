@@ -6,7 +6,7 @@ mod models;
 mod services;
 
 use std::sync::Arc;
-use tauri::{Manager, RunEvent};
+use tauri::{image::Image, Manager, RunEvent};
 use tokio::sync::Mutex;
 use services::{ProfileManager, FFmpegHandler, FFmpegDownloader, SettingsManager};
 use commands::FFmpegDownloaderState;
@@ -55,6 +55,21 @@ pub fn run() {
             app.manage(ffmpeg_downloader);
 
             log::info!("SpiritStream initialized. Data dir: {app_data_dir:?}");
+
+            // Set window icon
+            if let Some(window) = app.get_webview_window("main") {
+                let icon_bytes = include_bytes!("../icons/icon.png").to_vec();
+                match Image::from_bytes(&icon_bytes) {
+                    Ok(icon) => {
+                        if let Err(e) = window.set_icon(icon) {
+                            log::warn!("Failed to set window icon: {e}");
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to load icon: {e}");
+                    }
+                }
+            }
 
             Ok(())
         })

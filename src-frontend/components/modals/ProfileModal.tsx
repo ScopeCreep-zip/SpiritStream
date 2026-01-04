@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Lock, Eye, EyeOff } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { Select, SelectOption } from '@/components/ui/Select';
 import { Button } from '@/components/ui/Button';
+import { Toggle } from '@/components/ui/Toggle';
 import { useProfileStore } from '@/stores/profileStore';
 import { api } from '@/lib/tauri';
 import type { Profile, RtmpInput } from '@/types/profile';
@@ -44,6 +46,10 @@ interface FormData {
   resolution: string;
   fps: string;
   videoBitrate: string;
+  // Password protection
+  usePassword: boolean;
+  password: string;
+  confirmPassword: string;
 }
 
 const defaultFormData: FormData = {
@@ -54,6 +60,9 @@ const defaultFormData: FormData = {
   resolution: '1920x1080',
   fps: '60',
   videoBitrate: '6000',
+  usePassword: false,
+  password: '',
+  confirmPassword: '',
 };
 
 export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps) {
@@ -62,6 +71,7 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
   const [formData, setFormData] = useState<FormData>(defaultFormData);
   const [errors, setErrors] = useState<Partial<FormData>>({});
   const [saving, setSaving] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   // Initialize form data when modal opens or profile changes
   useEffect(() => {
@@ -84,6 +94,9 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
           resolution,
           fps: String(firstGroup?.video?.fps || 60),
           videoBitrate,
+          usePassword: false,
+          password: '',
+          confirmPassword: '',
         });
       } else {
         setFormData(defaultFormData);
@@ -118,6 +131,18 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
     const bitrate = parseInt(formData.videoBitrate);
     if (isNaN(bitrate) || bitrate < 500 || bitrate > 50000) {
       newErrors.videoBitrate = t('validation.bitrateRange');
+    }
+
+    // Validate password when protection is enabled
+    if (formData.usePassword) {
+      if (!formData.password) {
+        newErrors.password = t('validation.passwordRequired');
+      } else if (formData.password.length < 8) {
+        newErrors.password = t('validation.passwordMinLength');
+      }
+      if (formData.password !== formData.confirmPassword) {
+        newErrors.confirmPassword = t('validation.passwordsDoNotMatch');
+      }
     }
 
     setErrors(newErrors);
@@ -186,12 +211,14 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
 
         newProfile.outputGroups = [outputGroup];
 
-        // Save to backend via store
-        await api.profile.save(newProfile);
+        // Save to backend via store (with password if enabled)
+        const password = formData.usePassword ? formData.password : undefined;
+        await api.profile.save(newProfile, password);
         // Reload profiles to update the list
         const { loadProfiles, loadProfile } = useProfileStore.getState();
         await loadProfiles();
-        await loadProfile(newProfile.name);
+        // Load profile (will require password if encrypted)
+        await loadProfile(newProfile.name, password);
       } else if (mode === 'edit' && current) {
         // Update existing profile's input settings
         const updatedInput = { ...input };
@@ -357,6 +384,76 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
           error={errors.videoBitrate}
           helper={t('encoder.videoBitrateHelper')}
         />
+
+        {/* Password Protection (only for create mode) */}
+        {mode === 'create' && (
+          <div style={{ padding: '12px', backgroundColor: 'var(--bg-muted)', borderRadius: '8px' }}>
+            <div className="flex items-center justify-between" style={{ marginBottom: formData.usePassword ? '12px' : '0' }}>
+              <div className="flex items-center gap-2">
+                <Lock className="w-4 h-4 text-[var(--primary)]" />
+                <span style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-primary)' }}>
+                  {t('profiles.protectWithPassword')}
+                </span>
+              </div>
+              <Toggle
+                checked={formData.usePassword}
+                onChange={(checked) => {
+                  setFormData(prev => ({
+                    ...prev,
+                    usePassword: checked,
+                    password: checked ? prev.password : '',
+                    confirmPassword: checked ? prev.confirmPassword : ''
+                  }));
+                  if (!checked) {
+                    setErrors(prev => ({ ...prev, password: undefined, confirmPassword: undefined }));
+                  }
+                }}
+              />
+            </div>
+
+            {formData.usePassword && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div className="relative">
+                  <Input
+                    label={t('modals.password.password')}
+                    type={showPassword ? 'text' : 'password'}
+                    value={formData.password}
+                    onChange={handleChange('password')}
+                    error={errors.password}
+                    placeholder={t('modals.enterStrongPassword')}
+                    autoComplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-[34px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+
+                <Input
+                  label={t('modals.confirmPassword')}
+                  type={showPassword ? 'text' : 'password'}
+                  value={formData.confirmPassword}
+                  onChange={handleChange('confirmPassword')}
+                  error={errors.confirmPassword}
+                  placeholder={t('modals.confirmYourPassword')}
+                  autoComplete="new-password"
+                />
+
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+                  <p style={{ fontWeight: 500, marginBottom: '4px' }}>{t('modals.passwordRequirements')}:</p>
+                  <ul style={{ margin: 0, paddingLeft: '16px' }}>
+                    <li>{t('modals.passwordReq8Chars')}</li>
+                    <li>{t('modals.passwordReqNoRecovery')}</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </Modal>
   );

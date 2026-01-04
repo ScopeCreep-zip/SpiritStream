@@ -105,7 +105,8 @@ export function Modal({ open, onClose, title, children, footer, maxWidth = '500p
         className={cn(
           'bg-[var(--bg-surface)] rounded-xl shadow-[var(--shadow-xl)]',
           'w-full max-h-[90vh] overflow-hidden',
-          'animate-in zoom-in-95 duration-200'
+          'animate-in zoom-in-95 duration-200',
+          'flex flex-col'
         )}
         style={{ maxWidth }}
         role="dialog"
@@ -128,7 +129,7 @@ interface ModalHeaderProps {
 export function ModalHeader({ title, onClose }: ModalHeaderProps) {
   return (
     <div
-      className="border-b border-[var(--border-muted)] flex items-center justify-between"
+      className="flex-shrink-0 border-b border-[var(--border-muted)] flex items-center justify-between"
       style={{ padding: '20px 24px' }}
     >
       <h3 id="modal-title" className="text-lg font-semibold text-[var(--text-primary)]">
@@ -158,7 +159,7 @@ interface ModalBodyProps {
 
 export function ModalBody({ children, className }: ModalBodyProps) {
   return (
-    <div className={cn('overflow-y-auto', className)} style={{ padding: '24px' }}>
+    <div className={cn('flex-1 min-h-0 overflow-y-auto', className)} style={{ padding: '24px' }}>
       {children}
     </div>
   );
@@ -172,7 +173,7 @@ interface ModalFooterProps {
 export function ModalFooter({ children, className }: ModalFooterProps) {
   return (
     <div
-      className={cn('border-t border-[var(--border-muted)] flex justify-end gap-3', className)}
+      className={cn('flex-shrink-0 border-t border-[var(--border-muted)] flex justify-end gap-3', className)}
       style={{ padding: '16px 24px' }}
     >
       {children}

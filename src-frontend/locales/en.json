@@ -107,7 +107,12 @@
     "duplicate": "Duplicate",
     "delete": "Delete",
     "confirmDelete": "Are you sure you want to delete this profile?",
-    "selectProfile": "Select Profile"
+    "selectProfile": "Select Profile",
+    "passwordProtected": "Password protected",
+    "addPassword": "Add password protection",
+    "removePassword": "Remove password protection",
+    "protectWithPassword": "Protect with password",
+    "enterPassword": "Enter password to unlock"
   },
   "streams": {
     "startStreaming": "Start Streaming",
