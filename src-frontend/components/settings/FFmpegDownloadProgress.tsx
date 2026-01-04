@@ -132,14 +132,19 @@ export function FFmpegDownloadProgress({
     );
   }
 
+  // Detect Windows platform
+  const isWindows = typeof navigator !== 'undefined' && navigator.platform?.toLowerCase().includes('win');
+
   // If downloading
   if (isDownloading && progress) {
     const isRequestingPermission = progress.phase === 'requesting_permission';
     // Show elevation hint during extraction, verification, and permission phases
+    // Skip on Windows since they already saw it before download started
     const showElevationHint =
-      progress.phase === 'extracting' ||
-      progress.phase === 'verifying' ||
-      progress.phase === 'requesting_permission';
+      !isWindows &&
+      (progress.phase === 'extracting' ||
+        progress.phase === 'verifying' ||
+        progress.phase === 'requesting_permission');
 
     return (
       <div className={cn('space-y-3', className)}>
@@ -187,10 +192,23 @@ export function FFmpegDownloadProgress({
   // Default: show download button
   if (showDownloadButton) {
     return (
-      <Button variant="outline" size="sm" onClick={handleDownload} className={className}>
-        <Download className="w-4 h-4" />
-        {t('settings.downloadFFmpeg')}
-      </Button>
+      <div className={cn('space-y-3', className)}>
+        {/* Show elevation hint on Windows before download starts */}
+        {isWindows && (
+          <div className="p-3 rounded-lg bg-[var(--primary-muted)] border border-[var(--primary-subtle)]">
+            <div className="flex items-start gap-2">
+              <ShieldCheck className="w-4 h-4 text-[var(--primary)] mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-[var(--text-secondary)]">
+                {t('settings.elevationPromptHint')}
+              </p>
+            </div>
+          </div>
+        )}
+        <Button variant="outline" size="sm" onClick={handleDownload}>
+          <Download className="w-4 h-4" />
+          {t('settings.downloadFFmpeg')}
+        </Button>
+      </div>
     );
   }
 
