@@ -327,49 +327,58 @@ impl FFmpegHandler {
 
     /// Build FFmpeg arguments for an output group
     fn build_args(&self, group: &OutputGroup, incoming_url: &str) -> Vec<String> {
-        let mut args = vec![
-            "-i".to_string(), incoming_url.to_string(),
+        let mut args = vec!["-i".to_string(), incoming_url.to_string()];
+
+        // Determine if we can use stream copy (passthrough)
+        // For now, we check if codec, resolution, fps, bitrate, audio codec, bitrate, channels, and sample rate match a special value "copy" or a future input descriptor
+        let use_stream_copy = group.video.codec == "copy"
+            && group.audio.codec == "copy";
+
+        if use_stream_copy {
+            args.push("-c:v".to_string()); args.push("copy".to_string());
+            args.push("-c:a".to_string()); args.push("copy".to_string());
+        } else {
             // Video settings
-            "-c:v".to_string(), group.video.codec.clone(),
-            "-s".to_string(), group.video.resolution(),
-            "-b:v".to_string(), group.video.bitrate.clone(),
-            "-r".to_string(), group.video.fps.to_string(),
+            args.push("-c:v".to_string()); args.push(group.video.codec.clone());
+            args.push("-s".to_string()); args.push(group.video.resolution());
+            args.push("-b:v".to_string()); args.push(group.video.bitrate.clone());
+            args.push("-r".to_string()); args.push(group.video.fps.to_string());
             // Audio settings
-            "-c:a".to_string(), group.audio.codec.clone(),
-            "-b:a".to_string(), group.audio.bitrate.clone(),
-            "-ac".to_string(), group.audio.channels.to_string(),
-            "-ar".to_string(), group.audio.sample_rate.to_string(),
-            // Progress output for stats parsing
-            "-progress".to_string(), "pipe:2".to_string(),
-            "-stats".to_string(),
-        ];
-
-        // Add video encoder preset if specified
-        if let Some(preset) = &group.video.preset {
-            // Map user-friendly preset names to FFmpeg preset values
-            let ffmpeg_preset = match preset.as_str() {
-                "quality" => "slow",
-                "balanced" => "medium",
-                "performance" => "fast",
-                "low_latency" | "low-latency" => "ultrafast",
-                _ => preset.as_str(), // Use as-is if already a valid FFmpeg preset
-            };
-            args.extend(["-preset".to_string(), ffmpeg_preset.to_string()]);
+            args.push("-c:a".to_string()); args.push(group.audio.codec.clone());
+            args.push("-b:a".to_string()); args.push(group.audio.bitrate.clone());
+            args.push("-ac".to_string()); args.push(group.audio.channels.to_string());
+            args.push("-ar".to_string()); args.push(group.audio.sample_rate.to_string());
+            // Add video encoder preset if specified
+            if let Some(preset) = &group.video.preset {
+                let ffmpeg_preset = match preset.as_str() {
+                    "quality" => "slow",
+                    "balanced" => "medium",
+                    "performance" => "fast",
+                    "low_latency" | "low-latency" => "ultrafast",
+                    _ => preset.as_str(),
+                };
+                args.push("-preset".to_string()); args.push(ffmpeg_preset.to_string());
+            }
+            // Add H.264 profile if specified
+            if let Some(profile) = &group.video.profile {
+                args.push("-profile:v".to_string()); args.push(profile.clone());
+            }
         }
 
-        // Add H.264 profile if specified
-        if let Some(profile) = &group.video.profile {
-            args.extend(["-profile:v".to_string(), profile.clone()]);
-        }
+        // Always map video and audio from input 0
+        args.push("-map".to_string()); args.push("0:v".to_string());
+        args.push("-map".to_string()); args.push("0:a".to_string());
+
+        // Progress output for stats parsing
+        args.push("-progress".to_string()); args.push("pipe:2".to_string());
+        args.push("-stats".to_string());
 
         // Add output targets
         for target in &group.stream_targets {
             let normalized_url = Self::normalize_rtmp_url(&target.url);
             let resolved_key = Self::resolve_stream_key(&target.stream_key);
-            args.extend([
-                "-f".to_string(), group.container.format.clone(),
-                format!("{normalized_url}/{resolved_key}"),
-            ]);
+            args.push("-f".to_string()); args.push(group.container.format.clone());
+            args.push(format!("{normalized_url}/{resolved_key}"));
         }
 
         args
