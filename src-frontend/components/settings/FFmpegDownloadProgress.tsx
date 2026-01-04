@@ -54,9 +54,9 @@ export function FFmpegDownloadProgress({
 
   const handleDownload = async () => {
     try {
-      await startDownload();
-      if (ffmpegPath && onComplete) {
-        onComplete(ffmpegPath);
+      const path = await startDownload();
+      if (path && onComplete) {
+        onComplete(path);
       }
     } catch {
       // Error is handled by the hook

@@ -313,6 +313,9 @@ export function Settings() {
             <FFmpegDownloadProgress
               installedVersion={settings.ffmpegVersion || undefined}
               onComplete={(path: string) => {
+                // Immediately update local state for live feedback
+                setSettings((prev) => ({ ...prev, ffmpegPath: path }));
+                // Save to backend
                 saveSettings({ ffmpegPath: path });
                 // Refresh FFmpeg version
                 api.system

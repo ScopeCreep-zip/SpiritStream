@@ -30,8 +30,8 @@ export interface FFmpegDownloadState {
   versionInfo: FFmpegVersionInfo | null;
   /** Whether version check is in progress */
   isCheckingVersion: boolean;
-  /** Start the FFmpeg download */
-  startDownload: () => Promise<void>;
+  /** Start the FFmpeg download, returns the path on success */
+  startDownload: () => Promise<string>;
   /** Cancel the current download */
   cancelDownload: () => Promise<void>;
   /** Check for an existing bundled FFmpeg */
@@ -116,7 +116,7 @@ export function useFFmpegDownload(): FFmpegDownloadState {
   }, []);
 
   // Start the FFmpeg download
-  const startDownload = useCallback(async (): Promise<void> => {
+  const startDownload = useCallback(async (): Promise<string> => {
     setIsDownloading(true);
     setError(null);
     setProgress({
@@ -130,6 +130,7 @@ export function useFFmpegDownload(): FFmpegDownloadState {
       const path = await invoke<string>('download_ffmpeg');
       setFFmpegPath(path);
       setIsDownloading(false);
+      return path;
     } catch (err) {
       const errorMessage = String(err);
       setError(errorMessage);
