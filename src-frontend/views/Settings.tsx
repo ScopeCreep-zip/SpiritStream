@@ -7,6 +7,7 @@ import { Select } from '@/components/ui/Select';
 import { Input } from '@/components/ui/Input';
 import { Toggle } from '@/components/ui/Toggle';
 import { Grid } from '@/components/ui/Grid';
+import { Modal } from '@/components/ui/Modal';
 import { Logo } from '@/components/layout/Logo';
 import { FFmpegDownloadProgress } from '@/components/settings/FFmpegDownloadProgress';
 import { api } from '@/lib/tauri';
@@ -49,6 +50,9 @@ export function Settings() {
   const { t } = useTranslation();
   const { setLanguage, initFromSettings } = useLanguageStore();
   const [settings, setSettings] = useState<SettingsState>(defaultSettings);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const [clearInProgress, setClearInProgress] = useState(false);
+  const [clearError, setClearError] = useState<string | null>(null);
 
   // Load settings on mount
   useEffect(() => {
@@ -186,17 +190,31 @@ export function Settings() {
     }
   };
 
-  const handleClearAllData = async () => {
-    if (confirm(t('settings.clearConfirm'))) {
-      try {
-        await api.settings.clearData();
-        alert(t('toast.dataCleared'));
-        // Reset to defaults
-        setSettings({ ...defaultSettings, loading: false, saving: false });
-      } catch (error) {
-        console.error('Failed to clear data:', error);
-        alert(`${t('settings.clearFailed')}: ${error}`);
-      }
+  const handleClearAllData = () => {
+    setClearError(null);
+    setClearConfirmOpen(true);
+  };
+
+  const handleClearCancel = () => {
+    if (clearInProgress) return;
+    setClearConfirmOpen(false);
+    setClearError(null);
+  };
+
+  const handleClearConfirm = async () => {
+    setClearInProgress(true);
+    setClearError(null);
+    try {
+      await api.settings.clearData();
+      alert(t('toast.dataCleared'));
+      // Reset to defaults
+      setSettings({ ...defaultSettings, loading: false, saving: false });
+      setClearConfirmOpen(false);
+    } catch (error) {
+      console.error('Failed to clear data:', error);
+      setClearError(`${t('settings.clearFailed')}: ${error}`);
+    } finally {
+      setClearInProgress(false);
     }
   };
 
@@ -441,6 +459,28 @@ export function Settings() {
           </div>
         </CardBody>
       </Card>
+      <Modal
+        open={clearConfirmOpen}
+        onClose={handleClearCancel}
+        title={t('settings.clearAllData')}
+        footer={
+          <>
+            <Button variant="ghost" onClick={handleClearCancel} disabled={clearInProgress}>
+              {t('common.cancel')}
+            </Button>
+            <Button variant="destructive" onClick={handleClearConfirm} disabled={clearInProgress}>
+              {clearInProgress ? t('common.loading') : t('common.confirm')}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-[var(--text-secondary)]">{t('settings.clearConfirm')}</p>
+        {clearError && (
+          <div className="mt-4 p-3 rounded-lg bg-[var(--error-subtle)] border border-[var(--error-border)]">
+            <p className="text-sm text-[var(--error-text)]">{clearError}</p>
+          </div>
+        )}
+      </Modal>
     </Grid>
   );
 }
