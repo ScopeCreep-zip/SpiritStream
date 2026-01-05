@@ -202,6 +202,7 @@
       "veryslow": "Very Slow",
       "quality": "Quality",
       "balanced": "Balanced",
+      "speed": "Speed",
       "performance": "Performance",
       "lowLatency": "Low Latency",
       "low_latency": "Low Latency"

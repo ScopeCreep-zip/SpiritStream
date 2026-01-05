@@ -181,6 +181,7 @@
     "presets": {
       "quality": "Qualität",
       "balanced": "Ausgewogen",
+      "speed": "Geschwindigkeit",
       "performance": "Leistung",
       "lowLatency": "Niedrige Latenz"
     },

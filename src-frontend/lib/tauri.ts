@@ -28,6 +28,9 @@ export const api = {
     getActiveCount: () => invoke<number>('get_active_stream_count'),
     isGroupStreaming: (groupId: string) => invoke<boolean>('is_group_streaming', { groupId }),
     getActiveGroupIds: () => invoke<string[]>('get_active_group_ids'),
+    toggleTarget: (targetId: string, enabled: boolean, group: OutputGroup, incomingUrl: string) =>
+      invoke<number>('toggle_stream_target', { targetId, enabled, group, incomingUrl }),
+    isTargetDisabled: (targetId: string) => invoke<boolean>('is_target_disabled', { targetId }),
   },
   system: {
     getEncoders: () => invoke<Encoders>('get_encoders'),

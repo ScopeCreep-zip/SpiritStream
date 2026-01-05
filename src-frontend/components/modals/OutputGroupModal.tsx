@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
@@ -65,8 +65,32 @@ const PRESET_VALUES = [
   'veryslow',
 ];
 
+const AMF_PRESET_VALUES = ['quality', 'balanced', 'speed'];
+
 // Profile option values
 const PROFILE_VALUES = ['baseline', 'main', 'high'];
+
+const getPresetValues = (codec: string): string[] => {
+  const normalized = codec.toLowerCase();
+  if (normalized === 'libx264' || normalized === 'libx265' || normalized.includes('nvenc')) {
+    return PRESET_VALUES;
+  }
+  if (normalized.includes('amf')) {
+    return AMF_PRESET_VALUES;
+  }
+  return [];
+};
+
+const getDefaultPreset = (codec: string, presetValues: string[]): string => {
+  const normalized = codec.toLowerCase();
+  if (normalized.includes('amf')) {
+    return 'balanced';
+  }
+  if (presetValues.includes('veryfast')) {
+    return 'veryfast';
+  }
+  return presetValues[0] || '';
+};
 
 const defaultFormData: FormData = {
   name: '',
@@ -171,6 +195,12 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
     return { value: enc, label };
   });
 
+  const presetValues = useMemo(
+    () => getPresetValues(formData.videoCodec),
+    [formData.videoCodec]
+  );
+  const presetSupported = presetValues.length > 0;
+
   // Create translated options arrays
   const resolutionOptions: SelectOption[] = RESOLUTION_VALUES.map((value) => ({
     value,
@@ -202,12 +232,14 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
     label: value.toUpperCase(),
   }));
 
-  const presetOptions: SelectOption[] = PRESET_VALUES.map((value) => ({
-    value,
-    label: tDynamic(`encoder.presets.${value}`, {
-      defaultValue: value.charAt(0).toUpperCase() + value.slice(1),
-    }),
-  }));
+  const presetOptions: SelectOption[] = presetSupported
+    ? presetValues.map((value) => ({
+        value,
+        label: tDynamic(`encoder.presets.${value}`, {
+          defaultValue: value.charAt(0).toUpperCase() + value.slice(1),
+        }),
+      }))
+    : [];
 
   const profileOptions: SelectOption[] = PROFILE_VALUES.map((value) => ({
     value,
@@ -230,6 +262,20 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
     return Object.keys(newErrors).length === 0;
   };
 
+  useEffect(() => {
+    if (!presetSupported) {
+      if (formData.preset) {
+        setFormData((prev) => ({ ...prev, preset: '' }));
+      }
+      return;
+    }
+
+    if (!presetValues.includes(formData.preset)) {
+      const nextPreset = getDefaultPreset(formData.videoCodec, presetValues);
+      setFormData((prev) => ({ ...prev, preset: nextPreset }));
+    }
+  }, [presetSupported, presetValues, formData.preset, formData.videoCodec]);
+
   const handleSave = async () => {
     if (!validate()) return;
 
@@ -245,7 +291,7 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
         height,
         fps: parseInt(formData.fps),
         bitrate: `${formData.videoBitrate}k`,
-        preset: formData.preset,
+        preset: presetSupported && formData.preset ? formData.preset : undefined,
         profile: formData.profile,
       };
 
@@ -416,7 +462,21 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
             value={formData.preset}
             onChange={handleChange('preset')}
             options={presetOptions}
+            disabled={!presetSupported}
           />
+          {!presetSupported && (
+            <div
+              style={{
+                marginTop: '6px',
+                fontSize: '0.75rem',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              {tDynamic('encoder.presetUnsupported', {
+                defaultValue: 'Presets are not available for this encoder.',
+              })}
+            </div>
+          )}
         </div>
 
         {/* Audio Settings Section */}

@@ -168,6 +168,7 @@
     "presets": {
       "quality": "品質",
       "balanced": "バランス",
+      "speed": "速度",
       "performance": "パフォーマンス",
       "lowLatency": "低遅延"
     },

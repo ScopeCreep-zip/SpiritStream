@@ -71,3 +71,34 @@ pub fn get_active_group_ids(
 ) -> Result<Vec<String>, String> {
     Ok(ffmpeg_handler.get_active_group_ids())
 }
+
+/// Toggle a specific stream target on/off
+/// This will restart the parent output group with the updated target list
+#[tauri::command]
+pub fn toggle_stream_target(
+    app: AppHandle,
+    target_id: String,
+    enabled: bool,
+    group: OutputGroup,
+    incoming_url: String,
+    ffmpeg_handler: State<'_, FFmpegHandler>
+) -> Result<u32, String> {
+    // Update the disabled targets set
+    if enabled {
+        ffmpeg_handler.enable_target(&target_id);
+    } else {
+        ffmpeg_handler.disable_target(&target_id);
+    }
+
+    // Restart the group with the updated target list
+    ffmpeg_handler.restart_group(&group.id, &group, &incoming_url, &app)
+}
+
+/// Check if a specific stream target is currently disabled
+#[tauri::command]
+pub fn is_target_disabled(
+    target_id: String,
+    ffmpeg_handler: State<'_, FFmpegHandler>
+) -> Result<bool, String> {
+    Ok(ffmpeg_handler.is_target_disabled(&target_id))
+}

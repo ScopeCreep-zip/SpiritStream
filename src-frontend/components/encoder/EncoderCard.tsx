@@ -53,6 +53,10 @@ function getPresetLabel(preset: string | undefined): string {
     slow: 'Slow',
     slower: 'Slower',
     veryslow: 'Very Slow',
+    quality: 'Quality',
+    balanced: 'Balanced',
+    speed: 'Speed',
+    performance: 'Performance',
     // NVENC presets
     p1: 'P1 (Fastest)',
     p2: 'P2',

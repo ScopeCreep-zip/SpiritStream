@@ -42,6 +42,7 @@ interface StreamState {
   stopGroup: (groupId: string) => Promise<void>;
   startAllGroups: (groups: OutputGroup[], incomingUrl: string) => Promise<void>;
   stopAllGroups: () => Promise<void>;
+  toggleTargetLive: (targetId: string, enabled: boolean, group: OutputGroup, incomingUrl: string) => Promise<void>;
 
   // Backend sync actions
   syncWithBackend: () => Promise<void>;
@@ -156,41 +157,24 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     }
   },
 
-  // Start all output groups (respects enabled/disabled targets)
+  // Start all output groups
+  // Backend handles filtering disabled targets via disabled_targets set
   startAllGroups: async (groups, incomingUrl) => {
     set({ globalStatus: 'connecting', error: null });
-    const enabledTargets = get().enabledTargets;
 
     try {
-      let startedAny = false;
-
       for (const group of groups) {
-        // Filter to only enabled targets
-        const filteredTargets = group.streamTargets.filter((target) =>
-          enabledTargets.has(target.id)
-        );
-
-        // Skip groups with no enabled targets
-        if (filteredTargets.length === 0) {
+        // Skip groups with no targets at all
+        if (group.streamTargets.length === 0) {
           continue;
         }
 
-        // Create a modified group with only enabled targets
-        const filteredGroup = {
-          ...group,
-          streamTargets: filteredTargets,
-        };
-
-        await api.stream.start(filteredGroup, incomingUrl);
+        // Send all targets - backend will filter disabled ones
+        await api.stream.start(group, incomingUrl);
 
         const activeGroups = new Set(get().activeGroups);
         activeGroups.add(group.id);
         set({ activeGroups });
-        startedAny = true;
-      }
-
-      if (!startedAny) {
-        throw new Error('No enabled targets to stream to. Enable at least one target.');
       }
 
       set({
@@ -218,6 +202,27 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       });
     } catch (error) {
       set({ error: String(error) });
+    }
+  },
+
+  // Toggle a target on/off during live streaming
+  // This will restart the parent output group with the updated target list
+  toggleTargetLive: async (targetId, enabled, group, incomingUrl) => {
+    try {
+      // Call backend to toggle target and restart group
+      await api.stream.toggleTarget(targetId, enabled, group, incomingUrl);
+
+      // Update frontend state
+      const enabledTargets = new Set(get().enabledTargets);
+      if (enabled) {
+        enabledTargets.add(targetId);
+      } else {
+        enabledTargets.delete(targetId);
+      }
+      set({ enabledTargets });
+    } catch (error) {
+      set({ error: String(error) });
+      throw error; // Re-throw so UI can catch it
     }
   },
 

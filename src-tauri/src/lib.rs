@@ -89,6 +89,8 @@ pub fn run() {
             commands::get_active_stream_count,
             commands::is_group_streaming,
             commands::get_active_group_ids,
+            commands::toggle_stream_target,
+            commands::is_target_disabled,
             // System commands
             commands::get_encoders,
             commands::test_ffmpeg,

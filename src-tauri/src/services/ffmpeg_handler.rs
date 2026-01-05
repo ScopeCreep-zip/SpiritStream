@@ -1,7 +1,7 @@
 // FFmpegHandler Service
 // Manages FFmpeg processes for streaming with real-time stats
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -18,13 +18,26 @@ struct ProcessInfo {
     group_id: String,
 }
 
+/// FFmpeg relay process for shared ingest
+struct RelayProcess {
+    child: Child,
+    incoming_url: String,
+}
+
 /// Manages FFmpeg streaming processes
 pub struct FFmpegHandler {
     ffmpeg_path: String,
     processes: Arc<Mutex<HashMap<String, ProcessInfo>>>,
+    disabled_targets: Arc<Mutex<HashSet<String>>>,
+    relay: Arc<Mutex<Option<RelayProcess>>>,
 }
 
 impl FFmpegHandler {
+    // Multicast relay so multiple group processes can receive the same stream
+    const RELAY_UDP_OUT: &'static str = "udp://239.255.0.1:5000?ttl=1&pkt_size=1316";
+    const RELAY_UDP_IN: &'static str =
+        "udp://@239.255.0.1:5000?reuse=1&fifo_size=20000&overrun_nonfatal=1";
+
     /// Create FFmpegHandler with optional custom FFmpeg path from settings
     /// Falls back to auto-discovery if custom path is empty or invalid
     pub fn new_with_custom_path(app_data_dir: PathBuf, custom_path: Option<String>) -> Self {
@@ -42,6 +55,8 @@ impl FFmpegHandler {
         Self {
             ffmpeg_path,
             processes: Arc::new(Mutex::new(HashMap::new())),
+            disabled_targets: Arc::new(Mutex::new(HashSet::new())),
+            relay: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -50,6 +65,8 @@ impl FFmpegHandler {
         Self {
             ffmpeg_path: Self::find_ffmpeg(),
             processes: Arc::new(Mutex::new(HashMap::new())),
+            disabled_targets: Arc::new(Mutex::new(HashSet::new())),
+            relay: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -73,6 +90,57 @@ impl FFmpegHandler {
         }
 
         url
+    }
+
+    fn redact_rtmp_url(url: &str) -> String {
+        if !(url.starts_with("rtmp://") || url.starts_with("rtmps://")) {
+            return url.to_string();
+        }
+
+        let (scheme, rest) = match url.split_once("://") {
+            Some(parts) => parts,
+            None => return url.to_string(),
+        };
+
+        let (host, path) = match rest.split_once('/') {
+            Some(parts) => parts,
+            None => return url.to_string(),
+        };
+
+        let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+        if segments.len() < 2 {
+            return url.to_string();
+        }
+
+        format!("{scheme}://{host}/{}/***", segments[0])
+    }
+
+    fn sanitize_arg(arg: &str) -> String {
+        if !(arg.contains("rtmp://") || arg.contains("rtmps://")) {
+            return arg.to_string();
+        }
+
+        let mut parts = Vec::new();
+        for segment in arg.split('|') {
+            let redacted = if let Some(pos) = segment.find("rtmp://") {
+                let prefix = &segment[..pos];
+                let url = &segment[pos..];
+                format!("{prefix}{}", Self::redact_rtmp_url(url))
+            } else if let Some(pos) = segment.find("rtmps://") {
+                let prefix = &segment[..pos];
+                let url = &segment[pos..];
+                format!("{prefix}{}", Self::redact_rtmp_url(url))
+            } else {
+                segment.to_string()
+            };
+            parts.push(redacted);
+        }
+
+        parts.join("|")
+    }
+
+    fn sanitize_ffmpeg_args(args: &[String]) -> Vec<String> {
+        args.iter().map(|arg| Self::sanitize_arg(arg)).collect()
     }
 
     /// Find FFmpeg at the system install location (where we download to)
@@ -106,7 +174,16 @@ impl FFmpegHandler {
         incoming_url: &str,
         app_handle: &AppHandle<R>,
     ) -> Result<u32, String> {
-        let args = self.build_args(group, incoming_url);
+        self.ensure_relay_running(incoming_url)?;
+
+        let args = self.build_args(group);
+        let sanitized = Self::sanitize_ffmpeg_args(&args);
+        log::info!(
+            "Starting FFmpeg group {}: {} {}",
+            group.id,
+            self.ffmpeg_path,
+            sanitized.join(" ")
+        );
 
         let mut child = Command::new(&self.ffmpeg_path)
             .args(&args)
@@ -137,6 +214,7 @@ impl FFmpegHandler {
         // Spawn background thread to read stderr and emit stats
         let app_handle_clone = app_handle.clone();
         let processes_clone = Arc::clone(&self.processes);
+        let relay_clone = Arc::clone(&self.relay);
         let group_id_clone = group_id.clone();
 
         thread::spawn(move || {
@@ -145,6 +223,7 @@ impl FFmpegHandler {
                 group_id_clone,
                 app_handle_clone,
                 processes_clone,
+                relay_clone,
             );
         });
 
@@ -157,12 +236,14 @@ impl FFmpegHandler {
         group_id: String,
         app_handle: AppHandle<R>,
         processes: Arc<Mutex<HashMap<String, ProcessInfo>>>,
+        relay: Arc<Mutex<Option<RelayProcess>>>,
     ) {
         let reader = BufReader::new(stderr);
         let mut stats = StreamStats::new(group_id.clone());
         let mut last_emit = Instant::now();
         let emit_interval = Duration::from_millis(1000); // Emit every second
         let mut was_intentionally_stopped = false;
+        let mut recent_lines: VecDeque<String> = VecDeque::with_capacity(40);
 
         for line_result in reader.lines() {
             // Check if process is still running (was it intentionally stopped?)
@@ -177,6 +258,12 @@ impl FFmpegHandler {
             }
 
             if let Ok(line) = line_result {
+                let sanitized_line = Self::sanitize_arg(&line);
+                if recent_lines.len() == 40 {
+                    recent_lines.pop_front();
+                }
+                recent_lines.push_back(sanitized_line.clone());
+
                 // Parse stats from FFmpeg output
                 if stats.parse_line(&line) {
                     // Emit stats at most every second
@@ -195,8 +282,12 @@ impl FFmpegHandler {
                 }
 
                 // Only log errors and warnings (not frame stats which are too verbose)
-                if line.contains("[error]") || line.contains("[warning]") {
-                    log::warn!("[FFmpeg:{group_id}] {line}");
+                if line.contains("[error]")
+                    || line.contains("[warning]")
+                    || line.contains("Error")
+                    || line.contains("error")
+                {
+                    log::warn!("[FFmpeg:{group_id}] {sanitized_line}");
                 }
             }
         }
@@ -245,6 +336,12 @@ impl FFmpegHandler {
 
             if let Some(error) = error_message {
                 log::warn!("[FFmpeg:{group_id}] Stream error: {error}");
+                if !recent_lines.is_empty() {
+                    log::warn!("[FFmpeg:{group_id}] Last stderr lines:");
+                    for entry in recent_lines {
+                        log::warn!("[FFmpeg:{group_id}] {entry}");
+                    }
+                }
                 // Emit stream_error event with group_id and error message
                 let _ = app_handle.emit("stream_error", serde_json::json!({
                     "groupId": group_id,
@@ -254,17 +351,37 @@ impl FFmpegHandler {
                 // Clean exit (input ended)
                 let _ = app_handle.emit("stream_ended", &group_id);
             }
+
+            let should_stop_relay = processes.lock()
+                .map(|procs| procs.is_empty())
+                .unwrap_or(false);
+            if should_stop_relay {
+                if let Ok(mut relay_guard) = relay.lock() {
+                    if let Some(mut relay_proc) = relay_guard.take() {
+                        let _ = relay_proc.child.kill();
+                        let _ = relay_proc.child.wait();
+                    }
+                }
+            }
         }
     }
 
     /// Stop streaming for an output group
     pub fn stop(&self, group_id: &str) -> Result<(), String> {
-        if let Some(mut info) = self.processes.lock()
-            .map_err(|e| format!("Lock poisoned: {e}"))?
-            .remove(group_id)
-        {
+        let (removed, should_stop_relay) = {
+            let mut processes = self.processes.lock()
+                .map_err(|e| format!("Lock poisoned: {e}"))?;
+            let removed = processes.remove(group_id);
+            let should_stop_relay = processes.is_empty();
+            (removed, should_stop_relay)
+        };
+
+        if let Some(mut info) = removed {
             info.child.kill().map_err(|e| format!("Failed to kill FFmpeg: {e}"))?;
             info.child.wait().map_err(|e| format!("Failed to wait for FFmpeg: {e}"))?;
+        }
+        if should_stop_relay {
+            self.stop_relay();
         }
         Ok(())
     }
@@ -277,6 +394,7 @@ impl FFmpegHandler {
             let _ = info.child.kill();
             let _ = info.child.wait();
         }
+        self.stop_relay();
         Ok(())
     }
 
@@ -299,6 +417,106 @@ impl FFmpegHandler {
         self.processes.lock()
             .map(|procs| procs.values().map(|info| info.group_id.clone()).collect())
             .unwrap_or_default()
+    }
+
+    /// Enable a specific stream target (removes from disabled set)
+    pub fn enable_target(&self, target_id: &str) {
+        self.disabled_targets.lock().unwrap().remove(target_id);
+    }
+
+    /// Disable a specific stream target (adds to disabled set)
+    pub fn disable_target(&self, target_id: &str) {
+        self.disabled_targets.lock().unwrap().insert(target_id.to_string());
+    }
+
+    /// Check if a target is currently disabled
+    pub fn is_target_disabled(&self, target_id: &str) -> bool {
+        self.disabled_targets.lock().unwrap().contains(target_id)
+    }
+
+    /// Ensure relay process is running for shared ingest
+    fn ensure_relay_running(&self, incoming_url: &str) -> Result<(), String> {
+        let mut relay_guard = self.relay.lock()
+            .map_err(|e| format!("Lock poisoned: {e}"))?;
+
+        if let Some(relay) = relay_guard.as_mut() {
+            if let Ok(Some(_)) = relay.child.try_wait() {
+                *relay_guard = None;
+            }
+        }
+
+        if let Some(relay) = relay_guard.as_ref() {
+            if relay.incoming_url != incoming_url {
+                return Err("Incoming URL differs from active relay input".to_string());
+            }
+            return Ok(());
+        }
+
+        let args = self.build_relay_args(incoming_url);
+        let sanitized = Self::sanitize_ffmpeg_args(&args);
+        log::info!(
+            "Starting FFmpeg relay: {} {}",
+            self.ffmpeg_path,
+            sanitized.join(" ")
+        );
+        let mut child = Command::new(&self.ffmpeg_path)
+            .args(&args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Failed to start FFmpeg relay: {e}"))?;
+
+        if let Some(stderr) = child.stderr.take() {
+            thread::spawn(move || {
+                let reader = BufReader::new(stderr);
+                for line_result in reader.lines() {
+                    if let Ok(line) = line_result {
+                        if line.contains("[error]") || line.contains("[warning]") {
+                            log::warn!("[FFmpeg:relay] {line}");
+                        }
+                    }
+                }
+            });
+        }
+
+        *relay_guard = Some(RelayProcess {
+            child,
+            incoming_url: incoming_url.to_string(),
+        });
+
+        Ok(())
+    }
+
+    /// Stop the relay process if running
+    fn stop_relay(&self) {
+        let mut relay_guard = match self.relay.lock() {
+            Ok(guard) => guard,
+            Err(_) => return,
+        };
+
+        if let Some(mut relay) = relay_guard.take() {
+            let _ = relay.child.kill();
+            let _ = relay.child.wait();
+        }
+    }
+
+    /// Restart a specific group (used after toggling targets)
+    /// This stops the group and restarts it with the updated target list
+    pub fn restart_group<R: tauri::Runtime>(
+        &self,
+        group_id: &str,
+        group: &OutputGroup,
+        incoming_url: &str,
+        app_handle: &AppHandle<R>,
+    ) -> Result<u32, String> {
+        // Stop the group if it's running
+        if self.is_streaming(group_id) {
+            self.stop(group_id)?;
+        }
+
+        // Start with updated target list (disabled targets will be filtered out)
+        self.start(group, incoming_url, app_handle)
     }
 
     /// Resolve stream key - supports ${ENV_VAR} syntax
@@ -325,9 +543,38 @@ impl FFmpegHandler {
         }
     }
 
+    /// Build FFmpeg arguments for the shared relay process
+    fn build_relay_args(&self, incoming_url: &str) -> Vec<String> {
+        let mut args = Vec::new();
+
+        args.push("-listen".to_string());
+        args.push("1".to_string());
+        args.push("-i".to_string());
+        args.push(incoming_url.to_string());
+        args.push("-c:v".to_string());
+        args.push("copy".to_string());
+        args.push("-c:a".to_string());
+        args.push("copy".to_string());
+        args.push("-f".to_string());
+        args.push("mpegts".to_string());
+        args.push(Self::RELAY_UDP_OUT.to_string());
+
+        args
+    }
+
     /// Build FFmpeg arguments for an output group
-    fn build_args(&self, group: &OutputGroup, incoming_url: &str) -> Vec<String> {
-        let mut args = vec!["-listen".to_string(), "1".to_string(), "-i".to_string(), incoming_url.to_string()];
+    ///
+    /// Groups read from the shared UDP relay so they can restart independently.
+    fn build_args(&self, group: &OutputGroup) -> Vec<String> {
+        let mut args = Vec::new();
+
+        // Input configuration (shared relay)
+        args.push("-fflags".to_string());
+        args.push("nobuffer".to_string());
+        args.push("-flags".to_string());
+        args.push("low_delay".to_string());
+        args.push("-i".to_string());
+        args.push(Self::RELAY_UDP_IN.to_string());
 
         // Determine if we should use stream copy (passthrough mode)
         // When both video and audio codecs are set to "copy", FFmpeg acts as a pure
@@ -352,18 +599,69 @@ impl FFmpegHandler {
             args.push("-ar".to_string()); args.push(group.audio.sample_rate.to_string());
             // Add video encoder preset if specified
             if let Some(preset) = &group.video.preset {
-                let ffmpeg_preset = match preset.as_str() {
-                    "quality" => "slow",
-                    "balanced" => "medium",
-                    "performance" => "fast",
-                    "low_latency" | "low-latency" => "ultrafast",
-                    _ => preset.as_str(),
-                };
-                args.push("-preset".to_string()); args.push(ffmpeg_preset.to_string());
+                let encoder = group.video.codec.as_str();
+                if encoder.contains("amf") {
+                    let mut amf_quality: Option<&str> = None;
+                    let mut amf_usage: Option<&str> = None;
+                    match preset.as_str() {
+                        "quality" => amf_quality = Some("quality"),
+                        "balanced" => amf_quality = Some("balanced"),
+                        "speed" => amf_quality = Some("speed"),
+                        "performance" | "fast" | "faster" | "veryfast" | "superfast" | "ultrafast" => {
+                            amf_quality = Some("speed");
+                        }
+                        "medium" => amf_quality = Some("balanced"),
+                        "slow" | "slower" | "veryslow" => amf_quality = Some("quality"),
+                        "low_latency" | "low-latency" | "lowLatency" => {
+                            amf_quality = Some("speed");
+                            amf_usage = Some("lowlatency");
+                        }
+                        _ => {}
+                    }
+                    if let Some(quality) = amf_quality {
+                        args.push("-quality".to_string()); args.push(quality.to_string());
+                    }
+                    if let Some(usage) = amf_usage {
+                        args.push("-usage".to_string()); args.push(usage.to_string());
+                    }
+                } else {
+                    let supports_preset = encoder == "libx264"
+                        || encoder == "libx265"
+                        || encoder.contains("nvenc");
+                    if supports_preset {
+                        let ffmpeg_preset = match preset.as_str() {
+                            "quality" => "slow",
+                            "balanced" => "medium",
+                            "performance" => "fast",
+                            "low_latency" | "low-latency" | "lowLatency" => "ultrafast",
+                            _ => preset.as_str(),
+                        };
+                        args.push("-preset".to_string()); args.push(ffmpeg_preset.to_string());
+                    }
+                }
             }
             // Add H.264 profile if specified
             if let Some(profile) = &group.video.profile {
                 args.push("-profile:v".to_string()); args.push(profile.clone());
+            }
+        }
+
+        if group.container.format == "flv" {
+            let force_flv_video_tag = use_stream_copy || group.video.codec.contains("264");
+            if force_flv_video_tag {
+                args.push("-tag:v".to_string());
+                args.push("7".to_string());
+            }
+
+            let force_flv_audio_tag = use_stream_copy || group.audio.codec.contains("aac");
+            if force_flv_audio_tag {
+                args.push("-tag:a".to_string());
+                args.push("10".to_string());
+            }
+
+            if use_stream_copy {
+                args.push("-bsf:a".to_string());
+                args.push("aac_adtstoasc".to_string());
             }
         }
 
@@ -375,12 +673,35 @@ impl FFmpegHandler {
         args.push("-progress".to_string()); args.push("pipe:2".to_string());
         args.push("-stats".to_string());
 
-        // Add output targets
+        // Add output targets (skip disabled ones)
+        let disabled = self.disabled_targets.lock().unwrap();
+        let mut outputs: Vec<String> = Vec::new();
         for target in &group.stream_targets {
+            // Skip targets that have been disabled via toggle_target
+            if disabled.contains(&target.id) {
+                continue;
+            }
+
             let normalized_url = Self::normalize_rtmp_url(&target.url);
             let resolved_key = Self::resolve_stream_key(&target.stream_key);
-            args.push("-f".to_string()); args.push(group.container.format.clone());
-            args.push(format!("{normalized_url}/{resolved_key}"));
+            outputs.push(format!("{normalized_url}/{resolved_key}"));
+        }
+
+        if outputs.len() <= 1 {
+            if let Some(output) = outputs.first() {
+                args.push("-f".to_string());
+                args.push(group.container.format.clone());
+                args.push(output.clone());
+            }
+        } else {
+            let tee_outputs = outputs
+                .iter()
+                .map(|output| format!("[f={}:onfail=ignore]{output}", group.container.format))
+                .collect::<Vec<_>>()
+                .join("|");
+            args.push("-f".to_string());
+            args.push("tee".to_string());
+            args.push(tee_outputs);
         }
 
         args
