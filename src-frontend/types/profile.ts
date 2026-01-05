@@ -117,7 +117,7 @@ export const PLATFORMS: Record<
     abbreviation: 'TW',
     color: '#9146FF',
     textColor: '#FFFFFF',
-    defaultServer: 'rtmp://live.twitch.tv/app',
+    defaultServer: 'rtmp://ingest.global-contribute.live-video.net/app',
   },
   kick: {
     name: 'Kick',
