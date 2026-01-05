@@ -2,7 +2,7 @@
 // Manages FFmpeg processes for streaming with real-time stats
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -28,6 +28,7 @@ struct RelayProcess {
 pub struct FFmpegHandler {
     ffmpeg_path: String,
     processes: Arc<Mutex<HashMap<String, ProcessInfo>>>,
+    stopping_groups: Arc<Mutex<HashSet<String>>>,
     disabled_targets: Arc<Mutex<HashSet<String>>>,
     relay: Arc<Mutex<Option<RelayProcess>>>,
 }
@@ -55,6 +56,7 @@ impl FFmpegHandler {
         Self {
             ffmpeg_path,
             processes: Arc::new(Mutex::new(HashMap::new())),
+            stopping_groups: Arc::new(Mutex::new(HashSet::new())),
             disabled_targets: Arc::new(Mutex::new(HashSet::new())),
             relay: Arc::new(Mutex::new(None)),
         }
@@ -65,6 +67,7 @@ impl FFmpegHandler {
         Self {
             ffmpeg_path: Self::find_ffmpeg(),
             processes: Arc::new(Mutex::new(HashMap::new())),
+            stopping_groups: Arc::new(Mutex::new(HashSet::new())),
             disabled_targets: Arc::new(Mutex::new(HashSet::new())),
             relay: Arc::new(Mutex::new(None)),
         }
@@ -187,7 +190,7 @@ impl FFmpegHandler {
 
         let mut child = Command::new(&self.ffmpeg_path)
             .args(&args)
-            .stdin(Stdio::null())
+            .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .spawn()
@@ -215,6 +218,7 @@ impl FFmpegHandler {
         let app_handle_clone = app_handle.clone();
         let processes_clone = Arc::clone(&self.processes);
         let relay_clone = Arc::clone(&self.relay);
+        let stopping_clone = Arc::clone(&self.stopping_groups);
         let group_id_clone = group_id.clone();
 
         thread::spawn(move || {
@@ -223,6 +227,7 @@ impl FFmpegHandler {
                 group_id_clone,
                 app_handle_clone,
                 processes_clone,
+                stopping_clone,
                 relay_clone,
             );
         });
@@ -236,6 +241,7 @@ impl FFmpegHandler {
         group_id: String,
         app_handle: AppHandle<R>,
         processes: Arc<Mutex<HashMap<String, ProcessInfo>>>,
+        stopping_groups: Arc<Mutex<HashSet<String>>>,
         relay: Arc<Mutex<Option<RelayProcess>>>,
     ) {
         let reader = BufReader::new(stderr);
@@ -248,6 +254,12 @@ impl FFmpegHandler {
         for line_result in reader.lines() {
             // Check if process is still running (was it intentionally stopped?)
             {
+                if let Ok(stopping) = stopping_groups.lock() {
+                    if stopping.contains(&group_id) {
+                        was_intentionally_stopped = true;
+                        break;
+                    }
+                }
                 if let Ok(procs) = processes.lock() {
                     if !procs.contains_key(&group_id) {
                         // Process was removed by stop() - intentional stop
@@ -294,6 +306,9 @@ impl FFmpegHandler {
 
         // Process ended - check if it was intentional or a crash
         if was_intentionally_stopped {
+            if let Ok(mut stopping) = stopping_groups.lock() {
+                stopping.remove(&group_id);
+            }
             // Intentional stop via stop() - process already removed
             let _ = app_handle.emit("stream_ended", &group_id);
         } else {
@@ -315,6 +330,13 @@ impl FFmpegHandler {
                     None
                 }
             };
+
+            if let Ok(mut stopping) = stopping_groups.lock() {
+                if stopping.remove(&group_id) {
+                    let _ = app_handle.emit("stream_ended", &group_id);
+                    return;
+                }
+            }
 
             // Determine if this was a crash or normal exit
             let error_message = match exit_status {
@@ -368,6 +390,9 @@ impl FFmpegHandler {
 
     /// Stop streaming for an output group
     pub fn stop(&self, group_id: &str) -> Result<(), String> {
+        if let Ok(mut stopping) = self.stopping_groups.lock() {
+            stopping.insert(group_id.to_string());
+        }
         let (removed, should_stop_relay) = {
             let mut processes = self.processes.lock()
                 .map_err(|e| format!("Lock poisoned: {e}"))?;
@@ -377,8 +402,7 @@ impl FFmpegHandler {
         };
 
         if let Some(mut info) = removed {
-            info.child.kill().map_err(|e| format!("Failed to kill FFmpeg: {e}"))?;
-            info.child.wait().map_err(|e| format!("Failed to wait for FFmpeg: {e}"))?;
+            self.stop_child(&mut info.child);
         }
         if should_stop_relay {
             self.stop_relay();
@@ -390,9 +414,11 @@ impl FFmpegHandler {
     pub fn stop_all(&self) -> Result<(), String> {
         let mut processes = self.processes.lock()
             .map_err(|e| format!("Lock poisoned: {e}"))?;
-        for (_, mut info) in processes.drain() {
-            let _ = info.child.kill();
-            let _ = info.child.wait();
+        let mut stopping = self.stopping_groups.lock()
+            .map_err(|e| format!("Lock poisoned: {e}"))?;
+        for (group_id, mut info) in processes.drain() {
+            stopping.insert(group_id);
+            self.stop_child(&mut info.child);
         }
         self.stop_relay();
         Ok(())
@@ -499,6 +525,24 @@ impl FFmpegHandler {
             let _ = relay.child.kill();
             let _ = relay.child.wait();
         }
+    }
+
+    fn stop_child(&self, child: &mut Child) {
+        if let Some(stdin) = child.stdin.as_mut() {
+            let _ = stdin.write_all(b"q\n");
+            let _ = stdin.flush();
+        }
+
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_secs(2) {
+            if let Ok(Some(_)) = child.try_wait() {
+                return;
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+
+        let _ = child.kill();
+        let _ = child.wait();
     }
 
     /// Restart a specific group (used after toggling targets)
