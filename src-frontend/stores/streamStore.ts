@@ -94,10 +94,17 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       const activeGroups = new Set(activeGroupIds);
       const isStreaming = activeCount > 0;
 
+      if (!isStreaming) {
+        lastSamplesByGroup.clear();
+      }
+
       set({
         activeStreamCount: activeCount,
         activeGroups,
         isStreaming,
+        groupStats: isStreaming ? get().groupStats : {},
+        stats: isStreaming ? get().stats : initialStats,
+        uptime: isStreaming ? get().uptime : 0,
         globalStatus: isStreaming ? 'live' : 'offline',
       });
     } catch (error) {
@@ -206,6 +213,8 @@ export const useStreamStore = create<StreamState>((set, get) => ({
         isStreaming: false,
         globalStatus: 'offline',
         uptime: 0,
+        groupStats: {},
+        stats: initialStats,
       });
     } catch (error) {
       set({ error: String(error) });
@@ -321,10 +330,21 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     const groupStats = { ...get().groupStats };
     delete groupStats[groupId];
 
+    const allStats = Object.values(groupStats);
+    const totalBitrate = allStats.reduce((sum, s) => sum + s.bitrate, 0);
+    const totalDropped = allStats.reduce((sum, s) => sum + s.droppedFrames, 0);
+    const maxUptime = Math.max(...allStats.map((s) => s.uptime), 0);
     const isStreaming = activeGroups.size > 0;
     set({
       activeGroups,
       groupStats,
+      uptime: maxUptime,
+      stats: {
+        ...get().stats,
+        totalBitrate,
+        droppedFrames: totalDropped,
+        uptime: maxUptime,
+      },
       isStreaming,
       globalStatus: isStreaming ? 'live' : 'offline',
     });
@@ -339,10 +359,21 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     const groupStats = { ...get().groupStats };
     delete groupStats[groupId];
 
+    const allStats = Object.values(groupStats);
+    const totalBitrate = allStats.reduce((sum, s) => sum + s.bitrate, 0);
+    const totalDropped = allStats.reduce((sum, s) => sum + s.droppedFrames, 0);
+    const maxUptime = Math.max(...allStats.map((s) => s.uptime), 0);
     const isStreaming = activeGroups.size > 0;
     set({
       activeGroups,
       groupStats,
+      uptime: maxUptime,
+      stats: {
+        ...get().stats,
+        totalBitrate,
+        droppedFrames: totalDropped,
+        uptime: maxUptime,
+      },
       isStreaming,
       globalStatus: isStreaming ? 'live' : 'error',
       error: `Stream error (${groupId}): ${error}`,
