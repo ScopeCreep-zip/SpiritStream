@@ -6,23 +6,24 @@
 
 **SpiritStream** is a desktop streaming application undergoing a complete architectural overhaul. The application manages RTMP stream configurations, handles FFmpeg-based stream processing, and provides a modern UI for multi-output streaming with profile management.
 
-**Repository**: https://github.com/billboyles/spiritstream
-**Current Branch**: tauri-shift (active migration)
-**Migration Status**: Full lift-and-shift in progress — NO backwards compatibility
+**Repository**: https://github.com/ScopeCreep-zip/SpiritStream
+**Current Branch**: cleanup-release-cand
+**Migration Status**: ✅ **COMPLETE** — Electron fully removed, Tauri 2.x production-ready
 
 ## New Architecture (Target)
 
 ### Technology Stack
 
-| Layer | Current | Target |
-|-------|---------|--------|
-| Desktop Framework | Electron | **Tauri 2.x** |
-| Backend Language | TypeScript/Node.js | **Rust** |
-| Frontend Framework | Vanilla JS | **React 18+** |
-| Styling | Plain CSS | **Tailwind CSS v4** |
-| Build Tool | electron-builder | **Vite + Tauri** |
-| State Management | Local state | **Zustand or Jotai** |
-| Type Safety | TypeScript | **TypeScript + Rust** |
+| Layer | Technology |
+|-------|------------|
+| Desktop Framework | **Tauri 2.x** |
+| Backend Language | **Rust** |
+| Frontend Framework | **React 18+** |
+| Styling | **Tailwind CSS v4** |
+| Build Tool | **Vite + Tauri** |
+| State Management | **Zustand** |
+| Internationalization | **i18next** (5 languages) |
+| Type Safety | **TypeScript + Rust** |
 
 ### Design System
 
@@ -334,8 +335,9 @@ cargo clippy             # Rust linting
 ## Extended Documentation
 
 @.claude/claudedocs/index.md
+@.claude/claudedocs/migration-status.md
+@.claude/claudedocs/passthrough-architecture.md
 @.claude/claudedocs/architecture-new.md
-@.claude/claudedocs/tauri-migration.md
 @.claude/claudedocs/component-library.md
 @.claude/claudedocs/design-system.md
 @.claude/claudedocs/ui-specification.md

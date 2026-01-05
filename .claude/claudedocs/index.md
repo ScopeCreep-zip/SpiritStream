@@ -1,6 +1,6 @@
-# MagillaStream Documentation Index
+# SpiritStream Documentation Index
 
-Welcome to the MagillaStream documentation. This index provides quick access to all available documentation.
+Welcome to the SpiritStream documentation. This index provides quick access to all available documentation.
 
 ## Quick Start
 
@@ -8,9 +8,9 @@ Welcome to the MagillaStream documentation. This index provides quick access to 
 
 ## Current Status
 
-**Branch**: `tauri-shift`
-**Migration**: Full lift-and-shift in progress (Electron → Tauri)
-**Compatibility**: NO backwards compatibility
+**Branch**: `cleanup-release-cand`
+**Migration**: ✅ **COMPLETE** (Electron fully removed)
+**Production Status**: Tauri 2.x production-ready
 
 ## New Architecture (Target)
 
@@ -35,8 +35,12 @@ Welcome to the MagillaStream documentation. This index provides quick access to 
 
 | Document | Description |
 |----------|-------------|
-| [architecture-new.md](./architecture-new.md) | Target architecture with Tauri + React |
-| [tauri-migration.md](./tauri-migration.md) | Complete migration plan and checklist |
+| [migration-status.md](./migration-status.md) | ✅ **Migration complete status** |
+| [passthrough-architecture.md](./passthrough-architecture.md) | Passthrough-first design with immutable default group |
+| [architecture-new.md](./architecture-new.md) | Current Tauri + React architecture |
+| [scratch/immutable-default-group.md](./scratch/immutable-default-group.md) | Default group implementation notes |
+| [scratch/passthrough-mode-changes.md](./scratch/passthrough-mode-changes.md) | Copy mode implementation |
+| [scratch/profile-encoding-removal.md](./scratch/profile-encoding-removal.md) | Profile modal simplification |
 
 ### Design System
 
@@ -49,19 +53,18 @@ Welcome to the MagillaStream documentation. This index provides quick access to 
 | [research/magillastream-complete-design-system.md](./research/magillastream-complete-design-system.md) | Full design system specification |
 | [research/magillastream-mockup.html](./research/magillastream-mockup.html) | Interactive HTML mockup |
 
-### Legacy (Electron)
+### Key Features
 
-| Document | Description |
-|----------|-------------|
-| [architecture.md](./architecture.md) | Current Electron architecture |
-| [electron-ipc.md](./electron-ipc.md) | Electron IPC patterns |
-| [models.md](./models.md) | Domain model documentation |
-| [services.md](./services.md) | Service layer documentation |
-| [frontend.md](./frontend.md) | Vanilla JS frontend |
-| [security.md](./security.md) | Security implementation |
-| [build-system.md](./build-system.md) | Electron build pipeline |
-| [ffmpeg-integration.md](./ffmpeg-integration.md) | FFmpeg process management |
-| [development-workflow.md](./development-workflow.md) | Development setup |
+| Feature | Status |
+|---------|--------|
+| Profile Management | ✅ Complete (encrypted, password-protected) |
+| Output Groups | ✅ Complete (immutable default + custom) |
+| Passthrough Mode | ✅ Default (FFmpeg copy mode) |
+| Hardware Encoders | ✅ Auto-detection (NVENC, QuickSync, AMF, VideoToolbox) |
+| Stream Targets | ✅ Complete (YouTube, Twitch, Kick, Facebook, Custom) |
+| FFmpeg Auto-Download | ✅ Complete (with version checking) |
+| i18n Support | ✅ Complete (en, de, es, fr, ja) |
+| Theme System | ✅ Complete (light/dark, purple/pink) |
 
 ## Custom Commands
 
@@ -114,14 +117,16 @@ Coding standards in `.claude/rules/`:
 | Background | `#FAFAFA` | `#0F0A14` |
 | Text | `#1F1A29` | `#F4F2F7` |
 
-## Migration Phases
+## Recent Changes (2026-01-04)
 
-1. **Setup** - Initialize Tauri, Vite, React
-2. **Frontend** - Build component library with Tailwind
-3. **Backend** - Port services to Rust
-4. **Integration** - Wire frontend to Tauri commands
-5. **Build** - Configure packaging
-6. **Cleanup** - Remove Electron code
+1. ✅ **Migration Complete** - Electron code fully removed
+2. ✅ **Passthrough Architecture** - Default groups use copy mode
+3. ✅ **Immutable Default Group** - Cannot be edited/deleted
+4. ✅ **Profile Simplification** - Removed encoding settings from profile modal
+5. ✅ **FFmpeg Enhancements** - Hardware encoder detection, auto-download
+6. ✅ **Repository Update** - Moved to ScopeCreep-zip/SpiritStream
+7. ✅ **License Update** - Changed to GPL-3.0
+8. ✅ **Windows Setup** - Added PowerShell setup script
 
 ## Key Files Reference
 
@@ -139,38 +144,52 @@ magillastream/
 └── .claude/                # Claude Code config
 ```
 
-### Current Structure (Legacy)
+### Actual Current Structure
 
 ```
-magillastream/
-├── src/
-│   ├── electron/           # Main process
-│   ├── models/             # Domain models
-│   ├── utils/              # Services
-│   └── frontend/           # Vanilla JS UI
-└── .claude/                # Claude Code config
+spiritstream/
+├── src-frontend/           # React frontend
+│   ├── components/         # UI components
+│   ├── hooks/             # Custom React hooks
+│   ├── stores/            # Zustand state management
+│   ├── lib/               # Utilities and Tauri API
+│   ├── types/             # TypeScript definitions
+│   ├── styles/            # Tailwind CSS
+│   ├── locales/           # i18n translations (5 languages)
+│   └── views/             # Page views
+├── src-tauri/             # Rust backend
+│   ├── src/
+│   │   ├── commands/      # Tauri IPC commands
+│   │   ├── services/      # Business logic
+│   │   └── models/        # Domain models
+│   └── Cargo.toml
+├── .claude/               # Claude Code config
+├── setup.sh               # Unix setup script
+└── setup.ps1              # Windows setup script
 ```
 
 ## Common Tasks
 
-### Start Migration
+### Development
 
-1. Read [tauri-migration.md](./tauri-migration.md)
-2. Install Rust and Tauri CLI
-3. Initialize Tauri project
-4. Follow phase-by-phase checklist
+```bash
+npm run dev          # Start development server
+npm run build        # Production build
+npm run typecheck    # Check TypeScript
+npm run check        # Check Rust
+npm run lint         # Run ESLint
+npm run format       # Format with Prettier
+```
 
-### Build Components
+### Adding Features
 
-1. Read [component-library.md](./component-library.md)
-2. Reference [design-system.md](./design-system.md) for tokens
-3. Use Radix UI primitives for accessibility
-4. Apply Tailwind classes with design tokens
+1. **Frontend Component**: Read [component-library.md](./component-library.md)
+2. **Tauri Command**: Define in `src-tauri/src/commands/`, register in `main.rs`
+3. **State Management**: Add to Zustand stores in `src-frontend/stores/`
+4. **i18n**: Add translations to `src-frontend/locales/*.json`
 
-### Implement Tauri Commands
+### Understanding Architecture
 
-1. Define Rust models matching TypeScript types
-2. Implement service logic
-3. Create command function with `#[tauri::command]`
-4. Register in `main.rs`
-5. Call from frontend via `invoke()`
+1. **Passthrough Mode**: Read [passthrough-architecture.md](./passthrough-architecture.md)
+2. **Output Groups**: See [scratch/immutable-default-group.md](./scratch/immutable-default-group.md)
+3. **Design System**: Reference [design-system.md](./design-system.md)
