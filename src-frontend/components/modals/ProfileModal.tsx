@@ -45,6 +45,8 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
   const { updateProfile, saveProfile, current } = useProfileStore();
   const [formData, setFormData] = useState<FormData>(defaultFormData);
   const [errors, setErrors] = useState<Partial<FormData>>({});
+  const [portConflictMessage, setPortConflictMessage] = useState<string | undefined>();
+  const [portConflictOpen, setPortConflictOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -65,6 +67,8 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
         setFormData(defaultFormData);
       }
       setErrors({});
+      setPortConflictMessage(undefined);
+      setPortConflictOpen(false);
     }
   }, [open, mode, profile]);
 
@@ -108,7 +112,10 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
   };
 
   // Validate port conflict with other profiles (Story 2.2)
-  const validatePortConflict = async (): Promise<boolean> => {
+  const validatePortConflict = async (): Promise<{
+    conflictMessage?: string;
+    errorMessage?: string;
+  }> => {
     const profileId = mode === 'edit' && profile ? profile.id : '';
     const input: RtmpInput = {
       type: 'rtmp',
@@ -119,60 +126,74 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
 
     try {
       await api.profile.validateInput(profileId, input);
-      return true;
+      return {};
     } catch (error) {
-      setErrors((prev) => ({ ...prev, port: String(error) }));
-      return false;
+      const message = String(error);
+      if (message.includes('already configured') || message.includes('already in use')) {
+        return { conflictMessage: message };
+      }
+      return { errorMessage: message };
     }
   };
 
-  const handleSave = async () => {
+  const persistProfile = async () => {
+    // Build RTMP input object
+    const input: RtmpInput = {
+      type: 'rtmp',
+      bindAddress: formData.bindAddress,
+      port: parseInt(formData.port),
+      application: formData.application,
+    };
+
+    if (mode === 'create') {
+      // Create new profile with default passthrough group
+      // The default profile factory already includes the passthrough output group
+      const newProfile = createDefaultProfile(formData.name);
+      newProfile.input = input;
+
+      // Save to backend via store (with password if enabled)
+      const password = formData.usePassword ? formData.password : undefined;
+      await api.profile.save(newProfile, password);
+      // Reload profiles to update the list
+      const { loadProfiles, loadProfile } = useProfileStore.getState();
+      await loadProfiles();
+      // Load profile (will require password if encrypted)
+      await loadProfile(newProfile.name, password);
+    } else if (mode === 'edit' && current) {
+      // Update existing profile's name and input settings only
+      // Do NOT modify output groups - those are configured separately
+      updateProfile({
+        name: formData.name,
+        input,
+      });
+
+      // Save to backend
+      await saveProfile();
+    }
+
+    onClose();
+  };
+
+  const handleSave = async (skipPortCheck: boolean = false) => {
     if (!validate()) return;
 
     setSaving(true);
     try {
-      // Validate port conflict before saving (Story 2.2)
-      const portOk = await validatePortConflict();
-      if (!portOk) {
-        setSaving(false);
-        return;
+      if (!skipPortCheck) {
+        // Validate port conflict before saving (Story 2.2)
+        const { conflictMessage, errorMessage } = await validatePortConflict();
+        if (errorMessage) {
+          setErrors((prev) => ({ ...prev, port: errorMessage }));
+          return;
+        }
+        if (conflictMessage) {
+          setPortConflictMessage(conflictMessage);
+          setPortConflictOpen(true);
+          return;
+        }
       }
 
-      // Build RTMP input object
-      const input: RtmpInput = {
-        type: 'rtmp',
-        bindAddress: formData.bindAddress,
-        port: parseInt(formData.port),
-        application: formData.application,
-      };
-
-      if (mode === 'create') {
-        // Create new profile with default passthrough group
-        // The default profile factory already includes the passthrough output group
-        const newProfile = createDefaultProfile(formData.name);
-        newProfile.input = input;
-
-        // Save to backend via store (with password if enabled)
-        const password = formData.usePassword ? formData.password : undefined;
-        await api.profile.save(newProfile, password);
-        // Reload profiles to update the list
-        const { loadProfiles, loadProfile } = useProfileStore.getState();
-        await loadProfiles();
-        // Load profile (will require password if encrypted)
-        await loadProfile(newProfile.name, password);
-      } else if (mode === 'edit' && current) {
-        // Update existing profile's name and input settings only
-        // Do NOT modify output groups - those are configured separately
-        updateProfile({
-          name: formData.name,
-          input,
-        });
-
-        // Save to backend
-        await saveProfile();
-      }
-
-      onClose();
+      await persistProfile();
     } catch (error) {
       setErrors({ name: String(error) });
     } finally {
@@ -187,21 +208,26 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
       if (errors[field]) {
         setErrors((prev) => ({ ...prev, [field]: undefined }));
       }
+      if ((field === 'bindAddress' || field === 'port') && portConflictMessage) {
+        setPortConflictMessage(undefined);
+        setPortConflictOpen(false);
+      }
     };
 
   const title = mode === 'create' ? t('modals.createNewProfile') : t('modals.editProfile');
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title={title}
-      footer={
-        <>
+    <>
+      <Modal
+        open={open}
+        onClose={onClose}
+        title={title}
+        footer={
+          <>
           <Button variant="ghost" onClick={onClose} disabled={saving}>
             {t('common.cancel')}
           </Button>
-          <Button onClick={handleSave} disabled={saving}>
+          <Button onClick={() => handleSave()} disabled={saving}>
             {saving
               ? t('common.saving')
               : mode === 'create'
@@ -347,6 +373,56 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
           </div>
         )}
       </div>
-    </Modal>
+      </Modal>
+      <Modal
+        open={portConflictOpen}
+        onClose={() => {
+          setPortConflictOpen(false);
+          setPortConflictMessage(undefined);
+        }}
+        title={tDynamic('modals.portConflictTitle', { defaultValue: 'Port already in use' })}
+        footer={
+          <>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setPortConflictOpen(false);
+                setPortConflictMessage(undefined);
+              }}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              onClick={async () => {
+                setPortConflictOpen(false);
+                setPortConflictMessage(undefined);
+                await handleSave(true);
+              }}
+            >
+              {t('common.confirm')}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-[var(--text-secondary)]">
+            {tDynamic('modals.portConflictBody', {
+              defaultValue:
+                'Another profile is already configured to use this port. Only one profile can listen on a port at a time.'
+            })}
+          </p>
+          {portConflictMessage && (
+            <div className="p-3 rounded-lg bg-[var(--warning-subtle)] border border-[var(--warning-border)] text-[var(--warning-text)] text-sm">
+              {portConflictMessage}
+            </div>
+          )}
+          <p className="text-[var(--text-secondary)]">
+            {tDynamic('modals.portConflictConfirm', {
+              defaultValue: 'Do you want to save anyway?'
+            })}
+          </p>
+        </div>
+      </Modal>
+    </>
   );
 }

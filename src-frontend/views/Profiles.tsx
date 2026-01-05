@@ -25,6 +25,7 @@ export function Profiles() {
   // Delete confirmation state
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deletingProfileName, setDeletingProfileName] = useState<string | null>(null);
+  const [pendingDeleteProfileName, setPendingDeleteProfileName] = useState<string | null>(null);
 
   // Track which encrypted profiles have been unlocked (password entered) in this session
   const [unlockedProfiles, setUnlockedProfiles] = useState<Set<string>>(new Set());
@@ -40,6 +41,13 @@ export function Profiles() {
         // If this profile is encrypted, mark it as unlocked in session
         if (profileSummary?.isEncrypted) {
           setUnlockedProfiles(prev => new Set(prev).add(profileName));
+
+          // If this was a pending delete, now show the delete confirmation
+          if (pendingDeleteProfileName === profileName) {
+            setPendingDeleteProfileName(null);
+            setDeletingProfileName(profileName);
+            setDeleteModalOpen(true);
+          }
         }
       }
 
@@ -49,7 +57,7 @@ export function Profiles() {
       }
     });
     return unsubscribe;
-  }, []);
+  }, [pendingDeleteProfileName]);
 
   // Clear unlocked state when clicking outside profile cards
   const handleClickAway = (e: React.MouseEvent) => {
@@ -113,6 +121,17 @@ export function Profiles() {
 
   // Handle delete profile
   const handleDeleteClick = (profileName: string) => {
+    const profileSummary = profiles.find(p => p.name === profileName);
+
+    // If profile is encrypted and NOT unlocked in this session, require password first
+    if (profileSummary?.isEncrypted && !unlockedProfiles.has(profileName)) {
+      // Set pending delete and trigger password modal
+      setPendingDeleteProfileName(profileName);
+      selectProfile(profileName);
+      return;
+    }
+
+    // Profile is either not encrypted or already unlocked - show delete confirmation
     setDeletingProfileName(profileName);
     setDeleteModalOpen(true);
   };
@@ -120,6 +139,12 @@ export function Profiles() {
   const handleDeleteConfirm = async () => {
     if (deletingProfileName) {
       await deleteProfile(deletingProfileName);
+      // Clear from unlocked set after deletion
+      setUnlockedProfiles(prev => {
+        const next = new Set(prev);
+        next.delete(deletingProfileName);
+        return next;
+      });
       setDeleteModalOpen(false);
       setDeletingProfileName(null);
     }
@@ -128,6 +153,7 @@ export function Profiles() {
   const handleDeleteCancel = () => {
     setDeleteModalOpen(false);
     setDeletingProfileName(null);
+    setPendingDeleteProfileName(null);
   };
 
   if (loading) {

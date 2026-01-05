@@ -215,7 +215,7 @@ impl ProfileManager {
 
                 if bind_conflict && existing.input.port == input.port {
                     return Err(format!(
-                        "Port {} is already in use by profile '{}'. Choose a different port.",
+                        "Port {} is already configured for profile '{}'. Only one profile can listen on a port at a time.",
                         input.port,
                         existing.name
                     ));
