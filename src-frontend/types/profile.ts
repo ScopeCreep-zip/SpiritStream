@@ -24,6 +24,7 @@ export interface VideoSettings {
   bitrate: string; // e.g., "6000k"
   preset?: string; // e.g., "veryfast", "p4"
   profile?: string; // e.g., "high", "main"
+  keyframeIntervalSeconds?: number; // e.g., 2
 }
 
 /**
@@ -159,6 +160,7 @@ export const createDefaultVideoSettings = (): VideoSettings => ({
   bitrate: '0k',
   preset: undefined,
   profile: undefined,
+  keyframeIntervalSeconds: undefined,
 });
 
 export const createDefaultAudioSettings = (): AudioSettings => ({

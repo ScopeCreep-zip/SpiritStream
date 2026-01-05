@@ -43,6 +43,7 @@ interface FormData {
   videoBitrate: string;
   preset: string;
   profile: string;
+  keyframeIntervalSeconds: string;
   // Audio settings (nested)
   audioCodec: string;
   audioBitrate: string;
@@ -100,6 +101,7 @@ const defaultFormData: FormData = {
   videoBitrate: '6000',
   preset: 'veryfast',
   profile: 'high',
+  keyframeIntervalSeconds: '',
   audioCodec: 'aac',
   audioBitrate: '160k',
   audioChannels: '2',
@@ -168,6 +170,9 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
           videoBitrate,
           preset: group.video.preset || 'veryfast',
           profile: group.video.profile || 'high',
+          keyframeIntervalSeconds: group.video.keyframeIntervalSeconds
+            ? String(group.video.keyframeIntervalSeconds)
+            : '',
           audioCodec: group.audio.codec,
           audioBitrate: group.audio.bitrate,
           audioChannels: String(group.audio.channels),
@@ -258,6 +263,15 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
       newErrors.videoBitrate = t('validation.bitrateRange');
     }
 
+    if (formData.keyframeIntervalSeconds.trim()) {
+      const interval = Number(formData.keyframeIntervalSeconds);
+      if (!Number.isFinite(interval) || interval <= 0 || !Number.isInteger(interval)) {
+        newErrors.keyframeIntervalSeconds = tDynamic('errors.invalidInput', {
+          defaultValue: 'Invalid input',
+        });
+      }
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -293,6 +307,9 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
         bitrate: `${formData.videoBitrate}k`,
         preset: presetSupported && formData.preset ? formData.preset : undefined,
         profile: formData.profile,
+        keyframeIntervalSeconds: formData.keyframeIntervalSeconds.trim()
+          ? Number(formData.keyframeIntervalSeconds)
+          : undefined,
       };
 
       // Build nested audio settings
@@ -477,6 +494,18 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
               })}
             </div>
           )}
+
+          <Input
+            label={t('encoder.keyframeIntervalSeconds')}
+            type="number"
+            min="1"
+            step="1"
+            placeholder="2"
+            value={formData.keyframeIntervalSeconds}
+            onChange={handleChange('keyframeIntervalSeconds')}
+            helper={t('encoder.keyframeIntervalHelper')}
+            error={errors.keyframeIntervalSeconds}
+          />
         </div>
 
         {/* Audio Settings Section */}

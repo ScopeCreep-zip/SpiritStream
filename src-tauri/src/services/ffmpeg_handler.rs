@@ -644,6 +644,23 @@ impl FFmpegHandler {
             if let Some(profile) = &group.video.profile {
                 args.push("-profile:v".to_string()); args.push(profile.clone());
             }
+
+            if let Some(interval_seconds) = group.video.keyframe_interval_seconds {
+                if interval_seconds > 0 && group.video.fps > 0 {
+                    let gop_size = group.video.fps.saturating_mul(interval_seconds);
+                    if gop_size > 0 {
+                        args.push("-g".to_string()); args.push(gop_size.to_string());
+
+                        if group.video.codec == "libx264" || group.video.codec == "libx265" {
+                            args.push("-keyint_min".to_string()); args.push(gop_size.to_string());
+                            args.push("-sc_threshold".to_string()); args.push("0".to_string());
+                        }
+
+                        args.push("-force_key_frames".to_string());
+                        args.push(format!("expr:gte(t,n_forced*{})", interval_seconds));
+                    }
+                }
+            }
         }
 
         if group.container.format == "flv" {

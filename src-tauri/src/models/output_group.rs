@@ -32,6 +32,10 @@ pub struct VideoSettings {
     /// H.264 profile (e.g., "high", "main", "baseline")
     #[serde(default)]
     pub profile: Option<String>,
+
+    /// Keyframe interval in seconds (optional)
+    #[serde(default)]
+    pub keyframe_interval_seconds: Option<u32>,
 }
 
 impl Default for VideoSettings {
@@ -44,6 +48,7 @@ impl Default for VideoSettings {
             bitrate: "0k".to_string(),
             preset: None,
             profile: None,
+            keyframe_interval_seconds: None,
         }
     }
 }
