@@ -70,6 +70,8 @@ const initialStats: StreamStats = {
   targetStats: {},
 };
 
+const lastSamplesByGroup = new Map<string, { size: number; time: number }>();
+
 export const useStreamStore = create<StreamState>((set, get) => ({
   isStreaming: false,
   activeGroups: new Set(),
@@ -198,6 +200,7 @@ export const useStreamStore = create<StreamState>((set, get) => ({
   stopAllGroups: async () => {
     try {
       await api.stream.stopAll();
+      lastSamplesByGroup.clear();
       set({
         activeGroups: new Set(),
         isStreaming: false,
@@ -248,13 +251,30 @@ export const useStreamStore = create<StreamState>((set, get) => ({
 
   updateStats: (groupId, ffmpegStats) => {
     const currentGroupStats = get().groupStats;
+    let bitrate = ffmpegStats.bitrate;
+    const lastSample = lastSamplesByGroup.get(groupId);
+
+    if (
+      lastSample &&
+      ffmpegStats.time > lastSample.time &&
+      ffmpegStats.size >= lastSample.size
+    ) {
+      const deltaBytes = ffmpegStats.size - lastSample.size;
+      const deltaSeconds = ffmpegStats.time - lastSample.time;
+      const instantaneousKbps = (deltaBytes * 8) / 1000 / deltaSeconds;
+      if (Number.isFinite(instantaneousKbps)) {
+        bitrate = instantaneousKbps;
+      }
+    }
+
+    lastSamplesByGroup.set(groupId, { size: ffmpegStats.size, time: ffmpegStats.time });
 
     // Update per-group stats
     const newGroupStats = {
       ...currentGroupStats,
       [groupId]: {
         fps: ffmpegStats.fps,
-        bitrate: ffmpegStats.bitrate,
+        bitrate,
         droppedFrames: ffmpegStats.droppedFrames,
         uptime: ffmpegStats.time,
         speed: ffmpegStats.speed,
@@ -293,6 +313,7 @@ export const useStreamStore = create<StreamState>((set, get) => ({
   },
 
   setStreamEnded: (groupId) => {
+    lastSamplesByGroup.delete(groupId);
     const activeGroups = new Set(get().activeGroups);
     activeGroups.delete(groupId);
 
@@ -310,6 +331,7 @@ export const useStreamStore = create<StreamState>((set, get) => ({
   },
 
   setStreamError: (groupId, error) => {
+    lastSamplesByGroup.delete(groupId);
     const activeGroups = new Set(get().activeGroups);
     activeGroups.delete(groupId);
 
@@ -335,7 +357,8 @@ export const useStreamStore = create<StreamState>((set, get) => ({
 
   setError: (error) => set({ error }),
 
-  reset: () =>
+  reset: () => {
+    lastSamplesByGroup.clear();
     set({
       isStreaming: false,
       activeGroups: new Set(),
@@ -345,5 +368,6 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       globalStatus: 'offline' as StreamStatusType,
       error: null,
       activeStreamCount: 0,
-    }),
+    });
+  },
 }));
