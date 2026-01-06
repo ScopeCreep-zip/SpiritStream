@@ -74,6 +74,7 @@ Welcome to the SpiritStream documentation. This index provides quick access to a
 | FFmpeg Auto-Download | ✅ Complete (with version checking) |
 | i18n Support | ✅ Complete (en, de, es, fr, ja) |
 | Theme System | ✅ Complete (CSS validation, 3 example themes, light/dark) |
+| Theme System | ✅ Complete (CSS validation, 3 example themes, light/dark) |
 
 ## Custom Commands
 
