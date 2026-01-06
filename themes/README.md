@@ -5,7 +5,7 @@ This directory contains built-in example themes for SpiritStream. Each theme is 
 ## Available Themes
 
 - Spirit Light / Spirit Dark
-- Dracula Light / Dracula Dark
+- Dracula
 - Nord Light / Nord Dark
 - Catppuccin Mocha Light / Catppuccin Mocha Dark
 - Rainbow Pride Light / Rainbow Pride Dark
@@ -18,7 +18,7 @@ This directory contains built-in example themes for SpiritStream. Each theme is 
 1. Open SpiritStream.
 2. Navigate to **Settings > Themes**.
 3. Click **Install Theme**.
-4. Select a theme file (for example: `dracula-dark.jsonc` or `nord-light.jsonc`).
+4. Select a theme file (for example: `dracula.jsonc` or `nord-light.jsonc`).
 
 The theme will be validated and copied to your AppData directory.
 
