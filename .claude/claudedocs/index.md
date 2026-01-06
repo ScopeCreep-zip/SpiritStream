@@ -39,6 +39,14 @@ Welcome to the SpiritStream documentation. This index provides quick access to a
 | [migration-status.md](./migration-status.md) | ✅ **Migration complete status** |
 | [passthrough-architecture.md](./passthrough-architecture.md) | Passthrough-first design with immutable default group |
 | [architecture-new.md](./architecture-new.md) | Current Tauri + React architecture |
+| [scratch/2026-01-05-critical-fixes.md](./scratch/2026-01-05-critical-fixes.md) | FFmpeg handler race condition fixes |
+| [scratch/2026-01-05-css-validation.md](./scratch/2026-01-05-css-validation.md) | CSS value validation implementation |
+| [scratch/2026-01-06-theme-production-build.md](./scratch/2026-01-06-theme-production-build.md) | Theme system production build support |
+| [scratch/theme-system-review.md](./scratch/theme-system-review.md) | ⭐ **Theme system review** - Grade A (95/100) |
+| [themes/README.md](../themes/README.md) | Theme installation and creation guide |
+| [themes/dracula.jsonc](../themes/dracula.jsonc) | Dracula theme (purple/pink/cyan) |
+| [themes/nord.jsonc](../themes/nord.jsonc) | Nord theme (arctic blue tones) |
+| [themes/catppuccin-mocha.jsonc](../themes/catppuccin-mocha.jsonc) | Catppuccin Mocha theme (soothing pastels) |
 | [scratch/immutable-default-group.md](./scratch/immutable-default-group.md) | Default group implementation notes |
 | [scratch/passthrough-mode-changes.md](./scratch/passthrough-mode-changes.md) | Copy mode implementation |
 | [scratch/profile-encoding-removal.md](./scratch/profile-encoding-removal.md) | Profile modal simplification |
@@ -65,7 +73,7 @@ Welcome to the SpiritStream documentation. This index provides quick access to a
 | Stream Targets | ✅ Complete (YouTube, Twitch, Kick, Facebook, Custom) |
 | FFmpeg Auto-Download | ✅ Complete (with version checking) |
 | i18n Support | ✅ Complete (en, de, es, fr, ja) |
-| Theme System | ✅ Complete (light/dark, purple/pink) |
+| Theme System | ✅ Complete (CSS validation, 3 example themes, light/dark) |
 
 ## Custom Commands
 
@@ -118,8 +126,22 @@ Coding standards in `.claude/rules/`:
 | Background | `#FAFAFA` | `#0F0A14` |
 | Text | `#1F1A29` | `#F4F2F7` |
 
-## Recent Changes (2026-01-04)
+## Recent Changes
 
+### 2026-01-06
+1. ✅ **Theme Production Build Support** - Fixed theme loading for production builds using Tauri resource API
+2. ✅ **Cross-Platform Theme Sync** - Theme sync now works in dev and production on all platforms
+
+### 2026-01-05
+1. ✅ **FFmpeg Handler Fixes** - Fixed relay race condition with atomic refcounting
+2. ✅ **Robustness Improvements** - Added poisoned mutex recovery
+3. ✅ **Theme System Review** - Comprehensive analysis (Grade A, 95/100)
+4. ✅ **CSS Value Validation** - Added comprehensive validation for colors, sizes, shadows, gradients
+5. ✅ **Example Themes** - Created Dracula, Nord, and Catppuccin Mocha themes
+6. ✅ **Theme Documentation** - Created comprehensive README with installation guide
+7. ✅ **Development Roadmap** - Created comprehensive v0.1 → v3.0 roadmap
+
+### 2026-01-04
 1. ✅ **Migration Complete** - Electron code fully removed
 2. ✅ **Passthrough Architecture** - Default groups use copy mode
 3. ✅ **Immutable Default Group** - Cannot be edited/deleted

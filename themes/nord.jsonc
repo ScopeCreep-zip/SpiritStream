@@ -1,0 +1,474 @@
+// Nord theme for SpiritStream
+// Based on: https://www.nordtheme.com
+// License: MIT
+{
+  "id": "nord",
+  "name": "Nord",
+  "tokens": {
+    "light": {
+      // Nord doesn't have an official light mode, so we use Snow Storm (light colors)
+      // Primary (Frost - Blue/Cyan)
+      "--primary": "#81A1C1",
+      "--primary-active": "#5E81AC",
+      "--primary-foreground": "#2E3440",
+      "--primary-hover": "#88C0D0",
+      "--primary-muted": "#D8DEE9",
+      "--primary-subtle": "#ECEFF4",
+
+      // Secondary (Frost - Bright Blue)
+      "--secondary": "#5E81AC",
+      "--secondary-active": "#4C688B",
+      "--secondary-foreground": "#ECEFF4",
+      "--secondary-hover": "#6E91CC",
+      "--secondary-muted": "#D8DEE9",
+      "--secondary-subtle": "#E5E9F0",
+
+      // Accent (Aurora - Purple/Magenta)
+      "--accent": "#B48EAD",
+      "--accent-active": "#97718D",
+      "--accent-foreground": "#2E3440",
+      "--accent-hover": "#C49EBD",
+      "--accent-muted": "#E5E0E3",
+      "--accent-subtle": "#F2EFF1",
+      "--accent-subtle-hover": "#DCDAE0",
+
+      // Backgrounds (Snow Storm)
+      "--bg-base": "#ECEFF4",
+      "--bg-surface": "#E5E9F0",
+      "--bg-elevated": "#D8DEE9",
+      "--bg-muted": "#E5E9F0",
+      "--bg-sunken": "#D8DEE9",
+      "--bg-canvas": "#ECEFF4",
+      "--bg-surface-secondary": "#E5E9F0",
+      "--bg-overlay": "rgba(46, 52, 64, 0.7)",
+      "--bg-overlay-light": "rgba(46, 52, 64, 0.3)",
+      "--bg-hover": "rgba(129, 161, 193, 0.1)",
+      "--bg-active": "rgba(129, 161, 193, 0.15)",
+      "--bg-selected": "#D8DEE9",
+      "--bg-selected-hover": "#CED4E1",
+
+      // Text (Polar Night)
+      "--text-disabled": "#A3ABB8",
+      "--text-inverse": "#ECEFF4",
+      "--text-muted": "#5E6A7D",
+      "--text-primary": "#2E3440",
+      "--text-secondary": "#3B4252",
+      "--text-tertiary": "#4C566A",
+
+      // Borders
+      "--border-default": "#CBD2DC",
+      "--border-disabled": "#D8DEE9",
+      "--border-interactive": "#81A1C1",
+      "--border-interactive-hover": "#88C0D0",
+      "--border-muted": "#D8DEE9",
+      "--border-strong": "#B8C0CC",
+      "--border-stronger": "#A8B0BC",
+
+      // Status colors (Aurora)
+      "--success": "#A3BE8C",
+      "--success-border": "#A3BE8C",
+      "--success-foreground": "#2E3440",
+      "--success-hover": "#B3CE9C",
+      "--success-muted": "#DEE9D1",
+      "--success-subtle": "#EFF4E8",
+      "--success-text": "#5F7A50",
+
+      "--warning": "#EBCB8B",
+      "--warning-border": "#EBCB8B",
+      "--warning-foreground": "#2E3440",
+      "--warning-hover": "#F0D49B",
+      "--warning-muted": "#F8EFD8",
+      "--warning-subtle": "#FBF7EC",
+      "--warning-text": "#8A7650",
+
+      "--error": "#BF616A",
+      "--error-border": "#BF616A",
+      "--error-foreground": "#ECEFF4",
+      "--error-hover": "#CF717A",
+      "--error-muted": "#EDD5D8",
+      "--error-subtle": "#F6EAEC",
+      "--error-text": "#8F4950",
+
+      "--info": "#81A1C1",
+      "--info-border": "#81A1C1",
+      "--info-foreground": "#2E3440",
+      "--info-hover": "#91B1D1",
+      "--info-muted": "#D8DEE9",
+      "--info-subtle": "#E8EDF4",
+      "--info-text": "#5E81AC",
+
+      // Stream status
+      "--status-connecting": "#EBCB8B",
+      "--status-connecting-bg": "#F8EFD8",
+      "--status-connecting-text": "#8A7650",
+
+      "--status-error": "#BF616A",
+      "--status-error-bg": "#F6EAEC",
+      "--status-error-text": "#8F4950",
+
+      "--status-live": "#A3BE8C",
+      "--status-live-bg": "#EFF4E8",
+      "--status-live-text": "#5F7A50",
+
+      "--status-offline": "#4C566A",
+      "--status-offline-bg": "#E5E9F0",
+      "--status-offline-text": "#5E6A7D",
+
+      // Shadows
+      "--shadow-inner": "inset 0 2px 4px rgba(46, 52, 64, 0.05)",
+      "--shadow-lg": "0 10px 15px rgba(46, 52, 64, 0.1), 0 4px 6px rgba(46, 52, 64, 0.05)",
+      "--shadow-md": "0 4px 6px rgba(46, 52, 64, 0.07), 0 2px 4px rgba(46, 52, 64, 0.05)",
+      "--shadow-sm": "0 1px 3px rgba(46, 52, 64, 0.12), 0 1px 2px rgba(46, 52, 64, 0.06)",
+      "--shadow-xl": "0 20px 25px rgba(46, 52, 64, 0.15), 0 10px 10px rgba(46, 52, 64, 0.04)",
+      "--shadow-xs": "0 1px 2px rgba(46, 52, 64, 0.05)",
+      "--shadow-2xl": "0 25px 50px rgba(46, 52, 64, 0.25)",
+
+      // Gradients
+      "--gradient-brand": "linear-gradient(135deg, #81A1C1 0%, #5E81AC 50%, #B48EAD 100%)",
+      "--gradient-brand-subtle": "linear-gradient(135deg, #D8DEE9 0%, #E5E9F0 50%, #E5E0E3 100%)",
+      "--gradient-surface": "linear-gradient(180deg, #E5E9F0 0%, #ECEFF4 100%)",
+
+      // Focus ring
+      "--ring-default": "#81A1C1",
+      "--ring-offset": "#ECEFF4",
+      "--ring-offset-width": "2px",
+      "--ring-width": "3px",
+
+      // Nord Frost colors
+      "--cyan-50": "#EBF3F7",
+      "--cyan-100": "#D7E7EF",
+      "--cyan-200": "#C3DBE7",
+      "--cyan-300": "#AFCFDF",
+      "--cyan-400": "#9BC3D7",
+      "--cyan-500": "#88C0D0",
+      "--cyan-600": "#6EA9C0",
+      "--cyan-700": "#5492B0",
+      "--cyan-800": "#3A7BA0",
+      "--cyan-900": "#206490",
+
+      "--blue-50": "#E8EDF4",
+      "--blue-100": "#D1DBE9",
+      "--blue-200": "#BAC9DE",
+      "--blue-300": "#A3B7D3",
+      "--blue-400": "#8CA5C8",
+      "--blue-500": "#81A1C1",
+      "--blue-600": "#6789A8",
+      "--blue-700": "#4D718F",
+      "--blue-800": "#335976",
+      "--blue-900": "#19415D",
+
+      "--purple-50": "#F2EFF1",
+      "--purple-100": "#E5DFE3",
+      "--purple-200": "#D8CFD5",
+      "--purple-300": "#CBBFC7",
+      "--purple-400": "#BEAFB9",
+      "--purple-500": "#B48EAD",
+      "--purple-600": "#9A7494",
+      "--purple-700": "#805A7B",
+      "--purple-800": "#664062",
+      "--purple-900": "#4C2649",
+
+      // Additional Nord Aurora colors
+      "--green-500": "#A3BE8C",
+      "--orange-500": "#D08770",
+      "--red-500": "#BF616A",
+      "--yellow-500": "#EBCB8B",
+
+      // Pink scale (Nord doesn't have pink, using purple)
+      "--pink-50": "#F2EFF1",
+      "--pink-100": "#E5DFE3",
+      "--pink-200": "#D8CFD5",
+      "--pink-300": "#CBBFC7",
+      "--pink-400": "#BEAFB9",
+      "--pink-500": "#B48EAD",
+      "--pink-600": "#9A7494",
+      "--pink-700": "#805A7B",
+      "--pink-800": "#664062",
+      "--pink-900": "#4C2649",
+
+      // Fuchsia scale (same as purple for Nord)
+      "--fuchsia-50": "#F2EFF1",
+      "--fuchsia-100": "#E5DFE3",
+      "--fuchsia-200": "#D8CFD5",
+      "--fuchsia-300": "#CBBFC7",
+      "--fuchsia-400": "#BEAFB9",
+      "--fuchsia-500": "#B48EAD",
+      "--fuchsia-600": "#9A7494",
+      "--fuchsia-700": "#805A7B",
+      "--fuchsia-800": "#664062",
+      "--fuchsia-900": "#4C2649",
+
+      // Violet scale (slightly darker blue)
+      "--violet-50": "#E8EDF4",
+      "--violet-100": "#D1DBE9",
+      "--violet-200": "#BAC9DE",
+      "--violet-300": "#A3B7D3",
+      "--violet-400": "#8CA5C8",
+      "--violet-500": "#5E81AC",
+      "--violet-600": "#4C688B",
+      "--violet-700": "#3A4F6A",
+      "--violet-800": "#283649",
+      "--violet-900": "#161D28",
+      "--violet-950": "#0D0E14",
+
+      // Neutral scale (grayscale - light mode)
+      "--neutral-0": "#FFFFFF",
+      "--neutral-50": "#F9FAFB",
+      "--neutral-100": "#ECEFF4",
+      "--neutral-150": "#E8EBF0",
+      "--neutral-200": "#E5E9F0",
+      "--neutral-300": "#D8DEE9",
+      "--neutral-400": "#CBD2DC",
+      "--neutral-500": "#8F99A8",
+      "--neutral-600": "#6E7888",
+      "--neutral-700": "#4C566A",
+      "--neutral-800": "#3B4252",
+      "--neutral-900": "#2E3440",
+      "--neutral-950": "#242933",
+      "--neutral-1000": "#0F1419",
+
+      // Additional missing tokens (light mode)
+      "--pink-950": "#361833",
+      "--fuchsia-950": "#361833",
+      "--primary-subtle-hover": "#CED8E5",
+      "--secondary-subtle-hover": "#D5DCE5",
+      "--text-on-brand": "#2E3440",
+      "--shadow-color": "rgba(46, 52, 64, 0.5)",
+      "--scrollbar-track": "#E5E9F0",
+      "--scrollbar-thumb": "#CBD2DC",
+      "--scrollbar-thumb-hover": "#B8C0CC"
+    },
+    "dark": {
+      // Primary (Frost - Cyan/Blue)
+      "--primary": "#88C0D0",
+      "--primary-active": "#6EA9C0",
+      "--primary-foreground": "#2E3440",
+      "--primary-hover": "#9BCFD8",
+      "--primary-muted": "#3A4B5A",
+      "--primary-subtle": "#2E3A46",
+
+      // Secondary (Frost - Blue)
+      "--secondary": "#81A1C1",
+      "--secondary-active": "#6789A8",
+      "--secondary-foreground": "#ECEFF4",
+      "--secondary-hover": "#91B1D1",
+      "--secondary-muted": "#3A4856",
+      "--secondary-subtle": "#2E3844",
+
+      // Accent (Aurora - Purple)
+      "--accent": "#B48EAD",
+      "--accent-active": "#9A7494",
+      "--accent-foreground": "#ECEFF4",
+      "--accent-hover": "#C49EBD",
+      "--accent-muted": "#4A3D48",
+      "--accent-subtle": "#382E36",
+      "--accent-subtle-hover": "#5A4D58",
+
+      // Backgrounds (Polar Night)
+      "--bg-base": "#2E3440",
+      "--bg-surface": "#3B4252",
+      "--bg-elevated": "#434C5E",
+      "--bg-muted": "#353B47",
+      "--bg-sunken": "#242933",
+      "--bg-canvas": "#2A303C",
+      "--bg-surface-secondary": "#3A4048",
+      "--bg-overlay": "rgba(0, 0, 0, 0.75)",
+      "--bg-overlay-light": "rgba(0, 0, 0, 0.3)",
+      "--bg-hover": "rgba(136, 192, 208, 0.15)",
+      "--bg-active": "rgba(136, 192, 208, 0.2)",
+      "--bg-selected": "#3A4B5A",
+      "--bg-selected-hover": "#4A5B6A",
+
+      // Text (Snow Storm)
+      "--text-disabled": "#4C566A",
+      "--text-inverse": "#2E3440",
+      "--text-muted": "#8F99A8",
+      "--text-primary": "#ECEFF4",
+      "--text-secondary": "#E5E9F0",
+      "--text-tertiary": "#D8DEE9",
+
+      // Borders
+      "--border-default": "#4C566A",
+      "--border-disabled": "#3E4654",
+      "--border-interactive": "#88C0D0",
+      "--border-interactive-hover": "#9BCFD8",
+      "--border-muted": "#3B4252",
+      "--border-strong": "#5C667A",
+      "--border-stronger": "#6C768A",
+
+      // Status colors (Aurora)
+      "--success": "#A3BE8C",
+      "--success-border": "#A3BE8C",
+      "--success-foreground": "#2E3440",
+      "--success-hover": "#B3CE9C",
+      "--success-muted": "#3E4F38",
+      "--success-subtle": "#2E3A28",
+      "--success-text": "#A3BE8C",
+
+      "--warning": "#EBCB8B",
+      "--warning-border": "#EBCB8B",
+      "--warning-foreground": "#2E3440",
+      "--warning-hover": "#F0D49B",
+      "--warning-muted": "#5A4E38",
+      "--warning-subtle": "#3E3628",
+      "--warning-text": "#EBCB8B",
+
+      "--error": "#BF616A",
+      "--error-border": "#BF616A",
+      "--error-foreground": "#ECEFF4",
+      "--error-hover": "#CF717A",
+      "--error-muted": "#4A2E32",
+      "--error-subtle": "#3A1F22",
+      "--error-text": "#BF616A",
+
+      "--info": "#88C0D0",
+      "--info-border": "#88C0D0",
+      "--info-foreground": "#2E3440",
+      "--info-hover": "#9BCFD8",
+      "--info-muted": "#3A4B5A",
+      "--info-subtle": "#2E3A46",
+      "--info-text": "#88C0D0",
+
+      // Stream status
+      "--status-connecting": "#EBCB8B",
+      "--status-connecting-bg": "#3E3628",
+      "--status-connecting-text": "#EBCB8B",
+
+      "--status-error": "#BF616A",
+      "--status-error-bg": "#3A1F22",
+      "--status-error-text": "#BF616A",
+
+      "--status-live": "#A3BE8C",
+      "--status-live-bg": "#2E3A28",
+      "--status-live-text": "#A3BE8C",
+
+      "--status-offline": "#4C566A",
+      "--status-offline-bg": "#2E353F",
+      "--status-offline-text": "#8F99A8",
+
+      // Shadows (darker for dark mode)
+      "--shadow-inner": "inset 0 2px 4px rgba(0, 0, 0, 0.4)",
+      "--shadow-lg": "0 10px 15px rgba(0, 0, 0, 0.5), 0 4px 6px rgba(0, 0, 0, 0.3)",
+      "--shadow-md": "0 4px 6px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.25)",
+      "--shadow-sm": "0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2)",
+      "--shadow-xl": "0 20px 25px rgba(0, 0, 0, 0.6), 0 10px 10px rgba(0, 0, 0, 0.4)",
+      "--shadow-xs": "0 1px 2px rgba(0, 0, 0, 0.2)",
+      "--shadow-2xl": "0 25px 50px rgba(0, 0, 0, 0.7)",
+
+      // Gradients
+      "--gradient-brand": "linear-gradient(135deg, #88C0D0 0%, #81A1C1 50%, #B48EAD 100%)",
+      "--gradient-brand-subtle": "linear-gradient(135deg, #3A4B5A 0%, #3A4856 50%, #4A3D48 100%)",
+      "--gradient-surface": "linear-gradient(180deg, #3B4252 0%, #2E3440 100%)",
+
+      // Focus ring
+      "--ring-default": "#88C0D0",
+      "--ring-offset": "#2E3440",
+      "--ring-offset-width": "2px",
+      "--ring-width": "3px",
+
+      // Nord Frost colors (dark variants)
+      "--cyan-50": "#206490",
+      "--cyan-100": "#3A7BA0",
+      "--cyan-200": "#5492B0",
+      "--cyan-300": "#6EA9C0",
+      "--cyan-400": "#88C0D0",
+      "--cyan-500": "#9BCFD8",
+      "--cyan-600": "#AEDBE0",
+      "--cyan-700": "#C1E7E8",
+      "--cyan-800": "#D4F3F0",
+      "--cyan-900": "#E7FFF8",
+
+      "--blue-50": "#19415D",
+      "--blue-100": "#335976",
+      "--blue-200": "#4D718F",
+      "--blue-300": "#6789A8",
+      "--blue-400": "#81A1C1",
+      "--blue-500": "#91B1D1",
+      "--blue-600": "#A1C1E1",
+      "--blue-700": "#B1D1F1",
+      "--blue-800": "#C1E1FF",
+      "--blue-900": "#D1F1FF",
+
+      "--purple-50": "#4C2649",
+      "--purple-100": "#664062",
+      "--purple-200": "#805A7B",
+      "--purple-300": "#9A7494",
+      "--purple-400": "#B48EAD",
+      "--purple-500": "#C49EBD",
+      "--purple-600": "#D4AECD",
+      "--purple-700": "#E4BEDD",
+      "--purple-800": "#F4CEED",
+      "--purple-900": "#FFDEFD",
+
+      // Additional Nord Aurora colors
+      "--green-500": "#A3BE8C",
+      "--orange-500": "#D08770",
+      "--red-500": "#BF616A",
+      "--yellow-500": "#EBCB8B",
+
+      // Pink scale (Nord doesn't have pink, using purple)
+      "--pink-50": "#4C2649",
+      "--pink-100": "#664062",
+      "--pink-200": "#805A7B",
+      "--pink-300": "#9A7494",
+      "--pink-400": "#B48EAD",
+      "--pink-500": "#C49EBD",
+      "--pink-600": "#D4AECD",
+      "--pink-700": "#E4BEDD",
+      "--pink-800": "#F4CEED",
+      "--pink-900": "#FFDEFD",
+
+      // Fuchsia scale (same as purple for Nord)
+      "--fuchsia-50": "#4C2649",
+      "--fuchsia-100": "#664062",
+      "--fuchsia-200": "#805A7B",
+      "--fuchsia-300": "#9A7494",
+      "--fuchsia-400": "#B48EAD",
+      "--fuchsia-500": "#C49EBD",
+      "--fuchsia-600": "#D4AECD",
+      "--fuchsia-700": "#E4BEDD",
+      "--fuchsia-800": "#F4CEED",
+      "--fuchsia-900": "#FFDEFD",
+
+      // Violet scale (slightly darker blue)
+      "--violet-50": "#161D28",
+      "--violet-100": "#283649",
+      "--violet-200": "#3A4F6A",
+      "--violet-300": "#4C688B",
+      "--violet-400": "#5E81AC",
+      "--violet-500": "#6E91CC",
+      "--violet-600": "#7EA1DC",
+      "--violet-700": "#8EB1EC",
+      "--violet-800": "#9EC1FC",
+      "--violet-900": "#AED1FF",
+      "--violet-950": "#BEE1FF",
+
+      // Neutral scale (grayscale - dark mode)
+      "--neutral-0": "#0F1419",
+      "--neutral-50": "#242933",
+      "--neutral-100": "#2E3440",
+      "--neutral-150": "#353B47",
+      "--neutral-200": "#3B4252",
+      "--neutral-300": "#4C566A",
+      "--neutral-400": "#6E7888",
+      "--neutral-500": "#8F99A8",
+      "--neutral-600": "#A3ABB8",
+      "--neutral-700": "#CBD2DC",
+      "--neutral-800": "#D8DEE9",
+      "--neutral-900": "#E5E9F0",
+      "--neutral-950": "#ECEFF4",
+      "--neutral-1000": "#FFFFFF",
+
+      // Additional missing tokens (dark mode)
+      "--pink-950": "#FFDEFD",
+      "--fuchsia-950": "#FFDEFD",
+      "--primary-subtle-hover": "#3E5566",
+      "--secondary-subtle-hover": "#3E4C66",
+      "--text-on-brand": "#2E3440",
+      "--shadow-color": "rgba(0, 0, 0, 0.5)",
+      "--scrollbar-track": "#2E3440",
+      "--scrollbar-thumb": "#4C566A",
+      "--scrollbar-thumb-hover": "#5C667A"
+    }
+  }
+}

@@ -1,5 +1,6 @@
 import type { Profile, OutputGroup } from './profile';
 import type { Encoders } from './stream';
+import type { ThemeSummary, ThemeTokens } from './theme';
 
 /**
  * Tauri command result wrapper
@@ -80,6 +81,16 @@ export interface SettingsAPI {
 }
 
 /**
+ * Theme API commands
+ * @see src-frontend/lib/tauri.ts for implementation
+ */
+export interface ThemeAPI {
+  list: () => TauriResult<ThemeSummary[]>;
+  getTokens: (themeId: string) => TauriResult<ThemeTokens>;
+  install: (themePath: string) => TauriResult<ThemeSummary>;
+}
+
+/**
  * Complete API interface
  * Note: Targets are managed via Profile mutations, not a separate API
  */
@@ -88,4 +99,5 @@ export interface TauriAPI {
   stream: StreamAPI;
   system: SystemAPI;
   settings: SettingsAPI;
+  theme: ThemeAPI;
 }

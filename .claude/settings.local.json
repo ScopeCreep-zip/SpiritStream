@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(cargo check:*)"
+      "Bash(cargo check:*)",
+      "Bash(claude mcp list:*)",
+      "Bash(node -e:*)",
+      "Bash(dir:*)",
+      "Bash(echo:*)"
     ]
   }
 }

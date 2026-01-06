@@ -14,6 +14,7 @@ import { api } from '@/lib/tauri';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { open as openPath } from '@tauri-apps/plugin-shell';
 import { useLanguageStore, type Language } from '@/stores/languageStore';
+import { useThemeStore } from '@/stores/themeStore';
 import type { AppSettings } from '@/types/api';
 
 interface SettingsState {
@@ -49,10 +50,13 @@ const defaultSettings: SettingsState = {
 export function Settings() {
   const { t } = useTranslation();
   const { setLanguage, initFromSettings } = useLanguageStore();
+  const { themeId, themes, setThemeId, refreshThemes } = useThemeStore();
   const [settings, setSettings] = useState<SettingsState>(defaultSettings);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [clearInProgress, setClearInProgress] = useState(false);
   const [clearError, setClearError] = useState<string | null>(null);
+  const [themeInstallError, setThemeInstallError] = useState<string | null>(null);
+  const [themeInstalling, setThemeInstalling] = useState(false);
 
   // Load settings on mount
   useEffect(() => {
@@ -106,6 +110,12 @@ export function Settings() {
     // initFromSettings is stable (from Zustand store), intentionally excluded
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    refreshThemes().catch(() => {
+      // Errors are already logged in the store
+    });
+  }, [refreshThemes]);
 
   // Save settings to backend
   const saveSettings = useCallback(
@@ -190,6 +200,27 @@ export function Settings() {
     }
   };
 
+  const handleInstallTheme = async () => {
+    setThemeInstallError(null);
+    setThemeInstalling(true);
+    try {
+      const selected = await openDialog({
+        multiple: false,
+        filters: [{ name: 'Theme', extensions: ['json', 'jsonc'] }],
+        title: t('settings.installTheme', { defaultValue: 'Install Theme' }),
+      });
+      if (selected && typeof selected === 'string') {
+        await api.theme.install(selected);
+        await refreshThemes();
+      }
+    } catch (error) {
+      console.error('Failed to install theme:', error);
+      setThemeInstallError(String(error));
+    } finally {
+      setThemeInstalling(false);
+    }
+  };
+
   const handleClearAllData = () => {
     setClearError(null);
     setClearConfirmOpen(true);
@@ -225,6 +256,13 @@ export function Settings() {
     { value: 'de', label: 'Deutsch' },
     { value: 'ja', label: '日本語' },
   ];
+
+  const themeOptions = (themes.length ? themes : [{ id: 'spirit', name: 'Spirit', source: 'builtin' }]).map(
+    (themeItem) => ({
+      value: themeItem.id,
+      label: themeItem.name,
+    })
+  );
 
   if (settings.loading) {
     return (
@@ -347,6 +385,42 @@ export function Settings() {
               }}
             />
           </div>
+        </CardBody>
+      </Card>
+
+      {/* Themes */}
+      <Card>
+        <CardHeader>
+          <div>
+            <CardTitle>{t('settings.themes', { defaultValue: 'Themes' })}</CardTitle>
+            <CardDescription>
+              {t('settings.themesDescription', {
+                defaultValue: 'Choose a UI theme and install custom themes.',
+              })}
+            </CardDescription>
+          </div>
+        </CardHeader>
+        <CardBody
+          style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}
+        >
+          <Select
+            label={t('settings.theme', { defaultValue: 'Theme' })}
+            value={themeId}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setThemeId(e.target.value)}
+            options={themeOptions}
+          />
+          <div className="flex items-center" style={{ gap: '12px' }}>
+            <Button variant="outline" onClick={handleInstallTheme} disabled={themeInstalling}>
+              {themeInstalling
+                ? t('common.loading')
+                : t('settings.installTheme', { defaultValue: 'Install Theme' })}
+            </Button>
+          </div>
+          {themeInstallError && (
+            <div className="p-3 rounded-lg bg-[var(--error-subtle)] border border-[var(--error-border)]">
+              <p className="text-sm text-[var(--error-text)]">{themeInstallError}</p>
+            </div>
+          )}
         </CardBody>
       </Card>
 
