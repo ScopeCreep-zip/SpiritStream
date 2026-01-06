@@ -39,28 +39,4 @@ pub struct ThemeFile {
     pub tokens: HashMap<String, String>,  // Flat structure
 }
 
-// DEPRECATED: Dual-mode theme structure for backward compatibility
-// Will be removed in v0.3.0
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LegacyThemeFile {
-    pub id: String,
-    pub name: String,
-    pub tokens: LegacyThemeTokens,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LegacyThemeTokens {
-    pub light: HashMap<String, String>,
-    pub dark: HashMap<String, String>,
-}
-
-// DEPRECATED: Old ThemeTokens for frontend compatibility during transition
-// Frontend will be updated to use flat HashMap directly
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ThemeTokens {
-    pub light: HashMap<String, String>,
-    pub dark: HashMap<String, String>,
-}
+// Legacy dual-mode theme structures removed; themes are single-mode only now.

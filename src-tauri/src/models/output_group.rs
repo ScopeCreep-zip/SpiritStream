@@ -147,18 +147,6 @@ impl OutputGroup {
         }
     }
 
-    /// Create the default passthrough output group (immutable, always uses copy mode)
-    pub fn new_default() -> Self {
-        Self {
-            id: "default".to_string(),
-            name: "Passthrough (Default)".to_string(),
-            is_default: true,
-            video: VideoSettings::default(),  // Uses "copy" codec
-            audio: AudioSettings::default(),  // Uses "copy" codec
-            container: ContainerSettings::default(),
-            stream_targets: Vec::new(),
-        }
-    }
 }
 
 impl Default for OutputGroup {
