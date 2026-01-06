@@ -8,7 +8,7 @@ mod services;
 use std::sync::Arc;
 use tauri::{image::Image, Manager, RunEvent};
 use tokio::sync::Mutex;
-use services::{ProfileManager, FFmpegHandler, FFmpegDownloader, SettingsManager};
+use services::{ProfileManager, FFmpegHandler, FFmpegDownloader, SettingsManager, ThemeManager};
 use commands::FFmpegDownloaderState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -49,6 +49,10 @@ pub fn run() {
             app.manage(ffmpeg_handler);
 
             app.manage(settings_manager);
+
+            let theme_manager = ThemeManager::new(app_data_dir.clone());
+            theme_manager.start_watcher(app.handle().clone());
+            app.manage(theme_manager);
 
             // Register FFmpegDownloader as managed state
             let ffmpeg_downloader = FFmpegDownloaderState(Arc::new(Mutex::new(FFmpegDownloader::new())));
@@ -106,6 +110,10 @@ pub fn run() {
             commands::cancel_ffmpeg_download,
             commands::get_bundled_ffmpeg_path,
             commands::check_ffmpeg_update,
+            // Theme commands
+            commands::list_themes,
+            commands::get_theme_tokens,
+            commands::install_theme,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

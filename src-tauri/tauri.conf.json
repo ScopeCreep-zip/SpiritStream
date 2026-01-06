@@ -32,6 +32,9 @@
     "license": "../LICENSE",
     "licenseFile": "../LICENSE",
     "copyright": "Copyright (c) 2024-2025 SpiritStream Contributors",
+    "resources": [
+      "../themes/*.jsonc"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
