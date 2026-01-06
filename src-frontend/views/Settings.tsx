@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FolderOpen, Download, Trash2, Github, BookOpen, RefreshCw } from 'lucide-react';
+// import { open } from '@tauri-apps/api/shell';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
@@ -521,7 +522,7 @@ export function Settings() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => window.open('https://github.com/ScopeCreep-zip/SpiritStream', '_blank')}
+                onClick={() => openPath('https://github.com/ScopeCreep-zip/SpiritStream')}
               >
                 <Github className="w-4 h-4" />
                 {t('settings.github')}
@@ -529,9 +530,7 @@ export function Settings() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() =>
-                  window.open('https://deepwiki.com/ScopeCreep-zip/SpiritStream', '_blank')
-                }
+                onClick={() => openPath('https://deepwiki.com/ScopeCreep-zip/SpiritStream')}
               >
                 <BookOpen className="w-4 h-4" />
                 {t('settings.docs')}
