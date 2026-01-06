@@ -36,7 +36,7 @@ impl Default for Settings {
             ffmpeg_path: String::new(),
             auto_download_ffmpeg: true,
             encrypt_stream_keys: false,
-            theme_id: "spirit-light".to_string(),
+            theme_id: "spirit-dark".to_string(),
             last_profile: None,
         }
     }

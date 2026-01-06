@@ -95,10 +95,10 @@ function migrateOldThemeFormat(): { themeId: string } | null {
 export const useThemeStore = create<ThemeState>()(
   persist(
     (set, get) => ({
-      currentThemeId: DEFAULT_THEME_LIGHT,
+      currentThemeId: DEFAULT_THEME_DARK,
       themes: [],
       currentTokens: undefined,
-      currentMode: 'light',
+      currentMode: 'dark',
 
       setTheme: async (themeId) => {
         try {
@@ -119,9 +119,9 @@ export const useThemeStore = create<ThemeState>()(
         } catch (error) {
           console.error('Failed to load theme:', error);
           // Fall back to default
-          const fallback = DEFAULT_THEME_LIGHT;
-          applyTheme(fallback, 'light', undefined);
-          set({ currentThemeId: fallback, currentMode: 'light', currentTokens: undefined });
+          const fallback = DEFAULT_THEME_DARK;
+          applyTheme(fallback, 'dark', undefined);
+          set({ currentThemeId: fallback, currentMode: 'dark', currentTokens: undefined });
         }
       },
 
@@ -134,15 +134,15 @@ export const useThemeStore = create<ThemeState>()(
           const { currentThemeId } = get();
           if (!themes.find((theme) => theme.id === currentThemeId)) {
             // Fall back to default
-            const fallback = DEFAULT_THEME_LIGHT;
+            const fallback = DEFAULT_THEME_DARK;
             await get().setTheme(fallback);
           }
         } catch (error) {
           console.error('Failed to refresh themes:', error);
           set({
             themes: [
-              { id: DEFAULT_THEME_LIGHT, name: 'Spirit Light', mode: 'light', source: 'builtin' },
               { id: DEFAULT_THEME_DARK, name: 'Spirit Dark', mode: 'dark', source: 'builtin' },
+              { id: DEFAULT_THEME_LIGHT, name: 'Spirit Light', mode: 'light', source: 'builtin' },
             ],
           });
         }
@@ -187,7 +187,7 @@ if (typeof window !== 'undefined') {
     useThemeStore.setState({ themes });
     const state = useThemeStore.getState();
     if (!themes.find((theme) => theme.id === state.currentThemeId)) {
-      const fallback = DEFAULT_THEME_LIGHT;
+      const fallback = DEFAULT_THEME_DARK;
       state.setTheme(fallback);
     }
   }).catch((error) => {

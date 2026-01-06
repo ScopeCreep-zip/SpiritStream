@@ -14,17 +14,17 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ) => {
     const variants = {
       primary:
-        'bg-[var(--primary)] text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] active:bg-[var(--primary-active)]',
+        '[background:var(--button-primary,var(--primary))] text-[var(--primary-foreground)] hover:[background:var(--button-primary-hover,var(--primary-hover))] active:[background:var(--button-primary-active,var(--primary-active))]',
       secondary:
-        'bg-[var(--secondary)] text-[var(--secondary-foreground)] hover:bg-[var(--secondary-hover)] active:bg-[var(--secondary-active)]',
+        '[background:var(--button-secondary,var(--secondary))] text-[var(--secondary-foreground)] hover:[background:var(--button-secondary-hover,var(--secondary-hover))] active:[background:var(--button-secondary-active,var(--secondary-active))]',
       accent:
-        'bg-[var(--accent)] text-[var(--accent-foreground)] hover:bg-[var(--accent-hover)] active:bg-[var(--accent-active)]',
+        '[background:var(--button-accent,var(--accent))] text-[var(--accent-foreground)] hover:[background:var(--button-accent-hover,var(--accent-hover))] active:[background:var(--button-accent-active,var(--accent-active))]',
       ghost:
         'bg-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]',
       outline:
         'bg-transparent border-2 border-[var(--primary)] text-[var(--primary)] hover:bg-[var(--primary-subtle)]',
       destructive:
-        'bg-[var(--error)] text-[var(--error-foreground)] hover:bg-[var(--error-hover)]',
+        '[background:var(--button-destructive,var(--error))] text-[var(--error-foreground)] hover:[background:var(--button-destructive-hover,var(--error-hover))] active:[background:var(--button-destructive-active,var(--error-hover))]',
     };
 
     const sizeClasses = {
