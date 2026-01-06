@@ -6,6 +6,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
@@ -31,6 +32,9 @@ pub struct FFmpegHandler {
     stopping_groups: Arc<Mutex<HashSet<String>>>,
     disabled_targets: Arc<Mutex<HashSet<String>>>,
     relay: Arc<Mutex<Option<RelayProcess>>>,
+    /// Reference count for active groups using the relay
+    /// Prevents race condition where relay stops while groups are still active
+    relay_refcount: Arc<AtomicUsize>,
 }
 
 impl FFmpegHandler {
@@ -59,6 +63,7 @@ impl FFmpegHandler {
             stopping_groups: Arc::new(Mutex::new(HashSet::new())),
             disabled_targets: Arc::new(Mutex::new(HashSet::new())),
             relay: Arc::new(Mutex::new(None)),
+            relay_refcount: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -70,6 +75,7 @@ impl FFmpegHandler {
             stopping_groups: Arc::new(Mutex::new(HashSet::new())),
             disabled_targets: Arc::new(Mutex::new(HashSet::new())),
             relay: Arc::new(Mutex::new(None)),
+            relay_refcount: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -214,11 +220,15 @@ impl FFmpegHandler {
             });
         }
 
+        // Increment relay reference count (prevents premature relay shutdown)
+        self.relay_refcount.fetch_add(1, Ordering::SeqCst);
+
         // Spawn background thread to read stderr and emit stats
         let app_handle_clone = app_handle.clone();
         let processes_clone = Arc::clone(&self.processes);
         let relay_clone = Arc::clone(&self.relay);
         let stopping_clone = Arc::clone(&self.stopping_groups);
+        let relay_refcount_clone = Arc::clone(&self.relay_refcount);
         let group_id_clone = group_id.clone();
 
         thread::spawn(move || {
@@ -229,6 +239,7 @@ impl FFmpegHandler {
                 processes_clone,
                 stopping_clone,
                 relay_clone,
+                relay_refcount_clone,
             );
         });
 
@@ -243,6 +254,7 @@ impl FFmpegHandler {
         processes: Arc<Mutex<HashMap<String, ProcessInfo>>>,
         stopping_groups: Arc<Mutex<HashSet<String>>>,
         relay: Arc<Mutex<Option<RelayProcess>>>,
+        relay_refcount: Arc<AtomicUsize>,
     ) {
         let reader = BufReader::new(stderr);
         let mut stats = StreamStats::new(group_id.clone());
@@ -303,6 +315,9 @@ impl FFmpegHandler {
                 }
             }
         }
+
+        // Decrement relay reference count when group ends
+        relay_refcount.fetch_sub(1, Ordering::SeqCst);
 
         // Process ended - check if it was intentional or a crash
         if was_intentionally_stopped {
@@ -373,16 +388,17 @@ impl FFmpegHandler {
                 // Clean exit (input ended)
                 let _ = app_handle.emit("stream_ended", &group_id);
             }
+        }
 
-            let should_stop_relay = processes.lock()
-                .map(|procs| procs.is_empty())
-                .unwrap_or(false);
-            if should_stop_relay {
-                if let Ok(mut relay_guard) = relay.lock() {
-                    if let Some(mut relay_proc) = relay_guard.take() {
-                        let _ = relay_proc.child.kill();
-                        let _ = relay_proc.child.wait();
-                    }
+        // Check relay refcount and stop relay if no more groups are using it
+        // Use atomic load to avoid race condition where multiple groups finish simultaneously
+        let should_stop_relay = relay_refcount.load(Ordering::SeqCst) == 0;
+        if should_stop_relay {
+            if let Ok(mut relay_guard) = relay.lock() {
+                if let Some(mut relay_proc) = relay_guard.take() {
+                    log::info!("Stopping relay process (no active groups)");
+                    let _ = relay_proc.child.kill();
+                    let _ = relay_proc.child.wait();
                 }
             }
         }
@@ -447,17 +463,29 @@ impl FFmpegHandler {
 
     /// Enable a specific stream target (removes from disabled set)
     pub fn enable_target(&self, target_id: &str) {
-        self.disabled_targets.lock().unwrap().remove(target_id);
+        let mut disabled = self.disabled_targets.lock().unwrap_or_else(|e| {
+            log::warn!("Disabled targets mutex poisoned (enable_target), recovering: {}", e);
+            e.into_inner()
+        });
+        disabled.remove(target_id);
     }
 
     /// Disable a specific stream target (adds to disabled set)
     pub fn disable_target(&self, target_id: &str) {
-        self.disabled_targets.lock().unwrap().insert(target_id.to_string());
+        let mut disabled = self.disabled_targets.lock().unwrap_or_else(|e| {
+            log::warn!("Disabled targets mutex poisoned (disable_target), recovering: {}", e);
+            e.into_inner()
+        });
+        disabled.insert(target_id.to_string());
     }
 
     /// Check if a target is currently disabled
     pub fn is_target_disabled(&self, target_id: &str) -> bool {
-        self.disabled_targets.lock().unwrap().contains(target_id)
+        let disabled = self.disabled_targets.lock().unwrap_or_else(|e| {
+            log::warn!("Disabled targets mutex poisoned (is_target_disabled), recovering: {}", e);
+            e.into_inner()
+        });
+        disabled.contains(target_id)
     }
 
     /// Ensure relay process is running for shared ingest
@@ -624,8 +652,9 @@ impl FFmpegHandler {
         // When both video and audio codecs are set to "copy", FFmpeg acts as a pure
         // RTMP relay server, accepting the incoming stream and forwarding it to outputs
         // without re-encoding. This is the default behavior and most efficient mode.
-        let use_stream_copy = group.video.codec == "copy"
-            && group.audio.codec == "copy";
+        // Use case-insensitive comparison to handle "Copy", "COPY", etc.
+        let use_stream_copy = group.video.codec.eq_ignore_ascii_case("copy")
+            && group.audio.codec.eq_ignore_ascii_case("copy");
 
         if use_stream_copy {
             args.push("-c:v".to_string()); args.push("copy".to_string());
@@ -735,7 +764,10 @@ impl FFmpegHandler {
         args.push("-stats".to_string());
 
         // Add output targets (skip disabled ones)
-        let disabled = self.disabled_targets.lock().unwrap();
+        let disabled = self.disabled_targets.lock().unwrap_or_else(|e| {
+            log::warn!("Disabled targets mutex poisoned (build_args), recovering: {}", e);
+            e.into_inner()
+        });
         let mut outputs: Vec<String> = Vec::new();
         for target in &group.stream_targets {
             // Skip targets that have been disabled via toggle_target
