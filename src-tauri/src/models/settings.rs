@@ -19,6 +19,10 @@ pub struct Settings {
     // Data & Privacy
     pub encrypt_stream_keys: bool,
 
+    // UI theme
+    #[serde(default)]
+    pub theme_id: String,
+
     // Last used profile
     pub last_profile: Option<String>,
 }
@@ -32,6 +36,7 @@ impl Default for Settings {
             ffmpeg_path: String::new(),
             auto_download_ffmpeg: true,
             encrypt_stream_keys: false,
+            theme_id: "spirit-light".to_string(),
             last_profile: None,
         }
     }

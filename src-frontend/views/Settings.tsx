@@ -132,6 +132,7 @@ export function Settings() {
           ffmpegPath: updatedSettings.ffmpegPath,
           autoDownloadFfmpeg: updatedSettings.autoDownloadFfmpeg,
           encryptStreamKeys: updatedSettings.encryptStreamKeys,
+          themeId: useThemeStore.getState().currentThemeId,
           lastProfile: null, // Preserve existing or let backend handle
         };
 
@@ -279,6 +280,11 @@ export function Settings() {
     label: themeItem.name,
   }));
 
+  const handleThemeChange = async (themeId: string) => {
+    await setTheme(themeId);
+    saveSettings({});
+  };
+
   if (settings.loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -421,7 +427,7 @@ export function Settings() {
           <Select
             label={t('settings.theme', { defaultValue: 'Theme' })}
             value={currentThemeId}
-            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setTheme(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleThemeChange(e.target.value)}
             options={themeOptions}
             helper={t('settings.themeHelper', {
               defaultValue: 'Choose your preferred theme appearance.',

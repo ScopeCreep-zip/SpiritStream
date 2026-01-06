@@ -6,7 +6,7 @@ This document explains SpiritStream themes and how to create custom ones.
 
 - Themes are JSON or JSONC files (JSON with comments).
 - Each file represents a single mode: `light` or `dark`.
-- To support both modes, create two files (for example: `sunset-light.jsonc` and `sunset-dark.jsonc`).
+- If you want both variants, create two separate themes (naming is up to you; `-light`/`-dark` is just a convention).
 - Built-in themes include **Spirit Light** and **Spirit Dark**.
 - Custom themes are loaded from the app data themes folder and reloaded dynamically.
 

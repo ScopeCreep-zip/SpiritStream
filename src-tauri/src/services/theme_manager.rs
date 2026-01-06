@@ -9,7 +9,7 @@ use notify::{RecursiveMode, Watcher};
 use regex::Regex;
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::models::{ThemeFile, ThemeSummary, ThemeMode, LegacyThemeFile};
+use crate::models::{ThemeFile, ThemeSummary, ThemeMode};
 
 const THEME_FILE_EXTENSIONS: [&str; 2] = ["json", "jsonc"];
 const THEME_INSTALL_EXTENSION: &str = "jsonc";
@@ -264,58 +264,7 @@ impl ThemeManager {
     fn load_theme_file(path: &Path) -> Result<ThemeFile, String> {
         let content = fs::read_to_string(path)
             .map_err(|e| format!("Failed to read theme: {e}"))?;
-
-        // Try parsing as new single-mode format first
-        match Self::parse_theme(&content) {
-            Ok(theme) => {
-                Self::validate_theme(&theme)?;
-                return Ok(theme);
-            }
-            Err(parse_err) => {
-                // Try legacy dual-mode format
-                let sanitized = strip_jsonc_comments(&content);
-                if let Ok(legacy) = serde_json::from_str::<LegacyThemeFile>(&sanitized) {
-                    log::warn!("Theme '{}' uses deprecated dual-mode format", legacy.id);
-                    return Self::convert_legacy_to_single(&legacy, path);
-                }
-
-                // Return original parse error if both attempts fail
-                Err(parse_err)
-            }
-        }
-    }
-
-    fn convert_legacy_to_single(legacy: &LegacyThemeFile, path: &Path) -> Result<ThemeFile, String> {
-        // Detect mode from filename
-        let filename = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
-
-        let mode = if filename.ends_with("-light") {
-            ThemeMode::Light
-        } else if filename.ends_with("-dark") {
-            ThemeMode::Dark
-        } else {
-            return Err(format!(
-                "Legacy theme '{}' must end with -light or -dark in filename",
-                filename
-            ));
-        };
-
-        // Extract tokens for the detected mode
-        let tokens = match mode {
-            ThemeMode::Light => legacy.tokens.light.clone(),
-            ThemeMode::Dark => legacy.tokens.dark.clone(),
-        };
-
-        let theme = ThemeFile {
-            id: legacy.id.clone(),
-            name: legacy.name.clone(),
-            mode,
-            tokens,
-        };
-
+        let theme = Self::parse_theme(&content)?;
         Self::validate_theme(&theme)?;
         Ok(theme)
     }

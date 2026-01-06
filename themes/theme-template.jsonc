@@ -1,6 +1,6 @@
 // SpiritStream theme template (JSONC).
 // 1) Copy this file and set id/name/mode.
-// 2) Create one file per mode (light or dark).
+// 2) If you want both variants, create two separate themes (naming is up to you).
 // 3) Replace every REPLACE_ME with a valid CSS value (e.g., #RRGGBB, rgba(), hsl(), linear-gradient()).
 // 4) Install via Settings > Themes.
 {

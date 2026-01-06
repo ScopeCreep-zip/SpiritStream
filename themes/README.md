@@ -1,6 +1,6 @@
 # SpiritStream Themes
 
-This directory contains built-in example themes for SpiritStream. Each theme is provided as a single mode file (`light` or `dark`). If you want both modes, create two files.
+This directory contains built-in example themes for SpiritStream. Each theme is provided as a single mode file (`light` or `dark`). If you want both modes, create two files (naming is up to you; `-light`/`-dark` is just a convention).
 
 ## Available Themes
 
@@ -25,7 +25,7 @@ The theme will be validated and copied to your AppData directory.
 ### Method 2: Manual Installation
 
 1. Locate your SpiritStream AppData directory:
-   - **Windows**: `%APPDATA%\com.spiritstream.desktop	hemes\`
+   - **Windows**: `%APPDATA%\com.spiritstream.desktop\themes\`
    - **macOS**: `~/Library/Application Support/com.spiritstream.desktop/themes/`
    - **Linux**: `~/.local/share/com.spiritstream.desktop/themes/`
 

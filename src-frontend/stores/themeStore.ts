@@ -21,11 +21,6 @@ const DEFAULT_THEME_LIGHT = 'spirit-light';
 const DEFAULT_THEME_DARK = 'spirit-dark';
 const THEME_STYLE_ID = 'spiritstream-theme-overrides';
 
-function getSystemTheme(): ThemeMode {
-  if (typeof window === 'undefined') return 'light';
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
-
 function applyTheme(themeId: string, mode: ThemeMode, tokens?: Record<string, string>) {
   if (typeof document === 'undefined') return;
 
@@ -38,12 +33,6 @@ function applyTheme(themeId: string, mode: ThemeMode, tokens?: Record<string, st
   } else {
     clearThemeOverrides();
   }
-}
-
-function inferMode(themeId: string, fallback: ThemeMode): ThemeMode {
-  if (themeId.endsWith('-dark')) return 'dark';
-  if (themeId.endsWith('-light')) return 'light';
-  return fallback;
 }
 
 function setThemeOverrides(themeId: string, mode: ThemeMode, tokens: Record<string, string>) {
@@ -89,24 +78,14 @@ function migrateOldThemeFormat(): { themeId: string } | null {
       ? (parsed as { state?: Record<string, unknown> }).state
       : parsed) as { theme?: string; themeId?: string } | null;
 
-    if (!legacy || (!legacy.theme && !legacy.themeId)) {
+    if (!legacy || !legacy.themeId) {
       return null;
     }
 
-    // Old format: { theme: 'light'|'dark'|'system', themeId: 'spirit' }
-    const mode: ThemeMode =
-      legacy.theme === 'system' ? getSystemTheme() : legacy.theme === 'dark' ? 'dark' : 'light';
-    const oldThemeId = legacy.themeId || 'spirit';
+    const themeId = legacy.themeId;
+    console.log(`Migrating theme from old format: ${themeId}`);
 
-    // Construct new theme ID if needed
-    const newThemeId =
-      oldThemeId.endsWith('-light') || oldThemeId.endsWith('-dark')
-        ? oldThemeId
-        : `${oldThemeId}-${mode}`;
-
-    console.log(`Migrating theme from old format: ${oldThemeId} (${legacy.theme}) -> ${newThemeId}`);
-
-    return { themeId: newThemeId };
+    return { themeId };
   } catch (error) {
     console.error('Failed to migrate old theme format:', error);
     return null;
@@ -126,13 +105,7 @@ export const useThemeStore = create<ThemeState>()(
           const themes = get().themes;
           const theme = themes.find((t) => t.id === themeId);
           if (!theme) {
-            const inferredMode: ThemeMode = inferMode(themeId, get().currentMode);
-            let tokens: Record<string, string> | undefined;
-            if (!themeId.startsWith('spirit-')) {
-              tokens = await api.theme.getTokens(themeId);
-            }
-            applyTheme(themeId, inferredMode, tokens);
-            set({ currentThemeId: themeId, currentMode: inferredMode, currentTokens: tokens });
+            console.error(`Theme ${themeId} not found`);
             return;
           }
 
@@ -146,10 +119,9 @@ export const useThemeStore = create<ThemeState>()(
         } catch (error) {
           console.error('Failed to load theme:', error);
           // Fall back to default
-          const fallbackMode: ThemeMode = inferMode(themeId, 'light');
-          const fallback = fallbackMode === 'dark' ? DEFAULT_THEME_DARK : DEFAULT_THEME_LIGHT;
-          applyTheme(fallback, fallbackMode, undefined);
-          set({ currentThemeId: fallback, currentMode: fallbackMode, currentTokens: undefined });
+          const fallback = DEFAULT_THEME_LIGHT;
+          applyTheme(fallback, 'light', undefined);
+          set({ currentThemeId: fallback, currentMode: 'light', currentTokens: undefined });
         }
       },
 
