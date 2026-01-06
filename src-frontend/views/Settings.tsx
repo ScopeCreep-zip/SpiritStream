@@ -530,7 +530,7 @@ export function Settings() {
                 variant="ghost"
                 size="sm"
                 onClick={() =>
-                  window.open('https://github.com/ScopeCreep-zip/SpiritStream#readme', '_blank')
+                  window.open('https://deepwiki.com/ScopeCreep-zip/SpiritStream', '_blank')
                 }
               >
                 <BookOpen className="w-4 h-4" />
