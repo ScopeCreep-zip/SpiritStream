@@ -7,9 +7,7 @@ spiritstream-cert.pfx
 *.mp4
 *.flv
 *.ps1
-TODO.md
 testing/
 screenshots/
 frontend/node_modules/
 frontend/.vscode/
-roadmap.md

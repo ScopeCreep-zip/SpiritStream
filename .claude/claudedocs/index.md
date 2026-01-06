@@ -35,6 +35,7 @@ Welcome to the SpiritStream documentation. This index provides quick access to a
 
 | Document | Description |
 |----------|-------------|
+| [roadmap.md](./roadmap.md) | 🚀 **Complete development roadmap** (v0.1 → v3.0) |
 | [migration-status.md](./migration-status.md) | ✅ **Migration complete status** |
 | [passthrough-architecture.md](./passthrough-architecture.md) | Passthrough-first design with immutable default group |
 | [architecture-new.md](./architecture-new.md) | Current Tauri + React architecture |
