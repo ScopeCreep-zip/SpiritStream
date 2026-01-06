@@ -1,10 +1,10 @@
+export type ThemeMode = 'light' | 'dark';
+
 export interface ThemeSummary {
   id: string;
   name: string;
+  mode: ThemeMode;
   source: 'builtin' | 'custom';
 }
 
-export interface ThemeTokens {
-  light: Record<string, string>;
-  dark: Record<string, string>;
-}
+export type ThemeTokens = Record<string, string>;

@@ -14,13 +14,12 @@ import {
 } from 'lucide-react';
 
 import { AppShell } from '@/components/layout/AppShell';
-import { Sidebar, SidebarHeader, SidebarNav, SidebarFooter } from '@/components/layout/Sidebar';
+import { Sidebar, SidebarHeader, SidebarNav } from '@/components/layout/Sidebar';
 import { Logo } from '@/components/layout/Logo';
 import { MainContent, ContentArea } from '@/components/layout/MainContent';
 import { Header } from '@/components/layout/Header';
 import { NavSection } from '@/components/navigation/NavSection';
 import { NavItem } from '@/components/navigation/NavItem';
-import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { Button } from '@/components/ui/Button';
 import { ToastContainer } from '@/components/ui/Toast';
 import { ProfileModal, TargetModal, OutputGroupModal } from '@/components/modals';
@@ -31,6 +30,7 @@ import { useInitialize } from '@/hooks/useInitialize';
 import { useStreamStats } from '@/hooks/useStreamStats';
 import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValidation';
 import { toast } from '@/hooks/useToast';
+import { useThemeStore } from '@/stores/themeStore';
 
 // Import all views
 import {
@@ -64,6 +64,9 @@ function App() {
 
   // Listen to real-time stream stats from backend
   useStreamStats();
+
+  // Initialize theme store on app startup
+  useThemeStore((state) => state.currentThemeId);
 
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const {
@@ -272,9 +275,6 @@ function App() {
             />
           </NavSection>
         </SidebarNav>
-        <SidebarFooter>
-          <ThemeToggle />
-        </SidebarFooter>
       </Sidebar>
 
       <MainContent>

@@ -1,23 +1,33 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use tauri::{AppHandle, State};
 
-use crate::models::{ThemeSummary, ThemeTokens};
+use crate::models::ThemeSummary;
 use crate::services::ThemeManager;
 
 #[tauri::command]
 pub fn list_themes(
+    theme_manager: State<ThemeManager>,
+) -> Result<Vec<ThemeSummary>, String> {
+    Ok(theme_manager.list_themes())
+}
+
+#[tauri::command]
+pub fn refresh_themes(
     app_handle: AppHandle,
     theme_manager: State<ThemeManager>,
 ) -> Result<Vec<ThemeSummary>, String> {
-    Ok(theme_manager.list_themes(Some(&app_handle)))
+    // Force sync project themes and return updated list
+    theme_manager.sync_project_themes(Some(&app_handle));
+    Ok(theme_manager.list_themes())
 }
 
 #[tauri::command]
 pub fn get_theme_tokens(
     theme_id: String,
     theme_manager: State<ThemeManager>,
-) -> Result<ThemeTokens, String> {
+) -> Result<HashMap<String, String>, String> {
     theme_manager.get_theme_tokens(&theme_id)
 }
 

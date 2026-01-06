@@ -2,53 +2,45 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { listen } from '@tauri-apps/api/event';
 import { api } from '@/lib/tauri';
-import type { ThemeSummary, ThemeTokens } from '@/types/theme';
-
-export type Theme = 'light' | 'dark' | 'system';
+import type { ThemeSummary, ThemeMode } from '@/types/theme';
 
 interface ThemeState {
-  theme: Theme;
-  resolvedTheme: 'light' | 'dark';
-  themeId: string;
+  currentThemeId: string;
   themes: ThemeSummary[];
-  currentTokens?: ThemeTokens;
-  setTheme: (theme: Theme) => void;
-  toggleTheme: () => void;
-  setThemeId: (themeId: string) => Promise<void>;
+  currentTokens?: Record<string, string>;
+
+  // Computed property
+  currentMode: ThemeMode;
+
+  // Actions
+  setTheme: (themeId: string) => Promise<void>;
   refreshThemes: () => Promise<void>;
 }
 
-const BUILTIN_THEME_ID = 'spirit';
+const DEFAULT_THEME_LIGHT = 'spirit-light';
+const DEFAULT_THEME_DARK = 'spirit-dark';
 const THEME_STYLE_ID = 'spiritstream-theme-overrides';
 
-function getSystemTheme(): 'light' | 'dark' {
+function getSystemTheme(): ThemeMode {
   if (typeof window === 'undefined') return 'light';
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
-function resolveTheme(theme: Theme): 'light' | 'dark' {
-  return theme === 'system' ? getSystemTheme() : theme;
-}
+function applyTheme(themeId: string, mode: ThemeMode, tokens?: Record<string, string>) {
+  if (typeof document === 'undefined') return;
 
-function applyThemeAttributes(resolvedTheme: 'light' | 'dark', themeId: string) {
-  if (typeof document !== 'undefined') {
-    document.documentElement.setAttribute('data-theme', resolvedTheme);
-    document.documentElement.setAttribute('data-theme-name', themeId);
+  document.documentElement.setAttribute('data-theme', mode);
+  document.documentElement.setAttribute('data-theme-id', themeId);
+
+  // Only apply overrides when tokens are provided
+  if (tokens) {
+    setThemeOverrides(themeId, mode, tokens);
+  } else {
+    clearThemeOverrides();
   }
 }
 
-function buildThemeCss(themeId: string, tokens: ThemeTokens): string {
-  const buildBlock = (mode: 'light' | 'dark', entries: Record<string, string>) => {
-    const lines = Object.entries(entries)
-      .map(([key, value]) => `  ${key}: ${value};`)
-      .join('\n');
-    return `:root[data-theme-name="${themeId}"][data-theme="${mode}"] {\n${lines}\n}`;
-  };
-
-  return `${buildBlock('light', tokens.light)}\n${buildBlock('dark', tokens.dark)}`;
-}
-
-function setThemeOverrides(themeId: string, tokens: ThemeTokens) {
+function setThemeOverrides(themeId: string, mode: ThemeMode, tokens: Record<string, string>) {
   if (typeof document === 'undefined') return;
   const styleId = THEME_STYLE_ID;
   let style = document.getElementById(styleId) as HTMLStyleElement | null;
@@ -57,7 +49,13 @@ function setThemeOverrides(themeId: string, tokens: ThemeTokens) {
     style.id = styleId;
     document.head.appendChild(style);
   }
-  style.textContent = buildThemeCss(themeId, tokens);
+
+  const entries = Object.entries(tokens)
+    .map(([key, value]) => `  ${key}: ${value};`)
+    .join('\n');
+
+  // Single selector for this specific theme + mode
+  style.textContent = `:root[data-theme-id="${themeId}"][data-theme="${mode}"] {\n${entries}\n}`;
 }
 
 function clearThemeOverrides() {
@@ -68,57 +66,67 @@ function clearThemeOverrides() {
   }
 }
 
-function applyTheme(
-  resolvedTheme: 'light' | 'dark',
-  themeId: string,
-  tokens?: ThemeTokens
-) {
-  applyThemeAttributes(resolvedTheme, themeId);
-  if (themeId === BUILTIN_THEME_ID || !tokens) {
-    clearThemeOverrides();
-  } else {
-    setThemeOverrides(themeId, tokens);
+function migrateOldThemeFormat(): { themeId: string } | null {
+  try {
+    const oldData = localStorage.getItem('spiritstream-theme');
+    if (!oldData) return null;
+
+    const old = JSON.parse(oldData);
+    // Old format: { theme: 'light'|'dark'|'system', themeId: 'spirit' }
+    // New format: { currentThemeId: 'spirit-light' }
+
+    if (old.currentThemeId) return null; // Already new format
+
+    const mode: ThemeMode =
+      old.theme === 'system' ? getSystemTheme() : old.theme === 'dark' ? 'dark' : 'light';
+    const oldThemeId = old.themeId || 'spirit';
+
+    // Construct new theme ID if needed
+    const newThemeId =
+      oldThemeId.endsWith('-light') || oldThemeId.endsWith('-dark')
+        ? oldThemeId
+        : `${oldThemeId}-${mode}`;
+
+    console.log(`Migrating theme from old format: ${old.themeId} (${old.theme}) -> ${newThemeId}`);
+
+    return { themeId: newThemeId };
+  } catch (error) {
+    console.error('Failed to migrate old theme format:', error);
+    return null;
   }
 }
 
 export const useThemeStore = create<ThemeState>()(
   persist(
     (set, get) => ({
-      theme: 'system',
-      resolvedTheme: getSystemTheme(),
-      themeId: BUILTIN_THEME_ID,
+      currentThemeId: DEFAULT_THEME_LIGHT,
       themes: [],
       currentTokens: undefined,
+      currentMode: 'light',
 
-      setTheme: (theme) => {
-        const resolvedTheme = resolveTheme(theme);
-        applyTheme(resolvedTheme, get().themeId, get().currentTokens);
-        set({ theme, resolvedTheme });
-      },
-
-      toggleTheme: () => {
-        const current = get().resolvedTheme;
-        const next = current === 'light' ? 'dark' : 'light';
-        applyTheme(next, get().themeId, get().currentTokens);
-        set({ theme: next, resolvedTheme: next });
-      },
-
-      setThemeId: async (themeId) => {
-        const resolvedTheme = resolveTheme(get().theme);
-        if (themeId === BUILTIN_THEME_ID) {
-          applyTheme(resolvedTheme, themeId, undefined);
-          set({ themeId, currentTokens: undefined });
-          return;
-        }
-
+      setTheme: async (themeId) => {
         try {
-          const tokens = await api.theme.getTokens(themeId);
-          applyTheme(resolvedTheme, themeId, tokens);
-          set({ themeId, currentTokens: tokens });
+          const themes = get().themes;
+          const theme = themes.find((t) => t.id === themeId);
+          if (!theme) {
+            console.error(`Theme ${themeId} not found`);
+            return;
+          }
+
+          let tokens: Record<string, string> | undefined;
+          if (!(theme.source === 'builtin' && theme.id.startsWith('spirit-'))) {
+            tokens = await api.theme.getTokens(themeId);
+          }
+
+          applyTheme(themeId, theme.mode, tokens);
+          set({ currentThemeId: themeId, currentMode: theme.mode, currentTokens: tokens });
         } catch (error) {
-          console.error('Failed to load theme tokens:', error);
-          applyTheme(resolvedTheme, BUILTIN_THEME_ID, undefined);
-          set({ themeId: BUILTIN_THEME_ID, currentTokens: undefined });
+          console.error('Failed to load theme:', error);
+          // Fall back to default
+          const fallback = themeId.endsWith('-dark') ? DEFAULT_THEME_DARK : DEFAULT_THEME_LIGHT;
+          const fallbackMode: ThemeMode = fallback.endsWith('-dark') ? 'dark' : 'light';
+          applyTheme(fallback, fallbackMode, undefined);
+          set({ currentThemeId: fallback, currentMode: fallbackMode, currentTokens: undefined });
         }
       },
 
@@ -126,30 +134,58 @@ export const useThemeStore = create<ThemeState>()(
         try {
           const themes = await api.theme.list();
           set({ themes });
-          if (!themes.find((theme) => theme.id === get().themeId)) {
-            await get().setThemeId(BUILTIN_THEME_ID);
+
+          // Check if current theme still exists
+          const { currentThemeId } = get();
+          if (!themes.find((theme) => theme.id === currentThemeId)) {
+            // Fall back to default
+            const fallback = currentThemeId.endsWith('-dark') ? DEFAULT_THEME_DARK : DEFAULT_THEME_LIGHT;
+            await get().setTheme(fallback);
           }
         } catch (error) {
           console.error('Failed to refresh themes:', error);
-          set({ themes: [{ id: BUILTIN_THEME_ID, name: 'Spirit', source: 'builtin' }] });
-          await get().setThemeId(BUILTIN_THEME_ID);
+          set({
+            themes: [
+              { id: DEFAULT_THEME_LIGHT, name: 'Spirit Light', mode: 'light', source: 'builtin' },
+              { id: DEFAULT_THEME_DARK, name: 'Spirit Dark', mode: 'dark', source: 'builtin' },
+            ],
+          });
         }
       },
     }),
     {
       name: 'spiritstream-theme',
       partialize: (state) => ({
-        theme: state.theme,
-        themeId: state.themeId,
+        currentThemeId: state.currentThemeId,
       }),
       onRehydrateStorage: () => (state) => {
         if (state) {
-          const resolvedTheme = resolveTheme(state.theme);
-          applyTheme(resolvedTheme, state.themeId, state.currentTokens);
-          state.resolvedTheme = resolvedTheme;
-          if (state.themeId !== BUILTIN_THEME_ID) {
-            state.setThemeId(state.themeId);
+          // Try to migrate old format
+          const migrated = migrateOldThemeFormat();
+          if (migrated) {
+            state.currentThemeId = migrated.themeId;
+            // Clear old format from localStorage
+            const oldData = localStorage.getItem('spiritstream-theme');
+            if (oldData) {
+              try {
+                const parsed = JSON.parse(oldData);
+                delete parsed.theme;
+                delete parsed.themeId;
+                localStorage.setItem('spiritstream-theme', JSON.stringify(parsed));
+              } catch (e) {
+                console.error('Failed to clean up old theme format:', e);
+              }
+            }
           }
+
+          // Load themes and apply current theme
+          state.refreshThemes().then(() => {
+            const { currentThemeId, themes } = state;
+            const theme = themes.find((t) => t.id === currentThemeId);
+            if (theme) {
+              state.setTheme(currentThemeId);
+            }
+          });
         }
       },
     }
@@ -157,21 +193,16 @@ export const useThemeStore = create<ThemeState>()(
 );
 
 if (typeof window !== 'undefined') {
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
-    const state = useThemeStore.getState();
-    if (state.theme === 'system') {
-      const resolvedTheme = e.matches ? 'dark' : 'light';
-      applyTheme(resolvedTheme, state.themeId, state.currentTokens);
-      useThemeStore.setState({ resolvedTheme });
-    }
-  });
-
+  // Listen for theme file changes from backend
   listen<ThemeSummary[]>('themes_updated', (event) => {
     const themes = event.payload;
     useThemeStore.setState({ themes });
     const state = useThemeStore.getState();
-    if (!themes.find((theme) => theme.id === state.themeId)) {
-      state.setThemeId(BUILTIN_THEME_ID);
+    if (!themes.find((theme) => theme.id === state.currentThemeId)) {
+      const fallback = state.currentThemeId.endsWith('-dark')
+        ? DEFAULT_THEME_DARK
+        : DEFAULT_THEME_LIGHT;
+      state.setTheme(fallback);
     }
   }).catch((error) => {
     console.error('Failed to listen for theme updates:', error);

@@ -1,0 +1,296 @@
+// Trans Pride Theme 💙💗🤍💗💙
+// Soft pastels with powerful presence
+// All the rizz, all the love!
+{
+  "id": "trans-pride",
+  "name": "Trans Pride",
+  "tokens": {
+    "light": {
+      // === BRAND COLORS === (Trans Pride colors: baby blue, pink, white)
+      // Primary - Soft Baby Blue
+      "--primary": "#5BCEFA",
+      "--primary-hover": "#91D9FA",
+      "--primary-active": "#2EBCE6",
+      "--primary-subtle": "#E3F7FD",
+      "--primary-subtle-hover": "#C7EDFC",
+      "--primary-muted": "#F1FBFE",
+      "--primary-foreground": "#0A3D4F",
+
+      // Secondary - Gentle Pink
+      "--secondary": "#F5A9B8",
+      "--secondary-hover": "#F8C4D0",
+      "--secondary-active": "#F28FA6",
+      "--secondary-subtle": "#FDF0F3",
+      "--secondary-subtle-hover": "#FCE6EB",
+      "--secondary-muted": "#FEF8F9",
+      "--secondary-foreground": "#5A2232",
+
+      // Accent - Pure White (with subtle tint)
+      "--accent": "#FFFFFF",
+      "--accent-hover": "#F8FBFD",
+      "--accent-active": "#F0F6FA",
+      "--accent-subtle": "#E3F7FD",
+      "--accent-subtle-hover": "#C7EDFC",
+      "--accent-muted": "#F1FBFE",
+      "--accent-foreground": "#0A3D4F",
+
+      // === BACKGROUNDS ===
+      "--bg-base": "#FEFCFD",
+      "--bg-surface": "#FFFFFF",
+      "--bg-surface-secondary": "#FDFDFE",
+      "--bg-elevated": "#FFFFFF",
+      "--bg-muted": "#FCF9FA",
+      "--bg-sunken": "#FAF7F8",
+      "--bg-canvas": "#F8F3F5",
+      "--bg-overlay": "rgba(91, 206, 250, 0.5)",
+      "--bg-overlay-light": "rgba(91, 206, 250, 0.1)",
+      "--bg-hover": "rgba(245, 169, 184, 0.08)",
+      "--bg-active": "rgba(245, 169, 184, 0.12)",
+      "--bg-selected": "#FDF0F3",
+      "--bg-selected-hover": "#FCE6EB",
+
+      // === TEXT ===
+      "--text-primary": "#1A1521",
+      "--text-secondary": "#5A4B61",
+      "--text-tertiary": "#8374",
+      "--text-muted": "#B3A8BA",
+      "--text-disabled": "#D9D3DD",
+      "--text-inverse": "#FFFFFF",
+      "--text-on-brand": "#0A3D4F",
+
+      // === BORDERS ===
+      "--border-default": "#F3EEF5",
+      "--border-muted": "#FAF7F8",
+      "--border-strong": "#E8DFE",
+      "--border-stronger": "#D9D3DD",
+      "--border-interactive": "#5BCEFA",
+      "--border-interactive-hover": "#91D9FA",
+      "--border-disabled": "#F3EEF5",
+
+      // === FOCUS & RING ===
+      "--ring-default": "#5BCEFA",
+      "--ring-offset": "#FFFFFF",
+      "--ring-width": "3px",
+      "--ring-offset-width": "2px",
+
+      // === SHADOWS ===
+      "--shadow-color": "195 90% 60%",
+      "--shadow-xs": "0 1px 2px hsl(var(--shadow-color) / 0.08)",
+      "--shadow-sm": "0 1px 3px hsl(var(--shadow-color) / 0.10), 0 1px 2px hsl(var(--shadow-color) / 0.06)",
+      "--shadow-md": "0 4px 6px hsl(var(--shadow-color) / 0.10), 0 2px 4px hsl(var(--shadow-color) / 0.06)",
+      "--shadow-lg": "0 10px 15px hsl(var(--shadow-color) / 0.10), 0 4px 6px hsl(var(--shadow-color) / 0.05)",
+      "--shadow-xl": "0 20px 25px hsl(var(--shadow-color) / 0.12), 0 8px 10px hsl(var(--shadow-color) / 0.05)",
+      "--shadow-2xl": "0 25px 50px hsl(var(--shadow-color) / 0.15)",
+      "--shadow-inner": "inset 0 2px 4px hsl(var(--shadow-color) / 0.06)",
+
+      // === SEMANTIC: SUCCESS ===
+      "--success": "#10B981",
+      "--success-hover": "#34D399",
+      "--success-subtle": "#ECFDF5",
+      "--success-muted": "#F0FDF4",
+      "--success-foreground": "#FFFFFF",
+      "--success-text": "#059669",
+      "--success-border": "#6EE7B7",
+
+      // === SEMANTIC: WARNING ===
+      "--warning": "#F59E0B",
+      "--warning-hover": "#FBBF24",
+      "--warning-subtle": "#FEF3C7",
+      "--warning-muted": "#FFFBEB",
+      "--warning-foreground": "#0A3D4F",
+      "--warning-text": "#D97706",
+      "--warning-border": "#FCD34D",
+
+      // === SEMANTIC: ERROR ===
+      "--error": "#EF4444",
+      "--error-hover": "#F87171",
+      "--error-subtle": "#FEE2E2",
+      "--error-muted": "#FEF2F2",
+      "--error-foreground": "#FFFFFF",
+      "--error-text": "#DC2626",
+      "--error-border": "#FCA5A5",
+
+      // === SEMANTIC: INFO ===
+      "--info": "#5BCEFA",
+      "--info-hover": "#91D9FA",
+      "--info-subtle": "#E3F7FD",
+      "--info-muted": "#F1FBFE",
+      "--info-foreground": "#0A3D4F",
+      "--info-text": "#2EBCE6",
+      "--info-border": "#C7EDFC",
+
+      // === STREAMING STATUS ===
+      "--status-live": "#10B981",
+      "--status-live-bg": "#ECFDF5",
+      "--status-live-text": "#059669",
+
+      "--status-connecting": "#F59E0B",
+      "--status-connecting-bg": "#FEF3C7",
+      "--status-connecting-text": "#D97706",
+
+      "--status-offline": "#B3A8BA",
+      "--status-offline-bg": "#FAF7F8",
+      "--status-offline-text": "#8374",
+
+      "--status-error": "#EF4444",
+      "--status-error-bg": "#FEE2E2",
+      "--status-error-text": "#DC2626",
+
+      // === GRADIENTS === (Trans flag gradient: blue → pink → white → pink → blue)
+      "--gradient-brand": "linear-gradient(135deg, #5BCEFA 0%, #F5A9B8 30%, #FFFFFF 50%, #F5A9B8 70%, #5BCEFA 100%)",
+      "--gradient-brand-subtle": "linear-gradient(135deg, #E3F7FD 0%, #FDF0F3 30%, #FFFFFF 50%, #FDF0F3 70%, #E3F7FD 100%)",
+      "--gradient-surface": "linear-gradient(180deg, #FFFFFF 0%, #FEFCFD 100%)",
+
+      // === SCROLLBAR ===
+      "--scrollbar-track": "#FAF7F8",
+      "--scrollbar-thumb": "#E8DFE",
+      "--scrollbar-thumb-hover": "#D9D3DD",
+
+      // === TYPOGRAPHY === (Soft, approachable fonts)
+      "--font-sans": "'Quicksand', 'Nunito', 'Comfortaa', sans-serif",
+      "--font-mono": "'Fira Code', monospace"
+    },
+    "dark": {
+      // === BRAND COLORS ===
+      "--primary": "#91D9FA",
+      "--primary-hover": "#C7EDFC",
+      "--primary-active": "#E3F7FD",
+      "--primary-subtle": "#0A3D4F",
+      "--primary-subtle-hover": "#0F5670",
+      "--primary-muted": "#082835",
+      "--primary-foreground": "#0A1821",
+
+      // Secondary - Gentle Pink
+      "--secondary": "#F8C4D0",
+      "--secondary-hover": "#FCDCE5",
+      "--secondary-active": "#FDF0F3",
+      "--secondary-subtle": "#5A2232",
+      "--secondary-subtle-hover": "#7D2F45",
+      "--secondary-muted": "#3A1420",
+      "--secondary-foreground": "#0A1821",
+
+      // Accent - Soft White
+      "--accent": "#F8FBFD",
+      "--accent-hover": "#FFFFFF",
+      "--accent-active": "#FFFFFF",
+      "--accent-subtle": "#2A3D47",
+      "--accent-subtle-hover": "#3A5361",
+      "--accent-muted": "#1A2832",
+      "--accent-foreground": "#0A1821",
+
+      // === BACKGROUNDS ===
+      "--bg-base": "#0A1821",
+      "--bg-surface": "#152530",
+      "--bg-surface-secondary": "#1F3240",
+      "--bg-elevated": "#2A3D47",
+      "--bg-muted": "#152530",
+      "--bg-sunken": "#08121A",
+      "--bg-canvas": "#0D1B24",
+      "--bg-overlay": "rgba(145, 217, 250, 0.7)",
+      "--bg-overlay-light": "rgba(145, 217, 250, 0.3)",
+      "--bg-hover": "rgba(248, 196, 208, 0.12)",
+      "--bg-active": "rgba(248, 196, 208, 0.18)",
+      "--bg-selected": "#5A2232",
+      "--bg-selected-hover": "#7D2F45",
+
+      // === TEXT ===
+      "--text-primary": "#F8FBFD",
+      "--text-secondary": "#E3F7FD",
+      "--text-tertiary": "#C7EDFC",
+      "--text-muted": "#91D9FA",
+      "--text-disabled": "#5BCEFA",
+      "--text-inverse": "#0A1821",
+      "--text-on-brand": "#0A1821",
+
+      // === BORDERS ===
+      "--border-default": "#2A3D47",
+      "--border-muted": "#1F3240",
+      "--border-strong": "#3A5361",
+      "--border-stronger": "#4D6875",
+      "--border-interactive": "#91D9FA",
+      "--border-interactive-hover": "#C7EDFC",
+      "--border-disabled": "#2A3D47",
+
+      // === FOCUS & RING ===
+      "--ring-default": "#91D9FA",
+      "--ring-offset": "#152530",
+
+      // === SHADOWS ===
+      "--shadow-color": "195 90% 8%",
+      "--shadow-xs": "0 1px 2px hsl(var(--shadow-color) / 0.5)",
+      "--shadow-sm": "0 1px 3px hsl(var(--shadow-color) / 0.6), 0 1px 2px hsl(var(--shadow-color) / 0.4)",
+      "--shadow-md": "0 4px 6px hsl(var(--shadow-color) / 0.6), 0 2px 4px hsl(var(--shadow-color) / 0.4)",
+      "--shadow-lg": "0 10px 15px hsl(var(--shadow-color) / 0.6), 0 4px 6px hsl(var(--shadow-color) / 0.4)",
+      "--shadow-xl": "0 20px 25px hsl(var(--shadow-color) / 0.7), 0 8px 10px hsl(var(--shadow-color) / 0.5)",
+      "--shadow-2xl": "0 25px 50px hsl(var(--shadow-color) / 0.8)",
+      "--shadow-inner": "inset 0 2px 4px hsl(var(--shadow-color) / 0.5)",
+
+      // === SEMANTIC: SUCCESS ===
+      "--success": "#34D399",
+      "--success-hover": "#6EE7B7",
+      "--success-subtle": "#064E3B",
+      "--success-muted": "#022C22",
+      "--success-foreground": "#0A1821",
+      "--success-text": "#6EE7B7",
+      "--success-border": "#10B981",
+
+      // === SEMANTIC: WARNING ===
+      "--warning": "#FBBF24",
+      "--warning-hover": "#FCD34D",
+      "--warning-subtle": "#78350F",
+      "--warning-muted": "#451A03",
+      "--warning-foreground": "#0A1821",
+      "--warning-text": "#FCD34D",
+      "--warning-border": "#F59E0B",
+
+      // === SEMANTIC: ERROR ===
+      "--error": "#F87171",
+      "--error-hover": "#FCA5A5",
+      "--error-subtle": "#7F1D1D",
+      "--error-muted": "#450A0A",
+      "--error-foreground": "#0A1821",
+      "--error-text": "#FCA5A5",
+      "--error-border": "#EF4444",
+
+      // === SEMANTIC: INFO ===
+      "--info": "#91D9FA",
+      "--info-hover": "#C7EDFC",
+      "--info-subtle": "#0A3D4F",
+      "--info-muted": "#082835",
+      "--info-foreground": "#0A1821",
+      "--info-text": "#C7EDFC",
+      "--info-border": "#5BCEFA",
+
+      // === STREAMING STATUS ===
+      "--status-live": "#34D399",
+      "--status-live-bg": "#064E3B",
+      "--status-live-text": "#6EE7B7",
+
+      "--status-connecting": "#FBBF24",
+      "--status-connecting-bg": "#78350F",
+      "--status-connecting-text": "#FCD34D",
+
+      "--status-offline": "#5BCEFA",
+      "--status-offline-bg": "#0A3D4F",
+      "--status-offline-text": "#C7EDFC",
+
+      "--status-error": "#F87171",
+      "--status-error-bg": "#7F1D1D",
+      "--status-error-text": "#FCA5A5",
+
+      // === GRADIENTS ===
+      "--gradient-brand": "linear-gradient(135deg, #91D9FA 0%, #F8C4D0 30%, #F8FBFD 50%, #F8C4D0 70%, #91D9FA 100%)",
+      "--gradient-brand-subtle": "linear-gradient(135deg, #0A3D4F 0%, #5A2232 30%, #2A3D47 50%, #5A2232 70%, #0A3D4F 100%)",
+      "--gradient-surface": "linear-gradient(180deg, #152530 0%, #0D1B24 100%)",
+
+      // === SCROLLBAR ===
+      "--scrollbar-track": "#152530",
+      "--scrollbar-thumb": "#2A3D47",
+      "--scrollbar-thumb-hover": "#3A5361",
+
+      // === TYPOGRAPHY ===
+      "--font-sans": "'Quicksand', 'Nunito', 'Comfortaa', sans-serif",
+      "--font-mono": "'Fira Code', monospace"
+    }
+  }
+}

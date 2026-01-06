@@ -50,7 +50,7 @@ const defaultSettings: SettingsState = {
 export function Settings() {
   const { t } = useTranslation();
   const { setLanguage, initFromSettings } = useLanguageStore();
-  const { themeId, themes, setThemeId, refreshThemes } = useThemeStore();
+  const { currentThemeId, themes, setTheme, refreshThemes } = useThemeStore();
   const [settings, setSettings] = useState<SettingsState>(defaultSettings);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [clearInProgress, setClearInProgress] = useState(false);
@@ -257,12 +257,26 @@ export function Settings() {
     { value: 'ja', label: '日本語' },
   ];
 
-  const themeOptions = (themes.length ? themes : [{ id: 'spirit', name: 'Spirit', source: 'builtin' }]).map(
-    (themeItem) => ({
-      value: themeItem.id,
-      label: themeItem.name,
-    })
-  );
+  const themeOptions = (themes.length
+    ? themes
+    : [
+        {
+          id: 'spirit-light',
+          name: 'Spirit Light',
+          mode: 'light' as const,
+          source: 'builtin' as const,
+        },
+        {
+          id: 'spirit-dark',
+          name: 'Spirit Dark',
+          mode: 'dark' as const,
+          source: 'builtin' as const,
+        },
+      ]
+  ).map((themeItem) => ({
+    value: themeItem.id,
+    label: themeItem.name,
+  }));
 
   if (settings.loading) {
     return (
@@ -405,9 +419,12 @@ export function Settings() {
         >
           <Select
             label={t('settings.theme', { defaultValue: 'Theme' })}
-            value={themeId}
-            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setThemeId(e.target.value)}
+            value={currentThemeId}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setTheme(e.target.value)}
             options={themeOptions}
+            helper={t('settings.themeHelper', {
+              defaultValue: 'Choose your preferred theme appearance.',
+            })}
           />
           <div className="flex items-center" style={{ gap: '12px' }}>
             <Button variant="outline" onClick={handleInstallTheme} disabled={themeInstalling}>

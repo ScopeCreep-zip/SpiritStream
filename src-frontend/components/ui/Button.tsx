@@ -14,14 +14,17 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ) => {
     const variants = {
       primary:
-        'bg-[var(--primary)] text-white hover:bg-[var(--primary-hover)] active:bg-[var(--primary-active)]',
-      secondary: 'bg-[var(--secondary)] text-white hover:opacity-90',
-      accent: 'bg-[var(--accent)] text-white hover:opacity-90',
+        'bg-[var(--primary)] text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] active:bg-[var(--primary-active)]',
+      secondary:
+        'bg-[var(--secondary)] text-[var(--secondary-foreground)] hover:bg-[var(--secondary-hover)] active:bg-[var(--secondary-active)]',
+      accent:
+        'bg-[var(--accent)] text-[var(--accent-foreground)] hover:bg-[var(--accent-hover)] active:bg-[var(--accent-active)]',
       ghost:
         'bg-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]',
       outline:
         'bg-transparent border-2 border-[var(--primary)] text-[var(--primary)] hover:bg-[var(--primary-subtle)]',
-      destructive: 'bg-[var(--error)] text-white hover:opacity-90',
+      destructive:
+        'bg-[var(--error)] text-[var(--error-foreground)] hover:bg-[var(--error-hover)]',
     };
 
     const sizeClasses = {

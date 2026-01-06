@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { Profile, ProfileSummary, OutputGroup, RtmpInput } from '@/types/profile';
 import type { Encoders } from '@/types/stream';
 import type { AppSettings, FFmpegVersionInfo } from '@/types/api';
-import type { ThemeSummary, ThemeTokens } from '@/types/theme';
+import type { ThemeSummary } from '@/types/theme';
 
 /**
  * Type-safe Tauri API wrapper
@@ -51,7 +51,7 @@ export const api = {
   },
   theme: {
     list: () => invoke<ThemeSummary[]>('list_themes'),
-    getTokens: (themeId: string) => invoke<ThemeTokens>('get_theme_tokens', { themeId }),
+    getTokens: (themeId: string) => invoke<Record<string, string>>('get_theme_tokens', { themeId }),
     install: (themePath: string) => invoke<ThemeSummary>('install_theme', { themePath }),
   },
 };

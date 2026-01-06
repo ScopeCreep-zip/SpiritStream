@@ -1,0 +1,300 @@
+// Rainbow Pride Theme 🌈✨
+// Celebrating diversity with ALL the colors
+// Maximum pizzazz, maximum love!
+{
+  "id": "rainbow-pride",
+  "name": "Rainbow Pride",
+  "tokens": {
+    "light": {
+      // === BRAND COLORS ===
+      // Primary - Vibrant Rainbow Gradient Base (Purple to Pink)
+      "--primary": "#9333EA",
+      "--primary-hover": "#A855F7",
+      "--primary-active": "#7E22CE",
+      "--primary-subtle": "#F3E8FF",
+      "--primary-subtle-hover": "#E9D5FF",
+      "--primary-muted": "#FAF5FF",
+      "--primary-foreground": "#FFFFFF",
+
+      // Secondary - Hot Pink
+      "--secondary": "#EC4899",
+      "--secondary-hover": "#F472B6",
+      "--secondary-active": "#DB2777",
+      "--secondary-subtle": "#FCE7F3",
+      "--secondary-subtle-hover": "#FBCFE8",
+      "--secondary-muted": "#FDF2F8",
+      "--secondary-foreground": "#FFFFFF",
+
+      // Accent - Electric Orange
+      "--accent": "#F97316",
+      "--accent-hover": "#FB923C",
+      "--accent-active": "#EA580C",
+      "--accent-subtle": "#FFEDD5",
+      "--accent-subtle-hover": "#FED7AA",
+      "--accent-muted": "#FFF7ED",
+      "--accent-foreground": "#FFFFFF",
+
+      // === BACKGROUNDS ===
+      "--bg-base": "#FEF9F5",
+      "--bg-surface": "#FFFFFF",
+      "--bg-surface-secondary": "#FFFBF7",
+      "--bg-elevated": "#FFFFFF",
+      "--bg-muted": "#FEF3F2",
+      "--bg-sunken": "#FCF5F0",
+      "--bg-canvas": "#FEF0EB",
+      "--bg-overlay": "rgba(236, 72, 153, 0.5)",
+      "--bg-overlay-light": "rgba(236, 72, 153, 0.1)",
+      "--bg-hover": "rgba(236, 72, 153, 0.08)",
+      "--bg-active": "rgba(236, 72, 153, 0.12)",
+      "--bg-selected": "#FCE7F3",
+      "--bg-selected-hover": "#FBCFE8",
+
+      // === TEXT ===
+      "--text-primary": "#18181B",
+      "--text-secondary": "#52525B",
+      "--text-tertiary": "#71717A",
+      "--text-muted": "#A1A1AA",
+      "--text-disabled": "#D4D4D8",
+      "--text-inverse": "#FFFFFF",
+      "--text-on-brand": "#FFFFFF",
+
+      // === BORDERS ===
+      "--border-default": "#F4F4F5",
+      "--border-muted": "#FAFAFA",
+      "--border-strong": "#E4E4E7",
+      "--border-stronger": "#D4D4D8",
+      "--border-interactive": "#EC4899",
+      "--border-interactive-hover": "#F472B6",
+      "--border-disabled": "#F4F4F5",
+
+      // === FOCUS & RING ===
+      "--ring-default": "#EC4899",
+      "--ring-offset": "#FFFFFF",
+      "--ring-width": "3px",
+      "--ring-offset-width": "2px",
+
+      // === SHADOWS ===
+      "--shadow-color": "340 75% 60%",
+      "--shadow-xs": "0 1px 2px hsl(var(--shadow-color) / 0.08)",
+      "--shadow-sm": "0 1px 3px hsl(var(--shadow-color) / 0.12), 0 1px 2px hsl(var(--shadow-color) / 0.08)",
+      "--shadow-md": "0 4px 6px hsl(var(--shadow-color) / 0.12), 0 2px 4px hsl(var(--shadow-color) / 0.08)",
+      "--shadow-lg": "0 10px 15px hsl(var(--shadow-color) / 0.12), 0 4px 6px hsl(var(--shadow-color) / 0.08)",
+      "--shadow-xl": "0 20px 25px hsl(var(--shadow-color) / 0.15), 0 8px 10px hsl(var(--shadow-color) / 0.08)",
+      "--shadow-2xl": "0 25px 50px hsl(var(--shadow-color) / 0.20)",
+      "--shadow-inner": "inset 0 2px 4px hsl(var(--shadow-color) / 0.08)",
+
+      // === SEMANTIC: SUCCESS === (Green)
+      "--success": "#10B981",
+      "--success-hover": "#34D399",
+      "--success-subtle": "#ECFDF5",
+      "--success-muted": "#F0FDF4",
+      "--success-foreground": "#FFFFFF",
+      "--success-text": "#059669",
+      "--success-border": "#6EE7B7",
+
+      // === SEMANTIC: WARNING === (Yellow-Orange)
+      "--warning": "#F59E0B",
+      "--warning-hover": "#FBBF24",
+      "--warning-subtle": "#FEF3C7",
+      "--warning-muted": "#FFFBEB",
+      "--warning-foreground": "#18181B",
+      "--warning-text": "#D97706",
+      "--warning-border": "#FCD34D",
+
+      // === SEMANTIC: ERROR === (Red)
+      "--error": "#EF4444",
+      "--error-hover": "#F87171",
+      "--error-subtle": "#FEE2E2",
+      "--error-muted": "#FEF2F2",
+      "--error-foreground": "#FFFFFF",
+      "--error-text": "#DC2626",
+      "--error-border": "#FCA5A5",
+
+      // === SEMANTIC: INFO === (Blue)
+      "--info": "#3B82F6",
+      "--info-hover": "#60A5FA",
+      "--info-subtle": "#DBEAFE",
+      "--info-muted": "#EFF6FF",
+      "--info-foreground": "#FFFFFF",
+      "--info-text": "#2563EB",
+      "--info-border": "#93C5FD",
+
+      // === STREAMING STATUS ===
+      "--status-live": "#10B981",
+      "--status-live-bg": "#ECFDF5",
+      "--status-live-text": "#059669",
+
+      "--status-connecting": "#F59E0B",
+      "--status-connecting-bg": "#FEF3C7",
+      "--status-connecting-text": "#D97706",
+
+      "--status-offline": "#A1A1AA",
+      "--status-offline-bg": "#FAFAFA",
+      "--status-offline-text": "#71717A",
+
+      "--status-error": "#EF4444",
+      "--status-error-bg": "#FEE2E2",
+      "--status-error-text": "#DC2626",
+
+      // === GRADIENTS === (Rainbow magic!)
+      "--gradient-brand": "linear-gradient(135deg, #7C3AED 0%, #EC4899 25%, #F97316 50%, #FBBF24 75%, #10B981 100%)",
+      "--gradient-brand-subtle": "linear-gradient(135deg, #F3E8FF 0%, #FCE7F3 25%, #FFEDD5 50%, #FEF3C7 75%, #ECFDF5 100%)",
+      "--gradient-surface": "linear-gradient(180deg, #FFFFFF 0%, #FFFBF7 100%)",
+
+      // === SCROLLBAR ===
+      "--scrollbar-track": "#FAFAFA",
+      "--scrollbar-thumb": "#E4E4E7",
+      "--scrollbar-thumb-hover": "#D4D4D8",
+
+      // === TYPOGRAPHY === (Optional - can customize fonts!)
+      "--font-sans": "'Comic Neue', 'Comic Sans MS', 'Chalkboard SE', 'Marker Felt', cursive, sans-serif",
+      "--font-mono": "'Fira Code', 'JetBrains Mono', monospace"
+    },
+    "dark": {
+      // === BRAND COLORS ===
+      "--primary": "#C084FC",
+      "--primary-hover": "#D8B4FE",
+      "--primary-active": "#E9D5FF",
+      "--primary-subtle": "#3B1E54",
+      "--primary-subtle-hover": "#4C1D95",
+      "--primary-muted": "#2E1065",
+      "--primary-foreground": "#09090B",
+
+      // Secondary - Hot Pink
+      "--secondary": "#F472B6",
+      "--secondary-hover": "#F9A8D4",
+      "--secondary-active": "#FBCFE8",
+      "--secondary-subtle": "#500724",
+      "--secondary-subtle-hover": "#831843",
+      "--secondary-muted": "#500724",
+      "--secondary-foreground": "#09090B",
+
+      // Accent - Electric Orange
+      "--accent": "#FB923C",
+      "--accent-hover": "#FDBA74",
+      "--accent-active": "#FED7AA",
+      "--accent-subtle": "#431407",
+      "--accent-subtle-hover": "#7C2D12",
+      "--accent-muted": "#431407",
+      "--accent-foreground": "#09090B",
+
+      // === BACKGROUNDS ===
+      "--bg-base": "#09090B",
+      "--bg-surface": "#18181B",
+      "--bg-surface-secondary": "#27272A",
+      "--bg-elevated": "#3F3F46",
+      "--bg-muted": "#18181B",
+      "--bg-sunken": "#0A0A0C",
+      "--bg-canvas": "#0F0F11",
+      "--bg-overlay": "rgba(244, 114, 182, 0.7)",
+      "--bg-overlay-light": "rgba(244, 114, 182, 0.3)",
+      "--bg-hover": "rgba(244, 114, 182, 0.12)",
+      "--bg-active": "rgba(244, 114, 182, 0.18)",
+      "--bg-selected": "#500724",
+      "--bg-selected-hover": "#831843",
+
+      // === TEXT ===
+      "--text-primary": "#FAFAFA",
+      "--text-secondary": "#E4E4E7",
+      "--text-tertiary": "#D4D4D8",
+      "--text-muted": "#A1A1AA",
+      "--text-disabled": "#71717A",
+      "--text-inverse": "#18181B",
+      "--text-on-brand": "#FFFFFF",
+
+      // === BORDERS ===
+      "--border-default": "#3F3F46",
+      "--border-muted": "#27272A",
+      "--border-strong": "#52525B",
+      "--border-stronger": "#71717A",
+      "--border-interactive": "#F472B6",
+      "--border-interactive-hover": "#F9A8D4",
+      "--border-disabled": "#3F3F46",
+
+      // === FOCUS & RING ===
+      "--ring-default": "#F472B6",
+      "--ring-offset": "#18181B",
+
+      // === SHADOWS ===
+      "--shadow-color": "340 75% 10%",
+      "--shadow-xs": "0 1px 2px hsl(var(--shadow-color) / 0.5)",
+      "--shadow-sm": "0 1px 3px hsl(var(--shadow-color) / 0.6), 0 1px 2px hsl(var(--shadow-color) / 0.4)",
+      "--shadow-md": "0 4px 6px hsl(var(--shadow-color) / 0.6), 0 2px 4px hsl(var(--shadow-color) / 0.4)",
+      "--shadow-lg": "0 10px 15px hsl(var(--shadow-color) / 0.6), 0 4px 6px hsl(var(--shadow-color) / 0.4)",
+      "--shadow-xl": "0 20px 25px hsl(var(--shadow-color) / 0.7), 0 8px 10px hsl(var(--shadow-color) / 0.5)",
+      "--shadow-2xl": "0 25px 50px hsl(var(--shadow-color) / 0.8)",
+      "--shadow-inner": "inset 0 2px 4px hsl(var(--shadow-color) / 0.5)",
+
+      // === SEMANTIC: SUCCESS ===
+      "--success": "#34D399",
+      "--success-hover": "#6EE7B7",
+      "--success-subtle": "#064E3B",
+      "--success-muted": "#022C22",
+      "--success-foreground": "#09090B",
+      "--success-text": "#6EE7B7",
+      "--success-border": "#10B981",
+
+      // === SEMANTIC: WARNING ===
+      "--warning": "#FBBF24",
+      "--warning-hover": "#FCD34D",
+      "--warning-subtle": "#78350F",
+      "--warning-muted": "#451A03",
+      "--warning-foreground": "#09090B",
+      "--warning-text": "#FCD34D",
+      "--warning-border": "#F59E0B",
+
+      // === SEMANTIC: ERROR ===
+      "--error": "#F87171",
+      "--error-hover": "#FCA5A5",
+      "--error-subtle": "#7F1D1D",
+      "--error-muted": "#450A0A",
+      "--error-foreground": "#09090B",
+      "--error-text": "#FCA5A5",
+      "--error-border": "#EF4444",
+
+      // === SEMANTIC: INFO ===
+      "--info": "#60A5FA",
+      "--info-hover": "#93C5FD",
+      "--info-subtle": "#1E3A8A",
+      "--info-muted": "#172554",
+      "--info-foreground": "#09090B",
+      "--info-text": "#93C5FD",
+      "--info-border": "#3B82F6",
+
+      // === STREAMING STATUS ===
+      "--status-live": "#34D399",
+      "--status-live-bg": "#064E3B",
+      "--status-live-text": "#6EE7B7",
+
+      "--status-connecting": "#FBBF24",
+      "--status-connecting-bg": "#78350F",
+      "--status-connecting-text": "#FCD34D",
+
+      "--status-offline": "#71717A",
+      "--status-offline-bg": "#27272A",
+      "--status-offline-text": "#D4D4D8",
+
+      "--status-error": "#F87171",
+      "--status-error-bg": "#7F1D1D",
+      "--status-error-text": "#FCA5A5",
+
+      // === GRADIENTS ===
+      "--gradient-brand": "linear-gradient(135deg, #C084FC 0%, #F472B6 25%, #FB923C 50%, #FBBF24 75%, #34D399 100%)",
+      "--gradient-brand-subtle": "linear-gradient(135deg, #3B1E54 0%, #500724 25%, #431407 50%, #78350F 75%, #064E3B 100%)",
+      "--gradient-surface": "linear-gradient(180deg, #18181B 0%, #0F0F11 100%)",
+
+      // === SCROLLBAR ===
+      "--scrollbar-track": "#18181B",
+      "--scrollbar-thumb": "#3F3F46",
+      "--scrollbar-thumb-hover": "#52525B",
+
+      // === FOCUS RINGS ===
+      "--ring-width": "3px",
+      "--ring-offset-width": "2px",
+
+      // === TYPOGRAPHY ===
+      "--font-sans": "'Comic Neue', 'Comic Sans MS', 'Chalkboard SE', 'Marker Felt', cursive, sans-serif",
+      "--font-mono": "'Fira Code', 'JetBrains Mono', monospace"
+    }
+  }
+}

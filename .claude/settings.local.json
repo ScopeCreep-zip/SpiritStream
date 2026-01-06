@@ -5,7 +5,15 @@
       "Bash(claude mcp list:*)",
       "Bash(node -e:*)",
       "Bash(dir:*)",
-      "Bash(echo:*)"
+      "Bash(echo:*)",
+      "Bash(timeout /t 15)",
+      "Bash(ping:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(node scripts/test-themes.mjs:*)",
+      "Bash(node scripts/test-themes-manual.mjs:*)",
+      "Bash(node scripts/test-themes-final.mjs:*)",
+      "Bash(node scripts/split-themes.mjs:*)"
     ]
   }
 }

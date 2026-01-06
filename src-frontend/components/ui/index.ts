@@ -33,4 +33,3 @@ export {
   type FormRowProps,
 } from './Form';
 export { Grid, type GridProps } from './Grid';
-export { ThemeToggle, type ThemeToggleProps } from './ThemeToggle';

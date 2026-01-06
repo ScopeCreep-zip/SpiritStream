@@ -51,6 +51,8 @@ pub fn run() {
             app.manage(settings_manager);
 
             let theme_manager = ThemeManager::new(app_data_dir.clone());
+            // Sync project themes once on startup
+            theme_manager.sync_project_themes(Some(&app.handle()));
             theme_manager.start_watcher(app.handle().clone());
             app.manage(theme_manager);
 
@@ -112,6 +114,7 @@ pub fn run() {
             commands::check_ffmpeg_update,
             // Theme commands
             commands::list_themes,
+            commands::refresh_themes,
             commands::get_theme_tokens,
             commands::install_theme,
         ])
