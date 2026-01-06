@@ -40,6 +40,12 @@ function applyTheme(themeId: string, mode: ThemeMode, tokens?: Record<string, st
   }
 }
 
+function inferMode(themeId: string, fallback: ThemeMode): ThemeMode {
+  if (themeId.endsWith('-dark')) return 'dark';
+  if (themeId.endsWith('-light')) return 'light';
+  return fallback;
+}
+
 function setThemeOverrides(themeId: string, mode: ThemeMode, tokens: Record<string, string>) {
   if (typeof document === 'undefined') return;
   const styleId = THEME_STYLE_ID;
@@ -71,15 +77,26 @@ function migrateOldThemeFormat(): { themeId: string } | null {
     const oldData = localStorage.getItem('spiritstream-theme');
     if (!oldData) return null;
 
-    const old = JSON.parse(oldData);
+    const parsed = JSON.parse(oldData);
+    if (parsed && typeof parsed === 'object' && 'state' in parsed) {
+      const state = (parsed as { state?: { currentThemeId?: string } }).state;
+      if (state?.currentThemeId) {
+        return null; // Already persisted in the current format
+      }
+    }
+
+    const legacy = (parsed && typeof parsed === 'object' && 'state' in parsed
+      ? (parsed as { state?: Record<string, unknown> }).state
+      : parsed) as { theme?: string; themeId?: string } | null;
+
+    if (!legacy || (!legacy.theme && !legacy.themeId)) {
+      return null;
+    }
+
     // Old format: { theme: 'light'|'dark'|'system', themeId: 'spirit' }
-    // New format: { currentThemeId: 'spirit-light' }
-
-    if (old.currentThemeId) return null; // Already new format
-
     const mode: ThemeMode =
-      old.theme === 'system' ? getSystemTheme() : old.theme === 'dark' ? 'dark' : 'light';
-    const oldThemeId = old.themeId || 'spirit';
+      legacy.theme === 'system' ? getSystemTheme() : legacy.theme === 'dark' ? 'dark' : 'light';
+    const oldThemeId = legacy.themeId || 'spirit';
 
     // Construct new theme ID if needed
     const newThemeId =
@@ -87,7 +104,7 @@ function migrateOldThemeFormat(): { themeId: string } | null {
         ? oldThemeId
         : `${oldThemeId}-${mode}`;
 
-    console.log(`Migrating theme from old format: ${old.themeId} (${old.theme}) -> ${newThemeId}`);
+    console.log(`Migrating theme from old format: ${oldThemeId} (${legacy.theme}) -> ${newThemeId}`);
 
     return { themeId: newThemeId };
   } catch (error) {
@@ -109,7 +126,13 @@ export const useThemeStore = create<ThemeState>()(
           const themes = get().themes;
           const theme = themes.find((t) => t.id === themeId);
           if (!theme) {
-            console.error(`Theme ${themeId} not found`);
+            const inferredMode: ThemeMode = inferMode(themeId, get().currentMode);
+            let tokens: Record<string, string> | undefined;
+            if (!themeId.startsWith('spirit-')) {
+              tokens = await api.theme.getTokens(themeId);
+            }
+            applyTheme(themeId, inferredMode, tokens);
+            set({ currentThemeId: themeId, currentMode: inferredMode, currentTokens: tokens });
             return;
           }
 
@@ -123,8 +146,8 @@ export const useThemeStore = create<ThemeState>()(
         } catch (error) {
           console.error('Failed to load theme:', error);
           // Fall back to default
-          const fallback = themeId.endsWith('-dark') ? DEFAULT_THEME_DARK : DEFAULT_THEME_LIGHT;
-          const fallbackMode: ThemeMode = fallback.endsWith('-dark') ? 'dark' : 'light';
+          const fallbackMode: ThemeMode = inferMode(themeId, 'light');
+          const fallback = fallbackMode === 'dark' ? DEFAULT_THEME_DARK : DEFAULT_THEME_LIGHT;
           applyTheme(fallback, fallbackMode, undefined);
           set({ currentThemeId: fallback, currentMode: fallbackMode, currentTokens: undefined });
         }
@@ -139,7 +162,7 @@ export const useThemeStore = create<ThemeState>()(
           const { currentThemeId } = get();
           if (!themes.find((theme) => theme.id === currentThemeId)) {
             // Fall back to default
-            const fallback = currentThemeId.endsWith('-dark') ? DEFAULT_THEME_DARK : DEFAULT_THEME_LIGHT;
+            const fallback = DEFAULT_THEME_LIGHT;
             await get().setTheme(fallback);
           }
         } catch (error) {
@@ -164,27 +187,20 @@ export const useThemeStore = create<ThemeState>()(
           const migrated = migrateOldThemeFormat();
           if (migrated) {
             state.currentThemeId = migrated.themeId;
-            // Clear old format from localStorage
-            const oldData = localStorage.getItem('spiritstream-theme');
-            if (oldData) {
-              try {
-                const parsed = JSON.parse(oldData);
-                delete parsed.theme;
-                delete parsed.themeId;
-                localStorage.setItem('spiritstream-theme', JSON.stringify(parsed));
-              } catch (e) {
-                console.error('Failed to clean up old theme format:', e);
-              }
+            try {
+              localStorage.setItem(
+                'spiritstream-theme',
+                JSON.stringify({ state: { currentThemeId: migrated.themeId }, version: 0 })
+              );
+            } catch (e) {
+              console.error('Failed to update theme storage after migration:', e);
             }
           }
 
           // Load themes and apply current theme
           state.refreshThemes().then(() => {
-            const { currentThemeId, themes } = state;
-            const theme = themes.find((t) => t.id === currentThemeId);
-            if (theme) {
-              state.setTheme(currentThemeId);
-            }
+            const { currentThemeId } = state;
+            state.setTheme(currentThemeId);
           });
         }
       },
@@ -199,9 +215,7 @@ if (typeof window !== 'undefined') {
     useThemeStore.setState({ themes });
     const state = useThemeStore.getState();
     if (!themes.find((theme) => theme.id === state.currentThemeId)) {
-      const fallback = state.currentThemeId.endsWith('-dark')
-        ? DEFAULT_THEME_DARK
-        : DEFAULT_THEME_LIGHT;
+      const fallback = DEFAULT_THEME_LIGHT;
       state.setTheme(fallback);
     }
   }).catch((error) => {
