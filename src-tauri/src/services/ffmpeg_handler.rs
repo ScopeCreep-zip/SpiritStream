@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
-use crate::models::{OutputGroup, StreamStats};
+use crate::models::{OutputGroup, Platform, StreamStats};
 
 /// Process info for tracking active streams
 struct ProcessInfo {
@@ -99,6 +99,31 @@ impl FFmpegHandler {
         }
 
         url
+    }
+
+    fn normalize_service_url(service: &Platform, url: &str) -> String {
+        match service {
+            Platform::Kick => Self::ensure_kick_app_path(url),
+            _ => url.to_string(),
+        }
+    }
+
+    fn ensure_kick_app_path(url: &str) -> String {
+        let (scheme, rest) = match url.split_once("://") {
+            Some(parts) => parts,
+            None => return format!("{url}/app"),
+        };
+
+        let (host, path) = match rest.split_once('/') {
+            Some(parts) => parts,
+            None => (rest, ""),
+        };
+
+        if path.is_empty() {
+            format!("{scheme}://{host}/app")
+        } else {
+            url.to_string()
+        }
     }
 
     fn redact_rtmp_url(url: &str) -> String {
@@ -776,6 +801,7 @@ impl FFmpegHandler {
             }
 
             let normalized_url = Self::normalize_rtmp_url(&target.url);
+            let normalized_url = Self::normalize_service_url(&target.service, &normalized_url);
             let resolved_key = Self::resolve_stream_key(&target.stream_key);
             outputs.push(format!("{normalized_url}/{resolved_key}"));
         }

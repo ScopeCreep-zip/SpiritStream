@@ -124,7 +124,7 @@ export const PLATFORMS: Record<
     abbreviation: 'K',
     color: '#53FC18',
     textColor: '#000000',
-    defaultServer: 'rtmps://fa723fc1b171.global-contribute.live-video.net/app',
+    defaultServer: 'rtmps://fa723fc1b171.global-contribute.live-video.net/app/',
   },
   facebook: {
     name: 'Facebook Live',
