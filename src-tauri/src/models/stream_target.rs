@@ -3,29 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Supported streaming services/platforms
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq, Hash)]
-#[serde(rename_all = "lowercase")]
-pub enum Platform {
-    Youtube,
-    Twitch,
-    Kick,
-    Facebook,
-    #[default]
-    Custom,
-}
-
-impl std::fmt::Display for Platform {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Platform::Youtube => write!(f, "youtube"),
-            Platform::Twitch => write!(f, "twitch"),
-            Platform::Kick => write!(f, "kick"),
-            Platform::Facebook => write!(f, "facebook"),
-            Platform::Custom => write!(f, "custom"),
-        }
-    }
-}
+// Platform enum auto-generated from data/streaming-platforms.json at build time
+include!(concat!(env!("OUT_DIR"), "/generated_platforms.rs"));
 
 /// A stream target represents an RTMP destination
 #[derive(Debug, Clone, Serialize, Deserialize)]

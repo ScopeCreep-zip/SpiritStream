@@ -8,6 +8,9 @@
     "registry": "https://npm.pkg.github.com"
   },
   "scripts": {
+    "generate:platforms": "tsx scripts/generate-platforms.ts",
+    "predev": "npm run generate:platforms",
+    "prebuild": "npm run generate:platforms",
     "tauri": "tauri",
     "dev": "tauri dev",
     "build": "tauri build",
@@ -75,6 +78,7 @@
     "prettier": "^3.4.0",
     "puppeteer": "^24.34.0",
     "tailwindcss": "^4.1.18",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.0"
   },

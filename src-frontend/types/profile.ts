@@ -1,7 +1,9 @@
 /**
  * Platform/service types for stream targets
+ * Auto-generated from data/streaming-platforms.json
  */
-export type Platform = 'youtube' | 'twitch' | 'kick' | 'facebook' | 'custom';
+import type { Platform } from './generated-platforms';
+export type { Platform };
 
 /**
  * RTMP Input configuration - where the stream enters the system
@@ -94,53 +96,10 @@ export interface ProfileSummary {
 
 /**
  * Platform configuration constants
+ * Auto-generated from data/streaming-platforms.json
  */
-export const PLATFORMS: Record<
-  Platform,
-  {
-    name: string;
-    abbreviation: string;
-    color: string;
-    textColor: string;
-    defaultServer: string;
-  }
-> = {
-  youtube: {
-    name: 'YouTube',
-    abbreviation: 'YT',
-    color: '#FF0000',
-    textColor: '#FFFFFF',
-    defaultServer: 'rtmp://a.rtmp.youtube.com/live2',
-  },
-  twitch: {
-    name: 'Twitch',
-    abbreviation: 'TW',
-    color: '#9146FF',
-    textColor: '#FFFFFF',
-    defaultServer: 'rtmp://ingest.global-contribute.live-video.net/app',
-  },
-  kick: {
-    name: 'Kick',
-    abbreviation: 'K',
-    color: '#53FC18',
-    textColor: '#000000',
-    defaultServer: 'rtmps://fa723fc1b171.global-contribute.live-video.net/app/',
-  },
-  facebook: {
-    name: 'Facebook Live',
-    abbreviation: 'FB',
-    color: '#1877F2',
-    textColor: '#FFFFFF',
-    defaultServer: 'rtmps://live-api-s.facebook.com:443/rtmp',
-  },
-  custom: {
-    name: 'Custom RTMP',
-    abbreviation: 'RT',
-    color: 'var(--primary)',
-    textColor: '#FFFFFF',
-    defaultServer: '',
-  },
-};
+import { PLATFORMS } from './generated-platforms';
+export { PLATFORMS };
 
 /**
  * Factory functions for creating default objects
@@ -194,10 +153,10 @@ export const createPassthroughOutputGroup = (): OutputGroup => ({
   streamTargets: [],
 });
 
-export const createDefaultStreamTarget = (service: Platform = 'custom'): StreamTarget => ({
+export const createDefaultStreamTarget = (service: Platform): StreamTarget => ({
   id: crypto.randomUUID(),
   service,
-  name: PLATFORMS[service].name,
+  name: PLATFORMS[service].displayName,
   url: PLATFORMS[service].defaultServer,
   streamKey: '',
 });

@@ -17,7 +17,10 @@
       "Skill(review-security)",
       "Skill(review-security:*)",
       "Bash(cargo test:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(cargo clean:*)",
+      "Bash(cargo build:*)",
+      "Bash(grep:*)"
     ]
   }
 }

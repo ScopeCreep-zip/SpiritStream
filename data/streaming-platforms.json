@@ -721,8 +721,8 @@
       "displayName": "YouTube (Backup)",
       "defaultUrl": "rtmp://b.rtmp.youtube.com/live2/{stream_key}?backup=1",
       "streamKeyPlacement": "in_url_template",
-      "abbreviation": "YT",
-      "color": "#FF0000",
+      "abbreviation": "YB",
+      "color": "#CC0000",
       "faviconPath": "icons/platforms/youtube.svg"
     }
   ]

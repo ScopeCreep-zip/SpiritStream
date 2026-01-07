@@ -16,8 +16,9 @@ export interface TargetModalProps {
   target?: StreamTarget;
 }
 
-// Platform values (labels added with translation in component)
-const PLATFORM_VALUES: Platform[] = ['youtube', 'twitch', 'kick', 'facebook', 'custom'];
+// Platform values - dynamically loaded from JSON
+const PLATFORM_VALUES: Platform[] = Object.keys(platformConfig) as Platform[];
+const FIRST_PLATFORM = PLATFORM_VALUES[0];
 
 interface FormData {
   service: Platform;
@@ -27,9 +28,9 @@ interface FormData {
 }
 
 const defaultFormData: FormData = {
-  service: 'youtube',
+  service: FIRST_PLATFORM,
   name: '',
-  url: platformConfig.youtube.defaultServer,
+  url: platformConfig[FIRST_PLATFORM].defaultServer,
   streamKey: '',
 };
 
@@ -75,7 +76,7 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
       // Only update URL if in create mode or URL hasn't been modified
       url: mode === 'create' ? platformConfig[newService].defaultServer : prev.url,
       // Update name suggestion if empty
-      name: prev.name || platformConfig[newService].name,
+      name: prev.name || platformConfig[newService].displayName,
     }));
   };
 
@@ -143,13 +144,10 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
 
   const title = mode === 'create' ? t('modals.addStreamTarget') : t('modals.editStreamTarget');
 
-  // Type assertion for dynamic translation keys
-  const tDynamic = t as (key: string, options?: { defaultValue?: string }) => string;
-
-  // Create translated platform options
+  // Create platform options using displayName from PLATFORMS
   const platformOptions: SelectOption[] = PLATFORM_VALUES.map((value) => ({
     value,
-    label: t(`platforms.${value}`),
+    label: platformConfig[value].displayName,
   }));
 
   // Create output group options
@@ -188,9 +186,7 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
           disabled={outputGroups.length === 0}
           helper={
             outputGroups.length === 0
-              ? tDynamic('modals.noOutputGroupsAvailable', {
-                  defaultValue: 'No output groups available. Create one first.',
-                })
+              ? t('modals.noOutputGroupsAvailable')
               : undefined
           }
         />
@@ -216,11 +212,7 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
           value={formData.url}
           onChange={handleChange('url')}
           error={errors.url}
-          helper={
-            formData.service !== 'custom'
-              ? `${t('modals.default')}: ${platformConfig[formData.service].defaultServer}`
-              : undefined
-          }
+          helper={`${t('modals.default')}: ${platformConfig[formData.service].defaultServer}`}
         />
 
         <div style={{ position: 'relative' }}>

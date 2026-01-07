@@ -127,15 +127,15 @@ impl FFmpegHandler {
                 let url_end = segment[url_start..].find(' ').map(|i| url_start + i).unwrap_or(segment.len());
                 let url = &segment[url_start..url_end];
                 let suffix = &segment[url_end..];
-                // Use Custom platform for generic redaction
-                format!("{prefix}{}{suffix}", self.platform_registry.redact_url(&Platform::Custom, url))
+                // Use generic redaction for unknown platforms
+                format!("{prefix}{}{suffix}", PlatformRegistry::generic_redact(url))
             } else if let Some(pos) = segment.find("rtmps://") {
                 let prefix = &segment[..pos];
                 let url_start = pos;
                 let url_end = segment[url_start..].find(' ').map(|i| url_start + i).unwrap_or(segment.len());
                 let url = &segment[url_start..url_end];
                 let suffix = &segment[url_end..];
-                format!("{prefix}{}{suffix}", self.platform_registry.redact_url(&Platform::Custom, url))
+                format!("{prefix}{}{suffix}", PlatformRegistry::generic_redact(url))
             } else {
                 segment.to_string()
             };
@@ -808,7 +808,8 @@ impl FFmpegHandler {
             let normalized_url = Self::normalize_rtmp_url(&target.url);
             let normalized_url = self.platform_registry.normalize_url(&target.service, &normalized_url);
             let resolved_key = Self::resolve_stream_key(&target.stream_key);
-            outputs.push(format!("{normalized_url}/{resolved_key}"));
+            let full_url = self.platform_registry.build_url_with_key(&target.service, &normalized_url, &resolved_key);
+            outputs.push(full_url);
         }
 
         if outputs.len() <= 1 {
