@@ -2,428 +2,728 @@
   "source": {
     "name": "OBS rtmp-services",
     "url": "https://raw.githubusercontent.com/obsproject/obs-studio/master/plugins/rtmp-services/data/services.json",
-    "formatVersion": 5
+    "license": "GPL-2.0",
+    "formatVersion": 5,
+    "spiritStreamEnhancements": true
   },
   "services": [
     {
-      "name": "Amazon IVS",
-      "defaultUrl": "rtmps://hkg06.contribute.live-video.net/app",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "AngelThump",
-      "defaultUrl": "rtmp://ingest.angelthump.com/live",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Aparat",
-      "defaultUrl": "rtmp://rtmp.cdn.asset.aparat.com:443/event",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "api.video",
-      "defaultUrl": "rtmp://broadcast.api.video/s",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Bilibili Live - RTMP | \u54d4\u54e9\u54d4\u54e9\u76f4\u64ad - RTMP",
-      "defaultUrl": "rtmp://live-push.bilivideo.com/live-bvc/",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Bitmovin",
-      "defaultUrl": "rtmp://live-input.bitmovin.com/streams",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Bongacams",
-      "defaultUrl": "rtmp://auto.origin.gnsbc.com:1934/live",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Boomstream",
-      "defaultUrl": "rtmp://live.boomstream.com/live",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "BoxCast",
-      "defaultUrl": "rtmp://rtmp.boxcast.com/live",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Breakers.TV",
-      "defaultUrl": "rtmp://live-iad.vaughnsoft.net/live",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "CAM4",
-      "defaultUrl": "rtmp://origin.cam4.com/cam4-origin-live",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "CamSoda",
-      "defaultUrl": "rtmp://obs-ingest-na.livemediahost.com/cam_obs",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Castr.io",
-      "defaultUrl": "rtmp://cg.castr.io/static",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Chaturbate",
-      "defaultUrl": "rtmp://global.live.mmcdn.com/live-origin",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "CHZZK",
-      "defaultUrl": "rtmp://global-rtmp.lip2.navercorp.com:8080/relay",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Dacast",
-      "defaultUrl": "https://developer.dacast.com/v3/encoder-setup/",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Disciple Media",
-      "defaultUrl": "rtmp://rtmp.disciplemedia.com/b-fme",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "DLive",
-      "defaultUrl": "rtmp://stream.dlive.tv/live",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Dolby OptiView Real-time",
-      "defaultUrl": "rtmps://rtmp-auto.millicast.com:443/v2/pub",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Enchant.events",
-      "defaultUrl": "rtmps://stream.enchant.cloud:443/live",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "ePlay",
-      "defaultUrl": "rtmp://live.eplay.link/origin",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Eventials",
-      "defaultUrl": "rtmp://transmission.eventials.com/eventialsLiveOrigin",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "EventLive.pro",
-      "defaultUrl": "rtmp://go.eventlive.pro/live",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Facebook Live",
-      "defaultUrl": "rtmps://rtmp-api.facebook.com:443/rtmp/",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "GoodGame.ru",
-      "defaultUrl": "rtmp://msk.goodgame.ru:1940/live",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "IRLToolkit",
-      "defaultUrl": "rtmps://stream.global.irl.run/ingest",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Jio Games",
-      "defaultUrl": "rtmp://livepub1.api.engageapps.jio/live",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Joystick.TV",
-      "defaultUrl": "rtmp://live.joystick.tv/live/",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "KakaoTV",
-      "defaultUrl": "rtmp://rtmp.play.kakao.com/kakaotv",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Konduit.live",
-      "defaultUrl": "rtmp://rtmp.konduit.live/live",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Kuaishou Live",
-      "defaultUrl": "rtmp://open-push.voip.yximgs.com/gifshow/",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Lahzenegar - StreamG | \u0644\u062d\u0638\u0647\u200c\u0646\u06af\u0627\u0631 - \u0627\u0633\u062a\u0631\u06cc\u0645\u062c\u06cc",
-      "defaultUrl": "rtmp://rtmp.lahzecdn.com/pro",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Lightcast.com",
-      "defaultUrl": "rtmp://ingest-na1.live.lightcast.com/in",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Livepeer Studio",
-      "defaultUrl": "rtmp://rtmp.livepeer.com/live",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Livepush",
-      "defaultUrl": "rtmp://dc-global.livepush.io/live",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Loola.tv",
-      "defaultUrl": "rtmp://rtmp.loola.tv/push",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Lovecast",
-      "defaultUrl": "rtmp://live-a.lovecastapp.com:5222/app",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Luzento.com - RTMP",
-      "defaultUrl": "rtmp://ingest.luzento.com/live",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "MasterStream.iR | \u0645\u0633\u062a\u0631\u0627\u0633\u062a\u0631\u06cc\u0645 | \u0631\u06cc \u0627\u0633\u062a\u0631\u06cc\u0645 \u0648 \u0627\u0633\u062a\u0631\u06cc\u0645 \u0647\u0645\u0632\u0645\u0627\u0646",
-      "defaultUrl": "rtmp://live1.masterstream.ir/live",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Meridix Live Sports Platform",
-      "defaultUrl": "rtmp://publish.meridix.com/live",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Mixcloud",
-      "defaultUrl": "rtmp://rtmp.mixcloud.com/broadcast",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Mux",
-      "defaultUrl": "rtmps://global-live.mux.com:443/app",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "MyFreeCams",
-      "defaultUrl": "rtmp://publish.myfreecams.com/NxServer",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "MyLive",
-      "defaultUrl": "rtmp://stream.mylive.in.th/live",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "nanoStream Cloud / bintu",
-      "defaultUrl": "rtmp://bintu-stream.nanocosmos.de/live",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "NFHS Network",
-      "defaultUrl": "rtmp://video.nfhsnetwork.com/manual",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "niconico (\u30cb\u30b3\u30cb\u30b3\u751f\u653e\u9001)",
-      "defaultUrl": "rtmp://liveorigin.dlive.nicovideo.jp/live/input",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Nimo TV",
-      "defaultUrl": "rtmp://txpush.rtmp.nimo.tv/live/",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "OnlyFans.com",
-      "defaultUrl": "rtmp://cloudbetastreaming.onlyfans.com/live",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "OPENREC.tv - Premium member (\u30d7\u30ec\u30df\u30a2\u30e0\u4f1a\u54e1)",
-      "defaultUrl": "rtmp://a.station.openrec.tv:1935/live1",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "PandaTV | \ud32c\ub354\ud2f0\ube44",
-      "defaultUrl": "rtmp://rtmp.pandalive.co.kr/app",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "PhoneLiveStreaming",
-      "defaultUrl": "rtmp://live.phonelivestreaming.com/live/",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Picarto",
-      "defaultUrl": "rtmp://live.us.picarto.tv/golive",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Piczel.tv",
-      "defaultUrl": "rtmp://piczel.tv:1935/live",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "PolyStreamer.com",
-      "defaultUrl": "rtmp://live.polystreamer.com/live",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Restream.io",
-      "defaultUrl": "rtmp://live.restream.io/live",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "SermonAudio Cloud",
-      "defaultUrl": "rtmp://webcast.sermonaudio.com/sa",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "SharePlay.tv",
-      "defaultUrl": "rtmp://stream.shareplay.tv",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "sheeta",
-      "defaultUrl": "rtmp://lsm.sheeta.com:1935/lsm",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "SHOWROOM",
-      "defaultUrl": "https://www.showroom-live.com/api/obs/streaming_info?obs_key=",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "SOOP Global",
-      "defaultUrl": "rtmp://global-stream.sooplive.com/app",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "SOOP Korea",
-      "defaultUrl": "rtmp://stream.sooplive.co.kr/app/",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "STAGE TEN",
-      "defaultUrl": "rtmps://app-rtmp.stageten.tv:443/stageten",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Steam",
-      "defaultUrl": "rtmp://ingest-rtmp.broadcast.steamcontent.com/app",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Streamway",
-      "defaultUrl": "rtmp://injest.streamway.in/LiveApp",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Stripchat",
-      "defaultUrl": "rtmp://live.doppiocdn.com/ext",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Switchboard Live",
-      "defaultUrl": "rtmps://live.sb.zone:443/live",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Sympla",
-      "defaultUrl": "rtmp://rtmp.sympla.com.br:5222/app",
-      "streamKeyPlacement": "append"
-    },
-    {
-      "name": "Trovo",
-      "defaultUrl": "rtmp://livepush.trovo.live/live/",
-      "streamKeyPlacement": "append"
+      "name": "YouTube - RTMPS",
+      "displayName": "YouTube",
+      "defaultUrl": "rtmps://a.rtmps.youtube.com:443/live2",
+      "streamKeyPlacement": "append",
+      "abbreviation": "YT",
+      "color": "#FF0000",
+      "faviconPath": "icons/platforms/youtube.svg"
     },
     {
       "name": "Twitch",
+      "displayName": "Twitch",
       "defaultUrl": "rtmp://live-hkg.twitch.tv/app",
-      "streamKeyPlacement": "append"
+      "streamKeyPlacement": "append",
+      "abbreviation": "TW",
+      "color": "#9146FF",
+      "faviconPath": "icons/platforms/twitch.svg"
     },
     {
-      "name": "Twitter",
-      "defaultUrl": "rtmp://ca.pscp.tv:80/x",
-      "streamKeyPlacement": "append"
+      "name": "Kick",
+      "displayName": "Kick",
+      "defaultUrl": "rtmps://fa723fc1b171.global-contribute.live-video.net/app",
+      "streamKeyPlacement": "append",
+      "abbreviation": "K",
+      "color": "#53FC18"
     },
     {
-      "name": "Uscreen",
-      "defaultUrl": "rtmp://global-live.uscreen.app:5222/app",
-      "streamKeyPlacement": "append"
+      "name": "Facebook Live",
+      "displayName": "Facebook",
+      "defaultUrl": "rtmps://rtmp-api.facebook.com:443/rtmp/",
+      "streamKeyPlacement": "append",
+      "abbreviation": "FB",
+      "color": "#1877F2",
+      "faviconPath": "icons/platforms/facebook.svg"
     },
     {
-      "name": "Vaughn Live / iNSTAGIB",
-      "defaultUrl": "rtmp://live-iad.vaughnsoft.net/live",
-      "streamKeyPlacement": "append"
+      "name": "TikTok Live",
+      "displayName": "TikTok",
+      "defaultUrl": "rtmps://live.tiktok.com/rtmp/",
+      "streamKeyPlacement": "append",
+      "abbreviation": "TT",
+      "color": "#000000",
+      "faviconPath": "icons/platforms/tiktok.svg"
     },
     {
-      "name": "Vault - by CommanderRoot",
-      "defaultUrl": "rtmp://ingest-eu-central.vault.root-space.eu/app",
-      "streamKeyPlacement": "append"
+      "name": "Trovo",
+      "displayName": "Trovo",
+      "defaultUrl": "rtmp://livepush.trovo.live/live/",
+      "streamKeyPlacement": "append",
+      "abbreviation": "TR",
+      "color": "#1ECD97"
     },
     {
-      "name": "Viloud",
-      "defaultUrl": "rtmp://live.viloud.tv:5222/app",
-      "streamKeyPlacement": "append"
+      "name": "Rumble",
+      "displayName": "Rumble",
+      "defaultUrl": "rtmp://ingest.rumble.com/app",
+      "streamKeyPlacement": "append",
+      "abbreviation": "R",
+      "color": "#85C742"
+    },
+    {
+      "name": "Bilibili Live - RTMP | 哔哩哔哩直播 - RTMP",
+      "displayName": "Bilibili",
+      "defaultUrl": "rtmp://live-push.bilivideo.com/live-bvc/",
+      "streamKeyPlacement": "append",
+      "abbreviation": "BL",
+      "color": "#00A1D6"
+    },
+    {
+      "name": "DLive",
+      "displayName": "DLive",
+      "defaultUrl": "rtmp://stream.dlive.tv/live",
+      "streamKeyPlacement": "append",
+      "abbreviation": "DL",
+      "color": "#FFD300"
+    },
+    {
+      "name": "Streamlabs",
+      "displayName": "Streamlabs",
+      "defaultUrl": "rtmp://rtmp.streamlabs.com/live",
+      "streamKeyPlacement": "append",
+      "abbreviation": "SL",
+      "color": "#80F5D2"
+    },
+    {
+      "name": "Restream.io",
+      "displayName": "Restream",
+      "defaultUrl": "rtmp://live.restream.io/live",
+      "streamKeyPlacement": "append",
+      "abbreviation": "RS",
+      "color": "#0081FF"
+    },
+    {
+      "name": "Amazon IVS",
+      "displayName": "Amazon IVS",
+      "defaultUrl": "rtmps://hkg06.contribute.live-video.net/app",
+      "streamKeyPlacement": "append",
+      "abbreviation": "AI",
+      "color": "#FF9900"
+    },
+    {
+      "name": "Nimo TV",
+      "displayName": "Nimo TV",
+      "defaultUrl": "rtmp://txpush.rtmp.nimo.tv/live/",
+      "streamKeyPlacement": "append",
+      "abbreviation": "NT",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Steam",
+      "displayName": "Steam",
+      "defaultUrl": "rtmp://ingest-rtmp.broadcast.steamcontent.com/app",
+      "streamKeyPlacement": "append",
+      "abbreviation": "ST",
+      "color": "#171A21"
     },
     {
       "name": "Vimeo",
+      "displayName": "Vimeo",
       "defaultUrl": "rtmp://rtmp.cloud.vimeo.com/live",
-      "streamKeyPlacement": "append"
+      "streamKeyPlacement": "append",
+      "abbreviation": "VM",
+      "color": "#1AB7EA"
+    },
+    {
+      "name": "Twitter",
+      "displayName": "Twitter",
+      "defaultUrl": "rtmp://ca.pscp.tv:80/x",
+      "streamKeyPlacement": "append",
+      "abbreviation": "X",
+      "color": "#1DA1F2"
+    },
+    {
+      "name": "AngelThump",
+      "displayName": "AngelThump",
+      "defaultUrl": "rtmp://ingest.angelthump.com/live",
+      "streamKeyPlacement": "append",
+      "abbreviation": "AT",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Aparat",
+      "displayName": "Aparat",
+      "defaultUrl": "rtmp://rtmp.cdn.asset.aparat.com:443/event",
+      "streamKeyPlacement": "append",
+      "abbreviation": "AP",
+      "color": "#9489A8"
+    },
+    {
+      "name": "api.video",
+      "displayName": "api.video",
+      "defaultUrl": "rtmp://broadcast.api.video/s",
+      "streamKeyPlacement": "append",
+      "abbreviation": "AV",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Bitmovin",
+      "displayName": "Bitmovin",
+      "defaultUrl": "rtmp://live-input.bitmovin.com/streams",
+      "streamKeyPlacement": "append",
+      "abbreviation": "BM",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Bongacams",
+      "displayName": "Bongacams",
+      "defaultUrl": "rtmp://auto.origin.gnsbc.com:1934/live",
+      "streamKeyPlacement": "append",
+      "abbreviation": "BC",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Boomstream",
+      "displayName": "Boomstream",
+      "defaultUrl": "rtmp://live.boomstream.com/live",
+      "streamKeyPlacement": "append",
+      "abbreviation": "BS",
+      "color": "#9489A8"
+    },
+    {
+      "name": "BoxCast",
+      "displayName": "BoxCast",
+      "defaultUrl": "rtmp://rtmp.boxcast.com/live",
+      "streamKeyPlacement": "append",
+      "abbreviation": "BX",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Breakers.TV",
+      "displayName": "Breakers.TV",
+      "defaultUrl": "rtmp://live-iad.vaughnsoft.net/live",
+      "streamKeyPlacement": "append",
+      "abbreviation": "BR",
+      "color": "#9489A8"
+    },
+    {
+      "name": "CAM4",
+      "displayName": "CAM4",
+      "defaultUrl": "rtmp://origin.cam4.com/cam4-origin-live",
+      "streamKeyPlacement": "append",
+      "abbreviation": "C4",
+      "color": "#9489A8"
+    },
+    {
+      "name": "CamSoda",
+      "displayName": "CamSoda",
+      "defaultUrl": "rtmp://obs-ingest-na.livemediahost.com/cam_obs",
+      "streamKeyPlacement": "append",
+      "abbreviation": "CS",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Castr.io",
+      "displayName": "Castr",
+      "defaultUrl": "rtmp://cg.castr.io/static",
+      "streamKeyPlacement": "append",
+      "abbreviation": "CA",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Chaturbate",
+      "displayName": "Chaturbate",
+      "defaultUrl": "rtmp://global.live.mmcdn.com/live-origin",
+      "streamKeyPlacement": "append",
+      "abbreviation": "CB",
+      "color": "#9489A8"
+    },
+    {
+      "name": "CHZZK",
+      "displayName": "CHZZK",
+      "defaultUrl": "rtmp://global-rtmp.lip2.navercorp.com:8080/relay",
+      "streamKeyPlacement": "append",
+      "abbreviation": "CZ",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Dacast",
+      "displayName": "Dacast",
+      "defaultUrl": "https://developer.dacast.com/v3/encoder-setup/",
+      "streamKeyPlacement": "append",
+      "abbreviation": "DC",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Disciple Media",
+      "displayName": "Disciple Media",
+      "defaultUrl": "rtmp://rtmp.disciplemedia.com/b-fme",
+      "streamKeyPlacement": "append",
+      "abbreviation": "DM",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Dolby OptiView Real-time",
+      "displayName": "Dolby OptiView",
+      "defaultUrl": "rtmps://rtmp-auto.millicast.com:443/v2/pub",
+      "streamKeyPlacement": "append",
+      "abbreviation": "DO",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Enchant.events",
+      "displayName": "Enchant",
+      "defaultUrl": "rtmps://stream.enchant.cloud:443/live",
+      "streamKeyPlacement": "append",
+      "abbreviation": "EN",
+      "color": "#9489A8"
+    },
+    {
+      "name": "ePlay",
+      "displayName": "ePlay",
+      "defaultUrl": "rtmp://live.eplay.link/origin",
+      "streamKeyPlacement": "append",
+      "abbreviation": "EP",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Eventials",
+      "displayName": "Eventials",
+      "defaultUrl": "rtmp://transmission.eventials.com/eventialsLiveOrigin",
+      "streamKeyPlacement": "append",
+      "abbreviation": "EV",
+      "color": "#9489A8"
+    },
+    {
+      "name": "EventLive.pro",
+      "displayName": "EventLive",
+      "defaultUrl": "rtmp://go.eventlive.pro/live",
+      "streamKeyPlacement": "append",
+      "abbreviation": "EL",
+      "color": "#9489A8"
+    },
+    {
+      "name": "GoodGame.ru",
+      "displayName": "GoodGame",
+      "defaultUrl": "rtmp://msk.goodgame.ru:1940/live",
+      "streamKeyPlacement": "append",
+      "abbreviation": "GG",
+      "color": "#9489A8"
+    },
+    {
+      "name": "IRLToolkit",
+      "displayName": "IRLToolkit",
+      "defaultUrl": "rtmps://stream.global.irl.run/ingest",
+      "streamKeyPlacement": "append",
+      "abbreviation": "IT",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Jio Games",
+      "displayName": "Jio Games",
+      "defaultUrl": "rtmp://livepub1.api.engageapps.jio/live",
+      "streamKeyPlacement": "append",
+      "abbreviation": "JG",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Joystick.TV",
+      "displayName": "Joystick",
+      "defaultUrl": "rtmp://live.joystick.tv/live/",
+      "streamKeyPlacement": "append",
+      "abbreviation": "JS",
+      "color": "#9489A8"
+    },
+    {
+      "name": "KakaoTV",
+      "displayName": "KakaoTV",
+      "defaultUrl": "rtmp://rtmp.play.kakao.com/kakaotv",
+      "streamKeyPlacement": "append",
+      "abbreviation": "KT",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Konduit.live",
+      "displayName": "Konduit",
+      "defaultUrl": "rtmp://rtmp.konduit.live/live",
+      "streamKeyPlacement": "append",
+      "abbreviation": "KD",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Kuaishou Live",
+      "displayName": "Kuaishou",
+      "defaultUrl": "rtmp://open-push.voip.yximgs.com/gifshow/",
+      "streamKeyPlacement": "append",
+      "abbreviation": "KS",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Lahzenegar - StreamG | لحظه‌نگار - استریمجی",
+      "displayName": "Lahzenegar",
+      "defaultUrl": "rtmp://rtmp.lahzecdn.com/pro",
+      "streamKeyPlacement": "append",
+      "abbreviation": "LZ",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Lightcast.com",
+      "displayName": "Lightcast",
+      "defaultUrl": "rtmp://ingest-na1.live.lightcast.com/in",
+      "streamKeyPlacement": "append",
+      "abbreviation": "LC",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Livepeer Studio",
+      "displayName": "Livepeer",
+      "defaultUrl": "rtmp://rtmp.livepeer.com/live",
+      "streamKeyPlacement": "append",
+      "abbreviation": "LP",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Livepush",
+      "displayName": "Livepush",
+      "defaultUrl": "rtmp://dc-global.livepush.io/live",
+      "streamKeyPlacement": "append",
+      "abbreviation": "LV",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Loola.tv",
+      "displayName": "Loola",
+      "defaultUrl": "rtmp://rtmp.loola.tv/push",
+      "streamKeyPlacement": "append",
+      "abbreviation": "LO",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Lovecast",
+      "displayName": "Lovecast",
+      "defaultUrl": "rtmp://live-a.lovecastapp.com:5222/app",
+      "streamKeyPlacement": "append",
+      "abbreviation": "LV",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Luzento.com - RTMP",
+      "displayName": "Luzento",
+      "defaultUrl": "rtmp://ingest.luzento.com/live",
+      "streamKeyPlacement": "append",
+      "abbreviation": "LZ",
+      "color": "#9489A8"
+    },
+    {
+      "name": "MasterStream.iR | مستراستریم | ری استریم و استریم همزمان",
+      "displayName": "MasterStream",
+      "defaultUrl": "rtmp://live1.masterstream.ir/live",
+      "streamKeyPlacement": "append",
+      "abbreviation": "MS",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Meridix Live Sports Platform",
+      "displayName": "Meridix",
+      "defaultUrl": "rtmp://publish.meridix.com/live",
+      "streamKeyPlacement": "append",
+      "abbreviation": "MX",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Mixcloud",
+      "displayName": "Mixcloud",
+      "defaultUrl": "rtmp://rtmp.mixcloud.com/broadcast",
+      "streamKeyPlacement": "append",
+      "abbreviation": "MC",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Mux",
+      "displayName": "Mux",
+      "defaultUrl": "rtmps://global-live.mux.com:443/app",
+      "streamKeyPlacement": "append",
+      "abbreviation": "MX",
+      "color": "#9489A8"
+    },
+    {
+      "name": "MyFreeCams",
+      "displayName": "MyFreeCams",
+      "defaultUrl": "rtmp://publish.myfreecams.com/NxServer",
+      "streamKeyPlacement": "append",
+      "abbreviation": "MF",
+      "color": "#9489A8"
+    },
+    {
+      "name": "MyLive",
+      "displayName": "MyLive",
+      "defaultUrl": "rtmp://stream.mylive.in.th/live",
+      "streamKeyPlacement": "append",
+      "abbreviation": "ML",
+      "color": "#9489A8"
+    },
+    {
+      "name": "nanoStream Cloud / bintu",
+      "displayName": "nanoStream",
+      "defaultUrl": "rtmp://bintu-stream.nanocosmos.de/live",
+      "streamKeyPlacement": "append",
+      "abbreviation": "NS",
+      "color": "#9489A8"
+    },
+    {
+      "name": "NFHS Network",
+      "displayName": "NFHS",
+      "defaultUrl": "rtmp://video.nfhsnetwork.com/manual",
+      "streamKeyPlacement": "append",
+      "abbreviation": "NH",
+      "color": "#9489A8"
+    },
+    {
+      "name": "niconico (ニコニコ生放送)",
+      "displayName": "niconico",
+      "defaultUrl": "rtmp://liveorigin.dlive.nicovideo.jp/live/input",
+      "streamKeyPlacement": "append",
+      "abbreviation": "NC",
+      "color": "#9489A8"
+    },
+    {
+      "name": "OnlyFans.com",
+      "displayName": "OnlyFans",
+      "defaultUrl": "rtmp://cloudbetastreaming.onlyfans.com/live",
+      "streamKeyPlacement": "append",
+      "abbreviation": "OF",
+      "color": "#9489A8"
+    },
+    {
+      "name": "OPENREC.tv - Premium member (プレミアム会員)",
+      "displayName": "OPENREC",
+      "defaultUrl": "rtmp://a.station.openrec.tv:1935/live1",
+      "streamKeyPlacement": "append",
+      "abbreviation": "OR",
+      "color": "#9489A8"
+    },
+    {
+      "name": "PandaTV | 판더티비",
+      "displayName": "PandaTV",
+      "defaultUrl": "rtmp://rtmp.pandalive.co.kr/app",
+      "streamKeyPlacement": "append",
+      "abbreviation": "PD",
+      "color": "#9489A8"
+    },
+    {
+      "name": "PhoneLiveStreaming",
+      "displayName": "PhoneLive",
+      "defaultUrl": "rtmp://live.phonelivestreaming.com/live/",
+      "streamKeyPlacement": "append",
+      "abbreviation": "PL",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Picarto",
+      "displayName": "Picarto",
+      "defaultUrl": "rtmp://live.us.picarto.tv/golive",
+      "streamKeyPlacement": "append",
+      "abbreviation": "PC",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Piczel.tv",
+      "displayName": "Piczel",
+      "defaultUrl": "rtmp://piczel.tv:1935/live",
+      "streamKeyPlacement": "append",
+      "abbreviation": "PZ",
+      "color": "#9489A8"
+    },
+    {
+      "name": "PolyStreamer.com",
+      "displayName": "PolyStreamer",
+      "defaultUrl": "rtmp://live.polystreamer.com/live",
+      "streamKeyPlacement": "append",
+      "abbreviation": "PS",
+      "color": "#9489A8"
+    },
+    {
+      "name": "SermonAudio Cloud",
+      "displayName": "SermonAudio",
+      "defaultUrl": "rtmp://webcast.sermonaudio.com/sa",
+      "streamKeyPlacement": "append",
+      "abbreviation": "SA",
+      "color": "#9489A8"
+    },
+    {
+      "name": "SharePlay.tv",
+      "displayName": "SharePlay",
+      "defaultUrl": "rtmp://stream.shareplay.tv",
+      "streamKeyPlacement": "append",
+      "abbreviation": "SP",
+      "color": "#9489A8"
+    },
+    {
+      "name": "sheeta",
+      "displayName": "sheeta",
+      "defaultUrl": "rtmp://lsm.sheeta.com:1935/lsm",
+      "streamKeyPlacement": "append",
+      "abbreviation": "SH",
+      "color": "#9489A8"
+    },
+    {
+      "name": "SHOWROOM",
+      "displayName": "SHOWROOM",
+      "defaultUrl": "https://www.showroom-live.com/api/obs/streaming_info?obs_key=",
+      "streamKeyPlacement": "append",
+      "abbreviation": "SR",
+      "color": "#9489A8"
+    },
+    {
+      "name": "SOOP Global",
+      "displayName": "SOOP Global",
+      "defaultUrl": "rtmp://global-stream.sooplive.com/app",
+      "streamKeyPlacement": "append",
+      "abbreviation": "SG",
+      "color": "#9489A8"
+    },
+    {
+      "name": "SOOP Korea",
+      "displayName": "SOOP Korea",
+      "defaultUrl": "rtmp://stream.sooplive.co.kr/app/",
+      "streamKeyPlacement": "append",
+      "abbreviation": "SK",
+      "color": "#9489A8"
+    },
+    {
+      "name": "STAGE TEN",
+      "displayName": "STAGE TEN",
+      "defaultUrl": "rtmps://app-rtmp.stageten.tv:443/stageten",
+      "streamKeyPlacement": "append",
+      "abbreviation": "ST",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Streamway",
+      "displayName": "Streamway",
+      "defaultUrl": "rtmp://injest.streamway.in/LiveApp",
+      "streamKeyPlacement": "append",
+      "abbreviation": "SW",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Stripchat",
+      "displayName": "Stripchat",
+      "defaultUrl": "rtmp://live.doppiocdn.com/ext",
+      "streamKeyPlacement": "append",
+      "abbreviation": "SC",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Switchboard Live",
+      "displayName": "Switchboard",
+      "defaultUrl": "rtmps://live.sb.zone:443/live",
+      "streamKeyPlacement": "append",
+      "abbreviation": "SB",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Sympla",
+      "displayName": "Sympla",
+      "defaultUrl": "rtmp://rtmp.sympla.com.br:5222/app",
+      "streamKeyPlacement": "append",
+      "abbreviation": "SY",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Uscreen",
+      "displayName": "Uscreen",
+      "defaultUrl": "rtmp://global-live.uscreen.app:5222/app",
+      "streamKeyPlacement": "append",
+      "abbreviation": "US",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Vaughn Live / iNSTAGIB",
+      "displayName": "Vaughn Live",
+      "defaultUrl": "rtmp://live-iad.vaughnsoft.net/live",
+      "streamKeyPlacement": "append",
+      "abbreviation": "VL",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Vault - by CommanderRoot",
+      "displayName": "Vault",
+      "defaultUrl": "rtmp://ingest-eu-central.vault.root-space.eu/app",
+      "streamKeyPlacement": "append",
+      "abbreviation": "VT",
+      "color": "#9489A8"
+    },
+    {
+      "name": "Viloud",
+      "displayName": "Viloud",
+      "defaultUrl": "rtmp://live.viloud.tv:5222/app",
+      "streamKeyPlacement": "append",
+      "abbreviation": "VD",
+      "color": "#9489A8"
     },
     {
       "name": "Vindral",
+      "displayName": "Vindral",
       "defaultUrl": "rtmps://rtmp.global.cdn.vindral.com/publish",
-      "streamKeyPlacement": "append"
+      "streamKeyPlacement": "append",
+      "abbreviation": "VN",
+      "color": "#9489A8"
     },
     {
       "name": "VRCDN - Live",
+      "displayName": "VRCDN",
       "defaultUrl": "rtmp://ingest.vrcdn.live/live",
-      "streamKeyPlacement": "append"
+      "streamKeyPlacement": "append",
+      "abbreviation": "VR",
+      "color": "#9489A8"
     },
     {
       "name": "Web.TV",
+      "displayName": "Web.TV",
       "defaultUrl": "rtmp://live3.origins.web.tv/liveext",
-      "streamKeyPlacement": "append"
+      "streamKeyPlacement": "append",
+      "abbreviation": "WT",
+      "color": "#9489A8"
     },
     {
-      "name": "Whowatch (\u3075\u308f\u3063\u3061)",
+      "name": "Whowatch (ふわっち)",
+      "displayName": "Whowatch",
       "defaultUrl": "rtmp://live.whowatch.tv/live/",
-      "streamKeyPlacement": "append"
+      "streamKeyPlacement": "append",
+      "abbreviation": "WW",
+      "color": "#9489A8"
     },
     {
       "name": "WpStream",
+      "displayName": "WpStream",
       "defaultUrl": "rtmp://ingest.wpstream.net/golive",
-      "streamKeyPlacement": "append"
+      "streamKeyPlacement": "append",
+      "abbreviation": "WP",
+      "color": "#9489A8"
     },
     {
       "name": "XLoveCam.com",
+      "displayName": "XLoveCam",
       "defaultUrl": "rtmp://nl.eu.stream.xlove.com/performer-origin",
-      "streamKeyPlacement": "append"
+      "streamKeyPlacement": "append",
+      "abbreviation": "XL",
+      "color": "#9489A8"
     },
     {
       "name": "YouTube - HLS",
+      "displayName": "YouTube (HLS)",
       "defaultUrl": "https://a.upload.youtube.com/http_upload_hls?cid={stream_key}&copy=0&file=out.m3u8",
-      "streamKeyPlacement": "in_url_template"
+      "streamKeyPlacement": "in_url_template",
+      "abbreviation": "YT",
+      "color": "#FF0000",
+      "faviconPath": "icons/platforms/youtube.svg"
     },
     {
-      "name": "YouTube - RTMPS",
-      "defaultUrl": "rtmps://a.rtmps.youtube.com:443/live2",
-      "streamKeyPlacement": "append"
+      "name": "YouTube Backup - RTMPS",
+      "displayName": "YouTube (Backup)",
+      "defaultUrl": "rtmp://b.rtmp.youtube.com/live2/{stream_key}?backup=1",
+      "streamKeyPlacement": "in_url_template",
+      "abbreviation": "YT",
+      "color": "#FF0000",
+      "faviconPath": "icons/platforms/youtube.svg"
     }
   ]
 }
