@@ -64,17 +64,70 @@ impl PlatformConfig {
 
     /// Redact stream key from URL for logging
     pub fn redact_url(&self, url: &str) -> String {
-        // If stream key position is 0, don't redact
-        if self.stream_key_position == 0 {
-            return url.to_string();
-        }
-
         // Only redact RTMP(S) URLs
         if !(url.starts_with("rtmp://") || url.starts_with("rtmps://")) {
             return url.to_string();
         }
 
-        // Parse URL
+        match self.placement {
+            StreamKeyPlacement::InUrlTemplate => {
+                // For template mode, find where the template was and redact that portion
+                // Template contains {stream_key}, so we need to find what replaced it
+                let template = self.default_server;
+
+                // Find the {stream_key} placeholder position
+                if let Some(template_start) = template.find("{stream_key}") {
+                    let before_key = &template[..template_start];
+                    let after_key = &template[template_start + "{stream_key}".len()..];
+
+                    // Check if URL matches the template pattern
+                    if url.starts_with(before_key) && url.contains(after_key) {
+                        // Find where the key ends (where after_key starts in the URL)
+                        if let Some(key_end) = url.find(after_key) {
+                            return format!("{}***{}", before_key, &url[key_end..]);
+                        }
+                    }
+                }
+
+                // Fallback: couldn't parse template, return generic redaction
+                Self::generic_segment_redact(url)
+            }
+            StreamKeyPlacement::Append => {
+                // For append mode, use path-based redaction
+                if self.stream_key_position == 0 {
+                    return url.to_string();
+                }
+
+                // Parse URL
+                let (scheme, rest) = match url.split_once("://") {
+                    Some(parts) => parts,
+                    None => return url.to_string(),
+                };
+
+                let (host, path) = match rest.split_once('/') {
+                    Some(parts) => parts,
+                    None => return url.to_string(),
+                };
+
+                // Split path into segments
+                let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+
+                // Check if we have enough segments to redact
+                if segments.len() < self.stream_key_position {
+                    return url.to_string();
+                }
+
+                // Build redacted URL
+                let safe_segments = &segments[0..self.stream_key_position - 1];
+                let safe_path = safe_segments.join("/");
+
+                format!("{scheme}://{host}/{safe_path}/***")
+            }
+        }
+    }
+
+    /// Generic segment-based redaction (fallback)
+    fn generic_segment_redact(url: &str) -> String {
         let (scheme, rest) = match url.split_once("://") {
             Some(parts) => parts,
             None => return url.to_string(),
@@ -85,16 +138,12 @@ impl PlatformConfig {
             None => return url.to_string(),
         };
 
-        // Split path into segments
         let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-
-        // Check if we have enough segments to redact
-        if segments.len() < self.stream_key_position {
+        if segments.len() < 2 {
             return url.to_string();
         }
 
-        // Build redacted URL
-        let safe_segments = &segments[0..self.stream_key_position - 1];
+        let safe_segments = &segments[0..segments.len() - 1];
         let safe_path = safe_segments.join("/");
 
         format!("{scheme}://{host}/{safe_path}/***")
