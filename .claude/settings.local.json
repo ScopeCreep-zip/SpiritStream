@@ -13,7 +13,9 @@
       "Bash(node scripts/test-themes.mjs:*)",
       "Bash(node scripts/test-themes-manual.mjs:*)",
       "Bash(node scripts/test-themes-final.mjs:*)",
-      "Bash(node scripts/split-themes.mjs:*)"
+      "Bash(node scripts/split-themes.mjs:*)",
+      "Skill(review-security)",
+      "Skill(review-security:*)"
     ]
   }
 }
