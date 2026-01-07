@@ -7,6 +7,7 @@ mod ffmpeg_downloader;
 mod encryption;
 mod settings_manager;
 mod theme_manager;
+mod platform_registry;
 
 pub use profile_manager::*;
 pub use ffmpeg_handler::*;
@@ -14,3 +15,4 @@ pub use ffmpeg_downloader::*;
 pub use encryption::*;
 pub use settings_manager::*;
 pub use theme_manager::*;
+pub use platform_registry::*;
