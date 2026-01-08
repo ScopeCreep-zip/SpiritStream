@@ -43,6 +43,14 @@
       "faviconPath": "icons/platforms/facebook.svg"
     },
     {
+      "name": "LinkedIn Live",
+      "displayName": "LinkedIn",
+      "defaultUrl": "rtmps://fa723fc1b171.global-contribute.live-video.net/app",
+      "streamKeyPlacement": "append",
+      "abbreviation": "LI",
+      "color": "#0A66C2"
+    },
+    {
       "name": "TikTok Live",
       "displayName": "TikTok",
       "defaultUrl": "rtmps://live.tiktok.com/rtmp/",

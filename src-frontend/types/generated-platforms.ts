@@ -11,6 +11,7 @@ export type Platform =
   | 'Twitch'
   | 'Kick'
   | 'Facebook Live'
+  | 'LinkedIn Live'
   | 'TikTok Live'
   | 'Trovo'
   | 'Rumble'
@@ -136,6 +137,14 @@ export const PLATFORMS: Record<Platform, {
     color: '#1877F2',
     textColor: '#FFFFFF',
     defaultServer: 'rtmps://rtmp-api.facebook.com:443/rtmp/',
+    streamKeyPlacement: 'append',
+  },
+  'LinkedIn Live': {
+    displayName: 'LinkedIn',
+    abbreviation: 'LI',
+    color: '#0A66C2',
+    textColor: '#FFFFFF',
+    defaultServer: 'rtmps://fa723fc1b171.global-contribute.live-video.net/app',
     streamKeyPlacement: 'append',
   },
   'TikTok Live': {
