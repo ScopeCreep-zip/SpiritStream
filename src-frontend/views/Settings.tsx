@@ -30,6 +30,7 @@ interface SettingsState {
   // Data & Privacy
   profileStoragePath: string;
   encryptStreamKeys: boolean;
+  logRetentionDays: number;
   // UI state
   loading: boolean;
   saving: boolean;
@@ -44,6 +45,7 @@ const defaultSettings: SettingsState = {
   autoDownloadFfmpeg: true,
   profileStoragePath: '',
   encryptStreamKeys: false,
+  logRetentionDays: 30,
   loading: true,
   saving: false,
 };
@@ -96,6 +98,7 @@ export function Settings() {
           ffmpegPath,
           autoDownloadFfmpeg: backendSettings.autoDownloadFfmpeg,
           encryptStreamKeys: backendSettings.encryptStreamKeys,
+          logRetentionDays: backendSettings.logRetentionDays,
           ffmpegVersion,
           profileStoragePath: profilesPath,
           loading: false,
@@ -132,6 +135,7 @@ export function Settings() {
           ffmpegPath: updatedSettings.ffmpegPath,
           autoDownloadFfmpeg: updatedSettings.autoDownloadFfmpeg,
           encryptStreamKeys: updatedSettings.encryptStreamKeys,
+          logRetentionDays: updatedSettings.logRetentionDays,
           themeId: useThemeStore.getState().currentThemeId,
           lastProfile: null, // Preserve existing or let backend handle
         };
@@ -257,6 +261,14 @@ export function Settings() {
     { value: 'fr', label: 'Français' },
     { value: 'de', label: 'Deutsch' },
     { value: 'ja', label: '日本語' },
+  ];
+
+  const logRetentionOptions = [
+    { value: 7, label: t('settings.logRetention7Days', { defaultValue: '7 days' }) },
+    { value: 14, label: t('settings.logRetention14Days', { defaultValue: '14 days' }) },
+    { value: 30, label: t('settings.logRetention30Days', { defaultValue: '30 days' }) },
+    { value: 90, label: t('settings.logRetention90Days', { defaultValue: '90 days' }) },
+    { value: 365, label: t('settings.logRetention365Days', { defaultValue: '365 days' }) },
   ];
 
   const themeOptions = (themes.length
@@ -489,6 +501,18 @@ export function Settings() {
               onChange={(checked: boolean) => updateSetting('encryptStreamKeys', checked)}
             />
           </div>
+          <Select
+            label={t('settings.logRetention', { defaultValue: 'Log retention' })}
+            value={String(settings.logRetentionDays)}
+            onChange={(e) => updateSetting('logRetentionDays', Number(e.target.value))}
+            options={logRetentionOptions.map((option) => ({
+              value: String(option.value),
+              label: option.label,
+            }))}
+            helper={t('settings.logRetentionDescription', {
+              defaultValue: 'How long to keep application log files.',
+            })}
+          />
           <div
             className="border-t border-[var(--border-muted)] flex"
             style={{ paddingTop: '16px', gap: '12px' }}

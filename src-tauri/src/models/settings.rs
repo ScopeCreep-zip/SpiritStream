@@ -3,6 +3,10 @@
 
 use serde::{Deserialize, Serialize};
 
+fn default_log_retention_days() -> u32 {
+    30
+}
+
 /// Application settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -18,6 +22,10 @@ pub struct Settings {
 
     // Data & Privacy
     pub encrypt_stream_keys: bool,
+
+    // Log retention
+    #[serde(default = "default_log_retention_days")]
+    pub log_retention_days: u32,
 
     // UI theme
     #[serde(default)]
@@ -36,6 +44,7 @@ impl Default for Settings {
             ffmpeg_path: String::new(),
             auto_download_ffmpeg: true,
             encrypt_stream_keys: false,
+            log_retention_days: default_log_retention_days(),
             theme_id: "spirit-dark".to_string(),
             last_profile: None,
         }

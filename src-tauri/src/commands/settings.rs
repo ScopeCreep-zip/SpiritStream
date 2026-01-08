@@ -2,9 +2,9 @@
 // Tauri command handlers for settings management
 
 use std::path::PathBuf;
-use tauri::State;
+use tauri::{AppHandle, State};
 use crate::models::Settings;
-use crate::services::SettingsManager;
+use crate::services::{prune_logs, SettingsManager};
 
 /// Get current settings
 #[tauri::command]
@@ -17,8 +17,11 @@ pub fn get_settings(settings_manager: State<SettingsManager>) -> Result<Settings
 pub fn save_settings(
     settings: Settings,
     settings_manager: State<SettingsManager>,
+    app_handle: AppHandle,
 ) -> Result<(), String> {
-    settings_manager.save(&settings)
+    settings_manager.save(&settings)?;
+    let _ = prune_logs(&app_handle, settings.log_retention_days);
+    Ok(())
 }
 
 /// Get profiles storage path

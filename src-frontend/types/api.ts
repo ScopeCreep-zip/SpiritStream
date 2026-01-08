@@ -51,6 +51,7 @@ export interface AppSettings {
   ffmpegPath: string;
   autoDownloadFfmpeg: boolean;
   encryptStreamKeys: boolean;
+  logRetentionDays: number;
   themeId: string;
   lastProfile: string | null;
 }

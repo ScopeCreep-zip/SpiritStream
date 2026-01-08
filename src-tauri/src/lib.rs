@@ -48,9 +48,16 @@ pub fn run() {
             let settings_manager = SettingsManager::new(app_data_dir.clone());
 
             // Load settings to get custom ffmpeg_path if configured
-            let custom_ffmpeg_path = settings_manager.load()
-                .ok()
-                .and_then(|s| if s.ffmpeg_path.is_empty() { None } else { Some(s.ffmpeg_path) });
+            let settings = settings_manager.load().ok();
+            let custom_ffmpeg_path = settings
+                .as_ref()
+                .and_then(|s| if s.ffmpeg_path.is_empty() { None } else { Some(s.ffmpeg_path.clone()) });
+
+            if let Some(settings) = settings.as_ref() {
+                if let Err(error) = services::prune_logs(&app.handle(), settings.log_retention_days) {
+                    log::warn!("Failed to prune logs: {error}");
+                }
+            }
 
             // Register FFmpegHandler with custom path from settings (falls back to auto-discovery)
             let ffmpeg_handler = FFmpegHandler::new_with_custom_path(app_data_dir.clone(), custom_ffmpeg_path);
