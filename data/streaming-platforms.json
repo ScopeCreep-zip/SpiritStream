@@ -19,7 +19,7 @@
     {
       "name": "Twitch",
       "displayName": "Twitch",
-      "defaultUrl": "rtmp://live-hkg.twitch.tv/app",
+      "defaultUrl": "rtmp://ingest.global-contribute.live-video.net/app/",
       "streamKeyPlacement": "append",
       "abbreviation": "TW",
       "color": "#9146FF",
