@@ -257,10 +257,16 @@ export function Settings() {
 
   const languageOptions = [
     { value: 'en', label: 'English' },
-    { value: 'es', label: 'Español' },
-    { value: 'fr', label: 'Français' },
+    { value: 'es', label: 'Espa\u00f1ol' },
+    { value: 'fr', label: 'Fran\u00e7ais' },
     { value: 'de', label: 'Deutsch' },
-    { value: 'ja', label: '日本語' },
+    { value: 'ja', label: '\u65e5\u672c\u8a9e' },
+    { value: 'ar', label: '\u0627\u0644\u0639\u0631\u0628\u064a\u0629' },
+    { value: 'zh-CN', label: '\u4e2d\u6587(\u7b80\u4f53)' },
+    { value: 'ko', label: '\ud55c\uad6d\uc5b4' },
+    { value: 'uk', label: '\u0423\u043a\u0440\u0430\u0457\u043d\u0441\u044c\u043a\u0430' },
+    { value: 'ru', label: '\u0420\u0443\u0441\u0441\u043a\u0438\u0439' },
+    { value: 'af', label: 'Afrikaans' },
   ];
 
   const logRetentionOptions = [
