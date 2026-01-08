@@ -17,10 +17,11 @@ pub enum StreamKeyPlacement {
 #[derive(Debug, Clone)]
 pub struct PlatformConfig {
     /// Display name
+    #[allow(dead_code)] // Reserved for future UI display
     pub name: &'static str,
 
     /// Default RTMP server URL (may contain {stream_key} template)
-    pub default_server: &'static str,
+    pub default_server: &'static str, // Used in InUrlTemplate redaction
 
     /// Stream key placement strategy
     pub placement: StreamKeyPlacement,
@@ -30,7 +31,7 @@ pub struct PlatformConfig {
     pub default_app_path: Option<&'static str>,
 
     /// Stream key position in URL path (0 = no masking, 1 = /KEY, 2 = /app/KEY, etc.)
-    pub stream_key_position: usize,
+    pub stream_key_position: usize, // Used in Append redaction
 }
 
 impl PlatformConfig {
@@ -271,13 +272,6 @@ impl PlatformRegistry {
             // Fallback: assume append mode
             format!("{}/{}", base_url.trim_end_matches('/'), stream_key)
         }
-    }
-
-    /// Redact stream key from URL
-    pub fn redact_url(&self, platform: &Platform, url: &str) -> String {
-        self.get(platform)
-            .map(|config| config.redact_url(url))
-            .unwrap_or_else(|| Self::generic_redact(url))
     }
 
     /// Generic redaction for unknown platforms (fallback)

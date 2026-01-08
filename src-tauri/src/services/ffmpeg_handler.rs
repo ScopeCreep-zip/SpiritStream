@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
-use crate::models::{OutputGroup, Platform, StreamStats};
+use crate::models::{OutputGroup, StreamStats};
 use crate::services::PlatformRegistry;
 
 /// Process info for tracking active streams
@@ -106,36 +106,41 @@ impl FFmpegHandler {
         url
     }
 
-    /// Redact stream key from URL using platform-specific logic
-    fn redact_url(&self, platform: &Platform, url: &str) -> String {
-        self.platform_registry.redact_url(platform, url)
-    }
 
-    /// Sanitize a single FFmpeg argument (redact stream keys from RTMP URLs)
-    /// Uses generic platform-agnostic redaction
-    fn sanitize_arg(&self, arg: &str) -> String {
+    /// Sanitize a single argument with platform context for accurate redaction
+    fn sanitize_arg_with_context(&self, arg: &str, group: &OutputGroup) -> String {
         if !(arg.contains("rtmp://") || arg.contains("rtmps://")) {
             return arg.to_string();
         }
 
         let mut parts = Vec::new();
         for segment in arg.split('|') {
-            let redacted = if let Some(pos) = segment.find("rtmp://") {
-                let prefix = &segment[..pos];
-                let url_start = pos;
-                // Find the end of the URL (space or end of string)
-                let url_end = segment[url_start..].find(' ').map(|i| url_start + i).unwrap_or(segment.len());
-                let url = &segment[url_start..url_end];
-                let suffix = &segment[url_end..];
-                // Use generic redaction for unknown platforms
-                format!("{prefix}{}{suffix}", PlatformRegistry::generic_redact(url))
-            } else if let Some(pos) = segment.find("rtmps://") {
+            let redacted = if let Some(pos) = segment.find("rtmp://").or_else(|| segment.find("rtmps://")) {
                 let prefix = &segment[..pos];
                 let url_start = pos;
                 let url_end = segment[url_start..].find(' ').map(|i| url_start + i).unwrap_or(segment.len());
                 let url = &segment[url_start..url_end];
                 let suffix = &segment[url_end..];
-                format!("{prefix}{}{suffix}", PlatformRegistry::generic_redact(url))
+
+                // Try to find matching target to get platform
+                let platform_redacted = group.stream_targets.iter()
+                    .find(|target| {
+                        // Check if this URL belongs to this target by matching the base URL
+                        let normalized = Self::normalize_rtmp_url(&target.url);
+                        url.starts_with(&normalized) || url.contains(&target.url)
+                    })
+                    .and_then(|target| {
+                        // Use platform-specific redaction
+                        self.platform_registry.get(&target.service)
+                            .map(|config| config.redact_url(url))
+                    });
+
+                let redacted_url = platform_redacted.unwrap_or_else(|| {
+                    // Fallback to generic redaction
+                    PlatformRegistry::generic_redact(url)
+                });
+
+                format!("{prefix}{redacted_url}{suffix}")
             } else {
                 segment.to_string()
             };
@@ -145,9 +150,9 @@ impl FFmpegHandler {
         parts.join("|")
     }
 
-    /// Sanitize all FFmpeg arguments (redact stream keys)
-    fn sanitize_ffmpeg_args(&self, args: &[String]) -> Vec<String> {
-        args.iter().map(|arg| self.sanitize_arg(arg)).collect()
+    /// Sanitize all FFmpeg arguments (redact stream keys) with platform-aware redaction
+    fn sanitize_ffmpeg_args(&self, args: &[String], group: &OutputGroup) -> Vec<String> {
+        args.iter().map(|arg| self.sanitize_arg_with_context(arg, group)).collect()
     }
 
     /// Static version of sanitize_arg for use in background threads
@@ -216,7 +221,7 @@ impl FFmpegHandler {
         self.ensure_relay_running(incoming_url)?;
 
         let args = self.build_args(group);
-        let sanitized = self.sanitize_ffmpeg_args(&args);
+        let sanitized = self.sanitize_ffmpeg_args(&args, group);
         log::info!(
             "Starting FFmpeg group {}: {} {}",
             group.id,
@@ -537,7 +542,7 @@ impl FFmpegHandler {
         }
 
         let args = self.build_relay_args(incoming_url);
-        let sanitized = self.sanitize_ffmpeg_args(&args);
+        let sanitized: Vec<String> = args.iter().map(|arg| Self::sanitize_arg_static(arg)).collect();
         log::info!(
             "Starting FFmpeg relay: {} {}",
             self.ffmpeg_path,
