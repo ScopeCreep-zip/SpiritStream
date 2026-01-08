@@ -11,6 +11,27 @@ Multi-destination streaming application that allows you to stream to multiple pl
 - Real-time stream statistics
 - Cross-platform: macOS, Windows, Linux
 
+## Documentation
+
+Comprehensive technical documentation is available in the [`docs/`](./docs/) directory.
+
+### Quick Links
+
+| Document | Description |
+|----------|-------------|
+| [Getting Started](./docs/06-tutorials/01-getting-started.md) | Installation and first run guide |
+| [System Overview](./docs/01-architecture/01-system-overview.md) | Architecture and component diagrams |
+| [FFmpeg Integration](./docs/04-streaming/01-ffmpeg-integration.md) | Relay architecture and process management |
+| [State Management](./docs/03-frontend/02-state-management.md) | Zustand stores and data flow |
+| [Services Layer](./docs/02-backend/02-services-layer.md) | Rust backend services |
+| [Glossary](./docs/GLOSSARY.md) | Technical terms and definitions |
+
+### Reading Paths
+
+- **Beginners**: Start with [Getting Started](./docs/06-tutorials/01-getting-started.md) → [First Stream](./docs/06-tutorials/02-first-stream.md)
+- **Developers**: [System Overview](./docs/01-architecture/01-system-overview.md) → [Services Layer](./docs/02-backend/02-services-layer.md) → [State Management](./docs/03-frontend/02-state-management.md)
+- **Complete Documentation**: [docs/README.md](./docs/README.md)
+
 ## Quick Start
 
 ### One-Command Setup
@@ -19,14 +40,14 @@ Run the setup script to install all prerequisites automatically:
 
 **macOS / Linux:**
 ```bash
-git clone https://github.com/billboyles/spiritstream.git
+git clone https://github.com/ScopeCreep-zip/SpiritStream.git
 cd spiritstream
 ./setup.sh
 ```
 
 **Windows (PowerShell):**
 ```powershell
-git clone https://github.com/billboyles/spiritstream.git
+git clone https://github.com/ScopeCreep-zip/SpiritStream.git
 cd spiritstream
 .\setup.ps1
 ```
@@ -43,7 +64,7 @@ npm run build  # Production build
 
 ## Download Pre-built Binaries
 
-Download the latest release from [Releases](https://github.com/billboyles/spiritstream/releases):
+Download the latest release from [Releases](https://github.com/ScopeCreep-zip/SpiritStream/releases):
 
 | Platform | File |
 |----------|------|
@@ -72,7 +93,7 @@ Download the latest release from [Releases](https://github.com/billboyles/spirit
 ### Build Steps
 
 ```bash
-git clone https://github.com/billboyles/spiritstream.git
+git clone https://github.com/ScopeCreep-zip/SpiritStream.git
 cd spiritstream
 npm install
 npm run build

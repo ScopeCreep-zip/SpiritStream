@@ -278,8 +278,8 @@ dist/
 
 ```bash
 # Clone repository
-git clone https://github.com/billboyles/magillastream.git
-cd magillastream
+git clone https://github.com/ScopeCreep-zip/SpiritStream.git
+cd SpiritStream
 
 # Install dependencies
 npm install
