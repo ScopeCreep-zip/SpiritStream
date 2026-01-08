@@ -107,7 +107,14 @@
     "duplicate": "Duplicar",
     "delete": "Eliminar",
     "confirmDelete": "¿Estás seguro de que quieres eliminar este perfil?",
-    "selectProfile": "Seleccionar Perfil"
+    "selectProfile": "Seleccionar Perfil",
+    "deleteProfile": "Eliminar perfil",
+    "deleteConfirmation": "?Seguro que deseas eliminar \"{{name}}\"? Esta acci?n no se puede deshacer.",
+    "passwordProtected": "Protegido con contrase?a",
+    "addPassword": "A?adir protecci?n con contrase?a",
+    "removePassword": "Eliminar protecci?n con contrase?a",
+    "protectWithPassword": "Proteger con contrase?a",
+    "enterPassword": "Introduce la contrase?a para desbloquear"
   },
   "streams": {
     "startStreaming": "Iniciar Transmisión",
@@ -132,7 +139,8 @@
     "defaultGroupName": "Grupo de Salida",
     "uptime": "Tiempo Activo",
     "bitrate": "Tasa de Bits",
-    "fps": "FPS"
+    "fps": "FPS",
+    "totalBandwidth": "Ancho de banda total"
   },
   "encoder": {
     "title": "Configuración del Codificador",
@@ -152,7 +160,7 @@
     "outputSettings": "Ajustes de Salida",
     "encoder": "Codificador",
     "encoderHelper": "Los codificadores de hardware (NVENC, QSV, AMF) ofrecen mejor rendimiento",
-    "preset": "Preset",
+    "preset": "Preajuste",
     "presetHelper": "Equilibrio entre calidad y velocidad de codificación",
     "rateControl": "Control de Tasa",
     "rateControlHelper": "CBR se recomienda para transmisión",
@@ -185,7 +193,17 @@
       "balanced": "Equilibrado",
       "speed": "Velocidad",
       "performance": "Rendimiento",
-      "lowLatency": "Baja Latencia"
+      "lowLatency": "Baja Latencia",
+      "ultrafast": "Ultrarr?pido",
+      "superfast": "S?per r?pido",
+      "veryfast": "Muy r?pido",
+      "faster": "M?s r?pido",
+      "fast": "R?pido",
+      "medium": "Medio",
+      "slow": "Lento",
+      "slower": "M?s lento",
+      "veryslow": "Muy lento",
+      "low_latency": "Baja latencia"
     },
     "rateControls": {
       "cbr": "CBR (Tasa de Bits Constante)",
@@ -205,7 +223,9 @@
       "30": "30 FPS",
       "25": "25 FPS",
       "24": "24 FPS"
-    }
+    },
+    "profile": "Perfil",
+    "profileHelper": "Perfil H.264 (baseline para compatibilidad, high para calidad)"
   },
   "audio": {
     "codecs": {
@@ -219,7 +239,14 @@
       "192": "192 kbps",
       "128": "128 kbps (Estándar)",
       "96": "96 kbps",
-      "64": "64 kbps (Bajo)"
+      "64": "64 kbps (Bajo)",
+      "320k": "320 kbps (Mejor)",
+      "256k": "256 kbps",
+      "192k": "192 kbps",
+      "160k": "160 kbps",
+      "128k": "128 kbps (Est?ndar)",
+      "96k": "96 kbps",
+      "64k": "64 kbps (Bajo)"
     }
   },
   "outputs": {
@@ -287,7 +314,15 @@
     "autoScrollEnabled": "Auto-desplazamiento activado",
     "autoScrollDisabled": "Auto-desplazamiento desactivado",
     "noLogs": "Aún no hay entradas de registro",
-    "logsWillAppear": "Los registros aparecerán aquí cuando la aplicación los genere."
+    "logsWillAppear": "Los registros aparecerán aquí cuando la aplicación los genere.",
+    "allTime": "Todo el tiempo",
+    "last15Minutes": "?ltimos 15 minutos",
+    "lastHour": "?ltima hora",
+    "last24Hours": "?ltimas 24 horas",
+    "last7Days": "?ltimos 7 d?as",
+    "exportTitle": "Exportar registros",
+    "exportSuccess": "Registros exportados",
+    "exportFailed": "No se pudieron exportar los registros"
   },
   "settings": {
     "generalSettings": "Ajustes Generales",
@@ -328,7 +363,22 @@
     "tagline": "Transmisión a múltiples destinos simplificada",
     "github": "GitHub",
     "docs": "Documentación",
-    "updates": "Actualizaciones"
+    "updates": "Actualizaciones",
+    "logRetention": "Retención de registros",
+    "logRetentionDescription": "Cuánto tiempo conservar los archivos de registro de la aplicación.",
+    "logRetention7Days": "7 días",
+    "logRetention14Days": "14 días",
+    "logRetention30Days": "30 días",
+    "logRetention90Days": "90 días",
+    "logRetention365Days": "365 días",
+    "invalidFfmpegPath": "Ruta de FFmpeg no v?lida",
+    "updateFFmpeg": "Actualizar FFmpeg",
+    "elevationDenied": "Permiso denegado",
+    "elevationDeniedDescription": "Se requiere permiso de administrador para instalar FFmpeg. Puedes intentarlo de nuevo y conceder permiso cuando se solicite.",
+    "elevationPromptHint": "Aparecer? un cuadro de di?logo del sistema solicitando permisos de administrador. En Windows, haz clic en \"S?\" en el aviso de Control de cuentas de usuario para instalar FFmpeg.",
+    "updateAvailable": "Actualizaci?n disponible",
+    "checkingForUpdates": "Buscando actualizaciones...",
+    "upToDate": "FFmpeg est? actualizado"
   },
   "modals": {
     "createNewProfile": "Crear Nuevo Perfil",
@@ -421,7 +471,13 @@
       "confirmPasswordPlaceholder": "Confirmar contraseña",
       "encrypt": "Encriptar",
       "decrypt": "Desencriptar"
-    }
+    },
+    "rtmpInputSettings": "Configuraci?n de entrada RTMP",
+    "bindAddress": "Direcci?n de enlace",
+    "bindAddressHelper": "0.0.0.0 escucha en todas las interfaces",
+    "application": "Aplicaci?n",
+    "applicationHelper": "El nombre de la aplicaci?n (por ejemplo, \"live\")",
+    "rtmpUrlPreview": "URL de entrada"
   },
   "platforms": {
     "youtube": "YouTube",
@@ -519,7 +575,19 @@
     "streamKeyRequired": "La clave de transmisión es obligatoria",
     "portInvalid": "El puerto debe estar entre 1 y 65535",
     "passwordRequired": "La contraseña es obligatoria",
-    "passwordMismatch": "Las contraseñas no coinciden"
+    "passwordMismatch": "Las contraseñas no coinciden",
+    "profileNameRequired": "El nombre del perfil es obligatorio",
+    "targetNameRequired": "El nombre del destino es obligatorio",
+    "outputGroupNameRequired": "El nombre del grupo de salida es obligatorio",
+    "incomingUrlRequired": "La URL de entrada es obligatoria",
+    "serverUrlRequired": "La URL del servidor es obligatoria",
+    "urlMustStartWithRtmp": "La URL debe comenzar con rtmp:// o rtmps://",
+    "portRange": "El puerto debe estar entre 1 y 65535",
+    "bindAddressRequired": "La direcci?n de enlace es obligatoria",
+    "applicationRequired": "El nombre de la aplicaci?n es obligatorio",
+    "bitrateRange": "La tasa de bits debe estar entre 500 y 50000 kbps",
+    "passwordMinLength": "La contrase?a debe tener al menos 8 caracteres",
+    "passwordsDoNotMatch": "Las contrase?as no coinciden"
   },
   "toast": {
     "profileSaved": "Perfil guardado correctamente",

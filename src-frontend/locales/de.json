@@ -1,7 +1,7 @@
 {
   "nav": {
     "main": "Hauptmenü",
-    "dashboard": "Dashboard",
+    "dashboard": "?bersicht",
     "profiles": "Profile",
     "streamManager": "Stream-Manager",
     "configuration": "Konfiguration",
@@ -14,7 +14,7 @@
   },
   "header": {
     "dashboard": {
-      "title": "Dashboard",
+      "title": "?bersicht",
       "description": "Übersicht Ihrer Streaming-Konfiguration"
     },
     "profiles": {
@@ -107,7 +107,14 @@
     "delete": "Löschen",
     "confirmDelete": "Sind Sie sicher, dass Sie dieses Profil löschen möchten?",
     "selectProfile": "Profil auswählen",
-    "createNewProfile": "Neues Profil erstellen"
+    "createNewProfile": "Neues Profil erstellen",
+    "deleteProfile": "Profil l?schen",
+    "deleteConfirmation": "M?chtest du \"{{name}}\" wirklich l?schen? Diese Aktion kann nicht r?ckg?ngig gemacht werden.",
+    "passwordProtected": "Passwortgesch?tzt",
+    "addPassword": "Passwortschutz hinzuf?gen",
+    "removePassword": "Passwortschutz entfernen",
+    "protectWithPassword": "Mit Passwort sch?tzen",
+    "enterPassword": "Passwort zum Entsperren eingeben"
   },
   "streams": {
     "startStreaming": "Streaming starten",
@@ -132,7 +139,8 @@
     "defaultGroupName": "Ausgabegruppe",
     "uptime": "Laufzeit",
     "bitrate": "Bitrate",
-    "fps": "FPS"
+    "fps": "FPS",
+    "totalBandwidth": "Gesamtbandbreite"
   },
   "encoder": {
     "title": "Encoder-Konfiguration",
@@ -183,7 +191,17 @@
       "balanced": "Ausgewogen",
       "speed": "Geschwindigkeit",
       "performance": "Leistung",
-      "lowLatency": "Niedrige Latenz"
+      "lowLatency": "Niedrige Latenz",
+      "ultrafast": "Ultraschnell",
+      "superfast": "Superschnell",
+      "veryfast": "Sehr schnell",
+      "faster": "Schneller",
+      "fast": "Schnell",
+      "medium": "Mittel",
+      "slow": "Langsam",
+      "slower": "Langsamer",
+      "veryslow": "Sehr langsam",
+      "low_latency": "Niedrige Latenz"
     },
     "rateControls": {
       "cbr": "CBR (Konstante Bitrate)",
@@ -205,7 +223,9 @@
       "24": "24 FPS"
     },
     "fps": "FPS",
-    "generatePts": "PTS-Zeitstempel generieren"
+    "generatePts": "PTS-Zeitstempel generieren",
+    "profile": "Profil",
+    "profileHelper": "H.264-Profil (baseline f?r Kompatibilit?t, high f?r Qualit?t)"
   },
   "audio": {
     "codecs": {
@@ -219,7 +239,14 @@
       "192": "192 kbps",
       "128": "128 kbps (Standard)",
       "96": "96 kbps",
-      "64": "64 kbps (Niedrig)"
+      "64": "64 kbps (Niedrig)",
+      "320k": "320 kbps (Beste)",
+      "256k": "256 kbps",
+      "192k": "192 kbps",
+      "160k": "160 kbps",
+      "128k": "128 kbps (Standard)",
+      "96k": "96 kbps",
+      "64k": "64 kbps (Niedrig)"
     }
   },
   "outputs": {
@@ -272,7 +299,7 @@
   "logs": {
     "applicationLogs": "Anwendungsprotokolle",
     "realTimeEvents": "Echtzeit-Anwendungsereignisse und Debug-Informationen",
-    "level": "Level",
+    "level": "Stufe",
     "allLevels": "Alle Level",
     "info": "Info",
     "warning": "Warnung",
@@ -282,7 +309,20 @@
     "clear": "Löschen",
     "noLogs": "Noch keine Protokolleinträge",
     "logsWillAppear": "Protokolle werden hier angezeigt, wenn die Anwendung sie generiert.",
-    "initialized": "Protokollkonsole initialisiert - warte auf Ereignisse..."
+    "initialized": "Protokollkonsole initialisiert - warte auf Ereignisse...",
+    "title": "Anwendungsprotokolle",
+    "description": "Echtzeit-Anwendungsereignisse und Debug-Informationen anzeigen",
+    "allTime": "Gesamter Zeitraum",
+    "last15Minutes": "Letzte 15 Minuten",
+    "lastHour": "Letzte Stunde",
+    "last24Hours": "Letzte 24 Stunden",
+    "last7Days": "Letzte 7 Tage",
+    "exportTitle": "Protokolle exportieren",
+    "exportSuccess": "Protokolle exportiert",
+    "exportFailed": "Export der Protokolle fehlgeschlagen",
+    "autoScroll": "Automatisches Scrollen",
+    "autoScrollEnabled": "Automatisches Scrollen aktiviert",
+    "autoScrollDisabled": "Automatisches Scrollen deaktiviert"
   },
   "settings": {
     "generalSettings": "Allgemeine Einstellungen",
@@ -323,7 +363,22 @@
     "docs": "Dokumentation",
     "updates": "Updates",
     "detecting": "Erkenne...",
-    "ffmpegNotFound": "FFmpeg nicht gefunden"
+    "ffmpegNotFound": "FFmpeg nicht gefunden",
+    "logRetention": "Protokollaufbewahrung",
+    "logRetentionDescription": "Wie lange Anwendungsprotokolle aufbewahrt werden.",
+    "logRetention7Days": "7 Tage",
+    "logRetention14Days": "14 Tage",
+    "logRetention30Days": "30 Tage",
+    "logRetention90Days": "90 Tage",
+    "logRetention365Days": "365 Tage",
+    "invalidFfmpegPath": "Ung?ltiger FFmpeg-Pfad",
+    "updateFFmpeg": "FFmpeg aktualisieren",
+    "elevationDenied": "Berechtigung verweigert",
+    "elevationDeniedDescription": "Administratorberechtigung ist erforderlich, um FFmpeg zu installieren. Du kannst es erneut versuchen und die Berechtigung erteilen, wenn du dazu aufgefordert wirst.",
+    "elevationPromptHint": "Ein Systemdialog fordert Administratorrechte an. Unter Windows klicke im UAC-Dialog auf ?Ja?, um FFmpeg zu installieren.",
+    "updateAvailable": "Update verf?gbar",
+    "checkingForUpdates": "Suche nach Updates...",
+    "upToDate": "FFmpeg ist aktuell"
   },
   "modals": {
     "createNewProfile": "Neues Profil erstellen",
@@ -416,7 +471,13 @@
       "confirmPasswordPlaceholder": "Passwort bestätigen",
       "encrypt": "Verschlüsseln",
       "decrypt": "Entschlüsseln"
-    }
+    },
+    "rtmpInputSettings": "RTMP-Eingangseinstellungen",
+    "bindAddress": "Bind-Adresse",
+    "bindAddressHelper": "0.0.0.0 lauscht auf allen Schnittstellen",
+    "application": "Anwendung",
+    "applicationHelper": "Der Anwendungsname (z. B. \"live\")",
+    "rtmpUrlPreview": "Eingangs-URL"
   },
   "platforms": {
     "youtube": "YouTube",
@@ -514,7 +575,19 @@
     "streamKeyRequired": "Stream-Schlüssel ist erforderlich",
     "portInvalid": "Port muss zwischen 1 und 65535 liegen",
     "passwordRequired": "Passwort ist erforderlich",
-    "passwordMismatch": "Passwörter stimmen nicht überein"
+    "passwordMismatch": "Passwörter stimmen nicht überein",
+    "profileNameRequired": "Profilname ist erforderlich",
+    "targetNameRequired": "Zielname ist erforderlich",
+    "outputGroupNameRequired": "Name der Ausgabengruppe ist erforderlich",
+    "incomingUrlRequired": "Eingangs-URL ist erforderlich",
+    "serverUrlRequired": "Server-URL ist erforderlich",
+    "urlMustStartWithRtmp": "URL muss mit rtmp:// oder rtmps:// beginnen",
+    "portRange": "Port muss zwischen 1 und 65535 liegen",
+    "bindAddressRequired": "Bind-Adresse ist erforderlich",
+    "applicationRequired": "Anwendungsname ist erforderlich",
+    "bitrateRange": "Bitrate muss zwischen 500 und 50000 kbps liegen",
+    "passwordMinLength": "Passwort muss mindestens 8 Zeichen lang sein",
+    "passwordsDoNotMatch": "Passw?rter stimmen nicht ?berein"
   },
   "toast": {
     "profileSaved": "Profil erfolgreich gespeichert",

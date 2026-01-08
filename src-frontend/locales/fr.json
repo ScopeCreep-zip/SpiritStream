@@ -107,7 +107,14 @@
     "duplicate": "Dupliquer",
     "delete": "Supprimer",
     "confirmDelete": "Êtes-vous sûr de vouloir supprimer ce profil ?",
-    "selectProfile": "Sélectionner un Profil"
+    "selectProfile": "Sélectionner un Profil",
+    "deleteProfile": "Supprimer le profil",
+    "deleteConfirmation": "Voulez-vous vraiment supprimer \"{{name}}\" ? Cette action est irr?versible.",
+    "passwordProtected": "Prot?g? par mot de passe",
+    "addPassword": "Ajouter une protection par mot de passe",
+    "removePassword": "Retirer la protection par mot de passe",
+    "protectWithPassword": "Prot?ger par mot de passe",
+    "enterPassword": "Entrez le mot de passe pour d?verrouiller"
   },
   "streams": {
     "startStreaming": "Démarrer la Diffusion",
@@ -132,7 +139,8 @@
     "defaultGroupName": "Groupe de Sortie",
     "uptime": "Temps d'Activité",
     "bitrate": "Débit",
-    "fps": "IPS"
+    "fps": "IPS",
+    "totalBandwidth": "Bande passante totale"
   },
   "encoder": {
     "title": "Configuration de l'Encodeur",
@@ -182,8 +190,18 @@
       "quality": "Qualité",
       "balanced": "Équilibré",
       "speed": "Vitesse",
-      "performance": "Performance",
-      "lowLatency": "Faible Latence"
+      "performance": "Performances",
+      "lowLatency": "Faible Latence",
+      "ultrafast": "Ultra rapide",
+      "superfast": "Super rapide",
+      "veryfast": "Tr?s rapide",
+      "faster": "Plus rapide",
+      "fast": "Rapide",
+      "medium": "Moyen",
+      "slow": "Lent",
+      "slower": "Plus lent",
+      "veryslow": "Tr?s lent",
+      "low_latency": "Faible latence"
     },
     "rateControls": {
       "cbr": "CBR (Débit Constant)",
@@ -205,7 +223,9 @@
       "24": "24 IPS"
     },
     "fps": "IPS",
-    "generatePts": "Générer les horodatages PTS"
+    "generatePts": "Générer les horodatages PTS",
+    "profile": "Profil",
+    "profileHelper": "Profil H.264 (baseline pour la compatibilit?, high pour la qualit?)"
   },
   "audio": {
     "codecs": {
@@ -219,7 +239,14 @@
       "192": "192 kbps",
       "128": "128 kbps (Standard)",
       "96": "96 kbps",
-      "64": "64 kbps (Bas)"
+      "64": "64 kbps (Bas)",
+      "320k": "320 kbps (Meilleur)",
+      "256k": "256 kbps",
+      "192k": "192 kbps",
+      "160k": "160 kbps",
+      "128k": "128 kbps (Standard)",
+      "96k": "96 kbps",
+      "64k": "64 kbps (Bas)"
     }
   },
   "outputs": {
@@ -282,7 +309,20 @@
     "clear": "Effacer",
     "noLogs": "Aucune entrée de journal pour le moment",
     "logsWillAppear": "Les journaux apparaîtront ici lorsque l'application les générera.",
-    "initialized": "Console de journaux initialisée - en attente d'événements..."
+    "initialized": "Console de journaux initialisée - en attente d'événements...",
+    "title": "Journaux de l'application",
+    "description": "Voir les ?v?nements de l'application en temps r?el et les informations de d?bogage",
+    "allTime": "Tout le temps",
+    "last15Minutes": "15 derni?res minutes",
+    "lastHour": "Derni?re heure",
+    "last24Hours": "Derni?res 24 heures",
+    "last7Days": "7 derniers jours",
+    "exportTitle": "Exporter les journaux",
+    "exportSuccess": "Journaux export?s",
+    "exportFailed": "?chec de l'export des journaux",
+    "autoScroll": "D?filement automatique",
+    "autoScrollEnabled": "D?filement automatique activ?",
+    "autoScrollDisabled": "D?filement automatique d?sactiv?"
   },
   "settings": {
     "generalSettings": "Paramètres Généraux",
@@ -323,7 +363,22 @@
     "docs": "Documentation",
     "updates": "Mises à jour",
     "detecting": "Détection...",
-    "ffmpegNotFound": "FFmpeg non trouvé"
+    "ffmpegNotFound": "FFmpeg non trouvé",
+    "logRetention": "Conservation des journaux",
+    "logRetentionDescription": "Dur?e de conservation des fichiers journaux de l'application.",
+    "logRetention7Days": "7 jours",
+    "logRetention14Days": "14 jours",
+    "logRetention30Days": "30 jours",
+    "logRetention90Days": "90 jours",
+    "logRetention365Days": "365 jours",
+    "invalidFfmpegPath": "Chemin FFmpeg invalide",
+    "updateFFmpeg": "Mettre ? jour FFmpeg",
+    "elevationDenied": "Autorisation refus?e",
+    "elevationDeniedDescription": "Une autorisation administrateur est requise pour installer FFmpeg. Vous pouvez r?essayer et accorder l'autorisation lorsque demand?.",
+    "elevationPromptHint": "Une bo?te de dialogue syst?me demandera les autorisations administrateur. Sous Windows, cliquez sur ? Oui ? dans l'invite UAC pour installer FFmpeg.",
+    "updateAvailable": "Mise ? jour disponible",
+    "checkingForUpdates": "V?rification des mises ? jour...",
+    "upToDate": "FFmpeg est ? jour"
   },
   "modals": {
     "createNewProfile": "Créer un Nouveau Profil",
@@ -416,7 +471,13 @@
       "confirmPasswordPlaceholder": "Confirmer le mot de passe",
       "encrypt": "Chiffrer",
       "decrypt": "Déchiffrer"
-    }
+    },
+    "rtmpInputSettings": "Param?tres d'entr?e RTMP",
+    "bindAddress": "Adresse de liaison",
+    "bindAddressHelper": "0.0.0.0 ?coute sur toutes les interfaces",
+    "application": "Application",
+    "applicationHelper": "Le nom de l'application (ex. \"live\")",
+    "rtmpUrlPreview": "URL d'ingestion"
   },
   "platforms": {
     "youtube": "YouTube",
@@ -514,7 +575,19 @@
     "streamKeyRequired": "La clé de diffusion est obligatoire",
     "portInvalid": "Le port doit être compris entre 1 et 65535",
     "passwordRequired": "Le mot de passe est obligatoire",
-    "passwordMismatch": "Les mots de passe ne correspondent pas"
+    "passwordMismatch": "Les mots de passe ne correspondent pas",
+    "profileNameRequired": "Le nom du profil est requis",
+    "targetNameRequired": "Le nom de la destination est requis",
+    "outputGroupNameRequired": "Le nom du groupe de sortie est requis",
+    "incomingUrlRequired": "L'URL d'entr?e est requise",
+    "serverUrlRequired": "L'URL du serveur est requise",
+    "urlMustStartWithRtmp": "L'URL doit commencer par rtmp:// ou rtmps://",
+    "portRange": "Le port doit ?tre compris entre 1 et 65535",
+    "bindAddressRequired": "L'adresse de liaison est requise",
+    "applicationRequired": "Le nom de l'application est requis",
+    "bitrateRange": "Le d?bit doit ?tre compris entre 500 et 50000 kbps",
+    "passwordMinLength": "Le mot de passe doit comporter au moins 8 caract?res",
+    "passwordsDoNotMatch": "Les mots de passe ne correspondent pas"
   },
   "toast": {
     "profileSaved": "Profil enregistré avec succès",
