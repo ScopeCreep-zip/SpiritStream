@@ -150,6 +150,8 @@ impl ProfileManager {
 
     /// Delete a profile by name (both encrypted and unencrypted versions)
     pub async fn delete(&self, name: &str) -> Result<(), String> {
+        log::info!("Deleting profile: {}", name);
+
         // Validate profile name to prevent path traversal attacks
         validate_profile_name(name)?;
 
@@ -171,8 +173,10 @@ impl ProfileManager {
         }
 
         if deleted {
+            log::info!("Profile deleted successfully: {}", name);
             Ok(())
         } else {
+            log::warn!("Profile not found for deletion: {}", name);
             Err(format!("Profile '{name}' not found"))
         }
     }
@@ -261,6 +265,12 @@ impl ProfileManager {
         password: Option<&str>,
         encrypt_keys: bool,
     ) -> Result<(), String> {
+        log::info!("Saving profile: {} (encrypted: {}, stream keys encrypted: {})",
+            profile.name,
+            password.is_some(),
+            encrypt_keys
+        );
+
         // Validate profile name to prevent path traversal attacks
         validate_profile_name(&profile.name)?;
 
@@ -307,16 +317,23 @@ impl ProfileManager {
             }
         }
 
+        log::info!("Profile saved successfully: {}", profile.name);
         Ok(())
     }
 
     /// Load a profile and always decrypt stream keys (if they were encrypted)
     pub async fn load_with_key_decryption(&self, name: &str, password: Option<&str>) -> Result<Profile, String> {
+        log::info!("Loading profile: {}", name);
         let mut profile = self.load(name, password).await?;
 
         // Always try to decrypt stream keys (they'll be returned as-is if not encrypted)
         self.decrypt_stream_keys(&mut profile)?;
 
+        log::info!("Profile loaded successfully: {} ({} output groups, {} total targets)",
+            name,
+            profile.output_groups.len(),
+            profile.output_groups.iter().map(|g| g.stream_targets.len()).sum::<usize>()
+        );
         Ok(profile)
     }
 }

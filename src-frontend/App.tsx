@@ -28,6 +28,7 @@ import { useProfileStore } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
 import { useInitialize } from '@/hooks/useInitialize';
 import { useStreamStats } from '@/hooks/useStreamStats';
+import { useLogListener } from '@/hooks/useLogListener';
 import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValidation';
 import { toast } from '@/hooks/useToast';
 import { useThemeStore } from '@/stores/themeStore';
@@ -64,6 +65,9 @@ function App() {
 
   // Listen to real-time stream stats from backend
   useStreamStats();
+
+  // Capture logs throughout the app lifecycle
+  useLogListener();
 
   // Initialize theme store on app startup
   useThemeStore((state) => state.currentThemeId);

@@ -1,7 +1,10 @@
 // System Commands
 // Handles system-level operations like encoder detection
 
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use tauri::{AppHandle, Manager};
 use crate::models::Encoders;
 
 /// Find FFmpeg path
@@ -259,4 +262,55 @@ pub fn validate_ffmpeg_path(path: String) -> Result<String, String> {
         .to_string();
 
     Ok(version_line)
+}
+
+fn find_latest_log_file(log_dir: &Path) -> Option<PathBuf> {
+    let entries = fs::read_dir(log_dir).ok()?;
+    let mut latest: Option<(PathBuf, std::time::SystemTime)> = None;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("log") {
+            continue;
+        }
+        let modified = entry
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+
+        match latest {
+            Some((_, latest_time)) if modified <= latest_time => {}
+            _ => latest = Some((path, modified)),
+        }
+    }
+
+    latest.map(|(path, _)| path)
+}
+
+fn read_log_lines(path: &Path, max_lines: usize) -> Result<Vec<String>, String> {
+    let bytes = fs::read(path).map_err(|e| format!("Failed to read log file: {e}"))?;
+    let content = String::from_utf8_lossy(&bytes);
+    let lines: Vec<String> = content
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| line.to_string())
+        .collect();
+
+    let start = lines.len().saturating_sub(max_lines);
+    Ok(lines[start..].to_vec())
+}
+
+/// Load recent log lines from the latest log file.
+#[tauri::command]
+pub fn get_recent_logs(app_handle: AppHandle, max_lines: Option<usize>) -> Result<Vec<String>, String> {
+    let log_dir = app_handle
+        .path()
+        .app_log_dir()
+        .map_err(|e| format!("Failed to resolve log directory: {e}"))?;
+    let log_file = match find_latest_log_file(&log_dir) {
+        Some(path) => path,
+        None => return Ok(Vec::new()),
+    };
+
+    read_log_lines(&log_file, max_lines.unwrap_or(500))
 }

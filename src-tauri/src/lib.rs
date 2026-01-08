@@ -7,6 +7,7 @@ mod services;
 
 use std::sync::Arc;
 use tauri::{image::Image, Manager, RunEvent};
+use tauri_plugin_log::{Target, TargetKind};
 use tokio::sync::Mutex;
 use services::{ProfileManager, FFmpegHandler, FFmpegDownloader, SettingsManager, ThemeManager};
 use commands::FFmpegDownloaderState;
@@ -18,14 +19,21 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            // Initialize logging in debug mode
+            let mut targets = vec![
+                Target::new(TargetKind::LogDir {
+                    file_name: Some("spiritstream".to_string()),
+                }),
+                Target::new(TargetKind::Webview),
+            ];
             if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
+                targets.push(Target::new(TargetKind::Stdout));
             }
+            app.handle().plugin(
+                tauri_plugin_log::Builder::default()
+                    .level(log::LevelFilter::Info)
+                    .targets(targets)
+                    .build(),
+            )?;
 
             // Get app data directory for profile storage
             let app_data_dir = app.path().app_data_dir()
@@ -101,6 +109,7 @@ pub fn run() {
             commands::get_encoders,
             commands::test_ffmpeg,
             commands::validate_ffmpeg_path,
+            commands::get_recent_logs,
             // Settings commands
             commands::get_settings,
             commands::save_settings,
