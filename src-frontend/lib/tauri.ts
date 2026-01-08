@@ -43,6 +43,8 @@ export const api = {
     validateFfmpegPath: (path: string) => invoke<string>('validate_ffmpeg_path', { path }),
     getRecentLogs: (maxLines?: number) =>
       invoke<string[]>('get_recent_logs', { maxLines }),
+    exportLogs: (path: string, content: string) =>
+      invoke<void>('export_logs', { path, content }),
   },
   settings: {
     get: () => invoke<AppSettings>('get_settings'),

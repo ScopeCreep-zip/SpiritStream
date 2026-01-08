@@ -110,6 +110,7 @@ pub fn run() {
             commands::test_ffmpeg,
             commands::validate_ffmpeg_path,
             commands::get_recent_logs,
+            commands::export_logs,
             // Settings commands
             commands::get_settings,
             commands::save_settings,

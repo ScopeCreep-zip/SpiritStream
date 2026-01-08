@@ -57,7 +57,7 @@ export const parseLogLine = (line: string): LogEntry => {
   const match = logLineRegex.exec(line);
   if (match) {
     const [, date, time, target, levelRaw, message] = match;
-    const timestamp = new Date(`${date}T${time}`);
+    const timestamp = new Date(`${date}T${time}Z`);
     const safeTimestamp = Number.isNaN(timestamp.getTime()) ? new Date() : timestamp;
     return {
       id: nextLogId(),

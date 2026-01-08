@@ -5,12 +5,14 @@ interface LogStore {
   logs: LogEntry[];
   filter: LogLevel | 'all';
   autoScroll: boolean;
+  timeFilter: 'all' | '15m' | '1h' | '24h' | '7d';
 
   // Actions
   addLog: (log: LogEntry) => void;
   addLogs: (logs: LogEntry[]) => void;
   setFilter: (filter: LogLevel | 'all') => void;
   setAutoScroll: (enabled: boolean) => void;
+  setTimeFilter: (filter: 'all' | '15m' | '1h' | '24h' | '7d') => void;
   clearLogs: () => void;
 }
 
@@ -18,6 +20,7 @@ export const useLogStore = create<LogStore>((set) => ({
   logs: [],
   filter: 'all',
   autoScroll: true,
+  timeFilter: 'all',
 
   addLog: (log) =>
     set((state) => ({
@@ -33,6 +36,8 @@ export const useLogStore = create<LogStore>((set) => ({
   setFilter: (filter) => set({ filter }),
 
   setAutoScroll: (enabled) => set({ autoScroll: enabled }),
+
+  setTimeFilter: (filter) => set({ timeFilter: filter }),
 
   clearLogs: () => set({ logs: [] }),
 }));

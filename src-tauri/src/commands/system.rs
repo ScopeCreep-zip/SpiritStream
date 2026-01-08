@@ -314,3 +314,9 @@ pub fn get_recent_logs(app_handle: AppHandle, max_lines: Option<usize>) -> Resul
 
     read_log_lines(&log_file, max_lines.unwrap_or(500))
 }
+
+/// Export logs to a user-selected path.
+#[tauri::command]
+pub fn export_logs(path: String, content: String) -> Result<(), String> {
+    fs::write(&path, content).map_err(|e| format!("Failed to write log file: {e}"))
+}
