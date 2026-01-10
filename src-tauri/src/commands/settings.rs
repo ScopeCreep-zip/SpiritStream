@@ -2,9 +2,9 @@
 // Tauri command handlers for settings management
 
 use std::path::PathBuf;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use crate::models::Settings;
-use crate::services::{prune_logs, SettingsManager};
+use crate::services::{prune_logs, SettingsManager, Encryption, RotationReport};
 
 /// Get current settings
 #[tauri::command]
@@ -44,4 +44,23 @@ pub fn export_data(
 #[tauri::command]
 pub fn clear_data(settings_manager: State<SettingsManager>) -> Result<(), String> {
     settings_manager.clear_data()
+}
+
+/// Rotate the machine encryption key
+/// Re-encrypts all stream keys in all profiles with a new machine key
+#[tauri::command]
+pub fn rotate_machine_key(app_handle: AppHandle) -> Result<RotationReport, String> {
+    log::info!("Machine key rotation requested");
+
+    // Get app data directory
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data directory: {}", e))?;
+
+    // Get profiles directory
+    let profiles_dir = app_data_dir.join("profiles");
+
+    // Perform rotation
+    Encryption::rotate_machine_key(&app_data_dir, &profiles_dir)
 }

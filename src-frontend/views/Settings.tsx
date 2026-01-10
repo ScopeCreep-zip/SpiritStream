@@ -11,6 +11,7 @@ import { Grid } from '@/components/ui/Grid';
 import { Modal } from '@/components/ui/Modal';
 import { Logo } from '@/components/layout/Logo';
 import { FFmpegDownloadProgress } from '@/components/settings/FFmpegDownloadProgress';
+import { KeyRotationSection } from '@/components/settings/KeyRotationSection';
 import { api } from '@/lib/tauri';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { open as openPath } from '@tauri-apps/plugin-shell';
@@ -507,6 +508,10 @@ export function Settings() {
               onChange={(checked: boolean) => updateSetting('encryptStreamKeys', checked)}
             />
           </div>
+          <KeyRotationSection
+            encryptStreamKeys={settings.encryptStreamKeys}
+            disabled={settings.saving}
+          />
           <Select
             label={t('settings.logRetention', { defaultValue: 'Log retention' })}
             value={String(settings.logRetentionDays)}

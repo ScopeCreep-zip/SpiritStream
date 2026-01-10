@@ -57,6 +57,16 @@ export interface AppSettings {
 }
 
 /**
+ * Report returned after successful key rotation
+ */
+export interface RotationReport {
+  profilesUpdated: number;
+  keysReencrypted: number;
+  totalProfiles: number;
+  timestamp: string;
+}
+
+/**
  * FFmpeg version information
  */
 export interface FFmpegVersionInfo {
@@ -80,6 +90,7 @@ export interface SettingsAPI {
   getProfilesPath: () => TauriResult<string>;
   exportData: (exportPath: string) => TauriResult<void>;
   clearData: () => TauriResult<void>;
+  rotateMachineKey: () => TauriResult<RotationReport>;
 }
 
 /**

@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { Profile, ProfileSummary, OutputGroup, RtmpInput } from '@/types/profile';
 import type { Encoders } from '@/types/stream';
-import type { AppSettings, FFmpegVersionInfo } from '@/types/api';
+import type { AppSettings, FFmpegVersionInfo, RotationReport } from '@/types/api';
 import type { ThemeSummary } from '@/types/theme';
 
 /**
@@ -52,6 +52,7 @@ export const api = {
     getProfilesPath: () => invoke<string>('get_profiles_path'),
     exportData: (exportPath: string) => invoke<void>('export_data', { exportPath }),
     clearData: () => invoke<void>('clear_data'),
+    rotateMachineKey: () => invoke<RotationReport>('rotate_machine_key'),
   },
   theme: {
     list: () => invoke<ThemeSummary[]>('list_themes'),

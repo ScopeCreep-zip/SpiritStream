@@ -348,6 +348,22 @@
     "open": "Open",
     "encryptStreamKeys": "Encrypt Stream Keys",
     "encryptStreamKeysDescription": "Encrypt stream keys at rest using AES-256",
+    "machineKey": "Machine Key",
+    "rotateMachineKey": "Rotate Machine Key",
+    "rotateMachineKeyTitle": "Rotate Machine Key?",
+    "rotateMachineKeyDescription": "Generate a new machine key and re-encrypt all stored stream keys.",
+    "lastRotated": "Last rotated: {{timestamp}}",
+    "rotationNever": "Not available",
+    "rotationStepsTitle": "This will:",
+    "rotationStepGenerate": "Generate a new encryption key",
+    "rotationStepBackup": "Create a backup of your profiles",
+    "rotationStepReencrypt": "Re-encrypt all stored stream keys",
+    "rotationStepDelete": "Securely delete the old key",
+    "rotationWarning": "This cannot be undone. Ensure no streams are currently active.",
+    "rotationInProgress": "Rotating machine key...",
+    "rotationActiveStreams": "Cannot rotate while streams are active. Stop all streams and try again.",
+    "rotationPreflightFailed": "Could not verify streaming status. Please try again.",
+    "rotationEncryptionOffHint": "Stream key encryption is currently off. Rotation only updates existing encrypted keys.",
     "logRetention": "Log retention",
     "logRetentionDescription": "How long to keep application log files.",
     "logRetention7Days": "7 days",
@@ -610,6 +626,8 @@
     "configTesting": "Testing configuration...",
     "streamKeyCopied": "Stream key copied to clipboard",
     "groupDuplicated": "Output group \"{{name}}\" duplicated",
-    "groupRemoved": "Output group removed"
+    "groupRemoved": "Output group removed",
+    "keyRotationSuccess": "Machine key rotated. {{profiles}} profiles updated, {{keys}} keys re-encrypted.",
+    "keyRotationFailed": "Key rotation failed: {{error}}"
   }
 }

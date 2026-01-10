@@ -124,6 +124,7 @@ pub fn run() {
             commands::get_profiles_path,
             commands::export_data,
             commands::clear_data,
+            commands::rotate_machine_key,
             // FFmpeg download commands
             commands::download_ffmpeg,
             commands::cancel_ffmpeg_download,
