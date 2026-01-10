@@ -13,8 +13,8 @@
     "windows": [
       {
         "title": "SpiritStream",
-        "width": 1280,
-        "height": 800,
+        "width": 1500,
+        "height": 1000,
         "minWidth": 1024,
         "minHeight": 600,
         "resizable": true,
