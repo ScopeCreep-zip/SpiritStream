@@ -9,6 +9,7 @@ use argon2::Argon2;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use rand::Rng;
 use std::path::Path;
+use zeroize::{Zeroize, Zeroizing};
 
 const SALT_LEN: usize = 32;
 const NONCE_LEN: usize = 12;
@@ -32,7 +33,7 @@ impl Encryption {
         let key = Self::derive_key(password, &salt)?;
 
         // Encrypt
-        let cipher = Aes256Gcm::new_from_slice(&key)
+        let cipher = Aes256Gcm::new_from_slice(&*key)
             .map_err(|e| format!("Failed to create cipher: {e}"))?;
         let nonce = Nonce::from_slice(&nonce_bytes);
 
@@ -63,7 +64,7 @@ impl Encryption {
         let key = Self::derive_key(password, salt)?;
 
         // Decrypt
-        let cipher = Aes256Gcm::new_from_slice(&key)
+        let cipher = Aes256Gcm::new_from_slice(&*key)
             .map_err(|e| format!("Failed to create cipher: {e}"))?;
         let nonce = Nonce::from_slice(nonce_bytes);
 
@@ -72,11 +73,12 @@ impl Encryption {
     }
 
     /// Derive a key from password using Argon2id
-    fn derive_key(password: &str, salt: &[u8]) -> Result<[u8; KEY_LEN], String> {
-        let mut key = [0u8; KEY_LEN];
+    /// Returns a zeroizing key that will be securely erased from memory
+    fn derive_key(password: &str, salt: &[u8]) -> Result<Zeroizing<[u8; KEY_LEN]>, String> {
+        let mut key = Zeroizing::new([0u8; KEY_LEN]);
 
         Argon2::default()
-            .hash_password_into(password.as_bytes(), salt, &mut key)
+            .hash_password_into(password.as_bytes(), salt, &mut *key)
             .map_err(|e| format!("Key derivation failed: {e}"))?;
 
         Ok(key)
@@ -88,15 +90,18 @@ impl Encryption {
     // =========================================================================
 
     /// Get or create the machine-specific encryption key for stream keys
-    fn get_or_create_machine_key(app_data_dir: &Path) -> Result<[u8; KEY_LEN], String> {
+    /// Returns a zeroizing key that will be securely erased from memory
+    fn get_or_create_machine_key(app_data_dir: &Path) -> Result<Zeroizing<[u8; KEY_LEN]>, String> {
         let key_file = app_data_dir.join(".stream_key");
 
         if key_file.exists() {
             // Read existing key
-            let key_data = std::fs::read(&key_file)
+            let mut key_data = std::fs::read(&key_file)
                 .map_err(|e| format!("Failed to read machine key: {e}"))?;
 
             if key_data.len() != KEY_LEN {
+                // Zeroize key_data before returning error
+                key_data.zeroize();
                 return Err("Invalid machine key file".to_string());
             }
 
@@ -109,16 +114,20 @@ impl Encryption {
                     .map_err(|e| format!("Failed to set key file permissions: {e}"))?;
             }
 
-            let mut key = [0u8; KEY_LEN];
+            let mut key = Zeroizing::new([0u8; KEY_LEN]);
             key.copy_from_slice(&key_data);
+
+            // Zeroize the temporary buffer
+            key_data.zeroize();
+
             Ok(key)
         } else {
             // Generate new key
             let mut rng = rand::thread_rng();
-            let key: [u8; KEY_LEN] = rng.gen();
+            let key = Zeroizing::new(rng.gen::<[u8; KEY_LEN]>());
 
             // Save it
-            std::fs::write(&key_file, key)
+            std::fs::write(&key_file, &*key)
                 .map_err(|e| format!("Failed to save machine key: {e}"))?;
 
             // Set restrictive permissions on the new key file
@@ -149,7 +158,7 @@ impl Encryption {
         let nonce_bytes: [u8; NONCE_LEN] = rng.gen();
 
         // Encrypt
-        let cipher = Aes256Gcm::new_from_slice(&machine_key)
+        let cipher = Aes256Gcm::new_from_slice(&*machine_key)
             .map_err(|e| format!("Failed to create cipher: {e}"))?;
         let nonce = Nonce::from_slice(&nonce_bytes);
 
@@ -165,7 +174,7 @@ impl Encryption {
     }
 
     /// Decrypt a stream key from storage
-    /// Returns the original stream key
+    /// Returns the original stream key (will be zeroized when dropped)
     pub fn decrypt_stream_key(encrypted_key: &str, app_data_dir: &Path) -> Result<String, String> {
         // If not encrypted, return as-is
         if !encrypted_key.starts_with(STREAM_KEY_PREFIX) {
@@ -176,10 +185,11 @@ impl Encryption {
 
         // Remove prefix and decode base64
         let encoded = &encrypted_key[STREAM_KEY_PREFIX.len()..];
-        let combined = BASE64.decode(encoded)
+        let mut combined = BASE64.decode(encoded)
             .map_err(|e| format!("Failed to decode encrypted stream key: {e}"))?;
 
         if combined.len() < NONCE_LEN {
+            combined.zeroize();
             return Err("Invalid encrypted stream key".to_string());
         }
 
@@ -188,15 +198,21 @@ impl Encryption {
         let ciphertext = &combined[NONCE_LEN..];
 
         // Decrypt
-        let cipher = Aes256Gcm::new_from_slice(&machine_key)
+        let cipher = Aes256Gcm::new_from_slice(&*machine_key)
             .map_err(|e| format!("Failed to create cipher: {e}"))?;
         let nonce = Nonce::from_slice(nonce_bytes);
 
-        let plaintext = cipher.decrypt(nonce, ciphertext)
+        let mut plaintext = cipher.decrypt(nonce, ciphertext)
             .map_err(|e| format!("Stream key decryption failed: {e}"))?;
 
-        String::from_utf8(plaintext)
-            .map_err(|e| format!("Invalid UTF-8 in decrypted stream key: {e}"))
+        let result = String::from_utf8(plaintext.clone())
+            .map_err(|e| format!("Invalid UTF-8 in decrypted stream key: {e}"));
+
+        // Zeroize sensitive buffers
+        plaintext.zeroize();
+        combined.zeroize();
+
+        result
     }
 
     /// Check if a stream key is encrypted
