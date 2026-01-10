@@ -5,7 +5,7 @@ use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
 };
-use argon2::Argon2;
+use argon2::{Argon2, Algorithm, Version, Params};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use rand::Rng;
 use std::path::Path;
@@ -74,10 +74,29 @@ impl Encryption {
 
     /// Derive a key from password using Argon2id
     /// Returns a zeroizing key that will be securely erased from memory
+    ///
+    /// Uses strengthened parameters:
+    /// - Memory: 64 MB (65536 KiB)
+    /// - Iterations: 3
+    /// - Parallelism: 4 threads
     fn derive_key(password: &str, salt: &[u8]) -> Result<Zeroizing<[u8; KEY_LEN]>, String> {
         let mut key = Zeroizing::new([0u8; KEY_LEN]);
 
-        Argon2::default()
+        // Argon2id with strengthened parameters for better security
+        let params = Params::new(
+            65536,  // m_cost: 64 MB memory
+            3,      // t_cost: 3 iterations
+            4,      // p_cost: 4 parallel threads
+            None    // output length (using hash_password_into default)
+        ).map_err(|e| format!("Failed to create Argon2 params: {e}"))?;
+
+        let argon2 = Argon2::new(
+            Algorithm::Argon2id,
+            Version::V0x13,
+            params
+        );
+
+        argon2
             .hash_password_into(password.as_bytes(), salt, &mut *key)
             .map_err(|e| format!("Key derivation failed: {e}"))?;
 
