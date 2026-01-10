@@ -133,6 +133,12 @@ impl Encryption {
                     .map_err(|e| format!("Failed to set key file permissions: {e}"))?;
             }
 
+            // On Windows, set hidden and system attributes
+            #[cfg(windows)]
+            {
+                Self::set_windows_key_attributes(&key_file)?;
+            }
+
             let mut key = Zeroizing::new([0u8; KEY_LEN]);
             key.copy_from_slice(&key_data);
 
@@ -158,8 +164,45 @@ impl Encryption {
                     .map_err(|e| format!("Failed to set key file permissions: {e}"))?;
             }
 
+            // On Windows, set hidden and system attributes
+            #[cfg(windows)]
+            {
+                Self::set_windows_key_attributes(&key_file)?;
+            }
+
             Ok(key)
         }
+    }
+
+    /// Set Windows file attributes to hide and protect the machine key file
+    #[cfg(windows)]
+    fn set_windows_key_attributes(key_file: &Path) -> Result<(), String> {
+        use std::os::windows::fs::MetadataExt;
+
+        // Get current attributes
+        let metadata = std::fs::metadata(key_file)
+            .map_err(|e| format!("Failed to read key file metadata: {e}"))?;
+        let mut attributes = metadata.file_attributes();
+
+        // FILE_ATTRIBUTE_HIDDEN = 0x2
+        // FILE_ATTRIBUTE_SYSTEM = 0x4
+        const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
+        const FILE_ATTRIBUTE_SYSTEM: u32 = 0x4;
+
+        // Add hidden and system attributes
+        attributes |= FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM;
+
+        // Set the attributes using winapi
+        use std::os::windows::ffi::OsStrExt;
+        let wide_path: Vec<u16> = key_file.as_os_str().encode_wide().chain(Some(0)).collect();
+
+        unsafe {
+            if winapi::um::fileapi::SetFileAttributesW(wide_path.as_ptr(), attributes) == 0 {
+                return Err("Failed to set Windows file attributes".to_string());
+            }
+        }
+
+        Ok(())
     }
 
     /// Encrypt a stream key for storage

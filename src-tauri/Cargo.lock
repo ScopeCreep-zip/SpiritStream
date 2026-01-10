@@ -4237,6 +4237,7 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "uuid",
+ "winapi",
  "xz2",
  "zeroize",
  "zip",
