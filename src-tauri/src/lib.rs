@@ -54,7 +54,7 @@ pub fn run() {
                 .and_then(|s| if s.ffmpeg_path.is_empty() { None } else { Some(s.ffmpeg_path.clone()) });
 
             if let Some(settings) = settings.as_ref() {
-                if let Err(error) = services::prune_logs(&app.handle(), settings.log_retention_days) {
+                if let Err(error) = services::prune_logs(app.handle(), settings.log_retention_days) {
                     log::warn!("Failed to prune logs: {error}");
                 }
             }
@@ -67,7 +67,7 @@ pub fn run() {
 
             let theme_manager = ThemeManager::new(app_data_dir.clone());
             // Sync project themes once on startup
-            theme_manager.sync_project_themes(Some(&app.handle()));
+            theme_manager.sync_project_themes(Some(app.handle()));
             theme_manager.start_watcher(app.handle().clone());
             app.manage(theme_manager);
 

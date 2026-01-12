@@ -153,7 +153,7 @@ impl Encryption {
             let key = Zeroizing::new(rng.gen::<[u8; KEY_LEN]>());
 
             // Save it
-            std::fs::write(&key_file, &*key)
+            std::fs::write(&key_file, *key)
                 .map_err(|e| format!("Failed to save machine key: {e}"))?;
 
             // Set restrictive permissions on the new key file
@@ -374,7 +374,7 @@ impl Encryption {
         let key_file = app_data_dir.join(".stream_key");
 
         // Write key
-        std::fs::write(&key_file, &**key)
+        std::fs::write(&key_file, **key)
             .map_err(|e| format!("Failed to write machine key: {e}"))?;
 
         // Set restrictive permissions
@@ -444,7 +444,7 @@ impl Encryption {
         {
             use std::os::unix::fs::PermissionsExt;
             let perms = std::fs::Permissions::from_mode(0o700); // Owner only
-            std::fs::set_permissions(&backup_dir, perms)
+            std::fs::set_permissions(&backup_dir, perms.clone())
                 .map_err(|e| format!("Failed to set backup directory permissions: {}", e))?;
             std::fs::set_permissions(&backup_path, perms)
                 .map_err(|e| format!("Failed to set backup directory permissions: {}", e))?;

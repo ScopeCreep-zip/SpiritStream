@@ -420,7 +420,7 @@ fn should_skip_theme_file(path: &Path) -> bool {
 
 fn is_theme_file(path: &Path) -> bool {
     match path.extension().and_then(|s| s.to_str()) {
-        Some(ext) => THEME_FILE_EXTENSIONS.iter().any(|allowed| *allowed == ext),
+        Some(ext) => THEME_FILE_EXTENSIONS.contains(&ext),
         None => false,
     }
 }

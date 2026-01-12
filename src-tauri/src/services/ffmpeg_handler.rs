@@ -298,7 +298,7 @@ impl FFmpegHandler {
         let mut was_intentionally_stopped = false;
         let mut recent_lines: VecDeque<String> = VecDeque::with_capacity(40);
 
-        for line_result in reader.lines() {
+        for line in reader.lines().flatten() {
             // Check if process is still running (was it intentionally stopped?)
             {
                 if let Ok(stopping) = stopping_groups.lock() {
@@ -316,38 +316,36 @@ impl FFmpegHandler {
                 }
             }
 
-            if let Ok(line) = line_result {
-                let sanitized_line = Self::sanitize_arg_static(&line);
-                if recent_lines.len() == 40 {
-                    recent_lines.pop_front();
-                }
-                recent_lines.push_back(sanitized_line.clone());
+            let sanitized_line = Self::sanitize_arg_static(&line);
+            if recent_lines.len() == 40 {
+                recent_lines.pop_front();
+            }
+            recent_lines.push_back(sanitized_line.clone());
 
-                // Parse stats from FFmpeg output
-                if stats.parse_line(&line) {
-                    // Emit stats at most every second
-                    if last_emit.elapsed() >= emit_interval {
-                        // Add uptime from process start
-                        if let Ok(procs) = processes.lock() {
-                            if let Some(info) = procs.get(&group_id) {
-                                stats.time = info.start_time.elapsed().as_secs_f64();
-                            }
+            // Parse stats from FFmpeg output
+            if stats.parse_line(&line) {
+                // Emit stats at most every second
+                if last_emit.elapsed() >= emit_interval {
+                    // Add uptime from process start
+                    if let Ok(procs) = processes.lock() {
+                        if let Some(info) = procs.get(&group_id) {
+                            stats.time = info.start_time.elapsed().as_secs_f64();
                         }
-
-                        // Emit event
-                        let _ = app_handle.emit("stream_stats", stats.clone());
-                        last_emit = Instant::now();
                     }
-                }
 
-                // Only log errors and warnings (not frame stats which are too verbose)
-                if line.contains("[error]")
-                    || line.contains("[warning]")
-                    || line.contains("Error")
-                    || line.contains("error")
-                {
-                    log::warn!("[FFmpeg:{group_id}] {sanitized_line}");
+                    // Emit event
+                    let _ = app_handle.emit("stream_stats", stats.clone());
+                    last_emit = Instant::now();
                 }
+            }
+
+            // Only log errors and warnings (not frame stats which are too verbose)
+            if line.contains("[error]")
+                || line.contains("[warning]")
+                || line.contains("Error")
+                || line.contains("error")
+            {
+                log::warn!("[FFmpeg:{group_id}] {sanitized_line}");
             }
         }
 
@@ -559,11 +557,9 @@ impl FFmpegHandler {
         if let Some(stderr) = child.stderr.take() {
             thread::spawn(move || {
                 let reader = BufReader::new(stderr);
-                for line_result in reader.lines() {
-                    if let Ok(line) = line_result {
-                        if line.contains("[error]") || line.contains("[warning]") {
-                            log::warn!("[FFmpeg:relay] {line}");
-                        }
+                for line in reader.lines().flatten() {
+                    if line.contains("[error]") || line.contains("[warning]") {
+                        log::warn!("[FFmpeg:relay] {line}");
                     }
                 }
             });
@@ -652,36 +648,33 @@ impl FFmpegHandler {
 
     /// Build FFmpeg arguments for the shared relay process
     fn build_relay_args(&self, incoming_url: &str) -> Vec<String> {
-        let mut args = Vec::new();
-
-        args.push("-listen".to_string());
-        args.push("1".to_string());
-        args.push("-i".to_string());
-        args.push(incoming_url.to_string());
-        args.push("-c:v".to_string());
-        args.push("copy".to_string());
-        args.push("-c:a".to_string());
-        args.push("copy".to_string());
-        args.push("-f".to_string());
-        args.push("mpegts".to_string());
-        args.push(Self::RELAY_UDP_OUT.to_string());
-
-        args
+        vec![
+            "-listen".to_string(),
+            "1".to_string(),
+            "-i".to_string(),
+            incoming_url.to_string(),
+            "-c:v".to_string(),
+            "copy".to_string(),
+            "-c:a".to_string(),
+            "copy".to_string(),
+            "-f".to_string(),
+            "mpegts".to_string(),
+            Self::RELAY_UDP_OUT.to_string(),
+        ]
     }
 
     /// Build FFmpeg arguments for an output group
     ///
     /// Groups read from the shared UDP relay so they can restart independently.
     fn build_args(&self, group: &OutputGroup) -> Vec<String> {
-        let mut args = Vec::new();
-
-        // Input configuration (shared relay)
-        args.push("-fflags".to_string());
-        args.push("nobuffer".to_string());
-        args.push("-flags".to_string());
-        args.push("low_delay".to_string());
-        args.push("-i".to_string());
-        args.push(Self::RELAY_UDP_IN.to_string());
+        let mut args = vec![
+            "-fflags".to_string(),
+            "nobuffer".to_string(),
+            "-flags".to_string(),
+            "low_delay".to_string(),
+            "-i".to_string(),
+            Self::RELAY_UDP_IN.to_string(),
+        ];
 
         // Determine if we should use stream copy (passthrough mode)
         // When both video and audio codecs are set to "copy", FFmpeg acts as a pure

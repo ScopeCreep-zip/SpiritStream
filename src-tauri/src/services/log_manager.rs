@@ -35,10 +35,8 @@ pub fn prune_logs(app_handle: &AppHandle, retention_days: u32) -> Result<usize, 
             .metadata()
             .and_then(|metadata| metadata.modified())
             .unwrap_or(SystemTime::UNIX_EPOCH);
-        if modified < cutoff {
-            if fs::remove_file(&path).is_ok() {
-                removed += 1;
-            }
+        if modified < cutoff && fs::remove_file(&path).is_ok() {
+            removed += 1;
         }
     }
 

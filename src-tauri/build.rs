@@ -23,7 +23,8 @@ fn main() {
     let mut enum_code = String::from(
         "// Auto-generated from data/streaming-platforms.json\n\
          // DO NOT EDIT MANUALLY\n\n\
-         #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]\n\
+         #[allow(clippy::enum_variant_names, clippy::upper_case_acronyms)]\n\
+         #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]\n\
          pub enum Platform {\n"
     );
 
@@ -65,31 +66,25 @@ fn main() {
             variant.clone()
         };
 
-        // Track the first variant for default implementation
-        if first_variant.is_none() {
+        let is_first = first_variant.is_none();
+        if is_first {
             first_variant = Some(final_variant.clone());
         }
 
-        // Add the enum variant with serde rename
-        enum_code.push_str(&format!(
-            "    #[serde(rename = \"{}\")]\n    {},\n",
-            name, final_variant
-        ));
+        if is_first {
+            enum_code.push_str(&format!(
+                "    #[serde(rename = \"{}\")]\n    #[default]\n    {},\n",
+                name, final_variant
+            ));
+        } else {
+            enum_code.push_str(&format!(
+                "    #[serde(rename = \"{}\")]\n    {},\n",
+                name, final_variant
+            ));
+        }
     }
 
     enum_code.push_str("}\n");
-
-    // Add Default implementation
-    if let Some(first) = first_variant {
-        enum_code.push_str(&format!(
-            "\nimpl Default for Platform {{\n\
-                 fn default() -> Self {{\n\
-                     Platform::{}\n\
-                 }}\n\
-             }}\n",
-            first
-        ));
-    }
 
     // Write to OUT_DIR
     let out_dir = env::var("OUT_DIR").unwrap();
