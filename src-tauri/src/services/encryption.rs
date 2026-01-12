@@ -444,7 +444,7 @@ impl Encryption {
         {
             use std::os::unix::fs::PermissionsExt;
             let perms = std::fs::Permissions::from_mode(0o700); // Owner only
-            std::fs::set_permissions(&backup_dir, perms)
+            std::fs::set_permissions(&backup_dir, perms.clone())
                 .map_err(|e| format!("Failed to set backup directory permissions: {}", e))?;
             std::fs::set_permissions(&backup_path, perms)
                 .map_err(|e| format!("Failed to set backup directory permissions: {}", e))?;
