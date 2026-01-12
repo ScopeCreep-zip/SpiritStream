@@ -298,7 +298,7 @@ impl FFmpegHandler {
         let mut was_intentionally_stopped = false;
         let mut recent_lines: VecDeque<String> = VecDeque::with_capacity(40);
 
-        for line in reader.lines().flatten() {
+        for line in reader.lines().map_while(Result::ok) {
             // Check if process is still running (was it intentionally stopped?)
             {
                 if let Ok(stopping) = stopping_groups.lock() {
@@ -557,7 +557,7 @@ impl FFmpegHandler {
         if let Some(stderr) = child.stderr.take() {
             thread::spawn(move || {
                 let reader = BufReader::new(stderr);
-                for line in reader.lines().flatten() {
+                for line in reader.lines().map_while(Result::ok) {
                     if line.contains("[error]") || line.contains("[warning]") {
                         log::warn!("[FFmpeg:relay] {line}");
                     }
