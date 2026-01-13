@@ -11,7 +11,9 @@ import {
   Cog,
   Play,
   Square,
+  MessageSquare,
 } from 'lucide-react';
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 
 import { AppShell } from '@/components/layout/AppShell';
 import { Sidebar, SidebarHeader, SidebarNav } from '@/components/layout/Sidebar';
@@ -29,9 +31,11 @@ import { useStreamStore } from '@/stores/streamStore';
 import { useInitialize } from '@/hooks/useInitialize';
 import { useStreamStats } from '@/hooks/useStreamStats';
 import { useLogListener } from '@/hooks/useLogListener';
+import { useChatListener } from '@/hooks/useChatListener';
 import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValidation';
 import { toast } from '@/hooks/useToast';
 import { useThemeStore } from '@/stores/themeStore';
+import { ChatOverlay } from '@/views/ChatOverlay';
 
 // Import all views
 import {
@@ -43,6 +47,7 @@ import {
   StreamTargets,
   Logs,
   Settings,
+  Chat,
 } from '@/views';
 
 export type View =
@@ -52,12 +57,38 @@ export type View =
   | 'encoder'
   | 'outputs'
   | 'targets'
+  | 'chat'
   | 'logs'
   | 'settings';
 
 // View meta is now handled via translations using keys like header.dashboard.title
+const getWindowLabel = () => {
+  try {
+    return WebviewWindow.getCurrent().label;
+  } catch (error) {
+    console.warn('Failed to read current window label:', error);
+    return 'main';
+  }
+};
 
 function App() {
+  const [windowLabel] = useState(getWindowLabel);
+
+  if (windowLabel === 'chat-overlay') {
+    return <ChatOverlayApp />;
+  }
+
+  return <MainApp />;
+}
+
+function ChatOverlayApp() {
+  useChatListener();
+  useThemeStore((state) => state.currentThemeId);
+
+  return <ChatOverlay />;
+}
+
+function MainApp() {
   const { t } = useTranslation();
 
   // Initialize app - load profiles from backend
@@ -68,6 +99,9 @@ function App() {
 
   // Capture logs throughout the app lifecycle
   useLogListener();
+
+  // Listen to unified chat messages
+  useChatListener();
 
   // Initialize theme store on app startup
   useThemeStore((state) => state.currentThemeId);
@@ -161,6 +195,8 @@ function App() {
         return <OutputGroups />;
       case 'targets':
         return <StreamTargets />;
+      case 'chat':
+        return <Chat />;
       case 'logs':
         return <Logs />;
       case 'settings':
@@ -242,6 +278,12 @@ function App() {
               label={t('nav.streamManager')}
               active={currentView === 'streams'}
               onClick={() => setCurrentView('streams')}
+            />
+            <NavItem
+              icon={<MessageSquare className="w-5 h-5" />}
+              label={t('nav.chat', { defaultValue: 'Chat' })}
+              active={currentView === 'chat'}
+              onClick={() => setCurrentView('chat')}
             />
           </NavSection>
           <NavSection title={t('nav.configuration')}>

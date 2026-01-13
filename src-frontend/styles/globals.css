@@ -97,6 +97,19 @@ body {
   min-height: 100vh;
 }
 
+body[data-window='chat-overlay'] {
+  background: var(--bg-base);
+}
+
+body[data-window='chat-overlay'][data-overlay-transparent='true'] {
+  background: transparent;
+}
+
+body[data-window='chat-overlay'] #root {
+  min-height: 100vh;
+  background: transparent;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
   width: 8px;

@@ -3,7 +3,8 @@
   "identifier": "default",
   "description": "SpiritStream default capabilities",
   "windows": [
-    "main"
+    "main",
+    "chat-overlay"
   ],
   "permissions": [
     "core:default",

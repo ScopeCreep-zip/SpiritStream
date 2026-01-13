@@ -4,6 +4,7 @@
     "dashboard": "Dashboard",
     "profiles": "Profiles",
     "streamManager": "Stream Manager",
+    "chat": "Chat",
     "configuration": "Configuration",
     "encoderSettings": "Encoder Settings",
     "outputGroups": "Output Groups",
@@ -24,6 +25,10 @@
     "streams": {
       "title": "Stream Manager",
       "description": "Control your live streaming operations"
+    },
+    "chat": {
+      "title": "Unified Chat",
+      "description": "Read-only chat messages from your connected platforms"
     },
     "encoder": {
       "title": "Encoder Settings",
@@ -141,6 +146,14 @@
     "bitrate": "Bitrate",
     "fps": "FPS",
     "totalBandwidth": "Total Upload"
+  },
+  "chat": {
+    "title": "Unified Chat",
+    "description": "Read-only chat messages from your connected platforms.",
+    "popOut": "Pop out",
+    "transparentOverlay": "Transparent overlay",
+    "transparentOverlayDescription": "Makes the pop-out window background transparent.",
+    "empty": "No chat messages yet."
   },
   "encoder": {
     "title": "Encoder Configuration",
