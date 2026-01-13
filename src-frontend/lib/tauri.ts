@@ -24,6 +24,8 @@ export const api = {
   stream: {
     start: (group: OutputGroup, incomingUrl: string) =>
       invoke<number>('start_stream', { group, incomingUrl }),
+    startAll: (groups: OutputGroup[], incomingUrl: string) =>
+      invoke<number[]>('start_all_streams', { groups, incomingUrl }),
     stop: (groupId: string) => invoke<void>('stop_stream', { groupId }),
     stopAll: () => invoke<void>('stop_all_streams'),
     getActiveCount: () => invoke<number>('get_active_stream_count'),

@@ -131,7 +131,7 @@ impl StreamStats {
     fn extract_value(line: &str, key: &str) -> Option<String> {
         let start = line.find(key)?;
         let value_start = start + key.len();
-        let rest = &line[value_start..];
+        let rest = line[value_start..].trim_start();
 
         // Find the end of the value (next space or end of string)
         let end = rest.find(|c: char| c.is_whitespace()).unwrap_or(rest.len());

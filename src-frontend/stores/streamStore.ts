@@ -163,19 +163,18 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     set({ globalStatus: 'connecting', error: null });
 
     try {
-      for (const group of groups) {
-        // Skip groups with no targets at all
-        if (group.streamTargets.length === 0) {
-          continue;
-        }
-
-        // Send all targets - backend will filter disabled ones
-        await api.stream.start(group, incomingUrl);
-
-        const activeGroups = new Set(get().activeGroups);
-        activeGroups.add(group.id);
-        set({ activeGroups });
+      const eligibleGroups = groups.filter((group) => group.streamTargets.length > 0);
+      if (eligibleGroups.length === 0) {
+        throw new Error('At least one stream target is required');
       }
+
+      await api.stream.startAll(eligibleGroups, incomingUrl);
+
+      const activeGroups = new Set(get().activeGroups);
+      for (const group of eligibleGroups) {
+        activeGroups.add(group.id);
+      }
+      set({ activeGroups });
 
       set({
         isStreaming: true,

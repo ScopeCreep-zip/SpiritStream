@@ -30,6 +30,34 @@ pub fn start_stream(
     ffmpeg_handler.start(&group, &incoming_url, &app)
 }
 
+/// Start streaming for multiple output groups in one batch
+#[tauri::command]
+pub fn start_all_streams(
+    app: AppHandle,
+    groups: Vec<OutputGroup>,
+    incoming_url: String,
+    ffmpeg_handler: State<'_, FFmpegHandler>,
+) -> Result<Vec<u32>, String> {
+    if incoming_url.is_empty() {
+        return Err("Incoming URL is required".to_string());
+    }
+
+    if groups.is_empty() {
+        return Err("At least one output group is required".to_string());
+    }
+
+    for group in &groups {
+        if group.video.codec.is_empty() {
+            return Err("Video encoder is required".to_string());
+        }
+        if group.audio.codec.is_empty() {
+            return Err("Audio codec is required".to_string());
+        }
+    }
+
+    ffmpeg_handler.start_all(&groups, &incoming_url, &app)
+}
+
 /// Stop streaming for an output group
 #[tauri::command]
 pub fn stop_stream(
