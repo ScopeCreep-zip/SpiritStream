@@ -268,9 +268,10 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     const lastSample = lastSamplesByGroup.get(groupId);
 
     if (
+      bitrate <= 0 &&
       lastSample &&
       ffmpegStats.time > lastSample.time &&
-      ffmpegStats.size >= lastSample.size
+      ffmpegStats.size > lastSample.size
     ) {
       const deltaBytes = ffmpegStats.size - lastSample.size;
       const deltaSeconds = ffmpegStats.time - lastSample.time;
