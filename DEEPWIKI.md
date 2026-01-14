@@ -1,6 +1,6 @@
 # DeepWiki Project Badge
 
-[![DeepWiki](https://mcp.deepwiki.com/badge.svg)](https://mcp.deepwiki.com/project?url=https://github.com/your-org/SpiritStream)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/ScopeCreep-zip/SpiritStream)
 
 This badge enables DeepWiki scanning and documentation for this project.
 
