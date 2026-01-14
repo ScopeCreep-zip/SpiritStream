@@ -66,10 +66,9 @@ impl StreamStats {
             }
         }
 
-        // Parse bitrate (remove "kbits/s" suffix)
+        // Parse bitrate
         if let Some(bitrate_str) = Self::extract_value(line, "bitrate=") {
-            let bitrate = bitrate_str.replace("kbits/s", "").replace("kbit/s", "");
-            if let Ok(b) = bitrate.trim().parse::<f64>() {
+            if let Some(b) = Self::parse_bitrate_kbps(&bitrate_str) {
                 self.bitrate = b;
                 parsed = true;
             }
@@ -84,18 +83,18 @@ impl StreamStats {
             }
         }
 
-        // Parse size (remove "kB" suffix and convert to bytes)
+        // Parse size and convert to bytes
         if let Some(size_str) = Self::extract_value(line, "size=") {
-            let size = size_str.replace("kB", "").replace("KB", "").replace("mB", "").replace("MB", "");
-            if let Ok(s) = size.trim().parse::<f64>() {
-                // Assume kB if contains kB
-                self.size = if size_str.contains("kB") || size_str.contains("KB") {
-                    (s * 1024.0) as u64
-                } else if size_str.contains("mB") || size_str.contains("MB") {
-                    (s * 1024.0 * 1024.0) as u64
-                } else {
-                    s as u64
-                };
+            if let Some(bytes) = Self::parse_size_bytes(&size_str) {
+                self.size = bytes;
+                parsed = true;
+            }
+        }
+
+        // Parse total size from progress output (bytes)
+        if let Some(size_str) = Self::extract_value(line, "total_size=") {
+            if let Ok(s) = size_str.trim().parse::<u64>() {
+                self.size = s;
                 parsed = true;
             }
         }
@@ -108,8 +107,39 @@ impl StreamStats {
             }
         }
 
+        // Parse progress time (format: HH:MM:SS.ms)
+        if let Some(time_str) = Self::extract_value(line, "out_time=") {
+            if let Some(seconds) = Self::parse_time(&time_str) {
+                self.time = seconds;
+                parsed = true;
+            }
+        }
+
+        // Parse progress time in microseconds
+        if let Some(time_str) = Self::extract_value(line, "out_time_ms=") {
+            if let Ok(us) = time_str.trim().parse::<u64>() {
+                self.time = us as f64 / 1_000_000.0;
+                parsed = true;
+            }
+        }
+
+        // Parse progress time in microseconds (alternate key)
+        if let Some(time_str) = Self::extract_value(line, "out_time_us=") {
+            if let Ok(us) = time_str.trim().parse::<u64>() {
+                self.time = us as f64 / 1_000_000.0;
+                parsed = true;
+            }
+        }
+
         // Parse dropped frames
         if let Some(drop_str) = Self::extract_value(line, "drop=") {
+            if let Ok(d) = drop_str.parse::<u64>() {
+                self.dropped_frames = d;
+                parsed = true;
+            }
+        }
+
+        if let Some(drop_str) = Self::extract_value(line, "drop_frames=") {
             if let Ok(d) = drop_str.parse::<u64>() {
                 self.dropped_frames = d;
                 parsed = true;
@@ -120,6 +150,22 @@ impl StreamStats {
         if let Some(dup_str) = Self::extract_value(line, "dup=") {
             if let Ok(d) = dup_str.parse::<u64>() {
                 self.dup_frames = d;
+                parsed = true;
+            }
+        }
+
+        if let Some(dup_str) = Self::extract_value(line, "dup_frames=") {
+            if let Ok(d) = dup_str.parse::<u64>() {
+                self.dup_frames = d;
+                parsed = true;
+            }
+        }
+
+        // Fallback: compute average bitrate from size and time if FFmpeg doesn't report one.
+        if self.bitrate == 0.0 && self.size > 0 && self.time > 0.0 {
+            let avg_kbps = (self.size as f64 * 8.0) / 1000.0 / self.time;
+            if avg_kbps.is_finite() && avg_kbps > 0.0 {
+                self.bitrate = avg_kbps;
                 parsed = true;
             }
         }
@@ -150,5 +196,63 @@ impl StreamStats {
         let seconds: f64 = parts[2].parse().ok()?;
 
         Some(hours * 3600.0 + minutes * 60.0 + seconds)
+    }
+
+    /// Parse bitrate string to kbps.
+    fn parse_bitrate_kbps(value: &str) -> Option<f64> {
+        let trimmed = value.trim();
+        if trimmed.eq_ignore_ascii_case("N/A") {
+            return None;
+        }
+
+        let lower = trimmed.to_ascii_lowercase();
+        let (num_str, scale) = if let Some(v) = lower.strip_suffix("kbits/s") {
+            (v, 1.0)
+        } else if let Some(v) = lower.strip_suffix("kbit/s") {
+            (v, 1.0)
+        } else if let Some(v) = lower.strip_suffix("kb/s") {
+            (v, 1.0)
+        } else if let Some(v) = lower.strip_suffix("kbps") {
+            (v, 1.0)
+        } else if let Some(v) = lower.strip_suffix("mbits/s") {
+            (v, 1000.0)
+        } else if let Some(v) = lower.strip_suffix("mbit/s") {
+            (v, 1000.0)
+        } else if let Some(v) = lower.strip_suffix("mb/s") {
+            (v, 1000.0)
+        } else if let Some(v) = lower.strip_suffix("mbps") {
+            (v, 1000.0)
+        } else if let Some(v) = lower.strip_suffix("bits/s") {
+            (v, 1.0 / 1000.0)
+        } else {
+            (trimmed, 1.0)
+        };
+
+        num_str.trim().parse::<f64>().ok().map(|v| v * scale)
+    }
+
+    /// Parse size string to bytes.
+    fn parse_size_bytes(value: &str) -> Option<u64> {
+        let trimmed = value.trim();
+        if trimmed.eq_ignore_ascii_case("N/A") {
+            return None;
+        }
+
+        let lower = trimmed.to_ascii_lowercase();
+        let (num_str, scale) = if let Some(v) = lower.strip_suffix("kib") {
+            (v, 1024.0)
+        } else if let Some(v) = lower.strip_suffix("kb") {
+            (v, 1024.0)
+        } else if let Some(v) = lower.strip_suffix("mib") {
+            (v, 1024.0 * 1024.0)
+        } else if let Some(v) = lower.strip_suffix("mb") {
+            (v, 1024.0 * 1024.0)
+        } else if let Some(v) = lower.strip_suffix('b') {
+            (v, 1.0)
+        } else {
+            (trimmed, 1.0)
+        };
+
+        num_str.trim().parse::<f64>().ok().map(|v| (v * scale) as u64)
     }
 }

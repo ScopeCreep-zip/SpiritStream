@@ -519,21 +519,31 @@ impl FFmpegHandler {
             }
             recent_lines.push_back(sanitized_line.clone());
 
-            // Parse stats from FFmpeg output
-            if stats.parse_line(&line) {
-                // Emit stats at most every second
-                if last_emit.elapsed() >= emit_interval {
-                    // Add uptime from process start
-                    if let Ok(procs) = processes.lock() {
-                        if let Some(info) = procs.get(&group_id) {
-                            stats.time = info.start_time.elapsed().as_secs_f64();
+            let parsed = stats.parse_line(&line);
+            let is_progress_line = line.trim_start().starts_with("progress=");
+
+            // Emit stats at most every second or at progress boundaries
+            if is_progress_line || (parsed && last_emit.elapsed() >= emit_interval) {
+                // Add uptime from process start if FFmpeg doesn't report time
+                if let Ok(procs) = processes.lock() {
+                    if let Some(info) = procs.get(&group_id) {
+                        let uptime = info.start_time.elapsed().as_secs_f64();
+                        if stats.time <= 0.0 {
+                            stats.time = uptime;
                         }
                     }
-
-                    // Emit event
-                    let _ = app_handle.emit("stream_stats", stats.clone());
-                    last_emit = Instant::now();
                 }
+
+                if stats.bitrate == 0.0 && stats.size > 0 && stats.time > 0.0 {
+                    let avg_kbps = (stats.size as f64 * 8.0) / 1000.0 / stats.time;
+                    if avg_kbps.is_finite() && avg_kbps > 0.0 {
+                        stats.bitrate = avg_kbps;
+                    }
+                }
+
+                // Emit event
+                let _ = app_handle.emit("stream_stats", stats.clone());
+                last_emit = Instant::now();
             }
 
             // Only log errors and warnings (not frame stats which are too verbose)

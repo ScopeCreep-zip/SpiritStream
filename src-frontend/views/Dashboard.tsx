@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Radio,
@@ -47,7 +47,8 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
     addOutputGroup,
     removeOutputGroup,
   } = useProfileStore();
-  const { isStreaming, stats, uptime, globalStatus, activeStreamCount } = useStreamStore();
+  const { isStreaming, stats, uptime, globalStatus, activeStreamCount, activeGroups, enabledTargets } =
+    useStreamStore();
   const [isTesting, setIsTesting] = useState(false);
 
   // Get output groups from current profile
@@ -152,9 +153,27 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
 
   const targets = getAllTargets();
 
+  const activeTargetCount = useMemo(() => {
+    if (!currentProfile) return 0;
+
+    return currentProfile.outputGroups.reduce((total, group) => {
+      if (!activeGroups.has(group.id)) {
+        return total;
+      }
+      const enabledCount = group.streamTargets.filter((t) => enabledTargets.has(t.id)).length;
+      return total + enabledCount;
+    }, 0);
+  }, [currentProfile, activeGroups, enabledTargets]);
+
   // Use backend-verified active stream count, fallback to local calculation
   const displayActiveCount =
-    activeStreamCount > 0 ? activeStreamCount : isStreaming ? targets.length : 0;
+    activeTargetCount > 0
+      ? activeTargetCount
+      : activeStreamCount > 0
+        ? activeStreamCount
+        : isStreaming
+          ? targets.length
+          : 0;
 
   if (loading) {
     return (

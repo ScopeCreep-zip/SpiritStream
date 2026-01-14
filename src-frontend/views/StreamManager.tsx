@@ -1,10 +1,12 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Play, Square, Settings2, Activity, Gauge, Clock, Upload } from 'lucide-react';
+import { Play, Square, Settings2, Activity, Gauge, Clock, Upload, Radio, AlertTriangle } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Alert } from '@/components/ui/Alert';
 import { Toggle } from '@/components/ui/Toggle';
+import { StatsRow } from '@/components/dashboard/StatsRow';
+import { StatBox } from '@/components/dashboard/StatBox';
 import { OutputGroup } from '@/components/stream/OutputGroup';
 import { PlatformIcon } from '@/components/stream/PlatformIcon';
 import { useProfileStore } from '@/stores/profileStore';
@@ -29,6 +31,9 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
     globalStatus,
     groupStats,
     error: streamError,
+    stats,
+    uptime,
+    activeStreamCount,
     startAllGroups,
     stopAllGroups,
     setTargetEnabled,
@@ -99,6 +104,20 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
   };
 
   const isConnecting = globalStatus === 'connecting';
+  const activeTargetCount = useMemo(() => {
+    if (!current) return 0;
+
+    return current.outputGroups.reduce((total, group) => {
+      if (!activeGroups.has(group.id)) {
+        return total;
+      }
+      const enabledCount = group.streamTargets.filter((t) => enabledTargets.has(t.id)).length;
+      return total + enabledCount;
+    }, 0);
+  }, [current, activeGroups, enabledTargets]);
+
+  const displayActiveCount =
+    activeTargetCount > 0 ? activeTargetCount : activeStreamCount > 0 ? activeStreamCount : activeGroups.size;
 
   // Calculate total bandwidth for enabled groups
   const totalBandwidth = useMemo(() => {
@@ -200,6 +219,35 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
           {t('streams.readyToStreamDescription')}
         </Alert>
       )}
+
+      <StatsRow>
+        <StatBox
+          icon={<Radio className="w-5 h-5" />}
+          label={t('dashboard.activeStreams')}
+          value={displayActiveCount}
+          change={isStreaming ? t('status.streaming') : t('status.readyToStart')}
+          changeType={isStreaming ? 'positive' : 'neutral'}
+        />
+        <StatBox
+          icon={<Activity className="w-5 h-5" />}
+          label={t('dashboard.totalBitrate')}
+          value={stats.totalBitrate > 0 ? formatBitrate(stats.totalBitrate) : '0 kbps'}
+          change={isStreaming ? t('status.active') : t('status.noActiveStreams')}
+        />
+        <StatBox
+          icon={<AlertTriangle className="w-5 h-5" />}
+          label={t('dashboard.droppedFrames')}
+          value={stats.droppedFrames}
+          change={stats.droppedFrames === 0 ? t('status.noIssues') : t('status.checkConnection')}
+          changeType={stats.droppedFrames === 0 ? 'positive' : 'neutral'}
+        />
+        <StatBox
+          icon={<Clock className="w-5 h-5" />}
+          label={t('dashboard.uptime')}
+          value={formatUptime(Math.floor(uptime))}
+          change={isStreaming ? t('status.live') : t('status.notStreaming')}
+        />
+      </StatsRow>
 
       <Card>
         <CardHeader>
