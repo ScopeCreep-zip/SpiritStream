@@ -565,6 +565,8 @@ impl FFmpegHandler {
             .unwrap_or(0);
         let mut last_meter_instant = Instant::now();
         let mut has_meter_sample = false;
+        let mut smoothed_bitrate = 0.0;
+        let mut has_smoothed_bitrate = false;
 
         for line in reader.lines().map_while(Result::ok) {
             // Check if process is still running (was it intentionally stopped?)
@@ -631,7 +633,18 @@ impl FFmpegHandler {
                         let delta_bytes = current_bytes.saturating_sub(last_meter_bytes);
                         if elapsed > 0.0 {
                             let kbps = (delta_bytes as f64 * 8.0) / 1000.0 / elapsed;
-                            stats.bitrate = if kbps.is_finite() { kbps } else { 0.0 };
+                            if kbps.is_finite() {
+                                let alpha = 0.2;
+                                if has_smoothed_bitrate {
+                                    smoothed_bitrate = smoothed_bitrate * (1.0 - alpha) + kbps * alpha;
+                                } else {
+                                    smoothed_bitrate = kbps;
+                                    has_smoothed_bitrate = true;
+                                }
+                                stats.bitrate = smoothed_bitrate;
+                            } else {
+                                stats.bitrate = 0.0;
+                            }
                         }
                     } else {
                         has_meter_sample = true;
