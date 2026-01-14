@@ -543,6 +543,7 @@ impl FFmpegHandler {
     }
 
     /// Background thread that reads FFmpeg stderr and emits stats events
+    #[allow(clippy::too_many_arguments)]
     fn stats_reader<R: tauri::Runtime>(
         stderr: std::process::ChildStderr,
         group_id: String,
