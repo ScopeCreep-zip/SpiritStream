@@ -3,10 +3,11 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{BufRead, BufReader, Write};
+use std::net::UdpSocket;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
@@ -57,6 +58,10 @@ impl FFmpegHandler {
     const RELAY_TCP_IN_QUERY: &'static str = "listen=1&tcp_nodelay=1";
     const RELAY_TEE_FIFO_OPTIONS: &'static str =
         "fifo_format=mpegts:queue_size=512:drop_pkts_on_overflow=1:attempt_recovery=1:recover_any_error=1";
+    const METER_HOST: &'static str = "127.0.0.1";
+    const METER_PORT_BASE: u16 = 40000;
+    const METER_PORT_RANGE: u16 = 10000;
+    const METER_UDP_QUERY: &'static str = "pkt_size=1316";
 
     /// Create FFmpegHandler with optional custom FFmpeg path from settings
     /// Falls back to auto-discovery if custom path is empty or invalid
@@ -360,6 +365,7 @@ impl FFmpegHandler {
 
         let app_handle_clone = app_handle.clone();
         let processes_clone = Arc::clone(&self.processes);
+        let meter_bytes = Self::start_bitrate_meter(&group_id, Arc::clone(&processes_clone));
         let relay_clone = Arc::clone(&self.relay);
         let stopping_clone = Arc::clone(&self.stopping_groups);
         let relay_refcount_clone = Arc::clone(&self.relay_refcount);
@@ -369,6 +375,7 @@ impl FFmpegHandler {
             Self::stats_reader(
                 stderr,
                 group_id_clone,
+                meter_bytes,
                 app_handle_clone,
                 processes_clone,
                 stopping_clone,
@@ -478,10 +485,68 @@ impl FFmpegHandler {
         Ok(pids)
     }
 
+    fn start_bitrate_meter(
+        group_id: &str,
+        processes: Arc<Mutex<HashMap<String, ProcessInfo>>>,
+    ) -> Option<Arc<AtomicU64>> {
+        let port = Self::meter_port_for_group(group_id);
+        let bind_addr = format!("{}:{}", Self::METER_HOST, port);
+        let socket = match UdpSocket::bind(&bind_addr) {
+            Ok(socket) => socket,
+            Err(err) => {
+                log::warn!(
+                    "Failed to bind bitrate meter for group {} on {}: {}",
+                    group_id,
+                    bind_addr,
+                    err
+                );
+                return None;
+            }
+        };
+
+        if let Err(err) = socket.set_read_timeout(Some(Duration::from_millis(250))) {
+            log::warn!(
+                "Failed to set meter read timeout for group {} on {}: {}",
+                group_id,
+                bind_addr,
+                err
+            );
+        }
+
+        let bytes = Arc::new(AtomicU64::new(0));
+        let bytes_clone = Arc::clone(&bytes);
+        let group_id = group_id.to_string();
+
+        thread::spawn(move || {
+            let mut buffer = [0u8; 2048];
+            loop {
+                match socket.recv_from(&mut buffer) {
+                    Ok((len, _)) => {
+                        bytes_clone.fetch_add(len as u64, Ordering::Relaxed);
+                    }
+                    Err(err) if err.kind() == std::io::ErrorKind::TimedOut => {}
+                    Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {}
+                    Err(_) => break,
+                }
+
+                if let Ok(procs) = processes.lock() {
+                    if !procs.contains_key(&group_id) {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+        });
+
+        Some(bytes)
+    }
+
     /// Background thread that reads FFmpeg stderr and emits stats events
     fn stats_reader<R: tauri::Runtime>(
         stderr: std::process::ChildStderr,
         group_id: String,
+        meter_bytes: Option<Arc<AtomicU64>>,
         app_handle: AppHandle<R>,
         processes: Arc<Mutex<HashMap<String, ProcessInfo>>>,
         stopping_groups: Arc<Mutex<HashSet<String>>>,
@@ -494,6 +559,12 @@ impl FFmpegHandler {
         let emit_interval = Duration::from_millis(1000); // Emit every second
         let mut was_intentionally_stopped = false;
         let mut recent_lines: VecDeque<String> = VecDeque::with_capacity(40);
+        let mut last_meter_bytes = meter_bytes
+            .as_ref()
+            .map(|bytes| bytes.load(Ordering::Relaxed))
+            .unwrap_or(0);
+        let mut last_meter_instant = Instant::now();
+        let mut has_meter_sample = false;
 
         for line in reader.lines().map_while(Result::ok) {
             // Check if process is still running (was it intentionally stopped?)
@@ -519,6 +590,17 @@ impl FFmpegHandler {
             }
             recent_lines.push_back(sanitized_line.clone());
 
+            // Temporary: log sanitized progress lines to diagnose stats parsing.
+            if sanitized_line.contains("progress=")
+                || sanitized_line.contains("out_time=")
+                || sanitized_line.contains("out_time_ms=")
+                || sanitized_line.contains("out_time_us=")
+                || sanitized_line.contains("total_size=")
+                || sanitized_line.contains("bitrate=")
+            {
+                log::info!("[FFmpeg:{group_id}] progress {sanitized_line}");
+            }
+
             let parsed = stats.parse_line(&line);
             let is_progress_line = line.trim_start().starts_with("progress=");
 
@@ -539,6 +621,23 @@ impl FFmpegHandler {
                     if avg_kbps.is_finite() && avg_kbps > 0.0 {
                         stats.bitrate = avg_kbps;
                     }
+                }
+
+                if let Some(bytes) = meter_bytes.as_ref() {
+                    let now = Instant::now();
+                    let current_bytes = bytes.load(Ordering::Relaxed);
+                    if has_meter_sample {
+                        let elapsed = now.duration_since(last_meter_instant).as_secs_f64();
+                        let delta_bytes = current_bytes.saturating_sub(last_meter_bytes);
+                        if elapsed > 0.0 {
+                            let kbps = (delta_bytes as f64 * 8.0) / 1000.0 / elapsed;
+                            stats.bitrate = if kbps.is_finite() { kbps } else { 0.0 };
+                        }
+                    } else {
+                        has_meter_sample = true;
+                    }
+                    last_meter_bytes = current_bytes;
+                    last_meter_instant = now;
                 }
 
                 // Emit event
@@ -964,6 +1063,30 @@ impl FFmpegHandler {
         )
     }
 
+    fn meter_port_for_group(group_id: &str) -> u16 {
+        const FNV_OFFSET: u32 = 2166136261;
+        const FNV_PRIME: u32 = 16777619;
+
+        let mut hash = FNV_OFFSET;
+        for &b in group_id.as_bytes() {
+            hash ^= b as u32;
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+
+        let range = Self::METER_PORT_RANGE as u32;
+        let port = Self::METER_PORT_BASE as u32 + (hash % range);
+        port as u16
+    }
+
+    fn meter_output_url_for_group(group_id: &str) -> String {
+        format!(
+            "udp://{}:{}?{}",
+            Self::METER_HOST,
+            Self::meter_port_for_group(group_id),
+            Self::METER_UDP_QUERY
+        )
+    }
+
     fn relay_tee_output_list(group_ids: &HashSet<String>) -> String {
         let mut ids: Vec<&String> = group_ids.iter().collect();
         ids.sort();
@@ -1131,7 +1254,7 @@ impl FFmpegHandler {
             log::warn!("Disabled targets mutex poisoned (build_args), recovering: {}", e);
             e.into_inner()
         });
-        let mut outputs: Vec<String> = Vec::new();
+        let mut target_outputs: Vec<String> = Vec::new();
         for target in &group.stream_targets {
             // Skip targets that have been disabled via toggle_target
             if disabled.contains(&target.id) {
@@ -1142,25 +1265,31 @@ impl FFmpegHandler {
             let normalized_url = self.platform_registry.normalize_url(&target.service, &normalized_url);
             let resolved_key = Self::resolve_stream_key(&target.stream_key);
             let full_url = self.platform_registry.build_url_with_key(&target.service, &normalized_url, &resolved_key);
-            outputs.push(full_url);
+            target_outputs.push(full_url);
         }
 
-        if outputs.len() <= 1 {
-            if let Some(output) = outputs.first() {
-                args.push("-f".to_string());
-                args.push(group.container.format.clone());
-                args.push(output.clone());
-            }
-        } else {
-            let tee_outputs = outputs
-                .iter()
-                .map(|output| format!("[f={}:onfail=ignore]{output}", group.container.format))
-                .collect::<Vec<_>>()
-                .join("|");
-            args.push("-f".to_string());
-            args.push("tee".to_string());
-            args.push(tee_outputs);
+        if target_outputs.is_empty() {
+            return args;
         }
+
+        let meter_output = Self::meter_output_url_for_group(&group.id);
+
+        let mut tee_outputs: Vec<String> = Vec::new();
+        if target_outputs.len() == 1 {
+            let output = &target_outputs[0];
+            tee_outputs.push(format!("[f={}]{output}", group.container.format));
+        } else {
+            tee_outputs.extend(
+                target_outputs
+                    .iter()
+                    .map(|output| format!("[f={}:onfail=ignore]{output}", group.container.format))
+            );
+        }
+        tee_outputs.push(format!("[f=mpegts:onfail=ignore]{meter_output}"));
+
+        args.push("-f".to_string());
+        args.push("tee".to_string());
+        args.push(tee_outputs.join("|"));
 
         args
     }
