@@ -105,6 +105,7 @@ pub fn run() {
             commands::validate_input,
             // Stream commands
             commands::start_stream,
+            commands::start_all_streams,
             commands::stop_stream,
             commands::stop_all_streams,
             commands::get_active_stream_count,

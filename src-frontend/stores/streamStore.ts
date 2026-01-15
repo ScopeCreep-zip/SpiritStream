@@ -71,8 +71,6 @@ const initialStats: StreamStats = {
   targetStats: {},
 };
 
-const lastSamplesByGroup = new Map<string, { size: number; time: number }>();
-
 export const useStreamStore = create<StreamState>((set, get) => ({
   isStreaming: false,
   activeGroups: new Set(),
@@ -94,10 +92,6 @@ export const useStreamStore = create<StreamState>((set, get) => ({
 
       const activeGroups = new Set(activeGroupIds);
       const isStreaming = activeCount > 0;
-
-      if (!isStreaming) {
-        lastSamplesByGroup.clear();
-      }
 
       set({
         activeStreamCount: activeCount,
@@ -163,19 +157,18 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     set({ globalStatus: 'connecting', error: null });
 
     try {
-      for (const group of groups) {
-        // Skip groups with no targets at all
-        if (group.streamTargets.length === 0) {
-          continue;
-        }
-
-        // Send all targets - backend will filter disabled ones
-        await api.stream.start(group, incomingUrl);
-
-        const activeGroups = new Set(get().activeGroups);
-        activeGroups.add(group.id);
-        set({ activeGroups });
+      const eligibleGroups = groups.filter((group) => group.streamTargets.length > 0);
+      if (eligibleGroups.length === 0) {
+        throw new Error('At least one stream target is required');
       }
+
+      await api.stream.startAll(eligibleGroups, incomingUrl);
+
+      const activeGroups = new Set(get().activeGroups);
+      for (const group of eligibleGroups) {
+        activeGroups.add(group.id);
+      }
+      set({ activeGroups });
 
       set({
         isStreaming: true,
@@ -191,7 +184,6 @@ export const useStreamStore = create<StreamState>((set, get) => ({
   stopAllGroups: async () => {
     try {
       await api.stream.stopAll();
-      lastSamplesByGroup.clear();
       set({
         activeGroups: new Set(),
         isStreaming: false,
@@ -265,23 +257,7 @@ export const useStreamStore = create<StreamState>((set, get) => ({
 
   updateStats: (groupId, ffmpegStats) => {
     const currentGroupStats = get().groupStats;
-    let bitrate = ffmpegStats.bitrate;
-    const lastSample = lastSamplesByGroup.get(groupId);
-
-    if (
-      lastSample &&
-      ffmpegStats.time > lastSample.time &&
-      ffmpegStats.size >= lastSample.size
-    ) {
-      const deltaBytes = ffmpegStats.size - lastSample.size;
-      const deltaSeconds = ffmpegStats.time - lastSample.time;
-      const instantaneousKbps = (deltaBytes * 8) / 1000 / deltaSeconds;
-      if (Number.isFinite(instantaneousKbps)) {
-        bitrate = instantaneousKbps;
-      }
-    }
-
-    lastSamplesByGroup.set(groupId, { size: ffmpegStats.size, time: ffmpegStats.time });
+    const bitrate = ffmpegStats.bitrate;
 
     // Update per-group stats
     const newGroupStats = {
@@ -327,7 +303,6 @@ export const useStreamStore = create<StreamState>((set, get) => ({
   },
 
   setStreamEnded: (groupId) => {
-    lastSamplesByGroup.delete(groupId);
     const activeGroups = new Set(get().activeGroups);
     activeGroups.delete(groupId);
 
@@ -356,7 +331,6 @@ export const useStreamStore = create<StreamState>((set, get) => ({
   },
 
   setStreamError: (groupId, error) => {
-    lastSamplesByGroup.delete(groupId);
     const activeGroups = new Set(get().activeGroups);
     activeGroups.delete(groupId);
 
@@ -394,7 +368,6 @@ export const useStreamStore = create<StreamState>((set, get) => ({
   setError: (error) => set({ error }),
 
   reset: () => {
-    lastSamplesByGroup.clear();
     set({
       isStreaming: false,
       activeGroups: new Set(),
