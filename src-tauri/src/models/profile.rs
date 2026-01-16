@@ -53,6 +53,14 @@ pub struct Profile {
 
     /// Encoding configurations with their targets
     pub output_groups: Vec<OutputGroup>,
+
+    /// Theme ID for this profile (optional, falls back to global setting)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub theme: Option<String>,
+
+    /// Language code for this profile (optional, falls back to global setting)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
 }
 
 impl Profile {

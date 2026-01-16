@@ -3,6 +3,7 @@
  */
 export type Platform = 'youtube' | 'twitch' | 'kick' | 'facebook' | 'custom';
 
+
 /**
  * RTMP Input configuration - where the stream enters the system
  */
@@ -75,6 +76,8 @@ export interface Profile {
   encrypted: boolean;
   input: RtmpInput;
   outputGroups: OutputGroup[];
+  theme?: string; // Theme ID (optional, falls back to global setting)
+  language?: string; // Language code (optional, falls back to global setting)
 }
 
 /**
@@ -194,6 +197,8 @@ export const createDefaultProfile = (name: string = 'New Profile'): Profile => (
   encrypted: false,
   input: createDefaultRtmpInput(),
   outputGroups: [],
+  theme: undefined, // Will fall back to global setting
+  language: undefined, // Will fall back to global setting
 });
 
 /**

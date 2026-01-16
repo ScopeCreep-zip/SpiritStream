@@ -13,6 +13,7 @@ import { api } from '@/lib/tauri';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { open as openPath } from '@tauri-apps/plugin-shell';
 import { useLanguageStore, type Language } from '@/stores/languageStore';
+import { useProfileStore } from '@/stores/profileStore';
 import type { AppSettings } from '@/types/api';
 
 interface SettingsState {
@@ -48,6 +49,7 @@ const defaultSettings: SettingsState = {
 export function Settings() {
   const { t } = useTranslation();
   const { setLanguage, initFromSettings } = useLanguageStore();
+  const { current: currentProfile, updateProfile } = useProfileStore();
   const [settings, setSettings] = useState<SettingsState>(defaultSettings);
 
   // Load settings on mount
@@ -131,9 +133,16 @@ export function Settings() {
   );
 
   const updateSetting = <K extends keyof SettingsState>(key: K, value: SettingsState[K]) => {
-    // If changing language, update i18n as well
+    // If changing language, update i18n and save to profile
     if (key === 'language') {
-      setLanguage(value as Language);
+      const lang = value as string;
+      setLanguage(lang as Language);
+      // Save to profile if one is active
+      if (currentProfile) {
+        updateProfile({ language: lang }).catch((err) =>
+          console.error('Failed to update profile language:', err)
+        );
+      }
     }
     saveSettings({ [key]: value });
   };
