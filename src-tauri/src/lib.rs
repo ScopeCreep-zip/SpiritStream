@@ -9,7 +9,7 @@ use std::sync::Arc;
 use tauri::{image::Image, Manager, RunEvent};
 use tauri_plugin_log::{Target, TargetKind};
 use tokio::sync::Mutex;
-use services::{ProfileManager, FFmpegHandler, FFmpegDownloader, SettingsManager, ThemeManager};
+use services::{ProfileManager, FFmpegHandler, FFmpegDownloader, SettingsManager, ThemeManager, ChatManager};
 use commands::FFmpegDownloaderState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -75,6 +75,10 @@ pub fn run() {
             let ffmpeg_downloader = FFmpegDownloaderState(Arc::new(Mutex::new(FFmpegDownloader::new())));
             app.manage(ffmpeg_downloader);
 
+            // Register ChatManager as managed state
+            let chat_manager = ChatManager::new(app.handle().clone());
+            app.manage(chat_manager);
+
             log::info!("SpiritStream initialized. Data dir: {app_data_dir:?}");
 
             // Set window icon
@@ -136,19 +140,39 @@ pub fn run() {
             commands::refresh_themes,
             commands::get_theme_tokens,
             commands::install_theme,
+            // Chat commands
+            commands::connect_chat,
+            commands::disconnect_chat,
+            commands::disconnect_all_chat,
+            commands::get_chat_status,
+            commands::get_platform_chat_status,
+            commands::is_chat_connected,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            // Clean up FFmpeg processes on app exit
+            // Clean up resources on app exit
             if let RunEvent::Exit = event {
-                log::info!("Application exiting, stopping all FFmpeg processes...");
+                log::info!("Application exiting...");
+
+                // Stop all FFmpeg processes
                 if let Some(handler) = app_handle.try_state::<FFmpegHandler>() {
                     if let Err(e) = handler.stop_all() {
                         log::error!("Failed to stop FFmpeg processes: {e}");
                     } else {
                         log::info!("All FFmpeg processes stopped successfully");
                     }
+                }
+
+                // Disconnect all chat platforms
+                if let Some(chat_manager) = app_handle.try_state::<ChatManager>() {
+                    tauri::async_runtime::block_on(async {
+                        if let Err(e) = chat_manager.disconnect_all().await {
+                            log::error!("Failed to disconnect chat platforms: {e}");
+                        } else {
+                            log::info!("All chat platforms disconnected successfully");
+                        }
+                    });
                 }
             }
         });

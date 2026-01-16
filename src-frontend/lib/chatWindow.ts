@@ -18,7 +18,6 @@ export async function openChatOverlay() {
       resizable: true,
       decorations: false,
       transparent: true,
-      alwaysOnTop: true,
       center: true,
       url: '/?overlay=chat',
     });

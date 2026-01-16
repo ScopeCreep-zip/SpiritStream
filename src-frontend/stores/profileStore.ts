@@ -132,6 +132,12 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       }
 
       const profile = await api.profile.load(name, password);
+      console.log('[ProfileStore] Profile loaded from backend:', {
+        profileId: profile.id,
+        profileName: profile.name,
+        chatConfigsCount: profile.chatConfigs?.length || 0,
+        chatPlatforms: profile.chatConfigs?.map((c) => c.platform) || [],
+      });
       set({
         current: profile,
         loading: false,
@@ -221,9 +227,17 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     const current = get().current;
     if (!current) return;
 
+    console.log('[ProfileStore] saveProfile called:', {
+      profileId: current.id,
+      profileName: current.name,
+      chatConfigsCount: current.chatConfigs?.length || 0,
+      hasPassword: !!password,
+    });
+
     set({ loading: true, error: null });
     try {
       await api.profile.save(current, password);
+      console.log('[ProfileStore] saveProfile completed (backend save successful)');
       // Update the summary in the list
       const summaries = get().profiles.map((s) =>
         s.name === current.name ? createSummary(current) : s
@@ -234,6 +248,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       }
       set({ profiles: summaries, loading: false });
     } catch (error) {
+      console.error('[ProfileStore] saveProfile failed:', error);
       set({ error: String(error), loading: false });
     }
   },
@@ -299,8 +314,17 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   updateProfile: async (updates) => {
     const current = get().current;
     if (current) {
-      set({ current: { ...current, ...updates } });
+      const updatedProfile = { ...current, ...updates };
+      console.log('[ProfileStore] updateProfile called:', {
+        profileId: current.id,
+        profileName: current.name,
+        updateKeys: Object.keys(updates),
+        chatConfigsCount: (updates.chatConfigs as any)?.length,
+        updatedChatConfigsCount: updatedProfile.chatConfigs?.length,
+      });
+      set({ current: updatedProfile });
       await get().saveProfile();
+      console.log('[ProfileStore] updateProfile completed (saveProfile called)');
     }
   },
 

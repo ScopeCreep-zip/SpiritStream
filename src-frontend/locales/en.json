@@ -153,7 +153,60 @@
     "popOut": "Pop out",
     "transparentOverlay": "Transparent overlay",
     "transparentOverlayDescription": "Makes the pop-out window background transparent.",
-    "empty": "No chat messages yet."
+    "empty": "No chat messages yet.",
+    "config": {
+      "title": "Chat Configuration",
+      "description": "Connect to chat platforms to view messages",
+      "twitch": {
+        "title": "Twitch Chat",
+        "description": "Connect to Twitch IRC chat",
+        "channel": "Channel Name",
+        "channelPlaceholder": "e.g., yourchannelname",
+        "channelHelper": "The Twitch channel to connect to (without #)",
+        "oauthToken": "OAuth Token (Optional)",
+        "oauthTokenPlaceholder": "oauth:your_token_here",
+        "oauthTokenHelper": "Optional: Leave empty for anonymous read-only mode",
+        "anonymous": "Connecting anonymously (read-only)",
+        "connecting": "Connecting to Twitch...",
+        "connected": "Connected to Twitch",
+        "disconnected": "Disconnected",
+        "error": "Connection error"
+      },
+      "tiktok": {
+        "title": "TikTok Chat",
+        "description": "Connect to TikTok live chat",
+        "username": "Username",
+        "usernamePlaceholder": "e.g., yourusername",
+        "usernameHelper": "The TikTok username to connect to (without @)",
+        "sessionToken": "Session Token (Optional)",
+        "sessionTokenPlaceholder": "Enter session token",
+        "sessionTokenHelper": "Optional: Session token for authenticated access",
+        "experimental": "Experimental feature",
+        "experimentalWarning": "TikTok chat integration is experimental and may not work reliably.",
+        "notImplemented": "Not fully implemented yet",
+        "notImplementedWarning": "TikTok chat requires additional protobuf implementation.",
+        "connecting": "Connecting to TikTok...",
+        "connected": "Connected to TikTok",
+        "disconnected": "Disconnected",
+        "error": "Connection error"
+      },
+      "connect": "Connect",
+      "disconnect": "Disconnect",
+      "connecting": "Connecting...",
+      "disconnecting": "Disconnecting...",
+      "status": {
+        "connected": "Connected",
+        "disconnected": "Disconnected",
+        "connecting": "Connecting",
+        "error": "Error"
+      },
+      "errors": {
+        "connectionFailed": "Failed to connect: {{error}}",
+        "disconnectionFailed": "Failed to disconnect: {{error}}",
+        "invalidChannel": "Please enter a valid channel name",
+        "invalidUsername": "Please enter a valid username"
+      }
+    }
   },
   "encoder": {
     "title": "Encoder Configuration",

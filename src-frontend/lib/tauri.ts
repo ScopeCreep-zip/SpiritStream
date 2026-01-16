@@ -3,6 +3,7 @@ import type { Profile, ProfileSummary, OutputGroup, RtmpInput } from '@/types/pr
 import type { Encoders } from '@/types/stream';
 import type { AppSettings, FFmpegVersionInfo, RotationReport } from '@/types/api';
 import type { ThemeSummary } from '@/types/theme';
+import type { ChatConfig, ChatPlatform, ChatPlatformStatus } from '@/types/chat';
 
 /**
  * Type-safe Tauri API wrapper
@@ -60,5 +61,14 @@ export const api = {
     list: () => invoke<ThemeSummary[]>('list_themes'),
     getTokens: (themeId: string) => invoke<Record<string, string>>('get_theme_tokens', { themeId }),
     install: (themePath: string) => invoke<ThemeSummary>('install_theme', { themePath }),
+  },
+  chat: {
+    connect: (config: ChatConfig) => invoke<void>('connect_chat', { config }),
+    disconnect: (platform: ChatPlatform) => invoke<void>('disconnect_chat', { platform }),
+    disconnectAll: () => invoke<void>('disconnect_all_chat'),
+    getStatus: () => invoke<ChatPlatformStatus[]>('get_chat_status'),
+    getPlatformStatus: (platform: ChatPlatform) =>
+      invoke<ChatPlatformStatus | null>('get_platform_chat_status', { platform }),
+    isConnected: () => invoke<boolean>('is_chat_connected'),
   },
 };

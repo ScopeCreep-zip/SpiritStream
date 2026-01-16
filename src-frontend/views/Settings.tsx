@@ -122,6 +122,19 @@ export function Settings() {
         const twitchConfig = currentProfile?.chatConfigs?.find((c) => c.platform === 'twitch');
         const tiktokConfig = currentProfile?.chatConfigs?.find((c) => c.platform === 'tiktok');
 
+        // Debug logging to track what's being loaded
+        console.log('[Settings] Loading chat configs from profile:', {
+          profileId: currentProfile?.id,
+          profileName: currentProfile?.name,
+          totalChatConfigs: currentProfile?.chatConfigs?.length || 0,
+          twitchConfig: twitchConfig ? {
+            platform: twitchConfig.platform,
+            enabled: twitchConfig.enabled,
+            hasChannel: twitchConfig.credentials.type === 'twitch' && !!twitchConfig.credentials.channel,
+            hasToken: twitchConfig.credentials.type === 'twitch' && !!twitchConfig.credentials.oauthToken,
+          } : null,
+        });
+
         // Use detected path if available, otherwise fall back to saved settings path
         const ffmpegPath = detectedFfmpegPath || backendSettings.ffmpegPath;
 
@@ -308,6 +321,12 @@ export function Settings() {
       const existingConfigs = currentProfile.chatConfigs || [];
       const updatedConfigs = existingConfigs.filter((c) => c.platform !== 'twitch');
       updatedConfigs.push(config);
+      console.log('[Settings] Saving Twitch config to profile:', {
+        profileId: currentProfile.id,
+        profileName: currentProfile.name,
+        configCount: updatedConfigs.length,
+        twitchChannel: config.credentials.type === 'twitch' ? config.credentials.channel : null,
+      });
       await updateProfile({ chatConfigs: updatedConfigs });
     } catch (error) {
       console.error('Failed to connect to Twitch:', error);
@@ -326,11 +345,17 @@ export function Settings() {
       await api.chat.disconnect('twitch' as ChatPlatform);
       setSettings((prev) => ({ ...prev, twitchStatus: 'disconnected' }));
 
-      // Update chat config in profile to mark as disabled
+      // Update chat config in profile to mark as disabled (but preserve credentials)
       const existingConfigs = currentProfile.chatConfigs || [];
       const updatedConfigs = existingConfigs.map((c) =>
         c.platform === 'twitch' ? { ...c, enabled: false } : c
       );
+      console.log('[Settings] Disabling Twitch config (preserving credentials):', {
+        profileId: currentProfile.id,
+        profileName: currentProfile.name,
+        configCount: updatedConfigs.length,
+        twitchConfigExists: updatedConfigs.some((c) => c.platform === 'twitch'),
+      });
       await updateProfile({ chatConfigs: updatedConfigs });
     } catch (error) {
       console.error('Failed to disconnect from Twitch:', error);
@@ -585,7 +610,11 @@ export function Settings() {
               onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                 setSettings((prev) => ({ ...prev, twitchChannel: e.target.value }))
               }
-              helper={t('chat.config.twitch.channelHelper')}
+              helper={
+                settings.twitchStatus === 'disconnected' && settings.twitchChannel
+                  ? t('chat.config.credentialsSaved', { defaultValue: '✓ Credentials saved in this profile' })
+                  : t('chat.config.twitch.channelHelper')
+              }
               disabled={settings.twitchStatus === 'connected'}
             />
             <Input

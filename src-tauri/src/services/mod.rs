@@ -9,6 +9,8 @@ mod settings_manager;
 mod theme_manager;
 mod platform_registry;
 mod log_manager;
+mod chat_manager;
+pub mod chat;
 
 pub use profile_manager::*;
 pub use ffmpeg_handler::*;
@@ -18,3 +20,4 @@ pub use settings_manager::*;
 pub use theme_manager::*;
 pub use platform_registry::*;
 pub use log_manager::*;
+pub use chat_manager::*;
