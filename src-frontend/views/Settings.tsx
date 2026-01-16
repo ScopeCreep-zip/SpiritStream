@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FolderOpen, Download, Trash2, Github, BookOpen, RefreshCw, MessageCircle, AlertTriangle } from 'lucide-react';
+import { FolderOpen, Download, Trash2, Github, BookOpen, RefreshCw } from 'lucide-react';
 // import { open } from '@tauri-apps/api/shell';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -19,7 +19,6 @@ import { useLanguageStore, type Language } from '@/stores/languageStore';
 import { useThemeStore } from '@/stores/themeStore';
 import { useProfileStore } from '@/stores/profileStore';
 import type { AppSettings } from '@/types/api';
-import type { ChatPlatform, ChatConnectionStatus, ChatConfig } from '@/types/chat';
 
 interface SettingsState {
   // General
@@ -34,15 +33,6 @@ interface SettingsState {
   profileStoragePath: string;
   encryptStreamKeys: boolean;
   logRetentionDays: number;
-  // Chat
-  twitchChannel: string;
-  twitchOAuthToken: string;
-  twitchStatus: ChatConnectionStatus;
-  twitchConnecting: boolean;
-  tiktokUsername: string;
-  tiktokSessionToken: string;
-  tiktokStatus: ChatConnectionStatus;
-  tiktokConnecting: boolean;
   // UI state
   loading: boolean;
   saving: boolean;
@@ -58,14 +48,6 @@ const defaultSettings: SettingsState = {
   profileStoragePath: '',
   encryptStreamKeys: false,
   logRetentionDays: 30,
-  twitchChannel: '',
-  twitchOAuthToken: '',
-  twitchStatus: 'disconnected',
-  twitchConnecting: false,
-  tiktokUsername: '',
-  tiktokSessionToken: '',
-  tiktokStatus: 'disconnected',
-  tiktokConnecting: false,
   loading: true,
   saving: false,
 };

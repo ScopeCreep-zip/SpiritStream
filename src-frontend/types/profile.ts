@@ -6,12 +6,6 @@ import type { Platform } from './generated-platforms';
 export type { Platform };
 
 /**
- * Chat types
- */
-import type { ChatConfig } from './chat';
-export type { ChatConfig };
-
-/**
  * RTMP Input configuration - where the stream enters the system
  */
 export interface RtmpInput {
@@ -32,7 +26,7 @@ export interface VideoSettings {
   bitrate: string; // e.g., "6000k"
   preset?: string; // e.g., "veryfast", "p4"
   profile?: string; // e.g., "high", "main"
-  keyframeIntervalSeconds?: number; // e.g., 2
+  keyframeIntervalSeconds?: number; // Keyframe interval in seconds
 }
 
 /**
@@ -69,7 +63,7 @@ export interface StreamTarget {
 export interface OutputGroup {
   id: string;
   name: string;
-  isDefault?: boolean; // True for the immutable passthrough group
+  isDefault?: boolean; // Whether this is the default passthrough group
   video: VideoSettings;
   audio: AudioSettings;
   container: ContainerSettings;
@@ -87,7 +81,6 @@ export interface Profile {
   outputGroups: OutputGroup[];
   theme?: string; // Theme ID (optional, falls back to global setting)
   language?: string; // Language code (optional, falls back to global setting)
-  chatConfigs?: ChatConfig[]; // Chat platform configurations
 }
 
 /**
@@ -178,7 +171,6 @@ export const createDefaultProfile = (name: string = 'New Profile'): Profile => (
   outputGroups: [createPassthroughOutputGroup()], // Always include default passthrough group
   theme: undefined, // Will fall back to global setting
   language: undefined, // Will fall back to global setting
-  chatConfigs: [], // No chat platforms configured by default
 });
 
 /**

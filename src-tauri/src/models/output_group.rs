@@ -33,8 +33,8 @@ pub struct VideoSettings {
     #[serde(default)]
     pub profile: Option<String>,
 
-    /// Keyframe interval in seconds (optional)
-    #[serde(default)]
+    /// Keyframe interval in seconds
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keyframe_interval_seconds: Option<u32>,
 }
 
@@ -116,9 +116,9 @@ pub struct OutputGroup {
     /// Display name for the group
     pub name: String,
 
-    /// Whether this is the default passthrough group (immutable)
-    #[serde(default)]
-    pub is_default: bool,
+    /// Whether this is the default passthrough group (cannot be edited/deleted)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_default: Option<bool>,
 
     /// Video encoding settings
     pub video: VideoSettings,
@@ -139,7 +139,7 @@ impl OutputGroup {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             name: "New Output Group".to_string(),
-            is_default: false,
+            is_default: None,
             video: VideoSettings::default(),
             audio: AudioSettings::default(),
             container: ContainerSettings::default(),

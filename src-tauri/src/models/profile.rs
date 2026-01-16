@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use crate::models::{OutputGroup, Platform, ChatConfig};
+use crate::models::{OutputGroup, Platform};
 
 /// RTMP Input configuration - where the stream enters the system
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,9 +62,9 @@ pub struct Profile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
 
-    /// Chat platform configurations for this profile
+    /// Chat configurations (preserved for backwards compatibility, not currently used)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub chat_configs: Vec<ChatConfig>,
+    pub chat_configs: Vec<serde_json::Value>,
 }
 
 impl Profile {
