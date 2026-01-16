@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   LayoutDashboard,
@@ -28,6 +28,7 @@ import { ProfileModal, TargetModal, OutputGroupModal } from '@/components/modals
 import { PasswordModal } from '@/components/modals/PasswordModal';
 import { useProfileStore } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
+import { useLanguageStore } from '@/stores/languageStore';
 import { useInitialize } from '@/hooks/useInitialize';
 import { useStreamStats } from '@/hooks/useStreamStats';
 import { useLogListener } from '@/hooks/useLogListener';
@@ -36,6 +37,7 @@ import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValid
 import { toast } from '@/hooks/useToast';
 import { useThemeStore } from '@/stores/themeStore';
 import { ChatOverlay } from '@/views/ChatOverlay';
+import { api } from '@/lib/tauri';
 
 // Import all views
 import {
@@ -103,8 +105,9 @@ function MainApp() {
   // Listen to unified chat messages
   useChatListener();
 
-  // Initialize theme store on app startup
-  useThemeStore((state) => state.currentThemeId);
+  // Store hooks
+  const { setLanguage } = useLanguageStore();
+  const { currentThemeId, setTheme } = useThemeStore();
 
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const {
@@ -116,6 +119,34 @@ function MainApp() {
     cancelPasswordPrompt,
   } = useProfileStore();
   const { isStreaming, startAllGroups, stopAllGroups } = useStreamStore();
+
+  // Apply profile-specific theme and language when profile changes
+  useEffect(() => {
+    const applyProfileSettings = async () => {
+      if (!current) return;
+
+      try {
+        // Get global settings as fallback
+        const globalSettings = await api.settings.get();
+
+        // Apply theme (profile-specific or global fallback)
+        const effectiveTheme = current.theme || globalSettings.themeId;
+        if (effectiveTheme && effectiveTheme !== currentThemeId) {
+          await setTheme(effectiveTheme);
+        }
+
+        // Apply language (profile-specific or global fallback)
+        const effectiveLanguage = current.language || globalSettings.language;
+        if (effectiveLanguage) {
+          setLanguage(effectiveLanguage as any);
+        }
+      } catch (error) {
+        console.error('Failed to apply profile settings:', error);
+      }
+    };
+
+    applyProfileSettings();
+  }, [current, currentThemeId, setTheme, setLanguage]);
 
   // Modal state
   const [profileModalOpen, setProfileModalOpen] = useState(false);

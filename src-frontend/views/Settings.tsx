@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FolderOpen, Download, Trash2, Github, BookOpen, RefreshCw } from 'lucide-react';
+import { FolderOpen, Download, Trash2, Github, BookOpen, RefreshCw, MessageCircle, AlertTriangle } from 'lucide-react';
 // import { open } from '@tauri-apps/api/shell';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -17,7 +17,9 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { open as openPath } from '@tauri-apps/plugin-shell';
 import { useLanguageStore, type Language } from '@/stores/languageStore';
 import { useThemeStore } from '@/stores/themeStore';
+import { useProfileStore } from '@/stores/profileStore';
 import type { AppSettings } from '@/types/api';
+import type { ChatPlatform, ChatConnectionStatus, ChatConfig } from '@/types/chat';
 
 interface SettingsState {
   // General
@@ -32,6 +34,15 @@ interface SettingsState {
   profileStoragePath: string;
   encryptStreamKeys: boolean;
   logRetentionDays: number;
+  // Chat
+  twitchChannel: string;
+  twitchOAuthToken: string;
+  twitchStatus: ChatConnectionStatus;
+  twitchConnecting: boolean;
+  tiktokUsername: string;
+  tiktokSessionToken: string;
+  tiktokStatus: ChatConnectionStatus;
+  tiktokConnecting: boolean;
   // UI state
   loading: boolean;
   saving: boolean;
@@ -47,6 +58,14 @@ const defaultSettings: SettingsState = {
   profileStoragePath: '',
   encryptStreamKeys: false,
   logRetentionDays: 30,
+  twitchChannel: '',
+  twitchOAuthToken: '',
+  twitchStatus: 'disconnected',
+  twitchConnecting: false,
+  tiktokUsername: '',
+  tiktokSessionToken: '',
+  tiktokStatus: 'disconnected',
+  tiktokConnecting: false,
   loading: true,
   saving: false,
 };
@@ -55,6 +74,7 @@ export function Settings() {
   const { t } = useTranslation();
   const { setLanguage, initFromSettings } = useLanguageStore();
   const { currentThemeId, themes, setTheme, refreshThemes } = useThemeStore();
+  const { current: currentProfile, updateProfile } = useProfileStore();
   const [settings, setSettings] = useState<SettingsState>(defaultSettings);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [clearInProgress, setClearInProgress] = useState(false);
@@ -68,7 +88,7 @@ export function Settings() {
       try {
         setSettings((prev) => ({ ...prev, loading: true }));
 
-        // Load settings from backend
+        // Load global settings from backend (used as fallback)
         const backendSettings = await api.settings.get();
         const profilesPath = await api.settings.getProfilesPath();
 
@@ -86,14 +106,27 @@ export function Settings() {
           // FFmpeg not available
         }
 
-        // Initialize i18n with the saved language
-        initFromSettings(backendSettings.language);
+        // Profile-specific settings (with fallback to global)
+        const effectiveLanguage = currentProfile?.language || backendSettings.language;
+        const effectiveTheme = currentProfile?.theme || backendSettings.themeId;
+
+        // Initialize i18n with the effective language
+        initFromSettings(effectiveLanguage);
+
+        // Apply the effective theme
+        if (effectiveTheme !== currentThemeId) {
+          setTheme(effectiveTheme);
+        }
+
+        // Load chat configs from profile
+        const twitchConfig = currentProfile?.chatConfigs?.find((c) => c.platform === 'twitch');
+        const tiktokConfig = currentProfile?.chatConfigs?.find((c) => c.platform === 'tiktok');
 
         // Use detected path if available, otherwise fall back to saved settings path
         const ffmpegPath = detectedFfmpegPath || backendSettings.ffmpegPath;
 
         setSettings({
-          language: backendSettings.language,
+          language: effectiveLanguage,
           startMinimized: backendSettings.startMinimized,
           showNotifications: backendSettings.showNotifications,
           ffmpegPath,
@@ -102,6 +135,14 @@ export function Settings() {
           logRetentionDays: backendSettings.logRetentionDays,
           ffmpegVersion,
           profileStoragePath: profilesPath,
+          twitchChannel: twitchConfig?.credentials.type === 'twitch' ? twitchConfig.credentials.channel : '',
+          twitchOAuthToken: twitchConfig?.credentials.type === 'twitch' ? twitchConfig.credentials.oauthToken || '' : '',
+          twitchStatus: twitchConfig?.enabled ? 'connected' : 'disconnected',
+          twitchConnecting: false,
+          tiktokUsername: tiktokConfig?.credentials.type === 'tiktok' ? tiktokConfig.credentials.username : '',
+          tiktokSessionToken: tiktokConfig?.credentials.type === 'tiktok' ? tiktokConfig.credentials.sessionToken || '' : '',
+          tiktokStatus: tiktokConfig?.enabled ? 'connected' : 'disconnected',
+          tiktokConnecting: false,
           loading: false,
           saving: false,
         });
@@ -114,7 +155,7 @@ export function Settings() {
     loadSettings();
     // initFromSettings is stable (from Zustand store), intentionally excluded
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [currentProfile]);
 
   useEffect(() => {
     refreshThemes().catch(() => {
@@ -152,11 +193,20 @@ export function Settings() {
   );
 
   const updateSetting = <K extends keyof SettingsState>(key: K, value: SettingsState[K]) => {
-    // If changing language, update i18n as well
+    // Handle profile-specific settings
     if (key === 'language') {
-      setLanguage(value as Language);
+      const lang = value as string;
+      setLanguage(lang as Language);
+      // Save to profile if one is active
+      if (currentProfile) {
+        updateProfile({ language: lang }).catch((err) => console.error('Failed to update profile language:', err));
+      }
+      // Also save to global settings as fallback
+      saveSettings({ language: lang });
+    } else {
+      // For non-profile settings, save to global
+      saveSettings({ [key]: value });
     }
-    saveSettings({ [key]: value });
   };
 
   const handleBrowseFfmpeg = async () => {
@@ -225,6 +275,129 @@ export function Settings() {
       setThemeInstallError(String(error));
     } finally {
       setThemeInstalling(false);
+    }
+  };
+
+  // Chat connection handlers
+  const handleTwitchConnect = async () => {
+    if (!settings.twitchChannel.trim()) {
+      alert(t('chat.config.errors.invalidChannel'));
+      return;
+    }
+
+    if (!currentProfile) {
+      alert(t('chat.config.errors.noActiveProfile', { defaultValue: 'No active profile. Please load or create a profile first.' }));
+      return;
+    }
+
+    setSettings((prev) => ({ ...prev, twitchConnecting: true }));
+    try {
+      const config: ChatConfig = {
+        platform: 'twitch' as ChatPlatform,
+        enabled: true,
+        credentials: {
+          type: 'twitch',
+          channel: settings.twitchChannel.trim(),
+          oauthToken: settings.twitchOAuthToken.trim() || undefined,
+        },
+      };
+      await api.chat.connect(config);
+      setSettings((prev) => ({ ...prev, twitchStatus: 'connected' }));
+
+      // Save chat config to profile
+      const existingConfigs = currentProfile.chatConfigs || [];
+      const updatedConfigs = existingConfigs.filter((c) => c.platform !== 'twitch');
+      updatedConfigs.push(config);
+      await updateProfile({ chatConfigs: updatedConfigs });
+    } catch (error) {
+      console.error('Failed to connect to Twitch:', error);
+      alert(t('chat.config.errors.connectionFailed', { error: String(error) }));
+      setSettings((prev) => ({ ...prev, twitchStatus: 'error' }));
+    } finally {
+      setSettings((prev) => ({ ...prev, twitchConnecting: false }));
+    }
+  };
+
+  const handleTwitchDisconnect = async () => {
+    if (!currentProfile) return;
+
+    setSettings((prev) => ({ ...prev, twitchConnecting: true }));
+    try {
+      await api.chat.disconnect('twitch' as ChatPlatform);
+      setSettings((prev) => ({ ...prev, twitchStatus: 'disconnected' }));
+
+      // Update chat config in profile to mark as disabled
+      const existingConfigs = currentProfile.chatConfigs || [];
+      const updatedConfigs = existingConfigs.map((c) =>
+        c.platform === 'twitch' ? { ...c, enabled: false } : c
+      );
+      await updateProfile({ chatConfigs: updatedConfigs });
+    } catch (error) {
+      console.error('Failed to disconnect from Twitch:', error);
+      alert(t('chat.config.errors.disconnectionFailed', { error: String(error) }));
+    } finally {
+      setSettings((prev) => ({ ...prev, twitchConnecting: false }));
+    }
+  };
+
+  const handleTikTokConnect = async () => {
+    if (!settings.tiktokUsername.trim()) {
+      alert(t('chat.config.errors.invalidUsername'));
+      return;
+    }
+
+    if (!currentProfile) {
+      alert(t('chat.config.errors.noActiveProfile', { defaultValue: 'No active profile. Please load or create a profile first.' }));
+      return;
+    }
+
+    setSettings((prev) => ({ ...prev, tiktokConnecting: true }));
+    try {
+      const config: ChatConfig = {
+        platform: 'tiktok' as ChatPlatform,
+        enabled: true,
+        credentials: {
+          type: 'tiktok',
+          username: settings.tiktokUsername.trim(),
+          sessionToken: settings.tiktokSessionToken.trim() || undefined,
+        },
+      };
+      await api.chat.connect(config);
+      setSettings((prev) => ({ ...prev, tiktokStatus: 'connected' }));
+
+      // Save chat config to profile
+      const existingConfigs = currentProfile.chatConfigs || [];
+      const updatedConfigs = existingConfigs.filter((c) => c.platform !== 'tiktok');
+      updatedConfigs.push(config);
+      await updateProfile({ chatConfigs: updatedConfigs });
+    } catch (error) {
+      console.error('Failed to connect to TikTok:', error);
+      alert(t('chat.config.errors.connectionFailed', { error: String(error) }));
+      setSettings((prev) => ({ ...prev, tiktokStatus: 'error' }));
+    } finally {
+      setSettings((prev) => ({ ...prev, tiktokConnecting: false }));
+    }
+  };
+
+  const handleTikTokDisconnect = async () => {
+    if (!currentProfile) return;
+
+    setSettings((prev) => ({ ...prev, tiktokConnecting: true }));
+    try {
+      await api.chat.disconnect('tiktok' as ChatPlatform);
+      setSettings((prev) => ({ ...prev, tiktokStatus: 'disconnected' }));
+
+      // Update chat config in profile to mark as disabled
+      const existingConfigs = currentProfile.chatConfigs || [];
+      const updatedConfigs = existingConfigs.map((c) =>
+        c.platform === 'tiktok' ? { ...c, enabled: false } : c
+      );
+      await updateProfile({ chatConfigs: updatedConfigs });
+    } catch (error) {
+      console.error('Failed to disconnect from TikTok:', error);
+      alert(t('chat.config.errors.disconnectionFailed', { error: String(error) }));
+    } finally {
+      setSettings((prev) => ({ ...prev, tiktokConnecting: false }));
     }
   };
 
@@ -301,6 +474,11 @@ export function Settings() {
 
   const handleThemeChange = async (themeId: string) => {
     await setTheme(themeId);
+    // Save to profile if one is active
+    if (currentProfile) {
+      await updateProfile({ theme: themeId }).catch((err) => console.error('Failed to update profile theme:', err));
+    }
+    // Also save to global settings as fallback
     saveSettings({});
   };
 
@@ -360,6 +538,175 @@ export function Settings() {
               checked={settings.showNotifications}
               onChange={(checked: boolean) => updateSetting('showNotifications', checked)}
             />
+          </div>
+        </CardBody>
+      </Card>
+
+      {/* Chat Configuration */}
+      <Card>
+        <CardHeader>
+          <div>
+            <CardTitle>
+              <div className="flex items-center gap-2">
+                <MessageCircle className="w-5 h-5" />
+                {t('chat.config.title')}
+              </div>
+            </CardTitle>
+            <CardDescription>{t('chat.config.description')}</CardDescription>
+          </div>
+        </CardHeader>
+        <CardBody
+          style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}
+        >
+          {/* Twitch Configuration */}
+          <div className="flex flex-col" style={{ gap: '16px' }}>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-semibold text-[var(--text-primary)]">
+                  {t('chat.config.twitch.title')}
+                </div>
+                <div className="text-xs text-[var(--text-tertiary)]">
+                  {t('chat.config.twitch.description')}
+                </div>
+              </div>
+              {settings.twitchStatus === 'connected' && (
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-[var(--status-live)] animate-pulse" />
+                  <span className="text-xs font-medium text-[var(--status-live-text)]">
+                    {t('chat.config.status.connected')}
+                  </span>
+                </div>
+              )}
+            </div>
+            <Input
+              label={t('chat.config.twitch.channel')}
+              placeholder={t('chat.config.twitch.channelPlaceholder')}
+              value={settings.twitchChannel}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                setSettings((prev) => ({ ...prev, twitchChannel: e.target.value }))
+              }
+              helper={t('chat.config.twitch.channelHelper')}
+              disabled={settings.twitchStatus === 'connected'}
+            />
+            <Input
+              label={t('chat.config.twitch.oauthToken')}
+              type="password"
+              placeholder={t('chat.config.twitch.oauthTokenPlaceholder')}
+              value={settings.twitchOAuthToken}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                setSettings((prev) => ({ ...prev, twitchOAuthToken: e.target.value }))
+              }
+              helper={t('chat.config.twitch.oauthTokenHelper')}
+              disabled={settings.twitchStatus === 'connected'}
+            />
+            <div>
+              {settings.twitchStatus === 'connected' ? (
+                <Button
+                  variant="outline"
+                  onClick={handleTwitchDisconnect}
+                  disabled={settings.twitchConnecting}
+                >
+                  {settings.twitchConnecting
+                    ? t('chat.config.disconnecting')
+                    : t('chat.config.disconnect')}
+                </Button>
+              ) : (
+                <Button
+                  variant="primary"
+                  onClick={handleTwitchConnect}
+                  disabled={settings.twitchConnecting || !settings.twitchChannel.trim()}
+                >
+                  {settings.twitchConnecting
+                    ? t('chat.config.connecting')
+                    : t('chat.config.connect')}
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div className="border-t border-[var(--border-muted)]" />
+
+          {/* TikTok Configuration */}
+          <div className="flex flex-col" style={{ gap: '16px' }}>
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <div className="text-sm font-semibold text-[var(--text-primary)]">
+                    {t('chat.config.tiktok.title')}
+                  </div>
+                  <div className="px-2 py-0.5 text-xs font-medium bg-[var(--warning-subtle)] text-[var(--warning-text)] rounded-full">
+                    {t('chat.config.tiktok.experimental')}
+                  </div>
+                </div>
+                <div className="text-xs text-[var(--text-tertiary)]">
+                  {t('chat.config.tiktok.description')}
+                </div>
+              </div>
+              {settings.tiktokStatus === 'connected' && (
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-[var(--status-live)] animate-pulse" />
+                  <span className="text-xs font-medium text-[var(--status-live-text)]">
+                    {t('chat.config.status.connected')}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Warning about experimental status */}
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-[var(--warning-subtle)] border border-[var(--warning-border)]">
+              <AlertTriangle className="w-4 h-4 text-[var(--warning-text)] flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-xs text-[var(--warning-text)]">
+                  {t('chat.config.tiktok.notImplementedWarning')}
+                </p>
+              </div>
+            </div>
+
+            <Input
+              label={t('chat.config.tiktok.username')}
+              placeholder={t('chat.config.tiktok.usernamePlaceholder')}
+              value={settings.tiktokUsername}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                setSettings((prev) => ({ ...prev, tiktokUsername: e.target.value }))
+              }
+              helper={t('chat.config.tiktok.usernameHelper')}
+              disabled={settings.tiktokStatus === 'connected'}
+            />
+            <Input
+              label={t('chat.config.tiktok.sessionToken')}
+              type="password"
+              placeholder={t('chat.config.tiktok.sessionTokenPlaceholder')}
+              value={settings.tiktokSessionToken}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                setSettings((prev) => ({ ...prev, tiktokSessionToken: e.target.value }))
+              }
+              helper={t('chat.config.tiktok.sessionTokenHelper')}
+              disabled={settings.tiktokStatus === 'connected'}
+            />
+            <div>
+              {settings.tiktokStatus === 'connected' ? (
+                <Button
+                  variant="outline"
+                  onClick={handleTikTokDisconnect}
+                  disabled={settings.tiktokConnecting}
+                >
+                  {settings.tiktokConnecting
+                    ? t('chat.config.disconnecting')
+                    : t('chat.config.disconnect')}
+                </Button>
+              ) : (
+                <Button
+                  variant="primary"
+                  onClick={handleTikTokConnect}
+                  disabled={settings.tiktokConnecting || !settings.tiktokUsername.trim()}
+                >
+                  {settings.tiktokConnecting
+                    ? t('chat.config.connecting')
+                    : t('chat.config.connect')}
+                </Button>
+              )}
+            </div>
           </div>
         </CardBody>
       </Card>
