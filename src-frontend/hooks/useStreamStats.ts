@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { listen, UnlistenFn } from '@tauri-apps/api/event';
+import { events } from '@/lib/backend';
 import { useStreamStore } from '@/stores/streamStore';
 
 /**
@@ -33,24 +33,24 @@ export function useStreamStats() {
 
   // Set up event listeners
   useEffect(() => {
-    let unlistenStats: UnlistenFn | null = null;
-    let unlistenEnded: UnlistenFn | null = null;
-    let unlistenError: UnlistenFn | null = null;
+    let unlistenStats: (() => void) | null = null;
+    let unlistenEnded: (() => void) | null = null;
+    let unlistenError: (() => void) | null = null;
 
     const setupListeners = async () => {
       // Listen for stream stats updates
-      unlistenStats = await listen<StreamStats>('stream_stats', (event) => {
-        updateStats(event.payload.groupId, event.payload);
+      unlistenStats = await events.on<StreamStats>('stream_stats', (payload) => {
+        updateStats(payload.groupId, payload);
       });
 
       // Listen for stream ended events (clean exit)
-      unlistenEnded = await listen<string>('stream_ended', (event) => {
-        setStreamEnded(event.payload);
+      unlistenEnded = await events.on<string>('stream_ended', (payload) => {
+        setStreamEnded(payload);
       });
 
       // Listen for stream error events (crash/unexpected exit)
-      unlistenError = await listen<StreamError>('stream_error', (event) => {
-        setStreamError(event.payload.groupId, event.payload.error);
+      unlistenError = await events.on<StreamError>('stream_error', (payload) => {
+        setStreamError(payload.groupId, payload.error);
       });
     };
 

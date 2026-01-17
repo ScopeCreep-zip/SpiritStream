@@ -11,8 +11,6 @@ import {
   Upload,
   Loader2,
 } from 'lucide-react';
-import { open } from '@tauri-apps/plugin-dialog';
-import { readTextFile } from '@tauri-apps/plugin-fs';
 import { StatsRow } from '@/components/dashboard/StatsRow';
 import { StatBox } from '@/components/dashboard/StatBox';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
@@ -26,7 +24,7 @@ import { useProfileStore } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
 import { formatUptime, formatBitrate } from '@/hooks/useStreamStats';
 import { toast } from '@/hooks/useToast';
-import { api } from '@/lib/tauri';
+import { api, dialogs } from '@/lib/backend';
 import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValidation';
 import type { View } from '@/App';
 import type { Profile, OutputGroup } from '@/types/profile';
@@ -78,16 +76,14 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
   // Import profile from JSON file
   const handleImportProfile = async () => {
     try {
-      const selected = await open({
+      const selected = await dialogs.openTextFile({
         multiple: false,
         filters: [{ name: 'Profile', extensions: ['json'] }],
       });
 
       if (!selected) return;
 
-      // open() returns string directly when multiple: false
-      const content = await readTextFile(selected);
-      const profile = JSON.parse(content) as Profile;
+      const profile = JSON.parse(selected.content) as Profile;
 
       // Validate basic structure
       if (!profile.name || !profile.outputGroups) {

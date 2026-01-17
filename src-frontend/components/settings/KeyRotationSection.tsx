@@ -4,7 +4,7 @@ import { RotateCw } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { KeyRotationModal } from '@/components/modals/KeyRotationModal';
 import { toast } from '@/hooks/useToast';
-import { api } from '@/lib/tauri';
+import { api } from '@/lib/backend';
 import type { RotationReport } from '@/types/api';
 
 interface KeyRotationSectionProps {

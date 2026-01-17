@@ -20,7 +20,9 @@ pub fn save_settings(
     app_handle: AppHandle,
 ) -> Result<(), String> {
     settings_manager.save(&settings)?;
-    let _ = prune_logs(&app_handle, settings.log_retention_days);
+    if let Ok(log_dir) = app_handle.path().app_log_dir() {
+        let _ = prune_logs(&log_dir, settings.log_retention_days);
+    }
     Ok(())
 }
 

@@ -11,8 +11,7 @@ use reqwest::Client;
 use serde::Serialize;
 #[cfg(target_os = "macos")]
 use serde::Deserialize;
-use tauri::{AppHandle, Emitter, Manager};
-use crate::services::SettingsManager;
+use crate::services::{emit_event, EventSink, SettingsManager};
 use thiserror::Error;
 
 /// Progress information emitted during download
@@ -386,7 +385,7 @@ exit /b %errorlevel%
     }
 
     /// Download and extract FFmpeg to system location with elevation
-    pub async fn download(&self, app_handle: &AppHandle) -> Result<PathBuf, DownloadError> {
+    pub async fn download(&self, event_sink: &dyn EventSink) -> Result<PathBuf, DownloadError> {
         self.reset_cancel();
 
         // Get system install path
@@ -395,7 +394,7 @@ exit /b %errorlevel%
         // Check if already installed at system location
         if target_path.exists() {
             log::info!("FFmpeg already installed at: {target_path:?}");
-            self.emit_progress(app_handle, 100, 100, 100.0, "complete", Some("FFmpeg is already installed"));
+            self.emit_progress(event_sink, 100, 100, 100.0, "complete", Some("FFmpeg is already installed"));
             return Ok(target_path);
         }
 
@@ -410,17 +409,17 @@ exit /b %errorlevel%
         );
 
         // Emit starting phase
-        self.emit_progress(app_handle, 0, 0, 0.0, "starting", None);
+        self.emit_progress(event_sink, 0, 0, 0.0, "starting", None);
 
         // Download the file
-        self.download_file(platform.url, &archive_path, app_handle).await?;
+        self.download_file(platform.url, &archive_path, event_sink).await?;
 
         if self.is_cancelled() {
             return Err(DownloadError::Cancelled);
         }
 
         // Extract the archive to temp location
-        self.emit_progress(app_handle, 0, 0, 0.0, "extracting", None);
+        self.emit_progress(event_sink, 0, 0, 0.0, "extracting", None);
 
         self.extract_archive(
             &archive_path,
@@ -430,7 +429,7 @@ exit /b %errorlevel%
         )?;
 
         // Verify extracted binary
-        self.emit_progress(app_handle, 0, 0, 0.0, "verifying", None);
+        self.emit_progress(event_sink, 0, 0, 0.0, "verifying", None);
 
         if !temp_binary.exists() {
             return Err(DownloadError::BinaryNotFound);
@@ -438,7 +437,7 @@ exit /b %errorlevel%
 
         // Request elevation and install to system location
         self.emit_progress(
-            app_handle,
+            event_sink,
             0, 0, 0.0,
             "requesting_permission",
             Some("Administrator permission required to install FFmpeg")
@@ -447,7 +446,7 @@ exit /b %errorlevel%
         match Self::install_with_elevation(&temp_binary, &target_path) {
             Ok(()) => {
                 self.emit_progress(
-                    app_handle,
+                    event_sink,
                     100, 100, 100.0,
                     "complete",
                     Some("FFmpeg installed successfully")
@@ -457,7 +456,7 @@ exit /b %errorlevel%
             }
             Err(DownloadError::ElevationDenied) => {
                 self.emit_progress(
-                    app_handle,
+                    event_sink,
                     0, 0, 0.0,
                     "elevation_denied",
                     Some("Permission denied - FFmpeg was not installed")
@@ -466,7 +465,7 @@ exit /b %errorlevel%
             }
             Err(e) => {
                 self.emit_progress(
-                    app_handle,
+                    event_sink,
                     0, 0, 0.0,
                     "error",
                     Some(&format!("Installation failed: {e}"))
@@ -482,7 +481,7 @@ exit /b %errorlevel%
         &self,
         url: &str,
         dest: &PathBuf,
-        app_handle: &AppHandle,
+        event_sink: &dyn EventSink,
     ) -> Result<(), DownloadError> {
         log::info!("Downloading FFmpeg from: {url}");
 
@@ -513,7 +512,7 @@ exit /b %errorlevel%
                 0.0
             };
 
-            self.emit_progress(app_handle, downloaded, total_size, percent, "downloading", None);
+            self.emit_progress(event_sink, downloaded, total_size, percent, "downloading", None);
         }
 
         file.flush()?;
@@ -644,7 +643,7 @@ exit /b %errorlevel%
     /// Emit progress event to frontend
     fn emit_progress(
         &self,
-        app_handle: &AppHandle,
+        event_sink: &dyn EventSink,
         downloaded: u64,
         total: u64,
         percent: f64,
@@ -659,14 +658,14 @@ exit /b %errorlevel%
             message: message.map(|s| s.to_string()),
         };
 
-        let _ = app_handle.emit("ffmpeg_download_progress", &progress);
+        emit_event(event_sink, "ffmpeg_download_progress", &progress);
     }
 
     /// Get the path where FFmpeg is installed
     /// Checks in order: 1) Custom path from settings, 2) System install location
-    pub fn get_ffmpeg_path(app_handle: &AppHandle) -> Option<PathBuf> {
+    pub fn get_ffmpeg_path(settings_manager: Option<&SettingsManager>) -> Option<PathBuf> {
         // First, check for custom path in settings (set via browse functionality)
-        if let Some(settings_manager) = app_handle.try_state::<SettingsManager>() {
+        if let Some(settings_manager) = settings_manager {
             if let Ok(settings) = settings_manager.load() {
                 if !settings.ffmpeg_path.is_empty() {
                     let custom_path = PathBuf::from(&settings.ffmpeg_path);

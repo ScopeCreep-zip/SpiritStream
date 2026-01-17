@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/Input';
 import { Select, SelectOption } from '@/components/ui/Select';
 import { Button } from '@/components/ui/Button';
 import { useProfileStore } from '@/stores/profileStore';
-import { api } from '@/lib/tauri';
+import { api } from '@/lib/backend';
 import type { OutputGroup, VideoSettings, AudioSettings, ContainerSettings } from '@/types/profile';
 import type { Encoders } from '@/types/stream';
 

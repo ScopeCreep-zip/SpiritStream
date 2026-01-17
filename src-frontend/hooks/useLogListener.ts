@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { listen } from '@tauri-apps/api/event';
-import { api } from '@/lib/tauri';
+import { api, events } from '@/lib/backend';
 import { useLogStore } from '@/stores/logStore';
 import { createLogEntry, mapLogLevelFromNumber, parseLogLine } from '@/lib/logging';
 
@@ -31,8 +30,8 @@ export function useLogListener() {
     };
 
     const setupListener = async () => {
-      const unlisten = await listen<TauriLogRecord>('log://log', (event) => {
-        const { level, message } = event.payload;
+      const unlisten = await events.on<TauriLogRecord>('log://log', (payload) => {
+        const { level, message } = payload;
         addLog(createLogEntry(mapLogLevelFromNumber(level), message));
       });
 

@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { listen, UnlistenFn } from '@tauri-apps/api/event';
+import { api, events } from '@/lib/backend';
 import type { FFmpegVersionInfo } from '@/types/api';
 
 /**
@@ -70,26 +69,26 @@ export function useFFmpegDownload(): FFmpegDownloadState {
 
   // Listen to download progress events
   useEffect(() => {
-    let unlistenProgress: UnlistenFn | null = null;
+    let unlistenProgress: (() => void) | null = null;
 
     const setupListener = async () => {
-      unlistenProgress = await listen<DownloadProgress>('ffmpeg_download_progress', (event) => {
-        setProgress(event.payload);
+      unlistenProgress = await events.on<DownloadProgress>('ffmpeg_download_progress', (payload) => {
+        setProgress(payload);
 
         // Handle completion states
-        if (event.payload.phase === 'complete') {
+        if (payload.phase === 'complete') {
           setIsDownloading(false);
           setError(null);
           // Check for the bundled path
           checkBundledFFmpeg().then((path) => {
             if (path) setFFmpegPath(path);
           });
-        } else if (event.payload.phase === 'elevation_denied') {
+        } else if (payload.phase === 'elevation_denied') {
           setIsDownloading(false);
-          setError(event.payload.message || 'Permission denied');
-        } else if (event.payload.phase === 'error') {
+          setError(payload.message || 'Permission denied');
+        } else if (payload.phase === 'error') {
           setIsDownloading(false);
-          setError(event.payload.message || 'Installation failed');
+          setError(payload.message || 'Installation failed');
         }
       });
     };
@@ -106,7 +105,7 @@ export function useFFmpegDownload(): FFmpegDownloadState {
   // Check for an existing bundled FFmpeg
   const checkBundledFFmpeg = useCallback(async (): Promise<string | null> => {
     try {
-      const path = await invoke<string | null>('get_bundled_ffmpeg_path');
+      const path = await api.system.getFfmpegPath();
       setFFmpegPath(path);
       return path;
     } catch (err) {
@@ -127,7 +126,7 @@ export function useFFmpegDownload(): FFmpegDownloadState {
     });
 
     try {
-      const path = await invoke<string>('download_ffmpeg');
+      const path = await api.system.downloadFfmpeg();
       setFFmpegPath(path);
       setIsDownloading(false);
       return path;
@@ -142,7 +141,7 @@ export function useFFmpegDownload(): FFmpegDownloadState {
   // Cancel the current download
   const cancelDownload = useCallback(async (): Promise<void> => {
     try {
-      await invoke('cancel_ffmpeg_download');
+      await api.system.cancelFfmpegDownload();
       setIsDownloading(false);
       setProgress(null);
     } catch (err) {
@@ -155,9 +154,7 @@ export function useFFmpegDownload(): FFmpegDownloadState {
     async (installedVersion?: string): Promise<FFmpegVersionInfo | null> => {
       setIsCheckingVersion(true);
       try {
-        const info = await invoke<FFmpegVersionInfo>('check_ffmpeg_update', {
-          installedVersion,
-        });
+        const info = await api.system.checkFfmpegUpdate(installedVersion);
         setVersionInfo(info);
         return info;
       } catch (err) {

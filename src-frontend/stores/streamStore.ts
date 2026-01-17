@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api } from '@/lib/tauri';
+import { api } from '@/lib/backend';
 import type { OutputGroup } from '@/types/profile';
 import type { StreamStats, StreamStatusType, TargetStats } from '@/types/stream';
 

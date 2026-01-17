@@ -15,6 +15,7 @@
     "dev": "tauri dev",
     "build": "tauri build",
     "build:debug": "tauri build --debug",
+    "backend:dev": "cargo run --manifest-path src-tauri/Cargo.toml --bin server",
     "vite:dev": "vite",
     "vite:build": "vite build",
     "vite:preview": "vite preview",

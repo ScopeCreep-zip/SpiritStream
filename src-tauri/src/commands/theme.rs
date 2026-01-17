@@ -19,7 +19,8 @@ pub fn refresh_themes(
     theme_manager: State<ThemeManager>,
 ) -> Result<Vec<ThemeSummary>, String> {
     // Force sync project themes and return updated list
-    theme_manager.sync_project_themes(Some(&app_handle));
+    let _ = app_handle;
+    theme_manager.sync_project_themes();
     Ok(theme_manager.list_themes())
 }
 

@@ -118,6 +118,52 @@ npm run typecheck    # Check TypeScript types
 npm run check        # Check Rust code
 ```
 
+### Backend Server (HTTP/WebSocket)
+
+Run the standalone backend server for browser-based usage:
+
+```bash
+npm run backend:dev
+```
+
+Environment variables:
+
+- `SPIRITSTREAM_HOST` (default: `127.0.0.1`)
+- `SPIRITSTREAM_PORT` (default: `8008`)
+- `SPIRITSTREAM_DATA_DIR` (default: `./data`)
+- `SPIRITSTREAM_LOG_DIR` (default: `./data/logs`)
+- `SPIRITSTREAM_THEMES_DIR` (default: `./themes`)
+- `SPIRITSTREAM_UI_DIR` (default: `./dist`)
+- `SPIRITSTREAM_API_TOKEN` (optional; single shared token for HTTP auth)
+- `SPIRITSTREAM_UI_ENABLED` (optional; `1` to serve the web UI from the host)
+- `SPIRITSTREAM_UI_URL` (launcher-only; default: `http://localhost:1420` in dev, `http://HOST:PORT` in release)
+- `SPIRITSTREAM_SERVER_PATH` (launcher-only; absolute path to the host binary)
+- `SPIRITSTREAM_LAUNCHER_HIDE_WINDOW` (launcher-only; `1` to hide launcher window)
+- `SPIRITSTREAM_LAUNCHER_OPEN_EXTERNAL` (launcher-only; `1` to open the UI in your browser)
+
+Sample values live in `.env.example`.
+
+Frontend configuration for the web UI:
+
+```bash
+VITE_BACKEND_MODE=http
+VITE_BACKEND_URL=http://127.0.0.1:8008
+VITE_BACKEND_WS_URL=ws://127.0.0.1:8008/ws
+VITE_BACKEND_TOKEN=
+```
+
+Then start the frontend with:
+
+```bash
+npm run vite:dev
+```
+
+### Launcher (Desktop Host)
+
+The Tauri desktop binary now starts the host server and can open the UI URL in your default browser.
+Use `SPIRITSTREAM_UI_URL` to point it at a local Vite dev server or a cloud UI, and `SPIRITSTREAM_SERVER_PATH`
+to override the host binary location.
+
 ## License
 
 ISC License - See [LICENSE](LICENSE) for details.

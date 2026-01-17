@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { listen } from '@tauri-apps/api/event';
-import { api } from '@/lib/tauri';
+import { api, events } from '@/lib/backend';
 import type { ThemeSummary, ThemeMode } from '@/types/theme';
 
 interface ThemeState {
@@ -182,8 +181,8 @@ export const useThemeStore = create<ThemeState>()(
 
 if (typeof window !== 'undefined') {
   // Listen for theme file changes from backend
-  listen<ThemeSummary[]>('themes_updated', (event) => {
-    const themes = event.payload;
+  events.on<ThemeSummary[]>('themes_updated', (payload) => {
+    const themes = payload;
     useThemeStore.setState({ themes });
     const state = useThemeStore.getState();
     if (!themes.find((theme) => theme.id === state.currentThemeId)) {

@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useProfileStore } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
 import { useThemeStore } from '@/stores/themeStore';
-import { api } from '@/lib/tauri';
+import { api } from '@/lib/backend';
 
 /**
  * Hook to initialize the application on startup

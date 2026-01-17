@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Download, Trash2, ArrowDownToLine } from 'lucide-react';
-import { save } from '@tauri-apps/plugin-dialog';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
@@ -9,7 +8,7 @@ import { LogConsole } from '@/components/feedback/LogConsole';
 import { LogEntry } from '@/components/feedback/LogEntry';
 import type { LogLevel } from '@/types/stream';
 import { useLogStore } from '@/stores/logStore';
-import { api } from '@/lib/tauri';
+import { dialogs } from '@/lib/backend';
 import { toast } from '@/hooks/useToast';
 
 export function Logs() {
@@ -76,17 +75,13 @@ export function Logs() {
       .join('\n');
 
     const defaultName = `spiritstream-logs-${new Date().toISOString().slice(0, 10)}.txt`;
-    const selected = await save({
-      title: t('logs.exportTitle', { defaultValue: 'Export Logs' }),
-      defaultPath: defaultName,
-      filters: [{ name: 'Log file', extensions: ['txt', 'log'] }],
-    });
-    if (!selected) {
-      return;
-    }
-
     try {
-      await api.system.exportLogs(selected, content);
+      await dialogs.saveTextFile({
+        title: t('logs.exportTitle', { defaultValue: 'Export Logs' }),
+        defaultPath: defaultName,
+        filters: [{ name: 'Log file', extensions: ['txt', 'log'] }],
+        content,
+      });
       toast.success(t('logs.exportSuccess', { defaultValue: 'Logs exported' }));
     } catch (error) {
       console.error('Failed to export logs:', error);

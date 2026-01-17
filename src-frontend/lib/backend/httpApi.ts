@@ -1,0 +1,118 @@
+import type { Profile, ProfileSummary, OutputGroup, RtmpInput } from '@/types/profile';
+import type { Encoders } from '@/types/stream';
+import type { AppSettings, FFmpegVersionInfo, RotationReport } from '@/types/api';
+import type { ThemeSummary } from '@/types/theme';
+import { getBackendBaseUrl, getBackendToken } from './env';
+
+interface InvokeOk<T> {
+  ok: true;
+  data: T;
+}
+
+interface InvokeError {
+  ok: false;
+  error: string;
+}
+
+type InvokeResponse<T> = InvokeOk<T> | InvokeError;
+
+type InvokeArgs = Record<string, unknown> | undefined;
+
+async function invokeHttp<T>(command: string, args?: InvokeArgs): Promise<T> {
+  const baseUrl = getBackendBaseUrl();
+  const token = getBackendToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${baseUrl}/api/invoke/${command}`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(args ?? {}),
+  });
+
+  const text = await response.text();
+  const parsed = text ? (JSON.parse(text) as InvokeResponse<T> | T) : undefined;
+
+  if (!response.ok) {
+    const errorMessage =
+      parsed && typeof parsed === 'object' && 'error' in parsed
+        ? String((parsed as InvokeError).error)
+        : response.statusText || 'Request failed';
+    throw new Error(errorMessage);
+  }
+
+  if (parsed && typeof parsed === 'object' && 'ok' in parsed) {
+    if (!parsed.ok) {
+      throw new Error(parsed.error || 'Request failed');
+    }
+    return parsed.data;
+  }
+
+  return parsed as T;
+}
+
+/**
+ * HTTP API wrapper that mirrors the Tauri command surface.
+ */
+export const api = {
+  profile: {
+    getAll: () => invokeHttp<string[]>('get_all_profiles'),
+    getSummaries: () => invokeHttp<ProfileSummary[]>('get_profile_summaries'),
+    load: (name: string, password?: string) =>
+      invokeHttp<Profile>('load_profile', { name, password }),
+    save: (profile: Profile, password?: string) =>
+      invokeHttp<void>('save_profile', { profile, password }),
+    delete: (name: string) => invokeHttp<void>('delete_profile', { name }),
+    isEncrypted: (name: string) => invokeHttp<boolean>('is_profile_encrypted', { name }),
+    validateInput: (profileId: string, input: RtmpInput) =>
+      invokeHttp<void>('validate_input', { profileId, input }),
+  },
+  stream: {
+    start: (group: OutputGroup, incomingUrl: string) =>
+      invokeHttp<number>('start_stream', { group, incomingUrl }),
+    startAll: (groups: OutputGroup[], incomingUrl: string) =>
+      invokeHttp<number[]>('start_all_streams', { groups, incomingUrl }),
+    stop: (groupId: string) => invokeHttp<void>('stop_stream', { groupId }),
+    stopAll: () => invokeHttp<void>('stop_all_streams'),
+    getActiveCount: () => invokeHttp<number>('get_active_stream_count'),
+    isGroupStreaming: (groupId: string) =>
+      invokeHttp<boolean>('is_group_streaming', { groupId }),
+    getActiveGroupIds: () => invokeHttp<string[]>('get_active_group_ids'),
+    toggleTarget: (targetId: string, enabled: boolean, group: OutputGroup, incomingUrl: string) =>
+      invokeHttp<number>('toggle_stream_target', { targetId, enabled, group, incomingUrl }),
+    isTargetDisabled: (targetId: string) =>
+      invokeHttp<boolean>('is_target_disabled', { targetId }),
+  },
+  system: {
+    getEncoders: () => invokeHttp<Encoders>('get_encoders'),
+    testFfmpeg: () => invokeHttp<string>('test_ffmpeg'),
+    getFfmpegPath: () => invokeHttp<string | null>('get_bundled_ffmpeg_path'),
+    checkFfmpegUpdate: (installedVersion?: string) =>
+      invokeHttp<FFmpegVersionInfo>('check_ffmpeg_update', { installedVersion }),
+    validateFfmpegPath: (path: string) => invokeHttp<string>('validate_ffmpeg_path', { path }),
+    getRecentLogs: (maxLines?: number) =>
+      invokeHttp<string[]>('get_recent_logs', { maxLines }),
+    exportLogs: (path: string, content: string) =>
+      invokeHttp<void>('export_logs', { path, content }),
+    downloadFfmpeg: () => invokeHttp<string>('download_ffmpeg'),
+    cancelFfmpegDownload: () => invokeHttp<void>('cancel_ffmpeg_download'),
+  },
+  settings: {
+    get: () => invokeHttp<AppSettings>('get_settings'),
+    save: (settings: AppSettings) => invokeHttp<void>('save_settings', { settings }),
+    getProfilesPath: () => invokeHttp<string>('get_profiles_path'),
+    exportData: (exportPath: string) => invokeHttp<void>('export_data', { exportPath }),
+    clearData: () => invokeHttp<void>('clear_data'),
+    rotateMachineKey: () => invokeHttp<RotationReport>('rotate_machine_key'),
+  },
+  theme: {
+    list: () => invokeHttp<ThemeSummary[]>('list_themes'),
+    getTokens: (themeId: string) =>
+      invokeHttp<Record<string, string>>('get_theme_tokens', { themeId }),
+    install: (themePath: string) => invokeHttp<ThemeSummary>('install_theme', { themePath }),
+  },
+};

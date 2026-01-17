@@ -1,4 +1,4 @@
-import type { Profile, OutputGroup } from './profile';
+import type { Profile, OutputGroup, ProfileSummary, RtmpInput } from './profile';
 import type { Encoders } from './stream';
 import type { ThemeSummary, ThemeTokens } from './theme';
 
@@ -13,10 +13,12 @@ export type TauriResult<T> = Promise<T>;
  */
 export interface ProfileAPI {
   getAll: () => TauriResult<string[]>;
+  getSummaries: () => TauriResult<ProfileSummary[]>;
   load: (name: string, password?: string) => TauriResult<Profile>;
   save: (profile: Profile, password?: string) => TauriResult<void>;
   delete: (name: string) => TauriResult<void>;
   isEncrypted: (name: string) => TauriResult<boolean>;
+  validateInput: (profileId: string, input: RtmpInput) => TauriResult<void>;
 }
 
 /**
@@ -25,11 +27,19 @@ export interface ProfileAPI {
  */
 export interface StreamAPI {
   start: (group: OutputGroup, incomingUrl: string) => TauriResult<number>;
+  startAll: (groups: OutputGroup[], incomingUrl: string) => TauriResult<number[]>;
   stop: (groupId: string) => TauriResult<void>;
   stopAll: () => TauriResult<void>;
   getActiveCount: () => TauriResult<number>;
   isGroupStreaming: (groupId: string) => TauriResult<boolean>;
   getActiveGroupIds: () => TauriResult<string[]>;
+  toggleTarget: (
+    targetId: string,
+    enabled: boolean,
+    group: OutputGroup,
+    incomingUrl: string
+  ) => TauriResult<number>;
+  isTargetDisabled: (targetId: string) => TauriResult<boolean>;
 }
 
 /**
@@ -39,6 +49,13 @@ export interface StreamAPI {
 export interface SystemAPI {
   getEncoders: () => TauriResult<Encoders>;
   testFfmpeg: () => TauriResult<string>;
+  getFfmpegPath: () => TauriResult<string | null>;
+  checkFfmpegUpdate: (installedVersion?: string) => TauriResult<FFmpegVersionInfo>;
+  validateFfmpegPath: (path: string) => TauriResult<string>;
+  getRecentLogs: (maxLines?: number) => TauriResult<string[]>;
+  exportLogs: (path: string, content: string) => TauriResult<void>;
+  downloadFfmpeg: () => TauriResult<string>;
+  cancelFfmpegDownload: () => TauriResult<void>;
 }
 
 /**
@@ -53,6 +70,11 @@ export interface AppSettings {
   encryptStreamKeys: boolean;
   logRetentionDays: number;
   themeId: string;
+  backendRemoteEnabled: boolean;
+  backendUiEnabled: boolean;
+  backendHost: string;
+  backendPort: number;
+  backendToken: string;
   lastProfile: string | null;
 }
 

@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter};
+use crate::services::{emit_event, EventSink};
 use crate::models::{OutputGroup, StreamStats};
 use crate::services::PlatformRegistry;
 
@@ -323,10 +323,10 @@ impl FFmpegHandler {
         Ok(())
     }
 
-    fn start_group_process<R: tauri::Runtime>(
+    fn start_group_process(
         &self,
         group: &OutputGroup,
-        app_handle: &AppHandle<R>,
+        event_sink: Arc<dyn EventSink>,
     ) -> Result<u32, String> {
         let args = self.build_args(group);
         let sanitized = self.sanitize_ffmpeg_args(&args, group);
@@ -363,7 +363,7 @@ impl FFmpegHandler {
 
         self.relay_refcount.fetch_add(1, Ordering::SeqCst);
 
-        let app_handle_clone = app_handle.clone();
+        let event_sink_clone = Arc::clone(&event_sink);
         let processes_clone = Arc::clone(&self.processes);
         let meter_bytes = Self::start_bitrate_meter(&group_id, Arc::clone(&processes_clone));
         let relay_clone = Arc::clone(&self.relay);
@@ -376,7 +376,7 @@ impl FFmpegHandler {
                 stderr,
                 group_id_clone,
                 meter_bytes,
-                app_handle_clone,
+                event_sink_clone,
                 processes_clone,
                 stopping_clone,
                 relay_clone,
@@ -387,10 +387,10 @@ impl FFmpegHandler {
         Ok(pid)
     }
 
-    fn restart_relay_with_groups<R: tauri::Runtime>(
+    fn restart_relay_with_groups(
         &self,
         requested_group_id: &str,
-        app_handle: &AppHandle<R>,
+        event_sink: Arc<dyn EventSink>,
     ) -> Result<u32, String> {
         let incoming_url = self.resolve_active_incoming_url()?;
         let desired_group_ids = self.collect_active_group_ids()?;
@@ -405,7 +405,7 @@ impl FFmpegHandler {
             .map_err(|e| format!("Lock poisoned: {e}"))?;
         let mut requested_pid: Option<u32> = None;
         for (group_id, cfg) in active_groups.iter() {
-            let pid = self.start_group_process(&cfg.group, app_handle)?;
+            let pid = self.start_group_process(&cfg.group, Arc::clone(&event_sink))?;
             if group_id == requested_group_id {
                 requested_pid = Some(pid);
             }
@@ -417,11 +417,11 @@ impl FFmpegHandler {
     }
 
     /// Start streaming for an output group with stats monitoring
-    pub fn start<R: tauri::Runtime>(
+    pub fn start(
         &self,
         group: &OutputGroup,
         incoming_url: &str,
-        app_handle: &AppHandle<R>,
+        event_sink: Arc<dyn EventSink>,
     ) -> Result<u32, String> {
         self.record_active_group(group, incoming_url)?;
 
@@ -431,25 +431,25 @@ impl FFmpegHandler {
 
         let desired_group_ids = self.collect_active_group_ids()?;
         if self.relay_needs_restart(&desired_group_ids)? {
-            return self.restart_relay_with_groups(&group.id, app_handle);
+            return self.restart_relay_with_groups(&group.id, event_sink);
         }
 
         if !self.is_relay_active()? {
-            let pid = self.start_group_process(group, app_handle)?;
+            let pid = self.start_group_process(group, Arc::clone(&event_sink))?;
             self.ensure_relay_running(incoming_url, &desired_group_ids)?;
             return Ok(pid);
         }
 
         self.ensure_relay_running(incoming_url, &desired_group_ids)?;
-        self.start_group_process(group, app_handle)
+        self.start_group_process(group, event_sink)
     }
 
     /// Start streaming for multiple output groups in one batch
-    pub fn start_all<R: tauri::Runtime>(
+    pub fn start_all(
         &self,
         groups: &[OutputGroup],
         incoming_url: &str,
-        app_handle: &AppHandle<R>,
+        event_sink: Arc<dyn EventSink>,
     ) -> Result<Vec<u32>, String> {
         if self.active_count() > 0 {
             return Err("Streams already running".to_string());
@@ -476,7 +476,7 @@ impl FFmpegHandler {
 
         let mut pids = Vec::with_capacity(start_groups.len());
         for group in &start_groups {
-            let pid = self.start_group_process(group, app_handle)?;
+            let pid = self.start_group_process(group, Arc::clone(&event_sink))?;
             pids.push(pid);
         }
 
@@ -544,11 +544,11 @@ impl FFmpegHandler {
 
     /// Background thread that reads FFmpeg stderr and emits stats events
     #[allow(clippy::too_many_arguments)]
-    fn stats_reader<R: tauri::Runtime>(
+    fn stats_reader(
         stderr: std::process::ChildStderr,
         group_id: String,
         meter_bytes: Option<Arc<AtomicU64>>,
-        app_handle: AppHandle<R>,
+        event_sink: Arc<dyn EventSink>,
         processes: Arc<Mutex<HashMap<String, ProcessInfo>>>,
         stopping_groups: Arc<Mutex<HashSet<String>>>,
         relay: Arc<Mutex<Option<RelayProcess>>>,
@@ -655,7 +655,7 @@ impl FFmpegHandler {
                 }
 
                 // Emit event
-                let _ = app_handle.emit("stream_stats", stats.clone());
+                emit_event(event_sink.as_ref(), "stream_stats", &stats);
                 last_emit = Instant::now();
             }
 
@@ -678,7 +678,7 @@ impl FFmpegHandler {
                 stopping.remove(&group_id);
             }
             // Intentional stop via stop() - process already removed
-            let _ = app_handle.emit("stream_ended", &group_id);
+            emit_event(event_sink.as_ref(), "stream_ended", &group_id);
         } else {
             // Process ended unexpectedly (crash, connection loss, etc.)
             // Remove from HashMap and check exit status
@@ -701,7 +701,7 @@ impl FFmpegHandler {
 
             if let Ok(mut stopping) = stopping_groups.lock() {
                 if stopping.remove(&group_id) {
-                    let _ = app_handle.emit("stream_ended", &group_id);
+                    emit_event(event_sink.as_ref(), "stream_ended", &group_id);
                     return;
                 }
             }
@@ -733,13 +733,17 @@ impl FFmpegHandler {
                     }
                 }
                 // Emit stream_error event with group_id and error message
-                let _ = app_handle.emit("stream_error", serde_json::json!({
-                    "groupId": group_id,
-                    "error": error
-                }));
+                emit_event(
+                    event_sink.as_ref(),
+                    "stream_error",
+                    &serde_json::json!({
+                        "groupId": group_id,
+                        "error": error
+                    }),
+                );
             } else {
                 // Clean exit (input ended)
-                let _ = app_handle.emit("stream_ended", &group_id);
+                emit_event(event_sink.as_ref(), "stream_ended", &group_id);
             }
         }
 
@@ -969,12 +973,12 @@ impl FFmpegHandler {
 
     /// Restart a specific group (used after toggling targets)
     /// This stops the group and restarts it with the updated target list
-    pub fn restart_group<R: tauri::Runtime>(
+    pub fn restart_group(
         &self,
         group_id: &str,
         group: &OutputGroup,
         incoming_url: &str,
-        app_handle: &AppHandle<R>,
+        event_sink: Arc<dyn EventSink>,
     ) -> Result<u32, String> {
         // Stop the group if it's running
         if self.is_streaming(group_id) {
@@ -982,7 +986,7 @@ impl FFmpegHandler {
         }
 
         // Start with updated target list (disabled targets will be filtered out)
-        self.start(group, incoming_url, app_handle)
+        self.start(group, incoming_url, event_sink)
     }
 
     /// Resolve stream key - supports ${ENV_VAR} syntax

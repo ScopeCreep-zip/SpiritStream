@@ -7,6 +7,14 @@ fn default_log_retention_days() -> u32 {
     30
 }
 
+fn default_backend_host() -> String {
+    "127.0.0.1".to_string()
+}
+
+fn default_backend_port() -> u16 {
+    8008
+}
+
 /// Application settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -31,6 +39,18 @@ pub struct Settings {
     #[serde(default)]
     pub theme_id: String,
 
+    // Local host server (HTTP/WS)
+    #[serde(default)]
+    pub backend_remote_enabled: bool,
+    #[serde(default)]
+    pub backend_ui_enabled: bool,
+    #[serde(default = "default_backend_host")]
+    pub backend_host: String,
+    #[serde(default = "default_backend_port")]
+    pub backend_port: u16,
+    #[serde(default)]
+    pub backend_token: String,
+
     // Last used profile
     pub last_profile: Option<String>,
 }
@@ -46,6 +66,11 @@ impl Default for Settings {
             encrypt_stream_keys: false,
             log_retention_days: default_log_retention_days(),
             theme_id: "spirit-dark".to_string(),
+            backend_remote_enabled: false,
+            backend_ui_enabled: false,
+            backend_host: default_backend_host(),
+            backend_port: default_backend_port(),
+            backend_token: String::new(),
             last_profile: None,
         }
     }

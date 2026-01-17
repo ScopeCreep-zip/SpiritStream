@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Toggle } from '@/components/ui/Toggle';
 import { useProfileStore } from '@/stores/profileStore';
-import { api } from '@/lib/tauri';
+import { api } from '@/lib/backend';
 import type { Profile, RtmpInput } from '@/types/profile';
 import { createDefaultProfile } from '@/types/profile';
 

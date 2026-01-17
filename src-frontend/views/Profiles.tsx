@@ -8,7 +8,7 @@ import { Card, CardBody } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
 import { ProfileModal, PasswordModal } from '@/components/modals';
 import { useProfileStore } from '@/stores/profileStore';
-import { api } from '@/lib/tauri';
+import { api } from '@/lib/backend';
 import { cn } from '@/lib/cn';
 
 export function Profiles() {

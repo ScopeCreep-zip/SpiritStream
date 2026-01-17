@@ -12,9 +12,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Logo } from '@/components/layout/Logo';
 import { FFmpegDownloadProgress } from '@/components/settings/FFmpegDownloadProgress';
 import { KeyRotationSection } from '@/components/settings/KeyRotationSection';
-import { api } from '@/lib/tauri';
-import { open as openDialog } from '@tauri-apps/plugin-dialog';
-import { open as openPath } from '@tauri-apps/plugin-shell';
+import { api, dialogs } from '@/lib/backend';
 import { useLanguageStore, type Language } from '@/stores/languageStore';
 import { useThemeStore } from '@/stores/themeStore';
 import type { AppSettings } from '@/types/api';
@@ -32,6 +30,12 @@ interface SettingsState {
   profileStoragePath: string;
   encryptStreamKeys: boolean;
   logRetentionDays: number;
+  // Remote access
+  backendRemoteEnabled: boolean;
+  backendUiEnabled: boolean;
+  backendHost: string;
+  backendPort: number;
+  backendToken: string;
   // UI state
   loading: boolean;
   saving: boolean;
@@ -47,6 +51,11 @@ const defaultSettings: SettingsState = {
   profileStoragePath: '',
   encryptStreamKeys: false,
   logRetentionDays: 30,
+  backendRemoteEnabled: false,
+  backendUiEnabled: false,
+  backendHost: '127.0.0.1',
+  backendPort: 8008,
+  backendToken: '',
   loading: true,
   saving: false,
 };
@@ -100,6 +109,11 @@ export function Settings() {
           autoDownloadFfmpeg: backendSettings.autoDownloadFfmpeg,
           encryptStreamKeys: backendSettings.encryptStreamKeys,
           logRetentionDays: backendSettings.logRetentionDays,
+          backendRemoteEnabled: backendSettings.backendRemoteEnabled,
+          backendUiEnabled: backendSettings.backendUiEnabled,
+          backendHost: backendSettings.backendHost,
+          backendPort: backendSettings.backendPort,
+          backendToken: backendSettings.backendToken,
           ffmpegVersion,
           profileStoragePath: profilesPath,
           loading: false,
@@ -138,6 +152,11 @@ export function Settings() {
           encryptStreamKeys: updatedSettings.encryptStreamKeys,
           logRetentionDays: updatedSettings.logRetentionDays,
           themeId: useThemeStore.getState().currentThemeId,
+          backendRemoteEnabled: updatedSettings.backendRemoteEnabled,
+          backendUiEnabled: updatedSettings.backendUiEnabled,
+          backendHost: updatedSettings.backendHost,
+          backendPort: updatedSettings.backendPort,
+          backendToken: updatedSettings.backendToken,
           lastProfile: null, // Preserve existing or let backend handle
         };
 
@@ -161,11 +180,19 @@ export function Settings() {
 
   const handleBrowseFfmpeg = async () => {
     try {
-      const selected = await openDialog({
+      const selected = await dialogs.openFilePath({
         multiple: false,
         filters: [{ name: 'FFmpeg', extensions: ['*'] }],
       });
-      if (selected && typeof selected === 'string') {
+      if (!selected) {
+        alert(
+          t('settings.filePickerUnavailable', {
+            defaultValue: 'File picker is not available in this environment.',
+          })
+        );
+        return;
+      }
+      if (typeof selected === 'string') {
         // Validate the selected path before saving
         try {
           const version = await api.system.validateFfmpegPath(selected);
@@ -184,7 +211,7 @@ export function Settings() {
 
   const handleOpenProfileStorage = async () => {
     try {
-      await openPath(settings.profileStoragePath);
+      await dialogs.openExternal(settings.profileStoragePath);
     } catch (error) {
       console.error('Failed to open profile storage:', error);
     }
@@ -192,15 +219,20 @@ export function Settings() {
 
   const handleExportData = async () => {
     try {
-      const selected = await openDialog({
-        directory: true,
+      const selected = await dialogs.openDirectoryPath({
         multiple: false,
         title: t('settings.selectExportLocation'),
       });
-      if (selected && typeof selected === 'string') {
-        await api.settings.exportData(selected);
-        alert(t('toast.dataExported'));
+      if (!selected) {
+        alert(
+          t('settings.exportUnavailable', {
+            defaultValue: 'Export location selection is not available in this environment.',
+          })
+        );
+        return;
       }
+      await api.settings.exportData(selected);
+      alert(t('toast.dataExported'));
     } catch (error) {
       console.error('Failed to export data:', error);
       alert(`${t('settings.exportFailed')}: ${error}`);
@@ -211,15 +243,22 @@ export function Settings() {
     setThemeInstallError(null);
     setThemeInstalling(true);
     try {
-      const selected = await openDialog({
+      const selected = await dialogs.openFilePath({
         multiple: false,
         filters: [{ name: 'Theme', extensions: ['json', 'jsonc'] }],
         title: t('settings.installTheme', { defaultValue: 'Install Theme' }),
       });
-      if (selected && typeof selected === 'string') {
-        await api.theme.install(selected);
-        await refreshThemes();
+      if (!selected) {
+        setThemeInstalling(false);
+        alert(
+          t('settings.filePickerUnavailable', {
+            defaultValue: 'File picker is not available in this environment.',
+          })
+        );
+        return;
       }
+      await api.theme.install(selected);
+      await refreshThemes();
     } catch (error) {
       console.error('Failed to install theme:', error);
       setThemeInstallError(String(error));
@@ -540,6 +579,97 @@ export function Settings() {
         </CardBody>
       </Card>
 
+      {/* Remote Access */}
+      <Card>
+        <CardHeader>
+          <div>
+            <CardTitle>{t('settings.remoteAccess', { defaultValue: 'Remote access' })}</CardTitle>
+            <CardDescription>
+              {t('settings.remoteAccessDescription', {
+                defaultValue:
+                  'Enable the built-in HTTP API so you can manage SpiritStream from another device.',
+              })}
+            </CardDescription>
+          </div>
+        </CardHeader>
+        <CardBody
+          style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}
+        >
+          <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
+            <div>
+              <div className="text-sm font-medium text-[var(--text-primary)]">
+                {t('settings.remoteAccessToggle', {
+                  defaultValue: 'Allow remote web access',
+                })}
+              </div>
+              <div className="text-xs text-[var(--text-tertiary)]">
+                {t('settings.remoteAccessToggleDescription', {
+                  defaultValue:
+                    'When off, the API binds to localhost only. Restart required after changes.',
+                })}
+              </div>
+            </div>
+            <Toggle
+              checked={settings.backendRemoteEnabled}
+              onChange={(checked: boolean) => updateSetting('backendRemoteEnabled', checked)}
+            />
+          </div>
+          <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
+            <div>
+              <div className="text-sm font-medium text-[var(--text-primary)]">
+                {t('settings.remoteAccessUiToggle', {
+                  defaultValue: 'Serve web GUI from the host',
+                })}
+              </div>
+              <div className="text-xs text-[var(--text-tertiary)]">
+                {t('settings.remoteAccessUiToggleDescription', {
+                  defaultValue:
+                    'When off, the host will not serve the UI files. Restart required after changes.',
+                })}
+              </div>
+            </div>
+            <Toggle
+              checked={settings.backendUiEnabled}
+              onChange={(checked: boolean) => updateSetting('backendUiEnabled', checked)}
+            />
+          </div>
+          <Input
+            label={t('settings.remoteAccessHost', { defaultValue: 'Bind host' })}
+            value={settings.backendHost}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+              updateSetting('backendHost', e.target.value)
+            }
+            helper={t('settings.remoteAccessHostHelper', {
+              defaultValue: 'Use 0.0.0.0 to listen on all interfaces.',
+            })}
+          />
+          <Input
+            label={t('settings.remoteAccessPort', { defaultValue: 'Port' })}
+            type="number"
+            value={settings.backendPort}
+            min={1}
+            max={65535}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+              const value = Number(e.target.value);
+              if (Number.isNaN(value)) return;
+              updateSetting('backendPort', value);
+            }}
+          />
+          <Input
+            label={t('settings.remoteAccessToken', { defaultValue: 'Access token (optional)' })}
+            type="password"
+            value={settings.backendToken}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+              updateSetting('backendToken', e.target.value)
+            }
+            helper={t('settings.remoteAccessTokenHelper', {
+              defaultValue:
+                'Clients must send this token as a Bearer auth header when enabled.',
+            })}
+          />
+        </CardBody>
+      </Card>
+
       {/* About */}
       <Card>
         <CardHeader>
@@ -563,7 +693,7 @@ export function Settings() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => openPath('https://github.com/ScopeCreep-zip/SpiritStream')}
+                onClick={() => dialogs.openExternal('https://github.com/ScopeCreep-zip/SpiritStream')}
               >
                 <Github className="w-4 h-4" />
                 {t('settings.github')}
@@ -571,7 +701,9 @@ export function Settings() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => openPath('https://deepwiki.com/ScopeCreep-zip/SpiritStream')}
+                onClick={() =>
+                  dialogs.openExternal('https://deepwiki.com/ScopeCreep-zip/SpiritStream')
+                }
               >
                 <BookOpen className="w-4 h-4" />
                 {t('settings.docs')}

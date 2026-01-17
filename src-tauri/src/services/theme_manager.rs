@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use notify::{RecursiveMode, Watcher};
 use regex::Regex;
-use tauri::{AppHandle, Emitter, Manager};
+use crate::services::{emit_event, EventSink};
 
 use crate::models::{ThemeFile, ThemeSummary, ThemeMode};
 
@@ -23,7 +23,7 @@ static THEME_ID_REGEX: OnceLock<Regex> = OnceLock::new();
 #[derive(Clone)]
 pub struct ThemeManager {
     themes_dir: PathBuf,
-    project_themes_dir_cache: Arc<OnceLock<PathBuf>>,
+    project_themes_dir: PathBuf,
 }
 
 impl ThemeManager {
@@ -31,11 +31,14 @@ impl ThemeManager {
     ///
     /// In production: Uses Tauri's resource_dir to access bundled themes
     /// In development: Falls back to ../themes relative path
-    pub fn sync_project_themes(&self, app_handle: Option<&AppHandle>) {
-        let project_themes_dir = self.project_themes_dir(app_handle);
-        log::info!("Syncing themes from {:?} to {:?}", project_themes_dir, self.themes_dir);
+    pub fn sync_project_themes(&self) {
+        log::info!(
+            "Syncing themes from {:?} to {:?}",
+            self.project_themes_dir,
+            self.themes_dir
+        );
 
-        match fs::read_dir(&project_themes_dir) {
+        match fs::read_dir(&self.project_themes_dir) {
             Ok(entries) => {
                 let mut copied = 0;
                 for entry in entries.flatten() {
@@ -58,18 +61,29 @@ impl ThemeManager {
                 log::info!("Theme sync complete: {copied} theme(s) copied");
             }
             Err(e) => {
-                log::error!("Failed to read project themes directory {:?}: {e}", project_themes_dir);
+                log::error!(
+                    "Failed to read project themes directory {:?}: {e}",
+                    self.project_themes_dir
+                );
             }
         }
     }
-    pub fn new(app_data_dir: PathBuf) -> Self {
+    pub fn new(app_data_dir: PathBuf, project_themes_dir: PathBuf) -> Self {
         let themes_dir = app_data_dir.join("themes");
         if let Err(e) = fs::create_dir_all(&themes_dir) {
             log::warn!("Failed to create themes directory: {e}");
         }
+        let absolute_project_themes = if project_themes_dir.is_absolute() {
+            project_themes_dir
+        } else {
+            std::env::current_dir()
+                .ok()
+                .map(|dir| dir.join(&project_themes_dir))
+                .unwrap_or(project_themes_dir)
+        };
         Self {
             themes_dir,
-            project_themes_dir_cache: Arc::new(OnceLock::new()),
+            project_themes_dir: absolute_project_themes,
         }
     }
 
@@ -79,8 +93,7 @@ impl ThemeManager {
         let mut themes = Vec::new();
         let mut seen_ids = HashSet::new();
 
-        let project_themes_dir = self.project_themes_dir(None);
-        self.append_themes_from_dir(&project_themes_dir, "builtin", &mut themes, &mut seen_ids);
+        self.append_themes_from_dir(&self.project_themes_dir, "builtin", &mut themes, &mut seen_ids);
 
         if themes.is_empty() {
             for (id, name, mode) in [
@@ -130,9 +143,10 @@ impl ThemeManager {
         })
     }
 
-    pub fn start_watcher(&self, app_handle: AppHandle) {
+    pub fn start_watcher(&self, event_sink: Arc<dyn EventSink>) {
         let manager = self.clone();
         let themes_dir = self.themes_dir.clone();
+        let event_sink = Arc::clone(&event_sink);
         thread::spawn(move || {
             let (tx, rx) = std::sync::mpsc::channel();
             let mut watcher = match notify::recommended_watcher(tx) {
@@ -162,48 +176,9 @@ impl ThemeManager {
                 last_update = now;
 
                 let themes = manager.list_themes();
-                let _ = app_handle.emit("themes_updated", themes);
+                emit_event(event_sink.as_ref(), "themes_updated", &themes);
             }
         });
-    }
-
-    fn project_themes_dir(&self, app_handle: Option<&AppHandle>) -> PathBuf {
-        if let Some(dir) = self.project_themes_dir_cache.get() {
-            return dir.clone();
-        }
-
-        let should_cache = app_handle.is_some();
-        let project_themes_dir = if let Some(handle) = app_handle {
-            if let Ok(resource_dir) = handle.path().resource_dir() {
-                let bundled_themes = resource_dir.join("themes");
-                if bundled_themes.exists() {
-                    log::info!("Using bundled themes from: {:?}", bundled_themes);
-                    bundled_themes
-                } else {
-                    log::info!("Bundled themes not found, using dev path");
-                    PathBuf::from("../themes")
-                }
-            } else {
-                PathBuf::from("../themes")
-            }
-        } else {
-            PathBuf::from("../themes")
-        };
-
-        let absolute_project_themes = if project_themes_dir.is_absolute() {
-            project_themes_dir
-        } else {
-            std::env::current_dir()
-                .ok()
-                .map(|d| d.join(&project_themes_dir))
-                .unwrap_or(project_themes_dir)
-        };
-
-        if should_cache {
-            let _ = self.project_themes_dir_cache.set(absolute_project_themes.clone());
-        }
-
-        absolute_project_themes
     }
 
     fn append_themes_from_dir(
@@ -274,8 +249,7 @@ impl ThemeManager {
             return Ok(theme);
         }
 
-        let project_themes_dir = self.project_themes_dir(None);
-        if let Some(theme) = self.find_theme_in_dir(theme_id, &project_themes_dir) {
+        if let Some(theme) = self.find_theme_in_dir(theme_id, &self.project_themes_dir) {
             return Ok(theme);
         }
 

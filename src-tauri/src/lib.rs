@@ -1,15 +1,17 @@
 // SpiritStream - Tauri Backend
 // Multi-Destination Streaming Application
 
-mod commands;
-mod models;
-mod services;
+pub mod commands;
+mod launcher;
+pub mod models;
+pub mod services;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{image::Image, Manager, RunEvent};
 use tauri_plugin_log::{Target, TargetKind};
 use tokio::sync::Mutex;
-use services::{ProfileManager, FFmpegHandler, FFmpegDownloader, SettingsManager, ThemeManager};
+use services::{ProfileManager, FFmpegHandler, FFmpegDownloader, SettingsManager, ThemeManager, TauriEventSink};
 use commands::FFmpegDownloaderState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -54,8 +56,10 @@ pub fn run() {
                 .and_then(|s| if s.ffmpeg_path.is_empty() { None } else { Some(s.ffmpeg_path.clone()) });
 
             if let Some(settings) = settings.as_ref() {
-                if let Err(error) = services::prune_logs(app.handle(), settings.log_retention_days) {
-                    log::warn!("Failed to prune logs: {error}");
+                if let Ok(log_dir) = app.handle().path().app_log_dir() {
+                    if let Err(error) = services::prune_logs(&log_dir, settings.log_retention_days) {
+                        log::warn!("Failed to prune logs: {error}");
+                    }
                 }
             }
 
@@ -65,11 +69,21 @@ pub fn run() {
 
             app.manage(settings_manager);
 
-            let theme_manager = ThemeManager::new(app_data_dir.clone());
+            let project_themes_dir = app
+                .path()
+                .resource_dir()
+                .ok()
+                .map(|dir| dir.join("themes"))
+                .filter(|dir| dir.exists())
+                .unwrap_or_else(|| PathBuf::from("../themes"));
+            let theme_manager = ThemeManager::new(app_data_dir.clone(), project_themes_dir);
             // Sync project themes once on startup
-            theme_manager.sync_project_themes(Some(app.handle()));
-            theme_manager.start_watcher(app.handle().clone());
+            theme_manager.sync_project_themes();
+            let theme_event_sink = Arc::new(TauriEventSink::new(app.handle().clone()));
+            theme_manager.start_watcher(theme_event_sink);
             app.manage(theme_manager);
+
+            launcher::launch(&app.handle());
 
             // Register FFmpegDownloader as managed state
             let ffmpeg_downloader = FFmpegDownloaderState(Arc::new(Mutex::new(FFmpegDownloader::new())));

@@ -7,7 +7,7 @@ import { OutputGroupCard } from '@/components/stream/OutputGroupCard';
 import { OutputGroupModal, TargetModal } from '@/components/modals';
 import { useProfileStore } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
-import { api } from '@/lib/tauri';
+import { api } from '@/lib/backend';
 import type { OutputGroup } from '@/types/profile';
 import type { Encoders } from '@/types/stream';
 

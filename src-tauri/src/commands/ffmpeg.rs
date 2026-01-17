@@ -2,10 +2,10 @@
 // Handles FFmpeg auto-download functionality
 
 use std::sync::Arc;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use tokio::sync::Mutex;
 
-use crate::services::{FFmpegDownloader, FFmpegVersionInfo};
+use crate::services::{FFmpegDownloader, FFmpegVersionInfo, SettingsManager, TauriEventSink};
 
 /// State wrapper for the FFmpeg downloader
 pub struct FFmpegDownloaderState(pub Arc<Mutex<FFmpegDownloader>>);
@@ -20,7 +20,8 @@ pub async fn download_ffmpeg(
 
     let downloader = state.0.lock().await;
 
-    match downloader.download(&app).await {
+    let event_sink = TauriEventSink::new(app.clone());
+    match downloader.download(&event_sink).await {
         Ok(path) => {
             log::info!("FFmpeg downloaded to: {path:?}");
             Ok(path.to_string_lossy().to_string())
@@ -48,7 +49,8 @@ pub async fn cancel_ffmpeg_download(
 /// Get the path to the bundled/downloaded FFmpeg binary
 #[tauri::command]
 pub fn get_bundled_ffmpeg_path(app: AppHandle) -> Result<Option<String>, String> {
-    match FFmpegDownloader::get_ffmpeg_path(&app) {
+    let settings_manager = app.try_state::<SettingsManager>();
+    match FFmpegDownloader::get_ffmpeg_path(settings_manager.as_deref()) {
         Some(path) => Ok(Some(path.to_string_lossy().to_string())),
         None => Ok(None),
     }

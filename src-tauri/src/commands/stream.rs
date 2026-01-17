@@ -1,9 +1,10 @@
 // Stream Commands
 // Handles FFmpeg streaming operations
 
+use std::sync::Arc;
 use tauri::{AppHandle, State};
 use crate::models::OutputGroup;
-use crate::services::FFmpegHandler;
+use crate::services::{FFmpegHandler, TauriEventSink};
 
 /// Start streaming for an output group with real-time stats
 #[tauri::command]
@@ -27,7 +28,8 @@ pub fn start_stream(
         return Err("Audio codec is required".to_string());
     }
 
-    ffmpeg_handler.start(&group, &incoming_url, &app)
+    let event_sink = Arc::new(TauriEventSink::new(app.clone()));
+    ffmpeg_handler.start(&group, &incoming_url, event_sink)
 }
 
 /// Start streaming for multiple output groups in one batch
@@ -55,7 +57,8 @@ pub fn start_all_streams(
         }
     }
 
-    ffmpeg_handler.start_all(&groups, &incoming_url, &app)
+    let event_sink = Arc::new(TauriEventSink::new(app.clone()));
+    ffmpeg_handler.start_all(&groups, &incoming_url, event_sink)
 }
 
 /// Stop streaming for an output group
@@ -119,7 +122,8 @@ pub fn toggle_stream_target(
     }
 
     // Restart the group with the updated target list
-    ffmpeg_handler.restart_group(&group.id, &group, &incoming_url, &app)
+    let event_sink = Arc::new(TauriEventSink::new(app.clone()));
+    ffmpeg_handler.restart_group(&group.id, &group, &incoming_url, event_sink)
 }
 
 /// Check if a specific stream target is currently disabled

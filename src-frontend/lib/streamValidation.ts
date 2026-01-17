@@ -1,4 +1,4 @@
-import { api } from '@/lib/tauri';
+import { api } from '@/lib/backend';
 import i18n from '@/lib/i18n';
 import type { Profile } from '@/types/profile';
 

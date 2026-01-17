@@ -43,6 +43,8 @@ export const api = {
       invoke<FFmpegVersionInfo>('check_ffmpeg_update', { installedVersion }),
     /** Validate a custom FFmpeg path before saving */
     validateFfmpegPath: (path: string) => invoke<string>('validate_ffmpeg_path', { path }),
+    downloadFfmpeg: () => invoke<string>('download_ffmpeg'),
+    cancelFfmpegDownload: () => invoke<void>('cancel_ffmpeg_download'),
     getRecentLogs: (maxLines?: number) =>
       invoke<string[]>('get_recent_logs', { maxLines }),
     exportLogs: (path: string, content: string) =>
