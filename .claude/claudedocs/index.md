@@ -8,9 +8,17 @@ Welcome to the SpiritStream documentation. This index provides quick access to a
 
 ## Current Status
 
-**Branch**: `cleanup-release-cand`
+**Branch**: `web-app-split`
 **Migration**: ✅ **COMPLETE** (Electron fully removed)
+**Current Work**: 🔄 **Host Process + Web Client Architecture**
 **Production Status**: Tauri 2.x production-ready
+
+## Active Development
+
+| Document | Description |
+|----------|-------------|
+| [web-app-split-master-plan.md](./web-app-split-master-plan.md) | 📋 **PRIMARY COORDINATION DOC** - Host/client split architecture |
+| [Distribution Strategy](../../docs/07-deployment/03-distribution-strategy.md) | Desktop, Docker, Cloud distribution model |
 
 ## New Architecture (Target)
 
@@ -74,7 +82,14 @@ Welcome to the SpiritStream documentation. This index provides quick access to a
 | FFmpeg Auto-Download | ✅ Complete (with version checking) |
 | i18n Support | ✅ Complete (en, de, es, fr, ja) |
 | Theme System | ✅ Complete (CSS validation, 3 example themes, light/dark) |
-| Theme System | ✅ Complete (CSS validation, 3 example themes, light/dark) |
+| **HTTP Server** | ✅ Complete (Axum-based, all commands mapped) |
+| **WebSocket Events** | ✅ Complete (real-time streaming stats) |
+| **Token Auth** | ✅ Complete (Bearer header + WS query param) |
+| **Remote Access Settings** | ✅ Complete (host, port, token config in UI) |
+| **Backend Abstraction** | ✅ Complete (Tauri/HTTP auto-detection) |
+| **Launcher** | ✅ Complete (spawns host server, health check) |
+| Docker Distribution | ✅ Complete (Dockerfile, compose, docs) |
+| Cloud Distribution | 📋 Planned |
 
 ## Custom Commands
 
@@ -101,19 +116,26 @@ Coding standards in `.claude/rules/`:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                     Frontend (React + Tailwind)                      │
-│                        src-frontend/                                 │
-│  Components │ Hooks │ Stores │ Styles (Design Tokens)               │
+│                     CLIENT LAYER                                     │
+│  ┌─────────────────────┐    ┌─────────────────────┐                 │
+│  │  Tauri Desktop      │    │  Web Browser        │                 │
+│  │  (Embedded Webview) │    │  (Remote Access)    │                 │
+│  └──────────┬──────────┘    └──────────┬──────────┘                 │
+│             │       HTTP/WS API        │                            │
+│             └───────────┬──────────────┘                            │
+├─────────────────────────┼───────────────────────────────────────────┤
+│                         ▼                                           │
+│                  HOST SERVER (Rust + Axum)                          │
+│       POST /api/invoke/* │ WS /ws │ Static UI (optional)           │
 ├─────────────────────────────────────────────────────────────────────┤
-│                     Tauri IPC Bridge                                 │
-│                   @tauri-apps/api                                    │
+│                     SERVICE LAYER                                    │
+│  ProfileManager │ FFmpegHandler │ SettingsManager │ ThemeManager    │
 ├─────────────────────────────────────────────────────────────────────┤
-│                     Tauri Commands (Rust)                            │
-│                      src-tauri/src/                                  │
-│  commands/ │ services/ │ models/ │ utils/                           │
+│                     FFMPEG LAYER                                     │
+│           RTMP Relay │ Encoding Processes │ Stream Stats            │
 ├─────────────────────────────────────────────────────────────────────┤
-│                     System Integration                               │
-│              FFmpeg │ File System │ Encryption                       │
+│                     STORAGE LAYER                                    │
+│              Profiles │ Settings │ Logs │ Themes                    │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -128,6 +150,20 @@ Coding standards in `.claude/rules/`:
 | Text | `#1F1A29` | `#F4F2F7` |
 
 ## Recent Changes
+
+### 2026-01-17
+1. ✅ **Docker Distribution** - Complete Dockerfile, docker-compose, and documentation in `docker/`
+2. ✅ **Sidecar Configuration** - Fixed Tauri sidecar config with `build-server.ts` script
+3. ✅ **Desktop Dev Flow** - Verified end-to-end `npm run dev` works correctly
+
+### 2026-01-16
+1. ✅ **HTTP Server Implementation** - Complete Axum-based server with all 30+ commands mapped
+2. ✅ **Remote Access Settings** - New UI for configuring host, port, and token
+3. ✅ **Backend Abstraction Layer** - Frontend works in Tauri or HTTP mode transparently
+4. ✅ **WebSocket Event Broadcasting** - Real-time events to all connected clients
+5. ✅ **Launcher Implementation** - Tauri spawns host server as sidecar with health checks
+6. ✅ **Token Authentication** - Bearer header + WebSocket query param support
+7. 📋 **Master Implementation Plan** - Comprehensive documentation for multi-developer coordination
 
 ### 2026-01-06
 1. ✅ **Theme Production Build Support** - Fixed theme loading for production builds using Tauri resource API
@@ -174,35 +210,73 @@ magillastream/
 spiritstream/
 ├── src-frontend/           # React frontend
 │   ├── components/         # UI components
-│   ├── hooks/             # Custom React hooks
-│   ├── stores/            # Zustand state management
-│   ├── lib/               # Utilities and Tauri API
-│   ├── types/             # TypeScript definitions
-│   ├── styles/            # Tailwind CSS
-│   ├── locales/           # i18n translations (5 languages)
-│   └── views/             # Page views
-├── src-tauri/             # Rust backend
+│   ├── hooks/              # Custom React hooks
+│   ├── stores/             # Zustand state management
+│   ├── lib/                # Utilities
+│   │   └── backend/        # ⭐ NEW: Backend abstraction layer
+│   │       ├── env.ts      # Mode detection (Tauri/HTTP)
+│   │       ├── api.ts      # Tauri native commands
+│   │       ├── httpApi.ts  # HTTP API wrapper
+│   │       └── httpEvents.ts # WebSocket handler
+│   ├── types/              # TypeScript definitions
+│   ├── styles/             # Tailwind CSS
+│   ├── locales/            # i18n translations (5 languages)
+│   └── views/              # Page views
+├── src-tauri/              # Rust backend
 │   ├── src/
-│   │   ├── commands/      # Tauri IPC commands
-│   │   ├── services/      # Business logic
-│   │   └── models/        # Domain models
+│   │   ├── bin/
+│   │   │   └── server.rs   # ⭐ NEW: HTTP server (570 lines)
+│   │   ├── launcher.rs     # ⭐ NEW: Host process launcher
+│   │   ├── commands/       # Tauri IPC commands
+│   │   ├── services/       # Business logic
+│   │   └── models/         # Domain models
 │   └── Cargo.toml
-├── .claude/               # Claude Code config
-├── setup.sh               # Unix setup script
-└── setup.ps1              # Windows setup script
+├── docs/                   # Documentation
+│   └── 07-deployment/
+│       └── 03-distribution-strategy.md  # ⭐ Distribution plan
+├── .claude/                # Claude Code config
+│   └── claudedocs/
+│       └── web-app-split-master-plan.md # ⭐ Implementation plan
+├── .env.example            # Environment variables reference
+├── setup.sh                # Unix setup script
+└── setup.ps1               # Windows setup script
 ```
 
 ## Common Tasks
 
-### Development
+### Development Modes
 
 ```bash
-npm run dev          # Start development server
-npm run build        # Production build
-npm run typecheck    # Check TypeScript
-npm run check        # Check Rust
-npm run lint         # Run ESLint
-npm run format       # Format with Prettier
+# Desktop development (Tauri + embedded server)
+npm run dev
+
+# Standalone backend server only (no Tauri UI)
+npm run backend:dev
+
+# Frontend with separate backend (HTTP mode)
+VITE_BACKEND_MODE=http npm run vite:dev
+
+# Production build
+npm run build
+
+# Type checking
+npm run typecheck    # TypeScript
+npm run check        # Rust
+```
+
+### Environment Variables
+
+```bash
+# Frontend (Vite)
+VITE_BACKEND_MODE=http              # Force HTTP mode
+VITE_BACKEND_URL=http://host:8008   # Backend URL
+VITE_BACKEND_TOKEN=secret           # Auth token
+
+# Backend Server
+SPIRITSTREAM_HOST=127.0.0.1         # Bind address (default)
+SPIRITSTREAM_PORT=8008              # Port (default)
+SPIRITSTREAM_API_TOKEN=secret       # Auth token (optional)
+SPIRITSTREAM_UI_ENABLED=1           # Serve static UI
 ```
 
 ### Adding Features
@@ -214,6 +288,19 @@ npm run format       # Format with Prettier
 
 ### Understanding Architecture
 
-1. **Passthrough Mode**: Read [passthrough-architecture.md](./passthrough-architecture.md)
-2. **Output Groups**: See [scratch/immutable-default-group.md](./scratch/immutable-default-group.md)
-3. **Design System**: Reference [design-system.md](./design-system.md)
+1. **Host/Client Split**: Read [web-app-split-master-plan.md](./web-app-split-master-plan.md)
+2. **Passthrough Mode**: Read [passthrough-architecture.md](./passthrough-architecture.md)
+3. **Output Groups**: See [scratch/immutable-default-group.md](./scratch/immutable-default-group.md)
+4. **Design System**: Reference [design-system.md](./design-system.md)
+
+## Workstreams (Multi-Developer)
+
+| Workstream | Focus | Key Files |
+|------------|-------|-----------|
+| **A: Desktop** | Tauri launcher, packaging | `launcher.rs`, `tauri.conf.json` |
+| **B: Server + API** | HTTP server, stability | `bin/server.rs`, commands |
+| **C: Docker** | Containerization | Dockerfile, compose |
+| **D: Frontend** | Remote access UX | `lib/backend/`, views |
+| **E: Auth** | Full auth system | External developer |
+
+See [web-app-split-master-plan.md](./web-app-split-master-plan.md) for detailed task breakdown.

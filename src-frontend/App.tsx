@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 
 import { AppShell } from '@/components/layout/AppShell';
-import { Sidebar, SidebarHeader, SidebarNav } from '@/components/layout/Sidebar';
+import { Sidebar, SidebarHeader, SidebarNav, SidebarFooter } from '@/components/layout/Sidebar';
 import { Logo } from '@/components/layout/Logo';
 import { MainContent, ContentArea } from '@/components/layout/MainContent';
 import { Header } from '@/components/layout/Header';
@@ -22,6 +22,7 @@ import { NavSection } from '@/components/navigation/NavSection';
 import { NavItem } from '@/components/navigation/NavItem';
 import { Button } from '@/components/ui/Button';
 import { ToastContainer } from '@/components/ui/Toast';
+import { ConnectionStatus } from '@/components/ui/ConnectionStatus';
 import { ProfileModal, TargetModal, OutputGroupModal } from '@/components/modals';
 import { PasswordModal } from '@/components/modals/PasswordModal';
 import { useProfileStore } from '@/stores/profileStore';
@@ -29,6 +30,8 @@ import { useStreamStore } from '@/stores/streamStore';
 import { useInitialize } from '@/hooks/useInitialize';
 import { useStreamStats } from '@/hooks/useStreamStats';
 import { useLogListener } from '@/hooks/useLogListener';
+import { useConnectionStatus } from '@/hooks/useConnectionStatus';
+import { useBackendConnection } from '@/hooks/useBackendConnection';
 import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValidation';
 import { toast } from '@/hooks/useToast';
 import { useThemeStore } from '@/stores/themeStore';
@@ -60,6 +63,9 @@ export type View =
 function App() {
   const { t } = useTranslation();
 
+  // Initialize backend connection (HTTP mode only)
+  useBackendConnection();
+
   // Initialize app - load profiles from backend
   useInitialize();
 
@@ -68,6 +74,9 @@ function App() {
 
   // Capture logs throughout the app lifecycle
   useLogListener();
+
+  // Listen for backend connection status changes (HTTP mode only)
+  useConnectionStatus();
 
   // Initialize theme store on app startup
   useThemeStore((state) => state.currentThemeId);
@@ -279,6 +288,9 @@ function App() {
             />
           </NavSection>
         </SidebarNav>
+        <SidebarFooter>
+          <ConnectionStatus />
+        </SidebarFooter>
       </Sidebar>
 
       <MainContent>

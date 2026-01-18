@@ -11,3 +11,6 @@ testing/
 screenshots/
 frontend/node_modules/
 frontend/.vscode/
+
+# Tauri sidecar binaries (built by scripts/build-server.ts)
+src-tauri/binaries/

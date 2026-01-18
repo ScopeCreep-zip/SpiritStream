@@ -21,6 +21,11 @@ type InvokeArgs = Record<string, unknown> | undefined;
 async function invokeHttp<T>(command: string, args?: InvokeArgs): Promise<T> {
   const baseUrl = getBackendBaseUrl();
   const token = getBackendToken();
+  const url = `${baseUrl}/api/invoke/${command}`;
+
+  // Debug logging for connection issues
+  console.debug(`[httpApi] ${command} -> ${url}`);
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
@@ -28,7 +33,7 @@ async function invokeHttp<T>(command: string, args?: InvokeArgs): Promise<T> {
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${baseUrl}/api/invoke/${command}`, {
+  const response = await fetch(url, {
     method: 'POST',
     headers,
     body: JSON.stringify(args ?? {}),

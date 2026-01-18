@@ -198,13 +198,24 @@ Workstream D: Cloud Roadmap
 
 ---
 
+## Decisions Made
+
+These questions have been resolved:
+
+| Question | Decision | Rationale |
+|----------|----------|-----------|
+| Remote access default binding | `localhost:8008` (opt-in for 0.0.0.0) | Security-first, user must explicitly enable remote access |
+| Default bind address | User-configurable, default `127.0.0.1` | Allow users to set binding in settings |
+| UI in desktop mode | Tauri webview (embedded) | Best performance, native feel |
+| Host server disable-able? | No, always runs | Simplifies architecture, enables remote access |
+| Token sharing flow | Simple: copy token from settings | Full pairing flow handled by external auth work |
+| Host status in UI | Connection indicator planned | Shows connected/disconnected state |
+
 ## Open Questions
 
-- Should remote access use 0.0.0.0 by default or require explicit opt-in?
-- Should UI in desktop mode default to the Tauri webview or external browser?
-- Should the host server be fully disable-able for desktop-only users?
-- Do we need a pairing flow to share the token for remote clients?
-- How should we expose host status in the UI?
+- Exact CORS policy for production (currently permissive)
+- Whether to expose host logs separately from app logs
+- Container orchestration health check intervals
 
 ---
 

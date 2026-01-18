@@ -20,8 +20,18 @@ export const backendUrlStorageKey = 'spiritstream-backend-url';
 export const backendTokenStorageKey = 'spiritstream-backend-token';
 
 const defaultBaseUrl = 'http://127.0.0.1:8008';
-const browserOrigin = typeof window !== 'undefined' ? window.location.origin : defaultBaseUrl;
-const inferredBaseUrl = browserOrigin.startsWith('http') ? browserOrigin : defaultBaseUrl;
+
+// Infer the backend URL based on current context:
+// - If we're running on port 8008, we're likely being served by the backend itself
+// - Otherwise (e.g., Vite dev server on 1420), use the default backend URL
+const inferredBaseUrl = (() => {
+  if (typeof window === 'undefined') return defaultBaseUrl;
+  const origin = window.location.origin;
+  // If served directly by the backend (port 8008), use the origin
+  if (origin.includes(':8008')) return origin;
+  // Otherwise, use the default backend URL (dev server scenario)
+  return defaultBaseUrl;
+})();
 
 const readStorageValue = (key: string): string | null => {
   if (typeof window === 'undefined') return null;

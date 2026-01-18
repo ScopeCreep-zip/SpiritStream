@@ -1,0 +1,16 @@
+{
+  "language": "en",
+  "startMinimized": false,
+  "showNotifications": true,
+  "ffmpegPath": "",
+  "autoDownloadFfmpeg": true,
+  "encryptStreamKeys": false,
+  "logRetentionDays": 30,
+  "themeId": "spirit-dark",
+  "backendRemoteEnabled": false,
+  "backendUiEnabled": false,
+  "backendHost": "127.0.0.1",
+  "backendPort": 8008,
+  "backendToken": "",
+  "lastProfile": null
+}

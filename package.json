@@ -9,8 +9,10 @@
   },
   "scripts": {
     "generate:platforms": "tsx scripts/generate-platforms.ts",
-    "predev": "npm run generate:platforms",
-    "prebuild": "npm run generate:platforms",
+    "build:server": "tsx scripts/build-server.ts",
+    "build:server:release": "tsx scripts/build-server.ts --release",
+    "predev": "npm run generate:platforms && npm run build:server",
+    "prebuild": "npm run generate:platforms && npm run build:server:release",
     "tauri": "tauri",
     "dev": "tauri dev",
     "build": "tauri build",

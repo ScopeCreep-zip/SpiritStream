@@ -1,4 +1,5 @@
 import { getBackendWsUrl } from './env';
+import { useConnectionStore } from '@/stores/connectionStore';
 
 type Handler<T> = (payload: T) => void;
 
@@ -9,6 +10,41 @@ let socket: WebSocket | null = null;
 let openPromise: Promise<void> | null = null;
 let reconnectTimer: number | null = null;
 
+// Track if we were previously connected (for showing reconnection toasts)
+let wasConnected = false;
+
+// When true, keep the connection alive even without handlers (for status tracking)
+let keepAlive = false;
+
+function notifyConnected() {
+  const store = useConnectionStore.getState();
+  const wasReconnecting = store.reconnectAttempts > 0;
+  store.setConnected();
+  wasConnected = true;
+
+  // Emit custom event for reconnection notifications
+  if (wasReconnecting) {
+    window.dispatchEvent(new CustomEvent('backend:reconnected'));
+  } else {
+    window.dispatchEvent(new CustomEvent('backend:connected'));
+  }
+}
+
+function notifyDisconnected(error?: string) {
+  const store = useConnectionStore.getState();
+  store.setDisconnected(error);
+
+  if (wasConnected) {
+    window.dispatchEvent(new CustomEvent('backend:disconnected', { detail: { error } }));
+  }
+}
+
+function notifyConnecting() {
+  const store = useConnectionStore.getState();
+  store.setConnecting();
+  store.incrementReconnectAttempts();
+}
+
 function ensureSocket(): Promise<void> {
   if (socket && socket.readyState === WebSocket.OPEN) {
     return Promise.resolve();
@@ -18,11 +54,17 @@ function ensureSocket(): Promise<void> {
     return openPromise;
   }
 
+  notifyConnecting();
+
+  const wsUrl = getBackendWsUrl();
+  console.debug(`[httpEvents] Connecting to WebSocket: ${wsUrl}`);
+
   openPromise = new Promise((resolve) => {
-    socket = new WebSocket(getBackendWsUrl());
+    socket = new WebSocket(wsUrl);
 
     socket.addEventListener('open', () => {
       openPromise = null;
+      notifyConnected();
       resolve();
     });
 
@@ -47,18 +89,21 @@ function ensureSocket(): Promise<void> {
     socket.addEventListener('close', () => {
       socket = null;
       openPromise = null;
-      if (handlers.size > 0) {
+      notifyDisconnected();
+      if (handlers.size > 0 || keepAlive) {
         scheduleReconnect();
       }
     });
 
-    socket.addEventListener('error', () => {
+    socket.addEventListener('error', (event) => {
+      console.error('[httpEvents] WebSocket error:', event);
       if (socket && socket.readyState === WebSocket.OPEN) {
         return;
       }
       socket = null;
       openPromise = null;
-      if (handlers.size > 0) {
+      notifyDisconnected('Connection error');
+      if (handlers.size > 0 || keepAlive) {
         scheduleReconnect();
       }
     });
@@ -75,6 +120,18 @@ function scheduleReconnect() {
       scheduleReconnect();
     });
   }, 1000);
+}
+
+/**
+ * Initialize the WebSocket connection proactively.
+ * Call this early in app startup to establish connection status.
+ * The connection will be kept alive and auto-reconnect even without handlers.
+ */
+export function initConnection(): void {
+  keepAlive = true;
+  ensureSocket().catch((err) => {
+    console.error('[httpEvents] Failed to initialize connection:', err);
+  });
 }
 
 export const events = {

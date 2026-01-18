@@ -91,8 +91,15 @@ fn main() {
     let dest_path = PathBuf::from(out_dir).join("generated_platforms.rs");
     fs::write(&dest_path, enum_code).expect("Failed to write generated_platforms.rs");
 
-    // Run tauri build
-    tauri_build::build()
+    // Run tauri build (skip if building server binary only)
+    // Check if we're building the server binary by looking at CARGO_BIN_NAME
+    let bin_name = env::var("CARGO_BIN_NAME").unwrap_or_default();
+    if bin_name == "server" {
+        // Skip tauri_build for server binary - it doesn't need Tauri resources
+        println!("cargo:warning=Skipping tauri_build for server binary");
+    } else {
+        tauri_build::build()
+    }
 }
 
 /// Sanitize a platform name to a valid Rust enum variant

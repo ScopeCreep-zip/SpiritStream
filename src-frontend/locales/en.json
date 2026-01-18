@@ -516,6 +516,15 @@
     "checkConnection": "Check connection",
     "notStreaming": "Not streaming"
   },
+  "connection": {
+    "connected": "Connected",
+    "connecting": "Connecting...",
+    "reconnecting": "Reconnecting...",
+    "disconnected": "Disconnected",
+    "reconnected": "Reconnected to backend",
+    "lost": "Connection to backend lost. Attempting to reconnect...",
+    "lostWithError": "Connection lost: {{error}}"
+  },
   "common": {
     "save": "Save",
     "saveChanges": "Save Changes",

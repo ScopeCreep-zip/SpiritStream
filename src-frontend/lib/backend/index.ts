@@ -1,5 +1,5 @@
 export { api } from './api';
-export { events } from './events';
+export { events, initBackendConnection } from './events';
 export { dialogs } from './dialogs';
 export {
   backendMode,
