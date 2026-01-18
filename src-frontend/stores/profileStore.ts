@@ -29,6 +29,7 @@ interface ProfileState {
   deleteProfile: (name: string) => Promise<void>;
   createProfile: (name: string) => Promise<void>;
   isProfileEncrypted: (name: string) => Promise<boolean>;
+  reorderProfiles: (fromIndex: number, toIndex: number) => Promise<void>;
 
   // Password modal actions
   setPendingPasswordProfile: (name: string | null) => void;
@@ -301,6 +302,27 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     if (current) {
       set({ current: { ...current, ...updates } });
       await get().saveProfile();
+    }
+  },
+
+  reorderProfiles: async (fromIndex, toIndex) => {
+    const { profiles } = get();
+    if (fromIndex === toIndex) return;
+    if (fromIndex < 0 || toIndex < 0) return;
+    if (fromIndex >= profiles.length || toIndex >= profiles.length) return;
+
+    const next = profiles.slice();
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, moved);
+
+    // optimistic UI update
+    set({ profiles: next });
+
+    try {
+      await api.profile.setProfileOrder(next.map(p => p.name));
+    } catch (err) {
+      // revert on failure + surface error
+      set({ profiles, error: String(err) });
     }
   },
 

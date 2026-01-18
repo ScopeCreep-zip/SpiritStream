@@ -10,10 +10,14 @@ import { ProfileModal, PasswordModal } from '@/components/modals';
 import { useProfileStore } from '@/stores/profileStore';
 import { api } from '@/lib/tauri';
 import { cn } from '@/lib/cn';
+import {DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent} from "@dnd-kit/core";
+import {SortableContext, rectSortingStrategy} from "@dnd-kit/sortable";
+import SortableCardShell from "../components/ui/SortableCardShell.tsx";
+
 
 export function Profiles() {
   const { t } = useTranslation();
-  const { profiles, current, loading, error, selectProfile, duplicateProfile, deleteProfile, loadProfiles, unlockProfile } = useProfileStore();
+  const { profiles, reorderProfiles,  current, loading, error, selectProfile, duplicateProfile, deleteProfile, loadProfiles, unlockProfile } = useProfileStore();
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
 
@@ -29,6 +33,9 @@ export function Profiles() {
 
   // Track which encrypted profiles have been unlocked (password entered) in this session
   const [unlockedProfiles, setUnlockedProfiles] = useState<Set<string>>(new Set());
+
+  // Sensors for DND Kit for Drag and Drop
+  const sensors = useSensors( useSensor(PointerSensor, {activationConstraint: {distance: 6 }}));
 
   // Detect when an encrypted profile is successfully loaded (password was entered)
   useEffect(() => {
@@ -222,129 +229,148 @@ export function Profiles() {
     setEditModalOpen(true);
   };
 
+  
+  const handleDragEnd = async ({ active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id) return;
+
+    const ids = profiles.map((p) => p.name);
+    const fromIndex = ids.indexOf(String(active.id));
+    const toIndex = ids.indexOf(String(over.id));
+
+    if (fromIndex === -1 || toIndex === -1) return;
+
+    await reorderProfiles(fromIndex, toIndex);
+  };
+
+
   return (
     <>
-      <Grid cols={2} onClick={handleClickAway}>
-        {profiles.map((profile) => (
-          <ProfileCard
-            key={profile.id}
-            name={profile.name}
-            meta={[
-              { icon: <Monitor className="w-4 h-4" />, label: profile.resolution },
-              { icon: <Gauge className="w-4 h-4" />, label: `${profile.bitrate} kbps` },
-              {
-                icon: <Target className="w-4 h-4" />,
-                label: t('profiles.targetsCount', { count: profile.targetCount }),
-              },
-            ]}
-            services={profile.services}
-            active={current?.id === profile.id}
-            onClick={() => handleProfileClick(profile.name)}
-            actions={
-              <div className="flex" style={{ gap: '4px' }}>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleEdit(profile.name);
-                  }}
-                >
-                  {t('common.edit')}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    duplicateProfile(profile.name);
-                  }}
-                >
-                  {t('common.duplicate')}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDeleteClick(profile.name);
-                  }}
-                  title={t('common.delete')}
-                  className="text-[var(--error-text)] hover:bg-[var(--error-subtle)]"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-                {(() => {
-                  // Check if this encrypted profile has been unlocked in this session
-                  const isUnlocked = unlockedProfiles.has(profile.name);
-                  // Show Lock icon only if encrypted AND not unlocked in session
-                  const showLocked = profile.isEncrypted && !isUnlocked;
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={profiles.map((p) => p.name)} strategy={rectSortingStrategy}>
+          <Grid cols={2} onClick={handleClickAway}>
+            {profiles.map((profile) => (
+              <SortableCardShell key={profile.name} id={profile.name}>
+                <ProfileCard 
+                  name={profile.name}
+                  meta={[
+                    { icon: <Monitor className="w-4 h-4" />, label: profile.resolution },
+                    { icon: <Gauge className="w-4 h-4" />, label: `${profile.bitrate} kbps` },
+                    {
+                      icon: <Target className="w-4 h-4" />,
+                      label: t('profiles.targetsCount', { count: profile.targetCount }),
+                    },
+                  ]}
+                  services={profile.services}
+                  active={current?.id === profile.id}
+                  onClick={() => handleProfileClick(profile.name)}
+                  actions={
+                    <div className="flex" style={{ gap: '4px' }}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEdit(profile.name);
+                        }}
+                      >
+                        {t('common.edit')}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          duplicateProfile(profile.name);
+                        }}
+                      >
+                        {t('common.duplicate')}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteClick(profile.name);
+                        }}
+                        title={t('common.delete')}
+                        className="text-[var(--error-text)] hover:bg-[var(--error-subtle)]"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                      {(() => {
+                        // Check if this encrypted profile has been unlocked in this session
+                        const isUnlocked = unlockedProfiles.has(profile.name);
+                        // Show Lock icon only if encrypted AND not unlocked in session
+                        const showLocked = profile.isEncrypted && !isUnlocked;
 
-                  return showLocked ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        selectProfile(profile.name); // This will trigger password modal
-                      }}
-                      title={t('profiles.enterPassword')}
-                    >
-                      <Lock className="w-4 h-4 transition-transform duration-300" />
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        // If unlocked (was encrypted), clicking can remove encryption or re-lock
-                        // If not encrypted, clicking adds encryption
-                        if (isUnlocked && profile.isEncrypted) {
-                          handleUnlockProfile(profile.name); // Remove encryption entirely
-                        } else {
-                          handleLockProfile(profile.name); // Add encryption
-                        }
-                      }}
-                      title={isUnlocked && profile.isEncrypted
-                        ? t('profiles.removePassword')
-                        : t('profiles.addPassword')}
-                    >
-                      <Unlock
-                        className={cn(
-                          "w-4 h-4 transition-all duration-300",
-                          isUnlocked && "text-[var(--success)] scale-110"
-                        )}
-                      />
-                    </Button>
-                  );
-                })()}
-              </div>
-            }
-          />
-        ))}
+                        return showLocked ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              selectProfile(profile.name); // This will trigger password modal
+                            }}
+                            title={t('profiles.enterPassword')}
+                          >
+                            <Lock className="w-4 h-4 transition-transform duration-300" />
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              // If unlocked (was encrypted), clicking can remove encryption or re-lock
+                              // If not encrypted, clicking adds encryption
+                              if (isUnlocked && profile.isEncrypted) {
+                                handleUnlockProfile(profile.name); // Remove encryption entirely
+                              } else {
+                                handleLockProfile(profile.name); // Add encryption
+                              }
+                            }}
+                            title={isUnlocked && profile.isEncrypted
+                              ? t('profiles.removePassword')
+                              : t('profiles.addPassword')}
+                          >
+                            <Unlock
+                              className={cn(
+                                "w-4 h-4 transition-all duration-300",
+                                isUnlocked && "text-[var(--success)] scale-110"
+                              )}
+                            />
+                          </Button>
+                        );
+                      })()}
+                    </div>
+                  }
+                />
+              </SortableCardShell>
+            ))}
 
-        {/* Add New Profile Card */}
-        <Card
-          className="border-2 border-dashed border-[var(--border-default)] hover:border-[var(--primary)] transition-colors cursor-pointer"
-          onClick={() => setCreateModalOpen(true)}
-        >
-          <CardBody
-            className="flex flex-col items-center justify-center"
-            style={{ padding: '56px 28px' }}
-          >
-            <div
-              className="w-14 h-14 rounded-full bg-[var(--primary-subtle)] flex items-center justify-center"
-              style={{ marginBottom: '16px' }}
+            {/* Add New Profile Card */}
+            <Card
+              className="border-2 border-dashed border-[var(--border-default)] hover:border-[var(--primary)] transition-colors cursor-pointer"
+              onClick={() => setCreateModalOpen(true)}
             >
-              <Plus className="w-7 h-7 text-[var(--primary)]" />
-            </div>
-            <span className="text-base font-medium text-[var(--text-secondary)]">
-              {t('profiles.createNewProfile')}
-            </span>
-          </CardBody>
-        </Card>
-      </Grid>
+              <CardBody
+                className="flex flex-col items-center justify-center"
+                style={{ padding: '56px 28px' }}
+              >
+                <div
+                  className="w-14 h-14 rounded-full bg-[var(--primary-subtle)] flex items-center justify-center"
+                  style={{ marginBottom: '16px' }}
+                >
+                  <Plus className="w-7 h-7 text-[var(--primary)]" />
+                </div>
+                <span className="text-base font-medium text-[var(--text-secondary)]">
+                  {t('profiles.createNewProfile')}
+                </span>
+              </CardBody>
+            </Card>
+          </Grid>
+        </SortableContext>
+      </DndContext>
 
       {/* Create Profile Modal */}
       <ProfileModal

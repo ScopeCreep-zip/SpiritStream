@@ -41,8 +41,9 @@ pub fn run() {
             std::fs::create_dir_all(&app_data_dir).ok();
 
             // Register ProfileManager as managed state
-            let profile_manager = ProfileManager::new(app_data_dir.clone());
+            let profile_manager = ProfileManager::new(app_data_dir.clone()); 
             app.manage(profile_manager);
+            
 
             // Register SettingsManager as managed state (load early to get custom FFmpeg path)
             let settings_manager = SettingsManager::new(app_data_dir.clone());
@@ -103,6 +104,8 @@ pub fn run() {
             commands::delete_profile,
             commands::is_profile_encrypted,
             commands::validate_input,
+            commands::set_profile_order,
+            commands::get_order_index_map,
             // Stream commands
             commands::start_stream,
             commands::start_all_streams,

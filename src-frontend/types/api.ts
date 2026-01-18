@@ -1,4 +1,4 @@
-import type { Profile, OutputGroup } from './profile';
+import type { Profile, ProfileSummary, OutputGroup } from './profile';
 import type { Encoders } from './stream';
 import type { ThemeSummary, ThemeTokens } from './theme';
 
@@ -13,10 +13,13 @@ export type TauriResult<T> = Promise<T>;
  */
 export interface ProfileAPI {
   getAll: () => TauriResult<string[]>;
+  getSummaries: () => TauriResult<ProfileSummary[]>;
   load: (name: string, password?: string) => TauriResult<Profile>;
   save: (profile: Profile, password?: string) => TauriResult<void>;
   delete: (name: string) => TauriResult<void>;
   isEncrypted: (name: string) => TauriResult<boolean>;
+  setProfileOrder: (orderedNames: string[]) => TauriResult<void>;
+  getOrderIndexMap: () => TauriResult<Record<string, number>>;
 }
 
 /**
