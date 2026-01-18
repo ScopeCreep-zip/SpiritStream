@@ -11,7 +11,7 @@ import { useProfileStore } from '@/stores/profileStore';
 import { api } from '@/lib/tauri';
 import { cn } from '@/lib/cn';
 import {DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent} from "@dnd-kit/core";
-import {SortableContext,  arrayMove, rectSortingStrategy} from "@dnd-kit/sortable";
+import {SortableContext, rectSortingStrategy} from "@dnd-kit/sortable";
 import SortableCardShell from "../components/ui/SortableCardShell.tsx";
 
 

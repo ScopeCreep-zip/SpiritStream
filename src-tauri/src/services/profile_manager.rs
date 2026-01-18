@@ -93,20 +93,7 @@ impl ProfileManager {
         Ok(())
     }
 
-
-   pub async fn get_order_index(&self, name: &str) -> Result<Option<i32>, String> {
-        validate_profile_name(name)?;
-        let map = self.read_order_index_map()?;
-        Ok(map.get(name).copied())
-    } 
-
-    pub async fn set_order_index(&self, name: &str, order_index: i32) -> Result<(), String> {
-        validate_profile_name(name)?;
-        let mut map = self.read_order_index_map()?;
-        map.insert(name.to_string(), order_index);
-        self.write_order_index_map(&map)?;
-        Ok(())
-    }
+ 
 
     /// This method can eventually be removed, it's purpose is to add order_index
     /// to profiles that were created before order_index was introduced

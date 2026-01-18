@@ -1,4 +1,4 @@
-import type { Profile, OutputGroup } from './profile';
+import type { Profile, ProfileSummary, OutputGroup } from './profile';
 import type { Encoders } from './stream';
 import type { ThemeSummary, ThemeTokens } from './theme';
 
