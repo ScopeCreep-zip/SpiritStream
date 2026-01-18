@@ -150,7 +150,15 @@ impl ProfileManager {
     /// Includes services list for each profile (Story 1.1, 4.1, 4.2)
     pub async fn get_all_summaries(&self) -> Result<Vec<ProfileSummary>, String> {
         let names = self.get_all_names().await?;
-        let order_map = self.ensure_order_indexes().await?;
+        let order_map = self.ensure_order_indexes().await?; //<- Can eventually be replaced
+
+        // ensure_order_indexes can be replaced with this below eventually
+        // the purpose for ensure_order_indexes is to keep things from breaking
+        // if the user had profiles saved before merging this code,
+        // this will ensure the index is added to previously saved
+        // profiles 
+        // eventual replacement -> let order_map = self.read_order_index_map()?;
+
         let mut summaries = Vec::new();
 
         for name in names {

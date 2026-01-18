@@ -18,8 +18,6 @@ export interface ProfileAPI {
   save: (profile: Profile, password?: string) => TauriResult<void>;
   delete: (name: string) => TauriResult<void>;
   isEncrypted: (name: string) => TauriResult<boolean>;
-
-  // NEW 
   setProfileOrder: (orderedNames: string[]) => TauriResult<void>;
   getOrderIndexMap: () => TauriResult<Record<string, number>>;
 }

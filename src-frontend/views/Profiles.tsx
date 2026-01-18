@@ -250,102 +250,101 @@ export function Profiles() {
           <Grid cols={2} onClick={handleClickAway}>
             {profiles.map((profile) => (
               <SortableCardShell key={profile.name} id={profile.name}>
-              <ProfileCard
-                key={profile.id}
-                name={profile.name}
-                meta={[
-                  { icon: <Monitor className="w-4 h-4" />, label: profile.resolution },
-                  { icon: <Gauge className="w-4 h-4" />, label: `${profile.bitrate} kbps` },
-                  {
-                    icon: <Target className="w-4 h-4" />,
-                    label: t('profiles.targetsCount', { count: profile.targetCount }),
-                  },
-                ]}
-                services={profile.services}
-                active={current?.id === profile.id}
-                onClick={() => handleProfileClick(profile.name)}
-                actions={
-                  <div className="flex" style={{ gap: '4px' }}>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleEdit(profile.name);
-                      }}
-                    >
-                      {t('common.edit')}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        duplicateProfile(profile.name);
-                      }}
-                    >
-                      {t('common.duplicate')}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteClick(profile.name);
-                      }}
-                      title={t('common.delete')}
-                      className="text-[var(--error-text)] hover:bg-[var(--error-subtle)]"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                    {(() => {
-                      // Check if this encrypted profile has been unlocked in this session
-                      const isUnlocked = unlockedProfiles.has(profile.name);
-                      // Show Lock icon only if encrypted AND not unlocked in session
-                      const showLocked = profile.isEncrypted && !isUnlocked;
+                <ProfileCard 
+                  name={profile.name}
+                  meta={[
+                    { icon: <Monitor className="w-4 h-4" />, label: profile.resolution },
+                    { icon: <Gauge className="w-4 h-4" />, label: `${profile.bitrate} kbps` },
+                    {
+                      icon: <Target className="w-4 h-4" />,
+                      label: t('profiles.targetsCount', { count: profile.targetCount }),
+                    },
+                  ]}
+                  services={profile.services}
+                  active={current?.id === profile.id}
+                  onClick={() => handleProfileClick(profile.name)}
+                  actions={
+                    <div className="flex" style={{ gap: '4px' }}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEdit(profile.name);
+                        }}
+                      >
+                        {t('common.edit')}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          duplicateProfile(profile.name);
+                        }}
+                      >
+                        {t('common.duplicate')}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteClick(profile.name);
+                        }}
+                        title={t('common.delete')}
+                        className="text-[var(--error-text)] hover:bg-[var(--error-subtle)]"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                      {(() => {
+                        // Check if this encrypted profile has been unlocked in this session
+                        const isUnlocked = unlockedProfiles.has(profile.name);
+                        // Show Lock icon only if encrypted AND not unlocked in session
+                        const showLocked = profile.isEncrypted && !isUnlocked;
 
-                      return showLocked ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            selectProfile(profile.name); // This will trigger password modal
-                          }}
-                          title={t('profiles.enterPassword')}
-                        >
-                          <Lock className="w-4 h-4 transition-transform duration-300" />
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            // If unlocked (was encrypted), clicking can remove encryption or re-lock
-                            // If not encrypted, clicking adds encryption
-                            if (isUnlocked && profile.isEncrypted) {
-                              handleUnlockProfile(profile.name); // Remove encryption entirely
-                            } else {
-                              handleLockProfile(profile.name); // Add encryption
-                            }
-                          }}
-                          title={isUnlocked && profile.isEncrypted
-                            ? t('profiles.removePassword')
-                            : t('profiles.addPassword')}
-                        >
-                          <Unlock
-                            className={cn(
-                              "w-4 h-4 transition-all duration-300",
-                              isUnlocked && "text-[var(--success)] scale-110"
-                            )}
-                          />
-                        </Button>
-                      );
-                    })()}
-                  </div>
-                }
-              />
+                        return showLocked ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              selectProfile(profile.name); // This will trigger password modal
+                            }}
+                            title={t('profiles.enterPassword')}
+                          >
+                            <Lock className="w-4 h-4 transition-transform duration-300" />
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              // If unlocked (was encrypted), clicking can remove encryption or re-lock
+                              // If not encrypted, clicking adds encryption
+                              if (isUnlocked && profile.isEncrypted) {
+                                handleUnlockProfile(profile.name); // Remove encryption entirely
+                              } else {
+                                handleLockProfile(profile.name); // Add encryption
+                              }
+                            }}
+                            title={isUnlocked && profile.isEncrypted
+                              ? t('profiles.removePassword')
+                              : t('profiles.addPassword')}
+                          >
+                            <Unlock
+                              className={cn(
+                                "w-4 h-4 transition-all duration-300",
+                                isUnlocked && "text-[var(--success)] scale-110"
+                              )}
+                            />
+                          </Button>
+                        );
+                      })()}
+                    </div>
+                  }
+                />
               </SortableCardShell>
             ))}
 

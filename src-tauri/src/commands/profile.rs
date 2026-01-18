@@ -8,30 +8,28 @@ use crate::services::{ProfileManager, SettingsManager};
 
 /// Persist profile order based on UI order (names in desired order)
 #[tauri::command]
-pub fn set_profile_order(
+pub async fn set_profile_order(
     ordered_names: Vec<String>,
     profile_manager: State<'_, ProfileManager>
 ) -> Result<(), String> { 
-
     let mut map = profile_manager.read_order_index_map()?;
+    let existing = profile_manager.get_all_names().await?; 
+    
 
     let mut idx = 0;
     for name in ordered_names {
+       if !existing.contains(&name){
+            return Err(format!("Unknown profile: {}", name));
+        } 
         idx += 10;
         map.insert(name, idx);
+        
     }
 
     profile_manager.write_order_index_map(&map)?;
     Ok(())
 }
 
-/// Ensure every profile has an order index (adds missing ones) and returns the map
-#[tauri::command]
-pub async fn ensure_order_indexes(
-    profile_manager: State<'_, ProfileManager>
-) -> Result<OrderIndexMap, String> {
-    profile_manager.ensure_order_indexes().await
-}
 
 /// Get the order index map (name -> order_index)
 #[tauri::command]

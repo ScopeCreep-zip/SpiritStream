@@ -22,8 +22,8 @@ export const api = {
       invoke<void>('validate_input', { profileId, input }),
     setProfileOrder: (orderedNames: string[]) => 
       invoke<void>('set_profile_order', {orderedNames}),   
-    getOrderMap: () => invoke<Record<string, number>>('get_order_index_map'),
-    ensureOrderIndexes: () => invoke<Record<string, number>>('insure_order_indexes'),
+    getOrderIndexMap: () => invoke<Record<string, number>>('get_order_index_map'),
+    ensureOrderIndexes: () => invoke<Record<string, number>>('ensure_order_indexes'),
   },
   stream: {
     start: (group: OutputGroup, incomingUrl: string) =>
