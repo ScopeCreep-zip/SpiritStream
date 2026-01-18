@@ -8,7 +8,7 @@
     "devUrl": "http://localhost:1420",
     "beforeDevCommand": "npm run vite:dev",
     "beforeBuildCommand": "npm run vite:build",
-    "beforeBundleCommand": "./scripts/patch-for-distribution.sh"
+    "beforeBundleCommand": "node scripts/patch-for-distribution.js"
   },
   "app": {
     "windows": [
