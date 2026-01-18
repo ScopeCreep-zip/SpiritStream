@@ -1,4 +1,5 @@
-import type { Profile, OutputGroup, ProfileSummary, RtmpInput } from './profile';
+<<<<<<< HEAD
+import type { Profile, ProfileSummary, OutputGroup, RtmpInput } from './profile';
 import type { Encoders } from './stream';
 import type { ThemeSummary, ThemeTokens } from './theme';
 
@@ -19,6 +20,8 @@ export interface ProfileAPI {
   delete: (name: string) => TauriResult<void>;
   isEncrypted: (name: string) => TauriResult<boolean>;
   validateInput: (profileId: string, input: RtmpInput) => TauriResult<void>;
+  setProfileOrder: (orderedNames: string[]) => TauriResult<void>;
+  getOrderIndexMap: () => TauriResult<Record<string, number>>;
 }
 
 /**

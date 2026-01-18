@@ -2,8 +2,42 @@
 // Handles profile CRUD operations
 
 use tauri::State;
-use crate::models::{Profile, ProfileSummary, RtmpInput};
+use crate::models::{Profile, ProfileSummary, RtmpInput, OrderIndexMap};
 use crate::services::{ProfileManager, SettingsManager};
+
+
+/// Persist profile order based on UI order (names in desired order)
+#[tauri::command]
+pub async fn set_profile_order(
+    ordered_names: Vec<String>,
+    profile_manager: State<'_, ProfileManager>
+) -> Result<(), String> { 
+    let mut map = profile_manager.read_order_index_map()?;
+    let existing = profile_manager.get_all_names().await?; 
+    
+
+    let mut idx = 0;
+    for name in ordered_names {
+       if !existing.contains(&name){
+            return Err(format!("Unknown profile: {}", name));
+        } 
+        idx += 10;
+        map.insert(name, idx);
+        
+    }
+
+    profile_manager.write_order_index_map(&map)?;
+    Ok(())
+}
+
+
+/// Get the order index map (name -> order_index)
+#[tauri::command]
+pub fn get_order_index_map(
+    profile_manager: State<'_, ProfileManager>
+) -> Result<OrderIndexMap, String> {
+    profile_manager.read_order_index_map()
+}
 
 /// Get all profile names from the profiles directory
 #[tauri::command]
