@@ -41,7 +41,13 @@ echo "Patching binary for distribution..."
 echo "  Current interpreter: $INTERP"
 
 # Set standard FHS interpreter
-patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 "$BINARY"
+# Set standard FHS interpreter based on architecture
+case "$(uname -m)" in
+    x86_64)  INTERP="/lib64/ld-linux-x86-64.so.2" ;;
+    aarch64) INTERP="/lib/ld-linux-aarch64.so.1" ;;
+    *)       echo "Unsupported architecture: $(uname -m)"; exit 1 ;;
+esac
+patchelf --set-interpreter "$INTERP" "$BINARY"
 
 # Set RPATH to standard system library paths
 # These cover Debian/Ubuntu, Fedora/RHEL, and generic Linux
