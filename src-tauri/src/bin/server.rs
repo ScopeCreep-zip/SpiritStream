@@ -390,11 +390,13 @@ async fn invoke_command(
                 .profile_manager
                 .save_with_key_encryption(&profile, password.as_deref(), settings.encrypt_stream_keys)
                 .await?;
+            state.event_bus.emit("profile_changed", json!({ "action": "saved", "name": profile.name }));
             Ok(Value::Null)
         }
         "delete_profile" => {
             let name: String = get_arg(&payload, "name")?;
             state.profile_manager.delete(&name).await?;
+            state.event_bus.emit("profile_changed", json!({ "action": "deleted", "name": name }));
             Ok(Value::Null)
         }
         "is_profile_encrypted" => {
@@ -477,6 +479,7 @@ async fn invoke_command(
             let settings: Settings = get_arg(&payload, "settings")?;
             state.settings_manager.save(&settings)?;
             let _ = prune_logs(&state.log_dir, settings.log_retention_days);
+            state.event_bus.emit("settings_changed", json!({}));
             Ok(Value::Null)
         }
         "get_profiles_path" => {

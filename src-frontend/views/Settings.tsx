@@ -71,64 +71,76 @@ export function Settings() {
   const [themeInstallError, setThemeInstallError] = useState<string | null>(null);
   const [themeInstalling, setThemeInstalling] = useState(false);
 
+  // Load settings from backend
+  const loadSettings = useCallback(async () => {
+    try {
+      setSettings((prev) => ({ ...prev, loading: true }));
+
+      // Load settings from backend
+      const backendSettings = await api.settings.get();
+      const profilesPath = await api.settings.getProfilesPath();
+
+      // Get FFmpeg version and path
+      let ffmpegVersion = ''; // Empty means not found (will be translated when displayed)
+      let detectedFfmpegPath = '';
+      try {
+        ffmpegVersion = await api.system.testFfmpeg();
+        // Get the detected path (either custom from settings or system install location)
+        const path = await api.system.getFfmpegPath();
+        if (path) {
+          detectedFfmpegPath = path;
+        }
+      } catch {
+        // FFmpeg not available
+      }
+
+      // Initialize i18n with the saved language
+      initFromSettings(backendSettings.language);
+
+      // Use detected path if available, otherwise fall back to saved settings path
+      const ffmpegPath = detectedFfmpegPath || backendSettings.ffmpegPath;
+
+      setSettings({
+        language: backendSettings.language,
+        startMinimized: backendSettings.startMinimized,
+        showNotifications: backendSettings.showNotifications,
+        ffmpegPath,
+        autoDownloadFfmpeg: backendSettings.autoDownloadFfmpeg,
+        encryptStreamKeys: backendSettings.encryptStreamKeys,
+        logRetentionDays: backendSettings.logRetentionDays,
+        backendRemoteEnabled: backendSettings.backendRemoteEnabled,
+        backendUiEnabled: backendSettings.backendUiEnabled,
+        backendHost: backendSettings.backendHost,
+        backendPort: backendSettings.backendPort,
+        backendToken: backendSettings.backendToken,
+        ffmpegVersion,
+        profileStoragePath: profilesPath,
+        loading: false,
+        saving: false,
+      });
+    } catch (error) {
+      console.error('Failed to load settings:', error);
+      setSettings((prev) => ({ ...prev, loading: false }));
+    }
+  }, [initFromSettings]);
+
   // Load settings on mount
   useEffect(() => {
-    const loadSettings = async () => {
-      try {
-        setSettings((prev) => ({ ...prev, loading: true }));
+    loadSettings();
+  }, [loadSettings]);
 
-        // Load settings from backend
-        const backendSettings = await api.settings.get();
-        const profilesPath = await api.settings.getProfilesPath();
-
-        // Get FFmpeg version and path
-        let ffmpegVersion = ''; // Empty means not found (will be translated when displayed)
-        let detectedFfmpegPath = '';
-        try {
-          ffmpegVersion = await api.system.testFfmpeg();
-          // Get the detected path (either custom from settings or system install location)
-          const path = await api.system.getFfmpegPath();
-          if (path) {
-            detectedFfmpegPath = path;
-          }
-        } catch {
-          // FFmpeg not available
-        }
-
-        // Initialize i18n with the saved language
-        initFromSettings(backendSettings.language);
-
-        // Use detected path if available, otherwise fall back to saved settings path
-        const ffmpegPath = detectedFfmpegPath || backendSettings.ffmpegPath;
-
-        setSettings({
-          language: backendSettings.language,
-          startMinimized: backendSettings.startMinimized,
-          showNotifications: backendSettings.showNotifications,
-          ffmpegPath,
-          autoDownloadFfmpeg: backendSettings.autoDownloadFfmpeg,
-          encryptStreamKeys: backendSettings.encryptStreamKeys,
-          logRetentionDays: backendSettings.logRetentionDays,
-          backendRemoteEnabled: backendSettings.backendRemoteEnabled,
-          backendUiEnabled: backendSettings.backendUiEnabled,
-          backendHost: backendSettings.backendHost,
-          backendPort: backendSettings.backendPort,
-          backendToken: backendSettings.backendToken,
-          ffmpegVersion,
-          profileStoragePath: profilesPath,
-          loading: false,
-          saving: false,
-        });
-      } catch (error) {
-        console.error('Failed to load settings:', error);
-        setSettings((prev) => ({ ...prev, loading: false }));
-      }
+  // Listen for settings changes from other clients
+  useEffect(() => {
+    const handleSettingsChanged = () => {
+      console.debug('[Settings] Reloading due to remote change');
+      loadSettings();
     };
 
-    loadSettings();
-    // initFromSettings is stable (from Zustand store), intentionally excluded
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    window.addEventListener('backend:settings_changed', handleSettingsChanged);
+    return () => {
+      window.removeEventListener('backend:settings_changed', handleSettingsChanged);
+    };
+  }, [loadSettings]);
 
   useEffect(() => {
     refreshThemes().catch(() => {
