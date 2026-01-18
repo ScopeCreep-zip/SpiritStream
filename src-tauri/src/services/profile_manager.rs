@@ -1,6 +1,7 @@
 // ProfileManager Service
 // Handles profile persistence and encryption
-
+use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::path::PathBuf;
 use crate::models::{Profile, ProfileSummary, RtmpInput};
 use crate::services::Encryption;
@@ -37,22 +38,109 @@ fn validate_profile_name(name: &str) -> Result<(), String> {
 pub struct ProfileManager {
     profiles_dir: PathBuf,
     app_data_dir: PathBuf,
+    order_index_dir: PathBuf,
 }
 
 impl ProfileManager {
     /// Create a new ProfileManager with the given app data directory
     pub fn new(app_data_dir: PathBuf) -> Self {
         let profiles_dir = app_data_dir.join("profiles");
+        let order_index_dir = app_data_dir.join("indexes");
         std::fs::create_dir_all(&profiles_dir).ok();
+        std::fs::create_dir_all(&order_index_dir).ok();
         Self {
             profiles_dir,
             app_data_dir,
+            order_index_dir,
         }
+    }
+ 
+    // To read order indexes for drag and drop on profiles
+    pub fn read_order_index_map(&self) -> Result<HashMap<String, i32>, String> {
+        let indexes_path = self.order_index_dir.join("order_indexes.json");
+        
+        if !indexes_path.exists() {
+            let empty: HashMap<String, i32> = HashMap::new();
+            let content = serde_json::to_string_pretty(&empty)
+                .map_err(|e| format!("Failed to read empty order map: {e}"))?;
+            std::fs::write(&indexes_path, content)
+                .map_err(|e| format!("Failed to create order_indexes.json: {e}"))?;
+            return Ok(empty);
+        }
+
+        let content = std::fs::read_to_string(&indexes_path)
+            .map_err(|e| format!("Failed to read order_indexes.json: {e}"))?;
+        let map: HashMap<String, i32> = serde_json::from_str(&content)
+            .map_err(|e| format!("Failed to parse order_indexes.json: {e}"))?;
+
+        Ok(map)     
+    }
+
+    
+    pub fn write_order_index_map(&self, map: &HashMap<String, i32>) -> Result<(), String> {
+        let path = self.order_index_dir.join("order_indexes.json");
+        let tmp  = self.order_index_dir.join("order_indexes.json.tmp");
+
+        let content = serde_json::to_string_pretty(map)
+            .map_err(|e| format!("Failed to serialize order map: {e}"))?;
+
+        std::fs::write(&tmp, content)
+            .map_err(|e| format!("Failed to write temp order_indexes.json: {e}"))?;
+
+        std::fs::rename(&tmp, &path)
+            .map_err(|e| format!("Failed to replace order_indexes.json: {e}"))?;
+
+        Ok(())
+    }
+
+
+   pub async fn get_order_index(&self, name: &str) -> Result<Option<i32>, String> {
+        validate_profile_name(name)?;
+        let map = self.read_order_index_map()?;
+        Ok(map.get(name).copied())
+    } 
+
+    pub async fn set_order_index(&self, name: &str, order_index: i32) -> Result<(), String> {
+        validate_profile_name(name)?;
+        let mut map = self.read_order_index_map()?;
+        map.insert(name.to_string(), order_index);
+        self.write_order_index_map(&map)?;
+        Ok(())
+    }
+
+    /// This method can eventually be removed, it's purpose is to add order_index
+    /// to profiles that were created before order_index was introduced
+    pub async fn ensure_order_indexes(&self) -> Result<HashMap<String, i32>, String> {
+        let names = self.get_all_names().await?;
+        let mut map = self.read_order_index_map()?;
+
+        let mut max = map.values().copied().max().unwrap_or(0);
+        max = ((max + 9) / 10) * 10;
+        
+        let mut changed = false;
+
+        for name in names.clone() { 
+            match map.entry(name.clone()) {
+                Entry::Vacant(e) => {
+                    max += 10;
+                    e.insert(max);
+                    changed = true;
+                }
+                Entry::Occupied(_) => {}
+            }
+        }
+        map.retain(|k, _| names.contains(k));
+        if changed {
+            self.write_order_index_map(&map)?;
+        }
+
+        Ok(map)
     }
 
     /// Get all profile names from the profiles directory
     pub async fn get_all_names(&self) -> Result<Vec<String>, String> {
         let mut names = Vec::new();
+
 
         let entries = std::fs::read_dir(&self.profiles_dir)
             .map_err(|e| e.to_string())?;
@@ -75,6 +163,7 @@ impl ProfileManager {
     /// Includes services list for each profile (Story 1.1, 4.1, 4.2)
     pub async fn get_all_summaries(&self) -> Result<Vec<ProfileSummary>, String> {
         let names = self.get_all_names().await?;
+        let order_map = self.ensure_order_indexes().await?;
         let mut summaries = Vec::new();
 
         for name in names {
@@ -97,7 +186,7 @@ impl ProfileManager {
                 });
             }
         }
-
+        summaries.sort_by_key(|s| order_map.get(&s.name).copied().unwrap_or(i32::MAX));
         Ok(summaries)
     }
 

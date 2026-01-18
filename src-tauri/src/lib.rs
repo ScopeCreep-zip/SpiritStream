@@ -103,6 +103,9 @@ pub fn run() {
             commands::delete_profile,
             commands::is_profile_encrypted,
             commands::validate_input,
+            commands::set_profile_order,
+            commands::ensure_order_indexes,
+            commands::get_order_index_map,
             // Stream commands
             commands::start_stream,
             commands::start_all_streams,

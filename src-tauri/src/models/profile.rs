@@ -2,7 +2,7 @@
 // Top-level configuration entity
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use crate::models::{OutputGroup, Platform};
 
 /// RTMP Input configuration - where the stream enters the system
@@ -127,4 +127,6 @@ pub struct ProfileSummary {
     /// Whether the profile file is encrypted
     pub is_encrypted: bool,
 }
+
+pub type OrderIndexMap = HashMap<String, i32>;
 
