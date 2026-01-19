@@ -1,6 +1,6 @@
 {
   "name": "@scopecreep-zip/spiritstream",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "SpiritStream - Multi-Destination Streaming Application",
   "private": false,
   "type": "module",
@@ -41,6 +41,9 @@
   ],
   "author": "SpiritStream Contributors",
   "license": "ISC",
+  "engines": {
+    "node": ">=20.0.0 <21.0.0 || >=22.0.0 <23.0.0 || >=24.0.0 <25.0.0"
+  },
   "files": [
     "dist",
     "src-frontend",

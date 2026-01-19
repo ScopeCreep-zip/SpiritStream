@@ -14,6 +14,12 @@ use tauri::{AppHandle, Emitter};
 use crate::models::{OutputGroup, StreamStats};
 use crate::services::PlatformRegistry;
 
+// Windows: Hide console windows for spawned processes
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 /// Process info for tracking active streams
 struct ProcessInfo {
     child: Child,
@@ -337,12 +343,14 @@ impl FFmpegHandler {
             sanitized.join(" ")
         );
 
-        let mut child = Command::new(&self.ffmpeg_path)
-            .args(&args)
+        let mut cmd = Command::new(&self.ffmpeg_path);
+        cmd.args(&args)
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .spawn()
+            .stderr(Stdio::piped());
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        let mut child = cmd.spawn()
             .map_err(|e| format!("Failed to start FFmpeg: {e}"))?;
 
         let pid = child.id();
@@ -592,17 +600,6 @@ impl FFmpegHandler {
                 recent_lines.pop_front();
             }
             recent_lines.push_back(sanitized_line.clone());
-
-            // Temporary: log sanitized progress lines to diagnose stats parsing.
-            if sanitized_line.contains("progress=")
-                || sanitized_line.contains("out_time=")
-                || sanitized_line.contains("out_time_ms=")
-                || sanitized_line.contains("out_time_us=")
-                || sanitized_line.contains("total_size=")
-                || sanitized_line.contains("bitrate=")
-            {
-                log::info!("[FFmpeg:{group_id}] progress {sanitized_line}");
-            }
 
             let parsed = stats.parse_line(&line);
             let is_progress_line = line.trim_start().starts_with("progress=");
@@ -898,12 +895,14 @@ impl FFmpegHandler {
             self.ffmpeg_path,
             sanitized.join(" ")
         );
-        let mut child = Command::new(&self.ffmpeg_path)
-            .args(&args)
+        let mut cmd = Command::new(&self.ffmpeg_path);
+        cmd.args(&args)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .spawn()
+            .stderr(Stdio::piped());
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        let mut child = cmd.spawn()
             .map_err(|e| format!("Failed to start FFmpeg relay: {e}"))?;
 
         if let Some(stderr) = child.stderr.take() {
