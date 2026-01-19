@@ -520,6 +520,8 @@ This milestone implements the promotion pipeline defined in [GOVERNANCE.md](./GO
 | M6.7 | Changelog generation | `BLOCKED` | CHANGELOG.md auto-generated from commits |
 | M6.8 | GitHub Release creation | `BLOCKED` | Releases created with artifacts attached |
 | M6.9 | Preview artifacts from latest | `BLOCKED` | Nightly/preview builds available |
+| M6.10 | Forgejo Actions CI | `PROPOSED` | `.forgejo/workflows/` exists, runs on git.braincraft.io |
+| M6.11 | Multi-origin release sync | `PROPOSED` | Releases published to both GitHub and Forgejo |
 
 ### Blockers
 
@@ -533,6 +535,8 @@ This milestone implements the promotion pipeline defined in [GOVERNANCE.md](./GO
 | B-M6.7 | Changelog tooling unknown | Depends on M6.3 tooling choice | @usrbinkat |
 | B-M6.8 | Release creation manual | Depends on M6.3 tooling choice | @usrbinkat |
 | B-M6.9 | Preview artifacts not configured | Depends on M6.2 | @usrbinkat |
+| B-M6.10 | Forgejo Actions workflow not created | Create `.forgejo/workflows/ci.yml` | @usrbinkat |
+| B-M6.11 | Multi-origin release sync undefined | **DISCOVERY**: Research release mirroring strategies | @usrbinkat |
 
 ### Discovery: Semantic Release Tooling
 
@@ -549,18 +553,180 @@ This milestone implements the promotion pipeline defined in [GOVERNANCE.md](./GO
 
 **Discovery deliverable**: Decision document with chosen tool and rationale.
 
+### M6.10: Forgejo Actions CI — Detailed Specification
+
+**Purpose**: Implement CI/CD pipeline on Forgejo (git.braincraft.io) as the primary development origin, enabling semantic releases independent of GitHub.
+
+#### Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    MULTI-ORIGIN CI ARCHITECTURE                      │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│   git.braincraft.io (Forgejo)          GitHub (origin)              │
+│   ─────────────────────────           ──────────────────            │
+│   PRIMARY DEVELOPMENT                  MIRROR / COMMUNITY           │
+│                                                                      │
+│   ┌─────────────────────┐              ┌─────────────────────┐      │
+│   │ .forgejo/workflows/ │              │ .github/workflows/  │      │
+│   │  ├── ci.yml         │              │  ├── ci.yml         │      │
+│   │  ├── release.yml    │              │  └── mirror.yml     │      │
+│   │  └── promote.yml    │              └─────────────────────┘      │
+│   └─────────────────────┘                                           │
+│            │                                    ▲                   │
+│            ▼                                    │                   │
+│   Forgejo Actions Runner ──────────────────────┘                   │
+│   (semantic-release)          (push mirror on release)              │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+#### Deliverable Components
+
+| File | Type | Purpose |
+|------|------|---------|
+| `.forgejo/workflows/ci.yml` | Workflow | Build, test, lint on every push |
+| `.forgejo/workflows/release.yml` | Workflow | Semantic release on main/latest branches |
+| `.forgejo/workflows/promote.yml` | Workflow | Branch promotion main→latest |
+
+#### Implementation Requirements
+
+| Requirement | Description | Validation |
+|-------------|-------------|------------|
+| **Runner Available** | Forgejo Actions runner registered and active | `forgejo-runner list` shows runner |
+| **Workflow Syntax** | Compatible with Forgejo Actions (GitHub Actions subset) | Workflow lint passes |
+| **Node.js Environment** | Node 20+ available for semantic-release | `node --version` in workflow |
+| **Git Credentials** | Push access to create tags and releases | Workflow can `git push --tags` |
+| **Release Token** | `FORGEJO_TOKEN` secret with release permissions | Secret exists in repo settings |
+
+#### Workflow: ci.yml
+
+```yaml
+name: CI
+on:
+  push:
+    branches: [main, latest]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Type check
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+```
+
+#### Workflow: release.yml
+
+```yaml
+name: Release
+on:
+  push:
+    branches: [latest]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: npm ci
+      - name: Semantic Release
+        env:
+          FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
+          GIT_AUTHOR_NAME: forgejo-actions[bot]
+          GIT_AUTHOR_EMAIL: forgejo-actions[bot]@git.braincraft.io
+          GIT_COMMITTER_NAME: forgejo-actions[bot]
+          GIT_COMMITTER_EMAIL: forgejo-actions[bot]@git.braincraft.io
+        run: npx semantic-release
+```
+
+#### Acceptance Criteria
+
+| Criterion | Validation | Status |
+|-----------|------------|--------|
+| `.forgejo/workflows/ci.yml` exists | `test -f .forgejo/workflows/ci.yml` | Presence |
+| CI workflow runs on push | Forgejo Actions shows green check | Integration |
+| `.forgejo/workflows/release.yml` exists | `test -f .forgejo/workflows/release.yml` | Presence |
+| semantic-release configured | `.releaserc.json` or `release.config.js` exists | Presence |
+| Release creates tag | `git tag -l` shows semantic version tags | Integration |
+| Release creates Forgejo release | Forgejo releases page shows entry | External |
+| CHANGELOG.md updated | File modified by semantic-release | Content |
+
+#### Validation Scope
+
+**In Scope**:
+- Workflow file presence and syntax
+- CI pipeline execution on Forgejo
+- Semantic release tag creation
+- Changelog generation
+
+**Out of Scope** (validated by M6.11):
+- Cross-origin release synchronization
+- GitHub release mirroring
+
+#### Semantic Release Configuration
+
+```json
+{
+  "$schema": "https://json.schemastore.org/semantic-release.json",
+  "branches": ["latest", {"name": "main", "prerelease": "alpha"}],
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    "@semantic-release/changelog",
+    ["@semantic-release/git", {
+      "assets": ["CHANGELOG.md", "package.json"],
+      "message": "chore(release): ${nextRelease.version} [skip ci]"
+    }],
+    ["@semantic-release/github", {
+      "githubUrl": "https://git.braincraft.io",
+      "githubApiPathPrefix": "/api/v1"
+    }]
+  ]
+}
+```
+
+**Note**: The `@semantic-release/github` plugin works with Forgejo/Gitea API when configured with custom URLs.
+
 ### Acceptance Test
 
 ```bash
 # M6 Acceptance Test
+# Branch and config validation
 git branch -a | grep -q "origin/latest" && \
 test -f .releaserc.json -o -f release.config.js -o -f .release-please-manifest.json && \
 test -f CHANGELOG.md && \
+# GitHub release validation
 gh release list --limit 1 | grep -q . && \
+# Forgejo workflow validation
+test -d .forgejo/workflows && \
+test -f .forgejo/workflows/ci.yml && \
+test -f .forgejo/workflows/release.yml && \
 echo "M6: PASS" || echo "M6: FAIL"
 ```
 
-**Graduation Criteria**: Full promotion pipeline operational, v1.0.0-alpha released via automation.
+**Graduation Criteria**: Full promotion pipeline operational on both origins, v1.0.0-alpha released via automation.
 
 ---
 
@@ -578,7 +744,7 @@ echo "M6: PASS" || echo "M6: FAIL"
 | M7.2 | Nix devshell | `BLOCKED` | `nix develop` provides dev environment |
 | M7.3 | Nix package | `BLOCKED` | `nix build` produces working binary |
 | M7.4 | Nix CI runner | `BLOCKED` | CI uses Nix for reproducible builds |
-| M7.5 | git.braincraft.io mirror | `BLOCKED` | Push to GitHub mirrors to Braincraft |
+| M7.5 | git.braincraft.io mirror | `PROPOSED` | Push to GitHub mirrors to Braincraft |
 | M7.6 | Multi-origin CI | `BLOCKED` | CI triggers from both origins |
 
 ### Blockers
@@ -587,7 +753,7 @@ echo "M6: PASS" || echo "M6: FAIL"
 |----|---------|----------------|-------|
 | B-M7.1 | Nix flake not created | Create flake.nix with Tauri + Rust + Node | @usrbinkat |
 | B-M7.4 | Nix CI unknown | **DISCOVERY**: Research cachix, garnix, or self-hosted | @usrbinkat |
-| B-M7.5 | Braincraft repo not created | Create repo at git.braincraft.io | @usrbinkat |
+| B-M7.5 | Braincraft repo created, push mirror not configured | Configure push mirror in GitHub settings | @usrbinkat |
 | B-M7.6 | Multi-origin CI unknown | **DISCOVERY**: Research Forgejo/Gitea CI or webhook triggers | @usrbinkat |
 
 ### Discovery: Nix CI Runner
@@ -762,17 +928,20 @@ All active blockers across milestones:
 | B-M6.1 | M6 | Latest branch not created | Implementation | @usrbinkat | **Critical** |
 | B-M6.2 | M6 | Auto-promotion config | Discovery | @usrbinkat | Open |
 | B-M6.3 | M6 | Semantic release tooling | Discovery | @usrbinkat | **Critical** |
+| B-M6.10 | M6 | Forgejo Actions workflow | Implementation | @usrbinkat | Open |
+| B-M6.11 | M6 | Multi-origin release sync | Discovery | @usrbinkat | Open |
 | B-M7.1 | M7 | Nix flake not created | Implementation | @usrbinkat | Open |
 | B-M7.4 | M7 | Nix CI unknown | Discovery | @usrbinkat | Open |
-| B-M7.5 | M7 | Braincraft repo | Implementation | @usrbinkat | Open |
+| B-M7.5 | M7 | Push mirror not configured | Implementation | @usrbinkat | Open |
 
 ### Critical Path
 
 The following blockers are on the critical path to v1.0.0:
 
 1. **B-M6.3**: Choose semantic release tooling (unblocks M6.2-M6.9)
-2. **B-M6.1**: Create `latest` branch (unblocks governance operationalization)
-3. **B-M7.1**: Create Nix flake (unblocks M7.2-M7.4)
+2. **B-M6.10**: Implement Forgejo Actions workflows (unblocks multi-origin CI)
+3. **B-M6.1**: Create `latest` branch (unblocks governance operationalization)
+4. **B-M7.1**: Create Nix flake (unblocks M7.2-M7.4)
 
 ### Blocker Resolution
 
@@ -823,6 +992,7 @@ Per [MILESTONES_CEREMONY.md](./MILESTONES_CEREMONY.md#blockers):
 | 2026-01-18 | Initial draft | @usrbinkat |
 | 2026-01-18 | Added M6, M7; TDD acceptance criteria; discovery blockers | @usrbinkat |
 | 2026-01-18 | Added M1.11 (OpenCode Commit Tooling); validation outcome standards; fixed M1 acceptance test | @usrbinkat |
+| 2026-01-18 | Added M6.10/M6.11 (Forgejo Actions, multi-origin releases); detailed semantic release spec | @usrbinkat |
 
 ---
 
