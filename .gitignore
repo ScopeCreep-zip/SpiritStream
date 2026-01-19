@@ -1,6 +1,6 @@
 # Dependencies
 node_modules/
-frontend/node_modules/
+**/node_modules/
 
 # Build outputs
 dist/
@@ -9,6 +9,7 @@ resources/
 
 # Nix development environment
 .direnv/
+discovery/
 
 # Media and testing
 *.log
@@ -22,6 +23,9 @@ frontend/.vscode/
 
 # Credentials and certificates
 spiritstream-cert.pfx
+.env
+.env.*
+.env.secrets
 
 # Platform-specific scripts (generated)
 *.ps1
