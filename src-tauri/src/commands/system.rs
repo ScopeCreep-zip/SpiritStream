@@ -108,12 +108,41 @@ pub fn get_encoders() -> Result<Encoders, String> {
 
     #[cfg(windows)]
     {
-        if let Ok(output) = Command::new("wmic").args(["path", "win32_VideoController", "get", "name"]).output() {
-            if let Ok(gpu_list) = String::from_utf8(output.stdout) {
-                let gpu_list = gpu_list.to_lowercase();
-                if gpu_list.contains("nvidia") { has_nvidia = true; }
-                if gpu_list.contains("amd") || gpu_list.contains("radeon") { has_amd = true; }
-                if gpu_list.contains("intel") { has_intel = true; }
+        // Use PowerShell for consistent UTF-8 output (WMIC outputs UTF-16 on some systems)
+        let ps_result = Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-Command",
+                "Get-CimInstance -ClassName Win32_VideoController | Select-Object -ExpandProperty Name"
+            ])
+            .output();
+
+        // Fall back to WMIC if PowerShell fails
+        let gpu_output = match ps_result {
+            Ok(output) if output.status.success() => Some(output.stdout),
+            _ => Command::new("wmic")
+                .args(["path", "win32_VideoController", "get", "name"])
+                .output()
+                .ok()
+                .map(|o| o.stdout),
+        };
+
+        if let Some(stdout) = gpu_output {
+            // Use lossy conversion to handle any encoding issues
+            let gpu_list = String::from_utf8_lossy(&stdout).to_lowercase();
+            log::debug!("GPU detection output: {}", gpu_list.trim());
+
+            if gpu_list.contains("nvidia") || gpu_list.contains("geforce") || gpu_list.contains("quadro") {
+                has_nvidia = true;
+                log::info!("Detected NVIDIA GPU");
+            }
+            if gpu_list.contains("amd") || gpu_list.contains("radeon") {
+                has_amd = true;
+                log::info!("Detected AMD GPU");
+            }
+            if gpu_list.contains("intel") || gpu_list.contains("arc ") {
+                has_intel = true;
+                log::info!("Detected Intel GPU");
             }
         }
     }
