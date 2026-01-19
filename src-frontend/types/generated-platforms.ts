@@ -120,7 +120,7 @@ export const PLATFORMS: Record<Platform, {
     abbreviation: 'TW',
     color: '#9146FF',
     textColor: '#FFFFFF',
-    defaultServer: 'rtmp://ingest.global-contribute.live-video.net/app/',
+    defaultServer: 'rtmp://ingest.global-contribute.live-video.net/app',
     streamKeyPlacement: 'append',
   },
   'Kick': {
