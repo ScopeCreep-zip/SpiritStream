@@ -601,17 +601,6 @@ impl FFmpegHandler {
             }
             recent_lines.push_back(sanitized_line.clone());
 
-            // Temporary: log sanitized progress lines to diagnose stats parsing.
-            if sanitized_line.contains("progress=")
-                || sanitized_line.contains("out_time=")
-                || sanitized_line.contains("out_time_ms=")
-                || sanitized_line.contains("out_time_us=")
-                || sanitized_line.contains("total_size=")
-                || sanitized_line.contains("bitrate=")
-            {
-                log::info!("[FFmpeg:{group_id}] progress {sanitized_line}");
-            }
-
             let parsed = stats.parse_line(&line);
             let is_progress_line = line.trim_start().starts_with("progress=");
 
