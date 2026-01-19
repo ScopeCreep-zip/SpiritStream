@@ -129,6 +129,40 @@ Masks stream keys with asterisks when logging stream
 operations to prevent credential leakage in log files.
 ```
 
+### Commit Hygiene: PII Prohibition
+
+**STRICT REQUIREMENT**: Commits MUST NOT contain personally identifiable information (PII).
+
+Commits generate semantic releases, changelogs, and release notes. All commit content becomes permanent public record. The following are **prohibited** in commit messages:
+
+| Prohibited | Examples |
+|------------|----------|
+| Names | Personal names, usernames, handles |
+| Emails | Any email addresses including noreply addresses |
+| Co-Authored-By | `Co-Authored-By: Name <email>` lines |
+| Signed-off-by | `Signed-off-by: Name <email>` lines |
+| Attribution | Any personal attribution or credit |
+
+**Correct:**
+```
+fix(build): rename patch script to .cjs for CommonJS compatibility
+
+Project uses "type": "module" in package.json, causing .js files
+to be treated as ES modules. Renaming to .cjs resolves the issue.
+```
+
+**Incorrect:**
+```
+fix(build): rename patch script to .cjs for CommonJS compatibility
+
+Renaming to .cjs resolves the issue.
+
+Co-Authored-By: Someone <someone@example.com>
+Signed-off-by: Another Person <another@example.com>
+```
+
+Commit messages MUST be purely technical. Recognition happens through GitHub's contributor graph and release notes, not commit metadata.
+
 ### Code Standards
 
 #### TypeScript (Frontend)
@@ -321,6 +355,7 @@ cargo test           # Rust tests
 
 - [ ] Branch follows naming convention
 - [ ] Commits follow conventional commits
+- [ ] **No PII in commits** (no names, emails, Co-Authored-By)
 - [ ] All CI checks pass
 - [ ] PR description filled out
 - [ ] Related issues linked
