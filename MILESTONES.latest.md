@@ -535,7 +535,7 @@ This milestone implements the promotion pipeline defined in [GOVERNANCE.md](./GO
 | B-M6.7 | Changelog tooling unknown | Depends on M6.3 tooling choice | @usrbinkat |
 | B-M6.8 | Release creation manual | Depends on M6.3 tooling choice | @usrbinkat |
 | B-M6.9 | Preview artifacts not configured | Depends on M6.2 | @usrbinkat |
-| B-M6.10 | Forgejo Actions workflow not created | Create `.forgejo/workflows/ci.yml` | @usrbinkat |
+| B-M6.10 | Forgejo Actions workflow not created | Create `.forgejo/workflows/ci.yml`; **Depends on PR #5** (linux-build-validation) | @usrbinkat |
 | B-M6.11 | Multi-origin release sync undefined | **DISCOVERY**: Research release mirroring strategies | @usrbinkat |
 
 ### Discovery: Semantic Release Tooling
@@ -556,6 +556,8 @@ This milestone implements the promotion pipeline defined in [GOVERNANCE.md](./GO
 ### M6.10: Forgejo Actions CI — Detailed Specification
 
 **Purpose**: Implement CI/CD pipeline on Forgejo (git.braincraft.io) as the primary development origin, enabling semantic releases independent of GitHub.
+
+> **Dependency**: This work is blocked by [PR #5 (linux-build-validation)](https://github.com/ScopeCreep-zip/SpiritStream/pull/5) which provides the `.envrc`, Nix devshell integration, and Linux distribution packaging scripts required for CI builds.
 
 #### Architecture Overview
 
@@ -928,7 +930,7 @@ All active blockers across milestones:
 | B-M6.1 | M6 | Latest branch not created | Implementation | @usrbinkat | **Critical** |
 | B-M6.2 | M6 | Auto-promotion config | Discovery | @usrbinkat | Open |
 | B-M6.3 | M6 | Semantic release tooling | Discovery | @usrbinkat | **Critical** |
-| B-M6.10 | M6 | Forgejo Actions workflow | Implementation | @usrbinkat | Open |
+| B-M6.10 | M6 | Forgejo Actions workflow | Implementation | @usrbinkat | Open; **blocked by PR #5** |
 | B-M6.11 | M6 | Multi-origin release sync | Discovery | @usrbinkat | Open |
 | B-M7.1 | M7 | Nix flake not created | Implementation | @usrbinkat | Open |
 | B-M7.4 | M7 | Nix CI unknown | Discovery | @usrbinkat | Open |
