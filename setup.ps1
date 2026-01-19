@@ -61,7 +61,7 @@ function Check-Node {
 
             # Vite requires Node.js 20.19+ or 22.12+
             # Odd-numbered versions (21, 23, etc.) are not LTS and may have compatibility issues
-            $IsValid = ($Major -eq 20 -and $Minor -ge 19) -or ($Major -ge 22 -and $Minor -ge 12) -or ($Major -gt 22)
+            $IsValid = ($Major -eq 20 -and $Minor -ge 19) -or ($Major -ge 22 -and $Minor -ge 12)
             $IsOddVersion = ($Major % 2) -eq 1
 
             if ($IsOddVersion) {
