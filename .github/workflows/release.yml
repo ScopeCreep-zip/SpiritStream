@@ -6,7 +6,54 @@ on:
       - 'v*'
 
 jobs:
+  validate-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate version consistency
+        run: |
+          # Extract version from git tag (strip 'v' prefix)
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          echo "Git tag version: $TAG_VERSION"
+
+          # Extract version from package.json
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          echo "package.json version: $PKG_VERSION"
+
+          # Extract version from tauri.conf.json
+          TAURI_VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          echo "tauri.conf.json version: $TAURI_VERSION"
+
+          # Extract version from Cargo.toml
+          CARGO_VERSION=$(grep -m1 '^version' src-tauri/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "Cargo.toml version: $CARGO_VERSION"
+
+          # Check all versions match
+          MISMATCH=0
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "❌ ERROR: Git tag ($TAG_VERSION) doesn't match package.json ($PKG_VERSION)"
+            MISMATCH=1
+          fi
+          if [ "$TAG_VERSION" != "$TAURI_VERSION" ]; then
+            echo "❌ ERROR: Git tag ($TAG_VERSION) doesn't match tauri.conf.json ($TAURI_VERSION)"
+            MISMATCH=1
+          fi
+          if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
+            echo "❌ ERROR: Git tag ($TAG_VERSION) doesn't match Cargo.toml ($CARGO_VERSION)"
+            MISMATCH=1
+          fi
+
+          if [ $MISMATCH -eq 1 ]; then
+            echo ""
+            echo "💡 Fix: Update all version files to match your git tag, or create a new tag matching your versions."
+            exit 1
+          fi
+
+          echo "✅ All versions match: $TAG_VERSION"
+
   publish-tauri:
+    needs: validate-version
     permissions:
       contents: write
     strategy:
