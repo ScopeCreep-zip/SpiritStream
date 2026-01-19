@@ -125,6 +125,38 @@ Test: git branch -a | grep -q "latest" && echo PASS || echo FAIL
 Outcome: PASS required for COMPLETE status
 ```
 
+### Validation Outcome Standards
+
+Acceptance tests MUST follow these standards:
+
+| Standard | Requirement | Example |
+|----------|-------------|---------|
+| **Deterministic** | Same inputs produce same outputs | File existence checks, not timing-dependent |
+| **Automated** | No human judgment required | CI can execute without prompts |
+| **Documented** | Test commands are explicit | Bash snippet, not "verify it works" |
+| **Idempotent** | Running twice gives same result | Read-only operations preferred |
+| **Scoped** | Tests only the deliverable | No cross-cutting concerns |
+
+**Validation Types**:
+
+| Type | When to Use | Example |
+|------|-------------|---------|
+| **Presence** | File/branch must exist | `test -f FILE` |
+| **Content** | File must contain pattern | `grep -q "PATTERN" FILE` |
+| **Execution** | Command must succeed | `cargo test --package X` |
+| **Integration** | End-to-end workflow | CI pipeline completion |
+| **External** | Depends on external system | `gh release list` |
+
+**Cross-Cutting Concerns**:
+
+Some validations (e.g., commit format, code style) apply across all milestones. These are:
+
+1. **NOT duplicated** in each milestone's acceptance test
+2. **Centralized** in the milestone that owns the enforcement mechanism
+3. **Referenced** from dependent deliverables via `(see M#.#)`
+
+Example: Commit format validation is owned by M6.6 (Conventional Commits enforced), not M1.
+
 ---
 
 ## Scope Definition
@@ -181,11 +213,13 @@ Outcome: PASS required for COMPLETE status
 | M1.8 | Issue Templates | `PROPOSED` | Bug report, feature request, security report templates exist |
 | M1.9 | PR Template | `PROPOSED` | Template exists with summary, changes, test plan, checklist |
 | M1.10 | DEPENDENCIES.md | `COMPLETE` | File exists, documents all runtime/build dependencies |
+| M1.11 | OpenCode Commit Tooling | `ACCEPTED` | Commits validated by commitlint or semantic-release (see M6.6) |
 
 ### Acceptance Test
 
 ```bash
 # M1 Acceptance Test
+# Document existence validation
 test -f CONTRIBUTORS.md && \
 test -f REVIEWERS.md && \
 test -f GOVERNANCE.md && \
@@ -196,10 +230,77 @@ test -f DEPENDENCIES.md && \
 test -f CODE_OF_CONDUCT.md && \
 test -d .github/ISSUE_TEMPLATE && \
 test -f .github/PULL_REQUEST_TEMPLATE.md && \
+# OpenCode tooling presence
+test -f opencode.json && \
+test -d .opencode/command && \
+test -d .opencode/skill && \
 echo "M1: PASS" || echo "M1: FAIL"
+
+# NOTE: Commit conformance is NOT validated here.
+# Conventional commit enforcement is a cross-cutting concern
+# validated by M6.6 (commitlint pre-commit hooks or CI).
+# See: M1.11 acceptance criteria.
 ```
 
 **Graduation Criteria**: All deliverables reach `COMPLETE` status.
+
+### M1.11: OpenCode Commit Tooling — Detailed Specification
+
+**Purpose**: Provide AI-assisted commit tooling that enforces conventional commit standards during development, ensuring consistent commit messages before they reach CI validation (M6.6).
+
+#### Deliverable Components
+
+| File | Type | Purpose |
+|------|------|---------|
+| `opencode.json` | Configuration | OpenCode AI tool configuration with MCP servers for Kubernetes, Gitea, NixOS, browser automation |
+| `.opencode/command/commit.md` | Slash Command | `/commit` command definition that invokes the git-commit skill |
+| `.opencode/skill/git-commit/SKILL.md` | Skill Definition | 500+ line conventional commits skill implementing conventionalcommits.org v1.0.0 specification |
+
+#### Justification
+
+| Component | Why It's Needed |
+|-----------|-----------------|
+| **opencode.json** | Configures the AI development environment with project-specific MCP servers. Enables consistent tooling across all contributors using OpenCode. Uses `{env:VAR}` placeholders for secrets—no credentials in repository. |
+| **commit.md** | Provides discoverable `/commit` command for developers. Reduces friction for conventional commit adoption. Maps to skill for implementation. |
+| **SKILL.md** | Implements full conventional commits specification. Provides AI with detailed rules for type selection, scope formatting, breaking change detection, and message composition. Ensures commits pass M6.6 validation. |
+
+#### Acceptance Criteria
+
+| Criterion | Validation | Status |
+|-----------|------------|--------|
+| `opencode.json` exists at repo root | `test -f opencode.json` | Presence |
+| `opencode.json` contains no secrets | `grep -qE '(password|token|key).*:.*[^{]' opencode.json && echo FAIL \|\| echo PASS` | Content |
+| `.opencode/command/commit.md` exists | `test -f .opencode/command/commit.md` | Presence |
+| `.opencode/skill/git-commit/SKILL.md` exists | `test -f .opencode/skill/git-commit/SKILL.md` | Presence |
+| Skill references conventionalcommits.org | `grep -q "conventionalcommits.org" .opencode/skill/git-commit/SKILL.md` | Content |
+| Skill defines commit types | `grep -qE "^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)" .opencode/skill/git-commit/SKILL.md` | Content |
+
+#### Validation Scope
+
+**In Scope**:
+- File presence validation
+- No-secrets validation for configuration
+- Skill content references correct specification
+
+**Out of Scope** (validated by M6.6):
+- Actual commit message validation at commit time
+- Pre-commit hook enforcement
+- CI rejection of non-conforming commits
+
+#### Relationship to M6.6
+
+```
+M1.11 (OpenCode Tooling)          M6.6 (Conventional Commits Enforced)
+─────────────────────────         ────────────────────────────────────
+AI-assisted authoring             Automated enforcement
+Guidance during development   →   Rejection of non-conforming commits
+Skill teaches the rules           commitlint/semantic-release validates
+
+Developer Experience              CI/CD Pipeline
+(helpful suggestions)             (hard requirements)
+```
+
+M1.11 is `ACCEPTED` (not `COMPLETE`) because full validation requires M6.6 infrastructure. The tooling exists and guides developers, but enforcement awaits release infrastructure.
 
 ---
 
@@ -721,6 +822,7 @@ Per [MILESTONES_CEREMONY.md](./MILESTONES_CEREMONY.md#blockers):
 |------|--------|--------|
 | 2026-01-18 | Initial draft | @usrbinkat |
 | 2026-01-18 | Added M6, M7; TDD acceptance criteria; discovery blockers | @usrbinkat |
+| 2026-01-18 | Added M1.11 (OpenCode Commit Tooling); validation outcome standards; fixed M1 acceptance test | @usrbinkat |
 
 ---
 

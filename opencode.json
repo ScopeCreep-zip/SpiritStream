@@ -1,0 +1,52 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "theme": "catppuccin",
+  "small_model": "opencode/gpt-5-nano",
+  "permission": {
+    "read": {
+      "/workspace/**": "ask"
+    },
+    "edit": {
+      "/workspace/**": "ask"
+    },
+    "write": {
+      "/workspace/**": "ask"
+    },
+    "bash": "ask"
+  },
+  "mcp": {
+    "deepwiki": {
+      "type": "remote",
+      "url": "https://mcp.deepwiki.com/mcp"
+    },
+    "nixos": {
+      "type": "local",
+      "command": ["nix", "run", "github:utensils/mcp-nixos", "--"]
+    },
+    "github": {
+      "type": "local",
+      "command": ["github-mcp-server", "stdio"],
+      "environment": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "{env:GITHUB_PERSONAL_ACCESS_TOKEN}"
+      }
+    },
+    "gitea": {
+      "type": "local",
+      "command": ["gitea-mcp", "-host", "{env:GITEA_URL}", "-token", "{env:GITEA_TOKEN}"]
+    },
+    "kubernetes": {
+      "type": "local",
+      "command": ["mcp-k8s-go"]
+    },
+    "playwright": {
+      "type": "local",
+      "command": ["npx", "-y", "@playwright/mcp@latest"],
+      "environment": {
+        "PLAYWRIGHT_MCP_BROWSER": "chromium",
+        "PLAYWRIGHT_MCP_EXECUTABLE_PATH": "/usr/bin/google-chrome",
+        "PLAYWRIGHT_BROWSERS_PATH": "{env:HOME}/.cache/ms-playwright"
+      },
+      "enabled": true
+    }
+  }
+}
