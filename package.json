@@ -1,32 +1,36 @@
 {
-  "name": "@scopecreep-zip/spiritstream",
+  "name": "spiritstream",
   "version": "1.0.1",
   "description": "SpiritStream - Multi-Destination Streaming Application",
-  "private": false,
+  "private": true,
   "type": "module",
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
-  },
+  "packageManager": "pnpm@10.28.1",
   "scripts": {
     "generate:platforms": "tsx scripts/generate-platforms.ts",
     "build:server": "tsx scripts/build-server.ts",
     "build:server:release": "tsx scripts/build-server.ts --release",
-    "predev": "npm run generate:platforms && npm run build:server",
-    "prebuild": "npm run generate:platforms && npm run build:server:release",
-    "tauri": "tauri",
-    "dev": "tauri dev",
-    "build": "tauri build",
-    "build:debug": "tauri build --debug",
-    "backend:dev": "cargo run --manifest-path src-tauri/Cargo.toml --bin server",
-    "vite:dev": "vite",
-    "vite:build": "vite build",
-    "vite:preview": "vite preview",
-    "typecheck": "tsc -p tsconfig.frontend.json --noEmit",
-    "check": "cargo check --manifest-path src-tauri/Cargo.toml",
-    "lint": "eslint src-frontend --ext .ts,.tsx",
-    "lint:fix": "eslint src-frontend --ext .ts,.tsx --fix",
-    "format": "prettier --write \"src-frontend/**/*.{ts,tsx,css,json}\"",
-    "format:check": "prettier --check \"src-frontend/**/*.{ts,tsx,css,json}\""
+
+    "dev": "pnpm run dev:desktop",
+    "dev:web": "pnpm --filter @spiritstream/web dev",
+    "dev:desktop": "pnpm run build:server && pnpm --filter @spiritstream/desktop dev",
+
+    "build": "turbo run build",
+    "build:web": "pnpm --filter @spiritstream/web build",
+    "build:desktop": "pnpm run build:server:release && pnpm --filter @spiritstream/desktop build",
+
+    "backend:dev": "cargo run --manifest-path server/Cargo.toml",
+    "backend:build": "cargo build --manifest-path server/Cargo.toml --release",
+
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "lint:fix": "pnpm --filter @spiritstream/web lint:fix",
+    "format": "prettier --write \"apps/**/*.{ts,tsx,css,json}\" \"packages/**/*.{ts,tsx,css,json}\"",
+    "format:check": "prettier --check \"apps/**/*.{ts,tsx,css,json}\" \"packages/**/*.{ts,tsx,css,json}\"",
+
+    "check:server": "cargo check --manifest-path server/Cargo.toml",
+    "check:desktop": "cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml",
+
+    "clean": "rm -rf apps/*/dist apps/*/node_modules/.cache server/target apps/desktop/src-tauri/target"
   },
   "repository": {
     "type": "git",
@@ -47,62 +51,13 @@
   "engines": {
     "node": ">=20.0.0 <21.0.0 || >=22.0.0 <23.0.0 || >=24.0.0 <25.0.0"
   },
-  "files": [
-    "dist",
-    "src-frontend",
-    "src-tauri/src",
-    "src-tauri/Cargo.toml",
-    "src-tauri/tauri.conf.json",
-    "src-tauri/icons",
-    "src-tauri/build.rs",
-    "config",
-    "vite.config.ts",
-    "tsconfig.frontend.json",
-    "tsconfig.node.json",
-    "index.html",
-    "README.md",
-    "LICENSE"
-  ],
   "bugs": {
     "url": "https://github.com/ScopeCreep-zip/SpiritStream/issues"
   },
   "homepage": "https://github.com/ScopeCreep-zip/SpiritStream#readme",
   "devDependencies": {
-    "@eslint/js": "^9.39.2",
-    "@tailwindcss/vite": "^4.1.18",
-    "@tauri-apps/cli": "^2.9.6",
-    "@types/node": "^22.13.9",
-    "@types/react": "^19.2.7",
-    "@types/react-dom": "^19.2.3",
-    "@typescript-eslint/eslint-plugin": "^8.51.0",
-    "@typescript-eslint/parser": "^8.51.0",
-    "@vitejs/plugin-react": "^5.1.2",
-    "eslint": "^9.39.2",
-    "eslint-plugin-react": "^7.37.5",
-    "eslint-plugin-react-hooks": "^5.2.0",
-    "globals": "^17.0.0",
     "prettier": "^3.4.0",
-    "puppeteer": "^24.34.0",
-    "tailwindcss": "^4.1.18",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3",
-    "vite": "^7.3.0"
-  },
-  "dependencies": {
-    "@dnd-kit/core": "^6.3.1",
-    "@dnd-kit/sortable": "^10.0.0",
-    "@dnd-kit/utilities": "^3.2.2",
-    "@tauri-apps/api": "^2.9.1",
-    "@tauri-apps/plugin-dialog": "^2.4.2",
-    "@tauri-apps/plugin-fs": "^2.4.4",
-    "@tauri-apps/plugin-shell": "^2.3.3",
-    "clsx": "^2.1.1",
-    "i18next": "^25.7.3",
-    "lucide-react": "^0.562.0",
-    "react": "^19.2.3",
-    "react-dom": "^19.2.3",
-    "react-i18next": "^16.5.1",
-    "tailwind-merge": "^3.4.0",
-    "zustand": "^5.0.9"
+    "turbo": "^2.5.4"
   }
 }
