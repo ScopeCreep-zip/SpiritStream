@@ -7,6 +7,12 @@ use tauri::{AppHandle, Manager};
 use crate::models::Encoders;
 use crate::services::read_recent_logs;
 
+// Windows: Hide console windows for spawned processes
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 /// Find FFmpeg path
 fn find_ffmpeg() -> String {
     // Try to find ffmpeg in PATH first
@@ -20,12 +26,17 @@ fn find_ffmpeg() -> String {
     }
 
     #[cfg(windows)]
-    if let Ok(output) = Command::new("where").arg("ffmpeg").output() {
-        if output.status.success() {
-            if let Ok(path) = String::from_utf8(output.stdout) {
-                // `where` can return multiple paths, take the first
-                if let Some(first_path) = path.lines().next() {
-                    return first_path.trim().to_string();
+    {
+        let mut cmd = Command::new("where");
+        cmd.arg("ffmpeg");
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        if let Ok(output) = cmd.output() {
+            if output.status.success() {
+                if let Ok(path) = String::from_utf8(output.stdout) {
+                    // `where` can return multiple paths, take the first
+                    if let Some(first_path) = path.lines().next() {
+                        return first_path.trim().to_string();
+                    }
                 }
             }
         }
@@ -89,9 +100,11 @@ fn find_ffmpeg() -> String {
 #[tauri::command]
 pub fn get_encoders() -> Result<Encoders, String> {
     let ffmpeg_path = find_ffmpeg();
-    let output = Command::new(&ffmpeg_path)
-        .args(["-encoders", "-hide_banner"])
-        .output()
+    let mut cmd = Command::new(&ffmpeg_path);
+    cmd.args(["-encoders", "-hide_banner"]);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd.output()
         .map_err(|e| format!("Failed to run FFmpeg: {e}"))?;
     if !output.status.success() {
         return Ok(Encoders {
@@ -108,12 +121,43 @@ pub fn get_encoders() -> Result<Encoders, String> {
 
     #[cfg(windows)]
     {
-        if let Ok(output) = Command::new("wmic").args(["path", "win32_VideoController", "get", "name"]).output() {
-            if let Ok(gpu_list) = String::from_utf8(output.stdout) {
-                let gpu_list = gpu_list.to_lowercase();
-                if gpu_list.contains("nvidia") { has_nvidia = true; }
-                if gpu_list.contains("amd") || gpu_list.contains("radeon") { has_amd = true; }
-                if gpu_list.contains("intel") { has_intel = true; }
+        // Use PowerShell for consistent UTF-8 output (WMIC outputs UTF-16 on some systems)
+        let mut ps_cmd = Command::new("powershell");
+        ps_cmd.args([
+            "-NoProfile",
+            "-Command",
+            "Get-CimInstance -ClassName Win32_VideoController | Select-Object -ExpandProperty Name"
+        ]);
+        ps_cmd.creation_flags(CREATE_NO_WINDOW);
+        let ps_result = ps_cmd.output();
+
+        // Fall back to WMIC if PowerShell fails
+        let gpu_output = match ps_result {
+            Ok(output) if output.status.success() => Some(output.stdout),
+            _ => {
+                let mut wmic_cmd = Command::new("wmic");
+                wmic_cmd.args(["path", "win32_VideoController", "get", "name"]);
+                wmic_cmd.creation_flags(CREATE_NO_WINDOW);
+                wmic_cmd.output().ok().map(|o| o.stdout)
+            }
+        };
+
+        if let Some(stdout) = gpu_output {
+            // Use lossy conversion to handle any encoding issues
+            let gpu_list = String::from_utf8_lossy(&stdout).to_lowercase();
+            log::debug!("GPU detection output: {}", gpu_list.trim());
+
+            if gpu_list.contains("nvidia") || gpu_list.contains("geforce") || gpu_list.contains("quadro") {
+                has_nvidia = true;
+                log::info!("Detected NVIDIA GPU");
+            }
+            if gpu_list.contains("amd") || gpu_list.contains("radeon") {
+                has_amd = true;
+                log::info!("Detected AMD GPU");
+            }
+            if gpu_list.contains("intel") || gpu_list.contains("arc ") {
+                has_intel = true;
+                log::info!("Detected Intel GPU");
             }
         }
     }
@@ -199,9 +243,11 @@ pub fn get_encoders() -> Result<Encoders, String> {
 pub fn test_ffmpeg() -> Result<String, String> {
     let ffmpeg_path = find_ffmpeg();
 
-    let output = Command::new(&ffmpeg_path)
-        .args(["-version"])
-        .output()
+    let mut cmd = Command::new(&ffmpeg_path);
+    cmd.args(["-version"]);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd.output()
         .map_err(|e| format!("Failed to run FFmpeg: {e}"))?;
 
     if !output.status.success() {
@@ -238,9 +284,11 @@ pub fn validate_ffmpeg_path(path: String) -> Result<String, String> {
     }
 
     // Try to run it with -version to verify it's actually FFmpeg
-    let output = Command::new(&path)
-        .args(["-version"])
-        .output()
+    let mut cmd = Command::new(&path);
+    cmd.args(["-version"]);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd.output()
         .map_err(|e| format!("Failed to execute: {e}"))?;
 
     if !output.status.success() {

@@ -3,8 +3,15 @@
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+
+// Windows: Hide console windows for spawned processes
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -211,8 +218,6 @@ impl FFmpegDownloader {
     /// Install FFmpeg on Windows using UAC elevation
     #[cfg(target_os = "windows")]
     fn install_windows(temp_path: &Path, target_path: &Path) -> Result<(), DownloadError> {
-        use std::process::Command;
-
         let target_dir = target_path.parent()
             .ok_or_else(|| DownloadError::InstallationFailed("Invalid target path".to_string()))?;
 
@@ -241,15 +246,17 @@ exit /b %errorlevel%
         log::info!("Requesting Windows UAC elevation to install FFmpeg");
 
         // Use cmd to run the batch file with elevation - UAC will show the batch file name
-        let output = Command::new("powershell")
-            .args([
-                "-Command",
-                &format!(
-                    "Start-Process cmd -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '/c \"{}\"'",
-                    batch_path.display()
-                )
-            ])
-            .output()
+        let mut cmd = Command::new("powershell");
+        cmd.args([
+            "-NoProfile",
+            "-Command",
+            &format!(
+                "Start-Process cmd -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '/c \"{}\"'",
+                batch_path.display()
+            )
+        ]);
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        let output = cmd.output()
             .map_err(|e| DownloadError::ElevationFailed(e.to_string()))?;
 
         // Clean up the batch file
@@ -277,8 +284,6 @@ exit /b %errorlevel%
     /// Install FFmpeg on macOS using AppleScript elevation
     #[cfg(target_os = "macos")]
     fn install_macos(temp_path: &Path, target_path: &Path) -> Result<(), DownloadError> {
-        use std::process::Command;
-
         let target_dir = target_path.parent()
             .ok_or_else(|| DownloadError::InstallationFailed("Invalid target path".to_string()))?;
 
@@ -319,8 +324,6 @@ exit /b %errorlevel%
     /// Install FFmpeg on Linux using pkexec (PolicyKit) elevation
     #[cfg(target_os = "linux")]
     fn install_linux(temp_path: &Path, target_path: &Path) -> Result<(), DownloadError> {
-        use std::process::Command;
-
         let target_dir = target_path.parent()
             .ok_or_else(|| DownloadError::InstallationFailed("Invalid target path".to_string()))?;
 

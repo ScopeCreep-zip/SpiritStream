@@ -56,10 +56,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__
-          releaseName: 'SpiritStream v__VERSION__'
+          tagName: ${{ github.ref_name }}
+          releaseName: 'SpiritStream ${{ github.ref_name }}'
           releaseBody: |
-            ## SpiritStream v__VERSION__
+            ## SpiritStream ${{ github.ref_name }}
 
             ### Downloads
             Choose the appropriate download for your platform:

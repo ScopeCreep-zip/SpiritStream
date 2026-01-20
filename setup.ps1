@@ -1,12 +1,7 @@
 # SpiritStream Setup Script for Windows (PowerShell)
 # Installs all prerequisites for building and running SpiritStream
 
-# Colors for output
-$Red = "`e[31m"
-$Green = "`e[32m"
-$Yellow = "`e[33m"
-$Blue = "`e[34m"
-$Reset = "`e[0m"
+# Note: Using Write-Host with -ForegroundColor instead of ANSI codes for compatibility
 
 function Print-Header {
     Write-Host "" -ForegroundColor Blue
@@ -38,17 +33,50 @@ function Install-Rust {
         Print-Step "Rust already installed: $RustVersion"
     } else {
         Print-Step "Installing Rust..."
-        Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://sh.rustup.rs')) -ArgumentList "-y"
-        $Env:Path += ";$HOME\.cargo\bin"
-        Print-Step "Rust installed"
+        # Download rustup-init.exe for Windows
+        $RustupPath = "$env:TEMP\rustup-init.exe"
+        try {
+            Invoke-WebRequest -Uri "https://win.rustup.rs/x86_64" -OutFile $RustupPath -UseBasicParsing
+            # Run installer with -y for unattended install
+            Start-Process -FilePath $RustupPath -ArgumentList "-y" -Wait -NoNewWindow
+            $Env:Path += ";$env:USERPROFILE\.cargo\bin"
+            Print-Step "Rust installed"
+        } catch {
+            Print-Warning "Failed to download Rust installer. Please install manually from https://rustup.rs"
+        } finally {
+            if (Test-Path $RustupPath) { Remove-Item $RustupPath -Force }
+        }
     }
 }
 
 function Check-Node {
     if (Get-Command node -ErrorAction SilentlyContinue) {
-        $NodeVersion = node --version
-        Print-Step "Node.js already installed: $NodeVersion"
-        return $true
+        $NodeVersionStr = node --version
+        Print-Step "Node.js found: $NodeVersionStr"
+
+        # Extract major.minor version (e.g., "v22.12.0" -> 22, 12)
+        if ($NodeVersionStr -match "v(\d+)\.(\d+)") {
+            $Major = [int]$Matches[1]
+            $Minor = [int]$Matches[2]
+
+            # Vite requires Node.js 20.19+ or 22.12+
+            # Odd-numbered versions (21, 23, etc.) are not LTS and may have compatibility issues
+            $IsValid = ($Major -eq 20 -and $Minor -ge 19) -or ($Major -ge 22 -and $Minor -ge 12)
+            $IsOddVersion = ($Major % 2) -eq 1
+
+            if ($IsOddVersion) {
+                Print-Warning "Node.js $Major.x is an odd-numbered (non-LTS) release which may cause issues."
+                Print-Warning "Recommended: Install Node.js 22.x LTS from https://nodejs.org/"
+                return $false
+            } elseif (-not $IsValid) {
+                Print-Warning "Node.js version $Major.$Minor is too old. Vite requires 20.19+ or 22.12+"
+                Print-Warning "Please upgrade Node.js from https://nodejs.org/"
+                return $false
+            }
+            return $true
+        }
+        Print-Warning "Could not parse Node.js version"
+        return $false
     } else {
         Print-Warning "Node.js not found"
         return $false
@@ -90,7 +118,7 @@ function Main {
     # Step 2: Check Node.js
     Print-Step "Checking Node.js..."
     if (-not (Check-Node)) {
-        Print-Error "Node.js is required but not installed. Please install Node.js 18+ from https://nodejs.org/ and rerun this script."
+        Print-Error "Node.js 20.19+ or 22.x LTS is required. Please install from https://nodejs.org/ (LTS version recommended) and rerun this script."
     }
 
     # Step 3: Install FFmpeg
