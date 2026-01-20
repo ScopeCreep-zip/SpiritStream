@@ -40,7 +40,7 @@
     "--bg-muted": "#160A26",
     "--bg-sunken": "#07030D",
     "--bg-canvas": "#12081F",
-    "--bg-overlay": "rgba(255, 47, 178, 0.7)",
+    "--bg-overlay": "rgba(11, 4, 20, 0.78)",
     "--bg-overlay-light": "rgba(43, 212, 255, 0.35)",
     "--bg-hover": "rgba(255, 47, 178, 0.16)",
     "--bg-active": "rgba(255, 212, 0, 0.20)",
