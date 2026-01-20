@@ -1,0 +1,71 @@
+{
+  "$schema": "../../../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "SpiritStream",
+  "version": "1.0.1",
+  "identifier": "com.spiritstream.desktop",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "pnpm --filter @spiritstream/web dev",
+    "beforeBuildCommand": "pnpm --filter @spiritstream/web build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "SpiritStream",
+        "width": 1500,
+        "height": 1000,
+        "minWidth": 1024,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:8008 http://localhost:8008 ws://127.0.0.1:8008 ws://localhost:8008",
+      "devCsp": "default-src 'self' http://localhost:1420 http://127.0.0.1:1420; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost http://localhost:1420 http://127.0.0.1:1420 ws://localhost:1420 ws://127.0.0.1:1420 http://localhost:8008 http://127.0.0.1:8008 ws://localhost:8008 ws://127.0.0.1:8008"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "license": "../../../LICENSE",
+    "licenseFile": "../../../LICENSE",
+    "copyright": "Copyright (c) 2024-2025 SpiritStream Contributors",
+    "externalBin": [
+      "binaries/spiritstream-server"
+    ],
+    "resources": [
+      "../../../themes/*.jsonc",
+      "../dist"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "allowDowngrades": true
+    },
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      },
+      "deb": {
+        "depends": ["ffmpeg"]
+      },
+      "rpm": {
+        "depends": ["ffmpeg"]
+      }
+    },
+    "shortDescription": "Multi-destination streaming application",
+    "longDescription": "SpiritStream allows you to stream to multiple platforms simultaneously at different bitrates. Configure output groups with custom encoding settings and stream to YouTube, Twitch, Kick, Facebook, and custom RTMP servers.",
+    "category": "Video"
+  }
+}
