@@ -136,7 +136,7 @@ export const PLATFORMS: Record<Platform, {
     abbreviation: 'FB',
     color: '#1877F2',
     textColor: '#FFFFFF',
-    defaultServer: 'rtmps://rtmp-api.facebook.com:443/rtmp/',
+    defaultServer: 'rtmps://rtmp-api.facebook.com:443/rtmp',
     streamKeyPlacement: 'append',
   },
   'LinkedIn Live': {
@@ -152,7 +152,7 @@ export const PLATFORMS: Record<Platform, {
     abbreviation: 'TT',
     color: '#000000',
     textColor: '#FFFFFF',
-    defaultServer: 'rtmps://live.tiktok.com/rtmp/',
+    defaultServer: 'rtmps://live.tiktok.com/rtmp',
     streamKeyPlacement: 'append',
   },
   'Trovo': {
@@ -160,7 +160,7 @@ export const PLATFORMS: Record<Platform, {
     abbreviation: 'TR',
     color: '#1ECD97',
     textColor: '#000000',
-    defaultServer: 'rtmp://livepush.trovo.live/live/',
+    defaultServer: 'rtmp://livepush.trovo.live/live',
     streamKeyPlacement: 'append',
   },
   'Rumble': {
@@ -176,7 +176,7 @@ export const PLATFORMS: Record<Platform, {
     abbreviation: 'BL',
     color: '#00A1D6',
     textColor: '#FFFFFF',
-    defaultServer: 'rtmp://live-push.bilivideo.com/live-bvc/',
+    defaultServer: 'rtmp://live-push.bilivideo.com/live-bvc',
     streamKeyPlacement: 'append',
   },
   'DLive': {
@@ -216,7 +216,7 @@ export const PLATFORMS: Record<Platform, {
     abbreviation: 'NT',
     color: '#9489A8',
     textColor: '#000000',
-    defaultServer: 'rtmp://txpush.rtmp.nimo.tv/live/',
+    defaultServer: 'rtmp://txpush.rtmp.nimo.tv/live',
     streamKeyPlacement: 'append',
   },
   'Steam': {
@@ -424,7 +424,7 @@ export const PLATFORMS: Record<Platform, {
     abbreviation: 'JS',
     color: '#9489A8',
     textColor: '#000000',
-    defaultServer: 'rtmp://live.joystick.tv/live/',
+    defaultServer: 'rtmp://live.joystick.tv/live',
     streamKeyPlacement: 'append',
   },
   'KakaoTV': {
@@ -448,7 +448,7 @@ export const PLATFORMS: Record<Platform, {
     abbreviation: 'KS',
     color: '#9489A8',
     textColor: '#000000',
-    defaultServer: 'rtmp://open-push.voip.yximgs.com/gifshow/',
+    defaultServer: 'rtmp://open-push.voip.yximgs.com/gifshow',
     streamKeyPlacement: 'append',
   },
   'Lahzenegar - StreamG | لحظه‌نگار - استریمجی': {
@@ -608,7 +608,7 @@ export const PLATFORMS: Record<Platform, {
     abbreviation: 'PL',
     color: '#9489A8',
     textColor: '#000000',
-    defaultServer: 'rtmp://live.phonelivestreaming.com/live/',
+    defaultServer: 'rtmp://live.phonelivestreaming.com/live',
     streamKeyPlacement: 'append',
   },
   'Picarto': {
@@ -672,7 +672,7 @@ export const PLATFORMS: Record<Platform, {
     abbreviation: 'SK',
     color: '#9489A8',
     textColor: '#000000',
-    defaultServer: 'rtmp://stream.sooplive.co.kr/app/',
+    defaultServer: 'rtmp://stream.sooplive.co.kr/app',
     streamKeyPlacement: 'append',
   },
   'STAGE TEN': {
@@ -776,7 +776,7 @@ export const PLATFORMS: Record<Platform, {
     abbreviation: 'WW',
     color: '#9489A8',
     textColor: '#000000',
-    defaultServer: 'rtmp://live.whowatch.tv/live/',
+    defaultServer: 'rtmp://live.whowatch.tv/live',
     streamKeyPlacement: 'append',
   },
   'WpStream': {
