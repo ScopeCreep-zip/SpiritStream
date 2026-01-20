@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { useStreamStore } from '@/stores/streamStore';
+import { useProfileStore } from '@/stores/profileStore';
 
 /**
  * Stream statistics from FFmpeg
@@ -30,6 +31,7 @@ export interface StreamError {
  */
 export function useStreamStats() {
   const { updateStats, setStreamEnded, setStreamError } = useStreamStore();
+  const currentProfile = useProfileStore((state) => state.current);
 
   // Set up event listeners
   useEffect(() => {
@@ -40,7 +42,10 @@ export function useStreamStats() {
     const setupListeners = async () => {
       // Listen for stream stats updates
       unlistenStats = await listen<StreamStats>('stream_stats', (event) => {
-        updateStats(event.payload.groupId, event.payload);
+        // Find target IDs for this group from the current profile
+        const group = currentProfile?.outputGroups.find((g) => g.id === event.payload.groupId);
+        const targetIds = group?.streamTargets.map((t) => t.id);
+        updateStats(event.payload.groupId, event.payload, targetIds);
       });
 
       // Listen for stream ended events (clean exit)
@@ -62,7 +67,7 @@ export function useStreamStats() {
       if (unlistenEnded) unlistenEnded();
       if (unlistenError) unlistenError();
     };
-  }, [updateStats, setStreamEnded, setStreamError]);
+  }, [updateStats, setStreamEnded, setStreamError, currentProfile]);
 
   return null;
 }

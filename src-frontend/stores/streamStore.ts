@@ -53,7 +53,7 @@ interface StreamState {
   setActiveGroup: (groupId: string, active: boolean) => void;
   toggleTarget: (targetId: string) => void;
   setTargetEnabled: (targetId: string, enabled: boolean) => void;
-  updateStats: (groupId: string, ffmpegStats: FFmpegStats) => void;
+  updateStats: (groupId: string, ffmpegStats: FFmpegStats, targetIds?: string[]) => void;
   updateTargetStats: (targetId: string, stats: TargetStats) => void;
   setStreamEnded: (groupId: string) => void;
   setStreamError: (groupId: string, error: string) => void;
@@ -255,7 +255,7 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     set({ enabledTargets });
   },
 
-  updateStats: (groupId, ffmpegStats) => {
+  updateStats: (groupId, ffmpegStats, targetIds) => {
     const currentGroupStats = get().groupStats;
     const bitrate = ffmpegStats.bitrate;
 
@@ -277,6 +277,21 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     const totalDropped = allStats.reduce((sum, s) => sum + s.droppedFrames, 0);
     const maxUptime = Math.max(...allStats.map((s) => s.uptime), 0);
 
+    // Update per-target stats if target IDs are provided
+    // All targets in a group share the same FFmpeg output, so they have the same stats
+    const currentTargetStats = get().stats.targetStats;
+    const newTargetStats = { ...currentTargetStats };
+    if (targetIds && targetIds.length > 0) {
+      for (const targetId of targetIds) {
+        newTargetStats[targetId] = {
+          viewers: 0, // Not available from FFmpeg
+          bitrate: Math.round(bitrate),
+          fps: ffmpegStats.fps,
+          status: 'live',
+        };
+      }
+    }
+
     set({
       groupStats: newGroupStats,
       uptime: maxUptime,
@@ -285,6 +300,7 @@ export const useStreamStore = create<StreamState>((set, get) => ({
         totalBitrate,
         droppedFrames: totalDropped,
         uptime: maxUptime,
+        targetStats: newTargetStats,
       },
     });
   },
