@@ -1187,6 +1187,30 @@ impl FFmpegHandler {
         }
     }
 
+    fn map_nvenc_preset(preset: &str) -> String {
+        let normalized = preset.trim().to_ascii_lowercase();
+        if normalized.is_empty() {
+            return "p4".to_string();
+        }
+
+        match normalized.as_str() {
+            "p1" | "p2" | "p3" | "p4" | "p5" | "p6" | "p7" | "default" | "slow" | "medium"
+            | "fast" | "hp" | "hq" | "bd" | "ll" | "llhq" | "llhp" | "lossless"
+            | "losslesshp" => normalized,
+            "ultrafast" => "p1".to_string(),
+            "superfast" => "p2".to_string(),
+            "veryfast" => "p3".to_string(),
+            "faster" => "p4".to_string(),
+            "slower" => "p6".to_string(),
+            "veryslow" => "p7".to_string(),
+            "quality" => "p7".to_string(),
+            "balanced" => "p4".to_string(),
+            "performance" => "p2".to_string(),
+            "low_latency" | "low-latency" | "lowlatency" => "p1".to_string(),
+            _ => "p4".to_string(),
+        }
+    }
+
     /// Build FFmpeg arguments for an output group
     ///
     /// Groups read from the shared TCP relay so they can restart independently.
@@ -1249,10 +1273,12 @@ impl FFmpegHandler {
                     if let Some(usage) = amf_usage {
                         args.push("-usage".to_string()); args.push(usage.to_string());
                     }
+                } else if encoder.contains("nvenc") {
+                    let ffmpeg_preset = Self::map_nvenc_preset(preset);
+                    args.push("-preset".to_string()); args.push(ffmpeg_preset);
                 } else {
                     let supports_preset = encoder == "libx264"
-                        || encoder == "libx265"
-                        || encoder.contains("nvenc");
+                        || encoder == "libx265";
                     if supports_preset {
                         let ffmpeg_preset = match preset.as_str() {
                             "quality" => "slow",
