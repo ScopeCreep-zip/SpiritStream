@@ -1135,6 +1135,13 @@ impl FFmpegHandler {
             Some(value) if !value.is_empty() => value,
             _ => return url.to_string(),
         };
+        let host = if host == "0.0.0.0" {
+            "127.0.0.1".to_string()
+        } else if let Some(port) = host.strip_prefix("0.0.0.0:") {
+            format!("127.0.0.1:{port}")
+        } else {
+            host.to_string()
+        };
 
         let path = host_and_path.next().unwrap_or("");
         let app = path.split('/').find(|segment| !segment.is_empty());
