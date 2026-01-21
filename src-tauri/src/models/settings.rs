@@ -43,7 +43,7 @@ impl Default for Settings {
             show_notifications: true,
             ffmpeg_path: String::new(),
             auto_download_ffmpeg: true,
-            encrypt_stream_keys: false,
+            encrypt_stream_keys: true,
             log_retention_days: default_log_retention_days(),
             theme_id: "spirit-dark".to_string(),
             last_profile: None,

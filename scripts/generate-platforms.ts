@@ -25,6 +25,15 @@ interface PlatformsJSON {
   services: Service[];
 }
 
+// Normalize URL: trim whitespace and remove trailing slashes
+function normalizeUrl(url: string): string {
+  let normalized = url.trim();
+  while (normalized.endsWith('/')) {
+    normalized = normalized.slice(0, -1);
+  }
+  return normalized;
+}
+
 // Calculate appropriate text color for a given background color
 function getTextColor(hexColor: string): '#FFFFFF' | '#000000' {
   // Remove # if present
@@ -100,7 +109,7 @@ export const PLATFORMS: Record<Platform, {
     abbreviation: '${service.abbreviation}',
     color: '${service.color}',
     textColor: '${textColor}',
-    defaultServer: '${service.defaultUrl}',
+    defaultServer: '${normalizeUrl(service.defaultUrl)}',
     streamKeyPlacement: '${service.streamKeyPlacement}',
   }${isLast ? '\n' : ',\n'}`;
   });

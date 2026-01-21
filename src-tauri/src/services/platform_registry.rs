@@ -202,9 +202,12 @@ impl PlatformRegistry {
             // Extract app path from URL (for append mode)
             let (app_path, stream_key_position) = Self::extract_app_path(default_url);
 
+            // Normalize URL: remove trailing slashes
+            let normalized_url = default_url.trim_end_matches('/');
+
             // Box::leak to create 'static strings
             let static_display_name = Box::leak(display_name.to_string().into_boxed_str());
-            let static_default_url = Box::leak(default_url.to_string().into_boxed_str());
+            let static_default_url = Box::leak(normalized_url.to_string().into_boxed_str());
             let static_app_path = app_path.map(|s| Box::leak(s.into_boxed_str()) as &'static str);
 
             configs.insert(platform, PlatformConfig {

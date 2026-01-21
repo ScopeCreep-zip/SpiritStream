@@ -45,7 +45,7 @@ const defaultSettings: SettingsState = {
   ffmpegVersion: '', // Will be translated when displayed
   autoDownloadFfmpeg: true,
   profileStoragePath: '',
-  encryptStreamKeys: false,
+  encryptStreamKeys: true,
   logRetentionDays: 30,
   loading: true,
   saving: false,
