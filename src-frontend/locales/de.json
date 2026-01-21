@@ -1,7 +1,7 @@
 {
   "nav": {
     "main": "Hauptmenü",
-    "dashboard": "?bersicht",
+    "dashboard": "Übersicht",
     "profiles": "Profile",
     "streamManager": "Stream-Manager",
     "configuration": "Konfiguration",
@@ -14,7 +14,7 @@
   },
   "header": {
     "dashboard": {
-      "title": "?bersicht",
+      "title": "Übersicht",
       "description": "Übersicht Ihrer Streaming-Konfiguration"
     },
     "profiles": {
