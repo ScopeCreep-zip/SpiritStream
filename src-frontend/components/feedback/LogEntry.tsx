@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
 import type { LogLevel } from '@/types/stream';
 
@@ -14,14 +15,15 @@ const levelStyles: Record<LogLevel, string> = {
   debug: 'text-[var(--text-tertiary)]',
 };
 
-const levelLabels: Record<LogLevel, string> = {
-  info: 'INFO',
-  warn: 'WARN',
-  error: 'ERROR',
-  debug: 'DEBUG',
-};
-
 export function LogEntry({ time, level, message }: LogEntryProps) {
+  const { t } = useTranslation();
+  const levelLabels: Record<LogLevel, string> = {
+    info: t('logs.info'),
+    warn: t('logs.warning'),
+    error: t('logs.error'),
+    debug: t('logs.debug'),
+  };
+
   return (
     <div
       className="flex border-b border-[var(--border-muted)] last:border-b-0"
