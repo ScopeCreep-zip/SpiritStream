@@ -6,8 +6,73 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* https://*.spiritstream.io wss://*.spiritstream.io"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* https://*.spiritstream.io wss://*.spiritstream.io"
     />
+    <!-- STEP 1: Detect saved theme BEFORE any CSS loads -->
+    <!-- This guarantees data-theme is set before CSS parses - zero flash -->
+    <script>
+      (function() {
+        try {
+          var stored = localStorage.getItem('spiritstream-theme');
+          if (stored) {
+            var parsed = JSON.parse(stored);
+            var themeId = parsed.state && parsed.state.currentThemeId;
+            if (themeId) {
+              // Theme IDs containing '-light' are light mode, all others are dark
+              var mode = themeId.includes('-light') ? 'light' : 'dark';
+              document.documentElement.setAttribute('data-theme', mode);
+              document.documentElement.setAttribute('data-theme-id', themeId);
+            }
+          }
+        } catch (e) {
+          // Silently fail - will use default below
+        }
+        // Default to dark if nothing found (most users prefer dark)
+        if (!document.documentElement.getAttribute('data-theme')) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+          document.documentElement.setAttribute('data-theme-id', 'spirit-dark');
+        }
+      })();
+    </script>
+
+    <!-- STEP 2: CSS now sees data-theme already set - no flash -->
+    <!-- Both modes are selector-based - no :root defaults needed -->
+    <style>
+      :root[data-theme="dark"] {
+        --bg-base: #0F0A14;
+        --bg-surface: #1A1225;
+        --bg-elevated: #251A33;
+        --bg-muted: #1A1225;
+        --bg-sunken: #0A0710;
+        --bg-canvas: #150F1D;
+        --text-primary: #F4F2F7;
+        --text-secondary: #D8D1E2;
+        --text-tertiary: #B8AECA;
+        --primary: #A78BFA;
+        --border-default: #3D3649;
+        --border-muted: #2D2838;
+      }
+      :root[data-theme="light"] {
+        --bg-base: #FAF8F5;
+        --bg-surface: #FFFDF9;
+        --bg-elevated: #FFFEFB;
+        --bg-muted: #F6F3EF;
+        --bg-sunken: #F2EFE9;
+        --bg-canvas: #EDE9E3;
+        --text-primary: #1F1A29;
+        --text-secondary: #5E5472;
+        --text-tertiary: #756A8A;
+        --primary: #7C3AED;
+        --border-default: #E8E4DD;
+        --border-muted: #F3F0EA;
+      }
+      html, body {
+        background-color: var(--bg-base);
+        color: var(--text-primary);
+        margin: 0;
+        padding: 0;
+      }
+    </style>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
