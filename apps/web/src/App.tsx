@@ -37,9 +37,8 @@ import { useDataSync } from '@/hooks/useDataSync';
 import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValidation';
 import { toast } from '@/hooks/useToast';
 import { useThemeStore } from '@/stores/themeStore';
-import { checkAuth, checkServerHealth } from '@/lib/backend/env';
+import { checkAuth, checkServerHealth, checkServerReady } from '@/lib/backend/env';
 import { initConnection } from '@/lib/backend/httpEvents';
-import { backendMode } from '@/lib/backend/env';
 
 // Import all views
 import {
@@ -65,40 +64,91 @@ export type View =
 
 // View meta is now handled via translations using keys like header.dashboard.title
 
+/**
+ * Main App component - handles server health checking before rendering main content.
+ * This separation ensures that backend-dependent hooks only run after server is ready.
+ */
 function App() {
   const { t } = useTranslation();
 
-  // Server health check state (HTTP mode only)
+  // Server health check state
   const [serverHealthy, setServerHealthy] = useState<boolean | null>(null);
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
 
-  // Check server health on mount (HTTP mode only)
+  // Check server health on mount
   useEffect(() => {
-    if (backendMode !== 'http') {
-      // In Tauri mode, assume healthy (Tauri manages the server)
-      setServerHealthy(true);
-      return;
-    }
+    let cancelled = false;
 
     const checkHealth = async () => {
       setIsCheckingHealth(true);
-      const healthy = await checkServerHealth();
-      setServerHealthy(healthy);
+
+      // Give the server time to start (especially in Tauri where launcher is spawning it)
+      const healthy = await checkServerHealth(10, 500);
+      if (cancelled) return;
+
+      if (!healthy) {
+        setServerHealthy(false);
+        setIsCheckingHealth(false);
+        return;
+      }
+
+      const ready = await checkServerReady(15, 400);
+      if (cancelled) return;
+
+      setServerHealthy(ready);
       setIsCheckingHealth(false);
     };
 
     checkHealth();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Retry handler for connection error
   const handleRetryConnection = async () => {
     setIsCheckingHealth(true);
-    const healthy = await checkServerHealth();
-    setServerHealthy(healthy);
+    setServerHealthy(null); // Reset to loading state
+
+    const healthy = await checkServerHealth(15, 500);
+    if (healthy) {
+      const ready = await checkServerReady(15, 400);
+      setServerHealthy(ready);
+    } else {
+      setServerHealthy(false);
+    }
     setIsCheckingHealth(false);
   };
 
+  // Show connection error overlay if server is unreachable
+  if (serverHealthy === false) {
+    return <ConnectionError onRetry={handleRetryConnection} isRetrying={isCheckingHealth} />;
+  }
+
+  // Show loading state while checking server health
+  if (serverHealthy === null) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center bg-[var(--bg-base)]">
+        <div className="text-[var(--text-secondary)]">{t('common.loading', { defaultValue: 'Loading...' })}</div>
+      </div>
+    );
+  }
+
+  // Server is healthy - render the main app content
+  // This component contains all the hooks that depend on backend connectivity
+  return <AppContent />;
+}
+
+/**
+ * Main app content - only rendered after server health is confirmed.
+ * All backend-dependent hooks are safely contained here.
+ */
+function AppContent() {
+  const { t } = useTranslation();
+
   // Initialize backend connection (HTTP mode only)
+  // IMPORTANT: This hook and others below only run after server is confirmed healthy
   useBackendConnection();
 
   // Initialize app - load profiles from backend
@@ -148,16 +198,18 @@ function App() {
     // Listen for auth required events from backend (WebSocket auth failure)
     window.addEventListener('backend:auth-required', handleAuthRequired);
 
-    // Check auth status on mount to proactively show login if needed
+    return () => {
+      window.removeEventListener('backend:auth-required', handleAuthRequired);
+    };
+  }, []);
+
+  // Check auth status on mount (server is already confirmed healthy at this point)
+  useEffect(() => {
     checkAuth().then((status) => {
       if (status.required && !status.authenticated) {
         setLoginModalOpen(true);
       }
     });
-
-    return () => {
-      window.removeEventListener('backend:auth-required', handleAuthRequired);
-    };
   }, []);
 
   // Handle successful login
@@ -293,20 +345,6 @@ function App() {
         return null;
     }
   };
-
-  // Show connection error overlay if server is unreachable (HTTP mode only)
-  if (serverHealthy === false) {
-    return <ConnectionError onRetry={handleRetryConnection} isRetrying={isCheckingHealth} />;
-  }
-
-  // Show loading state while checking server health
-  if (serverHealthy === null) {
-    return (
-      <div className="fixed inset-0 flex items-center justify-center bg-[var(--bg-base)]">
-        <div className="text-[var(--text-secondary)]">{t('common.loading', { defaultValue: 'Loading...' })}</div>
-      </div>
-    );
-  }
 
   return (
     <AppShell>

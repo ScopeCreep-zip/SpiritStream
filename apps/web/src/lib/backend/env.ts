@@ -1,5 +1,10 @@
 export type BackendMode = 'tauri' | 'http';
 
+// Check if we're running inside a Tauri webview
+export const isTauri = (): boolean => {
+  return typeof window !== 'undefined' && '__TAURI__' in window;
+};
+
 // The desktop app is a minimal launcher that spawns a backend server.
 // All communication happens over HTTP, not Tauri IPC commands.
 // The 'tauri' mode is only used if explicitly set via env var (for legacy/testing).
@@ -12,6 +17,89 @@ export const backendMode: BackendMode = (() => {
   // Default to HTTP mode - the backend server handles all business logic
   return 'http';
 })();
+
+// ============================================================================
+// Fetch Wrapper
+// ============================================================================
+
+/**
+ * Fetch wrapper with retry logic for localhost requests.
+ *
+ * Handles race conditions where the frontend loads before the
+ * backend server is fully ready (common in Tauri desktop app).
+ *
+ * For localhost requests, we always use the browser's native fetch().
+ * The Tauri HTTP plugin has known bugs with localhost/127.0.0.1 requests:
+ * - https://github.com/tauri-apps/plugins-workspace/issues/1484
+ * - https://github.com/tauri-apps/plugins-workspace/issues/1559
+ *
+ * Since the CSP in tauri.conf.json already allows http://127.0.0.1:8008,
+ * browser fetch works fine and is more reliable.
+ *
+ * For external URLs in Tauri context, the HTTP plugin is used to bypass
+ * CORS/CSP restrictions (not currently used, but available for future needs).
+ */
+export async function safeFetch(
+  url: string,
+  options?: RequestInit
+): Promise<Response> {
+  // For localhost requests, always use browser fetch with retry logic.
+  // The Tauri HTTP plugin has known bugs with localhost/127.0.0.1.
+  // Browser fetch works fine since CSP allows localhost:8008.
+  const isLocalhost =
+    url.startsWith('http://127.0.0.1') || url.startsWith('http://localhost');
+
+  if (isLocalhost) {
+    // Retry logic for localhost - handles race condition with server startup
+    // Increased retries to handle server warm-up time after health check passes
+    const maxRetries = 5;
+    const baseDelay = 800; // ms
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await fetch(url, options);
+        return response;
+      } catch (error) {
+        const isLastAttempt = attempt === maxRetries;
+
+        if (isLastAttempt) {
+          console.error(
+            `[safeFetch] All ${maxRetries} attempts failed for ${url}:`,
+            error
+          );
+          throw error;
+        }
+
+        // Exponential backoff: 800ms, 1600ms, 3200ms, 6400ms
+        const delay = baseDelay * Math.pow(2, attempt - 1);
+        console.warn(
+          `[safeFetch] Attempt ${attempt}/${maxRetries} failed, retrying in ${delay}ms...`
+        );
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+
+    // This shouldn't be reached, but TypeScript needs it
+    throw new Error('safeFetch: unexpected state');
+  }
+
+  // For external URLs in Tauri context, use the HTTP plugin
+  // (not currently used, but available for future needs)
+  if (isTauri()) {
+    try {
+      const { fetch: tauriFetch } = await import('@tauri-apps/plugin-http');
+      return tauriFetch(url, options);
+    } catch (error) {
+      console.warn(
+        '[safeFetch] Tauri HTTP plugin not available, falling back to browser fetch:',
+        error
+      );
+      return fetch(url, options);
+    }
+  }
+
+  return fetch(url, options);
+}
 
 export const backendUrlStorageKey = 'spiritstream-backend-url';
 
@@ -69,7 +157,7 @@ export interface AuthStatus {
 export async function checkAuth(): Promise<AuthStatus> {
   const baseUrl = getBackendBaseUrl();
   try {
-    const response = await fetch(`${baseUrl}/auth/check`, {
+    const response = await safeFetch(`${baseUrl}/auth/check`, {
       method: 'GET',
       credentials: 'include', // Send cookies
     });
@@ -99,7 +187,7 @@ export async function checkAuth(): Promise<AuthStatus> {
 export async function login(token: string): Promise<boolean> {
   const baseUrl = getBackendBaseUrl();
   try {
-    const response = await fetch(`${baseUrl}/auth/login`, {
+    const response = await safeFetch(`${baseUrl}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include', // Receive and store cookies
@@ -136,25 +224,88 @@ export function getAuthHeaders(): Record<string, string> {
 // ============================================================================
 
 /**
- * Check if the backend server is reachable.
- * Used on startup to verify connection before rendering the app.
+ * Fetch with timeout protection for health checks.
+ * Unlike safeFetch(), this uses a single attempt with a hard timeout
+ * to avoid long waits during initial connection checks.
  */
-export async function checkServerHealth(): Promise<boolean> {
-  const baseUrl = getBackendBaseUrl();
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
+async function fetchWithTimeout(
+  url: string,
+  timeoutMs: number = 3000
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    const response = await fetch(`${baseUrl}/health`, {
+  try {
+    const response = await fetch(url, {
       method: 'GET',
       signal: controller.signal,
     });
-
     clearTimeout(timeoutId);
-    return response.ok;
+    return response;
   } catch (error) {
-    console.error('[health] Server health check failed:', error);
-    return false;
+    clearTimeout(timeoutId);
+    throw error;
   }
+}
+
+/**
+ * Check if the backend server is reachable.
+ * Uses a timeout-protected fetch to avoid hangs.
+ */
+export async function checkServerHealth(retries = 10, delayMs = 500): Promise<boolean> {
+  const baseUrl = getBackendBaseUrl();
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const response = await fetchWithTimeout(`${baseUrl}/health`, 3000);
+
+      if (response.ok) {
+        return true;
+      }
+    } catch {
+      // Network error or timeout - will retry
+    }
+
+    if (attempt < retries) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Check if the backend server is fully ready to serve requests.
+ * Uses a timeout-protected fetch to avoid hangs.
+ */
+export async function checkServerReady(retries = 15, delayMs = 300): Promise<boolean> {
+  const baseUrl = getBackendBaseUrl();
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const response = await fetchWithTimeout(`${baseUrl}/ready`, 3000);
+
+      if (response.ok) {
+        // Parse JSON with a try-catch to handle malformed responses
+        try {
+          const text = await response.text();
+          const data = JSON.parse(text);
+          if (data.ready === true) {
+            return true;
+          }
+        } catch {
+          // JSON parse error - server might not be fully ready
+        }
+      }
+    } catch {
+      // Network error or timeout - will retry
+    }
+
+    if (attempt < retries) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+
+  return false;
 }
 

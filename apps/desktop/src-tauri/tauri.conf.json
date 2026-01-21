@@ -4,7 +4,7 @@
   "version": "1.0.1",
   "identifier": "com.spiritstream.desktop",
   "build": {
-    "frontendDist": "../dist",
+    "frontendDist": "../../web/dist",
     "devUrl": "http://localhost:1420",
     "beforeDevCommand": "pnpm --filter @spiritstream/web dev",
     "beforeBuildCommand": "pnpm --filter @spiritstream/web build"
@@ -13,6 +13,7 @@
     "windows": [
       {
         "title": "SpiritStream",
+        "visible": false,
         "width": 1500,
         "height": 1000,
         "minWidth": 1024,
@@ -37,8 +38,7 @@
       "binaries/spiritstream-server"
     ],
     "resources": [
-      "../../../themes/*.jsonc",
-      "../dist"
+      "../../../themes/*.jsonc"
     ],
     "icon": [
       "icons/32x32.png",

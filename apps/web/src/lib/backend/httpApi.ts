@@ -2,7 +2,7 @@ import type { Profile, ProfileSummary, OutputGroup, RtmpInput } from '@/types/pr
 import type { Encoders } from '@/types/stream';
 import type { AppSettings, FFmpegVersionInfo, RotationReport, RtmpTestResult } from '@/types/api';
 import type { ThemeSummary } from '@/types/theme';
-import { getBackendBaseUrl } from './env';
+import { getBackendBaseUrl, safeFetch } from './env';
 
 interface InvokeOk<T> {
   ok: true;
@@ -25,7 +25,7 @@ async function invokeHttp<T>(command: string, args?: InvokeArgs): Promise<T> {
   // Debug logging for connection issues
   console.debug(`[httpApi] ${command} -> ${url}`);
 
-  const response = await fetch(url, {
+  const response = await safeFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

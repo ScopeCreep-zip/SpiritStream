@@ -237,7 +237,7 @@ fn parse_bool(value: &str) -> Option<bool> {
 
 fn build_cors_layer() -> CorsLayer {
     let cors_origins = env::var("SPIRITSTREAM_CORS_ORIGINS")
-        .unwrap_or_else(|_| "http://localhost:*,http://127.0.0.1:*".to_string());
+        .unwrap_or_else(|_| "http://localhost:*,http://127.0.0.1:*,tauri://localhost,https://tauri.localhost".to_string());
 
     let allowed_origins: Vec<String> = cors_origins
         .split(',')
@@ -404,6 +404,41 @@ async fn rate_limit_middleware(
 
 async fn health() -> impl IntoResponse {
     Json(json!({ "ok": true }))
+}
+
+/// Readiness check - verifies critical services are functional
+async fn ready(State(state): State<AppState>) -> impl IntoResponse {
+    let mut checks: Vec<(&str, bool)> = Vec::new();
+
+    // Check 1: ProfileManager can access profiles directory
+    let profiles_ok = state.profile_manager.get_all_names().await.is_ok();
+    checks.push(("profiles", profiles_ok));
+
+    // Check 2: SettingsManager can load settings
+    let settings_ok = state.settings_manager.load().is_ok();
+    checks.push(("settings", settings_ok));
+
+    // Check 3: ThemeManager initialized (theme list is always available after init)
+    let themes_ok = true;
+    checks.push(("themes", themes_ok));
+
+    let all_ok = checks.iter().all(|(_, ok)| *ok);
+    let failed: Vec<&str> = checks
+        .iter()
+        .filter(|(_, ok)| !ok)
+        .map(|(name, _)| *name)
+        .collect();
+
+    if all_ok {
+        Json(json!({ "ready": true })).into_response()
+    } else {
+        log::warn!("Readiness check failed: {:?}", failed);
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "ready": false, "failed": failed })),
+        )
+            .into_response()
+    }
 }
 
 // ============================================================================
@@ -1196,6 +1231,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Public routes (no auth required)
     let public_routes = Router::new()
         .route("/health", get(health))
+        .route("/ready", get(ready))
         .route("/auth/login", post(auth_login))
         .route("/auth/logout", post(auth_logout))
         .route("/auth/check", get(auth_check));

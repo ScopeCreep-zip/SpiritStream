@@ -11,7 +11,7 @@ import {
   RefreshCw,
   FolderOpen,
 } from 'lucide-react';
-import { getBackendBaseUrl, getAuthHeaders } from '@/lib/backend/env';
+import { getBackendBaseUrl, getAuthHeaders, safeFetch } from '@/lib/backend/env';
 
 interface FileEntry {
   name: string;
@@ -132,7 +132,7 @@ export function FileBrowserModal({
         const params = new URLSearchParams();
         if (path) params.set('path', path);
 
-        const response = await fetch(
+        const response = await safeFetch(
           `${baseUrl}/api/files/browse?${params.toString()}`,
           {
             method: 'GET',
@@ -187,7 +187,7 @@ export function FileBrowserModal({
       const fetchHome = async () => {
         try {
           const baseUrl = getBackendBaseUrl();
-          const response = await fetch(`${baseUrl}/api/files/home`, {
+          const response = await safeFetch(`${baseUrl}/api/files/home`, {
             method: 'GET',
             headers: getAuthHeaders(),
             credentials: 'include',
@@ -243,7 +243,7 @@ export function FileBrowserModal({
   const goHome = async () => {
     try {
       const baseUrl = getBackendBaseUrl();
-      const response = await fetch(`${baseUrl}/api/files/home`, {
+      const response = await safeFetch(`${baseUrl}/api/files/home`, {
         method: 'GET',
         headers: getAuthHeaders(),
         credentials: 'include',

@@ -12,11 +12,11 @@
 
     "dev": "pnpm run dev:desktop",
     "dev:web": "pnpm --filter @spiritstream/web dev",
-    "dev:desktop": "pnpm run build:server && pnpm --filter @spiritstream/desktop dev",
+    "dev:desktop": "pnpm --filter @spiritstream/desktop dev",
 
     "build": "turbo run build",
     "build:web": "pnpm --filter @spiritstream/web build",
-    "build:desktop": "pnpm run build:server:release && pnpm --filter @spiritstream/desktop build",
+    "build:desktop": "pnpm --filter @spiritstream/desktop build",
 
     "backend:dev": "cargo run --manifest-path server/Cargo.toml",
     "backend:build": "cargo build --manifest-path server/Cargo.toml --release",

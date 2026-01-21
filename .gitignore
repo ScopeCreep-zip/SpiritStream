@@ -39,6 +39,9 @@ server/data/
 testing/
 screenshots/
 
+# Claude Code documentation (session-specific)
+.claude/claudedocs/
+
 # IDE and editor
 .vscode/
 .idea/

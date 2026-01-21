@@ -12,7 +12,13 @@
 
 import { execSync } from 'child_process';
 import { copyFileSync, mkdirSync, existsSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+// Get project root (scripts/ is one level down from root)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const projectRoot = join(__dirname, '..');
 
 const isRelease = process.argv.includes('--release');
 const profile = isRelease ? 'release' : 'debug';
@@ -38,8 +44,8 @@ const ext = platform === 'win32' ? '.exe' : '';
 
 console.log(`Building server binary for ${target} (${profile})...`);
 
-// Create binaries directory in desktop app
-const binariesDir = join('apps', 'desktop', 'src-tauri', 'binaries');
+// Create binaries directory in desktop app (using absolute paths)
+const binariesDir = join(projectRoot, 'apps', 'desktop', 'src-tauri', 'binaries');
 if (!existsSync(binariesDir)) {
   mkdirSync(binariesDir, { recursive: true });
 }
@@ -53,20 +59,21 @@ if (!existsSync(destPath)) {
   writeFileSync(destPath, '');
 }
 
-// Build the server binary from /server/
+// Build the server binary from /server/ (using absolute path to manifest)
+const manifestPath = join(projectRoot, 'server', 'Cargo.toml');
 const buildCmd = isRelease
-  ? `cargo build --manifest-path server/Cargo.toml --release`
-  : `cargo build --manifest-path server/Cargo.toml`;
+  ? `cargo build --manifest-path "${manifestPath}" --release`
+  : `cargo build --manifest-path "${manifestPath}"`;
 
 try {
-  execSync(buildCmd, { stdio: 'inherit' });
+  execSync(buildCmd, { stdio: 'inherit', cwd: projectRoot });
 } catch (error) {
   console.error('Failed to build server binary');
   process.exit(1);
 }
 
-// Copy binary with platform-specific name
-const sourcePath = join('server', 'target', profile, `spiritstream-server${ext}`);
+// Copy binary with platform-specific name (using absolute paths)
+const sourcePath = join(projectRoot, 'server', 'target', profile, `spiritstream-server${ext}`);
 
 console.log(`Copying ${sourcePath} to ${destPath}...`);
 copyFileSync(sourcePath, destPath);

@@ -1,5 +1,5 @@
 import type { OpenFileOptions, SaveFileOptions, OpenTextResult, DialogFilter } from './dialogTypes';
-import { getBackendBaseUrl, getAuthHeaders } from './env';
+import { getBackendBaseUrl, getAuthHeaders, safeFetch } from './env';
 
 type PickerAcceptType = { description?: string; accept: Record<string, string[]> };
 
@@ -94,7 +94,7 @@ export const dialogs = {
       // Use server's file open endpoint for local paths
       try {
         const baseUrl = getBackendBaseUrl();
-        const response = await fetch(`${baseUrl}/api/files/open`, {
+        const response = await safeFetch(`${baseUrl}/api/files/open`, {
           method: 'POST',
           headers: {
             ...getAuthHeaders(),
