@@ -64,6 +64,7 @@ impl FFmpegHandler {
     const RELAY_TCP_IN_QUERY: &'static str = "listen=1&tcp_nodelay=1";
     const RELAY_TCP_LISTEN_TIMEOUT_MS: u32 = 604_800_000;
     const RELAY_RTMP_TIMEOUT_SECS: u32 = 604_800;
+    const RELAY_RTMP_TCP_NODELAY: &'static str = "1";
     const RELAY_TEE_FIFO_OPTIONS: &'static str =
         "fifo_format=mpegts:queue_size=512:drop_pkts_on_overflow=1:attempt_recovery=1:recover_any_error=1";
     const METER_HOST: &'static str = "127.0.0.1";
@@ -1156,12 +1157,23 @@ impl FFmpegHandler {
             format!("{scheme}://{host}")
         };
 
-        if base_url.contains("timeout=") {
+        let mut query_parts: Vec<String> = Vec::new();
+        if !base_url.contains("timeout=") {
+            query_parts.push(format!("timeout={}", Self::RELAY_RTMP_TIMEOUT_SECS));
+        }
+        if !base_url.contains("listen_timeout=") {
+            query_parts.push(format!("listen_timeout={}", Self::RELAY_TCP_LISTEN_TIMEOUT_MS));
+        }
+        if !base_url.contains("tcp_nodelay=") {
+            query_parts.push(format!("tcp_nodelay={}", Self::RELAY_RTMP_TCP_NODELAY));
+        }
+
+        if query_parts.is_empty() {
             base_url
         } else if base_url.contains('?') {
-            format!("{base_url}&timeout={}", Self::RELAY_RTMP_TIMEOUT_SECS)
+            format!("{base_url}&{}", query_parts.join("&"))
         } else {
-            format!("{base_url}?timeout={}", Self::RELAY_RTMP_TIMEOUT_SECS)
+            format!("{base_url}?{}", query_parts.join("&"))
         }
     }
 
