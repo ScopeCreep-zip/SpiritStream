@@ -1,6 +1,10 @@
 node_modules/
+**/node_modules/
+.direnv/
+discovery/
 dist/
-resources/
+.direnv/
+.env.secrets
 release/
 spiritstream-cert.pfx
 *.log

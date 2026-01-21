@@ -9,9 +9,11 @@ export interface ModalProps {
   children: React.ReactNode;
   footer?: React.ReactNode;
   maxWidth?: string;
+  /** Whether clicking the backdrop closes the modal. Default: false */
+  closeOnBackdropClick?: boolean;
 }
 
-export function Modal({ open, onClose, title, children, footer, maxWidth = '500px' }: ModalProps) {
+export function Modal({ open, onClose, title, children, footer, maxWidth = '500px', closeOnBackdropClick = false }: ModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
   const previousActiveElement = useRef<HTMLElement | null>(null);
 
@@ -98,7 +100,7 @@ export function Modal({ open, onClose, title, children, footer, maxWidth = '500p
         'bg-[var(--bg-overlay)]',
         'animate-in fade-in duration-200'
       )}
-      onClick={(e) => e.target === e.currentTarget && onClose()}
+      onClick={(e) => closeOnBackdropClick && e.target === e.currentTarget && onClose()}
     >
       <div
         ref={modalRef}
