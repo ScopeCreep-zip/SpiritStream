@@ -116,10 +116,21 @@ This is a pnpm monorepo with multiple workspaces:
 - `apps/desktop` - Tauri desktop wrapper (@spiritstream/desktop)
 - `server` - Standalone Rust HTTP server
 
+### Development Modes
+
+| Mode | Command | Description |
+|------|---------|-------------|
+| **Desktop** | `pnpm dev` | Tauri app with embedded webview + server sidecar. The full desktop experience. |
+| **Web + Server** | `pnpm backend:dev` then `VITE_BACKEND_MODE=http pnpm dev:web` | Browser-based UI connecting to standalone HTTP server. For remote access or Docker development. |
+| **Frontend Only** | `pnpm dev:web` | Just the React frontend (no backend). For UI-only work. |
+
+### Quick Commands
+
 ```bash
-pnpm dev             # Start all workspaces in parallel
+pnpm dev             # Desktop app (recommended for most development)
 pnpm dev:web         # Frontend only (localhost:5173)
-pnpm dev:desktop     # Desktop app with server sidecar
+pnpm dev:desktop     # Same as pnpm dev
+pnpm backend:dev     # Standalone HTTP server (localhost:8008)
 pnpm build           # Production build (all workspaces)
 pnpm typecheck       # Check TypeScript types
 cargo check --manifest-path server/Cargo.toml  # Check Rust server
