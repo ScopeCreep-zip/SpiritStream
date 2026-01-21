@@ -12,11 +12,15 @@
 node_modules
 npm-debug.log
 yarn-error.log
+pnpm-debug.log
 
 # Build outputs (keep dist for UI serving)
-src-tauri/target/debug
-src-tauri/target/release
-!src-tauri/target/release/server
+server/target/debug
+server/target/release
+!server/target/release/spiritstream-server
+apps/*/dist
+apps/desktop/src-tauri/target
+src-tauri/target
 
 # IDE and editor files
 .idea
@@ -54,8 +58,7 @@ DEEPWIKI.md
 **/*.spec.ts
 __tests__
 
-# Local data directories
-data
+# Local data directories (keep themes and data for build script)
 logs
 
 # Development configuration
@@ -64,11 +67,15 @@ logs
 eslint.config.js
 tsconfig.json
 tsconfig.node.json
+tsconfig.frontend.json
+turbo.json
 
 # GitHub
 .github
 
-# Scripts (not needed in runtime)
-scripts
+# Scripts (not needed in runtime - but keep for build)
 setup.sh
 setup.ps1
+
+# Desktop app (not needed for server container)
+apps/desktop

@@ -78,6 +78,19 @@ services:
         max-size: "10m"
         max-file: "3"
 
+    # Security hardening
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M,mode=1777
+
+    # Drop all capabilities - none needed for this app
+    cap_drop:
+      - ALL
+
+    # Prevent privilege escalation
+    security_opt:
+      - no-new-privileges:true
+
 # Named volumes for data persistence
 volumes:
   spiritstream-data:

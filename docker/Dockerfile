@@ -19,32 +19,31 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /build
 
 # Copy Cargo files first for dependency caching
-COPY src-tauri/Cargo.toml src-tauri/Cargo.lock* ./src-tauri/
-COPY src-tauri/build.rs ./src-tauri/
+COPY server/Cargo.toml server/Cargo.lock* ./server/
+COPY server/build.rs ./server/
 
 # Create dummy source files to build dependencies
-RUN mkdir -p src-tauri/src/bin src-tauri/src/commands src-tauri/src/models src-tauri/src/services \
-    && echo "fn main() {}" > src-tauri/src/main.rs \
-    && echo "fn main() {}" > src-tauri/src/bin/server.rs \
-    && echo "" > src-tauri/src/lib.rs \
-    && echo "" > src-tauri/src/commands/mod.rs \
-    && echo "" > src-tauri/src/models/mod.rs \
-    && echo "" > src-tauri/src/services/mod.rs
+RUN mkdir -p server/src/commands server/src/models server/src/services \
+    && echo "fn main() {}" > server/src/main.rs \
+    && echo "" > server/src/lib.rs \
+    && echo "" > server/src/commands/mod.rs \
+    && echo "" > server/src/models/mod.rs \
+    && echo "" > server/src/services/mod.rs
 
 # Copy platform data for build script
 COPY data ./data
 
 # Build dependencies (this layer will be cached)
-WORKDIR /build/src-tauri
-RUN cargo build --release --bin server 2>/dev/null || true
+WORKDIR /build/server
+RUN cargo build --release 2>/dev/null || true
 
 # Copy actual source code
 WORKDIR /build
-COPY src-tauri ./src-tauri
+COPY server ./server
 
 # Build the server binary
-WORKDIR /build/src-tauri
-RUN cargo build --release --bin server
+WORKDIR /build/server
+RUN cargo build --release
 
 # -----------------------------------------------------------------------------
 # Stage 2: Runtime Environment
@@ -56,6 +55,7 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     ffmpeg \
     libssl3 \
+    curl \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
@@ -69,10 +69,13 @@ RUN mkdir -p /app /data /data/logs /data/profiles /themes /dist \
 WORKDIR /app
 
 # Copy the built binary from builder stage
-COPY --from=builder /build/src-tauri/target/release/server /app/spiritstream-server
+COPY --from=builder /build/server/target/release/spiritstream-server /app/spiritstream-server
 
-# Make binary executable
-RUN chmod +x /app/spiritstream-server
+# Copy default themes
+COPY --chown=spiritstream:spiritstream themes/*.jsonc /themes/
+
+# Make binary executable but read-only (security hardening)
+RUN chmod 555 /app/spiritstream-server
 
 # Switch to non-root user
 USER spiritstream
