@@ -29,6 +29,9 @@ const ENCODER_DEFAULT_LABELS: Record<string, string> = {
   hevc_qsv: 'QuickSync HEVC',
   h264_amf: 'AMF',
   hevc_amf: 'AMF HEVC',
+  h264_vaapi: 'VAAPI',
+  hevc_vaapi: 'VAAPI HEVC',
+  av1_vaapi: 'VAAPI AV1',
 };
 
 const HARDWARE_ENCODERS = new Set([
@@ -40,6 +43,9 @@ const HARDWARE_ENCODERS = new Set([
   'hevc_qsv',
   'h264_amf',
   'hevc_amf',
+  'h264_vaapi',
+  'hevc_vaapi',
+  'av1_vaapi',
 ]);
 
 const PRESET_DEFAULT_LABELS: Record<string, string> = {

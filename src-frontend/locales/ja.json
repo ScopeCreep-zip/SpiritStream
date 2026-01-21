@@ -358,6 +358,7 @@
     "ffmpegDescription": "FFmpegエンコードバックエンドを設定",
     "ffmpegPath": "FFmpegパス",
     "ffmpegVersion": "FFmpegバージョン",
+    "ffmpegVersionUnavailable": "このビルドではバージョン情報はありません",
     "detectedVersion": "検出されたFFmpegのバージョン",
     "detecting": "検出中...",
     "ffmpegNotFound": "FFmpegが見つかりません",

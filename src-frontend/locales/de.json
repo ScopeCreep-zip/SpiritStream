@@ -358,6 +358,7 @@
     "ffmpegDescription": "FFmpeg-Encoding-Backend konfigurieren",
     "ffmpegPath": "FFmpeg-Pfad",
     "ffmpegVersion": "FFmpeg-Version",
+    "ffmpegVersionUnavailable": "Keine Versionsangabe für diesen Build verfügbar",
     "detectedVersion": "Erkannte FFmpeg-Version",
     "detecting": "Erkenne...",
     "ffmpegNotFound": "FFmpeg nicht gefunden",

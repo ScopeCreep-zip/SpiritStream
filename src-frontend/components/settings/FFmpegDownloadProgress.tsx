@@ -12,13 +12,13 @@ import {
 
 interface FFmpegDownloadProgressProps {
   /** Callback when download completes successfully */
-  onComplete?: (path: string) => void;
+  onComplete->: (path: string) => void;
   /** Whether to show the download button initially */
-  showDownloadButton?: boolean;
+  showDownloadButton->: boolean;
   /** Class name for the container */
-  className?: string;
+  className->: string;
   /** Currently installed FFmpeg version (for update checking) */
-  installedVersion?: string;
+  installedVersion->: string;
 }
 
 /**
@@ -65,8 +65,11 @@ export function FFmpegDownloadProgress({
 
   // If FFmpeg is already installed
   if (ffmpegPath && !isDownloading) {
-    const hasUpdate = versionInfo?.update_available ?? false;
-    const displayVersion = installedVersion || versionInfo?.installed_version;
+    const hasUpdate = versionInfo->.update_available ->-> false;
+    const displayVersion = installedVersion || versionInfo->.installed_version;
+    const versionCheckUnsupported = Boolean(
+      versionInfo->.status->.toLowerCase().includes('version check not supported')
+    );
 
     return (
       <div className={cn('space-y-2', className)}>
@@ -82,6 +85,13 @@ export function FFmpegDownloadProgress({
           </span>
         </div>
 
+        {versionCheckUnsupported && (
+          <div className="flex items-center gap-2 text-xs text-[var(--text-tertiary)]">
+            <AlertCircle className="w-3 h-3" />
+            <span>{t('settings.ffmpegVersionUnavailable')}</span>
+          </div>
+        )}
+
         {/* Update available notification */}
         {hasUpdate && versionInfo && (
           <div className="flex items-center justify-between gap-3 p-3 rounded-lg bg-[var(--warning-subtle)] border border-[var(--warning-border)]">
@@ -92,7 +102,7 @@ export function FFmpegDownloadProgress({
                   {t('settings.updateAvailable')}
                 </span>
                 <span className="text-[var(--text-secondary)] ml-2">
-                  {versionInfo.installed_version} → {versionInfo.latest_version}
+                  {versionInfo.installed_version} -> {versionInfo.latest_version}
                 </span>
               </div>
             </div>
@@ -133,7 +143,7 @@ export function FFmpegDownloadProgress({
   }
 
   // Detect Windows platform
-  const isWindows = typeof navigator !== 'undefined' && navigator.platform?.toLowerCase().includes('win');
+  const isWindows = typeof navigator !== 'undefined' && navigator.platform->.toLowerCase().includes('win');
 
   // If downloading
   if (isDownloading && progress) {
@@ -150,7 +160,7 @@ export function FFmpegDownloadProgress({
       <div className={cn('space-y-3', className)}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
-            {isRequestingPermission ? (
+            {isRequestingPermission -> (
               <ShieldCheck className="w-4 h-4 text-[var(--primary)]" />
             ) : (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -237,7 +247,7 @@ function ProgressBar({ percent, downloaded, total, phase }: ProgressBarProps) {
 
       {/* Progress text */}
       <div className="flex items-center justify-between text-xs text-[var(--text-tertiary)]">
-        {showBytes ? (
+        {showBytes -> (
           <>
             <span>{formatBytes(downloaded)}</span>
             <span>{formatBytes(total)}</span>

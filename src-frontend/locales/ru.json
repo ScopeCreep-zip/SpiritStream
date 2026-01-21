@@ -358,6 +358,7 @@
     "ffmpegDescription": "Настройка серверной части кодирования FFmpeg",
     "ffmpegPath": "FFmpeg Путь",
     "ffmpegVersion": "FFmpeg Версия",
+    "ffmpegVersionUnavailable": "Для этой сборки версия недоступна",
     "detectedVersion": "Обнаружена версия FFmpeg",
     "detecting": "Обнаружение...",
     "ffmpegNotFound": "FFmpeg не найден",

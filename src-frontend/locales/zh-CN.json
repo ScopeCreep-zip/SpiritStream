@@ -358,6 +358,7 @@
     "ffmpegDescription": "配置 FFmpeg 编码后端",
     "ffmpegPath": "FFmpeg 路径",
     "ffmpegVersion": "FFmpeg 版本",
+    "ffmpegVersionUnavailable": "此版本无可用版本信息",
     "detectedVersion": "检测到的 FFmpeg 版本",
     "detecting": "检测...",
     "ffmpegNotFound": "未找到 FFmpeg",

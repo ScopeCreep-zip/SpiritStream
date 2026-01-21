@@ -276,7 +276,7 @@ SpiritStream can download FFmpeg automatically:
 ### Manual Installation
 
 **Windows:**
-1. Download from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/)
+1. Download from [BtbN FFmpeg Builds](https://github.com/BtbN/FFmpeg-Builds/releases)
 2. Extract to `C:\ffmpeg`
 3. Add to PATH or configure in Settings
 
@@ -291,7 +291,7 @@ brew install ffmpeg
 sudo apt install ffmpeg
 
 # Or download static build
-wget https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
+wget https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-linux64-gpl.tar.xz
 tar xf ffmpeg-release-amd64-static.tar.xz
 sudo mv ffmpeg-*-static/ffmpeg /usr/local/bin/
 ```
