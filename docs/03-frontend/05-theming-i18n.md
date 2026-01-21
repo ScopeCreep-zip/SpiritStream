@@ -66,7 +66,7 @@ flowchart TB
 ### Token Definition
 
 ```css
-/* src-frontend/styles/tokens.css */
+/* apps/web/src/styles/tokens.css */
 :root {
   /* Primary Colors */
   --primary: #7C3AED;
@@ -173,7 +173,7 @@ flowchart TB
 ## Theme Store
 
 ```typescript
-// src-frontend/stores/themeStore.ts
+// apps/web/src/stores/themeStore.ts
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -223,7 +223,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
 ## Theme Toggle Component
 
 ```typescript
-// src-frontend/components/settings/ThemeToggle.tsx
+// apps/web/src/components/settings/ThemeToggle.tsx
 import { useThemeStore } from '@/stores/themeStore';
 import { Sun, Moon, Monitor } from 'lucide-react';
 
@@ -308,7 +308,7 @@ function ThemeButton({ icon, active, onClick, label }) {
 SpiritStream uses a custom i18n system with JSON translation files.
 
 ```
-src-frontend/
+apps/web/src/
 ├── locales/
 │   ├── en.json      # English (default)
 │   ├── es.json      # Spanish
@@ -418,7 +418,7 @@ src-frontend/
 ## Language Store
 
 ```typescript
-// src-frontend/stores/languageStore.ts
+// apps/web/src/stores/languageStore.ts
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -482,7 +482,7 @@ export const useLanguageStore = create<LanguageState>((set, get) => ({
 ## Translation Hook
 
 ```typescript
-// src-frontend/hooks/useTranslation.ts
+// apps/web/src/hooks/useTranslation.ts
 import { useLanguageStore } from '@/stores/languageStore';
 
 export function useTranslation() {
@@ -510,7 +510,7 @@ function Dashboard() {
 1. **Create translation file:**
 
 ```json
-// src-frontend/locales/fr.json
+// apps/web/src/locales/fr.json
 {
   "app": {
     "name": "SpiritStream",

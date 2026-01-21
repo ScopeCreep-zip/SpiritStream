@@ -66,7 +66,7 @@ flowchart LR
 Install the Tauri API package:
 
 ```bash
-npm install @tauri-apps/api
+pnpm add @tauri-apps/api
 ```
 
 ### Core Imports
@@ -112,7 +112,7 @@ const profile = await invoke<Profile>('load_profile', {
 Create a typed API layer for better developer experience:
 
 ```typescript
-// src-frontend/lib/api.ts
+// apps/web/src/lib/api.ts
 import { invoke } from '@tauri-apps/api/core';
 import type {
   Profile,
@@ -229,7 +229,7 @@ unlisten();
 ### React Hook for Events
 
 ```typescript
-// src-frontend/hooks/useTauriEvent.ts
+// apps/web/src/hooks/useTauriEvent.ts
 import { useEffect } from 'react';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 
@@ -281,7 +281,7 @@ function StreamMonitor() {
 ### Event Types
 
 ```typescript
-// src-frontend/types/events.ts
+// apps/web/src/types/events.ts
 export interface StreamStats {
   groupId: string;
   frame: number;
@@ -314,7 +314,7 @@ export type TauriEvent =
 ### Pattern: Store with Tauri
 
 ```typescript
-// src-frontend/stores/streamStore.ts
+// apps/web/src/stores/streamStore.ts
 import { create } from 'zustand';
 import { listen } from '@tauri-apps/api/event';
 import { api } from '@/lib/api';
@@ -405,7 +405,7 @@ export const useStreamStore = create<StreamState>((set, get) => ({
 ### Initializing Event Listeners
 
 ```typescript
-// src-frontend/App.tsx
+// apps/web/src/App.tsx
 import { useEffect } from 'react';
 import { useStreamStore } from '@/stores/streamStore';
 
@@ -562,7 +562,7 @@ async function pasteStreamKey() {
 Keep TypeScript types in sync with Rust structs:
 
 ```typescript
-// src-frontend/types/models.ts
+// apps/web/src/types/models.ts
 export interface Profile {
   id: string;
   name: string;
@@ -684,7 +684,7 @@ const api = isTauri
 ### Development Mocks
 
 ```typescript
-// src-frontend/lib/api.mock.ts
+// apps/web/src/lib/api.mock.ts
 export const mockApi = {
   profile: {
     getAll: async () => ['gaming', 'podcast'],

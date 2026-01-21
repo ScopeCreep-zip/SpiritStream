@@ -4,7 +4,37 @@
 
 ---
 
-This document covers building SpiritStream for development and production across all supported platforms.
+This document covers building SpiritStream for development and production across all supported platforms and deployment modes.
+
+---
+
+## Project Structure
+
+SpiritStream uses a **monorepo architecture** with pnpm workspaces and Turbo for build orchestration:
+
+```
+spiritstream/
+├── apps/
+│   ├── web/                    # React frontend (standalone)
+│   │   ├── package.json        # @spiritstream/web
+│   │   ├── vite.config.ts
+│   │   └── src/
+│   └── desktop/                # Tauri wrapper (minimal)
+│       ├── package.json        # @spiritstream/desktop
+│       └── src-tauri/
+│           ├── Cargo.toml
+│           ├── tauri.conf.json
+│           └── binaries/       # Server sidecar
+├── server/                     # Standalone Rust backend
+│   ├── Cargo.toml
+│   └── src/
+├── docker/                     # Docker configuration
+│   ├── Dockerfile
+│   └── docker-compose.yml
+├── pnpm-workspace.yaml
+├── turbo.json
+└── package.json
+```
 
 ---
 
@@ -15,9 +45,9 @@ This document covers building SpiritStream for development and production across
 | Tool | Version | Purpose |
 |------|---------|---------|
 | Node.js | 18+ | Frontend tooling |
+| pnpm | 8+ | Package management |
 | Rust | 1.70+ | Backend compilation |
-| pnpm/npm | Latest | Package management |
-| Tauri CLI | 2.x | Build orchestration |
+| Tauri CLI | 2.x | Desktop build orchestration |
 
 ### Platform-Specific Requirements
 
@@ -46,62 +76,93 @@ This document covers building SpiritStream for development and production across
 git clone https://github.com/ScopeCreep-zip/SpiritStream.git
 cd SpiritStream
 
-# Install dependencies
-npm install
+# Install dependencies (uses pnpm workspaces)
+pnpm install
 
 # Install Tauri CLI (if not global)
 cargo install tauri-cli
 ```
 
-### Development Server
+### Development Modes
+
+SpiritStream supports multiple development modes:
 
 ```bash
-# Start development server with hot reload
-npm run tauri dev
+# Full desktop app (Tauri + server sidecar + UI)
+pnpm dev
+
+# Frontend only (localhost:5173)
+pnpm dev:web
+
+# Backend server only (localhost:8008)
+pnpm backend:dev
+
+# Frontend with remote backend (HTTP mode)
+VITE_BACKEND_MODE=http VITE_BACKEND_URL=http://localhost:8008 pnpm dev:web
 ```
 
-This will:
-1. Start Vite dev server on port 5173
-2. Compile Rust backend
-3. Launch app window with DevTools
+### Dev Mode Details
+
+| Mode | Command | Use Case |
+|------|---------|----------|
+| Desktop | `pnpm dev` | Full desktop app development |
+| Web Only | `pnpm dev:web` | Frontend development (no backend) |
+| Server Only | `pnpm backend:dev` | Backend API development |
+| HTTP Client | `VITE_BACKEND_MODE=http pnpm dev:web` | Test browser-based remote access |
 
 ### Dev Server Options
 
 ```bash
-# Specify port
-VITE_PORT=3000 npm run tauri dev
+# Specify Vite port
+VITE_PORT=3000 pnpm dev:web
 
-# Enable verbose logging
-RUST_LOG=debug npm run tauri dev
+# Enable verbose Rust logging
+RUST_LOG=debug pnpm dev
 
-# Skip frontend (backend only)
-npm run tauri dev -- --no-watch
+# Backend on different port
+SPIRITSTREAM_PORT=9000 pnpm backend:dev
 ```
 
 ---
 
 ## Production Build
 
-### Build Command
+### Build All Workspaces
 
 ```bash
-# Build for current platform
-npm run tauri build
+# Build all packages (Turbo orchestrated)
+pnpm build
+
+# Build specific workspaces
+pnpm build:web       # Frontend only
+pnpm build:desktop   # Desktop app with server sidecar
 ```
 
-### Build Output
+### Desktop Build Output
 
 ```
-src-tauri/target/release/
+apps/desktop/src-tauri/target/release/
 ├── spiritstream              # Linux binary
 ├── spiritstream.exe          # Windows binary
 └── bundle/
     ├── msi/                  # Windows installer
     ├── dmg/                  # macOS disk image
-    ├── app/                  # macOS application
+    ├── macos/                # macOS application
     ├── appimage/             # Linux AppImage
     └── deb/                  # Linux Debian package
 ```
+
+### Standalone Server Build
+
+```bash
+# Build the standalone HTTP server
+pnpm backend:build
+
+# Or directly with Cargo
+cargo build --release --manifest-path server/Cargo.toml
+```
+
+Server output: `server/target/release/spiritstream-server`
 
 ---
 
@@ -111,10 +172,10 @@ src-tauri/target/release/
 
 ```bash
 # Build MSI installer
-npm run tauri build -- --target x86_64-pc-windows-msvc
+pnpm tauri build --target x86_64-pc-windows-msvc
 
 # Build NSIS installer (alternative)
-npm run tauri build -- --bundles nsis
+pnpm tauri build --bundles nsis
 ```
 
 **Output:**
@@ -125,13 +186,13 @@ npm run tauri build -- --bundles nsis
 
 ```bash
 # Build for Intel Mac
-npm run tauri build -- --target x86_64-apple-darwin
+pnpm tauri build --target x86_64-apple-darwin
 
 # Build for Apple Silicon
-npm run tauri build -- --target aarch64-apple-darwin
+pnpm tauri build --target aarch64-apple-darwin
 
 # Build Universal binary (both)
-npm run tauri build -- --target universal-apple-darwin
+pnpm tauri build --target universal-apple-darwin
 ```
 
 **Output:**
@@ -142,10 +203,10 @@ npm run tauri build -- --target universal-apple-darwin
 
 ```bash
 # Build AppImage
-npm run tauri build -- --target x86_64-unknown-linux-gnu
+pnpm tauri build --target x86_64-unknown-linux-gnu
 
 # Build specific bundle type
-npm run tauri build -- --bundles appimage,deb
+pnpm tauri build --bundles appimage,deb
 ```
 
 **Output:**
@@ -154,9 +215,53 @@ npm run tauri build -- --bundles appimage,deb
 
 ---
 
+## Docker Build
+
+SpiritStream can be deployed as a Docker container for self-hosted streaming.
+
+### Build Docker Image
+
+```bash
+# Build from project root
+docker build -t spiritstream:latest -f docker/Dockerfile .
+
+# Or use docker-compose
+cd docker
+docker compose build
+```
+
+### Run Container
+
+```bash
+# Basic run
+docker run -p 8008:8008 -p 1935:1935 spiritstream:latest
+
+# With persistent data
+docker run -p 8008:8008 -p 1935:1935 \
+  -v spiritstream-data:/app/data \
+  spiritstream:latest
+
+# With environment configuration
+docker run -p 8008:8008 -p 1935:1935 \
+  -e SPIRITSTREAM_HOST=0.0.0.0 \
+  -e SPIRITSTREAM_API_TOKEN=your-secret-token \
+  spiritstream:latest
+```
+
+### Docker Compose
+
+```bash
+cd docker
+docker compose up -d
+```
+
+See [Distribution Strategy](./03-distribution-strategy.md) for complete Docker deployment documentation.
+
+---
+
 ## Build Configuration
 
-### tauri.conf.json
+### tauri.conf.json (apps/desktop/src-tauri/)
 
 ```json
 {
@@ -164,10 +269,10 @@ npm run tauri build -- --bundles appimage,deb
   "version": "1.0.0",
   "identifier": "com.spiritstream.app",
   "build": {
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "pnpm dev:web",
+    "beforeBuildCommand": "pnpm build:web",
     "devUrl": "http://localhost:5173",
-    "frontendDist": "../dist"
+    "frontendDist": "../../web/dist"
   },
   "app": {
     "windows": [
@@ -182,12 +287,13 @@ npm run tauri build -- --bundles appimage,deb
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:*"
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
+    "externalBin": ["binaries/spiritstream-server"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -195,30 +301,15 @@ npm run tauri build -- --bundles appimage,deb
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [
-      "resources/*"
-    ],
-    "windows": {
-      "wix": {
-        "language": "en-US"
-      }
-    },
-    "macOS": {
-      "minimumSystemVersion": "10.15"
-    },
-    "linux": {
-      "desktop": {
-        "categories": ["Video", "AudioVideo"]
-      }
-    }
+    "resources": ["resources/*"]
   }
 }
 ```
 
-### Vite Configuration
+### Vite Configuration (apps/web/)
 
 ```typescript
-// vite.config.ts
+// apps/web/vite.config.ts
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
@@ -227,7 +318,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src-frontend'),
+      '@': path.resolve(__dirname, './src'),
     },
   },
   build: {
@@ -250,14 +341,35 @@ export default defineConfig({
 });
 ```
 
+### Turbo Configuration
+
+```json
+// turbo.json
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", ".next/**", "target/**"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"]
+    }
+  }
+}
+```
+
 ---
 
 ## Cargo Configuration
 
-### Release Profile
+### Release Profile (server/Cargo.toml)
 
 ```toml
-# Cargo.toml
 [profile.release]
 opt-level = 3
 lto = true
@@ -278,49 +390,24 @@ Build with features:
 
 ```bash
 # Enable devtools in release
-npm run tauri build -- --features devtools
+pnpm tauri build --features devtools
 ```
 
 ---
 
-## Bundle Resources
+## Sidecar Configuration
 
-### Including FFmpeg
+The desktop app spawns the server as a sidecar binary. Build the sidecar:
 
-```json
-// tauri.conf.json
-{
-  "bundle": {
-    "resources": [
-      "resources/ffmpeg*"
-    ]
-  }
-}
+```bash
+# Build server for sidecar (runs automatically via build script)
+pnpm build:server
+
+# Manual build for specific platform
+cargo build --release --manifest-path server/Cargo.toml
 ```
 
-Place binaries in `src-tauri/resources/`:
-
-```
-src-tauri/resources/
-├── ffmpeg          # Linux
-├── ffmpeg.exe      # Windows
-└── ffmpeg-macos    # macOS
-```
-
-### Sidecar Pattern
-
-For FFmpeg as a sidecar:
-
-```json
-// tauri.conf.json
-{
-  "bundle": {
-    "externalBin": [
-      "binaries/ffmpeg"
-    ]
-  }
-}
-```
+The `build-server.ts` script copies the built binary to `apps/desktop/src-tauri/binaries/` with the correct platform triple naming.
 
 ---
 
@@ -333,10 +420,10 @@ For FFmpeg as a sidecar:
 export APPLE_SIGNING_IDENTITY="Developer ID Application: Your Name (XXXXXXXXXX)"
 
 # Build and sign
-npm run tauri build
+pnpm tauri build
 
 # Notarize (requires Apple Developer account)
-xcrun notarytool submit target/release/bundle/dmg/SpiritStream.dmg \
+xcrun notarytool submit apps/desktop/src-tauri/target/release/bundle/dmg/SpiritStream.dmg \
   --apple-id "your@email.com" \
   --password "app-specific-password" \
   --team-id "XXXXXXXXXX" \
@@ -360,8 +447,6 @@ signtool sign /f certificate.pfx /p password /tr http://timestamp.digicert.com /
 # Cargo.toml - Strip symbols
 [profile.release]
 strip = true
-
-# Use panic=abort
 panic = "abort"
 ```
 
@@ -369,7 +454,7 @@ panic = "abort"
 
 ```bash
 # Analyze bundle size
-npm run build -- --sourcemap
+pnpm build:web -- --sourcemap
 npx vite-bundle-visualizer
 ```
 
@@ -380,6 +465,7 @@ npx vite-bundle-visualizer
 | Windows (MSI) | ~15 MB | ~8 MB |
 | macOS (DMG) | ~12 MB | ~6 MB |
 | Linux (AppImage) | ~18 MB | ~10 MB |
+| Docker Image | ~50 MB | N/A |
 
 ---
 
@@ -412,6 +498,11 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -422,17 +513,43 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev
 
       - name: Install npm dependencies
-        run: npm ci
+        run: pnpm install
 
       - name: Build
-        run: npm run tauri build
+        run: pnpm build:desktop
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: binaries-${{ matrix.platform }}
           path: |
-            src-tauri/target/release/bundle/
+            apps/desktop/src-tauri/target/release/bundle/
+```
+
+### Docker CI
+
+```yaml
+# .github/workflows/docker.yml
+name: Docker
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: true
+          tags: ghcr.io/scopecreep-zip/spiritstream:latest
 ```
 
 ---
@@ -447,17 +564,33 @@ jobs:
 | `MSVC not found` | Missing Windows tools | Install VS Build Tools |
 | `codesign failed` | Invalid certificate | Check signing identity |
 | `out of memory` | Large bundle | Increase `codegen-units` |
+| `workspace not found` | Wrong directory | Run from project root |
+| `sidecar not found` | Server not built | Run `pnpm build:server` |
 
 ### Debug Build
 
 ```bash
 # Build with debug symbols
-npm run tauri build -- --debug
+pnpm tauri build --debug
 
 # Check binary size
-ls -la src-tauri/target/release/spiritstream*
+ls -la apps/desktop/src-tauri/target/release/spiritstream*
+
+# Check server binary
+ls -la server/target/release/spiritstream-server*
+```
+
+### Type Checking
+
+```bash
+# Check all TypeScript
+pnpm typecheck
+
+# Check Rust
+cargo check --manifest-path server/Cargo.toml
+cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 ```
 
 ---
 
-**Related:** [Platform Guides](./02-platform-guides.md) | [Release Process](./03-release-process.md)
+**Related:** [Platform Guides](./02-platform-guides.md) | [Distribution Strategy](./03-distribution-strategy.md) | [Release Process](./04-release-process.md)

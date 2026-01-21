@@ -611,7 +611,7 @@ const defaultSettings: Settings = {
 ## File Organization
 
 ```
-src-frontend/types/
+apps/web/src/types/
 ├── index.ts           # Re-exports
 ├── profile.ts         # Profile, OutputGroup, StreamTarget
 ├── settings.ts        # Settings, Theme

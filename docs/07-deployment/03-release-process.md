@@ -46,9 +46,10 @@ MAJOR.MINOR.PATCH
 Update version in:
 
 ```
-src-tauri/Cargo.toml        → version = "1.0.0"
-src-tauri/tauri.conf.json   → "version": "1.0.0"
-package.json                → "version": "1.0.0"
+server/Cargo.toml                       → version = "1.0.0"
+apps/desktop/src-tauri/Cargo.toml       → version = "1.0.0"
+apps/desktop/src-tauri/tauri.conf.json  → "version": "1.0.0"
+package.json                            → "version": "1.0.0"
 ```
 
 ### Changelog
@@ -82,31 +83,33 @@ package.json                → "version": "1.0.0"
 
 ```bash
 # Clean previous builds
-rm -rf src-tauri/target/release
-rm -rf dist
+rm -rf apps/desktop/src-tauri/target/release
+rm -rf server/target/release
+rm -rf apps/web/dist
 
 # Fresh install
-npm ci
+pnpm install
 ```
 
 ### 2. Run Tests
 
 ```bash
 # Frontend tests
-npm test
+pnpm test
 
 # Rust tests
-cd src-tauri && cargo test
+cargo test --manifest-path server/Cargo.toml
+cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
 
 # Type checking
-npm run typecheck
+pnpm typecheck
 ```
 
 ### 3. Build All Platforms
 
 ```bash
 # Build for current platform
-npm run tauri build
+pnpm build:desktop
 
 # Or use CI/CD for all platforms
 ```
@@ -150,7 +153,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -164,17 +171,17 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev
 
       - name: Install Dependencies
-        run: npm ci
+        run: pnpm install
 
       - name: Build
-        run: npm run tauri build -- --target ${{ matrix.target }}
+        run: pnpm tauri build --target ${{ matrix.target }}
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: binaries-${{ matrix.target }}
           path: |
-            src-tauri/target/${{ matrix.target }}/release/bundle/
+            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/
 
   release:
     needs: build
@@ -206,7 +213,7 @@ jobs:
 export APPLE_SIGNING_IDENTITY="Developer ID Application: Name (TEAMID)"
 
 # Build with signing
-npm run tauri build
+pnpm tauri build
 
 # Notarize
 xcrun notarytool submit \
@@ -386,15 +393,16 @@ if [ -z "$VERSION" ]; then
   exit 1
 fi
 
-# Update Cargo.toml
-sed -i "s/^version = .*/version = \"$VERSION\"/" src-tauri/Cargo.toml
+# Update Cargo.toml files
+sed -i "s/^version = .*/version = \"$VERSION\"/" server/Cargo.toml
+sed -i "s/^version = .*/version = \"$VERSION\"/" apps/desktop/src-tauri/Cargo.toml
 
 # Update package.json
 npm version $VERSION --no-git-tag-version
 
 # Update tauri.conf.json
-jq ".version = \"$VERSION\"" src-tauri/tauri.conf.json > tmp.json
-mv tmp.json src-tauri/tauri.conf.json
+jq ".version = \"$VERSION\"" apps/desktop/src-tauri/tauri.conf.json > tmp.json
+mv tmp.json apps/desktop/src-tauri/tauri.conf.json
 
 echo "Version bumped to $VERSION"
 ```

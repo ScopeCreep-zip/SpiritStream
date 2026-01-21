@@ -18,6 +18,7 @@ SpiritStream is a multi-destination streaming application that lets you stream t
 | Understand frontend state | [State Management](./03-frontend/02-state-management.md) |
 | Configure streaming | [FFmpeg Integration](./04-streaming/01-ffmpeg-integration.md) |
 | Reference the API | [Commands API](./05-api-reference/01-commands-api.md) |
+| Deploy with Docker | [Building](./07-deployment/01-building.md#docker-build) |
 | Look up a term | [Glossary](./GLOSSARY.md) |
 
 ---
@@ -26,12 +27,13 @@ SpiritStream is a multi-destination streaming application that lets you stream t
 
 | Metric | Value |
 |--------|-------|
-| **Framework** | Tauri 2.x |
+| **Framework** | Tauri 2.x + Axum |
 | **Backend** | Rust (10,000+ lines) |
 | **Frontend** | React 19 + TypeScript (8,700+ lines) |
-| **Tauri Commands** | 25+ |
+| **Tauri Commands** | 30+ |
 | **UI Components** | 40+ |
 | **Supported Platforms** | Windows, macOS, Linux |
+| **Deployment Modes** | Desktop, Docker, Cloud (future) |
 | **Supported Languages** | 5 (en, es, fr, de, ja) |
 
 ---
@@ -81,7 +83,7 @@ Ready for implementation details and security?
 - [Rust Overview](./02-backend/01-rust-overview.md) — Crate structure, dependencies
 - [Services Layer](./02-backend/02-services-layer.md) — ProfileManager, FFmpegHandler, Encryption
 - [Models Reference](./02-backend/03-models-reference.md) — Profile, OutputGroup, StreamTarget
-- [Tauri Commands](./02-backend/04-tauri-commands.md) — All 25+ command signatures
+- [Tauri Commands](./02-backend/04-tauri-commands.md) — All 30+ command signatures
 - [Encryption Implementation](./02-backend/05-encryption-implementation.md) — AES-256-GCM + Argon2id
 
 ### Frontend (React)
@@ -118,7 +120,8 @@ Ready for implementation details and security?
 - [Section Overview](./07-deployment/README.md)
 - [Building](./07-deployment/01-building.md) — Build process documentation
 - [Platform Guides](./07-deployment/02-platform-guides.md) — Windows, macOS, Linux specifics
-- [Release Process](./07-deployment/03-release-process.md) — Versioning and distribution
+- [Distribution Strategy](./07-deployment/03-distribution-strategy.md) — Desktop, Docker, Cloud
+- [Release Process](./07-deployment/04-release-process.md) — Versioning and distribution
 
 ---
 
@@ -126,15 +129,20 @@ Ready for implementation details and security?
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                     PRESENTATION LAYER                               │
-│                     React 19 + TypeScript                            │
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐                 │
-│  │  Components  │ │    Hooks     │ │    Stores    │                 │
-│  │  (40+ UI)    │ │  (Custom)    │ │  (Zustand)   │                 │
-│  └──────────────┘ └──────────────┘ └──────────────┘                 │
-├─────────────────────────────────────────────────────────────────────┤
-│                     IPC BRIDGE                                       │
-│                     Tauri invoke() / listen()                        │
+│                     CLIENT LAYER                                     │
+│  ┌──────────────────────────┐  ┌──────────────────────────┐        │
+│  │     Tauri Desktop        │  │      Web Browser         │        │
+│  │    (Embedded Webview)    │  │    (Remote Access)       │        │
+│  └────────────┬─────────────┘  └────────────┬─────────────┘        │
+│               │                             │                       │
+│               └──────────────┬──────────────┘                       │
+│                              │                                      │
+├──────────────────────────────┼──────────────────────────────────────┤
+│                     API LAYER│                                      │
+│              HTTP/WebSocket API (Axum)                              │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐                │
+│  │ POST /api/*  │ │   WS /ws     │ │  Static UI   │                │
+│  └──────────────┘ └──────────────┘ └──────────────┘                │
 ├─────────────────────────────────────────────────────────────────────┤
 │                     APPLICATION LAYER                                │
 │                     Rust Services                                    │
@@ -149,6 +157,18 @@ Ready for implementation details and security?
 │  └──────────────┘ └──────────────┘ └──────────────┘                 │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Deployment Modes
+
+| Mode | Use Case | Setup |
+|------|----------|-------|
+| **Desktop** | Local streaming with GPU acceleration | Download installer |
+| **Docker** | Self-hosted on your server | `docker pull` + compose |
+| **Cloud** | Managed service (future) | Sign up |
+
+See [Distribution Strategy](./07-deployment/03-distribution-strategy.md) for details.
 
 ---
 

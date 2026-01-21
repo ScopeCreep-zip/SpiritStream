@@ -17,7 +17,7 @@ The component library is built with:
 - Lucide icons
 
 ```
-src-frontend/components/
+apps/web/src/components/
 ├── ui/              # Base components
 ├── layout/          # App structure
 ├── navigation/      # Nav components
