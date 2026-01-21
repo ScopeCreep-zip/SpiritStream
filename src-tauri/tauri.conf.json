@@ -11,6 +11,7 @@
     "beforeBundleCommand": "node scripts/patch-for-distribution.cjs"
   },
   "app": {
+    "enableGTKAppId": true,
     "windows": [
       {
         "title": "SpiritStream",

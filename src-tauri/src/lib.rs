@@ -12,13 +12,24 @@ use tokio::sync::Mutex;
 use services::{ProfileManager, FFmpegHandler, FFmpegDownloader, SettingsManager, ThemeManager};
 use commands::FFmpegDownloaderState;
 
+fn load_window_icon() -> Option<Image<'static>> {
+    let icon_bytes = include_bytes!("../icons/icon.png");
+    Image::from_bytes(icon_bytes).ok().map(|icon| icon.to_owned())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let window_icon = load_window_icon();
+    let mut context = tauri::generate_context!();
+    if let Some(icon) = window_icon.clone() {
+        context.set_default_window_icon(Some(icon));
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
-        .setup(|app| {
+        .setup(move |app| {
             let mut targets = vec![
                 Target::new(TargetKind::LogDir {
                     file_name: Some("spiritstream".to_string()),
@@ -78,19 +89,16 @@ pub fn run() {
 
             log::info!("SpiritStream initialized. Data dir: {app_data_dir:?}");
 
-            // Set window icon
-            if let Some(window) = app.get_webview_window("main") {
-                let icon_bytes = include_bytes!("../icons/icon.png").to_vec();
-                match Image::from_bytes(&icon_bytes) {
-                    Ok(icon) => {
-                        if let Err(e) = window.set_icon(icon) {
-                            log::warn!("Failed to set window icon: {e}");
-                        }
+            if let Some(icon) = window_icon.clone() {
+                if let Some(window) = app.get_webview_window("main") {
+                    if let Err(e) = window.set_icon(icon) {
+                        log::warn!("Failed to set window icon: {e}");
                     }
-                    Err(e) => {
-                        log::warn!("Failed to load icon: {e}");
-                    }
+                } else {
+                    log::warn!("Main window not found; window icon not set");
                 }
+            } else {
+                log::warn!("Window icon not loaded; using default");
             }
 
             Ok(())
@@ -140,7 +148,7 @@ pub fn run() {
             commands::get_theme_tokens,
             commands::install_theme,
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             // Clean up FFmpeg processes on app exit
