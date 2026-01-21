@@ -101,6 +101,15 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
     return Object.keys(newErrors).length === 0;
   };
 
+  // Normalize URL: trim whitespace and remove trailing slashes
+  const normalizeUrl = (url: string): string => {
+    let normalized = url.trim();
+    while (normalized.endsWith('/')) {
+      normalized = normalized.slice(0, -1);
+    }
+    return normalized;
+  };
+
   const handleSave = async () => {
     if (!validate()) return;
 
@@ -110,8 +119,8 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
         id: mode === 'edit' && target ? target.id : crypto.randomUUID(),
         service: formData.service,
         name: formData.name,
-        url: formData.url,
-        streamKey: formData.streamKey,
+        url: normalizeUrl(formData.url),
+        streamKey: formData.streamKey.trim(),
       };
 
       if (mode === 'create') {

@@ -256,7 +256,11 @@ function AppContent() {
       toast.success(t('toast.streamStarted'));
     } catch (err) {
       console.error('[App] startAllGroups failed:', err);
-      toast.error(`Failed to start streaming: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(
+        t('toast.startFailed', {
+          error: err instanceof Error ? err.message : String(err),
+        })
+      );
     } finally {
       setIsValidating(false);
     }

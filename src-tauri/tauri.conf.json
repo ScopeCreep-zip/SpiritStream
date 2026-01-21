@@ -7,7 +7,8 @@
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
     "beforeDevCommand": "npm run vite:dev",
-    "beforeBuildCommand": "npm run vite:build"
+    "beforeBuildCommand": "npm run vite:build",
+    "beforeBundleCommand": "node scripts/patch-for-distribution.cjs"
   },
   "app": {
     "windows": [
@@ -29,7 +30,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["deb", "rpm"],
     "license": "../LICENSE",
     "licenseFile": "../LICENSE",
     "copyright": "Copyright (c) 2024-2025 SpiritStream Contributors",
@@ -58,10 +59,12 @@
         "bundleMediaFramework": true
       },
       "deb": {
-        "depends": ["ffmpeg"]
+        "depends": ["ffmpeg", "pciutils", "liblzma5"],
+        "recommends": ["libayatana-appindicator3-1"]
       },
       "rpm": {
-        "depends": ["ffmpeg"]
+        "depends": ["ffmpeg", "pciutils", "xz-libs"],
+        "recommends": ["libayatana-appindicator-gtk3"]
       }
     },
     "shortDescription": "Multi-destination streaming application",

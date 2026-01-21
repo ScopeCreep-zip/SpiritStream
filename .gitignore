@@ -1,9 +1,15 @@
 # Dependencies
 node_modules/
+**/node_modules/
 .pnpm-store/
+.direnv/
+discovery/
 
 # Build outputs
 dist/
+
+# Secrets (not .env.example)
+.env.secrets
 release/
 resources/
 

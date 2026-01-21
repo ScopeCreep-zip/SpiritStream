@@ -600,6 +600,9 @@ impl FFmpegHandler {
                 recent_lines.pop_front();
             }
             recent_lines.push_back(sanitized_line.clone());
+            if log::log_enabled!(log::Level::Debug) {
+                log::debug!("[FFmpeg:{group_id}] {sanitized_line}");
+            }
 
             let parsed = stats.parse_line(&line);
             let is_progress_line = line.trim_start().starts_with("progress=");
@@ -914,6 +917,9 @@ impl FFmpegHandler {
                 let reader = BufReader::new(stderr);
                 for line in reader.lines().map_while(Result::ok) {
                     let sanitized = Self::sanitize_arg_static(&line);
+                    if log::log_enabled!(log::Level::Debug) {
+                        log::debug!("[FFmpeg:relay] {sanitized}");
+                    }
                     if line.contains("[error]")
                         || line.contains("[warning]")
                         || line.contains("Error")
@@ -1025,6 +1031,8 @@ impl FFmpegHandler {
         let outputs = Self::relay_tee_output_list(group_ids);
         let listen_url = Self::normalize_relay_input_url(incoming_url);
         Ok(vec![
+            "-loglevel".to_string(),
+            "verbose".to_string(),
             "-listen".to_string(),
             "1".to_string(),
             "-i".to_string(),
@@ -1142,6 +1150,47 @@ impl FFmpegHandler {
         }
     }
 
+    fn double_bitrate_value(bitrate: &str) -> Option<String> {
+        let trimmed = bitrate.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+
+        let split_at = trimmed
+            .find(|c: char| !c.is_ascii_digit() && c != '.')
+            .unwrap_or(trimmed.len());
+        let (value_str, suffix) = trimmed.split_at(split_at);
+        if value_str.is_empty() {
+            return None;
+        }
+
+        let value: f64 = value_str.parse().ok()?;
+        let doubled = value * 2.0;
+        let formatted = format!("{doubled}");
+        Some(format!("{formatted}{suffix}"))
+    }
+
+    fn append_cbr_args(args: &mut Vec<String>, encoder: &str, bitrate: &str) {
+        let bufsize = Self::double_bitrate_value(bitrate)
+            .unwrap_or_else(|| bitrate.to_string());
+
+        args.push("-minrate".to_string()); args.push(bitrate.to_string());
+        args.push("-maxrate".to_string()); args.push(bitrate.to_string());
+        args.push("-bufsize".to_string()); args.push(bufsize);
+
+        if encoder.contains("nvenc") || encoder.contains("qsv") || encoder.contains("amf") {
+            args.push("-rc".to_string()); args.push("cbr".to_string());
+        }
+
+        if encoder == "libx264" {
+            args.push("-x264-params".to_string());
+            args.push("nal-hrd=cbr:force-cfr=1".to_string());
+        } else if encoder == "libx265" {
+            args.push("-x265-params".to_string());
+            args.push("nal-hrd=cbr".to_string());
+        }
+    }
+
     /// Build FFmpeg arguments for an output group
     ///
     /// Groups read from the shared TCP relay so they can restart independently.
@@ -1155,6 +1204,8 @@ impl FFmpegHandler {
             && group.audio.codec.eq_ignore_ascii_case("copy");
 
         let mut args = vec![
+            "-loglevel".to_string(),
+            "verbose".to_string(),
             "-i".to_string(),
             Self::relay_input_url_for_group(&group.id),
         ];
@@ -1166,7 +1217,9 @@ impl FFmpegHandler {
             // Video settings
             args.push("-c:v".to_string()); args.push(group.video.codec.clone());
             args.push("-s".to_string()); args.push(group.video.resolution());
-            args.push("-b:v".to_string()); args.push(group.video.bitrate.clone());
+            let bitrate = group.video.bitrate.clone();
+            args.push("-b:v".to_string()); args.push(bitrate.clone());
+            Self::append_cbr_args(&mut args, &group.video.codec, &bitrate);
             args.push("-r".to_string()); args.push(group.video.fps.to_string());
             // Audio settings
             args.push("-c:a".to_string()); args.push(group.audio.codec.clone());
