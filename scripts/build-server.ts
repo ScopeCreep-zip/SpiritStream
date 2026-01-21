@@ -2,11 +2,12 @@
 /**
  * Build the server sidecar binary for Tauri bundling.
  *
- * Tauri expects sidecar binaries in src-tauri/binaries/ with platform-specific names:
- * - Windows: server-x86_64-pc-windows-msvc.exe
- * - Linux: server-x86_64-unknown-linux-gnu
- * - macOS Intel: server-x86_64-apple-darwin
- * - macOS ARM: server-aarch64-apple-darwin
+ * This script builds the standalone server from /server/ and copies it to
+ * apps/desktop/src-tauri/binaries/ with platform-specific names:
+ * - Windows: spiritstream-server-x86_64-pc-windows-msvc.exe
+ * - Linux: spiritstream-server-x86_64-unknown-linux-gnu
+ * - macOS Intel: spiritstream-server-x86_64-apple-darwin
+ * - macOS ARM: spiritstream-server-aarch64-apple-darwin
  */
 
 import { execSync } from 'child_process';
@@ -37,14 +38,14 @@ const ext = platform === 'win32' ? '.exe' : '';
 
 console.log(`Building server binary for ${target} (${profile})...`);
 
-// Create binaries directory
-const binariesDir = join('src-tauri', 'binaries');
+// Create binaries directory in desktop app
+const binariesDir = join('apps', 'desktop', 'src-tauri', 'binaries');
 if (!existsSync(binariesDir)) {
   mkdirSync(binariesDir, { recursive: true });
 }
 
 // Destination path for the sidecar binary
-const destPath = join(binariesDir, `server-${target}${ext}`);
+const destPath = join(binariesDir, `spiritstream-server-${target}${ext}`);
 
 // Create placeholder if it doesn't exist (so Tauri build.rs doesn't fail during library compilation)
 if (!existsSync(destPath)) {
@@ -52,10 +53,10 @@ if (!existsSync(destPath)) {
   writeFileSync(destPath, '');
 }
 
-// Build the server binary
+// Build the server binary from /server/
 const buildCmd = isRelease
-  ? `cargo build --manifest-path src-tauri/Cargo.toml --bin server --release`
-  : `cargo build --manifest-path src-tauri/Cargo.toml --bin server`;
+  ? `cargo build --manifest-path server/Cargo.toml --release`
+  : `cargo build --manifest-path server/Cargo.toml`;
 
 try {
   execSync(buildCmd, { stdio: 'inherit' });
@@ -65,7 +66,7 @@ try {
 }
 
 // Copy binary with platform-specific name
-const sourcePath = join('src-tauri', 'target', profile, `server${ext}`);
+const sourcePath = join('server', 'target', profile, `spiritstream-server${ext}`);
 
 console.log(`Copying ${sourcePath} to ${destPath}...`);
 copyFileSync(sourcePath, destPath);

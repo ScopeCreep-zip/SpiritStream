@@ -108,7 +108,7 @@ export const PLATFORMS: Record<Platform, {
   output += '};\n';
 
   // Write output file
-  const outputPath = path.join(__dirname, '..', 'src-frontend', 'types', 'generated-platforms.ts');
+  const outputPath = path.join(__dirname, '..', 'apps', 'web', 'src', 'types', 'generated-platforms.ts');
   fs.writeFileSync(outputPath, output, 'utf-8');
 
   console.log(`✅ Generated ${services.length} platform types to ${outputPath}`);

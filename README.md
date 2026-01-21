@@ -52,12 +52,12 @@ cd spiritstream
 .\setup.ps1
 ```
 
-The setup script installs: Rust, FFmpeg, platform build tools, and npm dependencies.
+The setup script installs: Rust, FFmpeg, platform build tools, and pnpm dependencies.
 
 After setup completes, restart your terminal and run:
 ```bash
-npm run dev    # Development mode
-npm run build  # Production build
+pnpm dev       # Development mode (all workspaces)
+pnpm build     # Production build
 ```
 
 ---
@@ -86,6 +86,7 @@ Download the latest release from [Releases](https://github.com/ScopeCreep-zip/Sp
 | Requirement | Installation |
 |-------------|--------------|
 | Node.js 18+ | [nodejs.org](https://nodejs.org/) |
+| pnpm 8+ | `npm install -g pnpm` |
 | Rust 1.70+ | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
 | FFmpeg | See above |
 | Platform tools | [Tauri Prerequisites](https://tauri.app/start/prerequisites/) |
@@ -95,11 +96,11 @@ Download the latest release from [Releases](https://github.com/ScopeCreep-zip/Sp
 ```bash
 git clone https://github.com/ScopeCreep-zip/SpiritStream.git
 cd spiritstream
-npm install
-npm run build
+pnpm install
+pnpm build
 ```
 
-Build output: `src-tauri/target/release/bundle/`
+Build output: `apps/desktop/src-tauri/target/release/bundle/`
 
 ## Usage
 
@@ -110,20 +111,26 @@ Build output: `src-tauri/target/release/bundle/`
 
 ## Development
 
+This is a pnpm monorepo with multiple workspaces:
+- `apps/web` - React frontend (@spiritstream/web)
+- `apps/desktop` - Tauri desktop wrapper (@spiritstream/desktop)
+- `server` - Standalone Rust HTTP server
+
 ```bash
-npm run dev          # Start development server with hot reload
-npm run build        # Production build
-npm run build:debug  # Debug build with symbols
-npm run typecheck    # Check TypeScript types
-npm run check        # Check Rust code
+pnpm dev             # Start all workspaces in parallel
+pnpm dev:web         # Frontend only (localhost:5173)
+pnpm dev:desktop     # Desktop app with server sidecar
+pnpm build           # Production build (all workspaces)
+pnpm typecheck       # Check TypeScript types
+cargo check --manifest-path server/Cargo.toml  # Check Rust server
 ```
 
 ### Backend Server (HTTP/WebSocket)
 
-Run the standalone backend server for browser-based usage:
+Run the standalone backend server for browser-based or Docker usage:
 
 ```bash
-npm run backend:dev
+pnpm backend:dev
 ```
 
 Environment variables:
@@ -155,7 +162,7 @@ VITE_BACKEND_TOKEN=
 Then start the frontend with:
 
 ```bash
-npm run vite:dev
+VITE_BACKEND_MODE=http pnpm dev:web
 ```
 
 ### Launcher (Desktop Host)
