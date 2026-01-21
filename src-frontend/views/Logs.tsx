@@ -13,7 +13,7 @@ import { api } from '@/lib/tauri';
 import { toast } from '@/hooks/useToast';
 
 export function Logs() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const {
     logs,
     filter,
@@ -62,7 +62,8 @@ export function Logs() {
 
   // Format timestamp for display
   const formatTime = (date: Date): string => {
-    return date.toLocaleTimeString('en-US', {
+    const locale = i18n.resolvedLanguage || i18n.language || 'en';
+    return date.toLocaleTimeString(locale, {
       hour12: false,
       hour: '2-digit',
       minute: '2-digit',
@@ -79,7 +80,7 @@ export function Logs() {
     const selected = await save({
       title: t('logs.exportTitle', { defaultValue: 'Export Logs' }),
       defaultPath: defaultName,
-      filters: [{ name: 'Log file', extensions: ['txt', 'log'] }],
+      filters: [{ name: t('logs.logFile'), extensions: ['txt', 'log'] }],
     });
     if (!selected) {
       return;

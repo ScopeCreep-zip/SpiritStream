@@ -16,57 +16,83 @@ export interface EncoderCardProps {
   className?: string;
 }
 
+type TranslateFn = (key: string, options?: Record<string, string | number>) => string;
+
+const ENCODER_DEFAULT_LABELS: Record<string, string> = {
+  libx264: 'x264',
+  libx265: 'x265',
+  h264_nvenc: 'NVENC',
+  hevc_nvenc: 'NVENC HEVC',
+  h264_videotoolbox: 'VideoToolbox',
+  hevc_videotoolbox: 'VideoToolbox HEVC',
+  h264_qsv: 'QuickSync',
+  hevc_qsv: 'QuickSync HEVC',
+  h264_amf: 'AMF',
+  hevc_amf: 'AMF HEVC',
+};
+
+const HARDWARE_ENCODERS = new Set([
+  'h264_nvenc',
+  'hevc_nvenc',
+  'h264_videotoolbox',
+  'hevc_videotoolbox',
+  'h264_qsv',
+  'hevc_qsv',
+  'h264_amf',
+  'hevc_amf',
+]);
+
+const PRESET_DEFAULT_LABELS: Record<string, string> = {
+  ultrafast: 'Ultrafast',
+  superfast: 'Superfast',
+  veryfast: 'Very Fast',
+  faster: 'Faster',
+  fast: 'Fast',
+  medium: 'Medium',
+  slow: 'Slow',
+  slower: 'Slower',
+  veryslow: 'Very Slow',
+  quality: 'Quality',
+  balanced: 'Balanced',
+  speed: 'Speed',
+  performance: 'Performance',
+  p1: 'P1 (Fastest)',
+  p2: 'P2',
+  p3: 'P3',
+  p4: 'P4 (Balanced)',
+  p5: 'P5',
+  p6: 'P6',
+  p7: 'P7 (Highest Quality)',
+};
+
 /**
  * Get a human-readable label for an encoder codec
  */
-function getEncoderLabel(codec: string): { label: string; type: 'software' | 'hardware' | 'passthrough' } {
+function getEncoderLabel(
+  codec: string,
+  t: TranslateFn
+): { label: string; type: 'software' | 'hardware' | 'passthrough' } {
   if (codec === 'copy') {
-    return { label: 'Passthrough', type: 'passthrough' };
+    return {
+      label: t('encoder.passthrough', { defaultValue: 'Passthrough' }),
+      type: 'passthrough',
+    };
   }
-  const encoders: Record<string, { label: string; type: 'software' | 'hardware' }> = {
-    libx264: { label: 'x264', type: 'software' },
-    libx265: { label: 'x265', type: 'software' },
-    h264_nvenc: { label: 'NVENC', type: 'hardware' },
-    hevc_nvenc: { label: 'NVENC HEVC', type: 'hardware' },
-    h264_videotoolbox: { label: 'VideoToolbox', type: 'hardware' },
-    hevc_videotoolbox: { label: 'VideoToolbox HEVC', type: 'hardware' },
-    h264_qsv: { label: 'QuickSync', type: 'hardware' },
-    hevc_qsv: { label: 'QuickSync HEVC', type: 'hardware' },
-    h264_amf: { label: 'AMF', type: 'hardware' },
-    hevc_amf: { label: 'AMF HEVC', type: 'hardware' },
+  const type = HARDWARE_ENCODERS.has(codec) ? 'hardware' : 'software';
+  const defaultLabel = ENCODER_DEFAULT_LABELS[codec] || codec;
+  return {
+    label: t(`encoder.encoders.${codec}`, { defaultValue: defaultLabel }),
+    type,
   };
-  return encoders[codec] || { label: codec, type: 'software' };
 }
 
 /**
  * Get a human-readable label for an encoder preset
  */
-function getPresetLabel(preset: string | undefined): string {
-  if (!preset) return '—';
-  const presets: Record<string, string> = {
-    ultrafast: 'Ultrafast',
-    superfast: 'Superfast',
-    veryfast: 'Very Fast',
-    faster: 'Faster',
-    fast: 'Fast',
-    medium: 'Medium',
-    slow: 'Slow',
-    slower: 'Slower',
-    veryslow: 'Very Slow',
-    quality: 'Quality',
-    balanced: 'Balanced',
-    speed: 'Speed',
-    performance: 'Performance',
-    // NVENC presets
-    p1: 'P1 (Fastest)',
-    p2: 'P2',
-    p3: 'P3',
-    p4: 'P4 (Balanced)',
-    p5: 'P5',
-    p6: 'P6',
-    p7: 'P7 (Highest Quality)',
-  };
-  return presets[preset] || preset;
+function getPresetLabel(preset: string | undefined, t: TranslateFn): string {
+  if (!preset) return t('common.notAvailable');
+  const defaultLabel = PRESET_DEFAULT_LABELS[preset] || preset;
+  return t(`encoder.presets.${preset}`, { defaultValue: defaultLabel });
 }
 
 export function EncoderCard({
@@ -78,18 +104,27 @@ export function EncoderCard({
   className,
 }: EncoderCardProps) {
   const { t } = useTranslation();
-  const tDynamic = t as (key: string, options?: { defaultValue?: string }) => string;
+  const tDynamic = t as TranslateFn;
 
   const isPassthrough = group.video.codec === 'copy' && group.audio.codec === 'copy';
   const isDefaultGroup = group.isDefault === true;
 
-  const encoder = getEncoderLabel(group.video.codec);
-  const resolution = isPassthrough ? 'Source' : `${group.video.width}×${group.video.height}`;
-  const bitrate = isPassthrough ? 'Source' : group.video.bitrate;
-  const fps = isPassthrough ? 'Source' : `${group.video.fps} fps`;
-  const preset = getPresetLabel(group.video.preset);
-  const profile = group.video.profile?.toUpperCase() || '—';
-  const audioSummary = isPassthrough ? 'Source' : `${group.audio.codec.toUpperCase()} @ ${group.audio.bitrate}`;
+  const encoder = getEncoderLabel(group.video.codec, tDynamic);
+  const sourceLabel = tDynamic('encoder.source', { defaultValue: 'Source' });
+  const resolution = isPassthrough ? sourceLabel : `${group.video.width}x${group.video.height}`;
+  const bitrate = isPassthrough ? sourceLabel : group.video.bitrate;
+  const fps = isPassthrough
+    ? sourceLabel
+    : `${group.video.fps} ${tDynamic('encoder.fpsSuffix', { defaultValue: 'fps' })}`;
+  const preset = getPresetLabel(group.video.preset, tDynamic);
+  const profile = group.video.profile?.toUpperCase() || t('common.notAvailable');
+  const audioSummary = isPassthrough
+    ? sourceLabel
+    : tDynamic('encoder.audioSummary', {
+        defaultValue: '{{codec}} @ {{bitrate}}',
+        codec: group.audio.codec.toUpperCase(),
+        bitrate: group.audio.bitrate,
+      });
 
   return (
     <Card className={cn('transition-all duration-150', className)}>
@@ -124,7 +159,9 @@ export function EncoderCard({
                 {encoder.type !== 'passthrough' && (
                   <span className="text-[var(--text-tertiary)]">
                     {' '}
-                    ({encoder.type === 'hardware' ? 'Hardware' : 'Software'})
+                    ({encoder.type === 'hardware'
+                      ? tDynamic('encoder.hardware', { defaultValue: 'Hardware' })
+                      : tDynamic('encoder.software', { defaultValue: 'Software' })})
                   </span>
                 )}
               </p>
@@ -180,7 +217,7 @@ export function EncoderCard({
             <span className="text-[var(--text-primary)]">{audioSummary}</span>
             {group.video.profile && (
               <>
-                <span className="text-[var(--text-tertiary)]">•</span>
+                <span className="text-[var(--text-tertiary)]">|</span>
                 <span className="text-[var(--text-secondary)]">
                   {tDynamic('encoder.profile', { defaultValue: 'Profile' })}:
                 </span>
