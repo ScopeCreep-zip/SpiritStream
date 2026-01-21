@@ -236,9 +236,7 @@ sequenceDiagram
 If automatic download fails:
 
 *Windows:*
-```powershell
-winget install FFmpeg.FFmpeg
-```
+Download from https://github.com/BtbN/FFmpeg-Builds/releases, extract, and add to PATH (or set the path in Settings).
 
 *macOS:*
 ```bash
@@ -256,6 +254,7 @@ sudo dnf install ffmpeg
 # Arch
 sudo pacman -S ffmpeg
 ```
+Or download a static build from https://github.com/BtbN/FFmpeg-Builds/releases.
 
 ### Application Interface
 

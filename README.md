@@ -73,9 +73,9 @@ Download the latest release from [Releases](https://github.com/ScopeCreep-zip/Sp
 | Linux | `SpiritStream_x.x.x_amd64.AppImage` or `.deb` |
 
 **Note:** FFmpeg must be installed separately:
+- Windows: Download from https://github.com/BtbN/FFmpeg-Builds/releases and add to PATH (or set the path in Settings).
+- Linux: Use your package manager (apt/dnf/pacman) or download a static build from the same BtbN link.
 - macOS: `brew install ffmpeg`
-- Windows: `winget install ffmpeg`
-- Linux: `sudo apt install ffmpeg`
 
 ---
 
