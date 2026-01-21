@@ -62,6 +62,7 @@ impl FFmpegHandler {
     const RELAY_PORT_RANGE: u16 = 20000;
     const RELAY_TCP_OUT_QUERY: &'static str = "tcp_nodelay=1";
     const RELAY_TCP_IN_QUERY: &'static str = "listen=1&tcp_nodelay=1";
+    const RELAY_RTMP_LISTEN_TIMEOUT_SECS: u32 = 604800;
     const RELAY_TEE_FIFO_OPTIONS: &'static str =
         "fifo_format=mpegts:queue_size=512:drop_pkts_on_overflow=1:attempt_recovery=1:recover_any_error=1";
     const METER_HOST: &'static str = "127.0.0.1";
@@ -1146,11 +1147,16 @@ impl FFmpegHandler {
         let path = host_and_path.next().unwrap_or("");
         let app = path.split('/').find(|segment| !segment.is_empty());
 
-        if let Some(app) = app {
+        let base_url = if let Some(app) = app {
             format!("{scheme}://{host}/{app}")
         } else {
             format!("{scheme}://{host}")
-        }
+        };
+
+        format!(
+            "{base_url}?listen_timeout={}",
+            Self::RELAY_RTMP_LISTEN_TIMEOUT_SECS
+        )
     }
 
     fn double_bitrate_value(bitrate: &str) -> Option<String> {
