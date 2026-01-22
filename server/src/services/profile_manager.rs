@@ -234,7 +234,7 @@ impl ProfileManager {
 
     /// Delete a profile by name (both encrypted and unencrypted versions)
     pub async fn delete(&self, name: &str) -> Result<(), String> {
-        log::info!("Deleting profile: {}", name);
+        log::info!("Deleting profile: {name}");
 
         // Validate profile name to prevent path traversal attacks
         validate_profile_name(name)?;
@@ -257,10 +257,10 @@ impl ProfileManager {
         }
 
         if deleted {
-            log::info!("Profile deleted successfully: {}", name);
+            log::info!("Profile deleted successfully: {name}");
             Ok(())
         } else {
-            log::warn!("Profile not found for deletion: {}", name);
+            log::warn!("Profile not found for deletion: {name}");
             Err(format!("Profile '{name}' not found"))
         }
     }
@@ -407,7 +407,7 @@ impl ProfileManager {
 
     /// Load a profile and always decrypt stream keys (if they were encrypted)
     pub async fn load_with_key_decryption(&self, name: &str, password: Option<&str>) -> Result<Profile, String> {
-        log::info!("Loading profile: {}", name);
+        log::info!("Loading profile: {name}");
         let mut profile = self.load(name, password).await?;
 
         // Always try to decrypt stream keys (they'll be returned as-is if not encrypted)

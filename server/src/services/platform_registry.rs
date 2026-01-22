@@ -189,14 +189,14 @@ impl PlatformRegistry {
             }
 
             // Deserialize the platform enum variant from the name
-            let platform: Platform = serde_json::from_str(&format!("\"{}\"", name))
-                .unwrap_or_else(|_| panic!("Failed to deserialize platform: {}", name));
+            let platform: Platform = serde_json::from_str(&format!("\"{name}\""))
+                .unwrap_or_else(|_| panic!("Failed to deserialize platform: {name}"));
 
             // Parse placement type
             let placement = match placement {
                 "append" => StreamKeyPlacement::Append,
                 "in_url_template" => StreamKeyPlacement::InUrlTemplate,
-                _ => panic!("Unknown streamKeyPlacement: {}", placement),
+                _ => panic!("Unknown streamKeyPlacement: {placement}"),
             };
 
             // Extract app path from URL (for append mode)

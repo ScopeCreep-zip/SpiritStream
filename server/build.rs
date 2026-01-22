@@ -60,7 +60,7 @@ fn main() {
         let final_variant = if let Some(count) = variant_counts.get(&variant) {
             let new_count = count + 1;
             variant_counts.insert(variant.clone(), new_count);
-            format!("{}{}", variant, new_count)
+            format!("{variant}{new_count}")
         } else {
             variant_counts.insert(variant.clone(), 1);
             variant.clone()
@@ -73,13 +73,11 @@ fn main() {
 
         if is_first {
             enum_code.push_str(&format!(
-                "    #[serde(rename = \"{}\")]\n    #[default]\n    {},\n",
-                name, final_variant
+                "    #[serde(rename = \"{name}\")]\n    #[default]\n    {final_variant},\n"
             ));
         } else {
             enum_code.push_str(&format!(
-                "    #[serde(rename = \"{}\")]\n    {},\n",
-                name, final_variant
+                "    #[serde(rename = \"{name}\")]\n    {final_variant},\n"
             ));
         }
     }

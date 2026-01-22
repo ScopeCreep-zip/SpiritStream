@@ -505,10 +505,7 @@ impl FFmpegHandler {
             Ok(socket) => socket,
             Err(err) => {
                 log::warn!(
-                    "Failed to bind bitrate meter for group {} on {}: {}",
-                    group_id,
-                    bind_addr,
-                    err
+                    "Failed to bind bitrate meter for group {group_id} on {bind_addr}: {err}"
                 );
                 return None;
             }
@@ -516,10 +513,7 @@ impl FFmpegHandler {
 
         if let Err(err) = socket.set_read_timeout(Some(Duration::from_millis(250))) {
             log::warn!(
-                "Failed to set meter read timeout for group {} on {}: {}",
-                group_id,
-                bind_addr,
-                err
+                "Failed to set meter read timeout for group {group_id} on {bind_addr}: {err}"
             );
         }
 
@@ -829,7 +823,7 @@ impl FFmpegHandler {
     /// Enable a specific stream target (removes from disabled set)
     pub fn enable_target(&self, target_id: &str) {
         let mut disabled = self.disabled_targets.lock().unwrap_or_else(|e| {
-            log::warn!("Disabled targets mutex poisoned (enable_target), recovering: {}", e);
+            log::warn!("Disabled targets mutex poisoned (enable_target), recovering: {e}");
             e.into_inner()
         });
         disabled.remove(target_id);
@@ -838,7 +832,7 @@ impl FFmpegHandler {
     /// Disable a specific stream target (adds to disabled set)
     pub fn disable_target(&self, target_id: &str) {
         let mut disabled = self.disabled_targets.lock().unwrap_or_else(|e| {
-            log::warn!("Disabled targets mutex poisoned (disable_target), recovering: {}", e);
+            log::warn!("Disabled targets mutex poisoned (disable_target), recovering: {e}");
             e.into_inner()
         });
         disabled.insert(target_id.to_string());
@@ -847,7 +841,7 @@ impl FFmpegHandler {
     /// Check if a target is currently disabled
     pub fn is_target_disabled(&self, target_id: &str) -> bool {
         let disabled = self.disabled_targets.lock().unwrap_or_else(|e| {
-            log::warn!("Disabled targets mutex poisoned (is_target_disabled), recovering: {}", e);
+            log::warn!("Disabled targets mutex poisoned (is_target_disabled), recovering: {e}");
             e.into_inner()
         });
         disabled.contains(target_id)
@@ -1318,7 +1312,7 @@ impl FFmpegHandler {
                         }
 
                         args.push("-force_key_frames".to_string());
-                        args.push(format!("expr:gte(t,n_forced*{})", interval_seconds));
+                        args.push(format!("expr:gte(t,n_forced*{interval_seconds})"));
                     }
                 }
             }
@@ -1353,7 +1347,7 @@ impl FFmpegHandler {
 
         // Add output targets (skip disabled ones)
         let disabled = self.disabled_targets.lock().unwrap_or_else(|e| {
-            log::warn!("Disabled targets mutex poisoned (build_args), recovering: {}", e);
+            log::warn!("Disabled targets mutex poisoned (build_args), recovering: {e}");
             e.into_inner()
         });
         let mut target_outputs: Vec<String> = Vec::new();

@@ -125,7 +125,7 @@ struct ServerLogger {
 }
 
 impl ServerLogger {
-    fn new(log_dir: &PathBuf, event_bus: EventBus) -> Result<Self, Box<dyn std::error::Error>> {
+    fn new(log_dir: &std::path::Path, event_bus: EventBus) -> Result<Self, Box<dyn std::error::Error>> {
         let log_path = log_dir.join("spiritstream-server.log");
         let file = OpenOptions::new()
             .create(true)
@@ -219,7 +219,7 @@ fn sanitize_error(error: &str) -> String {
 
     // Return generic message for unknown errors in production
     // In debug mode, we could log the actual error server-side
-    log::debug!("Sanitized error: {}", error);
+    log::debug!("Sanitized error: {error}");
     "Operation failed".to_string()
 }
 
@@ -432,7 +432,7 @@ async fn ready(State(state): State<AppState>) -> impl IntoResponse {
     if all_ok {
         Json(json!({ "ready": true })).into_response()
     } else {
-        log::warn!("Readiness check failed: {:?}", failed);
+        log::warn!("Readiness check failed: {failed:?}");
         (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({ "ready": false, "failed": failed })),
@@ -540,7 +540,7 @@ async fn files_browse(
     let entries = match std::fs::read_dir(&browse_path) {
         Ok(entries) => entries,
         Err(e) => {
-            log::error!("Failed to read directory {:?}: {}", browse_path, e);
+            log::error!("Failed to read directory {browse_path:?}: {e}");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({ "ok": false, "error": "Failed to read directory" })),
@@ -587,7 +587,7 @@ async fn files_browse(
     });
 
     // Calculate parent directory (if not at root)
-    let parent = browse_path.parent().map(|p| {
+    let parent = browse_path.parent().and_then(|p| {
         let parent_path = p.to_path_buf();
         // Only include parent if it's within allowed directories
         if validate_path_within_any(&parent_path, &allowed_dirs).is_ok() {
@@ -595,7 +595,7 @@ async fn files_browse(
         } else {
             None
         }
-    }).flatten();
+    });
 
     let response = BrowseResponse {
         path: browse_path.to_string_lossy().to_string(),
@@ -676,7 +676,7 @@ async fn files_open(
     match opener::open(&path) {
         Ok(_) => (StatusCode::OK, Json(json!({ "ok": true }))),
         Err(e) => {
-            log::error!("Failed to open path {:?}: {}", path, e);
+            log::error!("Failed to open path {path:?}: {e}");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({ "ok": false, "error": "Failed to open path" })),
@@ -696,16 +696,12 @@ async fn ws_handler(
     Query(query): Query<AuthQuery>,
     cookies: Cookies,
 ) -> impl IntoResponse {
-    // Check authentication via cookie first
-    let authenticated = if state.auth_token.is_none() {
-        true
-    } else if cookies.get(AUTH_COOKIE_NAME).is_some() {
-        true
-    } else if let Some(token) = query.token.as_deref() {
-        state.auth_token.as_deref().map_or(false, |expected| verify_token(expected, token))
-    } else {
-        false
-    };
+    // Check authentication: no token required, valid cookie, or valid query param
+    let authenticated = state.auth_token.is_none()
+        || cookies.get(AUTH_COOKIE_NAME).is_some()
+        || query.token.as_deref().is_some_and(|token| {
+            state.auth_token.as_deref().is_some_and(|expected| verify_token(expected, token))
+        });
 
     if !authenticated {
         return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
@@ -743,7 +739,7 @@ async fn invoke(
     // Authentication check (cookie or bearer token)
     if let Some(expected) = state.auth_token.as_deref() {
         let authenticated = cookies.get(AUTH_COOKIE_NAME).is_some()
-            || bearer_token(&headers).map_or(false, |t| verify_token(expected, t));
+            || bearer_token(&headers).is_some_and(|t| verify_token(expected, t));
 
         if !authenticated {
             return unauthorized_response().into_response();
@@ -834,7 +830,7 @@ async fn invoke_command(
             let mut idx = 0;
             for name in ordered_names {
                 if !existing.contains(&name) {
-                    return Err(format!("Unknown profile: {}", name));
+                    return Err(format!("Unknown profile: {name}"));
                 }
                 idx += 10;
                 map.insert(name, idx);
@@ -1016,7 +1012,7 @@ async fn invoke_command(
         }
         "get_theme_tokens" => {
             let theme_id: String = get_arg(&payload, "themeId")?;
-            log::info!("[THEME CMD] get_theme_tokens called for: {}", theme_id);
+            log::info!("[THEME CMD] get_theme_tokens called for: {theme_id}");
             match state.theme_manager.get_theme_tokens(&theme_id) {
                 Ok(tokens) => {
                     log::info!(
@@ -1031,7 +1027,7 @@ async fn invoke_command(
                     Ok(json!(tokens))
                 }
                 Err(e) => {
-                    log::error!("[THEME CMD] get_theme_tokens failed for {}: {}", theme_id, e);
+                    log::error!("[THEME CMD] get_theme_tokens failed for {theme_id}: {e}");
                     Err(e)
                 }
             }
@@ -1129,7 +1125,7 @@ fn find_themes_dir_fallback() -> Option<String> {
     None
 }
 
-fn init_logger(log_dir: &PathBuf, event_bus: EventBus) -> Result<(), Box<dyn std::error::Error>> {
+fn init_logger(log_dir: &std::path::Path, event_bus: EventBus) -> Result<(), Box<dyn std::error::Error>> {
     let logger = ServerLogger::new(log_dir, event_bus)?;
     log::set_boxed_logger(Box::new(logger))?;
     log::set_max_level(LevelFilter::Info);
@@ -1262,7 +1258,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         (final_host, configured_port)
     };
-    log::info!("Server will bind to {}:{}", host, port);
+    log::info!("Server will bind to {host}:{port}");
 
     let custom_ffmpeg_path = settings.as_ref().and_then(|s| {
         if s.ffmpeg_path.is_empty() {
@@ -1289,10 +1285,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let themes_exist = themes_path.exists();
     let env_was_set = env::var("SPIRITSTREAM_THEMES_DIR").is_ok();
     log::info!(
-        "Themes directory: {} (exists={}, env_set={})",
-        themes_dir,
-        themes_exist,
-        env_was_set
+        "Themes directory: {themes_dir} (exists={themes_exist}, env_set={env_was_set})"
     );
     if !themes_exist {
         log::warn!("Themes directory does not exist - custom themes may not load");
@@ -1301,7 +1294,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let theme_manager = Arc::new(ThemeManager::new(app_data_dir.clone(), PathBuf::from(&themes_dir)));
 
     // Sync themes and verify sync worked
-    log::info!("Starting theme sync from {:?} to user data", themes_dir);
+    log::info!("Starting theme sync from {themes_dir:?} to user data");
     theme_manager.sync_project_themes();
 
     // Verify sync worked by listing available themes

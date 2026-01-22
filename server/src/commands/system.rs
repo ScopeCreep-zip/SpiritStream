@@ -312,19 +312,19 @@ pub fn test_rtmp_target(url: String, stream_key: String) -> Result<RtmpTestResul
 
     // Step 1: TCP connectivity test (fast check)
     let tcp_timeout = Duration::from_secs(5);
-    let addr = format!("{}:{}", host, port);
+    let addr = format!("{host}:{port}");
 
     match TcpStream::connect_timeout(
-        &addr.parse().map_err(|e| format!("Invalid address {}: {}", addr, e))?,
+        &addr.parse().map_err(|e| format!("Invalid address {addr}: {e}"))?,
         tcp_timeout,
     ) {
         Ok(_) => {
-            log::info!("TCP connection to {} successful", addr);
+            log::info!("TCP connection to {addr} successful");
         }
         Err(e) => {
             return Ok(RtmpTestResult {
                 success: false,
-                message: format!("Cannot reach {} - {}", addr, e),
+                message: format!("Cannot reach {addr} - {e}"),
                 latency_ms: Some(start.elapsed().as_millis() as u64),
             });
         }
@@ -334,9 +334,9 @@ pub fn test_rtmp_target(url: String, stream_key: String) -> Result<RtmpTestResul
     // Generate a 2-second test pattern and attempt to publish
     let ffmpeg_path = find_ffmpeg();
     let full_url = if url.ends_with('/') {
-        format!("{}{}", url, stream_key)
+        format!("{url}{stream_key}")
     } else {
-        format!("{}/{}", url, stream_key)
+        format!("{url}/{stream_key}")
     };
 
     // Build FFmpeg command for a brief test publish
@@ -369,7 +369,7 @@ pub fn test_rtmp_target(url: String, stream_key: String) -> Result<RtmpTestResul
 
     // Set a timeout for the FFmpeg process
     let output = cmd.output()
-        .map_err(|e| format!("Failed to run FFmpeg: {}", e))?;
+        .map_err(|e| format!("Failed to run FFmpeg: {e}"))?;
 
     let elapsed = start.elapsed().as_millis() as u64;
 
@@ -416,12 +416,12 @@ fn parse_rtmp_url(url: &str) -> Result<(String, u16), String> {
     let url = url.trim();
 
     // Handle rtmp:// and rtmps:// protocols
-    let (is_secure, rest) = if url.starts_with("rtmps://") {
-        (true, &url[8..])
-    } else if url.starts_with("rtmp://") {
-        (false, &url[7..])
+    let (is_secure, rest) = if let Some(rest) = url.strip_prefix("rtmps://") {
+        (true, rest)
+    } else if let Some(rest) = url.strip_prefix("rtmp://") {
+        (false, rest)
     } else {
-        return Err(format!("Invalid RTMP URL: must start with rtmp:// or rtmps://"));
+        return Err("Invalid RTMP URL: must start with rtmp:// or rtmps://".to_string());
     };
 
     // Extract host:port from the path

@@ -50,11 +50,11 @@ impl ThemeManager {
                     let dest_path = self.themes_dir.join(fname);
                     match fs::copy(&path, &dest_path) {
                         Ok(_) => {
-                            log::info!("Synced theme {:?} to appdata", fname);
+                            log::info!("Synced theme {fname:?} to appdata");
                             copied += 1;
                         }
                         Err(e) => {
-                            log::error!("Failed to sync theme {:?} to appdata: {e}", fname);
+                            log::error!("Failed to sync theme {fname:?} to appdata: {e}");
                         }
                     }
                 }
@@ -88,7 +88,7 @@ impl ThemeManager {
             absolute_project_themes,
             absolute_project_themes.exists()
         );
-        log::info!("ThemeManager: user themes_dir={:?}", themes_dir);
+        log::info!("ThemeManager: user themes_dir={themes_dir:?}");
 
         Self {
             themes_dir,
@@ -121,8 +121,7 @@ impl ThemeManager {
 
     pub fn get_theme_tokens(&self, theme_id: &str) -> Result<HashMap<String, String>, String> {
         log::info!(
-            "get_theme_tokens('{}') - searching directories:",
-            theme_id
+            "get_theme_tokens('{theme_id}') - searching directories:"
         );
         log::info!(
             "  user themes_dir: {:?} (exists={})",
@@ -146,7 +145,7 @@ impl ThemeManager {
                 return Ok(theme.tokens);
             }
             Err(e) => {
-                log::warn!("Theme file not found for '{}': {}", theme_id, e);
+                log::warn!("Theme file not found for '{theme_id}': {e}");
             }
         }
 
@@ -162,8 +161,7 @@ impl ThemeManager {
 
         // THIRD: Theme not found anywhere
         Err(format!(
-            "Theme '{}' not found in files or embedded themes",
-            theme_id
+            "Theme '{theme_id}' not found in files or embedded themes"
         ))
     }
 
@@ -266,7 +264,7 @@ impl ThemeManager {
 
     fn find_theme_in_dir(&self, theme_id: &str, dir: &Path) -> Option<ThemeFile> {
         if !dir.exists() {
-            log::debug!("find_theme_in_dir: directory does not exist: {:?}", dir);
+            log::debug!("find_theme_in_dir: directory does not exist: {dir:?}");
             return None;
         }
 
@@ -291,23 +289,19 @@ impl ThemeManager {
                     );
                     if theme.id == theme_id {
                         log::info!(
-                            "find_theme_in_dir: FOUND theme '{}' at {:?}",
-                            theme_id,
-                            path
+                            "find_theme_in_dir: FOUND theme '{theme_id}' at {path:?}"
                         );
                         return Some(theme);
                     }
                 }
                 Err(e) => {
-                    log::debug!("find_theme_in_dir: failed to load {:?}: {}", path, e);
+                    log::debug!("find_theme_in_dir: failed to load {path:?}: {e}");
                 }
             }
         }
 
         log::debug!(
-            "find_theme_in_dir: theme '{}' NOT found in {:?}",
-            theme_id,
-            dir
+            "find_theme_in_dir: theme '{theme_id}' NOT found in {dir:?}"
         );
         None
     }

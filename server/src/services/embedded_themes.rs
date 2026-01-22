@@ -66,7 +66,7 @@ pub fn get_embedded_theme_tokens(theme_id: &str) -> Option<HashMap<String, Strin
                     map.insert(theme.id, theme.tokens);
                 }
                 Err(e) => {
-                    log::warn!("Failed to parse embedded theme JSON: {}", e);
+                    log::warn!("Failed to parse embedded theme JSON: {e}");
                 }
             }
         }
@@ -116,7 +116,7 @@ pub fn get_embedded_theme_list() -> Vec<ThemeSummary> {
                     });
                 }
                 Err(e) => {
-                    log::warn!("Failed to parse embedded theme for list: {}", e);
+                    log::warn!("Failed to parse embedded theme for list: {e}");
                 }
             }
         }

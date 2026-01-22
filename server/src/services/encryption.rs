@@ -431,13 +431,13 @@ impl Encryption {
         let profiles_dir = app_data_dir.join("profiles");
         let backup_dir = app_data_dir.join("profiles_backup");
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
-        let backup_path = backup_dir.join(format!("backup_{}", timestamp));
+        let backup_path = backup_dir.join(format!("backup_{timestamp}"));
 
         log::info!("Creating backup at: {}", backup_path.display());
 
         // Create backup directory
         std::fs::create_dir_all(&backup_path)
-            .map_err(|e| format!("Failed to create backup directory: {}", e))?;
+            .map_err(|e| format!("Failed to create backup directory: {e}"))?;
 
         // Set restrictive permissions on backup directory
         #[cfg(unix)]
@@ -445,14 +445,14 @@ impl Encryption {
             use std::os::unix::fs::PermissionsExt;
             let perms = std::fs::Permissions::from_mode(0o700); // Owner only
             std::fs::set_permissions(&backup_dir, perms.clone())
-                .map_err(|e| format!("Failed to set backup directory permissions: {}", e))?;
+                .map_err(|e| format!("Failed to set backup directory permissions: {e}"))?;
             std::fs::set_permissions(&backup_path, perms)
-                .map_err(|e| format!("Failed to set backup directory permissions: {}", e))?;
+                .map_err(|e| format!("Failed to set backup directory permissions: {e}"))?;
         }
 
         // Copy all profile files (.json and .mgs)
         let entries = std::fs::read_dir(&profiles_dir)
-            .map_err(|e| format!("Failed to read profiles directory: {}", e))?;
+            .map_err(|e| format!("Failed to read profiles directory: {e}"))?;
 
         for entry in entries.flatten() {
             let path = entry.path();
@@ -480,7 +480,7 @@ impl Encryption {
 
         // Delete current profiles
         let entries = std::fs::read_dir(&profiles_dir)
-            .map_err(|e| format!("Failed to read profiles directory: {}", e))?;
+            .map_err(|e| format!("Failed to read profiles directory: {e}"))?;
 
         for entry in entries.flatten() {
             let path = entry.path();
@@ -494,7 +494,7 @@ impl Encryption {
 
         // Restore from backup
         let backup_entries = std::fs::read_dir(backup_path)
-            .map_err(|e| format!("Failed to read backup directory: {}", e))?;
+            .map_err(|e| format!("Failed to read backup directory: {e}"))?;
 
         for entry in backup_entries.flatten() {
             let path = entry.path();
@@ -519,7 +519,7 @@ impl Encryption {
 
         // Get all backup directories
         let entries = std::fs::read_dir(&backup_dir)
-            .map_err(|e| format!("Failed to read backup directory: {}", e))?;
+            .map_err(|e| format!("Failed to read backup directory: {e}"))?;
 
         let mut backups: Vec<PathBuf> = entries
             .flatten()
@@ -535,7 +535,7 @@ impl Encryption {
             if let Some(oldest) = backups.first() {
                 log::info!("Deleting old backup: {}", oldest.display());
                 std::fs::remove_dir_all(oldest)
-                    .map_err(|e| format!("Failed to delete old backup: {}", e))?;
+                    .map_err(|e| format!("Failed to delete old backup: {e}"))?;
                 backups.remove(0);
             }
         }
@@ -562,7 +562,7 @@ impl Encryption {
 
         // 4. Get all profile files
         let entries = std::fs::read_dir(profiles_dir)
-            .map_err(|e| format!("Failed to read profiles directory: {}", e))?;
+            .map_err(|e| format!("Failed to read profiles directory: {e}"))?;
 
         let profile_files: Vec<PathBuf> = entries
             .flatten()
@@ -610,9 +610,7 @@ impl Encryption {
         Self::cleanup_old_backups(app_data_dir, 5)?;
 
         log::info!(
-            "Machine key rotation complete: {} profiles updated, {} keys re-encrypted",
-            profiles_updated,
-            keys_reencrypted
+            "Machine key rotation complete: {profiles_updated} profiles updated, {keys_reencrypted} keys re-encrypted"
         );
 
         Ok(RotationReport {
@@ -634,7 +632,7 @@ impl Encryption {
 
         // Read file content
         let content = std::fs::read(profile_path)
-            .map_err(|e| format!("Failed to read profile file: {}", e))?;
+            .map_err(|e| format!("Failed to read profile file: {e}"))?;
 
         // Parse profile (handle both encrypted and unencrypted)
         let mut profile: Profile = if profile_path.extension().and_then(|e| e.to_str()) == Some("mgs") {
@@ -645,9 +643,9 @@ impl Encryption {
         } else {
             // Unencrypted JSON profile
             let json_str = String::from_utf8(content)
-                .map_err(|e| format!("Invalid UTF-8 in profile: {}", e))?;
+                .map_err(|e| format!("Invalid UTF-8 in profile: {e}"))?;
             serde_json::from_str(&json_str)
-                .map_err(|e| format!("Failed to parse profile JSON: {}", e))?
+                .map_err(|e| format!("Failed to parse profile JSON: {e}"))?
         };
 
         // Re-encrypt stream keys
@@ -670,10 +668,10 @@ impl Encryption {
 
         // Save updated profile
         let json = serde_json::to_string_pretty(&profile)
-            .map_err(|e| format!("Failed to serialize profile: {}", e))?;
+            .map_err(|e| format!("Failed to serialize profile: {e}"))?;
 
         std::fs::write(profile_path, json.as_bytes())
-            .map_err(|e| format!("Failed to write profile: {}", e))?;
+            .map_err(|e| format!("Failed to write profile: {e}"))?;
 
         Ok(keys_updated)
     }
