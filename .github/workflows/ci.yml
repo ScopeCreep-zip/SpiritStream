@@ -65,20 +65,21 @@ jobs:
       - name: Rust check (server)
         run: cargo check --manifest-path server/Cargo.toml
 
-      - name: Rust check (desktop)
-        run: cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
-
       - name: Rust clippy (server)
         run: cargo clippy --manifest-path server/Cargo.toml -- -D warnings
-
-      - name: Rust clippy (desktop)
-        run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml -- -D warnings
 
       - name: Build frontend
         run: pnpm run build:web
 
       - name: Build server sidecar
         run: pnpm run build:server ${{ matrix.rust_target && format('-- --target {0}', matrix.rust_target) || '' }}
+
+      # Desktop checks must come after sidecar build (Tauri build.rs requires sidecar binary)
+      - name: Rust check (desktop)
+        run: cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml ${{ matrix.rust_target && format('--target {0}', matrix.rust_target) || '' }}
+
+      - name: Rust clippy (desktop)
+        run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml ${{ matrix.rust_target && format('--target {0}', matrix.rust_target) || '' }} -- -D warnings
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0.5.4
