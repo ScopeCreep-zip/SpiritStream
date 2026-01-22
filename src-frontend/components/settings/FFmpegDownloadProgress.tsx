@@ -102,7 +102,7 @@ export function FFmpegDownloadProgress({
                   {t('settings.updateAvailable')}
                 </span>
                 <span className="text-[var(--text-secondary)] ml-2">
-                  {versionInfo.installed_version} {'->'} {versionInfo.latest_version}
+                  {versionInfo.installed_version} → {versionInfo.latest_version}
                 </span>
               </div>
             </div>
