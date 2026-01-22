@@ -70,12 +70,16 @@ jobs:
         include:
           - platform: 'macos-latest'
             args: '--target aarch64-apple-darwin'
+            rust_target: 'aarch64-apple-darwin'
           - platform: 'macos-latest'
             args: '--target x86_64-apple-darwin'
+            rust_target: 'x86_64-apple-darwin'
           - platform: 'ubuntu-22.04'
             args: ''
+            rust_target: ''
           - platform: 'windows-latest'
             args: ''
+            rust_target: ''
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -112,6 +116,12 @@ jobs:
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Build frontend
+        run: pnpm run build:web
+
+      - name: Build server sidecar
+        run: pnpm run build:server --release ${{ matrix.rust_target && format('-- --target {0}', matrix.rust_target) || '' }}
 
       - name: Build and release
         uses: tauri-apps/tauri-action@v0.5.4
