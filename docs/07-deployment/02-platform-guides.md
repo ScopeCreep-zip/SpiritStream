@@ -276,9 +276,19 @@ SpiritStream can download FFmpeg automatically:
 ### Manual Installation
 
 **Windows:**
-1. Download from [BtbN FFmpeg Builds](https://github.com/BtbN/FFmpeg-Builds/releases)
-2. Extract to `C:\ffmpeg`
-3. Add to PATH or configure in Settings
+1. Download a release from [BtbN FFmpeg Builds](https://github.com/BtbN/FFmpeg-Builds/releases) (choose a `ffmpeg-n*-win64-lgpl` or similar archive).
+2. Extract the archive:
+   - Create `C:\ffmpeg` (for example) and extract the downloaded archive there.
+   - You should end up with `C:\ffmpeg\bin\ffmpeg.exe`.
+3. Make FFmpeg available to SpiritStream:
+   - **Option A – Add to `PATH`:**
+     1. Press `Win + R`, type `sysdm.cpl`, and press Enter.
+     2. Open **Advanced** → **Environment Variables…**.
+     3. Under **System variables**, select **Path** → **Edit** → **New** and add `C:\ffmpeg\bin`.
+     4. Click **OK** to save and restart SpiritStream.
+   - **Option B – Configure in SpiritStream Settings:**
+     1. Open SpiritStream and go to **Settings → FFmpeg**.
+     2. Set the **FFmpeg path** to `C:\ffmpeg\bin\ffmpeg.exe`.
 
 **macOS:**
 ```bash

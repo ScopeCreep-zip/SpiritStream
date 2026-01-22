@@ -158,6 +158,7 @@ impl FFmpegDownloader {
         {
             if let Ok(metadata) = std::fs::metadata(ffmpeg_path) {
                 let mut perms = metadata.permissions();
+                // 0o111 => any execute bit (owner/group/other); if none are set, make it user/group/world executable.
                 if (perms.mode() & 0o111) == 0 {
                     perms.set_mode(0o755);
                     let _ = std::fs::set_permissions(ffmpeg_path, perms);
@@ -213,6 +214,11 @@ impl FFmpegDownloader {
         {
             Ok(PlatformDownload {
                 // Windows: hardware-enabled build (NVENC/QSV/AMF)
+                // BtbN Windows ZIPs currently expose `ffmpeg.exe` at the archive
+                // root (no additional subdirectory), so we only need the bare
+                // filename here. If the upstream archive layout changes (e.g. a
+                // top-level directory is added), this binary_path will need to be
+                // updated to match the new internal path.
                 url: "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip",
                 archive_type: ArchiveType::Zip,
                 binary_path: "ffmpeg.exe",
