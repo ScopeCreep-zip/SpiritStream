@@ -1248,6 +1248,8 @@ impl FFmpegHandler {
             args.push("-c:v".to_string()); args.push(group.video.codec.clone());
             args.push("-s".to_string()); args.push(group.video.resolution());
             args.push("-b:v".to_string()); args.push(group.video.bitrate.clone());
+            // Add CBR enforcement for consistent streaming bitrate
+            Self::append_cbr_args(&mut args, &group.video.codec, &group.video.bitrate);
             args.push("-r".to_string()); args.push(group.video.fps.to_string());
             // Audio settings
             args.push("-c:a".to_string()); args.push(group.audio.codec.clone());
