@@ -158,6 +158,7 @@ impl FFmpegDownloader {
         {
             if let Ok(metadata) = std::fs::metadata(ffmpeg_path) {
                 let mut perms = metadata.permissions();
+                // 0o111 => any execute bit (owner/group/other); if none are set, make it user/group/world executable.
                 if (perms.mode() & 0o111) == 0 {
                     perms.set_mode(0o755);
                     let _ = std::fs::set_permissions(ffmpeg_path, perms);
