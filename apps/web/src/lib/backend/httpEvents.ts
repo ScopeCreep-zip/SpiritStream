@@ -85,12 +85,9 @@ function ensureSocket(): Promise<void> {
       if (token) {
         const separator = wsUrl.includes('?') ? '&' : '?';
         wsUrl = `${wsUrl}${separator}token=${encodeURIComponent(token)}`;
-        console.debug('[httpEvents] Cross-origin connection, added token to URL');
       }
     }
   }
-
-  console.debug(`[httpEvents] Connecting to WebSocket: ${wsUrl.replace(/token=[^&]+/, 'token=***')}`);
 
   openPromise = new Promise((resolve) => {
     socket = new WebSocket(wsUrl);
@@ -136,8 +133,7 @@ function ensureSocket(): Promise<void> {
       }
     });
 
-    socket.addEventListener('error', (event) => {
-      console.error('[httpEvents] WebSocket error:', event);
+    socket.addEventListener('error', () => {
       if (socket && socket.readyState === WebSocket.OPEN) {
         return;
       }
@@ -158,10 +154,6 @@ function scheduleReconnect() {
 
   // Check if we've exceeded max reconnection attempts
   if (reconnectCount >= MAX_RECONNECT_ATTEMPTS) {
-    console.error(
-      `[httpEvents] Max reconnection attempts (${MAX_RECONNECT_ATTEMPTS}) reached. ` +
-        'Please refresh the page or check backend server status.'
-    );
     notifyDisconnected('Connection lost. Please refresh the page.');
     return;
   }
@@ -172,10 +164,6 @@ function scheduleReconnect() {
   const delay = Math.min(
     INITIAL_RECONNECT_DELAY * Math.pow(1.5, reconnectCount - 1),
     MAX_RECONNECT_DELAY
-  );
-
-  console.debug(
-    `[httpEvents] Scheduling reconnect attempt ${reconnectCount}/${MAX_RECONNECT_ATTEMPTS} in ${Math.round(delay)}ms`
   );
 
   reconnectTimer = window.setTimeout(() => {
@@ -193,8 +181,8 @@ function scheduleReconnect() {
  */
 export function initConnection(): void {
   keepAlive = true;
-  ensureSocket().catch((err) => {
-    console.error('[httpEvents] Failed to initialize connection:', err);
+  ensureSocket().catch(() => {
+    // Connection errors handled by WebSocket event listeners
   });
 }
 

@@ -30,14 +30,11 @@ export function useDataSync() {
     // Listen for profile changes from other clients
     events
       .on<ProfileChangedPayload>('profile_changed', (payload) => {
-        console.debug('[useDataSync] profile_changed:', payload);
-
         // Reload the profile list
         loadProfiles();
 
         // If the current profile was updated by another client, reload it
         if (payload.action === 'saved' && payload.name === currentProfileNameRef.current) {
-          console.debug('[useDataSync] Reloading current profile:', payload.name);
           loadProfile(payload.name);
         }
 
@@ -45,18 +42,17 @@ export function useDataSync() {
         // which will show the profile is no longer available
       })
       .then((unsub) => unsubscribers.push(unsub))
-      .catch((err) => console.error('[useDataSync] Failed to subscribe to profile_changed:', err));
+      .catch(() => {});
 
     // Listen for settings changes from other clients
     // Settings are typically loaded on-demand in the Settings view,
     // so we emit a custom event that the Settings view can listen to
     events
       .on('settings_changed', () => {
-        console.debug('[useDataSync] settings_changed');
         window.dispatchEvent(new CustomEvent('backend:settings_changed'));
       })
       .then((unsub) => unsubscribers.push(unsub))
-      .catch((err) => console.error('[useDataSync] Failed to subscribe to settings_changed:', err));
+      .catch(() => {});
 
     return () => {
       unsubscribers.forEach((unsub) => unsub());

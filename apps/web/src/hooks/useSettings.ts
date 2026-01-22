@@ -243,10 +243,7 @@ export function useSettingsSync() {
       // Only invalidate if we're not currently mutating
       // This prevents the "reload" effect when we save our own changes
       if (isMutating === 0) {
-        console.debug('[Settings] Invalidating due to remote change');
         queryClient.invalidateQueries({ queryKey: SETTINGS_QUERY_KEY });
-      } else {
-        console.debug('[Settings] Ignoring remote change during local mutation');
       }
     };
 
