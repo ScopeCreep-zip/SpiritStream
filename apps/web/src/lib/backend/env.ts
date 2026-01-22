@@ -310,16 +310,21 @@ async function fetchWithTimeout(
  */
 export async function checkServerHealth(retries = 10, delayMs = 500): Promise<boolean> {
   const baseUrl = getBackendBaseUrl();
+  console.log(`[health] Checking server health at ${baseUrl}/health (${retries} retries, ${delayMs}ms delay)`);
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
+      console.log(`[health] Attempt ${attempt}/${retries}...`);
       const response = await fetchWithTimeout(`${baseUrl}/health`, 3000);
+      console.log(`[health] Response status: ${response.status}`);
 
       if (response.ok) {
+        console.log('[health] Server is healthy!');
         return true;
       }
-    } catch {
+    } catch (error) {
       // Network error or timeout - will retry
+      console.warn(`[health] Attempt ${attempt} failed:`, error);
     }
 
     if (attempt < retries) {
@@ -327,6 +332,7 @@ export async function checkServerHealth(retries = 10, delayMs = 500): Promise<bo
     }
   }
 
+  console.error('[health] All health check attempts failed');
   return false;
 }
 

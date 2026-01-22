@@ -345,7 +345,10 @@ fn spawn_server<R: Runtime>(
         }
     }
 
-    let (mut rx, child) = command.spawn().map_err(|e| e.to_string())?;
+    let (mut rx, child) = command.spawn().map_err(|e| {
+        log::error!("Failed to spawn server: {e}");
+        format!("Failed to spawn server: {e}")
+    })?;
 
     // Store the child process handle so we can kill it on exit
     if let Some(server_state) = app.try_state::<ServerProcess>() {
@@ -354,28 +357,55 @@ fn spawn_server<R: Runtime>(
         }
     }
 
+    let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
+        let mut startup_errors: Vec<String> = Vec::new();
+        let mut terminated_early = false;
+
         while let Some(event) = rx.recv().await {
             match event {
                 CommandEvent::Stdout(line) => {
-                    log::info!("[server] {}", String::from_utf8_lossy(&line));
+                    let msg = String::from_utf8_lossy(&line);
+                    log::info!("[server] {}", msg);
                 }
                 CommandEvent::Stderr(line) => {
-                    log::warn!("[server] {}", String::from_utf8_lossy(&line));
+                    let msg = String::from_utf8_lossy(&line).to_string();
+                    log::warn!("[server] {}", msg);
+                    // Capture stderr for potential error reporting
+                    startup_errors.push(msg);
                 }
                 CommandEvent::Error(error) => {
                     log::error!("[server] {error}");
+                    startup_errors.push(error.clone());
                 }
                 CommandEvent::Terminated(payload) => {
-                    log::warn!(
-                        "[server] terminated (code: {:?}, signal: {:?})",
+                    log::error!(
+                        "[server] terminated unexpectedly (code: {:?}, signal: {:?})",
                         payload.code,
                         payload.signal
                     );
+                    terminated_early = true;
+
+                    // Emit event to frontend with error details
+                    let error_msg = if startup_errors.is_empty() {
+                        format!(
+                            "Server process terminated with code {:?}",
+                            payload.code.unwrap_or(-1)
+                        )
+                    } else {
+                        startup_errors.join("\n")
+                    };
+
+                    let _ = app_handle.emit("server-error", &error_msg);
+                    log::error!("Server startup failed: {}", error_msg);
                     break;
                 }
                 _ => {}
             }
+        }
+
+        if terminated_early {
+            log::error!("Server terminated during startup - check logs for details");
         }
     });
 
@@ -403,19 +433,46 @@ fn kill_existing_servers() {
         let _ = Command::new("pkill")
             .args(["-f", "spiritstream-server"])
             .output();
-        // Give processes time to terminate
-        std::thread::sleep(Duration::from_millis(500));
+        // Give processes time to terminate and release the port
+        std::thread::sleep(Duration::from_millis(1000));
         log::info!("Killed any existing spiritstream-server processes");
     }
     #[cfg(windows)]
     {
         use std::process::Command;
-        let _ = Command::new("taskkill")
+        // Try taskkill first
+        let result = Command::new("taskkill")
             .args(["/F", "/IM", "spiritstream-server.exe"])
             .output();
-        std::thread::sleep(Duration::from_millis(500));
+
+        if let Ok(output) = &result {
+            if output.status.success() {
+                log::info!("Taskkill succeeded for spiritstream-server.exe");
+            }
+        }
+
+        // Wait for process to fully terminate and release the port
+        std::thread::sleep(Duration::from_millis(1500));
+
+        // Verify port 8008 is free, if not wait a bit more
+        for attempt in 1..=3 {
+            if is_port_available(8008) {
+                log::info!("Port 8008 is available after {} attempt(s)", attempt);
+                break;
+            }
+            log::warn!("Port 8008 still in use, waiting... (attempt {})", attempt);
+            std::thread::sleep(Duration::from_millis(1000));
+        }
+
         log::info!("Killed any existing spiritstream-server processes");
     }
+}
+
+/// Check if a port is available for binding
+#[cfg(windows)]
+fn is_port_available(port: u16) -> bool {
+    use std::net::TcpListener;
+    TcpListener::bind(format!("127.0.0.1:{}", port)).is_ok()
 }
 
 async fn wait_for_health(host: &str, port: &str) {

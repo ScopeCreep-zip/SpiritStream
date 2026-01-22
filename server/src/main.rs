@@ -237,7 +237,7 @@ fn parse_bool(value: &str) -> Option<bool> {
 
 fn build_cors_layer() -> CorsLayer {
     let cors_origins = env::var("SPIRITSTREAM_CORS_ORIGINS")
-        .unwrap_or_else(|_| "http://localhost:*,http://127.0.0.1:*,tauri://localhost,https://tauri.localhost".to_string());
+        .unwrap_or_else(|_| "http://localhost:*,http://127.0.0.1:*,tauri://localhost,http://tauri.localhost,https://tauri.localhost".to_string());
 
     let allowed_origins: Vec<String> = cors_origins
         .split(',')

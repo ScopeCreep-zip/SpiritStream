@@ -1,0 +1,5 @@
+# Root-level Cargo configuration for all Rust builds in this workspace
+#
+# This config applies to builds run from the project root (e.g., via build scripts)
+# Individual crates in server/ and apps/desktop/src-tauri/ have their own configs
+# that add target-specific settings like static CRT linking.
