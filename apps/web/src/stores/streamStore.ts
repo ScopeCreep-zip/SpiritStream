@@ -3,16 +3,36 @@ import { api } from '@/lib/backend';
 import type { OutputGroup } from '@/types/profile';
 import type { StreamStats, StreamStatusType, TargetStats } from '@/types/stream';
 
-// Real-time stats from FFmpeg backend
+/**
+ * Real-time streaming statistics from the FFmpeg backend.
+ *
+ * Maps to the backend's StreamStats struct (server/src/models/stream_stats.rs).
+ * Field names match after serde's camelCase transformation:
+ * - Rust `group_id` → TypeScript `groupId`
+ * - Rust `dropped_frames` → TypeScript `droppedFrames`
+ * - Rust `dup_frames` → TypeScript `dupFrames`
+ *
+ * These stats are received via WebSocket 'stream_stats' events and used
+ * to update the UI dashboard in real-time during active streaming.
+ */
 interface FFmpegStats {
+  /** The output group ID this stats update belongs to */
   groupId: string;
+  /** Current frame count */
   frame: number;
+  /** Frames per second */
   fps: number;
+  /** Current bitrate in kbps */
   bitrate: number;
+  /** Encoding speed multiplier (e.g., 1.0 = realtime) */
   speed: number;
+  /** Total encoded size in bytes */
   size: number;
+  /** Stream time in seconds */
   time: number;
+  /** Number of dropped frames */
   droppedFrames: number;
+  /** Number of duplicate frames */
   dupFrames: number;
 }
 
