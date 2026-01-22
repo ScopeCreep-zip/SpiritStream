@@ -624,3 +624,4 @@ apps/web/src/types/
 ---
 
 **Related:** [Commands API](./01-commands-api.md) | [Events API](./02-events-api.md) | [Models Reference](../02-backend/03-models-reference.md)
+

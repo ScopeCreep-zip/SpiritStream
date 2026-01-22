@@ -102,6 +102,8 @@ npm install -g pnpm
 
 ```bash
 # Install all workspace dependencies
+# Install frontend dependencies
+>>>>>>> origin/main
 pnpm install
 
 # Rust dependencies are handled automatically by Cargo
@@ -182,6 +184,8 @@ SpiritStream/
 
 ```bash
 pnpm dev
+pnpm run tauri dev
+>>>>>>> origin/main
 ```
 
 This command:
@@ -216,6 +220,9 @@ This command:
 ```bash
 pnpm format        # Format all files
 pnpm format:check  # Check without modifying
+pnpm run format        # Format all files
+pnpm run format:check  # Check without modifying
+>>>>>>> origin/main
 ```
 
 **Linting:** ESLint catches common issues:
@@ -223,6 +230,9 @@ pnpm format:check  # Check without modifying
 ```bash
 pnpm lint          # Check for issues
 pnpm lint:fix      # Auto-fix where possible
+pnpm run lint          # Check for issues
+pnpm run lint:fix      # Auto-fix where possible
+>>>>>>> origin/main
 ```
 
 **Conventions:**
@@ -393,6 +403,10 @@ flowchart TD
    pnpm dev                                  # Manual testing
    pnpm lint                                 # Frontend linting
    cargo clippy --manifest-path server/Cargo.toml  # Backend linting
+   pnpm run tauri dev    # Manual testing
+   pnpm run lint         # Frontend linting
+   cd src-tauri && cargo clippy  # Backend linting
+>>>>>>> origin/main
    ```
 
 4. **Commit with conventional format:**
@@ -443,6 +457,8 @@ Before requesting review:
 
 - [ ] Code follows style guidelines
 - [ ] `pnpm lint` passes
+- [ ] `pnpm run lint` passes
+>>>>>>> origin/main
 - [ ] `cargo clippy` passes
 - [ ] Manual testing completed
 - [ ] Documentation updated (if needed)
@@ -457,6 +473,8 @@ Before requesting review:
 Most testing is currently manual:
 
 1. Run `pnpm dev`
+1. Run `pnpm run tauri dev`
+>>>>>>> origin/main
 2. Test affected features
 3. Check browser console for errors
 4. Check server logs for backend issues
@@ -466,6 +484,8 @@ Most testing is currently manual:
 ```bash
 # Frontend
 pnpm typecheck
+pnpm run typecheck
+>>>>>>> origin/main
 
 # Backend
 cargo check --manifest-path server/Cargo.toml
@@ -478,6 +498,8 @@ Test that production builds work:
 
 ```bash
 pnpm build:desktop
+pnpm run tauri build
+>>>>>>> origin/main
 ```
 
 ---
@@ -577,3 +599,4 @@ By contributing to SpiritStream, you agree that your contributions will be licen
 ---
 
 **Related:** [System Overview](../01-architecture/01-system-overview.md) | [React Architecture](../03-frontend/01-react-architecture.md) | [Services Layer](../02-backend/02-services-layer.md)
+

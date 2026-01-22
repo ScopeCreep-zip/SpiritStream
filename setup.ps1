@@ -97,11 +97,15 @@ function Install-FFmpeg {
     }
 }
 
-function Install-Npm-Dependencies {
+function Install-Pnpm-Dependencies {
     if (Test-Path "package.json") {
-        Print-Step "Installing npm dependencies..."
-        npm install
-        Print-Step "npm dependencies installed"
+        if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
+            Print-Warning "pnpm not found. Install with: corepack prepare pnpm@9.15.0 --activate (or npm install -g pnpm@9.15.0)"
+            return
+        }
+        Print-Step "Installing pnpm dependencies..."
+        pnpm install
+        Print-Step "pnpm dependencies installed"
     } else {
         Print-Warning "package.json not found. Run this script from the project root."
     }
@@ -125,9 +129,9 @@ function Main {
     Print-Step "Installing FFmpeg..."
     Install-FFmpeg
 
-    # Step 4: Install npm dependencies
-    Print-Step "Installing npm dependencies..."
-    Install-Npm-Dependencies
+    # Step 4: Install pnpm dependencies
+    Print-Step "Installing pnpm dependencies..."
+    Install-Pnpm-Dependencies
 
     # Done
     Write-Host "" -ForegroundColor Green
@@ -137,8 +141,8 @@ function Main {
     Write-Host ""
     Write-Host "Next steps:" -ForegroundColor Green
     Write-Host "  1. Restart your terminal (to load Rust environment)" -ForegroundColor Green
-    Write-Host "  2. Run: npm run dev    (development mode)" -ForegroundColor Green
-    Write-Host "  3. Run: npm run build  (production build)" -ForegroundColor Green
+    Write-Host "  2. Run: pnpm run dev    (development mode)" -ForegroundColor Green
+    Write-Host "  3. Run: pnpm run build  (production build)" -ForegroundColor Green
     Write-Host ""
 }
 

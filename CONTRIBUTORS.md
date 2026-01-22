@@ -52,7 +52,7 @@ Look for issues labeled:
 |------|---------|---------|
 | Node.js | 18+ | Frontend tooling |
 | Rust | 1.70+ | Backend development |
-| pnpm/npm | Latest | Package management |
+| pnpm | Latest | Package management |
 | FFmpeg | 6.0+ | Stream processing |
 
 ### Quick Start
@@ -67,7 +67,7 @@ cd SpiritStream
 ./setup.ps1       # Windows PowerShell
 
 # Start development server
-npm run dev
+pnpm run dev
 ```
 
 ### Nix Users
@@ -189,21 +189,21 @@ Before opening a PR, verify:
 
 ```bash
 # TypeScript type checking
-npm run typecheck
+pnpm run typecheck
 
 # Rust checks
 cargo check --manifest-path src-tauri/Cargo.toml
 cargo clippy --manifest-path src-tauri/Cargo.toml
 
 # Linting
-npm run lint
+pnpm run lint
 
 # Format check
-npm run format:check
+pnpm run format:check
 cargo fmt --check --manifest-path src-tauri/Cargo.toml
 
 # Build (catches integration issues)
-npm run build
+pnpm run build
 ```
 
 ## Pull Request Process
@@ -341,11 +341,11 @@ To propose governance changes (scope, process, domains), add to [MILESTONES.main
 ### Commands
 
 ```bash
-npm run dev          # Development server
-npm run build        # Production build
-npm run typecheck    # TypeScript checks
-npm run lint         # Lint code
-npm run format       # Format code
+pnpm run dev          # Development server
+pnpm run build        # Production build
+pnpm run typecheck    # TypeScript checks
+pnpm run lint         # Lint code
+pnpm run format       # Format code
 cargo check          # Rust type check
 cargo clippy         # Rust linting
 cargo test           # Rust tests
@@ -369,3 +369,4 @@ cargo test           # Rust tests
 ---
 
 Thank you for contributing to SpiritStream!
+

@@ -358,6 +358,7 @@
     "ffmpegDescription": "قم بتكوين الواجهة الخلفية للتشفير FFmpeg",
     "ffmpegPath": "FFmpeg المسار",
     "ffmpegVersion": "FFmpeg الإصدار",
+    "ffmpegVersionUnavailable": "لا تتوفر معلومات إصدار لهذا البناء",
     "detectedVersion": "النسخة المكتشفة من FFmpeg",
     "detecting": "جارٍ الكشف...",
     "ffmpegNotFound": "FFmpeg غير موجود",

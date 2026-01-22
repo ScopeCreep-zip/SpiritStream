@@ -89,6 +89,8 @@ rm -rf apps/web/dist
 
 # Fresh install
 pnpm install
+pnpm install --frozen-lockfile
+>>>>>>> origin/main
 ```
 
 ### 2. Run Tests
@@ -103,6 +105,8 @@ cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
 
 # Type checking
 pnpm typecheck
+pnpm run typecheck
+>>>>>>> origin/main
 ```
 
 ### 3. Build All Platforms
@@ -110,6 +114,8 @@ pnpm typecheck
 ```bash
 # Build for current platform
 pnpm build:desktop
+pnpm run tauri build
+>>>>>>> origin/main
 
 # Or use CI/CD for all platforms
 ```
@@ -158,6 +164,8 @@ jobs:
         uses: pnpm/action-setup@v2
         with:
           version: 8
+          cache: 'pnpm'
+>>>>>>> origin/main
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -175,6 +183,11 @@ jobs:
 
       - name: Build
         run: pnpm tauri build --target ${{ matrix.target }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run tauri build -- --target ${{ matrix.target }}
+>>>>>>> origin/main
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
@@ -214,6 +227,8 @@ export APPLE_SIGNING_IDENTITY="Developer ID Application: Name (TEAMID)"
 
 # Build with signing
 pnpm tauri build
+pnpm run tauri build
+>>>>>>> origin/main
 
 # Notarize
 xcrun notarytool submit \
@@ -398,7 +413,7 @@ sed -i "s/^version = .*/version = \"$VERSION\"/" server/Cargo.toml
 sed -i "s/^version = .*/version = \"$VERSION\"/" apps/desktop/src-tauri/Cargo.toml
 
 # Update package.json
-npm version $VERSION --no-git-tag-version
+pnpm version $VERSION --no-git-tag-version
 
 # Update tauri.conf.json
 jq ".version = \"$VERSION\"" apps/desktop/src-tauri/tauri.conf.json > tmp.json
@@ -440,3 +455,4 @@ echo "Release v$VERSION initiated"
 ---
 
 **Related:** [Building](./01-building.md) | [Platform Guides](./02-platform-guides.md)
+

@@ -51,3 +51,4 @@ await listen<StreamStats>('stream_stats', (event) => {
 ---
 
 *Section: 05-api-reference*
+

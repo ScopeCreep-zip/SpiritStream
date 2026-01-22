@@ -358,6 +358,7 @@
     "ffmpegDescription": "Налаштуйте сервер кодування FFmpeg",
     "ffmpegPath": "FFmpeg Шлях",
     "ffmpegVersion": "FFmpeg Версія",
+    "ffmpegVersionUnavailable": "Для цієї збірки версія недоступна",
     "detectedVersion": "Виявлена ​​версія FFmpeg",
     "detecting": "Виявлення...",
     "ffmpegNotFound": "FFmpeg не знайдено",

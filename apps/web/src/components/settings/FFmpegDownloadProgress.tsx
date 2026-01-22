@@ -88,6 +88,9 @@ export function FFmpegDownloadProgress({
   if (ffmpegPath && !isDownloading) {
     const hasUpdate = versionInfo?.update_available ?? false;
     const displayVersion = installedVersion || versionInfo?.installed_version;
+    const versionCheckUnsupported = Boolean(
+      versionInfo?.status?.toLowerCase().includes('version check not supported')
+    );
 
     return (
       <div className={cn('space-y-2', className)}>
@@ -103,6 +106,13 @@ export function FFmpegDownloadProgress({
           </span>
         </div>
 
+        {versionCheckUnsupported && (
+          <div className="flex items-center gap-2 text-xs text-[var(--text-tertiary)]">
+            <AlertCircle className="w-3 h-3" />
+            <span>{t('settings.ffmpegVersionUnavailable')}</span>
+          </div>
+        )}
+
         {/* Update available notification */}
         {hasUpdate && versionInfo && (
           <div className="flex items-center justify-between gap-3 p-3 rounded-lg bg-[var(--warning-subtle)] border border-[var(--warning-border)]">
@@ -113,7 +123,7 @@ export function FFmpegDownloadProgress({
                   {t('settings.updateAvailable')}
                 </span>
                 <span className="text-[var(--text-secondary)] ml-2">
-                  {versionInfo.installed_version} → {versionInfo.latest_version}
+                  {versionInfo.installed_version} {'->'} {versionInfo.latest_version}
                 </span>
               </div>
             </div>

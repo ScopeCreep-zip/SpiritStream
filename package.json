@@ -4,7 +4,7 @@
   "description": "SpiritStream - Multi-Destination Streaming Application",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@10.28.1",
+  "packageManager": "pnpm@9.15.0",
   "scripts": {
     "generate:platforms": "tsx scripts/generate-platforms.ts",
     "build:server": "tsx scripts/build-server.ts",

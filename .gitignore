@@ -42,6 +42,10 @@ spiritstream-cert.pfx
 # Runtime data (user profiles, settings, logs)
 data/
 server/data/
+
+# npm lockfile (we use pnpm)
+package-lock.json
+
 testing/
 screenshots/
 

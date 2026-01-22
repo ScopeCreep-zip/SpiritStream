@@ -48,6 +48,9 @@ spiritstream/
 | pnpm | 8+ | Package management |
 | Rust | 1.70+ | Backend compilation |
 | Tauri CLI | 2.x | Desktop build orchestration |
+| pnpm | Latest | Package management |
+| Tauri CLI | 2.x | Build orchestration |
+>>>>>>> origin/main
 
 ### Platform-Specific Requirements
 
@@ -77,6 +80,8 @@ git clone https://github.com/ScopeCreep-zip/SpiritStream.git
 cd SpiritStream
 
 # Install dependencies (uses pnpm workspaces)
+# Install dependencies
+>>>>>>> origin/main
 pnpm install
 
 # Install Tauri CLI (if not global)
@@ -99,6 +104,9 @@ pnpm backend:dev
 
 # Frontend with remote backend (HTTP mode)
 VITE_BACKEND_MODE=http VITE_BACKEND_URL=http://localhost:8008 pnpm dev:web
+# Start development server with hot reload
+pnpm run tauri dev
+>>>>>>> origin/main
 ```
 
 ### Dev Mode Details
@@ -121,6 +129,15 @@ RUST_LOG=debug pnpm dev
 
 # Backend on different port
 SPIRITSTREAM_PORT=9000 pnpm backend:dev
+# Specify port
+VITE_PORT=3000 pnpm run tauri dev
+
+# Enable verbose logging
+RUST_LOG=debug pnpm run tauri dev
+
+# Skip frontend (backend only)
+pnpm run tauri dev -- --no-watch
+>>>>>>> origin/main
 ```
 
 ---
@@ -136,6 +153,9 @@ pnpm build
 # Build specific workspaces
 pnpm build:web       # Frontend only
 pnpm build:desktop   # Desktop app with server sidecar
+# Build for current platform
+pnpm run tauri build
+>>>>>>> origin/main
 ```
 
 ### Desktop Build Output
@@ -176,6 +196,11 @@ pnpm tauri build --target x86_64-pc-windows-msvc
 
 # Build NSIS installer (alternative)
 pnpm tauri build --bundles nsis
+pnpm run tauri build -- --target x86_64-pc-windows-msvc
+
+# Build NSIS installer (alternative)
+pnpm run tauri build -- --bundles nsis
+>>>>>>> origin/main
 ```
 
 **Output:**
@@ -193,6 +218,14 @@ pnpm tauri build --target aarch64-apple-darwin
 
 # Build Universal binary (both)
 pnpm tauri build --target universal-apple-darwin
+pnpm run tauri build -- --target x86_64-apple-darwin
+
+# Build for Apple Silicon
+pnpm run tauri build -- --target aarch64-apple-darwin
+
+# Build Universal binary (both)
+pnpm run tauri build -- --target universal-apple-darwin
+>>>>>>> origin/main
 ```
 
 **Output:**
@@ -207,6 +240,11 @@ pnpm tauri build --target x86_64-unknown-linux-gnu
 
 # Build specific bundle type
 pnpm tauri build --bundles appimage,deb
+pnpm run tauri build -- --target x86_64-unknown-linux-gnu
+
+# Build specific bundle type
+pnpm run tauri build -- --bundles appimage,deb
+>>>>>>> origin/main
 ```
 
 **Output:**
@@ -271,6 +309,9 @@ See [Distribution Strategy](./03-distribution-strategy.md) for complete Docker d
   "build": {
     "beforeDevCommand": "pnpm dev:web",
     "beforeBuildCommand": "pnpm build:web",
+    "beforeDevCommand": "pnpm run dev",
+    "beforeBuildCommand": "pnpm run build",
+>>>>>>> origin/main
     "devUrl": "http://localhost:5173",
     "frontendDist": "../../web/dist"
   },
@@ -391,6 +432,8 @@ Build with features:
 ```bash
 # Enable devtools in release
 pnpm tauri build --features devtools
+pnpm run tauri build -- --features devtools
+>>>>>>> origin/main
 ```
 
 ---
@@ -421,6 +464,8 @@ export APPLE_SIGNING_IDENTITY="Developer ID Application: Your Name (XXXXXXXXXX)"
 
 # Build and sign
 pnpm tauri build
+pnpm run tauri build
+>>>>>>> origin/main
 
 # Notarize (requires Apple Developer account)
 xcrun notarytool submit apps/desktop/src-tauri/target/release/bundle/dmg/SpiritStream.dmg \
@@ -455,6 +500,8 @@ panic = "abort"
 ```bash
 # Analyze bundle size
 pnpm build:web -- --sourcemap
+pnpm run build -- --sourcemap
+>>>>>>> origin/main
 npx vite-bundle-visualizer
 ```
 
@@ -517,6 +564,12 @@ jobs:
 
       - name: Build
         run: pnpm build:desktop
+      - name: Install pnpm dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run tauri build
+>>>>>>> origin/main
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -572,6 +625,8 @@ jobs:
 ```bash
 # Build with debug symbols
 pnpm tauri build --debug
+pnpm run tauri build -- --debug
+>>>>>>> origin/main
 
 # Check binary size
 ls -la apps/desktop/src-tauri/target/release/spiritstream*
@@ -594,3 +649,6 @@ cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 ---
 
 **Related:** [Platform Guides](./02-platform-guides.md) | [Distribution Strategy](./03-distribution-strategy.md) | [Release Process](./04-release-process.md)
+**Related:** [Platform Guides](./02-platform-guides.md) | [Release Process](./03-release-process.md)
+
+>>>>>>> origin/main

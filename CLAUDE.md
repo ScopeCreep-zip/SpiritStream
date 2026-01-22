@@ -394,3 +394,4 @@ SPIRITSTREAM_UI_ENABLED=1           # Serve static UI files
 @.claude/claudedocs/ui-specification.md
 @.claude/claudedocs/pages-and-views.md
 @.claude/claudedocs/research/spiritstream-complete-design-system.md
+

@@ -549,3 +549,4 @@ SpiritStream's architecture provides a robust foundation for multi-destination s
 ---
 
 **Related:** [Component Architecture](./02-component-architecture.md) | [Data Flow](./03-data-flow.md) | [Security Architecture](./04-security-architecture.md) | [Glossary](../GLOSSARY.md)
+

@@ -469,3 +469,4 @@ The registry panics at startup if JSON is malformed (fail-fast). Runtime methods
 ---
 
 **Related:** [Platform Registry (Streaming)](../04-streaming/05-platform-registry.md) | [Models Reference](./03-models-reference.md) | [FFmpeg Handler](./04-ffmpeg-handler.md)
+
