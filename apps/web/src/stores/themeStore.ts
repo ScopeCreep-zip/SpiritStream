@@ -189,33 +189,42 @@ export const useThemeStore = create<ThemeState>()(
 
           console.log('[THEME] Found theme:', theme);
 
-          // Always fetch tokens for all themes (including built-in ones)
-          // Built-in themes have token files too and need their CSS applied
-          let tokens: Record<string, string> | undefined;
-          try {
-            console.log('[THEME] Fetching tokens for theme:', themeId, 'source:', theme.source);
-            tokens = await api.theme.getTokens(themeId);
-            // Detailed response logging for debugging
-            console.log('[THEME] getTokens response:', {
-              type: typeof tokens,
-              isNull: tokens === null,
-              isUndefined: tokens === undefined,
-              keys: tokens ? Object.keys(tokens).length : 0,
-              sample: tokens ? Object.entries(tokens).slice(0, 3) : [],
-            });
+          // Check if we already have cached tokens for this theme
+          const cachedTokens = get().currentTokens;
+          const currentId = get().currentThemeId;
+          const hasCachedTokens = currentId === themeId && cachedTokens && Object.keys(cachedTokens).length > 0;
 
-            // Retry once with delay if tokens are empty (helps with timing issues in production)
-            if (!tokens || Object.keys(tokens).length === 0) {
-              console.warn('[THEME] Empty tokens received, retrying after delay...');
-              await new Promise((r) => setTimeout(r, 500));
+          // Use cached tokens if available (prevents flash), otherwise fetch from backend
+          let tokens: Record<string, string> | undefined;
+          if (hasCachedTokens) {
+            console.log('[THEME] Using cached tokens for theme:', themeId, 'tokenCount:', Object.keys(cachedTokens).length);
+            tokens = cachedTokens;
+          } else {
+            try {
+              console.log('[THEME] Fetching tokens for theme:', themeId, 'source:', theme.source);
               tokens = await api.theme.getTokens(themeId);
-              console.log('[THEME] Retry getTokens response:', {
+              // Detailed response logging for debugging
+              console.log('[THEME] getTokens response:', {
+                type: typeof tokens,
+                isNull: tokens === null,
+                isUndefined: tokens === undefined,
                 keys: tokens ? Object.keys(tokens).length : 0,
+                sample: tokens ? Object.entries(tokens).slice(0, 3) : [],
               });
+
+              // Retry once with delay if tokens are empty (helps with timing issues in production)
+              if (!tokens || Object.keys(tokens).length === 0) {
+                console.warn('[THEME] Empty tokens received, retrying after delay...');
+                await new Promise((r) => setTimeout(r, 500));
+                tokens = await api.theme.getTokens(themeId);
+                console.log('[THEME] Retry getTokens response:', {
+                  keys: tokens ? Object.keys(tokens).length : 0,
+                });
+              }
+            } catch (tokenError) {
+              console.warn('[THEME] Failed to fetch tokens for theme:', themeId, tokenError);
+              // tokens remains undefined - will use CSS defaults from tokens.css
             }
-          } catch (tokenError) {
-            console.warn('[THEME] Failed to fetch tokens for theme:', themeId, tokenError);
-            // tokens remains undefined - will use CSS defaults from tokens.css
           }
 
           applyTheme(themeId, theme.mode, tokens);
@@ -244,20 +253,38 @@ export const useThemeStore = create<ThemeState>()(
           }
 
           // Check if current theme still exists
-          const { currentThemeId } = get();
+          const { currentThemeId, currentTokens } = get();
           if (!themes.find((theme) => theme.id === currentThemeId)) {
-            console.log('[THEME] Current theme no longer exists, falling back to default');
-            // Fall back to default
-            const fallback = DEFAULT_THEME_DARK;
-            await get().setTheme(fallback);
+            // If we have cached tokens, trust them - theme data is valid even if not in list
+            if (currentTokens && Object.keys(currentTokens).length > 0) {
+              console.log('[THEME] Theme not in list but have cached tokens, keeping current theme:', currentThemeId);
+            } else {
+              console.log('[THEME] Current theme no longer exists and no cached tokens, falling back to default');
+              const fallback = DEFAULT_THEME_DARK;
+              await get().setTheme(fallback);
+            }
           }
         } catch (error) {
           console.error('[THEME] Failed to refresh themes:', error);
+          const { currentThemeId, currentTokens } = get();
+          // Include current theme in fallback list if we have cached tokens for it
+          const fallbackThemes: ThemeSummary[] = [
+            { id: DEFAULT_THEME_DARK, name: 'Spirit Dark', mode: 'dark', source: 'builtin' },
+            { id: DEFAULT_THEME_LIGHT, name: 'Spirit Light', mode: 'light', source: 'builtin' },
+          ];
+          // Add current theme to list if it has cached tokens (so it won't be considered "missing")
+          if (currentTokens && Object.keys(currentTokens).length > 0 &&
+              !fallbackThemes.find(t => t.id === currentThemeId)) {
+            const mode: ThemeMode = currentThemeId.includes('-light') ? 'light' : 'dark';
+            fallbackThemes.push({
+              id: currentThemeId,
+              name: currentThemeId,
+              mode,
+              source: 'builtin', // Use builtin since it's from embedded themes
+            });
+          }
           set({
-            themes: [
-              { id: DEFAULT_THEME_DARK, name: 'Spirit Dark', mode: 'dark', source: 'builtin' },
-              { id: DEFAULT_THEME_LIGHT, name: 'Spirit Light', mode: 'light', source: 'builtin' },
-            ],
+            themes: fallbackThemes,
             isInitialized: true,
           });
           // Resolve even on error so we don't block forever
@@ -272,10 +299,13 @@ export const useThemeStore = create<ThemeState>()(
       name: 'spiritstream-theme',
       partialize: (state) => ({
         currentThemeId: state.currentThemeId,
+        // Also persist tokens so they can be applied instantly on page load
+        currentTokens: state.currentTokens,
       }),
       onRehydrateStorage: () => (state) => {
         if (state) {
           console.log('[THEME] onRehydrateStorage - currentThemeId from localStorage:', state.currentThemeId);
+          console.log('[THEME] onRehydrateStorage - cached tokens:', state.currentTokens ? Object.keys(state.currentTokens).length : 0);
 
           // Try to migrate old format
           const migrated = migrateOldThemeFormat();
@@ -285,11 +315,19 @@ export const useThemeStore = create<ThemeState>()(
             try {
               localStorage.setItem(
                 'spiritstream-theme',
-                JSON.stringify({ state: { currentThemeId: migrated.themeId }, version: 0 })
+                JSON.stringify({ state: { currentThemeId: migrated.themeId, currentTokens: state.currentTokens }, version: 0 })
               );
             } catch (e) {
               console.error('Failed to update theme storage after migration:', e);
             }
+          }
+
+          // Apply cached tokens immediately to prevent flash
+          // This ensures React-side tokens match what inline script applied
+          if (state.currentTokens && Object.keys(state.currentTokens).length > 0) {
+            const mode = state.currentThemeId.includes('-light') ? 'light' : 'dark';
+            console.log('[THEME] Applying cached tokens on rehydrate');
+            applyTheme(state.currentThemeId, mode as ThemeMode, state.currentTokens);
           }
 
           // Load themes list - setTheme will be called by useInitialize
