@@ -30,7 +30,10 @@
     "check:server": "cargo check --manifest-path server/Cargo.toml",
     "check:desktop": "cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml",
 
-    "clean": "rm -rf apps/*/dist apps/*/node_modules/.cache server/target apps/desktop/src-tauri/target"
+    "clean": "rm -rf .turbo apps/*/.turbo apps/*/dist apps/*/node_modules/.vite apps/*/node_modules/.cache",
+    "clean:all": "pnpm clean && rm -rf server/target apps/desktop/src-tauri/target",
+    "clean:build": "pnpm clean && pnpm build",
+    "clean:build:web": "pnpm clean && pnpm build:web"
   },
   "repository": {
     "type": "git",

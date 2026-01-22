@@ -1,9 +1,24 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": [
+    "server/src/**",
+    "server/Cargo.toml",
+    "themes/**"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**", "target/**"]
+    },
+    "@spiritstream/desktop#build": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "../../server/src/**",
+        "../../server/Cargo.toml",
+        "../../themes/**"
+      ],
+      "outputs": ["dist/**", "src-tauri/target/**", "src-tauri/binaries/**"]
     },
     "dev": {
       "persistent": true,
