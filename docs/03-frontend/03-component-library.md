@@ -698,3 +698,4 @@ const buttonVariants = cva('px-4 py-2 rounded-lg font-medium', {
 ---
 
 **Related:** [React Architecture](./01-react-architecture.md) | [Theming & i18n](./05-theming-i18n.md) | [State Management](./02-state-management.md)
+

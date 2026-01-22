@@ -495,3 +495,4 @@ function validateProfile(data: ProfileFormData): ValidationErrors {
 ---
 
 **Related:** [Commands API](./01-commands-api.md) | [Types Reference](./03-types-reference.md) | [Tauri Commands](../02-backend/04-tauri-commands.md)
+

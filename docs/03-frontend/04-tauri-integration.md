@@ -66,7 +66,7 @@ flowchart LR
 Install the Tauri API package:
 
 ```bash
-npm install @tauri-apps/api
+pnpm add @tauri-apps/api
 ```
 
 ### Core Imports
@@ -724,3 +724,4 @@ export const mockApi = {
 ---
 
 **Related:** [React Architecture](./01-react-architecture.md) | [State Management](./02-state-management.md) | [Commands API](../05-api-reference/01-commands-api.md)
+

@@ -20,11 +20,11 @@ This section covers building, packaging, and distributing SpiritStream across al
 
 | Command | Purpose |
 |---------|---------|
-| `npm run dev` | Development with hot reload |
-| `npm run build` | Production build |
-| `npm run build:debug` | Debug build with sourcemaps |
-| `npm run typecheck` | TypeScript type checking |
-| `npm run check` | Rust type checking |
+| `pnpm run dev` | Development with hot reload |
+| `pnpm run build` | Production build |
+| `pnpm run build:debug` | Debug build with sourcemaps |
+| `pnpm run typecheck` | TypeScript type checking |
+| `pnpm run check` | Rust type checking |
 
 ## Platform Bundles
 
@@ -45,3 +45,4 @@ This section covers building, packaging, and distributing SpiritStream across al
 ---
 
 *Section: 07-deployment*
+

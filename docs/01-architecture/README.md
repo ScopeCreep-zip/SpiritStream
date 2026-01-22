@@ -32,3 +32,4 @@ This section documents SpiritStream's software architecture, from high-level sys
 ---
 
 *Section: 01-architecture*
+

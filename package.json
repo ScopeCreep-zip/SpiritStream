@@ -4,13 +4,14 @@
   "description": "SpiritStream - Multi-Destination Streaming Application",
   "private": false,
   "type": "module",
+  "packageManager": "pnpm@9.15.0",
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
   },
   "scripts": {
     "generate:platforms": "tsx scripts/generate-platforms.ts",
-    "predev": "npm run generate:platforms",
-    "prebuild": "npm run generate:platforms",
+    "predev": "pnpm run generate:platforms",
+    "prebuild": "pnpm run generate:platforms",
     "tauri": "tauri",
     "dev": "tauri dev",
     "build": "tauri build",

@@ -406,3 +406,4 @@ The `onfail=ignore` ensures one failed destination doesn't stop others.
 ---
 
 **Related:** [FFmpeg Integration](./01-ffmpeg-integration.md) | [Multi-Destination](./03-multi-destination.md) | [Encoding Reference](./04-encoding-reference.md)
+

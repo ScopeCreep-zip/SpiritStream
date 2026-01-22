@@ -444,9 +444,9 @@ gh api repos/OWNER/REPO/pulls/<N>/reviews --input review.json
 After the contributor addresses feedback, verify the fixes:
 
 ```bash
-# TypeScript (run npm install if dependencies changed)
-npm install
-npm run typecheck
+# TypeScript (run pnpm install if dependencies changed)
+pnpm install
+pnpm run typecheck
 
 # Rust
 cargo check --manifest-path src-tauri/Cargo.toml
@@ -461,7 +461,7 @@ PATH=$HOME/.cargo/bin:/usr/local/bin:/usr/bin:/bin \
 cargo check --manifest-path src-tauri/Cargo.toml
 
 # Full build
-npm run build
+pnpm run build
 ```
 
 ### Common Pitfalls
@@ -480,3 +480,4 @@ Watch for these frequently-missed issues:
 ---
 
 *This document complements [CONTRIBUTORS.md](./CONTRIBUTORS.md). Together with [GOVERNANCE.md](./GOVERNANCE.md) and [MILESTONES_CEREMONY.md](./MILESTONES_CEREMONY.md), they form the governance framework for SpiritStream.*
+
