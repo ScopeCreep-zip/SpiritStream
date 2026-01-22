@@ -995,14 +995,46 @@ async fn invoke_command(
                 .await;
             Ok(json!(info))
         }
-        "list_themes" => Ok(json!(state.theme_manager.list_themes())),
+        "list_themes" => {
+            let themes = state.theme_manager.list_themes();
+            log::info!(
+                "[THEME CMD] list_themes returning {} themes: {:?}",
+                themes.len(),
+                themes.iter().map(|t| &t.id).collect::<Vec<_>>()
+            );
+            Ok(json!(themes))
+        }
         "refresh_themes" => {
+            log::info!("[THEME CMD] refresh_themes called");
             state.theme_manager.sync_project_themes();
-            Ok(json!(state.theme_manager.list_themes()))
+            let themes = state.theme_manager.list_themes();
+            log::info!(
+                "[THEME CMD] refresh_themes returning {} themes",
+                themes.len()
+            );
+            Ok(json!(themes))
         }
         "get_theme_tokens" => {
             let theme_id: String = get_arg(&payload, "themeId")?;
-            Ok(json!(state.theme_manager.get_theme_tokens(&theme_id)?))
+            log::info!("[THEME CMD] get_theme_tokens called for: {}", theme_id);
+            match state.theme_manager.get_theme_tokens(&theme_id) {
+                Ok(tokens) => {
+                    log::info!(
+                        "[THEME CMD] Returning {} tokens for {}",
+                        tokens.len(),
+                        theme_id
+                    );
+                    // Log sample tokens for verification
+                    for (i, (key, value)) in tokens.iter().take(3).enumerate() {
+                        log::info!("[THEME CMD] Sample token {}: {} = {}", i + 1, key, value);
+                    }
+                    Ok(json!(tokens))
+                }
+                Err(e) => {
+                    log::error!("[THEME CMD] get_theme_tokens failed for {}: {}", theme_id, e);
+                    Err(e)
+                }
+            }
         }
         "install_theme" => {
             let theme_path: String = get_arg(&payload, "themePath")?;
@@ -1062,6 +1094,41 @@ fn parse_host(host: &str) -> IpAddr {
     host.parse().unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST))
 }
 
+/// Find themes directory by searching common relative paths from CWD.
+/// Used as fallback when SPIRITSTREAM_THEMES_DIR is not set or invalid.
+fn find_themes_dir_fallback() -> Option<String> {
+    let cwd = std::env::current_dir().ok()?;
+
+    let candidates = [
+        cwd.join("themes"),
+        cwd.join("../themes"),
+        cwd.join("../../themes"),
+        cwd.join("../../../themes"),
+    ];
+
+    for candidate in candidates {
+        if let Ok(canonical) = candidate.canonicalize() {
+            if canonical.is_dir() {
+                // Verify it has theme files
+                if std::fs::read_dir(&canonical)
+                    .map(|entries| {
+                        entries.flatten().any(|e| {
+                            e.path()
+                                .extension()
+                                .map(|ext| ext == "jsonc" || ext == "json")
+                                .unwrap_or(false)
+                        })
+                    })
+                    .unwrap_or(false)
+                {
+                    return Some(canonical.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
 fn init_logger(log_dir: &PathBuf, event_bus: EventBus) -> Result<(), Box<dyn std::error::Error>> {
     let logger = ServerLogger::new(log_dir, event_bus)?;
     log::set_boxed_logger(Box::new(logger))?;
@@ -1075,7 +1142,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let data_dir = env::var("SPIRITSTREAM_DATA_DIR").unwrap_or_else(|_| "data".to_string());
     let log_dir = env::var("SPIRITSTREAM_LOG_DIR")
         .unwrap_or_else(|_| format!("{data_dir}/logs"));
-    let themes_dir = env::var("SPIRITSTREAM_THEMES_DIR").unwrap_or_else(|_| "themes".to_string());
+    // Resolve themes directory with fallback logic
+    // Check if env var path exists and has theme files, otherwise try fallback paths
+    let themes_dir = match env::var("SPIRITSTREAM_THEMES_DIR") {
+        Ok(dir) => {
+            let path = PathBuf::from(&dir);
+            // Check if the path exists and has theme files
+            let has_themes = std::fs::read_dir(&path)
+                .map(|entries| {
+                    entries.flatten().any(|e| {
+                        e.path()
+                            .extension()
+                            .map(|ext| ext == "jsonc" || ext == "json")
+                            .unwrap_or(false)
+                    })
+                })
+                .unwrap_or(false);
+
+            if has_themes {
+                // Path exists and has theme files - use it
+                // Will be logged after logger is initialized
+                dir
+            } else {
+                // Path doesn't exist or has no themes - try fallback
+                // Will be logged after logger is initialized
+                if let Some(fallback) = find_themes_dir_fallback() {
+                    fallback
+                } else {
+                    // No fallback found, use original (server will handle missing)
+                    dir
+                }
+            }
+        }
+        Err(_) => {
+            // Env var not set - try to find themes automatically
+            if let Some(fallback) = find_themes_dir_fallback() {
+                fallback
+            } else {
+                // Will be logged after logger is initialized
+                "themes".to_string()
+            }
+        }
+    };
     let ui_dir = env::var("SPIRITSTREAM_UI_DIR").unwrap_or_else(|_| "dist".to_string());
     // Host/port read from env vars (may be overridden by settings below)
     let env_host = env::var("SPIRITSTREAM_HOST").ok();
@@ -1176,8 +1284,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let event_bus = EventBus::new();
     init_logger(&log_dir_path, event_bus.clone())?;
 
-    let theme_manager = Arc::new(ThemeManager::new(app_data_dir.clone(), PathBuf::from(themes_dir)));
+    // Log the themes directory configuration
+    let themes_path = PathBuf::from(&themes_dir);
+    let themes_exist = themes_path.exists();
+    let env_was_set = env::var("SPIRITSTREAM_THEMES_DIR").is_ok();
+    log::info!(
+        "Themes directory: {} (exists={}, env_set={})",
+        themes_dir,
+        themes_exist,
+        env_was_set
+    );
+    if !themes_exist {
+        log::warn!("Themes directory does not exist - custom themes may not load");
+    }
+
+    let theme_manager = Arc::new(ThemeManager::new(app_data_dir.clone(), PathBuf::from(&themes_dir)));
+
+    // Sync themes and verify sync worked
+    log::info!("Starting theme sync from {:?} to user data", themes_dir);
     theme_manager.sync_project_themes();
+
+    // Verify sync worked by listing available themes
+    let synced_themes = theme_manager.list_themes();
+    log::info!(
+        "Theme sync complete. Available themes ({}): {:?}",
+        synced_themes.len(),
+        synced_themes.iter().map(|t| &t.id).collect::<Vec<_>>()
+    );
+
     let theme_event_sink: Arc<dyn EventSink> = Arc::new(event_bus.clone());
     theme_manager.start_watcher(theme_event_sink);
 
