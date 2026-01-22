@@ -1385,11 +1385,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let address = SocketAddr::new(parse_host(&host), port);
-    println!("SpiritStream backend listening on http://{address}");
+    log::info!("SpiritStream backend listening on http://{address}");
     if state.auth_token.is_some() {
-        println!("  Authentication: enabled");
+        log::info!("  Authentication: enabled");
     } else {
-        println!("  Authentication: disabled (no token configured)");
+        log::info!("  Authentication: disabled (no token configured)");
     }
 
     let listener = tokio::net::TcpListener::bind(address).await?;

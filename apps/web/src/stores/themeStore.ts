@@ -39,7 +39,6 @@ function applyTheme(themeId: string, mode: ThemeMode, tokens?: Record<string, st
   if (hasTokens) {
     setThemeOverrides(themeId, mode, tokens);
   } else {
-    console.warn('[THEME] No tokens provided or empty tokens for theme:', themeId);
     clearThemeOverrides();
   }
 }
@@ -48,16 +47,7 @@ function setThemeOverrides(themeId: string, mode: ThemeMode, tokens: Record<stri
   if (typeof document === 'undefined') return;
 
   const tokenKeys = Object.keys(tokens);
-  console.log('[THEME] setThemeOverrides:', {
-    themeId,
-    mode,
-    tokenCount: tokenKeys.length,
-    hasPrimary: '--primary' in tokens,
-    primaryValue: tokens['--primary'],
-  });
-
   if (tokenKeys.length === 0) {
-    console.warn('[THEME] setThemeOverrides called with empty tokens object!');
     return;
   }
 
@@ -67,7 +57,6 @@ function setThemeOverrides(themeId: string, mode: ThemeMode, tokens: Record<stri
     style = document.createElement('style');
     style.id = styleId;
     document.head.appendChild(style);
-    console.log('[THEME] Created new style element');
   }
 
   const entries = Object.entries(tokens)
@@ -77,22 +66,6 @@ function setThemeOverrides(themeId: string, mode: ThemeMode, tokens: Record<stri
   // Single selector for this specific theme + mode
   const css = `:root[data-theme-id="${themeId}"][data-theme="${mode}"] {\n${entries}\n}`;
   style.textContent = css;
-  console.log('[THEME] Injected CSS:', {
-    length: css.length,
-    selector: `:root[data-theme-id="${themeId}"][data-theme="${mode}"]`,
-    sampleCSS: css.slice(0, 200) + '...',
-  });
-
-  // DOM verification for debugging
-  setTimeout(() => {
-    console.log('[THEME] DOM verification:', {
-      dataTheme: document.documentElement.getAttribute('data-theme'),
-      dataThemeId: document.documentElement.getAttribute('data-theme-id'),
-      styleElement: !!document.getElementById(THEME_STYLE_ID),
-      computedPrimary: getComputedStyle(document.documentElement).getPropertyValue('--primary').trim(),
-      computedBg: getComputedStyle(document.documentElement).getPropertyValue('--bg-base').trim(),
-    });
-  }, 100);
 }
 
 function clearThemeOverrides() {
@@ -125,8 +98,6 @@ function migrateOldThemeFormat(): { themeId: string } | null {
     }
 
     const themeId = legacy.themeId;
-    console.log(`Migrating theme from old format: ${themeId}`);
-
     return { themeId };
   } catch (error) {
     console.error('Failed to migrate old theme format:', error);
@@ -149,45 +120,36 @@ export const useThemeStore = create<ThemeState>()(
       },
 
       setTheme: async (themeId) => {
-        console.log('[THEME] setTheme called:', themeId);
-
         try {
           // Wait for themes to be loaded if not initialized (with timeout)
           if (!get().isInitialized) {
-            console.log('[THEME] Waiting for themes to load...');
             const timeout = new Promise<void>((_, reject) =>
               setTimeout(() => reject(new Error('Theme initialization timeout')), 10000)
             );
             try {
               await Promise.race([initPromise, timeout]);
-            } catch (timeoutError) {
-              console.error('[THEME] Initialization timeout, forcing refresh...');
+            } catch {
               await get().refreshThemes();
             }
           }
 
           // Re-get themes AFTER await to ensure we have fresh data
           let { themes } = get();
-          console.log('[THEME] themes array:', themes.length, themes.map((t) => t.id));
 
           let theme = themes.find((t) => t.id === themeId);
           if (!theme) {
-            console.warn(`[THEME] Theme ${themeId} not found, attempting refresh...`);
             // Retry: refresh themes and try again
             await get().refreshThemes();
             themes = get().themes;
             theme = themes.find((t) => t.id === themeId);
 
             if (!theme) {
-              console.error(`[THEME] Theme ${themeId} still not found after refresh, falling back to default`);
               const fallback = DEFAULT_THEME_DARK;
               applyTheme(fallback, 'dark', undefined);
               set({ currentThemeId: fallback, currentMode: 'dark', currentTokens: undefined });
               return;
             }
           }
-
-          console.log('[THEME] Found theme:', theme);
 
           // Check if we already have cached tokens for this theme
           const cachedTokens = get().currentTokens;
@@ -197,41 +159,24 @@ export const useThemeStore = create<ThemeState>()(
           // Use cached tokens if available (prevents flash), otherwise fetch from backend
           let tokens: Record<string, string> | undefined;
           if (hasCachedTokens) {
-            console.log('[THEME] Using cached tokens for theme:', themeId, 'tokenCount:', Object.keys(cachedTokens).length);
             tokens = cachedTokens;
           } else {
             try {
-              console.log('[THEME] Fetching tokens for theme:', themeId, 'source:', theme.source);
               tokens = await api.theme.getTokens(themeId);
-              // Detailed response logging for debugging
-              console.log('[THEME] getTokens response:', {
-                type: typeof tokens,
-                isNull: tokens === null,
-                isUndefined: tokens === undefined,
-                keys: tokens ? Object.keys(tokens).length : 0,
-                sample: tokens ? Object.entries(tokens).slice(0, 3) : [],
-              });
 
               // Retry once with delay if tokens are empty (helps with timing issues in production)
               if (!tokens || Object.keys(tokens).length === 0) {
-                console.warn('[THEME] Empty tokens received, retrying after delay...');
                 await new Promise((r) => setTimeout(r, 500));
                 tokens = await api.theme.getTokens(themeId);
-                console.log('[THEME] Retry getTokens response:', {
-                  keys: tokens ? Object.keys(tokens).length : 0,
-                });
               }
-            } catch (tokenError) {
-              console.warn('[THEME] Failed to fetch tokens for theme:', themeId, tokenError);
+            } catch {
               // tokens remains undefined - will use CSS defaults from tokens.css
             }
           }
 
           applyTheme(themeId, theme.mode, tokens);
           set({ currentThemeId: themeId, currentMode: theme.mode, currentTokens: tokens });
-          console.log('[THEME] Theme applied successfully:', themeId);
-        } catch (error) {
-          console.error('[THEME] Failed to load theme:', error);
+        } catch {
           // Fall back to default
           const fallback = DEFAULT_THEME_DARK;
           applyTheme(fallback, 'dark', undefined);
@@ -240,10 +185,8 @@ export const useThemeStore = create<ThemeState>()(
       },
 
       refreshThemes: async () => {
-        console.log('[THEME] refreshThemes called');
         try {
           const themes = await api.theme.list();
-          console.log('[THEME] Loaded themes:', themes.length, themes.map((t) => t.id));
           set({ themes, isInitialized: true });
 
           // Resolve the init promise so any waiting setTheme calls can proceed
@@ -256,16 +199,12 @@ export const useThemeStore = create<ThemeState>()(
           const { currentThemeId, currentTokens } = get();
           if (!themes.find((theme) => theme.id === currentThemeId)) {
             // If we have cached tokens, trust them - theme data is valid even if not in list
-            if (currentTokens && Object.keys(currentTokens).length > 0) {
-              console.log('[THEME] Theme not in list but have cached tokens, keeping current theme:', currentThemeId);
-            } else {
-              console.log('[THEME] Current theme no longer exists and no cached tokens, falling back to default');
+            if (!currentTokens || Object.keys(currentTokens).length === 0) {
               const fallback = DEFAULT_THEME_DARK;
               await get().setTheme(fallback);
             }
           }
-        } catch (error) {
-          console.error('[THEME] Failed to refresh themes:', error);
+        } catch {
           const { currentThemeId, currentTokens } = get();
           // Include current theme in fallback list if we have cached tokens for it
           const fallbackThemes: ThemeSummary[] = [
@@ -304,21 +243,17 @@ export const useThemeStore = create<ThemeState>()(
       }),
       onRehydrateStorage: () => (state) => {
         if (state) {
-          console.log('[THEME] onRehydrateStorage - currentThemeId from localStorage:', state.currentThemeId);
-          console.log('[THEME] onRehydrateStorage - cached tokens:', state.currentTokens ? Object.keys(state.currentTokens).length : 0);
-
           // Try to migrate old format
           const migrated = migrateOldThemeFormat();
           if (migrated) {
             state.currentThemeId = migrated.themeId;
-            console.log('[THEME] Migrated theme from old format:', migrated.themeId);
             try {
               localStorage.setItem(
                 'spiritstream-theme',
                 JSON.stringify({ state: { currentThemeId: migrated.themeId, currentTokens: state.currentTokens }, version: 0 })
               );
-            } catch (e) {
-              console.error('Failed to update theme storage after migration:', e);
+            } catch {
+              // Ignore storage errors
             }
           }
 
@@ -326,7 +261,6 @@ export const useThemeStore = create<ThemeState>()(
           // This ensures React-side tokens match what inline script applied
           if (state.currentTokens && Object.keys(state.currentTokens).length > 0) {
             const mode = state.currentThemeId.includes('-light') ? 'light' : 'dark';
-            console.log('[THEME] Applying cached tokens on rehydrate');
             applyTheme(state.currentThemeId, mode as ThemeMode, state.currentTokens);
           }
 
@@ -349,7 +283,7 @@ if (typeof window !== 'undefined') {
       const fallback = DEFAULT_THEME_DARK;
       state.setTheme(fallback);
     }
-  }).catch((error) => {
-    console.error('Failed to listen for theme updates:', error);
+  }).catch(() => {
+    // Ignore listener setup errors
   });
 }

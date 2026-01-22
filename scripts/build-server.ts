@@ -167,12 +167,6 @@ const target = getRustTarget();
 const explicitTarget = getExplicitTarget();
 const ext = platform === 'win32' ? '.exe' : '';
 
-// Debug environment detection
-if (platform === 'win32') {
-  console.log(`Environment check: MSYSTEM=${process.env.MSYSTEM || '(not set)'}, PATH starts with: ${(process.env.PATH || '').substring(0, 50)}`);
-  console.log(`isRunningInMsys2: ${isRunningInMsys2()}`);
-}
-
 console.log(`Building server binary for ${target} (${profile})...`);
 
 // Create binaries directory in desktop app (using absolute paths)

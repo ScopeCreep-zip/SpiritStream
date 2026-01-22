@@ -22,9 +22,6 @@ async function invokeHttp<T>(command: string, args?: InvokeArgs): Promise<T> {
   const baseUrl = getBackendBaseUrl();
   const url = `${baseUrl}/api/invoke/${command}`;
 
-  // Debug logging for connection issues
-  console.log(`[httpApi] ${command} -> ${url}`, args);
-
   const response = await safeFetch(url, {
     method: 'POST',
     headers: {
@@ -41,8 +38,7 @@ async function invokeHttp<T>(command: string, args?: InvokeArgs): Promise<T> {
   if (text) {
     try {
       parsed = JSON.parse(text) as InvokeResponse<T> | T;
-    } catch (e) {
-      console.error('[httpApi] Invalid JSON response:', text.slice(0, 200));
+    } catch {
       throw new Error('Invalid response from server');
     }
   }
@@ -58,15 +54,6 @@ async function invokeHttp<T>(command: string, args?: InvokeArgs): Promise<T> {
   if (parsed && typeof parsed === 'object' && 'ok' in parsed) {
     if (!parsed.ok) {
       throw new Error(parsed.error || 'Request failed');
-    }
-    // Log theme token responses for debugging
-    if (command === 'get_theme_tokens') {
-      const data = parsed.data as Record<string, unknown>;
-      console.log(`[httpApi] get_theme_tokens response:`, {
-        dataType: typeof data,
-        keys: data ? Object.keys(data).length : 0,
-        sample: data ? Object.entries(data).slice(0, 2) : [],
-      });
     }
     return parsed.data;
   }

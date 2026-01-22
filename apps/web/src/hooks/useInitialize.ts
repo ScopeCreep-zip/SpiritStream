@@ -29,7 +29,6 @@ export function useInitialize() {
             const storedThemeId = settings.themeId || useThemeStore.getState().currentThemeId;
             if (storedThemeId) {
               await setTheme(storedThemeId);
-              console.log('[useInitialize] Restored theme:', storedThemeId);
               if (!settings.themeId) {
                 await api.settings.save({ ...settings, themeId: storedThemeId });
               }
@@ -40,15 +39,14 @@ export function useInitialize() {
               if (exists) {
                 // Load the last used profile (will trigger password modal if encrypted)
                 await loadProfile(settings.lastProfile);
-                console.log('[useInitialize] Restored last profile:', settings.lastProfile);
               }
             }
-          } catch (error) {
-            console.warn('[useInitialize] Failed to restore last profile:', error);
+          } catch {
+            // Ignore restore errors - user can manually select profile
           }
         })
-        .catch((error) => {
-          console.error('[useInitialize] Initialization failed:', error);
+        .catch(() => {
+          // Initialization errors handled elsewhere
         });
     }
   }, [loadProfiles, loadProfile, syncWithBackend]);

@@ -9,7 +9,6 @@ import { initBackendConnection, backendMode } from '@/lib/backend';
 export function useBackendConnection() {
   useEffect(() => {
     if (backendMode === 'http') {
-      console.debug('[useBackendConnection] Initializing HTTP backend connection');
       initBackendConnection();
     }
   }, []);

@@ -86,18 +86,11 @@ export async function safeFetch(
         const isLastAttempt = attempt === maxRetries;
 
         if (isLastAttempt) {
-          console.error(
-            `[safeFetch] All ${maxRetries} attempts failed for ${url}:`,
-            error
-          );
           throw error;
         }
 
         // Exponential backoff: 800ms, 1600ms, 3200ms, 6400ms
         const delay = baseDelay * Math.pow(2, attempt - 1);
-        console.warn(
-          `[safeFetch] Attempt ${attempt}/${maxRetries} failed, retrying in ${delay}ms...`
-        );
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
@@ -112,11 +105,7 @@ export async function safeFetch(
     try {
       const { fetch: tauriFetch } = await import('@tauri-apps/plugin-http');
       return tauriFetch(url, options);
-    } catch (error) {
-      console.warn(
-        '[safeFetch] Tauri HTTP plugin not available, falling back to browser fetch:',
-        error
-      );
+    } catch {
       return fetch(url, options);
     }
   }
@@ -183,8 +172,6 @@ export function updateBackendUrl(host: string, port: number): void {
 
   const newUrl = `http://${host}:${port}`;
   window.localStorage.setItem(backendUrlStorageKey, newUrl);
-
-  console.log(`[env] Backend URL updated to: ${newUrl}`);
 }
 
 /**
@@ -194,7 +181,6 @@ export function updateBackendUrl(host: string, port: number): void {
 export function clearBackendUrl(): void {
   if (typeof window === 'undefined') return;
   window.localStorage.removeItem(backendUrlStorageKey);
-  console.log('[env] Backend URL cleared, will use defaults');
 }
 
 // ============================================================================
@@ -227,8 +213,7 @@ export async function checkAuth(): Promise<AuthStatus> {
       authenticated: data.authenticated ?? false,
       required: data.required ?? true,
     };
-  } catch (error) {
-    console.error('[auth] Failed to check auth status:', error);
+  } catch {
     return { authenticated: false, required: true };
   }
 }
@@ -256,8 +241,7 @@ export async function login(token: string): Promise<boolean> {
 
     const data = await response.json();
     return data.ok === true;
-  } catch (error) {
-    console.error('[auth] Login failed:', error);
+  } catch {
     return false;
   }
 }
@@ -310,21 +294,16 @@ async function fetchWithTimeout(
  */
 export async function checkServerHealth(retries = 10, delayMs = 500): Promise<boolean> {
   const baseUrl = getBackendBaseUrl();
-  console.log(`[health] Checking server health at ${baseUrl}/health (${retries} retries, ${delayMs}ms delay)`);
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      console.log(`[health] Attempt ${attempt}/${retries}...`);
       const response = await fetchWithTimeout(`${baseUrl}/health`, 3000);
-      console.log(`[health] Response status: ${response.status}`);
 
       if (response.ok) {
-        console.log('[health] Server is healthy!');
         return true;
       }
-    } catch (error) {
+    } catch {
       // Network error or timeout - will retry
-      console.warn(`[health] Attempt ${attempt} failed:`, error);
     }
 
     if (attempt < retries) {
@@ -332,7 +311,6 @@ export async function checkServerHealth(retries = 10, delayMs = 500): Promise<bo
     }
   }
 
-  console.error('[health] All health check attempts failed');
   return false;
 }
 
