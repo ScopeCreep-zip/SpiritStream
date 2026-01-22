@@ -9,7 +9,7 @@ use notify::{RecursiveMode, Watcher};
 use regex::Regex;
 use crate::services::{emit_event, EventSink};
 
-use crate::models::{ThemeFile, ThemeSummary, ThemeMode};
+use crate::models::{ThemeFile, ThemeSummary};
 
 const THEME_FILE_EXTENSIONS: [&str; 2] = ["json", "jsonc"];
 const THEME_INSTALL_EXTENSION: &str = "jsonc";
@@ -81,6 +81,15 @@ impl ThemeManager {
                 .map(|dir| dir.join(&project_themes_dir))
                 .unwrap_or(project_themes_dir)
         };
+
+        // Log paths for debugging theme loading issues
+        log::info!(
+            "ThemeManager: project_themes_dir={:?} (exists={})",
+            absolute_project_themes,
+            absolute_project_themes.exists()
+        );
+        log::info!("ThemeManager: user themes_dir={:?}", themes_dir);
+
         Self {
             themes_dir,
             project_themes_dir: absolute_project_themes,
@@ -96,17 +105,12 @@ impl ThemeManager {
         self.append_themes_from_dir(&self.project_themes_dir, "builtin", &mut themes, &mut seen_ids);
 
         if themes.is_empty() {
-            for (id, name, mode) in [
-                ("spirit-light", "Spirit Light", ThemeMode::Light),
-                ("spirit-dark", "Spirit Dark", ThemeMode::Dark),
-            ] {
-                themes.push(ThemeSummary {
-                    id: id.to_string(),
-                    name: name.to_string(),
-                    mode,
-                    source: "builtin".to_string(),
-                });
-                seen_ids.insert(id.to_string());
+            log::info!("No themes found in project_themes_dir, using embedded theme list as fallback");
+            for summary in super::embedded_themes::get_embedded_theme_list() {
+                if !seen_ids.contains(&summary.id) {
+                    seen_ids.insert(summary.id.clone());
+                    themes.push(summary);
+                }
             }
         }
 
@@ -116,8 +120,51 @@ impl ThemeManager {
     }
 
     pub fn get_theme_tokens(&self, theme_id: &str) -> Result<HashMap<String, String>, String> {
-        let theme = self.find_theme_by_id(theme_id)?;
-        Ok(theme.tokens)
+        log::info!(
+            "get_theme_tokens('{}') - searching directories:",
+            theme_id
+        );
+        log::info!(
+            "  user themes_dir: {:?} (exists={})",
+            self.themes_dir,
+            self.themes_dir.exists()
+        );
+        log::info!(
+            "  project_themes_dir: {:?} (exists={})",
+            self.project_themes_dir,
+            self.project_themes_dir.exists()
+        );
+
+        // FIRST: Try to load from theme files (normal path)
+        match self.find_theme_by_id(theme_id) {
+            Ok(theme) => {
+                log::info!(
+                    "Found theme '{}' from file with {} tokens",
+                    theme_id,
+                    theme.tokens.len()
+                );
+                return Ok(theme.tokens);
+            }
+            Err(e) => {
+                log::warn!("Theme file not found for '{}': {}", theme_id, e);
+            }
+        }
+
+        // SECOND: Check embedded themes (fallback for production builds)
+        if let Some(tokens) = super::embedded_themes::get_embedded_theme_tokens(theme_id) {
+            log::info!(
+                "Using embedded fallback for theme '{}' ({} tokens)",
+                theme_id,
+                tokens.len()
+            );
+            return Ok(tokens);
+        }
+
+        // THIRD: Theme not found anywhere
+        Err(format!(
+            "Theme '{}' not found in files or embedded themes",
+            theme_id
+        ))
     }
 
     pub fn install_theme(&self, source_path: &Path) -> Result<ThemeSummary, String> {
@@ -219,20 +266,49 @@ impl ThemeManager {
 
     fn find_theme_in_dir(&self, theme_id: &str, dir: &Path) -> Option<ThemeFile> {
         if !dir.exists() {
+            log::debug!("find_theme_in_dir: directory does not exist: {:?}", dir);
             return None;
         }
 
-        for path in theme_paths_from_dir(dir) {
+        let paths = theme_paths_from_dir(dir);
+        log::debug!(
+            "find_theme_in_dir: searching {} files in {:?} for theme '{}'",
+            paths.len(),
+            dir,
+            theme_id
+        );
+
+        for path in paths {
             if should_skip_theme_file(&path) {
                 continue;
             }
-            if let Ok(theme) = Self::load_theme_file(&path) {
-                if theme.id == theme_id {
-                    return Some(theme);
+            match Self::load_theme_file(&path) {
+                Ok(theme) => {
+                    log::debug!(
+                        "find_theme_in_dir: loaded {:?} -> id='{}'",
+                        path.file_name(),
+                        theme.id
+                    );
+                    if theme.id == theme_id {
+                        log::info!(
+                            "find_theme_in_dir: FOUND theme '{}' at {:?}",
+                            theme_id,
+                            path
+                        );
+                        return Some(theme);
+                    }
+                }
+                Err(e) => {
+                    log::debug!("find_theme_in_dir: failed to load {:?}: {}", path, e);
                 }
             }
         }
 
+        log::debug!(
+            "find_theme_in_dir: theme '{}' NOT found in {:?}",
+            theme_id,
+            dir
+        );
         None
     }
 
