@@ -214,6 +214,11 @@ impl FFmpegDownloader {
         {
             Ok(PlatformDownload {
                 // Windows: hardware-enabled build (NVENC/QSV/AMF)
+                // BtbN Windows ZIPs currently expose `ffmpeg.exe` at the archive
+                // root (no additional subdirectory), so we only need the bare
+                // filename here. If the upstream archive layout changes (e.g. a
+                // top-level directory is added), this binary_path will need to be
+                // updated to match the new internal path.
                 url: "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip",
                 archive_type: ArchiveType::Zip,
                 binary_path: "ffmpeg.exe",
