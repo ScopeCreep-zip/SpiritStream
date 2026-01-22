@@ -358,6 +358,7 @@
     "ffmpegDescription": "Configurar el backend de codificación FFmpeg",
     "ffmpegPath": "Ruta de FFmpeg",
     "ffmpegVersion": "Versión de FFmpeg",
+    "ffmpegVersionUnavailable": "No hay versión disponible para esta compilación",
     "detectedVersion": "Versión detectada de FFmpeg",
     "detecting": "Detectando...",
     "ffmpegNotFound": "FFmpeg no encontrado",

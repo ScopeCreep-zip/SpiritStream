@@ -343,12 +343,16 @@ install_windows_deps() {
     fi
 }
 
-# Install npm dependencies
-install_npm_deps() {
+# Install pnpm dependencies
+install_pnpm_deps() {
     if [[ -f "package.json" ]]; then
-        print_step "Installing npm dependencies..."
-        npm install
-        print_success "npm dependencies installed"
+        if ! command -v pnpm > /dev/null 2>&1; then
+            print_error "pnpm not found. Install with: corepack prepare pnpm@9.15.0 --activate (or npm install -g pnpm@9.15.0)"
+            return 1
+        fi
+        print_step "Installing pnpm dependencies..."
+        pnpm install
+        print_success "pnpm dependencies installed"
     else
         print_error "package.json not found. Run this script from the project root."
         return 1
@@ -440,18 +444,18 @@ verify_installation() {
         print_fail "Node.js not found in PATH"
     fi
 
-    # Verify npm
-    local has_npm=false
-    if command -v npm > /dev/null 2>&1; then
-        has_npm=true
+    # Verify pnpm
+    local has_pnpm=false
+    if command -v pnpm > /dev/null 2>&1; then
+        has_pnpm=true
     fi
 
-    if [[ "${has_npm}" = true ]]; then
-        local npm_ver
-        npm_ver=$(npm --version || true)
-        print_pass "npm ${npm_ver}"
+    if [[ "${has_pnpm}" = true ]]; then
+        local pnpm_ver
+        pnpm_ver=$(pnpm --version || true)
+        print_pass "pnpm ${pnpm_ver}"
     else
-        print_fail "npm not found in PATH"
+        print_fail "pnpm not found in PATH"
     fi
 
     # Verify FFmpeg
@@ -589,9 +593,9 @@ main() {
     echo -e "\n${BLUE}[5/7]${NC} Tauri CLI"
     install_tauri_cli
 
-    # Step 6: Install npm dependencies
-    echo -e "\n${BLUE}[6/7]${NC} npm Dependencies"
-    install_npm_deps
+    # Step 6: Install pnpm dependencies
+    echo -e "\n${BLUE}[6/7]${NC} pnpm Dependencies"
+    install_pnpm_deps
 
     # Step 7: Verify installation
     echo -e "\n${BLUE}[7/7]${NC} Verification"
@@ -604,8 +608,8 @@ main() {
         echo -e "${BOLD}══════════════════════════════════════════════════════════════${NC}"
         echo ""
         echo "Ready to build! Next steps:"
-        echo -e "  ${CYAN}npm run dev${NC}      Start development server"
-        echo -e "  ${CYAN}npm run build${NC}    Build for production"
+        echo -e "  ${CYAN}pnpm run dev${NC}      Start development server"
+        echo -e "  ${CYAN}pnpm run build${NC}    Build for production"
         echo ""
     else
         echo -e "${RED}${BOLD}  Setup Complete - Some Checks Failed!${NC}"

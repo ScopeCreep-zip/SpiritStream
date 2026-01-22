@@ -587,3 +587,4 @@ t('stream.bitrate', { value: '6000' })
 ---
 
 **Related:** [React Architecture](./01-react-architecture.md) | [Component Library](./03-component-library.md) | [State Management](./02-state-management.md)
+

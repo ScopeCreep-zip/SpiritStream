@@ -11,6 +11,7 @@ spiritstream-cert.pfx
 *.mp4
 *.flv
 *.ps1
+package-lock.json
 testing/
 screenshots/
 frontend/node_modules/

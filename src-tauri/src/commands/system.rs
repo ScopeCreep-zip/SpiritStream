@@ -190,7 +190,32 @@ pub fn get_encoders() -> Result<Encoders, String> {
     let mut audio = Vec::new();
 
     // Video encoders: (ffmpeg_name, vendor, codec)
-    let video_encoder_table = [
+    #[cfg(target_os = "linux")]
+    let mut video_encoder_table: Vec<(&str, Option<&str>)> = vec![
+        ("libx264", None),
+        ("h264_nvenc", Some("nvidia")),
+        ("hevc_nvenc", Some("nvidia")),
+        ("av1_nvenc", Some("nvidia")),
+        ("h264_amf", Some("amd")),
+        ("hevc_amf", Some("amd")),
+        ("av1_amf", Some("amd")),
+        ("h264_qsv", Some("intel")),
+        ("hevc_qsv", Some("intel")),
+        ("av1_qsv", Some("intel")),
+        ("h264_videotoolbox", Some("apple")),
+        ("hevc_videotoolbox", Some("apple")),
+        ("av1_videotoolbox", Some("apple")),
+    ];
+
+    #[cfg(target_os = "linux")]
+    video_encoder_table.extend([
+        ("h264_vaapi", Some("vaapi")),
+        ("hevc_vaapi", Some("vaapi")),
+        ("av1_vaapi", Some("vaapi")),
+    ]);
+
+    #[cfg(not(target_os = "linux"))]
+    let video_encoder_table: Vec<(&str, Option<&str>)> = vec![
         ("libx264", None),
         ("h264_nvenc", Some("nvidia")),
         ("hevc_nvenc", Some("nvidia")),
@@ -213,6 +238,7 @@ pub fn get_encoders() -> Result<Encoders, String> {
                 Some("nvidia") if has_nvidia => video.push((*name).to_string()),
                 Some("amd") if has_amd => video.push((*name).to_string()),
                 Some("intel") if has_intel => video.push((*name).to_string()),
+                Some("vaapi") if (has_amd || has_intel) => video.push((*name).to_string()),
                 Some("apple") if cfg!(target_os = "macos") => video.push((*name).to_string()),
                 _ => {},
             }

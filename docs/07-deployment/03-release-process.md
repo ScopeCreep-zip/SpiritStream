@@ -86,27 +86,27 @@ rm -rf src-tauri/target/release
 rm -rf dist
 
 # Fresh install
-npm ci
+pnpm install --frozen-lockfile
 ```
 
 ### 2. Run Tests
 
 ```bash
 # Frontend tests
-npm test
+pnpm test
 
 # Rust tests
 cd src-tauri && cargo test
 
 # Type checking
-npm run typecheck
+pnpm run typecheck
 ```
 
 ### 3. Build All Platforms
 
 ```bash
 # Build for current platform
-npm run tauri build
+pnpm run tauri build
 
 # Or use CI/CD for all platforms
 ```
@@ -150,7 +150,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+          cache: 'pnpm'
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -164,10 +164,10 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev
 
       - name: Install Dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build
-        run: npm run tauri build -- --target ${{ matrix.target }}
+        run: pnpm run tauri build -- --target ${{ matrix.target }}
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
@@ -206,7 +206,7 @@ jobs:
 export APPLE_SIGNING_IDENTITY="Developer ID Application: Name (TEAMID)"
 
 # Build with signing
-npm run tauri build
+pnpm run tauri build
 
 # Notarize
 xcrun notarytool submit \
@@ -390,7 +390,7 @@ fi
 sed -i "s/^version = .*/version = \"$VERSION\"/" src-tauri/Cargo.toml
 
 # Update package.json
-npm version $VERSION --no-git-tag-version
+pnpm version $VERSION --no-git-tag-version
 
 # Update tauri.conf.json
 jq ".version = \"$VERSION\"" src-tauri/tauri.conf.json > tmp.json
@@ -432,3 +432,4 @@ echo "Release v$VERSION initiated"
 ---
 
 **Related:** [Building](./01-building.md) | [Platform Guides](./02-platform-guides.md)
+

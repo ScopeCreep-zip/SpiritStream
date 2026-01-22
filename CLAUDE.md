@@ -216,18 +216,18 @@ See full token list in design system research document.
 
 ```bash
 # Development
-npm run dev              # Start Vite dev server + Tauri
+pnpm run dev              # Start Vite dev server + Tauri
 
 # Build
-npm run build            # Production build
-npm run tauri build      # Package for distribution
+pnpm run build            # Production build
+pnpm run tauri build      # Package for distribution
 
 # Type checking
-npm run typecheck        # Check TypeScript
+pnpm run typecheck        # Check TypeScript
 cargo check              # Check Rust
 
 # Linting
-npm run lint             # ESLint + Prettier
+pnpm run lint             # ESLint + Prettier
 cargo clippy             # Rust linting
 ```
 
@@ -343,3 +343,4 @@ cargo clippy             # Rust linting
 @.claude/claudedocs/ui-specification.md
 @.claude/claudedocs/pages-and-views.md
 @.claude/claudedocs/research/spiritstream-complete-design-system.md
+

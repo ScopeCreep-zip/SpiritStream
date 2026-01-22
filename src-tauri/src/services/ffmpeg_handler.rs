@@ -62,6 +62,8 @@ impl FFmpegHandler {
     const RELAY_PORT_RANGE: u16 = 20000;
     const RELAY_TCP_OUT_QUERY: &'static str = "tcp_nodelay=1";
     const RELAY_TCP_IN_QUERY: &'static str = "listen=1&tcp_nodelay=1";
+    const RELAY_RTMP_TIMEOUT_SECS: u32 = 604_800;
+    const RELAY_RTMP_TCP_NODELAY: &'static str = "1";
     const RELAY_TEE_FIFO_OPTIONS: &'static str =
         "fifo_format=mpegts:queue_size=512:drop_pkts_on_overflow=1:attempt_recovery=1:recover_any_error=1";
     const METER_HOST: &'static str = "127.0.0.1";
@@ -1031,6 +1033,10 @@ impl FFmpegHandler {
             "verbose".to_string(),
             "-listen".to_string(),
             "1".to_string(),
+            "-timeout".to_string(),
+            Self::RELAY_RTMP_TIMEOUT_SECS.to_string(),
+            "-tcp_nodelay".to_string(),
+            Self::RELAY_RTMP_TCP_NODELAY.to_string(),
             "-i".to_string(),
             listen_url,
             "-c:v".to_string(),
@@ -1135,15 +1141,24 @@ impl FFmpegHandler {
             Some(value) if !value.is_empty() => value,
             _ => return url.to_string(),
         };
+        let host = if host == "0.0.0.0" {
+            "127.0.0.1".to_string()
+        } else if let Some(port) = host.strip_prefix("0.0.0.0:") {
+            format!("127.0.0.1:{port}")
+        } else {
+            host.to_string()
+        };
 
         let path = host_and_path.next().unwrap_or("");
         let app = path.split('/').find(|segment| !segment.is_empty());
 
-        if let Some(app) = app {
+        let base_url = if let Some(app) = app {
             format!("{scheme}://{host}/{app}")
         } else {
             format!("{scheme}://{host}")
-        }
+        };
+
+        base_url
     }
 
     fn double_bitrate_value(bitrate: &str) -> Option<String> {
@@ -1184,6 +1199,30 @@ impl FFmpegHandler {
         } else if encoder == "libx265" {
             args.push("-x265-params".to_string());
             args.push("nal-hrd=cbr".to_string());
+        }
+    }
+
+    fn map_nvenc_preset(preset: &str) -> String {
+        let normalized = preset.trim().to_ascii_lowercase();
+        if normalized.is_empty() {
+            return "p4".to_string();
+        }
+
+        match normalized.as_str() {
+            "p1" | "p2" | "p3" | "p4" | "p5" | "p6" | "p7" | "default" | "slow" | "medium"
+            | "fast" | "hp" | "hq" | "bd" | "ll" | "llhq" | "llhp" | "lossless"
+            | "losslesshp" => normalized,
+            "ultrafast" => "p1".to_string(),
+            "superfast" => "p2".to_string(),
+            "veryfast" => "p3".to_string(),
+            "faster" => "p4".to_string(),
+            "slower" => "p6".to_string(),
+            "veryslow" => "p7".to_string(),
+            "quality" => "p7".to_string(),
+            "balanced" => "p4".to_string(),
+            "performance" => "p2".to_string(),
+            "low_latency" | "low-latency" | "lowlatency" => "p1".to_string(),
+            _ => "p4".to_string(),
         }
     }
 
@@ -1249,10 +1288,12 @@ impl FFmpegHandler {
                     if let Some(usage) = amf_usage {
                         args.push("-usage".to_string()); args.push(usage.to_string());
                     }
+                } else if encoder.contains("nvenc") {
+                    let ffmpeg_preset = Self::map_nvenc_preset(preset);
+                    args.push("-preset".to_string()); args.push(ffmpeg_preset);
                 } else {
                     let supports_preset = encoder == "libx264"
-                        || encoder == "libx265"
-                        || encoder.contains("nvenc");
+                        || encoder == "libx265";
                     if supports_preset {
                         let ffmpeg_preset = match preset.as_str() {
                             "quality" => "slow",

@@ -7,6 +7,9 @@ use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
 // Windows: Hide console windows for spawned processes
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -75,6 +78,9 @@ pub enum DownloadError {
 
     #[error("Installation failed: {0}")]
     InstallationFailed(String),
+
+    #[error("Downloaded FFmpeg build is missing required hardware encoders: {0}")]
+    UnsupportedBuild(String),
 }
 
 /// Platform-specific download information
@@ -120,25 +126,112 @@ impl FFmpegDownloader {
         self.cancel_token.load(Ordering::SeqCst)
     }
 
+    fn required_hardware_encoders() -> &'static [&'static str] {
+        #[cfg(target_os = "windows")]
+        {
+            &["h264_nvenc", "h264_qsv", "h264_amf"]
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            &["h264_nvenc", "h264_qsv", "h264_vaapi"]
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            &["h264_videotoolbox"]
+        }
+
+        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+        {
+            &[]
+        }
+    }
+
+    fn validate_hardware_support(ffmpeg_path: &Path) -> Result<(), DownloadError> {
+        let required = Self::required_hardware_encoders();
+        if required.is_empty() {
+            return Ok(());
+        }
+
+        #[cfg(unix)]
+        {
+            if let Ok(metadata) = std::fs::metadata(ffmpeg_path) {
+                let mut perms = metadata.permissions();
+                // 0o111 => any execute bit (owner/group/other); if none are set, make it user/group/world executable.
+                if (perms.mode() & 0o111) == 0 {
+                    perms.set_mode(0o755);
+                    let _ = std::fs::set_permissions(ffmpeg_path, perms);
+                }
+            }
+        }
+
+        let output = Command::new(ffmpeg_path)
+            .args(["-encoders", "-hide_banner"])
+            .output()
+            .map_err(|e| DownloadError::InstallationFailed(format!("Failed to run downloaded FFmpeg: {e}")))?;
+
+        if !output.status.success() {
+            return Err(DownloadError::InstallationFailed(
+                "Downloaded FFmpeg returned an error while listing encoders".to_string(),
+            ));
+        }
+
+        let encoder_list = String::from_utf8_lossy(&output.stdout);
+        let missing: Vec<&str> = required
+            .iter()
+            .copied()
+            .filter(|encoder| !encoder_list.contains(encoder))
+            .collect();
+
+        if !missing.is_empty() {
+            return Err(DownloadError::UnsupportedBuild(missing.join(", ")));
+        }
+
+        Ok(())
+    }
+
+    fn supports_version_check() -> bool {
+        #[cfg(target_os = "macos")]
+        {
+            true
+        }
+
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
+        {
+            false
+        }
+
+        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+        {
+            false
+        }
+    }
+
     /// Get platform-specific download information
     fn get_platform_download() -> Result<PlatformDownload, DownloadError> {
         #[cfg(target_os = "windows")]
         {
             Ok(PlatformDownload {
-                // Windows: gyan.dev essentials build (smaller, ~80MB)
-                url: "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
+                // Windows: hardware-enabled build (NVENC/QSV/AMF)
+                // BtbN Windows ZIPs currently expose `ffmpeg.exe` at the archive
+                // root (no additional subdirectory), so we only need the bare
+                // filename here. If the upstream archive layout changes (e.g. a
+                // top-level directory is added), this binary_path will need to be
+                // updated to match the new internal path.
+                url: "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip",
                 archive_type: ArchiveType::Zip,
-                binary_path: "ffmpeg-7.1-essentials_build/bin/ffmpeg.exe",
+                binary_path: "ffmpeg.exe",
             })
         }
 
         #[cfg(target_os = "linux")]
         {
             Ok(PlatformDownload {
-                // Linux: johnvansickle static build
-                url: "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz",
+                // Linux: hardware-enabled static build (NVENC/QSV/VAAPI)
+                url: "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-linux64-gpl.tar.xz",
                 archive_type: ArchiveType::TarXz,
-                binary_path: "ffmpeg-7.1-amd64-static/ffmpeg",
+                binary_path: "ffmpeg",
             })
         }
 
@@ -439,6 +532,8 @@ exit /b %errorlevel%
             return Err(DownloadError::BinaryNotFound);
         }
 
+        Self::validate_hardware_support(&temp_binary)?;
+
         // Request elevation and install to system location
         self.emit_progress(
             app_handle,
@@ -715,72 +810,16 @@ exit /b %errorlevel%
 
         #[cfg(target_os = "windows")]
         {
-            // gyan.dev release page - check via HEAD request and parse filename
-            // The release URL redirects to a file like ffmpeg-7.1-essentials_build.zip
-            let response = self.client
-                .head("https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip")
-                .send()
-                .await?;
-
-            // Try to get version from final URL after redirects
-            let final_url = response.url().to_string();
-
-            // Parse version from URL (e.g., "ffmpeg-7.1-essentials_build.zip")
-            if let Some(version) = Self::extract_version_from_url(&final_url) {
-                return Ok(version);
-            }
-
-            // Fallback: fetch the version info page
-            let version_response = self.client
-                .get("https://www.gyan.dev/ffmpeg/builds/release-version")
-                .send()
-                .await?
-                .text()
-                .await?;
-
-            // The page typically contains just the version number
-            let version = version_response.trim().to_string();
-            if !version.is_empty() && version.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
-                return Ok(version);
-            }
-
-            Err(DownloadError::ExtractionFailed("Could not determine latest version".to_string()))
+            Err(DownloadError::ExtractionFailed(
+                "Version check not supported for hardware-enabled Windows builds".to_string(),
+            ))
         }
 
         #[cfg(target_os = "linux")]
         {
-            // johnvansickle releases - check the release info
-            let response = self.client
-                .get("https://johnvansickle.com/ffmpeg/release-readme.txt")
-                .send()
-                .await?
-                .text()
-                .await?;
-
-            // Parse version from readme (usually contains "version: X.X" or similar)
-            for line in response.lines() {
-                let line_lower = line.to_lowercase();
-                if line_lower.contains("version") {
-                    if let Some(version) = Self::extract_version_from_text(line) {
-                        return Ok(version);
-                    }
-                }
-            }
-
-            // Fallback: check the builds page
-            let builds_response = self.client
-                .get("https://johnvansickle.com/ffmpeg/builds/")
-                .send()
-                .await?
-                .text()
-                .await?;
-
-            // Look for version pattern in the HTML
-            if let Some(version) = Self::extract_version_from_text(&builds_response) {
-                return Ok(version);
-            }
-
-            Err(DownloadError::ExtractionFailed("Could not determine latest version".to_string()))
+            Err(DownloadError::ExtractionFailed(
+                "Version check not supported for hardware-enabled Linux builds".to_string(),
+            ))
         }
 
         #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
@@ -837,7 +876,12 @@ exit /b %errorlevel%
 
     /// Check FFmpeg version status and determine if update is available
     pub async fn check_version_status(&self, installed_version: Option<&str>) -> FFmpegVersionInfo {
-        let latest = self.get_latest_version().await.ok();
+        let supports_version_check = Self::supports_version_check();
+        let latest = if supports_version_check {
+            self.get_latest_version().await.ok()
+        } else {
+            None
+        };
 
         let update_available = match (&installed_version, &latest) {
             (Some(inst), Some(lat)) => Self::is_newer_version(inst, lat),
@@ -845,12 +889,19 @@ exit /b %errorlevel%
             _ => false,
         };
 
-        let status = match (&installed_version, &latest, update_available) {
-            (Some(v), _, false) => format!("FFmpeg {v} is up to date"),
-            (Some(v), Some(l), true) => format!("Update available: {v} → {l}"),
-            (None, Some(l), _) => format!("FFmpeg not installed (latest: {l})"),
-            (None, None, _) => "FFmpeg not installed".to_string(),
-            (Some(v), None, _) => format!("FFmpeg {v} installed (unable to check for updates)"),
+        let status = if !supports_version_check {
+            match installed_version {
+                Some(_) => "Version check not supported for this build".to_string(),
+                None => "FFmpeg not installed".to_string(),
+            }
+        } else {
+            match (&installed_version, &latest, update_available) {
+                (Some(v), _, false) => format!("FFmpeg {v} is up to date"),
+                (Some(v), Some(l), true) => format!("Update available: {v} -> {l}"),
+                (None, Some(l), _) => format!("FFmpeg not installed (latest: {l})"),
+                (None, None, _) => "FFmpeg not installed".to_string(),
+                (Some(v), None, _) => format!("FFmpeg {v} installed (unable to check for updates)"),
+            }
         };
 
         FFmpegVersionInfo {

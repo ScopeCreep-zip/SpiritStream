@@ -4,13 +4,14 @@
   "description": "SpiritStream - Multi-Destination Streaming Application",
   "private": false,
   "type": "module",
+  "packageManager": "pnpm@9.15.0",
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
   },
   "scripts": {
     "generate:platforms": "tsx scripts/generate-platforms.ts",
-    "predev": "npm run generate:platforms",
-    "prebuild": "npm run generate:platforms",
+    "predev": "pnpm run generate:platforms",
+    "prebuild": "pnpm run generate:platforms",
     "tauri": "tauri",
     "dev": "tauri dev",
     "build": "tauri build",
@@ -90,7 +91,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@tauri-apps/api": "^2.9.1",
-    "@tauri-apps/plugin-dialog": "^2.4.2",
+    "@tauri-apps/plugin-dialog": "^2.6.0",
     "@tauri-apps/plugin-fs": "^2.4.4",
     "@tauri-apps/plugin-shell": "^2.3.3",
     "clsx": "^2.1.1",

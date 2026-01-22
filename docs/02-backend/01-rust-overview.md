@@ -611,3 +611,4 @@ mod tests {
 ---
 
 **Related:** [Services Layer](./02-services-layer.md) | [Models Reference](./03-models-reference.md) | [Tauri Commands](./04-tauri-commands.md)
+

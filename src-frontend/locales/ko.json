@@ -358,6 +358,7 @@
     "ffmpegDescription": "FFmpeg 인코딩 백엔드 구성",
     "ffmpegPath": "FFmpeg 경로",
     "ffmpegVersion": "FFmpeg 버전",
+    "ffmpegVersionUnavailable": "이 빌드에는 버전 정보가 없습니다",
     "detectedVersion": "FFmpeg의 감지된 버전",
     "detecting": "감지 중...",
     "ffmpegNotFound": "FFmpeg을 찾을 수 없습니다",

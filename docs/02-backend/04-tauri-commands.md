@@ -664,3 +664,4 @@ These guidelines keep commands consistent and maintainable across the codebase.
 ---
 
 **Related:** [Rust Overview](./01-rust-overview.md) | [Services Layer](./02-services-layer.md) | [Commands API](../05-api-reference/01-commands-api.md)
+

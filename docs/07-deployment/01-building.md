@@ -16,7 +16,7 @@ This document covers building SpiritStream for development and production across
 |------|---------|---------|
 | Node.js | 18+ | Frontend tooling |
 | Rust | 1.70+ | Backend compilation |
-| pnpm/npm | Latest | Package management |
+| pnpm | Latest | Package management |
 | Tauri CLI | 2.x | Build orchestration |
 
 ### Platform-Specific Requirements
@@ -47,7 +47,7 @@ git clone https://github.com/ScopeCreep-zip/SpiritStream.git
 cd SpiritStream
 
 # Install dependencies
-npm install
+pnpm install
 
 # Install Tauri CLI (if not global)
 cargo install tauri-cli
@@ -57,7 +57,7 @@ cargo install tauri-cli
 
 ```bash
 # Start development server with hot reload
-npm run tauri dev
+pnpm run tauri dev
 ```
 
 This will:
@@ -69,13 +69,13 @@ This will:
 
 ```bash
 # Specify port
-VITE_PORT=3000 npm run tauri dev
+VITE_PORT=3000 pnpm run tauri dev
 
 # Enable verbose logging
-RUST_LOG=debug npm run tauri dev
+RUST_LOG=debug pnpm run tauri dev
 
 # Skip frontend (backend only)
-npm run tauri dev -- --no-watch
+pnpm run tauri dev -- --no-watch
 ```
 
 ---
@@ -86,7 +86,7 @@ npm run tauri dev -- --no-watch
 
 ```bash
 # Build for current platform
-npm run tauri build
+pnpm run tauri build
 ```
 
 ### Build Output
@@ -111,10 +111,10 @@ src-tauri/target/release/
 
 ```bash
 # Build MSI installer
-npm run tauri build -- --target x86_64-pc-windows-msvc
+pnpm run tauri build -- --target x86_64-pc-windows-msvc
 
 # Build NSIS installer (alternative)
-npm run tauri build -- --bundles nsis
+pnpm run tauri build -- --bundles nsis
 ```
 
 **Output:**
@@ -125,13 +125,13 @@ npm run tauri build -- --bundles nsis
 
 ```bash
 # Build for Intel Mac
-npm run tauri build -- --target x86_64-apple-darwin
+pnpm run tauri build -- --target x86_64-apple-darwin
 
 # Build for Apple Silicon
-npm run tauri build -- --target aarch64-apple-darwin
+pnpm run tauri build -- --target aarch64-apple-darwin
 
 # Build Universal binary (both)
-npm run tauri build -- --target universal-apple-darwin
+pnpm run tauri build -- --target universal-apple-darwin
 ```
 
 **Output:**
@@ -142,10 +142,10 @@ npm run tauri build -- --target universal-apple-darwin
 
 ```bash
 # Build AppImage
-npm run tauri build -- --target x86_64-unknown-linux-gnu
+pnpm run tauri build -- --target x86_64-unknown-linux-gnu
 
 # Build specific bundle type
-npm run tauri build -- --bundles appimage,deb
+pnpm run tauri build -- --bundles appimage,deb
 ```
 
 **Output:**
@@ -164,8 +164,8 @@ npm run tauri build -- --bundles appimage,deb
   "version": "1.0.0",
   "identifier": "com.spiritstream.app",
   "build": {
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "pnpm run dev",
+    "beforeBuildCommand": "pnpm run build",
     "devUrl": "http://localhost:5173",
     "frontendDist": "../dist"
   },
@@ -278,7 +278,7 @@ Build with features:
 
 ```bash
 # Enable devtools in release
-npm run tauri build -- --features devtools
+pnpm run tauri build -- --features devtools
 ```
 
 ---
@@ -333,7 +333,7 @@ For FFmpeg as a sidecar:
 export APPLE_SIGNING_IDENTITY="Developer ID Application: Your Name (XXXXXXXXXX)"
 
 # Build and sign
-npm run tauri build
+pnpm run tauri build
 
 # Notarize (requires Apple Developer account)
 xcrun notarytool submit target/release/bundle/dmg/SpiritStream.dmg \
@@ -369,7 +369,7 @@ panic = "abort"
 
 ```bash
 # Analyze bundle size
-npm run build -- --sourcemap
+pnpm run build -- --sourcemap
 npx vite-bundle-visualizer
 ```
 
@@ -421,11 +421,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev
 
-      - name: Install npm dependencies
-        run: npm ci
+      - name: Install pnpm dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Build
-        run: npm run tauri build
+        run: pnpm run tauri build
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -452,7 +452,7 @@ jobs:
 
 ```bash
 # Build with debug symbols
-npm run tauri build -- --debug
+pnpm run tauri build -- --debug
 
 # Check binary size
 ls -la src-tauri/target/release/spiritstream*
@@ -461,3 +461,4 @@ ls -la src-tauri/target/release/spiritstream*
 ---
 
 **Related:** [Platform Guides](./02-platform-guides.md) | [Release Process](./03-release-process.md)
+

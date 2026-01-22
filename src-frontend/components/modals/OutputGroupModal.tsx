@@ -66,14 +66,25 @@ const PRESET_VALUES = [
   'veryslow',
 ];
 
+const NVENC_PRESET_VALUES = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'];
+
 const AMF_PRESET_VALUES = ['quality', 'balanced', 'speed'];
+
+const ENCODER_DEFAULT_LABELS: Record<string, string> = {
+  h264_vaapi: 'VAAPI (Linux)',
+  hevc_vaapi: 'VAAPI HEVC (Linux)',
+  av1_vaapi: 'VAAPI AV1 (Linux)',
+};
 
 // Profile option values
 const PROFILE_VALUES = ['baseline', 'main', 'high'];
 
 const getPresetValues = (codec: string): string[] => {
   const normalized = codec.toLowerCase();
-  if (normalized === 'libx264' || normalized === 'libx265' || normalized.includes('nvenc')) {
+  if (normalized.includes('nvenc')) {
+    return NVENC_PRESET_VALUES;
+  }
+  if (normalized === 'libx264' || normalized === 'libx265') {
     return PRESET_VALUES;
   }
   if (normalized.includes('amf')) {
@@ -84,6 +95,9 @@ const getPresetValues = (codec: string): string[] => {
 
 const getDefaultPreset = (codec: string, presetValues: string[]): string => {
   const normalized = codec.toLowerCase();
+  if (normalized.includes('nvenc')) {
+    return 'p4';
+  }
   if (normalized.includes('amf')) {
     return 'balanced';
   }
@@ -191,7 +205,8 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
   const tDynamic = t as (key: string, options?: { defaultValue: string }) => string;
 
   const videoCodecOptions: SelectOption[] = encoders.video.map((enc) => {
-    const label = tDynamic(`encoder.encoders.${enc}`, { defaultValue: enc });
+    const defaultLabel = ENCODER_DEFAULT_LABELS[enc] || enc;
+    const label = tDynamic(`encoder.encoders.${enc}`, { defaultValue: defaultLabel });
     return { value: enc, label };
   });
 

@@ -330,7 +330,7 @@ Preset mapping supports multiple hardware encoders:
 | Encoder | Preset Parameter | Quality Value |
 |---------|-----------------|---------------|
 | libx264 | `-preset` | ultrafast to veryslow |
-| NVENC | `-preset` | ultrafast to veryslow |
+| NVENC | `-preset` | p1 to p7 (P1 fastest, P7 highest quality) |
 | QuickSync | `-preset` | ultrafast to veryslow |
 | AMF | `-quality`, `-usage` | speed/balanced/quality |
 
@@ -662,3 +662,4 @@ ffmpeg \
 ---
 
 **Related:** [System Overview](../01-architecture/01-system-overview.md) | [Services Layer](../02-backend/02-services-layer.md) | [RTMP Fundamentals](./02-rtmp-fundamentals.md) | [Commands API](../05-api-reference/01-commands-api.md)
+

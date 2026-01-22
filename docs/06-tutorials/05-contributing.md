@@ -95,7 +95,7 @@ cd SpiritStream
 
 ```bash
 # Install frontend dependencies
-npm install
+pnpm install
 
 # Rust dependencies are handled automatically by Cargo
 ```
@@ -154,7 +154,7 @@ SpiritStream/
 ### Start Development Server
 
 ```bash
-npm run tauri dev
+pnpm run tauri dev
 ```
 
 This command:
@@ -185,15 +185,15 @@ This command:
 **Formatting:** We use Prettier with the project's `.prettierrc`:
 
 ```bash
-npm run format        # Format all files
-npm run format:check  # Check without modifying
+pnpm run format        # Format all files
+pnpm run format:check  # Check without modifying
 ```
 
 **Linting:** ESLint catches common issues:
 
 ```bash
-npm run lint          # Check for issues
-npm run lint:fix      # Auto-fix where possible
+pnpm run lint          # Check for issues
+pnpm run lint:fix      # Auto-fix where possible
 ```
 
 **Conventions:**
@@ -355,8 +355,8 @@ flowchart TD
 
 3. **Test your changes:**
    ```bash
-   npm run tauri dev    # Manual testing
-   npm run lint         # Frontend linting
+   pnpm run tauri dev    # Manual testing
+   pnpm run lint         # Frontend linting
    cd src-tauri && cargo clippy  # Backend linting
    ```
 
@@ -407,7 +407,7 @@ How you tested the changes.
 Before requesting review:
 
 - [ ] Code follows style guidelines
-- [ ] `npm run lint` passes
+- [ ] `pnpm run lint` passes
 - [ ] `cargo clippy` passes
 - [ ] Manual testing completed
 - [ ] Documentation updated (if needed)
@@ -421,7 +421,7 @@ Before requesting review:
 
 Most testing is currently manual:
 
-1. Run `npm run tauri dev`
+1. Run `pnpm run tauri dev`
 2. Test affected features
 3. Check browser console for errors
 4. Check Rust logs for backend issues
@@ -430,7 +430,7 @@ Most testing is currently manual:
 
 ```bash
 # Frontend
-npm run typecheck
+pnpm run typecheck
 
 # Backend
 cd src-tauri && cargo check
@@ -441,7 +441,7 @@ cd src-tauri && cargo check
 Test that production builds work:
 
 ```bash
-npm run tauri build
+pnpm run tauri build
 ```
 
 ---
@@ -544,3 +544,4 @@ By contributing to SpiritStream, you agree that your contributions will be licen
 ---
 
 **Related:** [System Overview](../01-architecture/01-system-overview.md) | [React Architecture](../03-frontend/01-react-architecture.md) | [Services Layer](../02-backend/02-services-layer.md)
+

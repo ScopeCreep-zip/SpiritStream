@@ -358,6 +358,7 @@
     "ffmpegDescription": "Stel FFmpeg enkodering agterkant op",
     "ffmpegPath": "FFmpeg Pad",
     "ffmpegVersion": "FFmpeg weergawe",
+    "ffmpegVersionUnavailable": "Geen weergawe beskikbaar vir hierdie bou nie",
     "detectedVersion": "Bespeur weergawe van FFmpeg",
     "detecting": "Bespeur tans …",
     "ffmpegNotFound": "FFmpeg nie gevind nie",

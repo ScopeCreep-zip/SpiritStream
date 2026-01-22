@@ -90,8 +90,8 @@ SpiritStream requires network access:
 4. Eject DMG
 
 **First Launch:**
-1. Right-click app → Open (bypasses Gatekeeper first time)
-2. Or: System Settings → Privacy & Security → Open Anyway
+1. Right-click app -> Open (bypasses Gatekeeper first time)
+2. Or: System Settings -> Privacy & Security -> Open Anyway
 
 ### Code Signing
 
@@ -120,7 +120,7 @@ SpiritStream may request:
 - **Files and Folders**: For profile storage
 - **Network**: For streaming
 
-Grant permissions in System Settings → Privacy & Security.
+Grant permissions in System Settings -> Privacy & Security.
 
 ### Apple Silicon
 
@@ -269,16 +269,26 @@ GDK_BACKEND=x11 ./SpiritStream.AppImage
 ### Automatic Download
 
 SpiritStream can download FFmpeg automatically:
-1. Go to Settings → FFmpeg
+1. Go to Settings -> FFmpeg
 2. Click "Download FFmpeg"
 3. Wait for download to complete
 
 ### Manual Installation
 
 **Windows:**
-1. Download from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/)
-2. Extract to `C:\ffmpeg`
-3. Add to PATH or configure in Settings
+1. Download a release from [BtbN FFmpeg Builds](https://github.com/BtbN/FFmpeg-Builds/releases) (choose a `ffmpeg-n*-win64-lgpl` or similar archive).
+2. Extract the archive:
+   - Create `C:\ffmpeg` (for example) and extract the downloaded archive there.
+   - You should end up with `C:\ffmpeg\bin\ffmpeg.exe`.
+3. Make FFmpeg available to SpiritStream:
+   - **Option A – Add to `PATH`:**
+     1. Press `Win + R`, type `sysdm.cpl`, and press Enter.
+     2. Open **Advanced** → **Environment Variables…**.
+     3. Under **System variables**, select **Path** → **Edit** → **New** and add `C:\ffmpeg\bin`.
+     4. Click **OK** to save and restart SpiritStream.
+   - **Option B – Configure in SpiritStream Settings:**
+     1. Open SpiritStream and go to **Settings → FFmpeg**.
+     2. Set the **FFmpeg path** to `C:\ffmpeg\bin\ffmpeg.exe`.
 
 **macOS:**
 ```bash
@@ -289,12 +299,8 @@ brew install ffmpeg
 ```bash
 # Package manager (recommended)
 sudo apt install ffmpeg
-
-# Or download static build
-wget https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
-tar xf ffmpeg-release-amd64-static.tar.xz
-sudo mv ffmpeg-*-static/ffmpeg /usr/local/bin/
 ```
+Or download a static build from https://github.com/BtbN/FFmpeg-Builds/releases, extract it, and copy the `ffmpeg` binary to `/usr/local/bin` (or set the path in Settings).
 
 ### Verify Installation
 
@@ -351,3 +357,4 @@ RUST_LOG=debug spiritstream
 ---
 
 **Related:** [Building](./01-building.md) | [Release Process](./03-release-process.md)
+

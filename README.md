@@ -52,12 +52,12 @@ cd spiritstream
 .\setup.ps1
 ```
 
-The setup script installs: Rust, FFmpeg, platform build tools, and npm dependencies.
+The setup script installs: Rust, FFmpeg, platform build tools, and pnpm dependencies.
 
 After setup completes, restart your terminal and run:
 ```bash
-npm run dev    # Development mode
-npm run build  # Production build
+pnpm run dev    # Development mode
+pnpm run build  # Production build
 ```
 
 ---
@@ -73,9 +73,9 @@ Download the latest release from [Releases](https://github.com/ScopeCreep-zip/Sp
 | Linux | `SpiritStream_x.x.x_amd64.AppImage` or `.deb` |
 
 **Note:** FFmpeg must be installed separately:
+- Windows: Download from https://github.com/BtbN/FFmpeg-Builds/releases and add to PATH (or set the path in Settings).
+- Linux: Use your package manager (apt/dnf/pacman) or download a static build from the same BtbN link.
 - macOS: `brew install ffmpeg`
-- Windows: `winget install ffmpeg`
-- Linux: `sudo apt install ffmpeg`
 
 ---
 
@@ -95,8 +95,8 @@ Download the latest release from [Releases](https://github.com/ScopeCreep-zip/Sp
 ```bash
 git clone https://github.com/ScopeCreep-zip/SpiritStream.git
 cd spiritstream
-npm install
-npm run build
+pnpm install
+pnpm run build
 ```
 
 Build output: `src-tauri/target/release/bundle/`
@@ -111,11 +111,11 @@ Build output: `src-tauri/target/release/bundle/`
 ## Development
 
 ```bash
-npm run dev          # Start development server with hot reload
-npm run build        # Production build
-npm run build:debug  # Debug build with symbols
-npm run typecheck    # Check TypeScript types
-npm run check        # Check Rust code
+pnpm run dev          # Start development server with hot reload
+pnpm run build        # Production build
+pnpm run build:debug  # Debug build with symbols
+pnpm run typecheck    # Check TypeScript types
+pnpm run check        # Check Rust code
 ```
 
 ## License

@@ -71,7 +71,7 @@ function generatePlatformTypes() {
   // Generate TypeScript code
   let output = `// Auto-generated from data/streaming-platforms.json
 // DO NOT EDIT MANUALLY
-// Run 'npm run generate:platforms' to regenerate this file
+// Run 'pnpm run generate:platforms' to regenerate this file
 
 /**
  * Supported streaming platforms
