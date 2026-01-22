@@ -51,6 +51,7 @@ screenshots/
 
 # Claude Code documentation (session-specific)
 .claude/claudedocs/
+.claude/settings.local.json
 
 # IDE and editor
 .vscode/
