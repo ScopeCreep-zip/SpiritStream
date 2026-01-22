@@ -188,26 +188,128 @@ fn spawn_server<R: Runtime>(
     std::fs::create_dir_all(&app_data_dir).ok();
     std::fs::create_dir_all(&log_dir).ok();
 
-    // Find themes directory - check bundled resources first, then dev path
-    let themes_dir = app
-        .path()
-        .resource_dir()
-        .ok()
-        .map(|dir| dir.join("themes"))
-        .filter(|dir| dir.exists())
-        .or_else(|| {
-            // In development, check relative to current working directory
-            // (pnpm dev runs from project root or apps/desktop)
-            let cwd = std::env::current_dir().ok()?;
-            // Try project root first
-            let root_themes = cwd.join("themes");
-            if root_themes.exists() {
-                return Some(root_themes);
+    // Helper function to check if directory has theme files
+    fn has_theme_files(dir: &std::path::Path) -> bool {
+        std::fs::read_dir(dir)
+            .map(|entries| {
+                entries.flatten().any(|entry| {
+                    entry
+                        .path()
+                        .extension()
+                        .map(|ext| ext == "jsonc" || ext == "json")
+                        .unwrap_or(false)
+                })
+            })
+            .unwrap_or(false)
+    }
+
+    // Helper to count theme files (for logging)
+    fn count_theme_files(dir: &std::path::Path) -> usize {
+        std::fs::read_dir(dir)
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .filter(|entry| {
+                        entry
+                            .path()
+                            .extension()
+                            .map(|ext| ext == "jsonc" || ext == "json")
+                            .unwrap_or(false)
+                    })
+                    .count()
+            })
+            .unwrap_or(0)
+    }
+
+    // Find themes directory - check bundled resources first, then dev paths
+    let themes_dir = {
+        let bundled = app.path().resource_dir().ok().map(|dir| dir.join("themes"));
+
+        // Log detailed info about bundled path for debugging production issues
+        if let Some(ref path) = bundled {
+            log::info!("Checking bundled themes at: {:?}", path);
+            log::info!(
+                "  exists: {}, is_dir: {}",
+                path.exists(),
+                path.is_dir()
+            );
+
+            // List contents if exists
+            if path.exists() {
+                let count = count_theme_files(path);
+                log::info!("  theme files found: {}", count);
+
+                if let Ok(entries) = std::fs::read_dir(path) {
+                    let files: Vec<_> = entries
+                        .flatten()
+                        .map(|e| e.file_name().to_string_lossy().to_string())
+                        .collect();
+                    log::info!("  contents: {:?}", files);
+                }
             }
-            // Try from apps/desktop
-            let parent_themes = cwd.join("../../themes");
-            parent_themes.canonicalize().ok().filter(|p| p.exists())
-        });
+        }
+
+        // Use bundled if it exists AND has theme files
+        if bundled
+            .as_ref()
+            .map(|p| p.exists() && has_theme_files(p))
+            .unwrap_or(false)
+        {
+            log::info!("Using bundled themes directory");
+            bundled
+        } else {
+            // Development fallback chain
+            let cwd = std::env::current_dir().ok();
+
+            // Option 1: themes/ in CWD (running from project root)
+            let cwd_themes = cwd.as_ref().map(|d| d.join("themes"));
+            if cwd_themes
+                .as_ref()
+                .map(|p| has_theme_files(p))
+                .unwrap_or(false)
+            {
+                log::info!("Using CWD themes directory: {:?}", cwd_themes);
+                cwd_themes
+            } else {
+                // Option 2: ../../themes from apps/desktop
+                let parent_themes = cwd
+                    .as_ref()
+                    .and_then(|d| d.join("../../themes").canonicalize().ok());
+                if parent_themes
+                    .as_ref()
+                    .map(|p| has_theme_files(p))
+                    .unwrap_or(false)
+                {
+                    log::info!("Using parent themes directory: {:?}", parent_themes);
+                    parent_themes
+                } else {
+                    // Option 3: ../../../themes from apps/desktop/src-tauri
+                    let grandparent_themes = cwd
+                        .as_ref()
+                        .and_then(|d| d.join("../../../themes").canonicalize().ok());
+                    if grandparent_themes
+                        .as_ref()
+                        .map(|p| has_theme_files(p))
+                        .unwrap_or(false)
+                    {
+                        log::info!(
+                            "Using grandparent themes directory: {:?}",
+                            grandparent_themes
+                        );
+                        grandparent_themes
+                    } else {
+                        log::warn!("No themes directory found with theme files!");
+                        log::warn!("  Tried bundled: {:?}", bundled);
+                        log::warn!("  Tried CWD: {:?}", cwd_themes);
+                        log::warn!("  Tried parent: {:?}", parent_themes);
+                        log::warn!("  Tried grandparent: {:?}", grandparent_themes);
+                        // Return bundled path anyway - server will handle missing
+                        bundled
+                    }
+                }
+            }
+        }
+    };
 
     if env::var("SPIRITSTREAM_DATA_DIR").is_err() {
         command = command.env("SPIRITSTREAM_DATA_DIR", &app_data_dir);
