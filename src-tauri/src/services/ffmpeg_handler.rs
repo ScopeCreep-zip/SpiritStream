@@ -62,7 +62,6 @@ impl FFmpegHandler {
     const RELAY_PORT_RANGE: u16 = 20000;
     const RELAY_TCP_OUT_QUERY: &'static str = "tcp_nodelay=1";
     const RELAY_TCP_IN_QUERY: &'static str = "listen=1&tcp_nodelay=1";
-    const RELAY_TCP_LISTEN_TIMEOUT_MS: u32 = 604_800_000;
     const RELAY_RTMP_TIMEOUT_SECS: u32 = 604_800;
     const RELAY_RTMP_TCP_NODELAY: &'static str = "1";
     const RELAY_TEE_FIFO_OPTIONS: &'static str =
@@ -1034,8 +1033,10 @@ impl FFmpegHandler {
             "verbose".to_string(),
             "-listen".to_string(),
             "1".to_string(),
-            "-listen_timeout".to_string(),
-            Self::RELAY_TCP_LISTEN_TIMEOUT_MS.to_string(),
+            "-timeout".to_string(),
+            Self::RELAY_RTMP_TIMEOUT_SECS.to_string(),
+            "-tcp_nodelay".to_string(),
+            Self::RELAY_RTMP_TCP_NODELAY.to_string(),
             "-i".to_string(),
             listen_url,
             "-c:v".to_string(),
@@ -1157,24 +1158,7 @@ impl FFmpegHandler {
             format!("{scheme}://{host}")
         };
 
-        let mut query_parts: Vec<String> = Vec::new();
-        if !base_url.contains("timeout=") {
-            query_parts.push(format!("timeout={}", Self::RELAY_RTMP_TIMEOUT_SECS));
-        }
-        if !base_url.contains("listen_timeout=") {
-            query_parts.push(format!("listen_timeout={}", Self::RELAY_TCP_LISTEN_TIMEOUT_MS));
-        }
-        if !base_url.contains("tcp_nodelay=") {
-            query_parts.push(format!("tcp_nodelay={}", Self::RELAY_RTMP_TCP_NODELAY));
-        }
-
-        if query_parts.is_empty() {
-            base_url
-        } else if base_url.contains('?') {
-            format!("{base_url}&{}", query_parts.join("&"))
-        } else {
-            format!("{base_url}?{}", query_parts.join("&"))
-        }
+        base_url
     }
 
     fn double_bitrate_value(bitrate: &str) -> Option<String> {
