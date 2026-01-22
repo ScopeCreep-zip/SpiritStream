@@ -23,12 +23,27 @@ const projectRoot = join(__dirname, '..');
 const isRelease = process.argv.includes('--release');
 const profile = isRelease ? 'release' : 'debug';
 
+// Check for explicit --target argument (for cross-compilation)
+function getExplicitTarget(): string | null {
+  const targetIndex = process.argv.indexOf('--target');
+  if (targetIndex !== -1 && process.argv[targetIndex + 1]) {
+    return process.argv[targetIndex + 1];
+  }
+  return null;
+}
+
 // Detect platform and architecture
 const platform = process.platform;
 const arch = process.arch;
 
 // Map to Rust target triple
 function getRustTarget(): string {
+  // Use explicit target if provided (for cross-compilation)
+  const explicit = getExplicitTarget();
+  if (explicit) {
+    return explicit;
+  }
+
   if (platform === 'win32') {
     return 'x86_64-pc-windows-msvc';
   } else if (platform === 'darwin') {
@@ -40,6 +55,7 @@ function getRustTarget(): string {
 }
 
 const target = getRustTarget();
+const explicitTarget = getExplicitTarget();
 const ext = platform === 'win32' ? '.exe' : '';
 
 console.log(`Building server binary for ${target} (${profile})...`);
@@ -61,9 +77,10 @@ if (!existsSync(destPath)) {
 
 // Build the server binary from /server/ (using absolute path to manifest)
 const manifestPath = join(projectRoot, 'server', 'Cargo.toml');
+const targetFlag = explicitTarget ? `--target ${explicitTarget}` : '';
 const buildCmd = isRelease
-  ? `cargo build --manifest-path "${manifestPath}" --release`
-  : `cargo build --manifest-path "${manifestPath}"`;
+  ? `cargo build --manifest-path "${manifestPath}" --release ${targetFlag}`.trim()
+  : `cargo build --manifest-path "${manifestPath}" ${targetFlag}`.trim();
 
 try {
   execSync(buildCmd, { stdio: 'inherit', cwd: projectRoot });
@@ -73,7 +90,10 @@ try {
 }
 
 // Copy binary with platform-specific name (using absolute paths)
-const sourcePath = join(projectRoot, 'server', 'target', profile, `spiritstream-server${ext}`);
+// When cross-compiling with --target, binary is in target/{target}/{profile}/
+const sourcePath = explicitTarget
+  ? join(projectRoot, 'server', 'target', explicitTarget, profile, `spiritstream-server${ext}`)
+  : join(projectRoot, 'server', 'target', profile, `spiritstream-server${ext}`);
 
 console.log(`Copying ${sourcePath} to ${destPath}...`);
 copyFileSync(sourcePath, destPath);

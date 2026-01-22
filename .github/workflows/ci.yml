@@ -14,10 +14,13 @@ jobs:
         include:
           - platform: 'macos-latest'
             args: '--target aarch64-apple-darwin'
+            rust_target: 'aarch64-apple-darwin'
           - platform: 'ubuntu-22.04'
             args: ''
+            rust_target: ''
           - platform: 'windows-latest'
             args: ''
+            rust_target: ''
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -37,7 +40,7 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
+          targets: ${{ matrix.rust_target }}
           components: clippy
 
       - name: Rust cache
@@ -75,7 +78,7 @@ jobs:
         run: pnpm run build:web
 
       - name: Build server sidecar
-        run: pnpm run build:server
+        run: pnpm run build:server ${{ matrix.rust_target && format('-- --target {0}', matrix.rust_target) || '' }}
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0.5.4
