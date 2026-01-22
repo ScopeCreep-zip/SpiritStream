@@ -7,8 +7,10 @@
 **SpiritStream** is a desktop streaming application undergoing a complete architectural overhaul. The application manages RTMP stream configurations, handles FFmpeg-based stream processing, and provides a modern UI for multi-output streaming with profile management.
 
 **Repository**: https://github.com/ScopeCreep-zip/SpiritStream
-**Current Branch**: cleanup-release-cand
+**Current Branch**: web-app-split
 **Migration Status**: ✅ **COMPLETE** — Electron fully removed, Tauri 2.x production-ready
+**Architecture Split**: ✅ **COMPLETE** — Frontend/Backend split into independent services
+**Current Work**: See [web-app-split-master-plan.md](.claude/claudedocs/web-app-split-master-plan.md)
 
 ## New Architecture (Target)
 
@@ -40,70 +42,91 @@ All colors are WCAG 2.2 AA compliant. See `.claude/claudedocs/research/spiritstr
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                     Frontend (React + Tailwind)                      │
-│                        src-frontend/                                 │
-│  ┌─────────────────────────────────────────────────────────────────┐│
-│  │  Components │ Hooks │ Stores │ Utils │ Types                    ││
-│  └─────────────────────────────────────────────────────────────────┘│
+│                         CLIENT LAYER                                 │
+│  ┌─────────────────────────┐    ┌─────────────────────────┐         │
+│  │  Tauri Desktop          │    │  Web Browser            │         │
+│  │  (Embedded Webview)     │    │  (Remote Access)        │         │
+│  └───────────┬─────────────┘    └───────────┬─────────────┘         │
+│              │         HTTP/WS API          │                       │
+│              └──────────────┬───────────────┘                       │
+├─────────────────────────────┼───────────────────────────────────────┤
+│                             ▼                                       │
+│                    HOST SERVER (Rust + Axum)                        │
+│         POST /api/invoke/* │ WS /ws │ Static UI (optional)         │
 ├─────────────────────────────────────────────────────────────────────┤
-│                     Tauri IPC Bridge                                 │
-│                   @tauri-apps/api                                    │
+│                       SERVICE LAYER                                  │
+│    ProfileManager │ FFmpegHandler │ SettingsManager │ ThemeManager  │
 ├─────────────────────────────────────────────────────────────────────┤
-│                     Tauri Commands (Rust)                            │
-│                      src-tauri/src/                                  │
-│  ┌─────────────────────────────────────────────────────────────────┐│
-│  │  commands/ │ services/ │ models/ │ utils/                       ││
-│  └─────────────────────────────────────────────────────────────────┘│
+│                       FFMPEG LAYER                                   │
+│             RTMP Relay │ Encoding Processes │ Stream Stats          │
 ├─────────────────────────────────────────────────────────────────────┤
-│                     System Integration                               │
-│              FFmpeg │ File System │ Encryption                       │
+│                       STORAGE LAYER                                  │
+│                Profiles │ Settings │ Logs │ Themes                  │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## Directory Structure (Target)
+**Deployment Modes:**
+- **Desktop**: Tauri launcher spawns host server, UI in embedded webview
+- **Docker**: Host server in container, UI served or separate
+- **Cloud**: Managed host servers with multi-tenant storage (future)
+
+## Directory Structure
 
 ```
 spiritstream/
-├── src-frontend/              # React frontend
-│   ├── components/            # React components
-│   │   ├── ui/               # Base UI components
-│   │   ├── layout/           # Layout components
-│   │   ├── profile/          # Profile management
-│   │   ├── stream/           # Streaming controls
-│   │   └── settings/         # Settings panels
-│   ├── hooks/                # Custom React hooks
-│   ├── stores/               # State management
-│   ├── lib/                  # Utilities
-│   ├── types/                # TypeScript types
-│   ├── styles/               # Global styles + Tailwind
-│   │   └── tokens.css        # Design system tokens
-│   ├── App.tsx
-│   └── main.tsx
-├── src-tauri/                 # Rust backend
-│   ├── src/
-│   │   ├── main.rs           # Tauri entry point
-│   │   ├── commands/         # Tauri commands
-│   │   │   ├── mod.rs
-│   │   │   ├── profile.rs
-│   │   │   ├── stream.rs
-│   │   │   └── system.rs
-│   │   ├── services/         # Business logic
-│   │   │   ├── mod.rs
-│   │   │   ├── profile_manager.rs
-│   │   │   ├── ffmpeg_handler.rs
-│   │   │   └── encryption.rs
-│   │   ├── models/           # Data structures
-│   │   └── utils/            # Utilities
-│   ├── Cargo.toml
-│   └── tauri.conf.json
-├── .claude/                   # Claude Code config
-│   ├── claudedocs/           # Documentation
-│   ├── commands/             # Custom commands
-│   └── rules/                # Coding standards
-├── tailwind.config.js
-├── vite.config.ts
-├── package.json
-└── tsconfig.json
+├── apps/
+│   ├── web/                      # React frontend (standalone)
+│   │   ├── package.json          # @spiritstream/web
+│   │   ├── vite.config.ts
+│   │   ├── index.html
+│   │   └── src/
+│   │       ├── components/       # React components
+│   │       │   ├── ui/          # Base UI components
+│   │       │   ├── layout/      # Layout components
+│   │       │   ├── stream/      # Streaming controls
+│   │       │   └── modals/      # Modal dialogs
+│   │       ├── hooks/           # Custom React hooks
+│   │       ├── stores/          # Zustand state management
+│   │       ├── lib/
+│   │       │   └── backend/     # Backend abstraction (Tauri/HTTP)
+│   │       ├── types/           # TypeScript types
+│   │       ├── styles/          # Global styles + Tailwind
+│   │       ├── locales/         # i18n translations
+│   │       └── views/           # Page views
+│   │
+│   └── desktop/                  # Tauri wrapper (minimal)
+│       ├── package.json          # @spiritstream/desktop
+│       ├── vite.config.ts        # Points to ../web
+│       └── src-tauri/
+│           ├── Cargo.toml        # Minimal deps (launcher only)
+│           ├── tauri.conf.json   # Sidecar config
+│           ├── binaries/         # Server sidecar binary
+│           └── src/main.rs       # Launcher (spawns server)
+│
+├── server/                       # Standalone Rust backend
+│   ├── Cargo.toml                # No Tauri dependencies
+│   └── src/
+│       ├── main.rs               # Axum HTTP server
+│       ├── lib.rs
+│       ├── commands/             # Business logic
+│       ├── models/               # Domain models
+│       └── services/             # Service layer
+│
+├── packages/
+│   └── shared/                   # Shared TypeScript types (future)
+│
+├── docker/
+│   ├── Dockerfile                # Backend container
+│   └── docker-compose.yml
+│
+├── .claude/                      # Claude Code config
+│   ├── claudedocs/              # Documentation
+│   ├── commands/                # Custom commands
+│   └── rules/                   # Coding standards
+│
+├── pnpm-workspace.yaml           # Workspace config
+├── turbo.json                    # Build orchestration
+└── package.json                  # Root workspace
 ```
 
 ## Core Domain Models
@@ -212,28 +235,55 @@ Theme tokens are defined as CSS custom properties:
 
 See full token list in design system research document.
 
-## Build Commands (Target)
+## Build Commands
 
 ```bash
-# Development
-pnpm run dev              # Start Vite dev server + Tauri
+# Development Modes
+pnpm dev                  # All workspaces in parallel (Turbo)
+pnpm dev:web              # Frontend only (localhost:5173)
+pnpm dev:desktop          # Desktop app (Tauri + server sidecar)
+pnpm backend:dev          # Standalone HTTP server (localhost:8008)
 
 # Build
-pnpm run build            # Production build
-pnpm run tauri build      # Package for distribution
+pnpm build                # All workspaces (Turbo)
+pnpm build:web            # Frontend only
+pnpm build:desktop        # Desktop app with server sidecar
+pnpm backend:build        # Rust server release build
 
 # Type checking
-pnpm run typecheck        # Check TypeScript
-cargo check              # Check Rust
+pnpm typecheck            # Check TypeScript (Turbo)
+cargo check --manifest-path server/Cargo.toml    # Check server
+cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml  # Check desktop
 
 # Linting
-pnpm run lint             # ESLint + Prettier
-cargo clippy             # Rust linting
+pnpm lint                 # ESLint (Turbo)
+pnpm format               # Prettier
+```
+
+## Environment Variables
+
+```bash
+# Frontend (Vite)
+VITE_BACKEND_MODE=http              # Force HTTP mode (auto-detects if not set)
+VITE_BACKEND_URL=http://host:8008   # Backend URL for HTTP mode
+VITE_BACKEND_TOKEN=secret           # Auth token
+
+# Backend Server
+SPIRITSTREAM_HOST=127.0.0.1         # Bind address (default localhost)
+SPIRITSTREAM_PORT=8008              # HTTP port
+SPIRITSTREAM_API_TOKEN=secret       # Auth token (optional)
+SPIRITSTREAM_UI_ENABLED=1           # Serve static UI files
 ```
 
 ## Security Model
 
-### Tauri Security (Target)
+### Remote Access Security
+- Default binding: `localhost:8008` (remote access opt-in)
+- Token authentication: Bearer header + WebSocket query param
+- Enforced only when token is configured
+- UI serving disabled by default
+
+### Tauri Security
 - Capability-based permissions
 - CSP headers enforced
 - IPC allowlist configuration
@@ -335,6 +385,7 @@ cargo clippy             # Rust linting
 ## Extended Documentation
 
 @.claude/claudedocs/index.md
+@.claude/claudedocs/web-app-split-master-plan.md
 @.claude/claudedocs/migration-status.md
 @.claude/claudedocs/passthrough-architecture.md
 @.claude/claudedocs/architecture-new.md

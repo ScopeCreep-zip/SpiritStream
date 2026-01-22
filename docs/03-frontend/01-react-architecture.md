@@ -87,7 +87,7 @@ flowchart TB
 ## Directory Structure
 
 ```
-src-frontend/
+apps/web/src/
 ├── components/
 │   ├── ui/                 # Base UI components
 │   │   ├── Button.tsx

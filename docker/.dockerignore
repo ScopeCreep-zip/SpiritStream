@@ -1,0 +1,81 @@
+# =============================================================================
+# SpiritStream Docker Build Ignore
+# =============================================================================
+# Place this file in the docker/ directory or copy to project root
+# =============================================================================
+
+# Git
+.git
+.gitignore
+
+# Node.js
+node_modules
+npm-debug.log
+yarn-error.log
+pnpm-debug.log
+
+# Build outputs (keep dist for UI serving)
+server/target/debug
+server/target/release
+!server/target/release/spiritstream-server
+apps/*/dist
+apps/desktop/src-tauri/target
+src-tauri/target
+
+# IDE and editor files
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Development files
+*.log
+*.tmp
+.env
+.env.local
+.env.development
+.env.test
+
+# Documentation (not needed in image)
+docs
+screenshots
+*.md
+!docker/README.md
+
+# Claude/AI configuration
+.claude
+.mcp.json
+CLAUDE.md
+DEEPWIKI.md
+
+# Test files
+**/*.test.ts
+**/*.spec.ts
+__tests__
+
+# Local data directories (keep themes and data for build script)
+logs
+
+# Development configuration
+.prettierrc
+.prettierignore
+eslint.config.js
+tsconfig.json
+tsconfig.node.json
+tsconfig.frontend.json
+turbo.json
+
+# GitHub
+.github
+
+# Scripts (not needed in runtime - but keep for build)
+setup.sh
+setup.ps1
+
+# Desktop app (not needed for server container)
+apps/desktop

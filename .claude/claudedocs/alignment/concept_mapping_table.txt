@@ -1,8 +1,0 @@
-| Concept       | Owns                   | Maps To (FFmpeg)                    | Notes                                  |
-| ------------- | ---------------------- | ----------------------------------- | -------------------------------------- |
-| Profile       | All subordinate config | N/A                                 | Persistence boundary                   |
-| RTMP Input    | Address, port, app     | `-listen 1 -i rtmp://host:port/app` | Exactly one per profile                |
-| Output Group  | Encoding rules         | `-c:v`, `-b:v`, `-vf`, `-c:a`, etc. | One encode → many outputs              |
-| Stream Target | Destination            | Output URL(s)                       | Implemented as multiple FFmpeg outputs |
-| Stream Key    | Credential             | URL concatenation                   | Must not be logged                     |
-| Container     | Muxing                 | `-f flv`                            | RTMP requires FLV                      |

@@ -1,0 +1,64 @@
+[package]
+name = "spiritstream-server"
+version = "1.1.1"
+description = "SpiritStream Backend Server - Multi-Destination Streaming Application"
+authors = ["SpiritStream Contributors"]
+license = "ISC"
+repository = "https://github.com/ScopeCreep-zip/SpiritStream"
+edition = "2021"
+rust-version = "1.77.2"
+
+[dependencies]
+# HTTP/WS
+axum = { version = "0.7", features = ["json", "ws"] }
+tower-http = { version = "0.5", features = ["cors", "fs", "set-header"] }
+tokio = { version = "1.0", features = ["full"] }
+tower-cookies = "0.10"
+
+# Security
+subtle = "2.5"
+governor = "0.6"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Encryption
+aes-gcm = "0.10"
+argon2 = "0.5"
+rand = "0.8"
+base64 = "0.22"
+zeroize = { version = "1.7", features = ["derive"] }
+
+# Utilities
+uuid = { version = "1.0", features = ["v4", "serde"] }
+log = { version = "0.4", features = ["std"] }
+thiserror = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+regex = "1.10"
+notify = "6"
+dirs-next = "2.0"
+opener = "0.7"
+
+# FFmpeg Download
+reqwest = { version = "0.11", features = ["stream", "json"] }
+zip = "0.6"
+tar = "0.4"
+xz2 = "0.1"
+flate2 = "1.0"
+sha2 = "0.10"
+hex = "0.4"
+futures-util = "0.3"
+tempfile = "3.10"
+
+# Platform-specific
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["fileapi", "winnt"] }
+
+[build-dependencies]
+serde_json = "1.0"
+
+[profile.release]
+lto = true
+strip = true
+opt-level = 3

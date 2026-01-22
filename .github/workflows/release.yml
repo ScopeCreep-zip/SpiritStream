@@ -22,12 +22,16 @@ jobs:
           echo "package.json version: $PKG_VERSION"
 
           # Extract version from tauri.conf.json
-          TAURI_VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          TAURI_VERSION=$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")
           echo "tauri.conf.json version: $TAURI_VERSION"
 
-          # Extract version from Cargo.toml
-          CARGO_VERSION=$(grep -m1 '^version' src-tauri/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
-          echo "Cargo.toml version: $CARGO_VERSION"
+          # Extract version from desktop Cargo.toml
+          CARGO_VERSION=$(grep -m1 '^version' apps/desktop/src-tauri/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "desktop Cargo.toml version: $CARGO_VERSION"
+
+          # Extract version from server Cargo.toml
+          SERVER_VERSION=$(grep -m1 '^version' server/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "server Cargo.toml version: $SERVER_VERSION"
 
           # Check all versions match
           MISMATCH=0
@@ -40,7 +44,11 @@ jobs:
             MISMATCH=1
           fi
           if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
-            echo "❌ ERROR: Git tag ($TAG_VERSION) doesn't match Cargo.toml ($CARGO_VERSION)"
+            echo "❌ ERROR: Git tag ($TAG_VERSION) doesn't match desktop Cargo.toml ($CARGO_VERSION)"
+            MISMATCH=1
+          fi
+          if [ "$TAG_VERSION" != "$SERVER_VERSION" ]; then
+            echo "❌ ERROR: Git tag ($TAG_VERSION) doesn't match server Cargo.toml ($SERVER_VERSION)"
             MISMATCH=1
           fi
 
@@ -92,7 +100,9 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: './src-tauri -> target'
+          workspaces: |
+            server -> target
+            apps/desktop/src-tauri -> target
 
       - name: Install dependencies (Ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
@@ -108,6 +118,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          projectPath: apps/desktop
           tauriScript: pnpm tauri
           tagName: ${{ github.ref_name }}
           releaseName: 'SpiritStream ${{ github.ref_name }}'

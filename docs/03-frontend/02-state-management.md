@@ -117,7 +117,7 @@ The profileStore manages:
 - Output group and stream target mutations
 - Auto-save on modifications
 
-**File:** [`src-frontend/stores/profileStore.ts`](../../src-frontend/stores/profileStore.ts)
+**File:** [`apps/web/src/stores/profileStore.ts`](../../apps/web/src/stores/profileStore.ts)
 
 ### State Interface
 
@@ -272,7 +272,7 @@ The streamStore manages:
 - Stream target enable/disable state
 - Uptime tracking
 
-**File:** [`src-frontend/stores/streamStore.ts`](../../src-frontend/stores/streamStore.ts)
+**File:** [`apps/web/src/stores/streamStore.ts`](../../apps/web/src/stores/streamStore.ts)
 
 ### State Interface
 
@@ -421,7 +421,7 @@ The themeStore manages:
 - Custom theme token application
 - Theme mode (light/dark)
 
-**File:** [`src-frontend/stores/themeStore.ts`](../../src-frontend/stores/themeStore.ts)
+**File:** [`apps/web/src/stores/themeStore.ts`](../../apps/web/src/stores/themeStore.ts)
 
 ### State Interface
 
@@ -498,7 +498,7 @@ The languageStore manages:
 - i18next language switching
 - Settings synchronization
 
-**File:** [`src-frontend/stores/languageStore.ts`](../../src-frontend/stores/languageStore.ts)
+**File:** [`apps/web/src/stores/languageStore.ts`](../../apps/web/src/stores/languageStore.ts)
 
 ### State Interface
 

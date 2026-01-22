@@ -1,0 +1,21 @@
+{
+  "name": "@spiritstream/desktop",
+  "version": "1.1.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:server": "tsx ../../scripts/build-server.ts",
+    "build:server:release": "tsx ../../scripts/build-server.ts --release",
+    "dev": "pnpm run build:server && tauri dev",
+    "build": "pnpm run build:server:release && tauri build",
+    "build:debug": "pnpm run build:server && tauri build --debug",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.9.6",
+    "tsx": "^4.21.0"
+  },
+  "dependencies": {
+    "@tauri-apps/plugin-http": "~2.5.6"
+  }
+}

@@ -20,7 +20,10 @@
       "Bash(cat:*)",
       "Bash(cargo clean:*)",
       "Bash(cargo build:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(timeout:*)",
+      "Bash(tasklist:*)",
+      "Bash(curl:*)"
     ]
   }
 }

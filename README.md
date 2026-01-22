@@ -56,8 +56,8 @@ The setup script installs: Rust, FFmpeg, platform build tools, and pnpm dependen
 
 After setup completes, restart your terminal and run:
 ```bash
-pnpm run dev    # Development mode
-pnpm run build  # Production build
+pnpm dev       # Development mode (all workspaces)
+pnpm build     # Production build
 ```
 
 ---
@@ -86,6 +86,7 @@ Download the latest release from [Releases](https://github.com/ScopeCreep-zip/Sp
 | Requirement | Installation |
 |-------------|--------------|
 | Node.js 18+ | [nodejs.org](https://nodejs.org/) |
+| pnpm 8+ | `npm install -g pnpm` |
 | Rust 1.70+ | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
 | FFmpeg | See above |
 | Platform tools | [Tauri Prerequisites](https://tauri.app/start/prerequisites/) |
@@ -96,10 +97,10 @@ Download the latest release from [Releases](https://github.com/ScopeCreep-zip/Sp
 git clone https://github.com/ScopeCreep-zip/SpiritStream.git
 cd spiritstream
 pnpm install
-pnpm run build
+pnpm build
 ```
 
-Build output: `src-tauri/target/release/bundle/`
+Build output: `apps/desktop/src-tauri/target/release/bundle/`
 
 ## Usage
 
@@ -110,13 +111,76 @@ Build output: `src-tauri/target/release/bundle/`
 
 ## Development
 
+This is a pnpm monorepo with multiple workspaces:
+- `apps/web` - React frontend (@spiritstream/web)
+- `apps/desktop` - Tauri desktop wrapper (@spiritstream/desktop)
+- `server` - Standalone Rust HTTP server
+
+### Development Modes
+
+| Mode | Command | Description |
+|------|---------|-------------|
+| **Desktop** | `pnpm dev` | Tauri app with embedded webview + server sidecar. The full desktop experience. |
+| **Web + Server** | `pnpm backend:dev` then `VITE_BACKEND_MODE=http pnpm dev:web` | Browser-based UI connecting to standalone HTTP server. For remote access or Docker development. |
+| **Frontend Only** | `pnpm dev:web` | Just the React frontend (no backend). For UI-only work. |
+
+### Quick Commands
+
 ```bash
-pnpm run dev          # Start development server with hot reload
-pnpm run build        # Production build
-pnpm run build:debug  # Debug build with symbols
-pnpm run typecheck    # Check TypeScript types
-pnpm run check        # Check Rust code
+pnpm dev             # Desktop app (recommended for most development)
+pnpm dev:web         # Frontend only (localhost:5173)
+pnpm dev:desktop     # Same as pnpm dev
+pnpm backend:dev     # Standalone HTTP server (localhost:8008)
+pnpm build           # Production build (all workspaces)
+pnpm typecheck       # Check TypeScript types
+cargo check --manifest-path server/Cargo.toml  # Check Rust server
 ```
+
+### Backend Server (HTTP/WebSocket)
+
+Run the standalone backend server for browser-based or Docker usage:
+
+```bash
+pnpm backend:dev
+```
+
+Environment variables:
+
+- `SPIRITSTREAM_HOST` (default: `127.0.0.1`)
+- `SPIRITSTREAM_PORT` (default: `8008`)
+- `SPIRITSTREAM_DATA_DIR` (default: `./data`)
+- `SPIRITSTREAM_LOG_DIR` (default: `./data/logs`)
+- `SPIRITSTREAM_THEMES_DIR` (default: `./themes`)
+- `SPIRITSTREAM_UI_DIR` (default: `./dist`)
+- `SPIRITSTREAM_API_TOKEN` (optional; single shared token for HTTP auth)
+- `SPIRITSTREAM_UI_ENABLED` (optional; `1` to serve the web UI from the host)
+- `SPIRITSTREAM_UI_URL` (launcher-only; default: `http://localhost:1420` in dev, `http://HOST:PORT` in release)
+- `SPIRITSTREAM_SERVER_PATH` (launcher-only; absolute path to the host binary)
+- `SPIRITSTREAM_LAUNCHER_HIDE_WINDOW` (launcher-only; `1` to hide launcher window)
+- `SPIRITSTREAM_LAUNCHER_OPEN_EXTERNAL` (launcher-only; `1` to open the UI in your browser)
+
+Sample values live in `.env.example`.
+
+Frontend configuration for the web UI:
+
+```bash
+VITE_BACKEND_MODE=http
+VITE_BACKEND_URL=http://127.0.0.1:8008
+VITE_BACKEND_WS_URL=ws://127.0.0.1:8008/ws
+VITE_BACKEND_TOKEN=
+```
+
+Then start the frontend with:
+
+```bash
+VITE_BACKEND_MODE=http pnpm dev:web
+```
+
+### Launcher (Desktop Host)
+
+The Tauri desktop binary now starts the host server and can open the UI URL in your default browser.
+Use `SPIRITSTREAM_UI_URL` to point it at a local Vite dev server or a cloud UI, and `SPIRITSTREAM_SERVER_PATH`
+to override the host binary location.
 
 ## License
 

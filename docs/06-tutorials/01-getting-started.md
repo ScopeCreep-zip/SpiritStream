@@ -10,7 +10,14 @@ This tutorial walks you through installing, configuring, and running SpiritStrea
 
 ## What is SpiritStream?
 
-SpiritStream is a desktop application for streaming to multiple destinations simultaneously. Unlike traditional streaming software that connects directly to a single platform, SpiritStream acts as an RTMP relay server—accepting your stream from encoding software like OBS Studio and redistributing it to YouTube, Twitch, Kick, Facebook, and custom RTMP servers.
+SpiritStream is an application for streaming to multiple destinations simultaneously. Unlike traditional streaming software that connects directly to a single platform, SpiritStream acts as an RTMP relay server—accepting your stream from encoding software like OBS Studio and redistributing it to YouTube, Twitch, Kick, Facebook, and custom RTMP servers.
+
+SpiritStream can be deployed in multiple ways:
+- **Desktop App** — Download and install for local streaming with GPU acceleration (this tutorial)
+- **Docker** — Self-host on your own server for remote access
+- **Cloud** — Managed service (coming soon)
+
+For Docker deployment, see the [Distribution Strategy](../07-deployment/03-distribution-strategy.md) documentation.
 
 ## Who Should Read This
 

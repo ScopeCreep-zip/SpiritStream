@@ -91,10 +91,19 @@ git clone https://github.com/ScopeCreep-zip/SpiritStream.git
 cd SpiritStream
 ```
 
+### Install pnpm
+
+```bash
+# Install pnpm globally
+npm install -g pnpm
+```
+
 ### Install Dependencies
 
 ```bash
+# Install all workspace dependencies
 # Install frontend dependencies
+>>>>>>> origin/main
 pnpm install
 
 # Rust dependencies are handled automatically by Cargo
@@ -106,74 +115,98 @@ pnpm install
 
 ```
 SpiritStream/
-├── src-frontend/              # React frontend
-│   ├── components/            # React components
-│   │   ├── ui/               # Base UI components
-│   │   ├── layout/           # Layout components
-│   │   ├── profile/          # Profile management
-│   │   ├── stream/           # Streaming controls
-│   │   └── settings/         # Settings panels
-│   ├── hooks/                # Custom React hooks
-│   ├── stores/               # Zustand state stores
-│   ├── lib/                  # Utilities and API wrapper
-│   ├── types/                # TypeScript type definitions
-│   ├── locales/              # i18n translation files
-│   └── styles/               # CSS and design tokens
+├── apps/
+│   ├── web/                       # React frontend (standalone)
+│   │   ├── src/
+│   │   │   ├── components/        # React components
+│   │   │   │   ├── ui/           # Base UI components
+│   │   │   │   ├── layout/       # Layout components
+│   │   │   │   ├── stream/       # Streaming controls
+│   │   │   │   └── modals/       # Modal dialogs
+│   │   │   ├── hooks/            # Custom React hooks
+│   │   │   ├── stores/           # Zustand state stores
+│   │   │   ├── lib/              # Utilities and API wrapper
+│   │   │   │   └── backend/      # Backend abstraction (Tauri/HTTP)
+│   │   │   ├── types/            # TypeScript definitions
+│   │   │   ├── locales/          # i18n translation files
+│   │   │   ├── styles/           # CSS and design tokens
+│   │   │   └── views/            # Page views
+│   │   ├── package.json          # @spiritstream/web
+│   │   └── vite.config.ts
+│   │
+│   └── desktop/                   # Tauri wrapper (minimal)
+│       ├── package.json          # @spiritstream/desktop
+│       └── src-tauri/
+│           ├── src/main.rs       # Launcher (spawns server)
+│           ├── Cargo.toml        # Minimal deps (launcher only)
+│           └── tauri.conf.json   # Sidecar configuration
 │
-├── src-tauri/                 # Rust backend
+├── server/                        # Standalone Rust backend
 │   ├── src/
-│   │   ├── commands/         # Tauri command handlers
-│   │   ├── services/         # Business logic
-│   │   ├── models/           # Data structures
-│   │   └── utils/            # Helper functions
-│   ├── Cargo.toml            # Rust dependencies
-│   └── tauri.conf.json       # Tauri configuration
+│   │   ├── main.rs               # Axum HTTP server
+│   │   ├── commands/             # Business logic
+│   │   ├── services/             # Service layer
+│   │   └── models/               # Domain models
+│   └── Cargo.toml
 │
-├── docs/                      # Documentation
-├── public/                    # Static assets
-├── package.json              # Node.js config
-├── vite.config.ts            # Vite bundler config
-├── tailwind.config.js        # Tailwind CSS config
-└── tsconfig.json             # TypeScript config
+├── docs/                          # Documentation
+├── docker/                        # Docker configuration
+├── pnpm-workspace.yaml           # Workspace config
+├── turbo.json                    # Build orchestration
+└── package.json                  # Root workspace
 ```
 
 ### Key Files
 
 | File | Purpose |
 |------|---------|
-| `src-tauri/src/main.rs` | Application entry point |
-| `src-frontend/App.tsx` | React root component |
-| `src-frontend/stores/` | Application state management |
-| `src-tauri/src/commands/` | IPC command handlers |
-| `src-tauri/tauri.conf.json` | App configuration, permissions |
+| `server/src/main.rs` | HTTP server entry point |
+| `apps/web/src/App.tsx` | React root component |
+| `apps/web/src/stores/` | Application state management |
+| `apps/web/src/lib/backend/` | Backend abstraction layer |
+| `apps/desktop/src-tauri/src/main.rs` | Desktop launcher |
+| `apps/desktop/src-tauri/tauri.conf.json` | App configuration, permissions |
 
 ---
 
 ## Running in Development
 
-### Start Development Server
+### Development Modes
+
+| Mode | Command | Use Case |
+|------|---------|----------|
+| Desktop | `pnpm dev` | Full desktop app with embedded server |
+| Web Only | `pnpm dev:web` | Frontend development (no backend) |
+| Server Only | `pnpm backend:dev` | Backend API development |
+| HTTP Client | `VITE_BACKEND_MODE=http pnpm dev:web` | Test browser-based remote access |
+
+### Start Desktop Development
 
 ```bash
+pnpm dev
 pnpm run tauri dev
+>>>>>>> origin/main
 ```
 
 This command:
 
-1. Starts the Vite dev server (frontend hot reload)
-2. Compiles the Rust backend
-3. Opens the application window
+1. Builds the standalone server
+2. Starts the Tauri launcher
+3. Spawns the server as a sidecar process
+4. Opens the application window with frontend hot reload
 
 ### Development URLs
 
 | Service | URL |
 |---------|-----|
 | Frontend Dev Server | http://localhost:5173 |
+| Backend API Server | http://localhost:8008 |
 | Tauri DevTools | Right-click → Inspect |
 
 ### Hot Reload
 
 - **Frontend changes** — Automatically reloaded
-- **Rust changes** — Triggers recompilation (takes a few seconds)
+- **Server changes** — Requires `pnpm backend:build` then restart
 - **Tauri config changes** — Requires restart
 
 ---
@@ -185,15 +218,21 @@ This command:
 **Formatting:** We use Prettier with the project's `.prettierrc`:
 
 ```bash
+pnpm format        # Format all files
+pnpm format:check  # Check without modifying
 pnpm run format        # Format all files
 pnpm run format:check  # Check without modifying
+>>>>>>> origin/main
 ```
 
 **Linting:** ESLint catches common issues:
 
 ```bash
+pnpm lint          # Check for issues
+pnpm lint:fix      # Auto-fix where possible
 pnpm run lint          # Check for issues
 pnpm run lint:fix      # Auto-fix where possible
+>>>>>>> origin/main
 ```
 
 **Conventions:**
@@ -224,16 +263,22 @@ const MAX_RETRY_COUNT = 3;
 **Formatting:** Use rustfmt:
 
 ```bash
-cd src-tauri
-cargo fmt             # Format all files
-cargo fmt -- --check  # Check without modifying
+# Server
+cargo fmt --manifest-path server/Cargo.toml
+cargo fmt --manifest-path server/Cargo.toml -- --check
+
+# Desktop launcher
+cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml
 ```
 
 **Linting:** Clippy catches common issues:
 
 ```bash
-cargo clippy          # Check for issues
-cargo clippy --fix    # Auto-fix where possible
+# Server
+cargo clippy --manifest-path server/Cargo.toml
+
+# Desktop launcher
+cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml
 ```
 
 **Conventions:**
@@ -355,9 +400,13 @@ flowchart TD
 
 3. **Test your changes:**
    ```bash
+   pnpm dev                                  # Manual testing
+   pnpm lint                                 # Frontend linting
+   cargo clippy --manifest-path server/Cargo.toml  # Backend linting
    pnpm run tauri dev    # Manual testing
    pnpm run lint         # Frontend linting
    cd src-tauri && cargo clippy  # Backend linting
+>>>>>>> origin/main
    ```
 
 4. **Commit with conventional format:**
@@ -407,7 +456,9 @@ How you tested the changes.
 Before requesting review:
 
 - [ ] Code follows style guidelines
+- [ ] `pnpm lint` passes
 - [ ] `pnpm run lint` passes
+>>>>>>> origin/main
 - [ ] `cargo clippy` passes
 - [ ] Manual testing completed
 - [ ] Documentation updated (if needed)
@@ -421,19 +472,24 @@ Before requesting review:
 
 Most testing is currently manual:
 
+1. Run `pnpm dev`
 1. Run `pnpm run tauri dev`
+>>>>>>> origin/main
 2. Test affected features
 3. Check browser console for errors
-4. Check Rust logs for backend issues
+4. Check server logs for backend issues
 
 ### Type Checking
 
 ```bash
 # Frontend
+pnpm typecheck
 pnpm run typecheck
+>>>>>>> origin/main
 
 # Backend
-cd src-tauri && cargo check
+cargo check --manifest-path server/Cargo.toml
+cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 ```
 
 ### Building for Production
@@ -441,40 +497,39 @@ cd src-tauri && cargo check
 Test that production builds work:
 
 ```bash
+pnpm build:desktop
 pnpm run tauri build
+>>>>>>> origin/main
 ```
 
 ---
 
 ## Common Tasks
 
-### Adding a Tauri Command
+### Adding a Server Command
 
-1. **Define the command** in `src-tauri/src/commands/`:
+1. **Define the command** in `server/src/commands/`:
 
    ```rust
-   #[tauri::command]
    pub async fn my_command(param: String) -> Result<String, String> {
        // Implementation
        Ok("result".to_string())
    }
    ```
 
-2. **Register in `main.rs`:**
+2. **Register the HTTP route** in `server/src/main.rs`:
 
    ```rust
-   .invoke_handler(tauri::generate_handler![
-       // ... existing commands
-       commands::my_command,
-   ])
+   .route("/api/invoke/my_command", post(handle_my_command))
    ```
 
-3. **Call from frontend:**
+3. **Call from frontend** via the backend abstraction:
 
    ```typescript
-   import { invoke } from '@tauri-apps/api/core';
+   // The backend abstraction handles Tauri IPC or HTTP automatically
+   import { api } from '@/lib/backend';
 
-   const result = await invoke<string>('my_command', { param: 'value' });
+   const result = await api.system.myCommand({ param: 'value' });
    ```
 
 ### Adding a React Component
@@ -482,7 +537,7 @@ pnpm run tauri build
 1. **Create the component** in appropriate directory:
 
    ```typescript
-   // src-frontend/components/ui/MyComponent.tsx
+   // apps/web/src/components/ui/MyComponent.tsx
    interface MyComponentProps {
      value: string;
    }
@@ -495,14 +550,14 @@ pnpm run tauri build
 2. **Export from index** (if in a grouped folder):
 
    ```typescript
-   // src-frontend/components/ui/index.ts
+   // apps/web/src/components/ui/index.ts
    export * from './MyComponent';
    ```
 
 ### Adding a Zustand Store
 
 ```typescript
-// src-frontend/stores/myStore.ts
+// apps/web/src/stores/myStore.ts
 import { create } from 'zustand';
 
 interface MyState {
