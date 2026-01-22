@@ -38,7 +38,9 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: './src-tauri -> target'
+          workspaces: |
+            server -> target
+            apps/desktop/src-tauri -> target
 
       - name: Install dependencies (Ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
@@ -52,14 +54,20 @@ jobs:
       - name: TypeScript check
         run: npm run typecheck
 
-      - name: Rust check
-        run: cargo check --manifest-path src-tauri/Cargo.toml
+      - name: Rust check (server)
+        run: cargo check --manifest-path server/Cargo.toml
 
-      - name: Rust clippy
-        run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+      - name: Rust check (desktop)
+        run: cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
+
+      - name: Rust clippy (server)
+        run: cargo clippy --manifest-path server/Cargo.toml -- -D warnings
+
+      - name: Rust clippy (desktop)
+        run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml -- -D warnings
 
       - name: Build frontend
-        run: npm run vite:build
+        run: npm run build:web
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
