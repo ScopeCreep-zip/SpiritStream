@@ -586,4 +586,46 @@ t('stream.bitrate', { value: '6000' })
 
 ---
 
+## Production Build: CSP Configuration
+
+### The Problem
+
+The theme system dynamically injects CSS via JavaScript to apply theme tokens. This works in development but can fail in production builds due to Tauri's automatic Content Security Policy (CSP) modifications.
+
+### Why It Happens
+
+Tauri automatically injects nonces and hashes into the CSP at compile time for `<script>` and `<style>` tags. Even if you add `'unsafe-inline'` to `style-src`, Tauri's nonce injection can override it, blocking dynamically created `<style>` elements.
+
+### The Fix
+
+Add `dangerousDisableAssetCspModification` to prevent Tauri from modifying the `style-src` directive:
+
+```json
+// apps/desktop/src-tauri/tauri.conf.json
+{
+  "app": {
+    "security": {
+      "csp": "... style-src 'self' 'unsafe-inline' ...",
+      "devCsp": "...",
+      "dangerousDisableAssetCspModification": ["style-src"]
+    }
+  }
+}
+```
+
+### Why This Is Safe
+
+This configuration is safe for SpiritStream because:
+- Theme CSS is injected from our own backend (embedded or file-based themes)
+- We don't allow arbitrary user CSS injection
+- Only the `style-src` directive is affected; script security remains intact
+
+### Symptoms of Missing This Fix
+
+- Themes work in `pnpm dev` but not in production builds
+- Theme selection changes but colors don't update
+- No visible errors (CSP violations may only appear in browser DevTools)
+
+---
+
 **Related:** [React Architecture](./01-react-architecture.md) | [Component Library](./03-component-library.md) | [State Management](./02-state-management.md)
