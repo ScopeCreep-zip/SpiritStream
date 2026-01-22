@@ -1,13 +1,36 @@
+/**
+ * Backend communication mode.
+ *
+ * - `'http'`: Default mode. All API calls go through HTTP/WebSocket to a
+ *   backend server. Used by:
+ *   - Desktop (Tauri spawns server sidecar)
+ *   - Docker containers
+ *   - Remote browser access
+ *
+ * - `'tauri'`: Legacy mode for testing. Uses Tauri IPC directly, bypassing
+ *   the HTTP server. Only activated via `VITE_BACKEND_MODE=tauri` env var.
+ *   Not recommended for production use.
+ */
 export type BackendMode = 'tauri' | 'http';
 
-// Check if we're running inside a Tauri webview
+/**
+ * Check if we're running inside a Tauri webview.
+ * Note: This doesn't determine the backend mode - even in Tauri, we use HTTP
+ * by default because the desktop app spawns a backend server.
+ */
 export const isTauri = (): boolean => {
   return typeof window !== 'undefined' && '__TAURI__' in window;
 };
 
-// The desktop app is a minimal launcher that spawns a backend server.
-// All communication happens over HTTP, not Tauri IPC commands.
-// The 'tauri' mode is only used if explicitly set via env var (for legacy/testing).
+/**
+ * The active backend communication mode.
+ *
+ * Defaults to 'http' because the desktop app architecture uses a Rust HTTP
+ * server for all business logic. The frontend communicates via HTTP/WebSocket
+ * regardless of whether it's running in Tauri, Docker, or a browser.
+ *
+ * Override with `VITE_BACKEND_MODE=tauri` for legacy testing only.
+ */
 export const backendMode: BackendMode = (() => {
   const mode = import.meta.env.VITE_BACKEND_MODE;
   if (mode === 'tauri' || mode === 'http') {
@@ -140,6 +163,39 @@ export const getBackendWsUrl = (): string => {
   const baseUrl = getBackendBaseUrl();
   return import.meta.env.VITE_BACKEND_WS_URL || defaultWsUrl(baseUrl);
 };
+
+/**
+ * Update the backend URL when settings change.
+ *
+ * Call this when the user changes backendHost/backendPort in settings
+ * to persist the new URL to localStorage. This ensures subsequent API
+ * calls and WebSocket connections use the new address.
+ *
+ * Note: After calling this, the WebSocket should be reconnected to
+ * use the new URL. Call `disconnectSocket()` followed by `initConnection()`
+ * from httpEvents.ts to force reconnection.
+ *
+ * @param host - The new backend host (e.g., "127.0.0.1" or "192.168.1.100")
+ * @param port - The new backend port (e.g., 8008)
+ */
+export function updateBackendUrl(host: string, port: number): void {
+  if (typeof window === 'undefined') return;
+
+  const newUrl = `http://${host}:${port}`;
+  window.localStorage.setItem(backendUrlStorageKey, newUrl);
+
+  console.log(`[env] Backend URL updated to: ${newUrl}`);
+}
+
+/**
+ * Clear the stored backend URL, reverting to defaults.
+ * Useful when resetting settings.
+ */
+export function clearBackendUrl(): void {
+  if (typeof window === 'undefined') return;
+  window.localStorage.removeItem(backendUrlStorageKey);
+  console.log('[env] Backend URL cleared, will use defaults');
+}
 
 // ============================================================================
 // Authentication API (HttpOnly Cookie-based)

@@ -6,6 +6,8 @@ export {
   backendUrlStorageKey,
   getBackendBaseUrl,
   getBackendWsUrl,
+  updateBackendUrl,
+  clearBackendUrl,
   checkAuth,
   login,
 } from './env';

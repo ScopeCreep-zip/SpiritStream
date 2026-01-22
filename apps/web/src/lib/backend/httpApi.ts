@@ -23,7 +23,7 @@ async function invokeHttp<T>(command: string, args?: InvokeArgs): Promise<T> {
   const url = `${baseUrl}/api/invoke/${command}`;
 
   // Debug logging for connection issues
-  console.debug(`[httpApi] ${command} -> ${url}`);
+  console.log(`[httpApi] ${command} -> ${url}`, args);
 
   const response = await safeFetch(url, {
     method: 'POST',
@@ -35,7 +35,17 @@ async function invokeHttp<T>(command: string, args?: InvokeArgs): Promise<T> {
   });
 
   const text = await response.text();
-  const parsed = text ? (JSON.parse(text) as InvokeResponse<T> | T) : undefined;
+
+  // Safely parse JSON response, handling malformed responses gracefully
+  let parsed: InvokeResponse<T> | T | undefined;
+  if (text) {
+    try {
+      parsed = JSON.parse(text) as InvokeResponse<T> | T;
+    } catch (e) {
+      console.error('[httpApi] Invalid JSON response:', text.slice(0, 200));
+      throw new Error('Invalid response from server');
+    }
+  }
 
   if (!response.ok) {
     const errorMessage =
@@ -48,6 +58,15 @@ async function invokeHttp<T>(command: string, args?: InvokeArgs): Promise<T> {
   if (parsed && typeof parsed === 'object' && 'ok' in parsed) {
     if (!parsed.ok) {
       throw new Error(parsed.error || 'Request failed');
+    }
+    // Log theme token responses for debugging
+    if (command === 'get_theme_tokens') {
+      const data = parsed.data as Record<string, unknown>;
+      console.log(`[httpApi] get_theme_tokens response:`, {
+        dataType: typeof data,
+        keys: data ? Object.keys(data).length : 0,
+        sample: data ? Object.entries(data).slice(0, 2) : [],
+      });
     }
     return parsed.data;
   }
@@ -77,11 +96,15 @@ export const api = {
     ensureOrderIndexes: () => invokeHttp<Record<string, number>>('ensure_order_indexes'),
   },
   stream: {
+    /** Start streaming for a single output group. Returns the FFmpeg process PID */
     start: (group: OutputGroup, incomingUrl: string) =>
       invokeHttp<number>('start_stream', { group, incomingUrl }),
+    /** Start all output groups. Returns array of FFmpeg process PIDs */
     startAll: (groups: OutputGroup[], incomingUrl: string) =>
       invokeHttp<number[]>('start_all_streams', { groups, incomingUrl }),
+    /** Stop streaming for a specific output group */
     stop: (groupId: string) => invokeHttp<void>('stop_stream', { groupId }),
+    /** Stop all active streams */
     stopAll: () => invokeHttp<void>('stop_all_streams'),
     getActiveCount: () => invokeHttp<number>('get_active_stream_count'),
     isGroupStreaming: (groupId: string) =>
@@ -93,8 +116,11 @@ export const api = {
       invokeHttp<boolean>('is_target_disabled', { targetId }),
   },
   system: {
+    /** Get available video and audio encoders detected on the system */
     getEncoders: () => invokeHttp<Encoders>('get_encoders'),
+    /** Test FFmpeg installation. Returns version string (e.g., "ffmpeg version 6.0") on success */
     testFfmpeg: () => invokeHttp<string>('test_ffmpeg'),
+    /** Get path to bundled FFmpeg binary, or null if not bundled */
     getFfmpegPath: () => invokeHttp<string | null>('get_bundled_ffmpeg_path'),
     checkFfmpegUpdate: (installedVersion?: string) =>
       invokeHttp<FFmpegVersionInfo>('check_ffmpeg_update', { installedVersion }),

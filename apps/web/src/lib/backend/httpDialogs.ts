@@ -41,8 +41,32 @@ async function openFileViaInput(options?: OpenFileOptions): Promise<File | null>
   });
 }
 
+/**
+ * HTTP mode dialog implementations.
+ *
+ * In HTTP mode (browser context), native file path access is restricted
+ * by browser security sandbox. Methods that would return file paths
+ * return null instead. Use the text-based alternatives that work with
+ * the browser File API.
+ *
+ * For operations requiring actual file paths (e.g., opening folders),
+ * the dialogs.openExternal() method uses a server endpoint to perform
+ * the operation on the backend.
+ */
 export const dialogs = {
+  /**
+   * Returns null in HTTP mode.
+   *
+   * Browser security sandbox prevents accessing native file paths.
+   * Use openTextFile() instead, which uses the browser File API
+   * to read file contents without exposing the path.
+   */
   openFilePath: async (): Promise<string | null> => null,
+
+  /**
+   * Open a file and read its text content using browser File API.
+   * Works in HTTP mode unlike openFilePath().
+   */
   openTextFile: async (options?: OpenFileOptions): Promise<OpenTextResult | null> => {
     if (typeof window === 'undefined') return null;
 
@@ -66,8 +90,27 @@ export const dialogs = {
     if (!file) return null;
     return { name: file.name, content: await file.text() };
   },
+  /**
+   * Returns null in HTTP mode.
+   *
+   * Browser security prevents selecting directories and exposing paths.
+   * For opening a directory in the file manager, use openExternal()
+   * which delegates to the backend server.
+   */
   openDirectoryPath: async (): Promise<string | null> => null,
+
+  /**
+   * Returns null in HTTP mode.
+   *
+   * Browser security prevents accessing native save paths.
+   * Use saveTextFile() instead, which triggers a browser download.
+   */
   saveFilePath: async (): Promise<string | null> => null,
+
+  /**
+   * Save text content to a file using browser download.
+   * Triggers a download prompt in the browser.
+   */
   saveTextFile: async (options: SaveFileOptions & { content: string }): Promise<void> => {
     if (typeof window === 'undefined') return;
     const name = options.defaultPath || 'spiritstream-export.txt';
