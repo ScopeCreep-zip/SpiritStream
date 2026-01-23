@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=SpiritStream
+Comment=Multi-destination streaming application
+Exec=spiritstream %U
+Icon=spiritstream
+Terminal=false
+Categories=AudioVideo;Video;
+StartupWMClass=spiritstream

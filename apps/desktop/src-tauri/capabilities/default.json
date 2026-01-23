@@ -29,7 +29,28 @@
     "fs:allow-app-read-recursive",
     "fs:allow-app-write-recursive",
     "fs:allow-resource-read-recursive",
+    "fs:allow-exists",
+    "fs:allow-read",
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        "$HOME/**",
+        "$APPDATA/**",
+        "$LOCALAPPDATA/**",
+        "$DOCUMENT/**",
+        "$DOWNLOAD/**",
+        "$DESKTOP/**",
+        "$RESOURCE/**",
+        "C:\\Program Files\\**",
+        "C:\\Program Files (x86)\\**",
+        "/usr/local/bin/**",
+        "/usr/bin/**",
+        "/opt/**"
+      ]
+    },
     "dialog:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
     "log:default",
     {
       "identifier": "http:default",

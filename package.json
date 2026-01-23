@@ -50,7 +50,7 @@
     "desktop-app"
   ],
   "author": "SpiritStream Contributors",
-  "license": "ISC",
+  "license": "GPL-3.0",
   "engines": {
     "node": ">=20.0.0 <21.0.0 || >=22.0.0 <23.0.0 || >=24.0.0 <25.0.0"
   },

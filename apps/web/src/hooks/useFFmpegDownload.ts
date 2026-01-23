@@ -21,6 +21,8 @@ export interface FFmpegDownloadState {
   progress: DownloadProgress | null;
   /** Whether a download is in progress */
   isDownloading: boolean;
+  /** Whether FFmpeg deletion is in progress */
+  isDeleting: boolean;
   /** Error message if download failed */
   error: string | null;
   /** Path to the downloaded FFmpeg binary */
@@ -33,6 +35,8 @@ export interface FFmpegDownloadState {
   startDownload: () => Promise<string>;
   /** Cancel the current download */
   cancelDownload: () => Promise<void>;
+  /** Delete FFmpeg from the system */
+  deleteFFmpeg: () => Promise<void>;
   /** Check for an existing bundled FFmpeg */
   checkBundledFFmpeg: () => Promise<string | null>;
   /** Check for FFmpeg updates */
@@ -62,6 +66,7 @@ export interface FFmpegDownloadState {
 export function useFFmpegDownload(): FFmpegDownloadState {
   const [progress, setProgress] = useState<DownloadProgress | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ffmpegPath, setFFmpegPath] = useState<string | null>(null);
   const [versionInfo, setVersionInfo] = useState<FFmpegVersionInfo | null>(null);
@@ -149,6 +154,24 @@ export function useFFmpegDownload(): FFmpegDownloadState {
     }
   }, []);
 
+  // Delete FFmpeg from the system
+  const deleteFFmpeg = useCallback(async (): Promise<void> => {
+    setIsDeleting(true);
+    setError(null);
+    try {
+      await api.system.deleteFfmpeg();
+      setFFmpegPath(null);
+      setVersionInfo(null);
+      setProgress(null);
+    } catch (err) {
+      const errorMessage = String(err);
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setIsDeleting(false);
+    }
+  }, []);
+
   // Check for FFmpeg updates
   const checkForUpdates = useCallback(
     async (installedVersion?: string): Promise<FFmpegVersionInfo | null> => {
@@ -175,12 +198,14 @@ export function useFFmpegDownload(): FFmpegDownloadState {
   return {
     progress,
     isDownloading,
+    isDeleting,
     error,
     ffmpegPath,
     versionInfo,
     isCheckingVersion,
     startDownload,
     cancelDownload,
+    deleteFFmpeg,
     checkBundledFFmpeg,
     checkForUpdates,
   };

@@ -612,7 +612,7 @@ impl FFmpegHandler {
                     }
                 }
 
-                if stats.bitrate == 0.0 && stats.size > 0 && stats.time > 0.0 {
+                if meter_bytes.is_none() && stats.bitrate == 0.0 && stats.size > 0 && stats.time > 0.0 {
                     let avg_kbps = (stats.size as f64 * 8.0) / 1000.0 / stats.time;
                     if avg_kbps.is_finite() && avg_kbps > 0.0 {
                         stats.bitrate = avg_kbps;

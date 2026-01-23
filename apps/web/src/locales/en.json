@@ -422,7 +422,10 @@
     "elevationPromptHint": "A system dialog will appear asking for administrator permission. On Windows, click 'Yes' on the User Account Control prompt to install FFmpeg.",
     "updateAvailable": "Update available",
     "checkingForUpdates": "Checking for updates...",
-    "upToDate": "FFmpeg is up to date"
+    "upToDate": "FFmpeg is up to date",
+    "deleteFFmpeg": "Delete",
+    "deleteFFmpegConfirm": "Are you sure you want to delete FFmpeg? You can download it again anytime.",
+    "deletingFFmpeg": "Deleting FFmpeg..."
   },
   "modals": {
     "createNewProfile": "Create New Profile",
@@ -672,5 +675,27 @@
     "groupRemoved": "Output group removed",
     "keyRotationSuccess": "Machine key rotated. {{profiles}} profiles updated, {{keys}} keys re-encrypted.",
     "keyRotationFailed": "Key rotation failed: {{error}}"
+  },
+  "fileBrowser": {
+    "selectDirectory": "Select Directory",
+    "selectFile": "Select File",
+    "saveFile": "Save File",
+    "goUp": "Go up",
+    "goHome": "Go home",
+    "refresh": "Refresh",
+    "typePath": "Type a path and press Enter...",
+    "goToPath": "Go to path (Enter)",
+    "quickPaths": "Quick paths:",
+    "accessDenied": "This location is outside the allowed browsing area. You can browse your home directory and common system folders.",
+    "directoryNotFound": "Directory not found.",
+    "notADirectory": "The selected path is not a directory.",
+    "readError": "Unable to read directory contents. Check permissions.",
+    "noSubdirectories": "No subdirectories",
+    "noFiles": "No matching files",
+    "fileName": "File name",
+    "enterFileName": "Enter file name",
+    "fileNameRequired": "File name is required",
+    "selectFileFirst": "Please select a file",
+    "selectedDirectory": "Selected directory:"
   }
 }

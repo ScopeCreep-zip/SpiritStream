@@ -1,6 +1,6 @@
 {
   "$schema": "../../../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "spirit-stream",
+  "productName": "spiritstream",
   "version": "1.1.1",
   "identifier": "com.spiritstream.desktop",
   "build": {
@@ -42,22 +42,33 @@
     "resources": {
       "../../../themes/*.jsonc": "themes/"
     },
-    "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
-    ],
+      "icon": [
+        "icons/32x32.png",
+        "icons/128x128.png",
+        "icons/128x128@2x.png",
+        "icons/icon.png",
+        "icons/icon.icns",
+        "icons/icon.ico"
+      ],
     "windows": {
       "webviewInstallMode": {
         "type": "downloadBootstrapper"
       },
-      "allowDowngrades": true
+      "allowDowngrades": true,
+      "nsis": {
+        "installerHooks": "installer-hooks.nsh"
+      },
+      "wix": {
+        "upgradeCode": "9592360f-57ac-57d1-bcaf-fdcad7caf89e"
+      }
     },
     "linux": {
       "appimage": {
-        "bundleMediaFramework": true
+        "bundleMediaFramework": true,
+        "files": {
+          "usr/share/icons/hicolor/512x512/apps/spiritstream.png": "icons/icon.png",
+          "usr/share/applications/spiritstream.desktop": "linux/spiritstream.desktop"
+        }
       },
       "deb": {
         "depends": ["ffmpeg"]

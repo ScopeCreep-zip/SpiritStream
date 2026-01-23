@@ -92,6 +92,6 @@ The required token list is derived from `src-frontend/styles/tokens.css`. Each t
 
 ## License
 
+- SpiritStream application: GPL-3.0 License.
 - Example themes (Dracula, Nord, Catppuccin, Pride variants): MIT License.
 - Theme template: MIT License.
-- SpiritStream application: GPL-3.0.

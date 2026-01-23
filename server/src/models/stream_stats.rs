@@ -161,15 +161,6 @@ impl StreamStats {
             }
         }
 
-        // Fallback: compute average bitrate from size and time if FFmpeg doesn't report one.
-        if self.bitrate == 0.0 && self.size > 0 && self.time > 0.0 {
-            let avg_kbps = (self.size as f64 * 8.0) / 1000.0 / self.time;
-            if avg_kbps.is_finite() && avg_kbps > 0.0 {
-                self.bitrate = avg_kbps;
-                parsed = true;
-            }
-        }
-
         parsed
     }
 

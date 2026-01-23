@@ -422,7 +422,10 @@
     "elevationPromptHint": "سيظهر مربع حوار النظام يطلب إذن المسؤول. في نظام التشغيل Windows، انقر فوق \"نعم\" في موجه التحكم في حساب المستخدم لتثبيت FFmpeg.",
     "updateAvailable": "التحديث متاح",
     "checkingForUpdates": "جارٍ التحقق من وجود تحديثات...",
-    "upToDate": "FFmpeg محدث"
+    "upToDate": "FFmpeg محدث",
+    "deleteFFmpeg": "حذف",
+    "deleteFFmpegConfirm": "هل أنت متأكد أنك تريد حذف FFmpeg؟ يمكنك تنزيله مرة أخرى في أي وقت.",
+    "deletingFFmpeg": "جارٍ حذف FFmpeg..."
   },
   "modals": {
     "createNewProfile": "إنشاء ملف تعريف جديد",

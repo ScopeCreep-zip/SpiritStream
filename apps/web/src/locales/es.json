@@ -422,7 +422,10 @@
     "elevationPromptHint": "Aparecerá un cuadro de diálogo del sistema solicitando permisos de administrador. En Windows, haz clic en \"Sí\" en el aviso de Control de cuentas de usuario para instalar FFmpeg.",
     "updateAvailable": "Actualización disponible",
     "checkingForUpdates": "Buscando actualizaciones...",
-    "upToDate": "FFmpeg está actualizado"
+    "upToDate": "FFmpeg está actualizado",
+    "deleteFFmpeg": "Eliminar",
+    "deleteFFmpegConfirm": "¿Estás seguro de que quieres eliminar FFmpeg? Puedes descargarlo de nuevo en cualquier momento.",
+    "deletingFFmpeg": "Eliminando FFmpeg..."
   },
   "modals": {
     "createNewProfile": "Crear Nuevo Perfil",

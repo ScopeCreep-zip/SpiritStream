@@ -422,7 +422,10 @@
     "elevationPromptHint": "'n Stelseldialoog sal verskyn wat vir administrateurtoestemming vra. Op Windows, klik 'Ja' op die Gebruikersrekeningbeheer-prompt om FFmpeg te installeer.",
     "updateAvailable": "Opdatering beskikbaar",
     "checkingForUpdates": "Kyk tans vir opdaterings...",
-    "upToDate": "FFmpeg is op datum"
+    "upToDate": "FFmpeg is op datum",
+    "deleteFFmpeg": "Verwyder",
+    "deleteFFmpegConfirm": "Is jy seker jy wil FFmpeg verwyder? Jy kan dit enige tyd weer aflaai.",
+    "deletingFFmpeg": "Verwyder FFmpeg..."
   },
   "modals": {
     "createNewProfile": "Skep nuwe profiel",

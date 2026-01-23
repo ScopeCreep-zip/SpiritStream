@@ -49,8 +49,16 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
     addOutputGroup,
     removeOutputGroup,
   } = useProfileStore();
-  const { isStreaming, stats, uptime, globalStatus, activeStreamCount, activeGroups, enabledTargets } =
-    useStreamStore();
+  const {
+    isStreaming,
+    stats,
+    groupStats,
+    uptime,
+    globalStatus,
+    activeStreamCount,
+    activeGroups,
+    enabledTargets,
+  } = useStreamStore();
   const [isTesting, setIsTesting] = useState(false);
   const [testingTarget, setTestingTarget] = useState<string | null>(null);
 
@@ -227,6 +235,33 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
     }, 0);
   }, [currentProfile, activeGroups, enabledTargets]);
 
+  const liveOutgoingBitrate = useMemo(() => {
+    if (!currentProfile) return 0;
+
+    const hasEnabledTargets = enabledTargets.size > 0;
+
+    return currentProfile.outputGroups.reduce((total, group) => {
+      if (!activeGroups.has(group.id)) {
+        return total;
+      }
+
+      const stats = groupStats[group.id];
+      if (!stats || stats.bitrate <= 0) {
+        return total;
+      }
+
+      const enabledCount = hasEnabledTargets
+        ? group.streamTargets.filter((target) => enabledTargets.has(target.id)).length
+        : group.streamTargets.length;
+
+      if (enabledCount === 0) {
+        return total;
+      }
+
+      return total + stats.bitrate * enabledCount;
+    }, 0);
+  }, [currentProfile, activeGroups, enabledTargets, groupStats]);
+
   // Use backend-verified active stream count, fallback to local calculation
   const displayActiveCount =
     activeTargetCount > 0
@@ -268,7 +303,7 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
         <StatBox
           icon={<Activity className="w-5 h-5" />}
           label={t('dashboard.totalBitrate')}
-          value={stats.totalBitrate > 0 ? formatBitrate(stats.totalBitrate) : '0 kbps'}
+          value={liveOutgoingBitrate > 0 ? formatBitrate(liveOutgoingBitrate) : '0 kbps'}
           change={isStreaming ? t('status.active') : t('status.noActiveStreams')}
         />
         <StatBox
@@ -399,9 +434,16 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
                     },
                     {
                       label: t('dashboard.bitrate'),
-                      value: stats.targetStats[target.id]?.bitrate || '--',
+                      value: groupStats[target.groupId]?.bitrate
+                        ? formatBitrate(groupStats[target.groupId].bitrate)
+                        : '--',
                     },
-                    { label: t('dashboard.fps'), value: stats.targetStats[target.id]?.fps || '--' },
+                    {
+                      label: t('dashboard.fps'),
+                      value: groupStats[target.groupId]?.fps
+                        ? Math.round(groupStats[target.groupId].fps)
+                        : '--',
+                    },
                   ]}
                 />
               ))}
