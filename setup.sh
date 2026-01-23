@@ -102,7 +102,7 @@ is_supported_node_version() {
         return 0
     fi
 
-    if (( major >= MIN_NODE_LTS_MAJOR && minor >= MIN_NODE_22_MINOR )); then
+    if (( ( major == MIN_NODE_LTS_MAJOR && minor >= MIN_NODE_22_MINOR ) || ( major > MIN_NODE_LTS_MAJOR ) )); then
         return 0
     fi
 
