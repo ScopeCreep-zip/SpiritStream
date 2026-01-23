@@ -53,7 +53,13 @@
       "webviewInstallMode": {
         "type": "downloadBootstrapper"
       },
-      "allowDowngrades": true
+      "allowDowngrades": true,
+      "nsis": {
+        "installerHooks": "installer-hooks.nsh"
+      },
+      "wix": {
+        "upgradeCode": "9592360f-57ac-57d1-bcaf-fdcad7caf89e"
+      }
     },
     "linux": {
       "appimage": {
