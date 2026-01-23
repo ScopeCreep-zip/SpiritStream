@@ -1296,8 +1296,6 @@ impl FFmpegHandler {
                     args.push("-look_ahead".to_string()); args.push("1".to_string());   // Enable look-ahead
                     args.push("-look_ahead_depth".to_string()); args.push("30".to_string());
                     args.push("-async_depth".to_string()); args.push("4".to_string());  // Pipeline depth
-                    // Global header flag ensures SPS/PPS are in extradata for FLV/RTMP compatibility
-                    args.push("-flags".to_string()); args.push("+global_header".to_string());
                 } else {
                     let supports_preset = encoder == "libx264"
                         || encoder == "libx265";
@@ -1329,6 +1327,12 @@ impl FFmpegHandler {
                     "4.1"
                 };
                 args.push("-level".to_string()); args.push(level.to_string());
+            }
+
+            // QSV-specific: Ensure proper pixel format and extradata handling for RTMP/FLV
+            if group.video.codec.contains("qsv") {
+                // NV12 is the native QSV format and ensures proper color space handling
+                args.push("-pix_fmt".to_string()); args.push("nv12".to_string());
             }
 
             if let Some(interval_seconds) = group.video.keyframe_interval_seconds {
@@ -1401,15 +1405,31 @@ impl FFmpegHandler {
 
         let meter_output = Self::meter_output_url_for_group(&group.id);
 
+        // For QSV encoders outputting to FLV, we need to add the dump_extra bitstream filter
+        // to ensure SPS/PPS NAL units are written to each output stream (required for RTMP/Twitch)
+        let needs_dump_extra = !use_stream_copy
+            && group.video.codec.contains("qsv")
+            && group.container.format == "flv";
+
         let mut tee_outputs: Vec<String> = Vec::new();
         if target_outputs.len() == 1 {
             let output = &target_outputs[0];
-            tee_outputs.push(format!("[f={}]{output}", group.container.format));
+            if needs_dump_extra {
+                tee_outputs.push(format!("[f={}:bsf/v=dump_extra]{output}", group.container.format));
+            } else {
+                tee_outputs.push(format!("[f={}]{output}", group.container.format));
+            }
         } else {
             tee_outputs.extend(
                 target_outputs
                     .iter()
-                    .map(|output| format!("[f={}:onfail=ignore]{output}", group.container.format))
+                    .map(|output| {
+                        if needs_dump_extra {
+                            format!("[f={}:onfail=ignore:bsf/v=dump_extra]{output}", group.container.format)
+                        } else {
+                            format!("[f={}:onfail=ignore]{output}", group.container.format)
+                        }
+                    })
             );
         }
         tee_outputs.push(format!("[f=mpegts:onfail=ignore]{meter_output}"));
