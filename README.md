@@ -185,3 +185,15 @@ to override the host binary location.
 ## License
 
 GPL-3.0 License - See [LICENSE](LICENSE) for details.
+
+## Acknowledgements & Support
+
+SpiritStream was inspired by streamer SpiritArtLife. We are grateful for the idea and for her testing.
+
+- Twitch: https://www.twitch.tv/spiritartlife
+- YouTube: https://www.youtube.com/@SpiritArtLife
+
+We're a team of queer devs who love making cool things for awesome people. We appreciate your support!
+
+- Donate: https://www.paypal.com/paypalme/radicalkjax
+- Website: https://scopecreep.zip/
