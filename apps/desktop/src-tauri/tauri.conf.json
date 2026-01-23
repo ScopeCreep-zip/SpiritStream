@@ -66,8 +66,8 @@
       "appimage": {
         "bundleMediaFramework": true,
         "files": {
-          "icons/icon.png": "usr/share/icons/hicolor/512x512/apps/spiritstream.png",
-          "linux/spiritstream.desktop": "usr/share/applications/spiritstream.desktop"
+          "usr/share/icons/hicolor/512x512/apps/spiritstream.png": "icons/icon.png",
+          "usr/share/applications/spiritstream.desktop": "linux/spiritstream.desktop"
         }
       },
       "deb": {
