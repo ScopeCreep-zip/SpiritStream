@@ -10,6 +10,7 @@ import {
   Home,
   RefreshCw,
   FolderOpen,
+  CornerDownLeft,
 } from 'lucide-react';
 import { getBackendBaseUrl, getAuthHeaders, safeFetch } from '@/lib/backend/env';
 
@@ -74,6 +75,8 @@ export function FileBrowserModal({
 }: FileBrowserModalProps) {
   const { t } = useTranslation();
   const [currentPath, setCurrentPath] = useState('');
+  const [pathInput, setPathInput] = useState('');
+  const [isEditingPath, setIsEditingPath] = useState(false);
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -152,6 +155,8 @@ export function FileBrowserModal({
         }
         const data: BrowseResponse = json.data;
         setCurrentPath(data.path);
+        setPathInput(data.path);
+        setIsEditingPath(false);
         setEntries(data.entries);
       } catch (err) {
         console.error('[FileBrowser] Browse failed:', err);
@@ -215,6 +220,8 @@ export function FileBrowserModal({
   useEffect(() => {
     if (!open) {
       setCurrentPath('');
+      setPathInput('');
+      setIsEditingPath(false);
       setEntries([]);
       setSelectedEntry(null);
       setError(null);
@@ -257,6 +264,23 @@ export function FileBrowserModal({
       }
     } catch {
       // Ignore
+    }
+  };
+
+  // Navigate to typed path
+  const goToPath = () => {
+    if (pathInput.trim()) {
+      browse(pathInput.trim());
+    }
+  };
+
+  // Handle path input key press
+  const handlePathKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      goToPath();
+    } else if (e.key === 'Escape') {
+      setPathInput(currentPath);
+      setIsEditingPath(false);
     }
   };
 
@@ -359,9 +383,64 @@ export function FileBrowserModal({
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </Button>
-          <div className="flex-1 px-3 py-1.5 bg-[var(--bg-sunken)] rounded text-sm font-mono text-[var(--text-secondary)] truncate">
-            {currentPath || '/'}
-          </div>
+          <input
+            type="text"
+            value={pathInput}
+            onChange={(e) => {
+              setPathInput(e.target.value);
+              setIsEditingPath(true);
+            }}
+            onKeyDown={handlePathKeyDown}
+            onFocus={() => setIsEditingPath(true)}
+            placeholder={t('fileBrowser.typePath', 'Type a path and press Enter...')}
+            className="flex-1 px-3 py-1.5 bg-[var(--bg-sunken)] rounded text-sm font-mono text-[var(--text-secondary)] border border-transparent focus:border-[var(--primary)] focus:outline-none"
+          />
+          {isEditingPath && pathInput !== currentPath && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={goToPath}
+              disabled={loading || !pathInput.trim()}
+              title={t('fileBrowser.goToPath', 'Go to path (Enter)')}
+            >
+              <CornerDownLeft className="w-4 h-4" />
+            </Button>
+          )}
+        </div>
+
+        {/* Quick path shortcuts */}
+        <div className="flex items-center gap-2 mb-3 flex-wrap">
+          <span className="text-xs text-[var(--text-muted)]">
+            {t('fileBrowser.quickPaths', 'Quick paths:')}
+          </span>
+          <button
+            type="button"
+            onClick={() => browse('C:\\Program Files')}
+            className="text-xs px-2 py-0.5 rounded bg-[var(--bg-muted)] hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] transition-colors"
+          >
+            Program Files
+          </button>
+          <button
+            type="button"
+            onClick={() => browse('C:\\Program Files (x86)')}
+            className="text-xs px-2 py-0.5 rounded bg-[var(--bg-muted)] hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] transition-colors"
+          >
+            Program Files (x86)
+          </button>
+          <button
+            type="button"
+            onClick={() => browse('/usr/local/bin')}
+            className="text-xs px-2 py-0.5 rounded bg-[var(--bg-muted)] hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] transition-colors"
+          >
+            /usr/local/bin
+          </button>
+          <button
+            type="button"
+            onClick={() => browse('/opt')}
+            className="text-xs px-2 py-0.5 rounded bg-[var(--bg-muted)] hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] transition-colors"
+          >
+            /opt
+          </button>
         </div>
 
         {/* File list */}
