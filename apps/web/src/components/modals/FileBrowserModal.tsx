@@ -23,6 +23,7 @@ interface FileEntry {
 interface BrowseResponse {
   path: string;
   entries: FileEntry[];
+  parent?: string | null;
 }
 
 export interface FileBrowserModalProps {
