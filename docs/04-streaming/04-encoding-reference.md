@@ -168,16 +168,30 @@ Intel's hardware encoder built into their integrated GPUs. Quality has improved 
 
 | Parameter | Options | Description |
 |-----------|---------|-------------|
-| `-preset` | veryfast, faster, fast, medium, slow, slower, veryslow | Quality/speed |
+| `-preset` | veryfast, faster, fast, medium, slow, slower, veryslow | Quality/speed (maps to Intel TargetUsage TU7-TU1) |
 | `-profile` | baseline, main, high | H.264 profile |
 | `-look_ahead` | 0, 1 | Enable lookahead |
 | `-look_ahead_depth` | 0-100 | Lookahead frames |
 
+**Preset to TargetUsage mapping:**
+
+| Preset | Intel TU | Notes |
+|--------|----------|-------|
+| veryslow | TU1 | Highest quality, slowest |
+| slower | TU2 | |
+| slow | TU3 | |
+| medium | TU4 | Balanced |
+| fast | TU5 | |
+| faster | TU6 | Recommended for streaming |
+| veryfast | TU7 | Fastest, lowest quality |
+
 **Recommended settings:**
 
 ```bash
--c:v h264_qsv -preset faster -profile:v high -look_ahead 1
+-c:v h264_qsv -preset faster -profile:v high
 ```
+
+> **Note:** OBS uses numeric TU values (TU1-TU7) directly. SpiritStream uses text presets for consistency with other encoders. The `faster` preset (TU6) provides a good balance for live streaming.
 
 #### AMD AMF
 

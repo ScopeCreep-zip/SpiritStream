@@ -1280,6 +1280,17 @@ impl FFmpegHandler {
                 } else if encoder.contains("nvenc") {
                     let ffmpeg_preset = Self::map_nvenc_preset(preset);
                     args.push("-preset".to_string()); args.push(ffmpeg_preset);
+                } else if encoder.contains("qsv") {
+                    // Intel QuickSync (QSV) accepts text presets that map to TargetUsage (TU1-TU7):
+                    // veryfast=TU7, faster=TU6, fast=TU5, medium=TU4, slow=TU3, slower=TU2, veryslow=TU1
+                    let ffmpeg_preset = match preset.as_str() {
+                        "quality" => "slow",
+                        "balanced" => "medium",
+                        "performance" => "fast",
+                        "low_latency" | "low-latency" | "lowLatency" => "veryfast",
+                        _ => preset.as_str(),
+                    };
+                    args.push("-preset".to_string()); args.push(ffmpeg_preset.to_string());
                 } else {
                     let supports_preset = encoder == "libx264"
                         || encoder == "libx265";

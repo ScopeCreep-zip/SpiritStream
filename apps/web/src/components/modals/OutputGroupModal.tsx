@@ -90,6 +90,11 @@ const getPresetValues = (codec: string): string[] => {
   if (normalized.includes('amf')) {
     return AMF_PRESET_VALUES;
   }
+  // Intel QuickSync (QSV) uses the same text presets as libx264
+  // These map to Intel's TargetUsage (TU1-TU7) internally
+  if (normalized.includes('qsv')) {
+    return PRESET_VALUES;
+  }
   return [];
 };
 
@@ -100,6 +105,10 @@ const getDefaultPreset = (codec: string, presetValues: string[]): string => {
   }
   if (normalized.includes('amf')) {
     return 'balanced';
+  }
+  // Intel QSV: "faster" is a good balance of quality and speed for streaming
+  if (normalized.includes('qsv')) {
+    return 'faster';
   }
   if (presetValues.includes('veryfast')) {
     return 'veryfast';
