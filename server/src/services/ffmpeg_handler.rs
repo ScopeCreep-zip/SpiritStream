@@ -1415,7 +1415,7 @@ impl FFmpegHandler {
         if target_outputs.len() == 1 {
             let output = &target_outputs[0];
             if needs_dump_extra {
-                tee_outputs.push(format!("[f={}:bsf/v=dump_extra]{output}", group.container.format));
+                tee_outputs.push(format!("[f={}:bsf:v=dump_extra]{output}", group.container.format));
             } else {
                 tee_outputs.push(format!("[f={}]{output}", group.container.format));
             }
@@ -1425,7 +1425,7 @@ impl FFmpegHandler {
                     .iter()
                     .map(|output| {
                         if needs_dump_extra {
-                            format!("[f={}:onfail=ignore:bsf/v=dump_extra]{output}", group.container.format)
+                            format!("[f={}:onfail=ignore:bsf:v=dump_extra]{output}", group.container.format)
                         } else {
                             format!("[f={}:onfail=ignore]{output}", group.container.format)
                         }
