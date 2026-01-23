@@ -120,6 +120,7 @@ export const api = {
       invokeHttp<void>('export_logs', { path, content }),
     downloadFfmpeg: () => invokeHttp<string>('download_ffmpeg'),
     cancelFfmpegDownload: () => invokeHttp<void>('cancel_ffmpeg_download'),
+    deleteFfmpeg: () => invokeHttp<void>('delete_ffmpeg'),
   },
   settings: {
     get: () => invokeHttp<AppSettings>('get_settings'),

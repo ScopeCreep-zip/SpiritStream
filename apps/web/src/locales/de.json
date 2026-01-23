@@ -420,9 +420,12 @@
     "elevationDenied": "Berechtigung verweigert",
     "elevationDeniedDescription": "Administratorberechtigung ist erforderlich, um FFmpeg zu installieren. Du kannst es erneut versuchen und die Berechtigung erteilen, wenn du dazu aufgefordert wirst.",
     "elevationPromptHint": "Ein Systemdialog fordert Administratorrechte an. Unter Windows klicke im UAC-Dialog auf ?Ja?, um FFmpeg zu installieren.",
-    "updateAvailable": "Update verf?gbar",
+    "updateAvailable": "Update verfügbar",
     "checkingForUpdates": "Suche nach Updates...",
-    "upToDate": "FFmpeg ist aktuell"
+    "upToDate": "FFmpeg ist aktuell",
+    "deleteFFmpeg": "Löschen",
+    "deleteFFmpegConfirm": "Sind Sie sicher, dass Sie FFmpeg löschen möchten? Sie können es jederzeit erneut herunterladen.",
+    "deletingFFmpeg": "FFmpeg wird gelöscht..."
   },
   "modals": {
     "createNewProfile": "Neues Profil erstellen",

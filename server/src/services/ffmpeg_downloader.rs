@@ -787,6 +787,247 @@ exit /b %errorlevel%
         }
     }
 
+    /// Delete FFmpeg from the system with privilege elevation
+    pub fn delete_ffmpeg(settings_manager: Option<&SettingsManager>) -> Result<(), DownloadError> {
+        // Get the current FFmpeg path
+        let ffmpeg_path = match Self::get_ffmpeg_path(settings_manager) {
+            Some(path) => path,
+            None => {
+                log::info!("FFmpeg not found, nothing to delete");
+                return Ok(());
+            }
+        };
+
+        log::info!("Deleting FFmpeg from: {ffmpeg_path:?}");
+
+        // Check if it's a system path that requires elevation
+        let system_path = Self::get_system_install_path();
+        let needs_elevation = ffmpeg_path == system_path || Self::path_needs_elevation(&ffmpeg_path);
+
+        if needs_elevation {
+            Self::delete_with_elevation(&ffmpeg_path)?;
+        } else {
+            // Custom path in user-writable location
+            std::fs::remove_file(&ffmpeg_path)
+                .map_err(|e| DownloadError::InstallationFailed(format!("Failed to delete FFmpeg: {e}")))?;
+        }
+
+        // Clear custom path from settings if it was set
+        if let Some(settings_manager) = settings_manager {
+            if let Ok(mut settings) = settings_manager.load() {
+                if !settings.ffmpeg_path.is_empty() {
+                    settings.ffmpeg_path = String::new();
+                    let _ = settings_manager.save(&settings);
+                    log::info!("Cleared custom FFmpeg path from settings");
+                }
+            }
+        }
+
+        log::info!("FFmpeg deleted successfully");
+        Ok(())
+    }
+
+    /// Check if a path requires elevation to modify
+    fn path_needs_elevation(path: &Path) -> bool {
+        #[cfg(target_os = "windows")]
+        {
+            // Windows: Program Files and system directories need elevation
+            let path_str = path.to_string_lossy().to_lowercase();
+            path_str.contains("program files") || path_str.contains("windows")
+        }
+
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        {
+            // Unix: /usr, /opt, /bin, /sbin need elevation
+            let path_str = path.to_string_lossy();
+            path_str.starts_with("/usr") ||
+            path_str.starts_with("/opt") ||
+            path_str.starts_with("/bin") ||
+            path_str.starts_with("/sbin")
+        }
+
+        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+        {
+            let _ = path;
+            false
+        }
+    }
+
+    /// Delete FFmpeg with privilege elevation
+    fn delete_with_elevation(target_path: &Path) -> Result<(), DownloadError> {
+        #[cfg(target_os = "windows")]
+        {
+            Self::delete_windows(target_path)
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            Self::delete_macos(target_path)
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            Self::delete_linux(target_path)
+        }
+
+        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+        {
+            let _ = target_path;
+            Err(DownloadError::UnsupportedPlatform("elevation not supported".to_string()))
+        }
+    }
+
+    /// Delete FFmpeg on Windows using UAC elevation
+    #[cfg(target_os = "windows")]
+    fn delete_windows(target_path: &Path) -> Result<(), DownloadError> {
+        let temp_script_dir = std::env::temp_dir();
+        let batch_path = temp_script_dir.join("Uninstall-FFmpeg-SpiritStream.bat");
+
+        let batch_content = format!(
+            r#"@echo off
+:: SpiritStream FFmpeg Uninstaller
+:: This script removes FFmpeg from the system
+if exist "{}" del /F /Q "{}"
+exit /b %errorlevel%
+"#,
+            target_path.display(),
+            target_path.display()
+        );
+
+        std::fs::write(&batch_path, &batch_content)
+            .map_err(|e| DownloadError::InstallationFailed(format!("Failed to create uninstaller script: {e}")))?;
+
+        log::info!("Requesting Windows UAC elevation to delete FFmpeg");
+
+        let mut cmd = Command::new("powershell");
+        cmd.args([
+            "-NoProfile",
+            "-Command",
+            &format!(
+                "Start-Process cmd -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '/c \"{}\"'",
+                batch_path.display()
+            )
+        ]);
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        let output = cmd.output()
+            .map_err(|e| DownloadError::ElevationFailed(e.to_string()))?;
+
+        // Clean up the batch file
+        let _ = std::fs::remove_file(&batch_path);
+
+        // Check both stdout and stderr for cancellation messages
+        // UAC cancellation errors can appear in either stream
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let combined_output = format!("{} {}", stdout, stderr).to_lowercase();
+
+        log::debug!("UAC delete stdout: {}", stdout);
+        log::debug!("UAC delete stderr: {}", stderr);
+        log::debug!("UAC delete exit code: {:?}", output.status.code());
+
+        // Check for cancellation indicators
+        if combined_output.contains("canceled")
+            || combined_output.contains("cancelled")
+            || combined_output.contains("denied")
+            || combined_output.contains("the operation was canceled")
+            || combined_output.contains("user account control")
+            || combined_output.contains("access is denied") {
+            log::warn!("UAC elevation was denied or cancelled");
+            return Err(DownloadError::ElevationDenied);
+        }
+
+        // Primary verification: check if file still exists
+        // This is the most reliable way to know if deletion succeeded
+        if target_path.exists() {
+            log::warn!("FFmpeg file still exists after delete attempt - UAC likely cancelled");
+            return Err(DownloadError::ElevationDenied);
+        }
+
+        log::info!("FFmpeg deleted from: {target_path:?}");
+        Ok(())
+    }
+
+    /// Delete FFmpeg on macOS using AppleScript elevation
+    #[cfg(target_os = "macos")]
+    fn delete_macos(target_path: &Path) -> Result<(), DownloadError> {
+        let script = format!(
+            r#"do shell script "rm -f '{}'" with administrator privileges"#,
+            target_path.display()
+        );
+
+        log::info!("Requesting macOS administrator privileges to delete FFmpeg");
+
+        let output = Command::new("osascript")
+            .args(["-e", &script])
+            .output()
+            .map_err(|e| DownloadError::ElevationFailed(e.to_string()))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.contains("User canceled") || stderr.contains("-128") {
+                return Err(DownloadError::ElevationDenied);
+            }
+            return Err(DownloadError::InstallationFailed(stderr.to_string()));
+        }
+
+        // Verify deletion
+        if target_path.exists() {
+            return Err(DownloadError::InstallationFailed("File still exists after deletion".to_string()));
+        }
+
+        log::info!("FFmpeg deleted from: {target_path:?}");
+        Ok(())
+    }
+
+    /// Delete FFmpeg on Linux using pkexec elevation
+    #[cfg(target_os = "linux")]
+    fn delete_linux(target_path: &Path) -> Result<(), DownloadError> {
+        log::info!("Requesting Linux administrator privileges via pkexec to delete FFmpeg");
+
+        let output = Command::new("pkexec")
+            .args(["rm", "-f", &target_path.to_string_lossy()])
+            .output();
+
+        match output {
+            Ok(output) => {
+                if output.status.success() {
+                    if !target_path.exists() {
+                        log::info!("FFmpeg deleted from: {target_path:?}");
+                        return Ok(());
+                    }
+                    return Err(DownloadError::InstallationFailed("File still exists after deletion".to_string()));
+                }
+
+                let exit_code = output.status.code().unwrap_or(-1);
+                if exit_code == 126 {
+                    return Err(DownloadError::ElevationDenied);
+                }
+
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                Err(DownloadError::InstallationFailed(stderr.to_string()))
+            }
+            Err(e) => {
+                log::warn!("pkexec not available: {e}. Trying gksudo/kdesudo...");
+
+                for cmd in ["gksudo", "kdesudo"] {
+                    if let Ok(output) = Command::new(cmd)
+                        .args(["--", "rm", "-f", &target_path.to_string_lossy()])
+                        .output()
+                    {
+                        if output.status.success() && !target_path.exists() {
+                            log::info!("FFmpeg deleted from: {target_path:?}");
+                            return Ok(());
+                        }
+                    }
+                }
+
+                Err(DownloadError::ElevationFailed(
+                    "No graphical sudo available (pkexec, gksudo, or kdesudo)".to_string()
+                ))
+            }
+        }
+    }
+
     /// Get the latest available FFmpeg version from the download source
     pub async fn get_latest_version(&self) -> Result<String, DownloadError> {
         #[cfg(target_os = "macos")]

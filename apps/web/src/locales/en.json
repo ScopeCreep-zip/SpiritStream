@@ -422,7 +422,10 @@
     "elevationPromptHint": "A system dialog will appear asking for administrator permission. On Windows, click 'Yes' on the User Account Control prompt to install FFmpeg.",
     "updateAvailable": "Update available",
     "checkingForUpdates": "Checking for updates...",
-    "upToDate": "FFmpeg is up to date"
+    "upToDate": "FFmpeg is up to date",
+    "deleteFFmpeg": "Delete",
+    "deleteFFmpegConfirm": "Are you sure you want to delete FFmpeg? You can download it again anytime.",
+    "deletingFFmpeg": "Deleting FFmpeg..."
   },
   "modals": {
     "createNewProfile": "Create New Profile",

@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
-import { useEffect, useRef } from 'react';
-import { Download, X, CheckCircle, AlertCircle, Loader2, ShieldCheck, RefreshCw } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Download, X, CheckCircle, AlertCircle, Loader2, ShieldCheck, RefreshCw, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/cn';
 import {
@@ -39,14 +39,19 @@ export function FFmpegDownloadProgress({
   const {
     progress,
     isDownloading,
+    isDeleting,
     error,
     ffmpegPath,
     versionInfo,
     isCheckingVersion,
     startDownload,
     cancelDownload,
+    deleteFFmpeg,
     checkForUpdates,
   } = useFFmpegDownload();
+
+  // State for delete confirmation
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Track if we've already attempted auto-download to prevent repeated attempts
   const autoDownloadAttempted = useRef(false);
@@ -84,8 +89,18 @@ export function FFmpegDownloadProgress({
     }
   };
 
+  const handleDelete = async () => {
+    try {
+      await deleteFFmpeg();
+      setShowDeleteConfirm(false);
+    } catch {
+      // Error is handled by the hook
+      setShowDeleteConfirm(false);
+    }
+  };
+
   // If FFmpeg is already installed
-  if (ffmpegPath && !isDownloading) {
+  if (ffmpegPath && !isDownloading && !isDeleting) {
     const hasUpdate = versionInfo?.update_available ?? false;
     const displayVersion = installedVersion || versionInfo?.installed_version;
     const versionCheckUnsupported = Boolean(
@@ -94,19 +109,55 @@ export function FFmpegDownloadProgress({
 
     return (
       <div className={cn('space-y-2', className)}>
-        <div className="flex items-center gap-2 text-sm text-[var(--success-text)]">
-          <CheckCircle className="w-4 h-4" />
-          <span>
-            {t('settings.ffmpegInstalled')}
-            {displayVersion && (
-              <span className="text-[var(--text-secondary)]">
-                {' '}(v{displayVersion.replace(/^ffmpeg\s+version\s+/i, '').split(' ')[0]})
-              </span>
-            )}
-          </span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm text-[var(--success-text)]">
+            <CheckCircle className="w-4 h-4" />
+            <span>
+              {t('settings.ffmpegInstalled')}
+              {displayVersion && (
+                <span className="text-[var(--text-secondary)]">
+                  {' '}(v{displayVersion.replace(/^ffmpeg\s+version\s+/i, '').split(' ')[0]})
+                </span>
+              )}
+            </span>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowDeleteConfirm(true)}
+            className="text-[var(--text-tertiary)] hover:text-[var(--error-text)]"
+          >
+            <Trash2 className="w-4 h-4" />
+          </Button>
         </div>
 
-        {versionCheckUnsupported && (
+        {/* Delete confirmation */}
+        {showDeleteConfirm && (
+          <div className="p-3 rounded-lg bg-[var(--error-subtle)] border border-[var(--error-border)]">
+            <p className="text-sm text-[var(--text-secondary)] mb-3">
+              {t('settings.deleteFFmpegConfirm')}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowDeleteConfirm(false)}
+              >
+                {t('common.cancel')}
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleDelete}
+              >
+                <Trash2 className="w-4 h-4" />
+                {t('settings.deleteFFmpeg')}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {versionCheckUnsupported && !showDeleteConfirm && (
           <div className="flex items-center gap-2 text-xs text-[var(--text-tertiary)]">
             <AlertCircle className="w-3 h-3" />
             <span>{t('settings.ffmpegVersionUnavailable')}</span>
@@ -114,7 +165,7 @@ export function FFmpegDownloadProgress({
         )}
 
         {/* Update available notification */}
-        {hasUpdate && versionInfo && (
+        {hasUpdate && versionInfo && !showDeleteConfirm && (
           <div className="flex items-center justify-between gap-3 p-3 rounded-lg bg-[var(--warning-subtle)] border border-[var(--warning-border)]">
             <div className="flex items-center gap-2">
               <RefreshCw className="w-4 h-4 text-[var(--warning-text)]" />
@@ -135,12 +186,24 @@ export function FFmpegDownloadProgress({
         )}
 
         {/* Checking for updates indicator */}
-        {isCheckingVersion && (
+        {isCheckingVersion && !showDeleteConfirm && (
           <div className="flex items-center gap-2 text-xs text-[var(--text-tertiary)]">
             <Loader2 className="w-3 h-3 animate-spin" />
             <span>{t('settings.checkingForUpdates')}</span>
           </div>
         )}
+      </div>
+    );
+  }
+
+  // If deleting FFmpeg
+  if (isDeleting) {
+    return (
+      <div className={cn('space-y-3', className)}>
+        <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span>{t('settings.deletingFFmpeg')}</span>
+        </div>
       </div>
     );
   }

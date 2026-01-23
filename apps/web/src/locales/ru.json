@@ -422,7 +422,10 @@
     "elevationPromptHint": "Появится системное диалоговое окно с запросом разрешения администратора. В Windows нажмите «Да» в окне контроля учетных записей, чтобы установить FFmpeg.",
     "updateAvailable": "Доступно обновление",
     "checkingForUpdates": "Проверяем наличие обновлений...",
-    "upToDate": "FFmpeg обновлен"
+    "upToDate": "FFmpeg обновлен",
+    "deleteFFmpeg": "Удалить",
+    "deleteFFmpegConfirm": "Вы уверены, что хотите удалить FFmpeg? Вы можете загрузить его снова в любое время.",
+    "deletingFFmpeg": "Удаление FFmpeg..."
   },
   "modals": {
     "createNewProfile": "Создать новый профиль",

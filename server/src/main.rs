@@ -991,6 +991,11 @@ async fn invoke_command(
                 .await;
             Ok(json!(info))
         }
+        "delete_ffmpeg" => {
+            FFmpegDownloader::delete_ffmpeg(Some(&state.settings_manager))
+                .map_err(|e| e.to_string())?;
+            Ok(Value::Null)
+        }
         "list_themes" => {
             let themes = state.theme_manager.list_themes();
             log::info!(

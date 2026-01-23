@@ -422,7 +422,10 @@
     "elevationPromptHint": "З’явиться системне діалогове вікно із запитом дозволу адміністратора. У Windows натисніть «Так» у вікні керування обліковими записами користувачів, щоб установити FFmpeg.",
     "updateAvailable": "Доступне оновлення",
     "checkingForUpdates": "Перевірка оновлень...",
-    "upToDate": "FFmpeg оновлено"
+    "upToDate": "FFmpeg оновлено",
+    "deleteFFmpeg": "Видалити",
+    "deleteFFmpegConfirm": "Ви впевнені, що хочете видалити FFmpeg? Ви можете завантажити його знову в будь-який час.",
+    "deletingFFmpeg": "Видалення FFmpeg..."
   },
   "modals": {
     "createNewProfile": "Створити новий профіль",

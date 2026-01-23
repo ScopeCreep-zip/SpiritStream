@@ -52,6 +52,7 @@ export const api = {
       invoke<RtmpTestResult>('test_rtmp_target', { url, streamKey }),
     downloadFfmpeg: () => invoke<string>('download_ffmpeg'),
     cancelFfmpegDownload: () => invoke<void>('cancel_ffmpeg_download'),
+    deleteFfmpeg: () => invoke<void>('delete_ffmpeg'),
     getRecentLogs: (maxLines?: number) =>
       invoke<string[]>('get_recent_logs', { maxLines }),
     exportLogs: (path: string, content: string) =>

@@ -422,7 +422,10 @@
     "elevationPromptHint": "Une boîte de dialogue système demandera les autorisations administrateur. Sous Windows, cliquez sur \"Oui\" dans l'invite UAC pour installer FFmpeg.",
     "updateAvailable": "Mise à jour disponible",
     "checkingForUpdates": "Vérification des mises à jour...",
-    "upToDate": "FFmpeg est à jour"
+    "upToDate": "FFmpeg est à jour",
+    "deleteFFmpeg": "Supprimer",
+    "deleteFFmpegConfirm": "Êtes-vous sûr de vouloir supprimer FFmpeg ? Vous pouvez le télécharger à nouveau à tout moment.",
+    "deletingFFmpeg": "Suppression de FFmpeg..."
   },
   "modals": {
     "createNewProfile": "Créer un Nouveau Profil",

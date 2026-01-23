@@ -422,7 +422,10 @@
     "elevationPromptHint": "将出现一个系统对话框，询问管理员权限。在 Windows 上，在用户帐户控制提示上单击“是”以安装 FFmpeg。",
     "updateAvailable": "可用更新",
     "checkingForUpdates": "正在检查更新...",
-    "upToDate": "FFmpeg 是最新的"
+    "upToDate": "FFmpeg 是最新的",
+    "deleteFFmpeg": "删除",
+    "deleteFFmpegConfirm": "确定要删除 FFmpeg 吗？您可以随时重新下载。",
+    "deletingFFmpeg": "正在删除 FFmpeg..."
   },
   "modals": {
     "createNewProfile": "创建新的个人资料",
