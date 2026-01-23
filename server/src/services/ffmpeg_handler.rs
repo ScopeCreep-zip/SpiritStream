@@ -1291,6 +1291,11 @@ impl FFmpegHandler {
                         _ => preset.as_str(),
                     };
                     args.push("-preset".to_string()); args.push(ffmpeg_preset.to_string());
+                    // QSV-specific parameters for streaming compatibility (based on OBS defaults)
+                    args.push("-bf".to_string()); args.push("2".to_string());           // B-frames
+                    args.push("-look_ahead".to_string()); args.push("1".to_string());   // Enable look-ahead
+                    args.push("-look_ahead_depth".to_string()); args.push("30".to_string());
+                    args.push("-async_depth".to_string()); args.push("4".to_string());  // Pipeline depth
                 } else {
                     let supports_preset = encoder == "libx264"
                         || encoder == "libx265";
@@ -1309,6 +1314,19 @@ impl FFmpegHandler {
             // Add H.264 profile if specified
             if let Some(profile) = &group.video.profile {
                 args.push("-profile:v".to_string()); args.push(profile.clone());
+            }
+
+            // Add H.264 level for QSV to ensure streaming platform compatibility
+            // Level 4.2 supports 1080p60, level 5.1 supports 1440p60 and 4K30
+            if group.video.codec.contains("qsv") && group.video.codec.contains("264") {
+                let level = if group.video.height > 1080 || (group.video.height == 1080 && group.video.fps > 60) {
+                    "5.1"
+                } else if group.video.height >= 1080 && group.video.fps >= 60 {
+                    "4.2"
+                } else {
+                    "4.1"
+                };
+                args.push("-level".to_string()); args.push(level.to_string());
             }
 
             if let Some(interval_seconds) = group.video.keyframe_interval_seconds {

@@ -76,8 +76,35 @@ const ENCODER_DEFAULT_LABELS: Record<string, string> = {
   av1_vaapi: 'VAAPI AV1 (Linux)',
 };
 
-// Profile option values
-const PROFILE_VALUES = ['baseline', 'main', 'high'];
+// Profile option values by codec type
+const H264_PROFILE_VALUES = ['baseline', 'main', 'high'];
+const HEVC_PROFILE_VALUES = ['main', 'main10'];
+const AV1_PROFILE_VALUES = ['main'];  // AV1 only has main profile for standard use
+
+// Helper to determine profile values based on codec
+const getProfileValues = (codec: string): string[] => {
+  const normalized = codec.toLowerCase();
+  if (normalized.includes('265') || normalized.includes('hevc')) {
+    return HEVC_PROFILE_VALUES;
+  }
+  if (normalized.includes('av1')) {
+    return AV1_PROFILE_VALUES;
+  }
+  // Default to H.264 profiles for h264_*, libx264, etc.
+  return H264_PROFILE_VALUES;
+};
+
+const getDefaultProfile = (codec: string): string => {
+  const normalized = codec.toLowerCase();
+  if (normalized.includes('265') || normalized.includes('hevc')) {
+    return 'main';
+  }
+  if (normalized.includes('av1')) {
+    return 'main';
+  }
+  // H.264 default - "high" for best quality while maintaining compatibility
+  return 'high';
+};
 
 const getPresetValues = (codec: string): string[] => {
   const normalized = codec.toLowerCase();
@@ -270,7 +297,12 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
       }))
     : [];
 
-  const profileOptions: SelectOption[] = PROFILE_VALUES.map((value) => ({
+  const profileValues = useMemo(
+    () => getProfileValues(formData.videoCodec),
+    [formData.videoCodec]
+  );
+
+  const profileOptions: SelectOption[] = profileValues.map((value) => ({
     value,
     label: value.charAt(0).toUpperCase() + value.slice(1),
   }));
@@ -313,6 +345,14 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
       setFormData((prev) => ({ ...prev, preset: nextPreset }));
     }
   }, [presetSupported, presetValues, formData.preset, formData.videoCodec]);
+
+  // Update profile when codec changes and current profile is not valid for new codec
+  useEffect(() => {
+    if (!profileValues.includes(formData.profile)) {
+      const nextProfile = getDefaultProfile(formData.videoCodec);
+      setFormData((prev) => ({ ...prev, profile: nextProfile }));
+    }
+  }, [profileValues, formData.profile, formData.videoCodec]);
 
   const handleSave = async () => {
     if (!validate()) return;

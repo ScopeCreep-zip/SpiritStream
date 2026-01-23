@@ -199,6 +199,7 @@
       "hevc_nvenc": "NVENC HEVC (NVIDIA)",
       "h264_qsv": "QuickSync (Intel)",
       "hevc_qsv": "QuickSync HEVC (Intel)",
+      "av1_qsv": "QuickSync AV1 (Intel)",
       "h264_amf": "AMF (AMD)",
       "hevc_amf": "AMF HEVC (AMD)",
       "h264_videotoolbox": "VideoToolbox (Apple)",
