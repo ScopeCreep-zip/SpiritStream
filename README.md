@@ -184,4 +184,4 @@ to override the host binary location.
 
 ## License
 
-ISC License - See [LICENSE](LICENSE) for details.
+GPL-3.0 License - See [LICENSE](LICENSE) for details.
