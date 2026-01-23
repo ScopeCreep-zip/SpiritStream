@@ -465,6 +465,50 @@ struct BrowseResponse {
     parent: Option<String>,
 }
 
+fn system_bin_paths() -> Vec<PathBuf> {
+    if cfg!(target_os = "windows") {
+        let mut paths = Vec::new();
+
+        if let Some(program_files) = env::var_os("ProgramFiles") {
+            paths.push(PathBuf::from(program_files));
+        }
+        if let Some(program_files_x86) = env::var_os("ProgramFiles(x86)") {
+            paths.push(PathBuf::from(program_files_x86));
+        }
+        if let Some(program_data) = env::var_os("ProgramData") {
+            let base = PathBuf::from(program_data);
+            paths.push(base.clone());
+            paths.push(base.join("chocolatey"));
+            paths.push(base.join("chocolatey\\bin"));
+        }
+        if let Some(choco_install) = env::var_os("ChocolateyInstall") {
+            let base = PathBuf::from(choco_install);
+            paths.push(base.clone());
+            paths.push(base.join("bin"));
+        }
+        if let Some(system_drive) = env::var_os("SystemDrive") {
+            let drive = PathBuf::from(format!("{}\\", system_drive.to_string_lossy()));
+            paths.push(drive.join("ffmpeg"));
+            paths.push(drive.join("ffmpeg\\bin"));
+            paths.push(drive.join("Windows\\System32"));
+        }
+
+        if paths.is_empty() {
+            paths.push(PathBuf::from("C:\\Program Files"));
+            paths.push(PathBuf::from("C:\\Program Files (x86)"));
+        }
+
+        return paths;
+    }
+
+    vec![
+        PathBuf::from("/opt"),
+        PathBuf::from("/usr/local"),
+        PathBuf::from("/usr/bin"),
+        PathBuf::from("/snap/bin"),
+    ]
+}
+
 /// GET /api/files/browse - List directory contents
 /// Query params: path (optional, defaults to home directory)
 async fn files_browse(
@@ -488,18 +532,7 @@ async fn files_browse(
 
     // Security: Validate path is within allowed directories
     // Include common binary directories for finding executables like FFmpeg
-    let system_bin_paths: Vec<PathBuf> = if cfg!(target_os = "windows") {
-        vec![
-            PathBuf::from("C:\\Program Files"),
-            PathBuf::from("C:\\Program Files (x86)"),
-        ]
-    } else {
-        vec![
-            PathBuf::from("/opt"),        // Homebrew on Apple Silicon
-            PathBuf::from("/usr/local"),  // Homebrew on Intel, common installs
-            PathBuf::from("/usr/bin"),    // System binaries
-        ]
-    };
+    let system_bin_paths = system_bin_paths();
 
     let mut allowed_dirs: Vec<&std::path::Path> = vec![state.app_data_dir.as_path()];
     if let Some(ref home) = state.home_dir {
@@ -634,18 +667,7 @@ async fn files_open(
 
     // Security: Validate path is within allowed directories
     // Include common binary directories for consistency with file browser
-    let system_bin_paths: Vec<PathBuf> = if cfg!(target_os = "windows") {
-        vec![
-            PathBuf::from("C:\\Program Files"),
-            PathBuf::from("C:\\Program Files (x86)"),
-        ]
-    } else {
-        vec![
-            PathBuf::from("/opt"),
-            PathBuf::from("/usr/local"),
-            PathBuf::from("/usr/bin"),
-        ]
-    };
+    let system_bin_paths = system_bin_paths();
 
     let mut allowed_dirs: Vec<&std::path::Path> = vec![state.app_data_dir.as_path()];
     if let Some(ref home) = state.home_dir {

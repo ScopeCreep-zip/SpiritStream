@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Modal, ModalBody, ModalFooter } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
@@ -38,6 +38,23 @@ export interface FileBrowserModalProps {
 
 // Map server error messages to user-friendly messages
 type TFunction = (key: string, defaultValue: string) => string;
+type Platform = 'windows' | 'macos' | 'linux' | 'unknown';
+type QuickPath = { label: string; path: string };
+
+function detectPlatform(): Platform {
+  if (typeof navigator === 'undefined') {
+    return 'unknown';
+  }
+
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  const platformHint =
+    nav.userAgentData?.platform || nav.platform || nav.userAgent || '';
+
+  if (/windows/i.test(platformHint)) return 'windows';
+  if (/mac/i.test(platformHint)) return 'macos';
+  if (/linux/i.test(platformHint)) return 'linux';
+  return 'unknown';
+}
 
 function getFriendlyError(serverError: string, t: TFunction): string {
   if (serverError.includes('Access to this directory is not allowed')) {
@@ -74,10 +91,37 @@ export function FileBrowserModal({
   initialPath,
 }: FileBrowserModalProps) {
   const { t } = useTranslation();
+  const platform = useMemo(() => detectPlatform(), []);
+  const quickPaths = useMemo<QuickPath[]>(() => {
+    if (platform === 'windows') {
+      return [
+        { label: 'Program Files', path: 'C:\\Program Files' },
+        { label: 'Program Files (x86)', path: 'C:\\Program Files (x86)' },
+      ];
+    }
+
+    if (platform === 'macos') {
+      return [
+        { label: '/usr/local/bin', path: '/usr/local/bin' },
+        { label: '/opt/homebrew/bin', path: '/opt/homebrew/bin' },
+      ];
+    }
+
+    if (platform === 'linux') {
+      return [
+        { label: '/usr/bin', path: '/usr/bin' },
+        { label: '/usr/local/bin', path: '/usr/local/bin' },
+        { label: '/opt', path: '/opt' },
+      ];
+    }
+
+    return [];
+  }, [platform]);
   const [currentPath, setCurrentPath] = useState('');
   const [pathInput, setPathInput] = useState('');
   const [isEditingPath, setIsEditingPath] = useState(false);
   const [entries, setEntries] = useState<FileEntry[]>([]);
+  const [parentPath, setParentPath] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedEntry, setSelectedEntry] = useState<string | null>(null);
@@ -158,6 +202,7 @@ export function FileBrowserModal({
         setPathInput(data.path);
         setIsEditingPath(false);
         setEntries(data.entries);
+        setParentPath(data.parent ?? null);
       } catch (err) {
         console.error('[FileBrowser] Browse failed:', err);
         // Map server errors to user-friendly messages
@@ -171,6 +216,33 @@ export function FileBrowserModal({
     []
   );
 
+  const getPathSeparator = (path: string) => (path.includes('\\') ? '\\' : '/');
+
+  const joinPath = (base: string, entry: string) => {
+    const separator = getPathSeparator(base);
+    if (!base || base.endsWith(separator)) {
+      return `${base}${entry}`;
+    }
+    return `${base}${separator}${entry}`;
+  };
+
+  const getInitialBrowsePath = (path: string) => {
+    const trimmed = path.replace(/[\\/]+$/, '');
+    const lastSlash = trimmed.lastIndexOf('/');
+    const lastBackslash = trimmed.lastIndexOf('\\');
+    const lastSep = Math.max(lastSlash, lastBackslash);
+    if (lastSep > 0) {
+      return trimmed.substring(0, lastSep);
+    }
+
+    const driveMatch = trimmed.match(/^[A-Za-z]:/);
+    if (driveMatch) {
+      return `${driveMatch[0]}\\`;
+    }
+
+    return '/';
+  };
+
   // Get initial directory on mount
   useEffect(() => {
     if (open && !currentPath) {
@@ -181,8 +253,7 @@ export function FileBrowserModal({
           browse(initialPath);
         } else {
           // For file/save mode, browse to the parent directory
-          const lastSlash = initialPath.lastIndexOf('/');
-          const dirPath = lastSlash > 0 ? initialPath.substring(0, lastSlash) : '/';
+          const dirPath = getInitialBrowsePath(initialPath);
           browse(dirPath);
         }
         return;
@@ -224,6 +295,7 @@ export function FileBrowserModal({
       setIsEditingPath(false);
       setEntries([]);
       setSelectedEntry(null);
+      setParentPath(null);
       setError(null);
       setFileName(defaultFileName || '');
     }
@@ -231,19 +303,9 @@ export function FileBrowserModal({
 
   // Navigate to parent directory
   const goUp = () => {
-    // Handle both absolute (/path/to/dir) and relative (data/profiles) paths
-    const isAbsolute = currentPath.startsWith('/');
-    const parts = currentPath.split('/').filter(Boolean);
-
-    if (parts.length > 1) {
-      parts.pop();
-      const newPath = isAbsolute ? '/' + parts.join('/') : parts.join('/');
-      browse(newPath);
-    } else if (parts.length === 1 && isAbsolute) {
-      // At root level of absolute path
-      browse('/');
+    if (parentPath) {
+      browse(parentPath);
     }
-    // For relative paths with only one part (e.g., "data"), can't go higher
   };
 
   // Navigate to home directory
@@ -288,10 +350,7 @@ export function FileBrowserModal({
   const handleEntryClick = (entry: FileEntry) => {
     if (entry.type === 'directory') {
       // Navigate into directory
-      const newPath = currentPath.endsWith('/')
-        ? `${currentPath}${entry.name}`
-        : `${currentPath}/${entry.name}`;
-      browse(newPath);
+      browse(joinPath(currentPath, entry.name));
     } else if (mode !== 'directory') {
       // Select file (not allowed in directory mode)
       setSelectedEntry(entry.name);
@@ -320,18 +379,14 @@ export function FileBrowserModal({
         setError(t('fileBrowser.fileNameRequired', 'File name is required'));
         return;
       }
-      const fullPath = currentPath.endsWith('/')
-        ? `${currentPath}${fileName}`
-        : `${currentPath}/${fileName}`;
+      const fullPath = joinPath(currentPath, fileName);
       onSelect(fullPath);
     } else {
       if (!selectedEntry) {
         setError(t('fileBrowser.selectFileFirst', 'Please select a file'));
         return;
       }
-      const fullPath = currentPath.endsWith('/')
-        ? `${currentPath}${selectedEntry}`
-        : `${currentPath}/${selectedEntry}`;
+      const fullPath = joinPath(currentPath, selectedEntry);
       onSelect(fullPath);
     }
     onClose();
@@ -360,7 +415,7 @@ export function FileBrowserModal({
             variant="ghost"
             size="sm"
             onClick={goUp}
-            disabled={loading || currentPath === '/'}
+            disabled={loading || !parentPath}
             title={t('fileBrowser.goUp', 'Go up')}
           >
             <ChevronUp className="w-4 h-4" />
@@ -409,39 +464,23 @@ export function FileBrowserModal({
         </div>
 
         {/* Quick path shortcuts */}
-        <div className="flex items-center gap-2 mb-3 flex-wrap">
-          <span className="text-xs text-[var(--text-muted)]">
-            {t('fileBrowser.quickPaths', 'Quick paths:')}
-          </span>
-          <button
-            type="button"
-            onClick={() => browse('C:\\Program Files')}
-            className="text-xs px-2 py-0.5 rounded bg-[var(--bg-muted)] hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] transition-colors"
-          >
-            Program Files
-          </button>
-          <button
-            type="button"
-            onClick={() => browse('C:\\Program Files (x86)')}
-            className="text-xs px-2 py-0.5 rounded bg-[var(--bg-muted)] hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] transition-colors"
-          >
-            Program Files (x86)
-          </button>
-          <button
-            type="button"
-            onClick={() => browse('/usr/local/bin')}
-            className="text-xs px-2 py-0.5 rounded bg-[var(--bg-muted)] hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] transition-colors"
-          >
-            /usr/local/bin
-          </button>
-          <button
-            type="button"
-            onClick={() => browse('/opt')}
-            className="text-xs px-2 py-0.5 rounded bg-[var(--bg-muted)] hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] transition-colors"
-          >
-            /opt
-          </button>
-        </div>
+        {quickPaths.length > 0 && (
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
+            <span className="text-xs text-[var(--text-muted)]">
+              {t('fileBrowser.quickPaths', 'Quick paths:')}
+            </span>
+            {quickPaths.map((quickPath) => (
+              <button
+                key={quickPath.path}
+                type="button"
+                onClick={() => browse(quickPath.path)}
+                className="text-xs px-2 py-0.5 rounded bg-[var(--bg-muted)] hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] transition-colors"
+              >
+                {quickPath.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* File list */}
         <div className="border border-[var(--border-default)] rounded-lg bg-[var(--bg-sunken)] h-[300px] overflow-y-auto">
