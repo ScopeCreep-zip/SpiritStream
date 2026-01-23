@@ -22,7 +22,11 @@ readonly BOLD='\033[1m'
 readonly NC='\033[0m' # No Color
 
 # Minimum version requirements
-readonly MIN_NODE_VERSION=18
+readonly MIN_NODE_MAJOR_20=20
+readonly MIN_NODE_20_MINOR=19
+readonly MIN_NODE_LTS_MAJOR=22
+readonly MIN_NODE_22_MINOR=12
+readonly MIN_NODE_REQUIREMENT="20.19+ or 22.12+"
 readonly MIN_RUST_VERSION="1.70"
 
 # Track verification results
@@ -76,6 +80,34 @@ get_major_version() {
     fi
 }
 
+# Extract minor version number (pure bash, no grep)
+get_minor_version() {
+    local version="${1#v}"
+    local remainder="${version#*.}"
+    local minor="${remainder%%[!0-9]*}"
+    if [[ -z "${minor}" ]]; then
+        echo "0"
+    else
+        echo "${minor}"
+    fi
+}
+
+is_supported_node_version() {
+    local version="$1"
+    local major minor
+    major=$(get_major_version "${version}")
+    minor=$(get_minor_version "${version}")
+
+    if (( major == MIN_NODE_MAJOR_20 && minor >= MIN_NODE_20_MINOR )); then
+        return 0
+    fi
+
+    if (( major >= MIN_NODE_LTS_MAJOR && minor >= MIN_NODE_22_MINOR )); then
+        return 0
+    fi
+
+    return 1
+}
 # Detect OS
 detect_os() {
     local uname_out
@@ -432,13 +464,16 @@ verify_installation() {
     fi
 
     if [[ "${has_node}" = true ]]; then
-        local node_ver node_major
+        local node_ver node_major node_minor
         node_ver=$(node --version | tr -d 'v' || true)
         node_major=$(get_major_version "${node_ver}")
-        if [[ "${node_major}" -ge "${MIN_NODE_VERSION}" ]]; then
-            print_pass "Node.js ${node_ver} (>= ${MIN_NODE_VERSION} required)"
+        node_minor=$(get_minor_version "${node_ver}")
+        if (( node_major % 2 == 1 )); then
+            print_fail "Node.js ${node_ver} is odd-numbered (non-LTS); install ${MIN_NODE_REQUIREMENT}"
+        elif is_supported_node_version "${node_ver}"; then
+            print_pass "Node.js ${node_ver} (Vite requires ${MIN_NODE_REQUIREMENT})"
         else
-            print_fail "Node.js ${node_ver} is below minimum ${MIN_NODE_VERSION}"
+            print_fail "Node.js ${node_ver} is too old; Vite requires ${MIN_NODE_REQUIREMENT}"
         fi
     else
         print_fail "Node.js not found in PATH"
@@ -576,14 +611,30 @@ main() {
     if [[ "${node_found}" = false ]]; then
         print_warning "Node.js not found"
         print_error "Node.js is required but not installed."
-        echo "  Please install Node.js ${MIN_NODE_VERSION}+ from https://nodejs.org/"
+        echo "  Please install Node.js ${MIN_NODE_REQUIREMENT} from https://nodejs.org/ (LTS recommended)."
         echo "  Or use a version manager like nvm, fnm, or mise."
         echo "  Then run this script again."
         exit 1
     fi
-    local node_version
-    node_version=$(node --version || true)
-    print_success "Node.js already installed: ${node_version}"
+    local node_version_str node_version node_major node_minor
+    node_version_str=$(node --version || true)
+    node_version="${node_version_str#v}"
+    node_major=$(get_major_version "${node_version}")
+    node_minor=$(get_minor_version "${node_version}")
+
+    if (( node_major % 2 == 1 )); then
+        print_warning "Node.js ${node_major}.x is an odd-numbered (non-LTS) release which may cause issues."
+        print_error "Node.js ${MIN_NODE_REQUIREMENT} is required. Please install from https://nodejs.org/ (LTS recommended)."
+        exit 1
+    fi
+
+    if ! is_supported_node_version "${node_version}"; then
+        print_warning "Node.js version ${node_major}.${node_minor} is too old. Vite requires ${MIN_NODE_REQUIREMENT}."
+        print_error "Please upgrade Node.js from https://nodejs.org/ and rerun this script."
+        exit 1
+    fi
+
+    print_success "Node.js already installed: ${node_version_str}"
 
     # Step 4: Install FFmpeg
     echo -e "\n${BLUE}[4/7]${NC} FFmpeg"
