@@ -1296,6 +1296,8 @@ impl FFmpegHandler {
                     args.push("-look_ahead".to_string()); args.push("1".to_string());   // Enable look-ahead
                     args.push("-look_ahead_depth".to_string()); args.push("30".to_string());
                     args.push("-async_depth".to_string()); args.push("4".to_string());  // Pipeline depth
+                    // Global header flag ensures SPS/PPS are in extradata for FLV/RTMP compatibility
+                    args.push("-flags".to_string()); args.push("+global_header".to_string());
                 } else {
                     let supports_preset = encoder == "libx264"
                         || encoder == "libx265";
