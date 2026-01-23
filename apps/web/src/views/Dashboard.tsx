@@ -49,7 +49,7 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
     addOutputGroup,
     removeOutputGroup,
   } = useProfileStore();
-  const { isStreaming, stats, uptime, globalStatus, activeStreamCount, activeGroups, enabledTargets } =
+  const { isStreaming, stats, groupStats, uptime, globalStatus, activeStreamCount, activeGroups, enabledTargets } =
     useStreamStore();
   const [isTesting, setIsTesting] = useState(false);
   const [testingTarget, setTestingTarget] = useState<string | null>(null);
@@ -399,9 +399,16 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
                     },
                     {
                       label: t('dashboard.bitrate'),
-                      value: stats.targetStats[target.id]?.bitrate || '--',
+                      value: groupStats[target.groupId]?.bitrate
+                        ? formatBitrate(groupStats[target.groupId].bitrate)
+                        : '--',
                     },
-                    { label: t('dashboard.fps'), value: stats.targetStats[target.id]?.fps || '--' },
+                    {
+                      label: t('dashboard.fps'),
+                      value: groupStats[target.groupId]?.fps
+                        ? Math.round(groupStats[target.groupId].fps)
+                        : '--',
+                    },
                   ]}
                 />
               ))}
