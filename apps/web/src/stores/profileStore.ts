@@ -44,6 +44,7 @@ interface ProfileState {
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   selectProfile: (name: string) => Promise<void>;
+  reloadProfile: () => Promise<void>;
   duplicateProfile: (name: string) => Promise<void>;
 
   // Profile mutations (local state updates + auto-save)
@@ -298,6 +299,14 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   // Select and load a profile by name
   selectProfile: async (name) => {
     await get().loadProfile(name);
+  },
+
+  // Reload the current profile from backend (for refreshing after scene/source changes)
+  reloadProfile: async () => {
+    const current = get().current;
+    if (current) {
+      await get().loadProfile(current.name);
+    }
   },
 
   // Duplicate a profile
