@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 use crate::services::{emit_event, EventSink};
-use crate::models::{OutputGroup, StreamStats};
+use crate::models::{OutputGroup, Platform, StreamStats};
 use crate::services::PlatformRegistry;
 
 // Windows: Hide console windows for spawned processes
@@ -1179,7 +1179,7 @@ impl FFmpegHandler {
         args.push("-maxrate".to_string()); args.push(bitrate.to_string());
         args.push("-bufsize".to_string()); args.push(bufsize);
 
-        if encoder.contains("nvenc") || encoder.contains("qsv") || encoder.contains("amf") {
+        if encoder.contains("nvenc") || encoder.contains("amf") {
             args.push("-rc".to_string()); args.push("cbr".to_string());
         }
 
@@ -1228,6 +1228,8 @@ impl FFmpegHandler {
         // Use case-insensitive comparison to handle "Copy", "COPY", etc.
         let use_stream_copy = group.video.codec.eq_ignore_ascii_case("copy")
             && group.audio.codec.eq_ignore_ascii_case("copy");
+        let has_twitch_target = group.stream_targets.iter()
+            .any(|target| matches!(target.service, Platform::Twitch));
 
         let mut args = vec![
             "-i".to_string(),
@@ -1250,9 +1252,42 @@ impl FFmpegHandler {
             args.push("-b:a".to_string()); args.push(group.audio.bitrate.clone());
             args.push("-ac".to_string()); args.push(group.audio.channels.to_string());
             args.push("-ar".to_string()); args.push(group.audio.sample_rate.to_string());
-            // Add video encoder preset if specified
-            if let Some(preset) = &group.video.preset {
-                let encoder = group.video.codec.as_str();
+            let encoder = group.video.codec.as_str();
+            let is_h264_qsv = encoder.eq_ignore_ascii_case("h264_qsv");
+            let is_twitch_qsv = is_h264_qsv && has_twitch_target;
+            if encoder.contains("qsv") {
+                let preset = group.video.preset
+                    .as_deref()
+                    .filter(|value| !value.trim().is_empty())
+                    .unwrap_or("balanced");
+                // Intel QuickSync (QSV) presets map to TargetUsage (TU1-TU7).
+                let ffmpeg_preset = match preset {
+                    "quality" => "slow",
+                    "balanced" => "medium",
+                    "performance" => "fast",
+                    "speed" => "veryfast",
+                    "low_latency" | "low-latency" | "lowLatency" | "lowlatency" => "veryfast",
+                    _ => preset,
+                };
+                args.push("-preset".to_string()); args.push(ffmpeg_preset.to_string());
+
+                let low_latency = matches!(preset, "low_latency" | "low-latency" | "lowLatency" | "lowlatency");
+                let lookahead_depth = if low_latency { "30" } else { "60" };
+
+                if is_twitch_qsv {
+                    // Twitch-safe QSV: avoid reordering and reduce buffering.
+                    args.push("-bf".to_string()); args.push("0".to_string());
+                    args.push("-look_ahead".to_string()); args.push("0".to_string());
+                    args.push("-async_depth".to_string()); args.push("1".to_string());
+                    args.push("-forced_idr".to_string()); args.push("1".to_string());
+                } else {
+                    // QSV defaults aligned with OBS: B-frames, async depth, and lookahead.
+                    args.push("-bf".to_string()); args.push("3".to_string());
+                    args.push("-look_ahead".to_string()); args.push("1".to_string());
+                    args.push("-look_ahead_depth".to_string()); args.push(lookahead_depth.to_string());
+                    args.push("-async_depth".to_string()); args.push("4".to_string());
+                }
+            } else if let Some(preset) = &group.video.preset {
                 if encoder.contains("amf") {
                     let mut amf_quality: Option<&str> = None;
                     let mut amf_usage: Option<&str> = None;
@@ -1280,22 +1315,6 @@ impl FFmpegHandler {
                 } else if encoder.contains("nvenc") {
                     let ffmpeg_preset = Self::map_nvenc_preset(preset);
                     args.push("-preset".to_string()); args.push(ffmpeg_preset);
-                } else if encoder.contains("qsv") {
-                    // Intel QuickSync (QSV) accepts text presets that map to TargetUsage (TU1-TU7):
-                    // veryfast=TU7, faster=TU6, fast=TU5, medium=TU4, slow=TU3, slower=TU2, veryslow=TU1
-                    let ffmpeg_preset = match preset.as_str() {
-                        "quality" => "slow",
-                        "balanced" => "medium",
-                        "performance" => "fast",
-                        "low_latency" | "low-latency" | "lowLatency" => "veryfast",
-                        _ => preset.as_str(),
-                    };
-                    args.push("-preset".to_string()); args.push(ffmpeg_preset.to_string());
-                    // QSV-specific parameters for streaming compatibility (based on OBS defaults)
-                    args.push("-bf".to_string()); args.push("2".to_string());           // B-frames
-                    args.push("-look_ahead".to_string()); args.push("1".to_string());   // Enable look-ahead
-                    args.push("-look_ahead_depth".to_string()); args.push("30".to_string());
-                    args.push("-async_depth".to_string()); args.push("4".to_string());  // Pipeline depth
                 } else {
                     let supports_preset = encoder == "libx264"
                         || encoder == "libx265";
@@ -1314,6 +1333,8 @@ impl FFmpegHandler {
             // Add H.264 profile if specified
             if let Some(profile) = &group.video.profile {
                 args.push("-profile:v".to_string()); args.push(profile.clone());
+            } else if encoder.contains("qsv") && encoder.contains("264") {
+                args.push("-profile:v".to_string()); args.push("high".to_string());
             }
 
             // Add H.264 level for QSV to ensure streaming platform compatibility
@@ -1346,8 +1367,10 @@ impl FFmpegHandler {
                             args.push("-sc_threshold".to_string()); args.push("0".to_string());
                         }
 
-                        args.push("-force_key_frames".to_string());
-                        args.push(format!("expr:gte(t,n_forced*{interval_seconds})"));
+                        if !is_twitch_qsv {
+                            args.push("-force_key_frames".to_string());
+                            args.push(format!("expr:gte(t,n_forced*{interval_seconds})"));
+                        }
                     }
                 }
             }
