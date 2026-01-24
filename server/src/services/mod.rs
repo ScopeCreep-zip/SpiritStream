@@ -4,6 +4,7 @@
 mod profile_manager;
 mod ffmpeg_handler;
 mod ffmpeg_downloader;
+mod encoder_capabilities;
 mod encryption;
 mod settings_manager;
 mod theme_manager;
@@ -16,6 +17,7 @@ mod path_validator;
 pub use profile_manager::*;
 pub use ffmpeg_handler::*;
 pub use ffmpeg_downloader::*;
+pub use encoder_capabilities::*;
 pub use encryption::*;
 pub use settings_manager::*;
 pub use theme_manager::*;
