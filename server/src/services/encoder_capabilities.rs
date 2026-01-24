@@ -440,12 +440,15 @@ impl EncoderCapabilities {
             return caps;
         }
 
-        // Try to actually initialize the encoder with a test encode
+        // Try to actually initialize the encoder with a test encode.
+        // Use a conservative frame size/format to avoid false negatives.
         // This verifies driver/hardware availability
         log::debug!("  NVENC: Testing encoder initialization...");
         if let Some(output) = Self::run_ffmpeg(&[
             "-f", "lavfi",
-            "-i", "color=black:s=64x64:d=0.1",
+            "-i", "color=black:s=128x128:r=30:d=0.5",
+            "-vf", "format=nv12",
+            "-b:v", "1M",
             "-c:v", "h264_nvenc",
             "-f", "null",
             "-"
@@ -598,11 +601,13 @@ impl EncoderCapabilities {
                 return caps;
             }
 
-            // Try to initialize QSV encoder
+            // Try to initialize QSV encoder with a conservative test encode.
             log::debug!("  QSV: Testing encoder initialization...");
             if let Some(output) = Self::run_ffmpeg(&[
                 "-f", "lavfi",
-                "-i", "color=black:s=64x64:d=0.1",
+                "-i", "color=black:s=128x128:r=30:d=0.5",
+                "-vf", "format=nv12",
+                "-b:v", "1M",
                 "-c:v", "h264_qsv",
                 "-f", "null",
                 "-"
