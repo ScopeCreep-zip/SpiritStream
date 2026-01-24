@@ -3,6 +3,7 @@
 
 use std::process::Command;
 use crate::models::Encoders;
+use crate::services::{EncoderCapabilities, EncoderOption};
 
 // Windows: Hide console windows for spawned processes
 #[cfg(windows)]
@@ -444,6 +445,38 @@ fn parse_rtmp_url(url: &str) -> Result<(String, u16), String> {
     }
 
     Ok((host, port))
+}
+
+/// Probe encoder capabilities using OBS-style detection
+/// This is the new preferred method that verifies actual hardware/driver availability
+pub fn probe_encoder_capabilities() -> EncoderCapabilities {
+    log::info!("Probing encoder capabilities...");
+    EncoderCapabilities::refresh()
+}
+
+/// Get cached encoder capabilities (faster, uses cached results)
+pub fn get_encoder_capabilities() -> &'static EncoderCapabilities {
+    EncoderCapabilities::probe()
+}
+
+/// Get list of available H.264 encoders (OBS-style probed)
+pub fn get_available_h264_encoders() -> Vec<EncoderOption> {
+    EncoderCapabilities::probe().available_h264_encoders()
+}
+
+/// Get list of available HEVC encoders (OBS-style probed)
+pub fn get_available_hevc_encoders() -> Vec<EncoderOption> {
+    EncoderCapabilities::probe().available_hevc_encoders()
+}
+
+/// Get list of available AV1 encoders (OBS-style probed)
+pub fn get_available_av1_encoders() -> Vec<EncoderOption> {
+    EncoderCapabilities::probe().available_av1_encoders()
+}
+
+/// Get all available video encoders (OBS-style probed)
+pub fn get_all_video_encoders() -> Vec<EncoderOption> {
+    EncoderCapabilities::probe().all_video_encoders()
 }
 
 /// Validate a specific FFmpeg path and return version if valid

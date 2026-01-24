@@ -36,7 +36,10 @@ use tower_http::{
     set_header::SetResponseHeaderLayer,
 };
 
-use spiritstream_server::commands::{get_encoders, test_ffmpeg, test_rtmp_target, validate_ffmpeg_path};
+use spiritstream_server::commands::{
+    get_encoders, test_ffmpeg, test_rtmp_target, validate_ffmpeg_path,
+    probe_encoder_capabilities, get_encoder_capabilities, get_all_video_encoders,
+};
 use spiritstream_server::models::{OutputGroup, Profile, RtmpInput, Settings};
 use spiritstream_server::services::{
     prune_logs, read_recent_logs, validate_extension, validate_path_within_any,
@@ -919,6 +922,10 @@ async fn invoke_command(
             Ok(json!(state.ffmpeg_handler.is_target_disabled(&target_id)))
         }
         "get_encoders" => Ok(json!(get_encoders()?)),
+        // New OBS-style encoder probing commands
+        "probe_encoder_capabilities" => Ok(json!(probe_encoder_capabilities())),
+        "get_encoder_capabilities" => Ok(json!(get_encoder_capabilities())),
+        "get_video_encoders" => Ok(json!(get_all_video_encoders())),
         "test_ffmpeg" => Ok(json!(test_ffmpeg()?)),
         "validate_ffmpeg_path" => {
             let path: String = get_arg(&payload, "path")?;

@@ -136,15 +136,45 @@ impl EncoderCapabilities {
         let mut caps = EncoderCapabilities::default();
         caps.probed_at = Some(chrono::Utc::now().to_rfc3339());
 
+        log::info!("=== Starting encoder capability probe ===");
+
         // Probe each encoder type
         // For now, use CLI-based probing until ffmpeg-sys-next is integrated
         // Later phases will add native OBS-style probing via FFmpeg libs
 
+        log::info!("Probing NVENC (NVIDIA)...");
         caps.nvenc = Self::probe_nvenc_via_cli();
+        log::info!("  NVENC: available={}, h264={}, hevc={}, av1={}, gpu={:?}",
+            caps.nvenc.available, caps.nvenc.h264, caps.nvenc.hevc, caps.nvenc.av1, caps.nvenc.gpu_name);
+
+        log::info!("Probing AMF (AMD)...");
         caps.amf = Self::probe_amf_via_cli();
+        log::info!("  AMF: available={}, h264={}, hevc={}, av1={}",
+            caps.amf.available, caps.amf.h264, caps.amf.hevc, caps.amf.av1);
+
+        log::info!("Probing QSV (Intel)...");
         caps.qsv = Self::probe_qsv_via_cli();
+        log::info!("  QSV: available={}, h264={}, hevc={}, av1={}, low_power={}",
+            caps.qsv.available, caps.qsv.h264, caps.qsv.hevc, caps.qsv.av1, caps.qsv.low_power);
+
+        log::info!("Probing VideoToolbox (Apple)...");
         caps.videotoolbox = Self::probe_videotoolbox_via_cli();
+        log::info!("  VideoToolbox: available={}, h264={}, hevc={}",
+            caps.videotoolbox.available, caps.videotoolbox.h264, caps.videotoolbox.hevc);
+
+        log::info!("Probing software encoders...");
         caps.software = Self::probe_software_via_cli();
+        log::info!("  Software: libx264={}, libx265={}, libsvtav1={}, aac={}, opus={}",
+            caps.software.libx264, caps.software.libx265, caps.software.libsvtav1,
+            caps.software.aac, caps.software.opus);
+
+        log::info!("=== Encoder probe complete ===");
+
+        // Summary of available encoders
+        let h264_count = caps.available_h264_encoders().len();
+        let hevc_count = caps.available_hevc_encoders().len();
+        let av1_count = caps.available_av1_encoders().len();
+        log::info!("Available encoders: {} H.264, {} HEVC, {} AV1", h264_count, hevc_count, av1_count);
 
         caps
     }
@@ -350,7 +380,13 @@ impl EncoderCapabilities {
 
     /// Get FFmpeg path for probing
     fn get_ffmpeg_path() -> Option<std::path::PathBuf> {
-        FFmpegDownloader::get_ffmpeg_path(None)
+        let path = FFmpegDownloader::get_ffmpeg_path(None);
+        if let Some(ref p) = path {
+            log::debug!("Using FFmpeg at: {:?}", p);
+        } else {
+            log::warn!("FFmpeg not found - encoder detection will fail");
+        }
+        path
     }
 
     /// Run FFmpeg with given args and return stdout
@@ -396,12 +432,17 @@ impl EncoderCapabilities {
         let hevc_available = Self::encoder_available("hevc_nvenc");
         let av1_available = Self::encoder_available("av1_nvenc");
 
+        log::debug!("  NVENC FFmpeg support: h264={}, hevc={}, av1={}",
+            h264_available, hevc_available, av1_available);
+
         if !h264_available && !hevc_available && !av1_available {
+            log::debug!("  NVENC: No encoders compiled into FFmpeg");
             return caps;
         }
 
         // Try to actually initialize the encoder with a test encode
         // This verifies driver/hardware availability
+        log::debug!("  NVENC: Testing encoder initialization...");
         if let Some(output) = Self::run_ffmpeg(&[
             "-f", "lavfi",
             "-i", "color=black:s=64x64:d=0.1",
@@ -416,7 +457,11 @@ impl EncoderCapabilities {
                 || output.contains("not found")
                 || output.contains("Codec not currently supported");
 
-            if !has_error {
+            if has_error {
+                log::debug!("  NVENC: Hardware/driver not available");
+                log::trace!("  NVENC error output: {}", output);
+            } else {
+                log::debug!("  NVENC: Encoder initialization successful");
                 caps.available = true;
                 caps.h264 = h264_available;
                 caps.hevc = hevc_available;
@@ -434,6 +479,7 @@ impl EncoderCapabilities {
                     if output.status.success() {
                         let name = String::from_utf8_lossy(&output.stdout);
                         caps.gpu_name = Some(name.trim().to_string());
+                        log::debug!("  NVENC: GPU detected: {}", name.trim());
                     }
                 }
 
@@ -445,9 +491,12 @@ impl EncoderCapabilities {
                     if output.status.success() {
                         let name = String::from_utf8_lossy(&output.stdout);
                         caps.gpu_name = Some(name.trim().to_string());
+                        log::debug!("  NVENC: GPU detected: {}", name.trim());
                     }
                 }
             }
+        } else {
+            log::debug!("  NVENC: Failed to run FFmpeg test encode");
         }
 
         caps
@@ -459,7 +508,10 @@ impl EncoderCapabilities {
 
         // AMF is Windows-only
         #[cfg(not(target_os = "windows"))]
-        return caps;
+        {
+            log::debug!("  AMF: Not available (Windows-only)");
+            return caps;
+        }
 
         #[cfg(target_os = "windows")]
         {
@@ -467,30 +519,54 @@ impl EncoderCapabilities {
             let hevc_available = Self::encoder_available("hevc_amf");
             let av1_available = Self::encoder_available("av1_amf");
 
+            log::debug!("  AMF FFmpeg support: h264={}, hevc={}, av1={}",
+                h264_available, hevc_available, av1_available);
+
             if !h264_available && !hevc_available && !av1_available {
+                log::debug!("  AMF: No encoders compiled into FFmpeg");
                 return caps;
             }
 
-            // Try to initialize AMF encoder
+            // Try to initialize AMF encoder with a conservative test encode.
+            // AMF can reject very small frames (e.g. 64x64) on some drivers.
+            log::debug!("  AMF: Testing encoder initialization...");
             if let Some(output) = Self::run_ffmpeg(&[
                 "-f", "lavfi",
-                "-i", "color=black:s=64x64:d=0.1",
+                "-i", "color=black:s=128x128:r=30:d=0.5",
+                "-vf", "format=nv12",
+                "-b:v", "1M",
                 "-c:v", "h264_amf",
                 "-f", "null",
                 "-"
             ]) {
-                let has_error = output.contains("Error")
-                    || output.contains("Cannot load")
-                    || output.contains("not supported")
-                    || output.contains("failed");
+                // Be specific about AMF errors - "Error" alone is too broad
+                // FFmpeg outputs "Error" in many contexts that aren't failures
+                let has_error = output.contains("Cannot load")
+                    || output.contains("DLL amfrt64.dll failed")
+                    || output.contains("Failed to create AMF")
+                    || output.contains("AMF runtime not found")
+                    || output.contains("CreateComponent failed")
+                    || output.contains("not supported in AMF")
+                    || output.contains("AMF failed")
+                    || output.contains("No AMD devices");
 
-                if !has_error {
+                // Log output for debugging
+                log::debug!("  AMF FFmpeg output (first 500 chars): {}",
+                    output.chars().take(500).collect::<String>());
+
+                if has_error {
+                    log::debug!("  AMF: Hardware/driver not available");
+                    log::trace!("  AMF full error output: {}", output);
+                } else {
+                    log::debug!("  AMF: Encoder initialization successful");
                     caps.available = true;
                     caps.h264 = h264_available;
                     caps.hevc = hevc_available;
                     caps.av1 = av1_available;
                     caps.b_frames = true;
                 }
+            } else {
+                log::debug!("  AMF: Failed to run FFmpeg test encode");
             }
 
             caps
@@ -503,7 +579,10 @@ impl EncoderCapabilities {
 
         // QSV is Windows/Linux only
         #[cfg(target_os = "macos")]
-        return caps;
+        {
+            log::debug!("  QSV: Not available (Windows/Linux only)");
+            return caps;
+        }
 
         #[cfg(not(target_os = "macos"))]
         {
@@ -511,11 +590,16 @@ impl EncoderCapabilities {
             let hevc_available = Self::encoder_available("hevc_qsv");
             let av1_available = Self::encoder_available("av1_qsv");
 
+            log::debug!("  QSV FFmpeg support: h264={}, hevc={}, av1={}",
+                h264_available, hevc_available, av1_available);
+
             if !h264_available && !hevc_available && !av1_available {
+                log::debug!("  QSV: No encoders compiled into FFmpeg");
                 return caps;
             }
 
             // Try to initialize QSV encoder
+            log::debug!("  QSV: Testing encoder initialization...");
             if let Some(output) = Self::run_ffmpeg(&[
                 "-f", "lavfi",
                 "-i", "color=black:s=64x64:d=0.1",
@@ -529,7 +613,11 @@ impl EncoderCapabilities {
                     || output.contains("MFX_ERR")
                     || output.contains("No device");
 
-                if !has_error {
+                if has_error {
+                    log::debug!("  QSV: Hardware/driver not available");
+                    log::trace!("  QSV error output: {}", output);
+                } else {
+                    log::debug!("  QSV: Encoder initialization successful");
                     caps.available = true;
                     caps.h264 = h264_available;
                     caps.hevc = hevc_available;
@@ -542,6 +630,8 @@ impl EncoderCapabilities {
                     caps.lookahead = true;
                     caps.low_power = false; // Detect via native probing later
                 }
+            } else {
+                log::debug!("  QSV: Failed to run FFmpeg test encode");
             }
 
             caps
@@ -579,13 +669,18 @@ impl EncoderCapabilities {
 
     /// Probe software encoders via CLI
     fn probe_software_via_cli() -> SoftwareCaps {
-        SoftwareCaps {
+        let caps = SoftwareCaps {
             libx264: Self::encoder_available("libx264"),
             libx265: Self::encoder_available("libx265"),
             libsvtav1: Self::encoder_available("libsvtav1"),
             aac: Self::encoder_available(" aac "), // Space-padded to avoid false matches
             opus: Self::encoder_available("libopus"),
-        }
+        };
+
+        log::debug!("  Software encoders: x264={}, x265={}, svtav1={}, aac={}, opus={}",
+            caps.libx264, caps.libx265, caps.libsvtav1, caps.aac, caps.opus);
+
+        caps
     }
 }
 
