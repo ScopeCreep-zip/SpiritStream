@@ -252,7 +252,7 @@ function AppContent() {
       // Validation passed, start streaming
       // Build incoming URL from structured input
       const incomingUrl = `rtmp://${current.input.bindAddress}:${current.input.port}/${current.input.application}`;
-      await startAllGroups(current.outputGroups, incomingUrl);
+      await startAllGroups(current.outputGroups, incomingUrl, current.input.streamKey);
       toast.success(t('toast.streamStarted'));
     } catch (err) {
       console.error('[App] startAllGroups failed:', err);

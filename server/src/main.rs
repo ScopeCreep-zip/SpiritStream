@@ -811,6 +811,7 @@ fn start_libs_pipeline(
     state: &AppState,
     group: OutputGroup,
     incoming_url: &str,
+    expected_stream_key: Option<&str>,
 ) -> Result<u32, String> {
     let group_id = group.id.clone();
     let targets = build_libs_targets(state, &group)?;
@@ -825,6 +826,7 @@ fn start_libs_pipeline(
     let mut pipeline = InputPipeline::new(InputPipelineConfig {
         input_id: group_id.clone(),
         input_url: incoming_url.to_string(),
+        expected_stream_key: expected_stream_key.map(String::from),
     });
     pipeline.add_group(group, targets)?;
     pipeline.start()?;
@@ -948,13 +950,15 @@ async fn invoke_command(
         "start_stream" => {
             let group: OutputGroup = get_arg(&payload, "group")?;
             let incoming_url: String = get_arg(&payload, "incomingUrl")?;
+            let expected_stream_key: Option<String> = get_opt_arg(&payload, "expectedStreamKey")?;
             #[cfg(feature = "ffmpeg-libs")]
             {
-                let pid = start_libs_pipeline(state, group, &incoming_url)?;
+                let pid = start_libs_pipeline(state, group, &incoming_url, expected_stream_key.as_deref())?;
                 Ok(json!(pid))
             }
             #[cfg(not(feature = "ffmpeg-libs"))]
             {
+                let _ = expected_stream_key; // Unused in CLI mode
                 let event_sink: Arc<dyn EventSink> = Arc::new(state.event_bus.clone());
                 let pid = state.ffmpeg_handler.start(&group, &incoming_url, event_sink)?;
                 Ok(json!(pid))
@@ -963,6 +967,7 @@ async fn invoke_command(
         "start_all_streams" => {
             let groups: Vec<OutputGroup> = get_arg(&payload, "groups")?;
             let incoming_url: String = get_arg(&payload, "incomingUrl")?;
+            let expected_stream_key: Option<String> = get_opt_arg(&payload, "expectedStreamKey")?;
             #[cfg(feature = "ffmpeg-libs")]
             {
                 let active_count = state.ffmpeg_libs_pipelines
@@ -985,7 +990,7 @@ async fn invoke_command(
                 let mut pids: Vec<u32> = Vec::with_capacity(start_groups.len());
                 for group in start_groups {
                     let group_id = group.id.clone();
-                    match start_libs_pipeline(state, group, &incoming_url) {
+                    match start_libs_pipeline(state, group, &incoming_url, expected_stream_key.as_deref()) {
                         Ok(pid) => {
                             started_groups.push(group_id);
                             pids.push(pid);
@@ -1003,6 +1008,7 @@ async fn invoke_command(
             }
             #[cfg(not(feature = "ffmpeg-libs"))]
             {
+                let _ = expected_stream_key; // Not used in CLI mode
                 let event_sink: Arc<dyn EventSink> = Arc::new(state.event_bus.clone());
                 let pids = state.ffmpeg_handler.start_all(&groups, &incoming_url, event_sink)?;
                 Ok(json!(pids))
@@ -1170,6 +1176,7 @@ async fn invoke_command(
             let enabled: bool = get_arg(&payload, "enabled")?;
             let group: OutputGroup = get_arg(&payload, "group")?;
             let incoming_url: String = get_arg(&payload, "incomingUrl")?;
+            let expected_stream_key: Option<String> = get_opt_arg(&payload, "expectedStreamKey")?;
             #[cfg(feature = "ffmpeg-libs")]
             {
                 if enabled {
@@ -1178,11 +1185,12 @@ async fn invoke_command(
                     state.ffmpeg_handler.disable_target(&target_id);
                 }
                 stop_libs_pipeline(state, &group.id)?;
-                let pid = start_libs_pipeline(state, group, &incoming_url)?;
+                let pid = start_libs_pipeline(state, group, &incoming_url, expected_stream_key.as_deref())?;
                 Ok(json!(pid))
             }
             #[cfg(not(feature = "ffmpeg-libs"))]
             {
+                let _ = expected_stream_key; // Not used in CLI mode
                 if enabled {
                     state.ffmpeg_handler.enable_target(&target_id);
                 } else {

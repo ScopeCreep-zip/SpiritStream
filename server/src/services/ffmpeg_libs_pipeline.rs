@@ -22,6 +22,10 @@ use crate::models::{OutputGroup, StreamTarget};
 pub struct InputPipelineConfig {
     pub input_id: String,
     pub input_url: String,
+    /// Expected stream key for RTMP listen mode.
+    /// If set, only streams with this key will be accepted.
+    /// If None/empty, any stream key will be accepted.
+    pub expected_stream_key: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -41,6 +45,7 @@ pub enum OutputGroupMode {
 pub struct InputPipeline {
     input_id: String,
     input_url: String,
+    expected_stream_key: Option<String>,
     groups: Vec<OutputGroupConfig>,
     stop_flag: Arc<AtomicBool>,
     thread: Option<JoinHandle<Result<(), String>>>,
@@ -51,6 +56,7 @@ impl InputPipeline {
         Self {
             input_id: config.input_id,
             input_url: config.input_url,
+            expected_stream_key: config.expected_stream_key,
             groups: Vec::new(),
             stop_flag: Arc::new(AtomicBool::new(false)),
             thread: None,
@@ -96,10 +102,11 @@ impl InputPipeline {
         }
 
         let input_url = self.input_url.clone();
+        let expected_stream_key = self.expected_stream_key.clone();
         let stop_flag = Arc::clone(&self.stop_flag);
         let groups = self.groups.clone();
 
-        let handle = thread::spawn(move || run_pipeline_loop(&input_url, groups, stop_flag));
+        let handle = thread::spawn(move || run_pipeline_loop(&input_url, expected_stream_key.as_deref(), groups, stop_flag));
         self.thread = Some(handle);
         Ok(())
     }
@@ -210,6 +217,7 @@ unsafe extern "C" fn should_interrupt(opaque: *mut c_void) -> c_int {
 
 fn run_pipeline_loop(
     input_url: &str,
+    expected_stream_key: Option<&str>,
     groups: Vec<OutputGroupConfig>,
     stop_flag: Arc<AtomicBool>,
 ) -> Result<(), String> {
@@ -228,10 +236,11 @@ fn run_pipeline_loop(
             opaque: Arc::as_ptr(&stop_flag) as *mut c_void,
         };
     }
-    let mut input_url = input_url.to_string();
+    let input_url = input_url.to_string();
 
     let mut opts: *mut ffi::AVDictionary = ptr::null_mut();
     if input_url.starts_with("rtmp://") || input_url.starts_with("rtmps://") {
+        // Set listen mode - this makes FFmpeg act as an RTMP server
         let listen_key = CString::new("listen").unwrap_or_default();
         let listen_val = CString::new("1").unwrap_or_default();
         let rtmp_listen_key = CString::new("rtmp_listen").unwrap_or_default();
@@ -240,29 +249,31 @@ fn run_pipeline_loop(
             ffi::av_dict_set(&mut opts, rtmp_listen_key.as_ptr(), listen_val.as_ptr(), 0);
         }
 
-        let (base_url, app, playpath) = parse_rtmp_listen_url(&input_url);
-        if let Some(app) = app {
-            let app_key = CString::new("rtmp_app").unwrap_or_default();
-            if let Ok(app_val) = CString::new(app.clone()) {
-                unsafe {
-                    ffi::av_dict_set(&mut opts, app_key.as_ptr(), app_val.as_ptr(), 0);
+        // If a stream key is configured, parse the URL and set rtmp_app/rtmp_playpath
+        // to only accept streams with the matching key
+        let (base_url, app, _) = parse_rtmp_listen_url(&input_url);
+        if let Some(key) = expected_stream_key {
+            if !key.is_empty() {
+                log::info!("RTMP listener expecting stream key (filtered mode)");
+                if let Some(ref app_name) = app {
+                    let rtmp_app_key = CString::new("rtmp_app").unwrap_or_default();
+                    let rtmp_app_val = CString::new(app_name.as_str()).unwrap_or_default();
+                    unsafe {
+                        ffi::av_dict_set(&mut opts, rtmp_app_key.as_ptr(), rtmp_app_val.as_ptr(), 0);
+                    }
                 }
-            }
-            let tcurl_key = CString::new("rtmp_tcurl").unwrap_or_default();
-            if let Ok(tcurl_val) = CString::new(format!("{}/{}", base_url.trim_end_matches('/'), app)) {
+                let rtmp_playpath_key = CString::new("rtmp_playpath").unwrap_or_default();
+                let rtmp_playpath_val = CString::new(key).unwrap_or_default();
                 unsafe {
-                    ffi::av_dict_set(&mut opts, tcurl_key.as_ptr(), tcurl_val.as_ptr(), 0);
+                    ffi::av_dict_set(&mut opts, rtmp_playpath_key.as_ptr(), rtmp_playpath_val.as_ptr(), 0);
                 }
+            } else {
+                log::info!("RTMP listener accepting any stream key (permissive mode)");
             }
+        } else {
+            log::info!("RTMP listener accepting any stream key (permissive mode)");
         }
-        if let Some(playpath) = playpath {
-            let play_key = CString::new("rtmp_playpath").unwrap_or_default();
-            if let Ok(play_val) = CString::new(playpath) {
-                unsafe {
-                    ffi::av_dict_set(&mut opts, play_key.as_ptr(), play_val.as_ptr(), 0);
-                }
-            }
-        }
+        log::debug!("RTMP listen base URL: {}", base_url);
     }
 
     let input_url_c = CString::new(input_url.clone())

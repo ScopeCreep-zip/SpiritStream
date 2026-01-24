@@ -84,11 +84,11 @@ export const api = {
   },
   stream: {
     /** Start streaming for a single output group. Returns the FFmpeg process PID */
-    start: (group: OutputGroup, incomingUrl: string) =>
-      invokeHttp<number>('start_stream', { group, incomingUrl }),
+    start: (group: OutputGroup, incomingUrl: string, expectedStreamKey?: string) =>
+      invokeHttp<number>('start_stream', { group, incomingUrl, expectedStreamKey }),
     /** Start all output groups. Returns array of FFmpeg process PIDs */
-    startAll: (groups: OutputGroup[], incomingUrl: string) =>
-      invokeHttp<number[]>('start_all_streams', { groups, incomingUrl }),
+    startAll: (groups: OutputGroup[], incomingUrl: string, expectedStreamKey?: string) =>
+      invokeHttp<number[]>('start_all_streams', { groups, incomingUrl, expectedStreamKey }),
     /** Stop streaming for a specific output group */
     stop: (groupId: string) => invokeHttp<void>('stop_stream', { groupId }),
     /** Stop all active streams */
@@ -97,8 +97,8 @@ export const api = {
     isGroupStreaming: (groupId: string) =>
       invokeHttp<boolean>('is_group_streaming', { groupId }),
     getActiveGroupIds: () => invokeHttp<string[]>('get_active_group_ids'),
-    toggleTarget: (targetId: string, enabled: boolean, group: OutputGroup, incomingUrl: string) =>
-      invokeHttp<number>('toggle_stream_target', { targetId, enabled, group, incomingUrl }),
+    toggleTarget: (targetId: string, enabled: boolean, group: OutputGroup, incomingUrl: string, expectedStreamKey?: string) =>
+      invokeHttp<number>('toggle_stream_target', { targetId, enabled, group, incomingUrl, expectedStreamKey }),
     isTargetDisabled: (targetId: string) =>
       invokeHttp<boolean>('is_target_disabled', { targetId }),
   },

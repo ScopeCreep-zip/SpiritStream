@@ -58,11 +58,11 @@ interface StreamState {
   activeStreamCount: number; // Backend-verified active stream count
 
   // Async actions (Tauri integration)
-  startGroup: (group: OutputGroup, incomingUrl: string) => Promise<void>;
+  startGroup: (group: OutputGroup, incomingUrl: string, expectedStreamKey?: string) => Promise<void>;
   stopGroup: (groupId: string) => Promise<void>;
-  startAllGroups: (groups: OutputGroup[], incomingUrl: string) => Promise<void>;
+  startAllGroups: (groups: OutputGroup[], incomingUrl: string, expectedStreamKey?: string) => Promise<void>;
   stopAllGroups: () => Promise<void>;
-  toggleTargetLive: (targetId: string, enabled: boolean, group: OutputGroup, incomingUrl: string) => Promise<void>;
+  toggleTargetLive: (targetId: string, enabled: boolean, group: OutputGroup, incomingUrl: string, expectedStreamKey?: string) => Promise<void>;
 
   // Backend sync actions
   syncWithBackend: () => Promise<void>;
@@ -138,10 +138,10 @@ export const useStreamStore = create<StreamState>((set, get) => ({
   },
 
   // Start streaming for a single output group
-  startGroup: async (group, incomingUrl) => {
+  startGroup: async (group, incomingUrl, expectedStreamKey) => {
     set({ globalStatus: 'connecting', error: null });
     try {
-      await api.stream.start(group, incomingUrl);
+      await api.stream.start(group, incomingUrl, expectedStreamKey);
       const activeGroups = new Set(get().activeGroups);
       activeGroups.add(group.id);
       set({
@@ -173,7 +173,7 @@ export const useStreamStore = create<StreamState>((set, get) => ({
 
   // Start all output groups
   // Backend handles filtering disabled targets via disabled_targets set
-  startAllGroups: async (groups, incomingUrl) => {
+  startAllGroups: async (groups, incomingUrl, expectedStreamKey) => {
     set({ globalStatus: 'connecting', error: null });
 
     try {
@@ -182,7 +182,7 @@ export const useStreamStore = create<StreamState>((set, get) => ({
         throw new Error('At least one stream target is required');
       }
 
-      await api.stream.startAll(eligibleGroups, incomingUrl);
+      await api.stream.startAll(eligibleGroups, incomingUrl, expectedStreamKey);
 
       const activeGroups = new Set(get().activeGroups);
       for (const group of eligibleGroups) {
@@ -219,10 +219,10 @@ export const useStreamStore = create<StreamState>((set, get) => ({
 
   // Toggle a target on/off during live streaming
   // This will restart the parent output group with the updated target list
-  toggleTargetLive: async (targetId, enabled, group, incomingUrl) => {
+  toggleTargetLive: async (targetId, enabled, group, incomingUrl, expectedStreamKey) => {
     try {
       // Call backend to toggle target and restart group
-      await api.stream.toggleTarget(targetId, enabled, group, incomingUrl);
+      await api.stream.toggleTarget(targetId, enabled, group, incomingUrl, expectedStreamKey);
 
       // Update frontend state
       const enabledTargets = new Set(get().enabledTargets);

@@ -26,17 +26,17 @@ export const api = {
     ensureOrderIndexes: () => invoke<Record<string, number>>('ensure_order_indexes'),
   },
   stream: {
-    start: (group: OutputGroup, incomingUrl: string) =>
-      invoke<number>('start_stream', { group, incomingUrl }),
-    startAll: (groups: OutputGroup[], incomingUrl: string) =>
-      invoke<number[]>('start_all_streams', { groups, incomingUrl }),
+    start: (group: OutputGroup, incomingUrl: string, expectedStreamKey?: string) =>
+      invoke<number>('start_stream', { group, incomingUrl, expectedStreamKey }),
+    startAll: (groups: OutputGroup[], incomingUrl: string, expectedStreamKey?: string) =>
+      invoke<number[]>('start_all_streams', { groups, incomingUrl, expectedStreamKey }),
     stop: (groupId: string) => invoke<void>('stop_stream', { groupId }),
     stopAll: () => invoke<void>('stop_all_streams'),
     getActiveCount: () => invoke<number>('get_active_stream_count'),
     isGroupStreaming: (groupId: string) => invoke<boolean>('is_group_streaming', { groupId }),
     getActiveGroupIds: () => invoke<string[]>('get_active_group_ids'),
-    toggleTarget: (targetId: string, enabled: boolean, group: OutputGroup, incomingUrl: string) =>
-      invoke<number>('toggle_stream_target', { targetId, enabled, group, incomingUrl }),
+    toggleTarget: (targetId: string, enabled: boolean, group: OutputGroup, incomingUrl: string, expectedStreamKey?: string) =>
+      invoke<number>('toggle_stream_target', { targetId, enabled, group, incomingUrl, expectedStreamKey }),
     isTargetDisabled: (targetId: string) => invoke<boolean>('is_target_disabled', { targetId }),
   },
   system: {

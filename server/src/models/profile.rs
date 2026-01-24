@@ -21,6 +21,12 @@ pub struct RtmpInput {
 
     /// RTMP application/path (e.g., "live", "ingest")
     pub application: String,
+
+    /// Stream key for authenticating incoming streams.
+    /// If set, only streams with this key will be accepted.
+    /// If empty/None, any stream key will be accepted.
+    #[serde(default)]
+    pub stream_key: Option<String>,
 }
 
 impl Default for RtmpInput {
@@ -30,6 +36,7 @@ impl Default for RtmpInput {
             bind_address: "0.0.0.0".to_string(),
             port: 1935,
             application: "live".to_string(),
+            stream_key: None,
         }
     }
 }

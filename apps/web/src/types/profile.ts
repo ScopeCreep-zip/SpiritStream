@@ -13,6 +13,7 @@ export interface RtmpInput {
   bindAddress: string; // e.g., "0.0.0.0"
   port: number; // e.g., 1935
   application: string; // e.g., "live"
+  streamKey?: string; // Optional stream key for authentication (supports ${ENV_VAR} syntax)
 }
 
 /**
@@ -109,6 +110,7 @@ export const createDefaultRtmpInput = (): RtmpInput => ({
   bindAddress: '0.0.0.0',
   port: 1935,
   application: 'live',
+  streamKey: undefined,
 });
 
 export const createDefaultVideoSettings = (): VideoSettings => ({
