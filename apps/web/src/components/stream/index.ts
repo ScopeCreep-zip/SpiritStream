@@ -1,3 +1,6 @@
-export { PlatformIcon, type PlatformIconProps } from './PlatformIcon';
-export { OutputGroup, type OutputGroupProps } from './OutputGroup';
-export { OutputGroupCard, type OutputGroupCardProps } from './OutputGroupCard';
+// Stream components barrel export
+export { SourcesPanel } from './SourcesPanel';
+export { SceneCanvas } from './SceneCanvas';
+export { PropertiesPanel } from './PropertiesPanel';
+export { SceneBar } from './SceneBar';
+export { AudioMixerPanel } from './AudioMixerPanel';
