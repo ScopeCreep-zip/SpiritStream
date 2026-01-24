@@ -25,9 +25,9 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:8008 http://localhost:8008 ws://127.0.0.1:8008 ws://localhost:8008",
-      "devCsp": "default-src 'self' http://localhost:1420 http://127.0.0.1:1420; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost http://localhost:1420 http://127.0.0.1:1420 ws://localhost:1420 ws://127.0.0.1:1420 http://localhost:8008 http://127.0.0.1:8008 ws://localhost:8008 ws://127.0.0.1:8008",
-      "dangerousDisableAssetCspModification": ["style-src"]
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: http://127.0.0.1:* http://localhost:*; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:8008 http://localhost:8008 ws://127.0.0.1:8008 ws://localhost:8008 ws://127.0.0.1:1984 ws://localhost:1984",
+      "devCsp": "default-src 'self' http://localhost:1420 http://127.0.0.1:1420; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: http://127.0.0.1:* http://localhost:*; connect-src 'self' ipc: http://ipc.localhost http://localhost:1420 http://127.0.0.1:1420 ws://localhost:1420 ws://127.0.0.1:1420 http://localhost:8008 http://127.0.0.1:8008 ws://localhost:8008 ws://127.0.0.1:8008 ws://127.0.0.1:1984 ws://localhost:1984",
+      "dangerousDisableAssetCspModification": ["style-src", "img-src"]
     }
   },
   "bundle": {
@@ -37,7 +37,8 @@
     "licenseFile": "../../../LICENSE",
     "copyright": "Copyright (c) 2024-2025 SpiritStream Contributors",
     "externalBin": [
-      "binaries/spiritstream-server"
+      "binaries/spiritstream-server",
+      "binaries/go2rtc"
     ],
     "resources": {
       "../../../themes/*.jsonc": "themes/"
