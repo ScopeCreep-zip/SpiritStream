@@ -66,6 +66,12 @@ async function invokeHttp<T>(command: string, args?: InvokeArgs): Promise<T> {
  * All requests include credentials (cookies) for authentication.
  */
 export const api = {
+  /**
+   * Generic invoke method for calling any backend command.
+   * Use this for commands that don't have a specific method on the api object.
+   */
+  invoke: <T>(command: string, args?: InvokeArgs): Promise<T> => invokeHttp<T>(command, args),
+
   profile: {
     getAll: () => invokeHttp<string[]>('get_all_profiles'),
     getSummaries: () => invokeHttp<ProfileSummary[]>('get_profile_summaries'),
@@ -135,5 +141,50 @@ export const api = {
       invokeHttp<Record<string, string>>('get_theme_tokens', { themeId }),
     install: (themePath: string) => invokeHttp<ThemeSummary>('install_theme', { themePath }),
     refresh: () => invokeHttp<ThemeSummary[]>('refresh_themes'),
+  },
+  preview: {
+    /** Get the MJPEG preview URL for a source (streaming - may not work in WebKit) */
+    getSourcePreviewUrl: (sourceId: string, width = 640, height = 360, fps = 15, quality = 5) => {
+      const baseUrl = getBackendBaseUrl();
+      return `${baseUrl}/api/preview/source/${sourceId}?width=${width}&height=${height}&fps=${fps}&quality=${quality}`;
+    },
+    /** Get a single snapshot URL for a source (works in all browsers) */
+    getSourceSnapshotUrl: (sourceId: string, width = 640, height = 360, quality = 5) => {
+      const baseUrl = getBackendBaseUrl();
+      // Add timestamp to prevent caching
+      return `${baseUrl}/api/preview/source/${sourceId}/snapshot?width=${width}&height=${height}&quality=${quality}&t=${Date.now()}`;
+    },
+    /** Stop a specific source preview */
+    stopSourcePreview: (sourceId: string) =>
+      invokeHttp<void>('stop_source_preview', { sourceId }),
+    /** Stop all active previews */
+    stopAllPreviews: () => invokeHttp<void>('stop_all_previews'),
+
+    // WebRTC Preview (go2rtc)
+
+    /**
+     * Start WebRTC preview for a source.
+     * Returns stream ID and WebSocket URL for WebRTC signaling.
+     * Requires go2rtc binary to be installed.
+     */
+    startWebrtcPreview: (sourceId: string) =>
+      invokeHttp<{ streamId: string; webrtcWsUrl: string }>('start_webrtc_preview', { sourceId }),
+
+    /**
+     * Stop WebRTC preview for a source.
+     */
+    stopWebrtcPreview: (sourceId: string) =>
+      invokeHttp<void>('stop_webrtc_preview', { sourceId }),
+
+    /**
+     * Get WebRTC preview status (availability, running state, active streams).
+     */
+    getWebrtcStatus: () =>
+      invokeHttp<{
+        available: boolean;
+        running: boolean;
+        activeStreams: number;
+        apiBaseUrl: string;
+      }>('get_webrtc_preview_status'),
   },
 };
