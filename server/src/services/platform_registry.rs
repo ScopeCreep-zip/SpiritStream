@@ -257,6 +257,11 @@ impl PlatformRegistry {
 
     /// Build complete URL with stream key based on platform's placement strategy
     pub fn build_url_with_key(&self, platform: &Platform, base_url: &str, stream_key: &str) -> String {
+        // If stream key is empty, return the base URL as-is (no trailing slash)
+        if stream_key.is_empty() {
+            return base_url.trim_end_matches('/').to_string();
+        }
+
         if let Some(config) = self.get(platform) {
             match config.placement {
                 StreamKeyPlacement::Append => {

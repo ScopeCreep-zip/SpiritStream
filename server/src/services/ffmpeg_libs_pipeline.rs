@@ -5,6 +5,8 @@
 #![cfg(feature = "ffmpeg-libs")]
 
 use std::ffi::{CStr, CString};
+use std::ffi::c_void;
+use std::os::raw::c_int;
 use std::ptr;
 use std::sync::{
     Arc,
@@ -150,6 +152,62 @@ struct TranscodeOutput {
     audio_out_index: Option<i32>,
 }
 
+fn parse_rtmp_listen_url(url: &str) -> (String, Option<String>, Option<String>) {
+    if !(url.starts_with("rtmp://") || url.starts_with("rtmps://")) {
+        return (url.to_string(), None, None);
+    }
+
+    let (without_query, query) = match url.split_once('?') {
+        Some(parts) => parts,
+        None => (url, ""),
+    };
+
+    let (scheme, rest) = match without_query.split_once("://") {
+        Some(parts) => parts,
+        None => return (url.to_string(), None, None),
+    };
+
+    let (host, path) = match rest.split_once('/') {
+        Some(parts) => parts,
+        None => {
+            let base = if query.is_empty() {
+                format!("{scheme}://{rest}")
+            } else {
+                format!("{scheme}://{rest}?{query}")
+            };
+            return (base, None, None);
+        }
+    };
+
+    let segments: Vec<&str> = path.split('/').filter(|segment| !segment.is_empty()).collect();
+    let app = segments.first().map(|segment| (*segment).to_string());
+    let playpath = if segments.len() > 1 {
+        Some(segments[1..].join("/"))
+    } else {
+        None
+    };
+
+    let base = if query.is_empty() {
+        format!("{scheme}://{host}")
+    } else {
+        format!("{scheme}://{host}?{query}")
+    };
+
+    (base, app, playpath)
+}
+
+unsafe extern "C" fn should_interrupt(opaque: *mut c_void) -> c_int {
+    if opaque.is_null() {
+        return 0;
+    }
+    let flag = &*(opaque as *const AtomicBool);
+    if flag.load(Ordering::SeqCst) {
+        1
+    } else {
+        0
+    }
+}
+
 fn run_pipeline_loop(
     input_url: &str,
     groups: Vec<OutputGroupConfig>,
@@ -159,18 +217,56 @@ fn run_pipeline_loop(
         ffi::avformat_network_init();
     }
 
-    let mut input_ctx: *mut ffi::AVFormatContext = ptr::null_mut();
-    let input_url_c = CString::new(input_url)
-        .map_err(|_| "Input URL contains null byte".to_string())?;
+    let mut input_ctx = unsafe { ffi::avformat_alloc_context() };
+    if input_ctx.is_null() {
+        return Err("Failed to allocate input context".to_string());
+    }
+
+    unsafe {
+        (*input_ctx).interrupt_callback = ffi::AVIOInterruptCB {
+            callback: Some(should_interrupt),
+            opaque: Arc::as_ptr(&stop_flag) as *mut c_void,
+        };
+    }
+    let mut input_url = input_url.to_string();
 
     let mut opts: *mut ffi::AVDictionary = ptr::null_mut();
     if input_url.starts_with("rtmp://") || input_url.starts_with("rtmps://") {
         let listen_key = CString::new("listen").unwrap_or_default();
         let listen_val = CString::new("1").unwrap_or_default();
+        let rtmp_listen_key = CString::new("rtmp_listen").unwrap_or_default();
         unsafe {
             ffi::av_dict_set(&mut opts, listen_key.as_ptr(), listen_val.as_ptr(), 0);
+            ffi::av_dict_set(&mut opts, rtmp_listen_key.as_ptr(), listen_val.as_ptr(), 0);
+        }
+
+        let (base_url, app, playpath) = parse_rtmp_listen_url(&input_url);
+        if let Some(app) = app {
+            let app_key = CString::new("rtmp_app").unwrap_or_default();
+            if let Ok(app_val) = CString::new(app.clone()) {
+                unsafe {
+                    ffi::av_dict_set(&mut opts, app_key.as_ptr(), app_val.as_ptr(), 0);
+                }
+            }
+            let tcurl_key = CString::new("rtmp_tcurl").unwrap_or_default();
+            if let Ok(tcurl_val) = CString::new(format!("{}/{}", base_url.trim_end_matches('/'), app)) {
+                unsafe {
+                    ffi::av_dict_set(&mut opts, tcurl_key.as_ptr(), tcurl_val.as_ptr(), 0);
+                }
+            }
+        }
+        if let Some(playpath) = playpath {
+            let play_key = CString::new("rtmp_playpath").unwrap_or_default();
+            if let Ok(play_val) = CString::new(playpath) {
+                unsafe {
+                    ffi::av_dict_set(&mut opts, play_key.as_ptr(), play_val.as_ptr(), 0);
+                }
+            }
         }
     }
+
+    let input_url_c = CString::new(input_url.clone())
+        .map_err(|_| "Input URL contains null byte".to_string())?;
 
     let open_ret = unsafe {
         ffi::avformat_open_input(
@@ -182,6 +278,7 @@ fn run_pipeline_loop(
     };
     unsafe { ffi::av_dict_free(&mut opts) };
     if open_ret < 0 {
+        unsafe { ffi::avformat_free_context(input_ctx) };
         return Err(format!("Failed to open input: {}", ffmpeg_err(open_ret)));
     }
 
@@ -1413,9 +1510,30 @@ unsafe fn apply_encoder_options(
 
     // Apply profile if provided
     if let Some(profile_val) = profile {
-        let key = CString::new("profile").unwrap();
-        let profile_c = CString::new(profile_val).unwrap_or_default();
-        ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), profile_c.as_ptr(), 0);
+        let profile_lower = profile_val.to_lowercase();
+
+        // For AMF encoders, set profile via codec context's profile field
+        // AMF's av_opt_set with string doesn't work reliably
+        if name_lower.contains("amf") {
+            // Map profile names to FF_PROFILE_H264 values
+            let profile_id = match profile_lower.as_str() {
+                "baseline" | "constrained_baseline" => 66,  // FF_PROFILE_H264_BASELINE
+                "main" => 77,                               // FF_PROFILE_H264_MAIN
+                "high" => 100,                              // FF_PROFILE_H264_HIGH
+                "high10" => 110,                            // FF_PROFILE_H264_HIGH_10
+                "high422" => 122,                           // FF_PROFILE_H264_HIGH_422
+                "high444" => 244,                           // FF_PROFILE_H264_HIGH_444_PREDICTIVE
+                _ => -1,                                    // Use encoder default
+            };
+            if profile_id > 0 {
+                (*enc_ctx).profile = profile_id;
+            }
+        } else {
+            // For other encoders, use av_opt_set
+            let key = CString::new("profile").unwrap();
+            let profile_c = CString::new(profile_val).unwrap_or_default();
+            ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), profile_c.as_ptr(), 0);
+        }
     }
 
     // Apply Twitch-safe QSV overrides
@@ -1458,6 +1576,22 @@ unsafe fn apply_encoder_options(
         let key = CString::new("rc").unwrap();
         let val = CString::new("cbr").unwrap();
         ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
+    }
+
+    // AMF-specific optimizations
+    if name_lower.contains("amf") {
+        // Use CBR rate control for streaming
+        let key = CString::new("rc").unwrap();
+        let val = CString::new("cbr").unwrap();
+        ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
+
+        // Low latency mode
+        let key = CString::new("usage").unwrap();
+        let val = CString::new("lowlatency").unwrap();
+        ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
+
+        // Disable B-frames for streaming (improves latency and compatibility)
+        (*enc_ctx).max_b_frames = 0;
     }
 }
 
