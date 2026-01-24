@@ -55,8 +55,14 @@ tempfile = "3.10"
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["fileapi", "winnt"] }
 
+# FFmpeg libs (in-process pipeline, optional)
+ffmpeg-sys-next = { version = "8.0", optional = true }
+
 [build-dependencies]
 serde_json = "1.0"
+
+[features]
+ffmpeg-libs = ["ffmpeg-sys-next"]
 
 [profile.release]
 lto = true

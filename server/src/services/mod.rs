@@ -13,6 +13,8 @@ mod platform_registry;
 mod log_manager;
 mod events;
 mod path_validator;
+#[cfg(feature = "ffmpeg-libs")]
+mod ffmpeg_libs_pipeline;
 
 pub use profile_manager::*;
 pub use ffmpeg_handler::*;
@@ -26,3 +28,5 @@ pub use platform_registry::*;
 pub use log_manager::*;
 pub use events::*;
 pub use path_validator::*;
+#[cfg(feature = "ffmpeg-libs")]
+pub use ffmpeg_libs_pipeline::*;
