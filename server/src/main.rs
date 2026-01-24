@@ -46,6 +46,8 @@ use spiritstream_server::services::{
     Encryption, EventSink, FFmpegDownloader, FFmpegHandler, ProfileManager, SettingsManager,
     ThemeManager,
 };
+#[cfg(feature = "ffmpeg-libs")]
+use spiritstream_server::services::{InputPipeline, InputPipelineConfig, OutputGroupConfig, OutputGroupMode};
 
 // ============================================================================
 // Constants
@@ -99,6 +101,8 @@ struct AppState {
     profile_manager: Arc<ProfileManager>,
     settings_manager: Arc<SettingsManager>,
     ffmpeg_handler: Arc<FFmpegHandler>,
+    #[cfg(feature = "ffmpeg-libs")]
+    ffmpeg_libs_pipeline: Arc<Mutex<Option<InputPipeline>>>,
     ffmpeg_downloader: Arc<AsyncMutex<FFmpegDownloader>>,
     theme_manager: Arc<ThemeManager>,
     event_bus: EventBus,
@@ -895,6 +899,52 @@ async fn invoke_command(
             state.ffmpeg_handler.stop_all()?;
             Ok(Value::Null)
         }
+        #[cfg(feature = "ffmpeg-libs")]
+        "start_ffmpeg_libs_passthrough" => {
+            let input_url: String = get_arg(&payload, "inputUrl")?;
+            let targets: Vec<String> = get_arg(&payload, "targets")?;
+            let input_id: Option<String> = get_opt_arg(&payload, "inputId")?;
+            let group_id: Option<String> = get_opt_arg(&payload, "groupId")?;
+
+            if targets.is_empty() {
+                return Err("At least one target URL is required".to_string());
+            }
+
+            let mut guard = state.ffmpeg_libs_pipeline
+                .lock()
+                .map_err(|_| "ffmpeg libs pipeline lock poisoned".to_string())?;
+            if guard.is_some() {
+                return Err("ffmpeg libs pipeline already running".to_string());
+            }
+
+            let mut pipeline = InputPipeline::new(InputPipelineConfig {
+                input_id: input_id.unwrap_or_else(|| "default".to_string()),
+                input_url,
+            });
+            pipeline.add_group_config(OutputGroupConfig {
+                group_id: group_id.unwrap_or_else(|| "passthrough".to_string()),
+                mode: OutputGroupMode::Passthrough,
+                targets,
+            });
+            pipeline.start()?;
+            *guard = Some(pipeline);
+            Ok(Value::Null)
+        }
+        #[cfg(not(feature = "ffmpeg-libs"))]
+        "start_ffmpeg_libs_passthrough" => Err("ffmpeg-libs feature not enabled".to_string()),
+        #[cfg(feature = "ffmpeg-libs")]
+        "stop_ffmpeg_libs_passthrough" => {
+            let mut guard = state.ffmpeg_libs_pipeline
+                .lock()
+                .map_err(|_| "ffmpeg libs pipeline lock poisoned".to_string())?;
+            let pipeline = guard.as_mut().ok_or_else(|| "ffmpeg libs pipeline is not running".to_string())?;
+            pipeline.stop();
+            pipeline.join()?;
+            *guard = None;
+            Ok(Value::Null)
+        }
+        #[cfg(not(feature = "ffmpeg-libs"))]
+        "stop_ffmpeg_libs_passthrough" => Err("ffmpeg-libs feature not enabled".to_string()),
         "get_active_stream_count" => Ok(json!(state.ffmpeg_handler.active_count())),
         "is_group_streaming" => {
             let group_id: String = get_arg(&payload, "groupId")?;
@@ -1358,6 +1408,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         profile_manager,
         settings_manager,
         ffmpeg_handler,
+        #[cfg(feature = "ffmpeg-libs")]
+        ffmpeg_libs_pipeline: Arc::new(Mutex::new(None)),
         ffmpeg_downloader: Arc::new(AsyncMutex::new(FFmpegDownloader::new())),
         theme_manager,
         event_bus,

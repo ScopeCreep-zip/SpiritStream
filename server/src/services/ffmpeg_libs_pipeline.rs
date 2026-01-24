@@ -75,6 +75,10 @@ impl InputPipeline {
         Ok(())
     }
 
+    pub fn add_group_config(&mut self, config: OutputGroupConfig) {
+        self.groups.push(config);
+    }
+
     pub fn start(&mut self) -> Result<(), String> {
         if self.thread.is_some() {
             return Err("FFmpeg libs pipeline already started".to_string());
