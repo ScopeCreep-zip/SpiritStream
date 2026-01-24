@@ -133,6 +133,7 @@ struct TranscodeGroup {
     audio_dec_ctx: Option<*mut ffi::AVCodecContext>,
     video_enc_ctx: *mut ffi::AVCodecContext,
     audio_enc_ctx: Option<*mut ffi::AVCodecContext>,
+    video_hw_device: Option<*mut ffi::AVBufferRef>,
     sws_ctx: *mut ffi::SwsContext,
     swr_ctx: Option<*mut ffi::SwrContext>,
     video_dec_frame: *mut ffi::AVFrame,
@@ -487,7 +488,8 @@ fn create_transcode_group(
     let output_width = if group.video.width > 0 { group.video.width as i32 } else { unsafe { (*video_codecpar).width } };
     let output_height = if group.video.height > 0 { group.video.height as i32 } else { unsafe { (*video_codecpar).height } };
 
-    let pix_fmt = select_pix_fmt(video_encoder, ffi::AV_PIX_FMT_YUV420P);
+    let prefer_hw = is_hw_encoder(&group.video.codec);
+    let pix_fmt = select_pix_fmt(video_encoder, prefer_hw);
     unsafe {
         (*video_enc_ctx).width = output_width;
         (*video_enc_ctx).height = output_height;
@@ -504,7 +506,17 @@ fn create_transcode_group(
         }
     }
 
-    let open_enc_ret = unsafe { ffi::avcodec_open2(video_enc_ctx, video_encoder, ptr::null_mut()) };
+    let mut video_hw_device = attach_hw_device(&group.video.codec, video_enc_ctx);
+    let mut open_enc_ret = unsafe { ffi::avcodec_open2(video_enc_ctx, video_encoder, ptr::null_mut()) };
+    if open_enc_ret < 0 && video_hw_device.is_some() {
+        unsafe {
+            if let Some(mut device_ref) = video_hw_device.take() {
+                ffi::av_buffer_unref(&mut device_ref);
+            }
+            (*video_enc_ctx).hw_device_ctx = ptr::null_mut();
+        }
+        open_enc_ret = unsafe { ffi::avcodec_open2(video_enc_ctx, video_encoder, ptr::null_mut()) };
+    }
     if open_enc_ret < 0 {
         unsafe {
             ffi::avcodec_free_context(&mut (video_enc_ctx as *mut _));
@@ -707,6 +719,7 @@ fn create_transcode_group(
         audio_dec_ctx,
         video_enc_ctx,
         audio_enc_ctx,
+        video_hw_device,
         sws_ctx,
         swr_ctx,
         video_dec_frame,
@@ -1126,6 +1139,9 @@ fn cleanup_transcode_group(group: TranscodeGroup) {
         if let Some(mut audio_dec) = group.audio_dec_ctx {
             ffi::avcodec_free_context(&mut audio_dec);
         }
+        if let Some(mut device_ref) = group.video_hw_device {
+            ffi::av_buffer_unref(&mut device_ref);
+        }
         ffi::avcodec_free_context(&mut (group.video_enc_ctx as *mut _));
         ffi::avcodec_free_context(&mut (group.video_dec_ctx as *mut _));
     }
@@ -1143,6 +1159,56 @@ fn cleanup_outputs(groups: Vec<GroupOutputs>) {
             }
         }
     }
+}
+
+fn is_hw_encoder(encoder_name: &str) -> bool {
+    let name = encoder_name.to_ascii_lowercase();
+    name.contains("nvenc") || name.contains("qsv") || name.contains("amf")
+}
+
+fn hw_device_type_for_encoder(encoder_name: &str) -> Option<ffi::AVHWDeviceType> {
+    let name = encoder_name.to_ascii_lowercase();
+    if name.contains("nvenc") {
+        Some(ffi::AV_HWDEVICE_TYPE_CUDA)
+    } else if name.contains("qsv") {
+        Some(ffi::AV_HWDEVICE_TYPE_QSV)
+    } else if name.contains("amf") {
+        Some(ffi::AV_HWDEVICE_TYPE_D3D11VA)
+    } else {
+        None
+    }
+}
+
+fn attach_hw_device(
+    encoder_name: &str,
+    enc_ctx: *mut ffi::AVCodecContext,
+) -> Option<*mut ffi::AVBufferRef> {
+    let device_type = hw_device_type_for_encoder(encoder_name)?;
+
+    let mut device_ctx: *mut ffi::AVBufferRef = ptr::null_mut();
+    let ret = unsafe {
+        ffi::av_hwdevice_ctx_create(&mut device_ctx, device_type, ptr::null(), ptr::null_mut(), 0)
+    };
+    if ret < 0 || device_ctx.is_null() {
+        log::debug!(
+            "FFmpeg libs hw device init failed for {}: {}",
+            encoder_name,
+            ffmpeg_err(ret)
+        );
+        return None;
+    }
+
+    let device_ref = unsafe { ffi::av_buffer_ref(device_ctx) };
+    unsafe { ffi::av_buffer_unref(&mut device_ctx) };
+    if device_ref.is_null() {
+        return None;
+    }
+
+    unsafe {
+        (*enc_ctx).hw_device_ctx = device_ref;
+    }
+
+    Some(device_ref)
 }
 
 fn ffmpeg_err(code: i32) -> String {
@@ -1172,24 +1238,27 @@ fn parse_bitrate_to_bits(value: &str) -> Option<i64> {
     Some((number * multiplier) as i64)
 }
 
-fn select_pix_fmt(encoder: *const ffi::AVCodec, fallback: ffi::AVPixelFormat) -> ffi::AVPixelFormat {
+fn select_pix_fmt(encoder: *const ffi::AVCodec, prefer_nv12: bool) -> ffi::AVPixelFormat {
     if encoder.is_null() {
-        return fallback;
+        return ffi::AV_PIX_FMT_YUV420P;
     }
     unsafe {
         let mut formats = (*encoder).pix_fmts;
         if formats.is_null() {
-            return fallback;
+            return ffi::AV_PIX_FMT_YUV420P;
         }
+        let mut fallback = ffi::AV_PIX_FMT_YUV420P;
         while *formats != ffi::AV_PIX_FMT_NONE {
-            if *formats == ffi::AV_PIX_FMT_YUV420P
-                || *formats == ffi::AV_PIX_FMT_NV12 {
+            if prefer_nv12 && *formats == ffi::AV_PIX_FMT_NV12 {
                 return *formats;
+            }
+            if *formats == ffi::AV_PIX_FMT_YUV420P || *formats == ffi::AV_PIX_FMT_NV12 {
+                fallback = *formats;
             }
             formats = formats.add(1);
         }
+        fallback
     }
-    fallback
 }
 
 fn select_sample_fmt(encoder: *const ffi::AVCodec, fallback: ffi::AVSampleFormat) -> ffi::AVSampleFormat {
