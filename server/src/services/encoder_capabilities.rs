@@ -143,27 +143,27 @@ impl EncoderCapabilities {
         // Later phases will add native OBS-style probing via FFmpeg libs
 
         log::info!("Probing NVENC (NVIDIA)...");
-        caps.nvenc = Self::probe_nvenc_via_cli();
+        caps.nvenc = Self::probe_nvenc_via_cli(&mut caps.probe_errors);
         log::info!("  NVENC: available={}, h264={}, hevc={}, av1={}, gpu={:?}",
             caps.nvenc.available, caps.nvenc.h264, caps.nvenc.hevc, caps.nvenc.av1, caps.nvenc.gpu_name);
 
         log::info!("Probing AMF (AMD)...");
-        caps.amf = Self::probe_amf_via_cli();
+        caps.amf = Self::probe_amf_via_cli(&mut caps.probe_errors);
         log::info!("  AMF: available={}, h264={}, hevc={}, av1={}",
             caps.amf.available, caps.amf.h264, caps.amf.hevc, caps.amf.av1);
 
         log::info!("Probing QSV (Intel)...");
-        caps.qsv = Self::probe_qsv_via_cli();
+        caps.qsv = Self::probe_qsv_via_cli(&mut caps.probe_errors);
         log::info!("  QSV: available={}, h264={}, hevc={}, av1={}, low_power={}",
             caps.qsv.available, caps.qsv.h264, caps.qsv.hevc, caps.qsv.av1, caps.qsv.low_power);
 
         log::info!("Probing VideoToolbox (Apple)...");
-        caps.videotoolbox = Self::probe_videotoolbox_via_cli();
+        caps.videotoolbox = Self::probe_videotoolbox_via_cli(&mut caps.probe_errors);
         log::info!("  VideoToolbox: available={}, h264={}, hevc={}",
             caps.videotoolbox.available, caps.videotoolbox.h264, caps.videotoolbox.hevc);
 
         log::info!("Probing software encoders...");
-        caps.software = Self::probe_software_via_cli();
+        caps.software = Self::probe_software_via_cli(&mut caps.probe_errors);
         log::info!("  Software: libx264={}, libx265={}, libsvtav1={}, aac={}, opus={}",
             caps.software.libx264, caps.software.libx265, caps.software.libsvtav1,
             caps.software.aac, caps.software.opus);
@@ -416,6 +416,20 @@ impl EncoderCapabilities {
         }
     }
 
+    fn record_probe_error(
+        probe_errors: &mut Vec<String>,
+        encoder: &str,
+        output: &str,
+    ) {
+        let trimmed = output.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+
+        let snippet: String = trimmed.chars().take(500).collect();
+        probe_errors.push(format!("{encoder}: {snippet}"));
+    }
+
     /// Check if an encoder is available in FFmpeg
     fn encoder_available(encoder_name: &str) -> bool {
         Self::run_ffmpeg(&["-encoders", "-hide_banner"])
@@ -424,7 +438,7 @@ impl EncoderCapabilities {
     }
 
     /// Probe NVENC via CLI
-    fn probe_nvenc_via_cli() -> NvencCaps {
+    fn probe_nvenc_via_cli(probe_errors: &mut Vec<String>) -> NvencCaps {
         let mut caps = NvencCaps::default();
 
         // Check if NVENC encoders are compiled into FFmpeg
@@ -437,6 +451,7 @@ impl EncoderCapabilities {
 
         if !h264_available && !hevc_available && !av1_available {
             log::debug!("  NVENC: No encoders compiled into FFmpeg");
+            probe_errors.push("nvenc: not compiled into ffmpeg".to_string());
             return caps;
         }
 
@@ -463,6 +478,7 @@ impl EncoderCapabilities {
             if has_error {
                 log::debug!("  NVENC: Hardware/driver not available");
                 log::trace!("  NVENC error output: {}", output);
+                Self::record_probe_error(probe_errors, "nvenc", &output);
             } else {
                 log::debug!("  NVENC: Encoder initialization successful");
                 caps.available = true;
@@ -500,19 +516,21 @@ impl EncoderCapabilities {
             }
         } else {
             log::debug!("  NVENC: Failed to run FFmpeg test encode");
+            probe_errors.push("nvenc: ffmpeg test encode failed to start".to_string());
         }
 
         caps
     }
 
     /// Probe AMF via CLI
-    fn probe_amf_via_cli() -> AmfCaps {
+    fn probe_amf_via_cli(probe_errors: &mut Vec<String>) -> AmfCaps {
         let mut caps = AmfCaps::default();
 
         // AMF is Windows-only
         #[cfg(not(target_os = "windows"))]
         {
             log::debug!("  AMF: Not available (Windows-only)");
+            probe_errors.push("amf: unsupported platform".to_string());
             return caps;
         }
 
@@ -527,6 +545,7 @@ impl EncoderCapabilities {
 
             if !h264_available && !hevc_available && !av1_available {
                 log::debug!("  AMF: No encoders compiled into FFmpeg");
+                probe_errors.push("amf: not compiled into ffmpeg".to_string());
                 return caps;
             }
 
@@ -560,6 +579,7 @@ impl EncoderCapabilities {
                 if has_error {
                     log::debug!("  AMF: Hardware/driver not available");
                     log::trace!("  AMF full error output: {}", output);
+                    Self::record_probe_error(probe_errors, "amf", &output);
                 } else {
                     log::debug!("  AMF: Encoder initialization successful");
                     caps.available = true;
@@ -570,6 +590,7 @@ impl EncoderCapabilities {
                 }
             } else {
                 log::debug!("  AMF: Failed to run FFmpeg test encode");
+                probe_errors.push("amf: ffmpeg test encode failed to start".to_string());
             }
 
             caps
@@ -577,13 +598,14 @@ impl EncoderCapabilities {
     }
 
     /// Probe QSV via CLI
-    fn probe_qsv_via_cli() -> QsvCaps {
+    fn probe_qsv_via_cli(probe_errors: &mut Vec<String>) -> QsvCaps {
         let mut caps = QsvCaps::default();
 
         // QSV is Windows/Linux only
         #[cfg(target_os = "macos")]
         {
             log::debug!("  QSV: Not available (Windows/Linux only)");
+            probe_errors.push("qsv: unsupported platform".to_string());
             return caps;
         }
 
@@ -598,6 +620,7 @@ impl EncoderCapabilities {
 
             if !h264_available && !hevc_available && !av1_available {
                 log::debug!("  QSV: No encoders compiled into FFmpeg");
+                probe_errors.push("qsv: not compiled into ffmpeg".to_string());
                 return caps;
             }
 
@@ -621,6 +644,7 @@ impl EncoderCapabilities {
                 if has_error {
                     log::debug!("  QSV: Hardware/driver not available");
                     log::trace!("  QSV error output: {}", output);
+                    Self::record_probe_error(probe_errors, "qsv", &output);
                 } else {
                     log::debug!("  QSV: Encoder initialization successful");
                     caps.available = true;
@@ -637,6 +661,7 @@ impl EncoderCapabilities {
                 }
             } else {
                 log::debug!("  QSV: Failed to run FFmpeg test encode");
+                probe_errors.push("qsv: ffmpeg test encode failed to start".to_string());
             }
 
             caps
@@ -644,10 +669,13 @@ impl EncoderCapabilities {
     }
 
     /// Probe VideoToolbox via CLI
-    fn probe_videotoolbox_via_cli() -> VideoToolboxCaps {
+    fn probe_videotoolbox_via_cli(probe_errors: &mut Vec<String>) -> VideoToolboxCaps {
         // VideoToolbox is macOS only
         #[cfg(not(target_os = "macos"))]
-        return VideoToolboxCaps::default();
+        {
+            probe_errors.push("videotoolbox: unsupported platform".to_string());
+            return VideoToolboxCaps::default();
+        }
 
         #[cfg(target_os = "macos")]
         let mut caps = VideoToolboxCaps::default();
@@ -673,7 +701,7 @@ impl EncoderCapabilities {
     }
 
     /// Probe software encoders via CLI
-    fn probe_software_via_cli() -> SoftwareCaps {
+    fn probe_software_via_cli(_probe_errors: &mut Vec<String>) -> SoftwareCaps {
         let caps = SoftwareCaps {
             libx264: Self::encoder_available("libx264"),
             libx265: Self::encoder_available("libx265"),
