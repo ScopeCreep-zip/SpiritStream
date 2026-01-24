@@ -141,6 +141,33 @@ function getExplicitTarget(): string | null {
   return null;
 }
 
+function getFeatures(): string | null {
+  const fromEnv = process.env['SPIRITSTREAM_SERVER_FEATURES']
+    || process.env['npm_config_features']
+    || '';
+  const args = process.argv;
+
+  let fromArgs = '';
+  const featuresIndex = args.indexOf('--features');
+  if (featuresIndex !== -1 && args[featuresIndex + 1]) {
+    fromArgs = args[featuresIndex + 1];
+  } else {
+    const inline = args.find((arg) => arg.startsWith('--features='));
+    if (inline) {
+      fromArgs = inline.split('=')[1] || '';
+    }
+  }
+
+  const raw = [fromArgs, fromEnv].filter(Boolean).join(',');
+  const normalized = raw
+    .split(/[,\s]+/)
+    .map((feature) => feature.trim())
+    .filter(Boolean)
+    .join(',');
+
+  return normalized.length > 0 ? normalized : null;
+}
+
 // Detect platform and architecture
 const platform = process.platform;
 const arch = process.arch;
@@ -166,6 +193,7 @@ function getRustTarget(): string {
 const target = getRustTarget();
 const explicitTarget = getExplicitTarget();
 const ext = platform === 'win32' ? '.exe' : '';
+const features = getFeatures();
 
 console.log(`Building server binary for ${target} (${profile})...`);
 
@@ -187,9 +215,10 @@ if (!existsSync(destPath)) {
 // Build the server binary from /server/ (using absolute path to manifest)
 const manifestPath = join(projectRoot, 'server', 'Cargo.toml');
 const targetFlag = explicitTarget ? `--target ${explicitTarget}` : '';
+const featuresFlag = features ? `--features ${features}` : '';
 const buildCmd = isRelease
-  ? `cargo build --manifest-path "${manifestPath}" --release ${targetFlag}`.trim()
-  : `cargo build --manifest-path "${manifestPath}" ${targetFlag}`.trim();
+  ? `cargo build --manifest-path "${manifestPath}" --release ${targetFlag} ${featuresFlag}`.trim()
+  : `cargo build --manifest-path "${manifestPath}" ${targetFlag} ${featuresFlag}`.trim();
 
 try {
   runCargoCommand(buildCmd, projectRoot);
