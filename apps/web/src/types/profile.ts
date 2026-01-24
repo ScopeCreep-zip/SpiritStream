@@ -5,8 +5,19 @@
 import type { Platform } from './generated-platforms';
 export type { Platform };
 
+// Import and re-export source and scene types
+import type { Source, SourceType } from './source';
+import type { Scene, SourceLayer, Transform, Crop, AudioMixer, AudioTrack } from './scene';
+export type { Source, SourceType };
+export type { Scene, SourceLayer, Transform, Crop, AudioMixer, AudioTrack };
+
+// Import factory functions for creating default sources/scenes
+import { createDefaultRtmpSource } from './source';
+import { createDefaultScene, addFullscreenLayerToScene } from './scene';
+
 /**
  * RTMP Input configuration - where the stream enters the system
+ * LEGACY: Kept for backward compatibility, use Sources instead
  */
 export interface RtmpInput {
   type: 'rtmp';
@@ -77,7 +88,14 @@ export interface Profile {
   id: string;
   name: string;
   encrypted: boolean;
-  input: RtmpInput;
+  /** LEGACY: RTMP input configuration (for backward compatibility) */
+  input?: RtmpInput;
+  /** NEW: Multiple input sources (RTMP, cameras, screens, files, etc.) */
+  sources: Source[];
+  /** NEW: Scene compositions (layouts with positioned sources) */
+  scenes: Scene[];
+  /** NEW: Currently active scene ID */
+  activeSceneId?: string;
   outputGroups: OutputGroup[];
 }
 
@@ -161,13 +179,95 @@ export const createDefaultStreamTarget = (service: Platform): StreamTarget => ({
   streamKey: '',
 });
 
-export const createDefaultProfile = (name: string = 'New Profile'): Profile => ({
+export const createDefaultProfile = (name: string = 'New Profile'): Profile => {
+  // Create default RTMP source
+  const rtmpSource = createDefaultRtmpSource('Main Input');
+
+  // Create default scene with the RTMP source
+  const defaultScene = addFullscreenLayerToScene(
+    createDefaultScene('Main'),
+    rtmpSource.id
+  );
+
+  return {
+    id: crypto.randomUUID(),
+    name,
+    encrypted: false,
+    // Legacy input field is now optional
+    input: undefined,
+    // New multi-source fields
+    sources: [rtmpSource],
+    scenes: [defaultScene],
+    activeSceneId: defaultScene.id,
+    outputGroups: [createPassthroughOutputGroup()],
+  };
+};
+
+/**
+ * Create a profile with legacy input format (for backward compatibility)
+ */
+export const createLegacyProfile = (name: string = 'New Profile'): Profile => ({
   id: crypto.randomUUID(),
   name,
   encrypted: false,
   input: createDefaultRtmpInput(),
-  outputGroups: [createPassthroughOutputGroup()], // Always include default passthrough group
+  sources: [],
+  scenes: [],
+  activeSceneId: undefined,
+  outputGroups: [createPassthroughOutputGroup()],
 });
+
+/**
+ * Migrate a legacy profile to the new multi-source format
+ * Call this after loading a profile to ensure it uses the new format
+ */
+export const migrateProfileIfNeeded = (profile: Profile): Profile => {
+  // Skip if already migrated (has sources)
+  if (profile.sources.length > 0) {
+    return profile;
+  }
+
+  // Check if legacy input exists
+  if (!profile.input) {
+    // No input at all - create default source and scene
+    const rtmpSource = createDefaultRtmpSource('Main Input');
+    const defaultScene = addFullscreenLayerToScene(
+      createDefaultScene('Main'),
+      rtmpSource.id
+    );
+
+    return {
+      ...profile,
+      input: undefined,
+      sources: [rtmpSource],
+      scenes: [defaultScene],
+      activeSceneId: defaultScene.id,
+    };
+  }
+
+  // Migrate legacy input to source
+  const rtmpSource = {
+    type: 'rtmp' as const,
+    id: crypto.randomUUID(),
+    name: 'Main Input',
+    bindAddress: profile.input.bindAddress,
+    port: profile.input.port,
+    application: profile.input.application,
+  };
+
+  const defaultScene = addFullscreenLayerToScene(
+    createDefaultScene('Main'),
+    rtmpSource.id
+  );
+
+  return {
+    ...profile,
+    input: undefined, // Clear legacy field
+    sources: [rtmpSource],
+    scenes: [defaultScene],
+    activeSceneId: defaultScene.id,
+  };
+};
 
 /**
  * Helper to format resolution string from video settings
@@ -192,4 +292,49 @@ export const parseBitrateToKbps = (bitrate: string): number => {
   const unit = match[2]?.toLowerCase();
   if (unit === 'm') return value * 1000;
   return value;
+};
+
+/**
+ * Get the incoming RTMP URL from a profile
+ * Checks both legacy input and new sources
+ */
+export const getIncomingUrl = (profile: Profile): string | null => {
+  // First check legacy input field
+  if (profile.input) {
+    return `rtmp://${profile.input.bindAddress}:${profile.input.port}/${profile.input.application}`;
+  }
+
+  // Check new sources - find first RTMP source
+  for (const source of profile.sources) {
+    if (source.type === 'rtmp') {
+      return `rtmp://${source.bindAddress}:${source.port}/${source.application}`;
+    }
+  }
+
+  return null;
+};
+
+/**
+ * Get the RTMP input configuration from a profile
+ * Returns either legacy input or first RTMP source as RtmpInput format
+ */
+export const getRtmpInput = (profile: Profile): RtmpInput | null => {
+  // First check legacy input field
+  if (profile.input) {
+    return profile.input;
+  }
+
+  // Check new sources - find first RTMP source
+  for (const source of profile.sources) {
+    if (source.type === 'rtmp') {
+      return {
+        type: 'rtmp',
+        bindAddress: source.bindAddress,
+        port: source.port,
+        application: source.application,
+      };
+    }
+  }
+
+  return null;
 };
