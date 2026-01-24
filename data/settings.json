@@ -6,11 +6,11 @@
   "autoDownloadFfmpeg": true,
   "encryptStreamKeys": false,
   "logRetentionDays": 30,
-  "themeId": "spirit-dark",
+  "themeId": "spiritstream-dark",
   "backendRemoteEnabled": false,
   "backendUiEnabled": false,
   "backendHost": "127.0.0.1",
   "backendPort": 8008,
   "backendToken": "",
-  "lastProfile": null
+  "lastProfile": "Preview Test"
 }

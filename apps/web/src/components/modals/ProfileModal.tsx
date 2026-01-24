@@ -8,7 +8,7 @@ import { Toggle } from '@/components/ui/Toggle';
 import { useProfileStore } from '@/stores/profileStore';
 import { api } from '@/lib/backend';
 import type { Profile, RtmpInput } from '@/types/profile';
-import { createDefaultProfile } from '@/types/profile';
+import { createDefaultProfile, getRtmpInput } from '@/types/profile';
 
 export interface ProfileModalProps {
   open: boolean;
@@ -54,11 +54,12 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
   useEffect(() => {
     if (open) {
       if (mode === 'edit' && profile) {
+        const rtmpInput = getRtmpInput(profile);
         setFormData({
           name: profile.name,
-          bindAddress: profile.input.bindAddress,
-          port: String(profile.input.port),
-          application: profile.input.application,
+          bindAddress: rtmpInput?.bindAddress ?? '0.0.0.0',
+          port: String(rtmpInput?.port ?? 1935),
+          application: rtmpInput?.application ?? 'live',
           usePassword: false,
           password: '',
           confirmPassword: '',

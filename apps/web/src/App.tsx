@@ -11,6 +11,7 @@ import {
   Cog,
   Play,
   Square,
+  Video,
 } from 'lucide-react';
 
 import { AppShell } from '@/components/layout/AppShell';
@@ -35,6 +36,7 @@ import { useConnectionStatus } from '@/hooks/useConnectionStatus';
 import { useBackendConnection } from '@/hooks/useBackendConnection';
 import { useDataSync } from '@/hooks/useDataSync';
 import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValidation';
+import { getIncomingUrl } from '@/types/profile';
 import { toast } from '@/hooks/useToast';
 import { useThemeStore } from '@/stores/themeStore';
 import { checkAuth, checkServerHealth, checkServerReady } from '@/lib/backend/env';
@@ -51,10 +53,12 @@ import {
   Logs,
   Settings,
 } from '@/views';
+import { Stream } from '@/views/Stream';
 
 export type View =
   | 'dashboard'
   | 'profiles'
+  | 'stream'
   | 'streams'
   | 'encoder'
   | 'outputs'
@@ -250,8 +254,12 @@ function AppContent() {
       }
 
       // Validation passed, start streaming
-      // Build incoming URL from structured input
-      const incomingUrl = `rtmp://${current.input.bindAddress}:${current.input.port}/${current.input.application}`;
+      // Get incoming URL from profile (supports both legacy and new source formats)
+      const incomingUrl = getIncomingUrl(current);
+      if (!incomingUrl) {
+        toast.error('No RTMP input configured');
+        return;
+      }
       await startAllGroups(current.outputGroups, incomingUrl);
       toast.success(t('toast.streamStarted'));
     } catch (err) {
@@ -287,6 +295,8 @@ function AppContent() {
         );
       case 'profiles':
         return <Profiles />;
+      case 'stream':
+        return <Stream />;
       case 'streams':
         return <StreamManager onNavigate={handleNavigate} />;
       case 'encoder':
@@ -376,6 +386,12 @@ function AppContent() {
               label={t('nav.streamManager')}
               active={currentView === 'streams'}
               onClick={() => setCurrentView('streams')}
+            />
+            <NavItem
+              icon={<Video className="w-5 h-5" />}
+              label="Stream Studio"
+              active={currentView === 'stream'}
+              onClick={() => setCurrentView('stream')}
             />
           </NavSection>
           <NavSection title={t('nav.configuration')}>

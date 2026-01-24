@@ -44,6 +44,10 @@
     "settings": {
       "title": "Settings",
       "description": "Configure application preferences"
+    },
+    "stream": {
+      "title": "Stream Studio",
+      "description": "Multi-source composition and live streaming"
     }
   },
   "dashboard": {

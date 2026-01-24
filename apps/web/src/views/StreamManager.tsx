@@ -15,6 +15,7 @@ import { formatUptime, formatBitrate } from '@/hooks/useStreamStats';
 import { toast } from '@/hooks/useToast';
 import type { View } from '@/App';
 import type { OutputGroup as OutputGroupType, StreamTarget } from '@/types/profile';
+import { getIncomingUrl } from '@/types/profile';
 import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValidation';
 
 interface StreamManagerProps {
@@ -78,8 +79,12 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
       }
 
       // Validation passed, start streaming
-      // Build incoming URL from structured input
-      const incomingUrl = `rtmp://${current.input.bindAddress}:${current.input.port}/${current.input.application}`;
+      // Get incoming URL from profile (supports both legacy and new source formats)
+      const incomingUrl = getIncomingUrl(current);
+      if (!incomingUrl) {
+        toast.error('No RTMP input configured');
+        return;
+      }
       await startAllGroups(current.outputGroups, incomingUrl);
       toast.success(t('toast.streamStarted'));
     } catch (err) {

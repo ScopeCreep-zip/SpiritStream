@@ -8,6 +8,13 @@ import type { ThemeSummary } from '@/types/theme';
  * Type-safe Tauri API wrapper
  */
 export const api = {
+  /**
+   * Generic invoke method for calling any backend command.
+   * Use this for commands that don't have a specific method on the api object.
+   */
+  invoke: <T>(command: string, args?: Record<string, unknown>): Promise<T> =>
+    invoke<T>(command, args),
+
   profile: {
     getAll: () => invoke<string[]>('get_all_profiles'),
     /** Get profile summaries with services list for displaying platform icons (Story 1.1, 4.1, 4.2) */
