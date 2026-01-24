@@ -820,6 +820,11 @@ impl FFmpegHandler {
             .unwrap_or_default()
     }
 
+    /// Get the FFmpeg path being used by this handler
+    pub fn get_ffmpeg_path(&self) -> String {
+        self.ffmpeg_path.clone()
+    }
+
     /// Enable a specific stream target (removes from disabled set)
     pub fn enable_target(&self, target_id: &str) {
         let mut disabled = self.disabled_targets.lock().unwrap_or_else(|e| {

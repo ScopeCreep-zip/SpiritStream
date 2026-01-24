@@ -280,6 +280,7 @@ impl ProfileManager {
 
     /// Check if the RTMP input port conflicts with any existing profile
     /// Returns Ok(()) if no conflict, or Err with conflicting profile name
+    /// This checks both legacy input fields and new RTMP sources
     pub async fn validate_input_conflict(
         &self,
         profile_id: &str,
@@ -295,18 +296,36 @@ impl ProfileManager {
                     continue;
                 }
 
-                // Check for port conflict on same bind address
-                // Both "0.0.0.0" and specific IPs should be checked
-                let bind_conflict = existing.input.bind_address == input.bind_address
-                    || existing.input.bind_address == "0.0.0.0"
-                    || input.bind_address == "0.0.0.0";
+                // Check legacy input field if present
+                if let Some(ref existing_input) = existing.input {
+                    let bind_conflict = existing_input.bind_address == input.bind_address
+                        || existing_input.bind_address == "0.0.0.0"
+                        || input.bind_address == "0.0.0.0";
 
-                if bind_conflict && existing.input.port == input.port {
-                    return Err(format!(
-                        "Port {} is already configured for profile '{}'. Only one profile can listen on a port at a time.",
-                        input.port,
-                        existing.name
-                    ));
+                    if bind_conflict && existing_input.port == input.port {
+                        return Err(format!(
+                            "Port {} is already configured for profile '{}'. Only one profile can listen on a port at a time.",
+                            input.port,
+                            existing.name
+                        ));
+                    }
+                }
+
+                // Also check new RTMP sources
+                for source in &existing.sources {
+                    if let crate::models::Source::Rtmp(rtmp_source) = source {
+                        let bind_conflict = rtmp_source.bind_address == input.bind_address
+                            || rtmp_source.bind_address == "0.0.0.0"
+                            || input.bind_address == "0.0.0.0";
+
+                        if bind_conflict && rtmp_source.port == input.port {
+                            return Err(format!(
+                                "Port {} is already configured for profile '{}'. Only one profile can listen on a port at a time.",
+                                input.port,
+                                existing.name
+                            ));
+                        }
+                    }
                 }
             }
             // Skip encrypted profiles we can't read (they might conflict but we can't check)

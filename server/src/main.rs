@@ -1,4 +1,5 @@
 use axum::{
+    body::Body,
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         Json, Path, Query, State,
@@ -9,6 +10,8 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use futures_util::StreamExt;
+use tokio_stream::wrappers::BroadcastStream;
 use governor::{
     clock::DefaultClock,
     state::{InMemoryState, NotKeyed},
@@ -37,11 +40,13 @@ use tower_http::{
 };
 
 use spiritstream_server::commands::{get_encoders, test_ffmpeg, test_rtmp_target, validate_ffmpeg_path};
-use spiritstream_server::models::{OutputGroup, Profile, RtmpInput, Settings};
+use spiritstream_server::models::{
+    OutputGroup, Profile, RtmpInput, Settings, Source, Scene, SourceLayer, Transform, AudioTrack,
+};
 use spiritstream_server::services::{
     prune_logs, read_recent_logs, validate_extension, validate_path_within_any,
     Encryption, EventSink, FFmpegDownloader, FFmpegHandler, ProfileManager, SettingsManager,
-    ThemeManager,
+    ThemeManager, DeviceDiscovery, PreviewHandler, PreviewParams, Go2rtcService,
 };
 
 // ============================================================================
@@ -98,6 +103,8 @@ struct AppState {
     ffmpeg_handler: Arc<FFmpegHandler>,
     ffmpeg_downloader: Arc<AsyncMutex<FFmpegDownloader>>,
     theme_manager: Arc<ThemeManager>,
+    preview_handler: Arc<PreviewHandler>,
+    go2rtc_service: Arc<Go2rtcService>,
     event_bus: EventBus,
     log_dir: PathBuf,
     app_data_dir: PathBuf,
@@ -690,6 +697,412 @@ struct AuthQuery {
     token: Option<String>,
 }
 
+// ============================================================================
+// Preview Endpoints
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+struct PreviewQuery {
+    width: Option<u32>,
+    height: Option<u32>,
+    fps: Option<u32>,
+    quality: Option<u32>,
+}
+
+impl From<PreviewQuery> for PreviewParams {
+    fn from(query: PreviewQuery) -> Self {
+        let defaults = PreviewParams::default();
+        PreviewParams {
+            width: query.width.unwrap_or(defaults.width).min(1280), // Cap at 720p width
+            height: query.height.unwrap_or(defaults.height).min(720),
+            fps: query.fps.unwrap_or(defaults.fps).min(30).max(5),
+            quality: query.quality.unwrap_or(defaults.quality).clamp(1, 15),
+        }
+    }
+}
+
+/// GET /api/preview/source/:source_id - Stream MJPEG preview for a source
+async fn source_preview_handler(
+    State(state): State<AppState>,
+    Path(source_id): Path<String>,
+    Query(query): Query<PreviewQuery>,
+    cookies: Cookies,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    log::info!("Preview request for source: {}", source_id);
+
+    // Authentication check (note: also accept token in query param for img tags)
+    if let Some(expected) = state.auth_token.as_deref() {
+        let authenticated = cookies.get(AUTH_COOKIE_NAME).is_some()
+            || bearer_token(&headers).is_some_and(|t| verify_token(expected, t));
+
+        if !authenticated {
+            log::warn!("Preview request unauthorized for source: {}", source_id);
+            return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+        }
+    }
+
+    let params: PreviewParams = query.into();
+    log::debug!("Preview params: {}x{} @ {} fps, quality {}", params.width, params.height, params.fps, params.quality);
+
+    // Find source from active profile
+    let source = {
+        // Get last profile from settings
+        let settings = match state.settings_manager.load() {
+            Ok(s) => s,
+            Err(e) => {
+                log::error!("Failed to load settings for preview: {}", e);
+                return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load settings").into_response();
+            }
+        };
+
+        let profile_name = match settings.last_profile.as_ref() {
+            Some(name) => name.clone(),
+            None => {
+                log::warn!("No active profile for preview request");
+                return (StatusCode::BAD_REQUEST, "No active profile").into_response();
+            }
+        };
+
+        log::debug!("Loading profile '{}' for preview", profile_name);
+
+        // Load profile (without password for preview - encrypted profiles not supported in preview yet)
+        match state.profile_manager.load(&profile_name, None).await {
+            Ok(profile) => {
+                log::debug!("Profile has {} sources", profile.sources.len());
+                profile.sources.into_iter().find(|s| s.id() == source_id)
+            }
+            Err(e) => {
+                log::error!("Failed to load profile for preview: {}", e);
+                return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load profile").into_response();
+            }
+        }
+    };
+
+    let source = match source {
+        Some(s) => {
+            log::info!("Found source for preview: {} (type: {:?})", s.name(), s.id());
+            s
+        }
+        None => {
+            log::warn!("Source {} not found in profile", source_id);
+            return (StatusCode::NOT_FOUND, "Source not found").into_response();
+        }
+    };
+
+    // Start preview stream
+    let rx = match state.preview_handler.start_source_preview(&source, params) {
+        Ok(rx) => rx,
+        Err(e) => {
+            log::error!("Failed to start preview: {}", e);
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to start preview: {}", e)).into_response();
+        }
+    };
+
+    // Convert broadcast receiver to stream
+    let stream = BroadcastStream::new(rx);
+
+    // Build MJPEG streaming response
+    // Format based on go2rtc (proven browser-compatible):
+    // "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: <len>\r\n\r\n" + jpeg_data + "\r\n"
+    let body_stream = stream.filter_map(move |result| {
+        async move {
+            match result {
+                Ok(frame_data) => {
+                    // Build multipart MJPEG frame matching go2rtc format exactly
+                    let header = format!(
+                        "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: {}\r\n\r\n",
+                        frame_data.len()
+                    );
+                    let mut response = Vec::with_capacity(frame_data.len() + header.len() + 2);
+                    response.extend_from_slice(header.as_bytes());
+                    response.extend_from_slice(&frame_data);
+                    response.extend_from_slice(b"\r\n");
+                    Some(Ok::<_, std::io::Error>(axum::body::Bytes::from(response)))
+                }
+                Err(_) => None, // Skip lagged frames
+            }
+        }
+    });
+
+    let body = Body::from_stream(body_stream);
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(
+            header::CONTENT_TYPE,
+            "multipart/x-mixed-replace; boundary=frame",
+        )
+        .header(header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")
+        .header(header::PRAGMA, "no-cache")
+        .header(header::EXPIRES, "0")
+        .body(body)
+        .unwrap()
+        .into_response()
+}
+
+/// POST /api/preview/source/:source_id/stop - Stop a source preview
+async fn stop_source_preview_handler(
+    State(state): State<AppState>,
+    Path(source_id): Path<String>,
+    cookies: Cookies,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    // Authentication check
+    if let Some(expected) = state.auth_token.as_deref() {
+        let authenticated = cookies.get(AUTH_COOKIE_NAME).is_some()
+            || bearer_token(&headers).is_some_and(|t| verify_token(expected, t));
+
+        if !authenticated {
+            return (StatusCode::UNAUTHORIZED, Json(json!({ "ok": false, "error": "Unauthorized" })));
+        }
+    }
+
+    state.preview_handler.stop_source_preview(&source_id);
+    (StatusCode::OK, Json(json!({ "ok": true })))
+}
+
+/// POST /api/preview/stop-all - Stop all previews
+async fn stop_all_previews_handler(
+    State(state): State<AppState>,
+    cookies: Cookies,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    // Authentication check
+    if let Some(expected) = state.auth_token.as_deref() {
+        let authenticated = cookies.get(AUTH_COOKIE_NAME).is_some()
+            || bearer_token(&headers).is_some_and(|t| verify_token(expected, t));
+
+        if !authenticated {
+            return (StatusCode::UNAUTHORIZED, Json(json!({ "ok": false, "error": "Unauthorized" })));
+        }
+    }
+
+    state.preview_handler.stop_all_previews();
+    (StatusCode::OK, Json(json!({ "ok": true })))
+}
+
+/// GET /api/preview/source/:source_id/snapshot - Get a single JPEG snapshot
+/// More reliable than MJPEG streaming for WebKit-based browsers (Safari, Tauri)
+async fn source_snapshot_handler(
+    State(state): State<AppState>,
+    Path(source_id): Path<String>,
+    Query(query): Query<PreviewQuery>,
+    cookies: Cookies,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    // Authentication check
+    if let Some(expected) = state.auth_token.as_deref() {
+        let authenticated = cookies.get(AUTH_COOKIE_NAME).is_some()
+            || bearer_token(&headers).is_some_and(|t| verify_token(expected, t));
+
+        if !authenticated {
+            return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+        }
+    }
+
+    let params: PreviewParams = query.into();
+
+    // Find source from active profile
+    let source = {
+        let settings = match state.settings_manager.load() {
+            Ok(s) => s,
+            Err(e) => {
+                log::error!("Failed to load settings for snapshot: {}", e);
+                return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load settings").into_response();
+            }
+        };
+
+        let profile_name = match settings.last_profile.as_ref() {
+            Some(name) => name.clone(),
+            None => {
+                return (StatusCode::BAD_REQUEST, "No active profile").into_response();
+            }
+        };
+
+        match state.profile_manager.load(&profile_name, None).await {
+            Ok(profile) => profile.sources.into_iter().find(|s| s.id() == source_id),
+            Err(e) => {
+                log::error!("Failed to load profile for snapshot: {}", e);
+                return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load profile").into_response();
+            }
+        }
+    };
+
+    let source = match source {
+        Some(s) => s,
+        None => {
+            return (StatusCode::NOT_FOUND, "Source not found").into_response();
+        }
+    };
+
+    // Capture snapshot
+    match state.preview_handler.capture_snapshot(&source, &params) {
+        Ok(jpeg_data) => {
+            Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, "image/jpeg")
+                .header(header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")
+                .body(Body::from(jpeg_data))
+                .unwrap()
+                .into_response()
+        }
+        Err(e) => {
+            log::error!("Snapshot capture failed: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, format!("Snapshot failed: {}", e)).into_response()
+        }
+    }
+}
+
+// ============================================================================
+// WebRTC Preview Endpoints (go2rtc)
+// ============================================================================
+
+/// POST /api/preview/webrtc/start - Start WebRTC preview for a source
+async fn start_webrtc_preview_handler(
+    State(state): State<AppState>,
+    cookies: Cookies,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> impl IntoResponse {
+    // Authentication check
+    if let Some(expected) = state.auth_token.as_deref() {
+        let authenticated = cookies.get(AUTH_COOKIE_NAME).is_some()
+            || bearer_token(&headers).is_some_and(|t| verify_token(expected, t));
+
+        if !authenticated {
+            return (StatusCode::UNAUTHORIZED, Json(json!({ "ok": false, "error": "Unauthorized" }))).into_response();
+        }
+    }
+
+    let source_id = match payload.get("sourceId").and_then(|v| v.as_str()) {
+        Some(id) => id.to_string(),
+        None => {
+            return (StatusCode::BAD_REQUEST, Json(json!({ "ok": false, "error": "Missing sourceId" }))).into_response();
+        }
+    };
+
+    // Check if go2rtc is available
+    if !state.go2rtc_service.is_available() {
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({
+            "ok": false,
+            "error": "WebRTC preview not available (go2rtc binary not found)"
+        }))).into_response();
+    }
+
+    // Find source from active profile
+    let source = {
+        let settings = match state.settings_manager.load() {
+            Ok(s) => s,
+            Err(e) => {
+                log::error!("Failed to load settings for WebRTC preview: {}", e);
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "ok": false, "error": "Failed to load settings" }))).into_response();
+            }
+        };
+
+        let profile_name = match settings.last_profile.as_ref() {
+            Some(name) => name.clone(),
+            None => {
+                return (StatusCode::BAD_REQUEST, Json(json!({ "ok": false, "error": "No active profile" }))).into_response();
+            }
+        };
+
+        match state.profile_manager.load(&profile_name, None).await {
+            Ok(profile) => profile.sources.into_iter().find(|s| s.id() == source_id),
+            Err(e) => {
+                log::error!("Failed to load profile for WebRTC preview: {}", e);
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "ok": false, "error": "Failed to load profile" }))).into_response();
+            }
+        }
+    };
+
+    let source = match source {
+        Some(s) => s,
+        None => {
+            return (StatusCode::NOT_FOUND, Json(json!({ "ok": false, "error": "Source not found" }))).into_response();
+        }
+    };
+
+    // Start WebRTC stream
+    match state.go2rtc_service.start_stream(&source).await {
+        Ok(stream_id) => {
+            let webrtc_ws_url = state.go2rtc_service.get_webrtc_ws_url(&stream_id);
+            (StatusCode::OK, Json(json!({
+                "ok": true,
+                "data": {
+                    "streamId": stream_id,
+                    "webrtcWsUrl": webrtc_ws_url,
+                    "go2rtcAvailable": true
+                }
+            }))).into_response()
+        }
+        Err(e) => {
+            log::error!("Failed to start WebRTC preview: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "ok": false, "error": format!("Failed to start preview: {}", e) }))).into_response()
+        }
+    }
+}
+
+/// POST /api/preview/webrtc/stop - Stop WebRTC preview for a source
+async fn stop_webrtc_preview_handler(
+    State(state): State<AppState>,
+    cookies: Cookies,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> impl IntoResponse {
+    // Authentication check
+    if let Some(expected) = state.auth_token.as_deref() {
+        let authenticated = cookies.get(AUTH_COOKIE_NAME).is_some()
+            || bearer_token(&headers).is_some_and(|t| verify_token(expected, t));
+
+        if !authenticated {
+            return (StatusCode::UNAUTHORIZED, Json(json!({ "ok": false, "error": "Unauthorized" })));
+        }
+    }
+
+    let source_id = match payload.get("sourceId").and_then(|v| v.as_str()) {
+        Some(id) => id.to_string(),
+        None => {
+            return (StatusCode::BAD_REQUEST, Json(json!({ "ok": false, "error": "Missing sourceId" })));
+        }
+    };
+
+    match state.go2rtc_service.stop_stream(&source_id).await {
+        Ok(_) => (StatusCode::OK, Json(json!({ "ok": true }))),
+        Err(e) => {
+            log::error!("Failed to stop WebRTC preview: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "ok": false, "error": format!("Failed to stop preview: {}", e) })))
+        }
+    }
+}
+
+/// GET /api/preview/webrtc/status - Get WebRTC preview availability and status
+async fn webrtc_preview_status_handler(
+    State(state): State<AppState>,
+    cookies: Cookies,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    // Authentication check
+    if let Some(expected) = state.auth_token.as_deref() {
+        let authenticated = cookies.get(AUTH_COOKIE_NAME).is_some()
+            || bearer_token(&headers).is_some_and(|t| verify_token(expected, t));
+
+        if !authenticated {
+            return (StatusCode::UNAUTHORIZED, Json(json!({ "ok": false, "error": "Unauthorized" })));
+        }
+    }
+
+    (StatusCode::OK, Json(json!({
+        "ok": true,
+        "data": {
+            "available": state.go2rtc_service.is_available(),
+            "running": state.go2rtc_service.is_running(),
+            "activeStreams": state.go2rtc_service.active_stream_count(),
+            "apiBaseUrl": state.go2rtc_service.api_base_url()
+        }
+    })))
+}
+
 async fn ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
@@ -793,6 +1206,13 @@ async fn invoke_command(
                 .profile_manager
                 .load_with_key_decryption(&name, password.as_deref())
                 .await?;
+
+            // Update last_profile in settings so preview handler knows which profile is active
+            if let Ok(mut settings) = state.settings_manager.load() {
+                settings.last_profile = Some(name.clone());
+                let _ = state.settings_manager.save(&settings);
+            }
+
             Ok(json!(profile))
         }
         "save_profile" => {
@@ -1046,6 +1466,653 @@ async fn invoke_command(
 
             Ok(json!(state.theme_manager.install_theme(&path)?))
         }
+
+        // ====================================================================
+        // Device Discovery Commands
+        // ====================================================================
+
+        "list_cameras" => {
+            let discovery = DeviceDiscovery::new(state.ffmpeg_handler.get_ffmpeg_path());
+            let cameras = discovery.list_cameras()?;
+            Ok(json!(cameras))
+        }
+        "list_displays" => {
+            let discovery = DeviceDiscovery::new(state.ffmpeg_handler.get_ffmpeg_path());
+            let displays = discovery.list_displays()?;
+            Ok(json!(displays))
+        }
+        "list_audio_devices" => {
+            let discovery = DeviceDiscovery::new(state.ffmpeg_handler.get_ffmpeg_path());
+            let devices = discovery.list_audio_inputs()?;
+            Ok(json!(devices))
+        }
+        "list_capture_cards" => {
+            let discovery = DeviceDiscovery::new(state.ffmpeg_handler.get_ffmpeg_path());
+            let cards = discovery.list_capture_cards()?;
+            Ok(json!(cards))
+        }
+        "refresh_devices" => {
+            // Return all device types at once
+            let discovery = DeviceDiscovery::new(state.ffmpeg_handler.get_ffmpeg_path());
+            let cameras = discovery.list_cameras().unwrap_or_default();
+            let displays = discovery.list_displays().unwrap_or_default();
+            let audio = discovery.list_audio_inputs().unwrap_or_default();
+            let capture_cards = discovery.list_capture_cards().unwrap_or_default();
+            Ok(json!({
+                "cameras": cameras,
+                "displays": displays,
+                "audioDevices": audio,
+                "captureCards": capture_cards
+            }))
+        }
+
+        // ====================================================================
+        // Source Management Commands
+        // ====================================================================
+
+        "add_source" => {
+            let profile_name: String = get_arg(&payload, "profileName")?;
+            let source: Source = get_arg(&payload, "source")?;
+            let password: Option<String> = get_opt_arg(&payload, "password")?;
+
+            let mut profile = state
+                .profile_manager
+                .load_with_key_decryption(&profile_name, password.as_deref())
+                .await?;
+
+            // Check for duplicate source ID
+            if profile.sources.iter().any(|s| s.id() == source.id()) {
+                return Err(format!("Source with ID {} already exists", source.id()));
+            }
+
+            profile.sources.push(source);
+
+            let settings = state.settings_manager.load()?;
+            state
+                .profile_manager
+                .save_with_key_encryption(&profile, password.as_deref(), settings.encrypt_stream_keys)
+                .await?;
+
+            state.event_bus.emit("source_added", json!({ "profileName": profile_name }));
+            Ok(json!(profile.sources))
+        }
+        "update_source" => {
+            let profile_name: String = get_arg(&payload, "profileName")?;
+            let source_id: String = get_arg(&payload, "sourceId")?;
+            let updates: Value = get_arg(&payload, "updates")?;
+            let password: Option<String> = get_opt_arg(&payload, "password")?;
+
+            let mut profile = state
+                .profile_manager
+                .load_with_key_decryption(&profile_name, password.as_deref())
+                .await?;
+
+            // Find and update the source
+            let source_idx = profile.sources.iter().position(|s| s.id() == source_id)
+                .ok_or_else(|| format!("Source {} not found", source_id))?;
+
+            // Merge updates into existing source
+            let mut source_json = serde_json::to_value(&profile.sources[source_idx])
+                .map_err(|e| e.to_string())?;
+            if let (Some(obj), Some(upd)) = (source_json.as_object_mut(), updates.as_object()) {
+                for (k, v) in upd {
+                    obj.insert(k.clone(), v.clone());
+                }
+            }
+            profile.sources[source_idx] = serde_json::from_value(source_json)
+                .map_err(|e| format!("Failed to update source: {}", e))?;
+
+            let settings = state.settings_manager.load()?;
+            state
+                .profile_manager
+                .save_with_key_encryption(&profile, password.as_deref(), settings.encrypt_stream_keys)
+                .await?;
+
+            state.event_bus.emit("source_updated", json!({ "profileName": profile_name, "sourceId": source_id }));
+            Ok(json!(profile.sources[source_idx]))
+        }
+        "remove_source" => {
+            let profile_name: String = get_arg(&payload, "profileName")?;
+            let source_id: String = get_arg(&payload, "sourceId")?;
+            let password: Option<String> = get_opt_arg(&payload, "password")?;
+
+            let mut profile = state
+                .profile_manager
+                .load_with_key_decryption(&profile_name, password.as_deref())
+                .await?;
+
+            let initial_len = profile.sources.len();
+            profile.sources.retain(|s| s.id() != source_id);
+
+            if profile.sources.len() == initial_len {
+                return Err(format!("Source {} not found", source_id));
+            }
+
+            // Also remove from all scenes
+            for scene in &mut profile.scenes {
+                scene.layers.retain(|l| l.source_id != source_id);
+                scene.audio_mixer.tracks.retain(|t| t.source_id != source_id);
+            }
+
+            let settings = state.settings_manager.load()?;
+            state
+                .profile_manager
+                .save_with_key_encryption(&profile, password.as_deref(), settings.encrypt_stream_keys)
+                .await?;
+
+            state.event_bus.emit("source_removed", json!({ "profileName": profile_name, "sourceId": source_id }));
+            Ok(Value::Null)
+        }
+
+        // ====================================================================
+        // Scene Management Commands
+        // ====================================================================
+
+        "create_scene" => {
+            let profile_name: String = get_arg(&payload, "profileName")?;
+            let name: String = get_arg(&payload, "name")?;
+            let width: Option<u32> = get_opt_arg(&payload, "width")?;
+            let height: Option<u32> = get_opt_arg(&payload, "height")?;
+            let password: Option<String> = get_opt_arg(&payload, "password")?;
+
+            let mut profile = state
+                .profile_manager
+                .load_with_key_decryption(&profile_name, password.as_deref())
+                .await?;
+
+            let scene = Scene {
+                id: uuid::Uuid::new_v4().to_string(),
+                name,
+                canvas_width: width.unwrap_or(1920),
+                canvas_height: height.unwrap_or(1080),
+                layers: Vec::new(),
+                audio_mixer: Default::default(),
+            };
+
+            let scene_id = scene.id.clone();
+            profile.scenes.push(scene);
+
+            // Set as active if it's the first scene
+            if profile.active_scene_id.is_none() {
+                profile.active_scene_id = Some(scene_id.clone());
+            }
+
+            let settings = state.settings_manager.load()?;
+            state
+                .profile_manager
+                .save_with_key_encryption(&profile, password.as_deref(), settings.encrypt_stream_keys)
+                .await?;
+
+            state.event_bus.emit("scene_created", json!({ "profileName": profile_name, "sceneId": scene_id }));
+            Ok(json!({ "sceneId": scene_id }))
+        }
+        "update_scene" => {
+            let profile_name: String = get_arg(&payload, "profileName")?;
+            let scene_id: String = get_arg(&payload, "sceneId")?;
+            let updates: Value = get_arg(&payload, "updates")?;
+            let password: Option<String> = get_opt_arg(&payload, "password")?;
+
+            let mut profile = state
+                .profile_manager
+                .load_with_key_decryption(&profile_name, password.as_deref())
+                .await?;
+
+            let scene_idx = profile.scenes.iter().position(|s| s.id == scene_id)
+                .ok_or_else(|| format!("Scene {} not found", scene_id))?;
+
+            // Merge updates into existing scene
+            let mut scene_json = serde_json::to_value(&profile.scenes[scene_idx])
+                .map_err(|e| e.to_string())?;
+            if let (Some(obj), Some(upd)) = (scene_json.as_object_mut(), updates.as_object()) {
+                for (k, v) in upd {
+                    obj.insert(k.clone(), v.clone());
+                }
+            }
+            profile.scenes[scene_idx] = serde_json::from_value(scene_json)
+                .map_err(|e| format!("Failed to update scene: {}", e))?;
+
+            let settings = state.settings_manager.load()?;
+            state
+                .profile_manager
+                .save_with_key_encryption(&profile, password.as_deref(), settings.encrypt_stream_keys)
+                .await?;
+
+            state.event_bus.emit("scene_updated", json!({ "profileName": profile_name, "sceneId": scene_id }));
+            Ok(json!(profile.scenes[scene_idx]))
+        }
+        "delete_scene" => {
+            let profile_name: String = get_arg(&payload, "profileName")?;
+            let scene_id: String = get_arg(&payload, "sceneId")?;
+            let password: Option<String> = get_opt_arg(&payload, "password")?;
+
+            let mut profile = state
+                .profile_manager
+                .load_with_key_decryption(&profile_name, password.as_deref())
+                .await?;
+
+            let initial_len = profile.scenes.len();
+            profile.scenes.retain(|s| s.id != scene_id);
+
+            if profile.scenes.len() == initial_len {
+                return Err(format!("Scene {} not found", scene_id));
+            }
+
+            // Update active scene if deleted
+            if profile.active_scene_id.as_ref() == Some(&scene_id) {
+                profile.active_scene_id = profile.scenes.first().map(|s| s.id.clone());
+            }
+
+            let settings = state.settings_manager.load()?;
+            state
+                .profile_manager
+                .save_with_key_encryption(&profile, password.as_deref(), settings.encrypt_stream_keys)
+                .await?;
+
+            state.event_bus.emit("scene_deleted", json!({ "profileName": profile_name, "sceneId": scene_id }));
+            Ok(Value::Null)
+        }
+        "set_active_scene" => {
+            let profile_name: String = get_arg(&payload, "profileName")?;
+            let scene_id: String = get_arg(&payload, "sceneId")?;
+            let password: Option<String> = get_opt_arg(&payload, "password")?;
+
+            let mut profile = state
+                .profile_manager
+                .load_with_key_decryption(&profile_name, password.as_deref())
+                .await?;
+
+            // Verify scene exists
+            if !profile.scenes.iter().any(|s| s.id == scene_id) {
+                return Err(format!("Scene {} not found", scene_id));
+            }
+
+            profile.active_scene_id = Some(scene_id.clone());
+
+            let settings = state.settings_manager.load()?;
+            state
+                .profile_manager
+                .save_with_key_encryption(&profile, password.as_deref(), settings.encrypt_stream_keys)
+                .await?;
+
+            state.event_bus.emit("active_scene_changed", json!({ "profileName": profile_name, "sceneId": scene_id }));
+            Ok(Value::Null)
+        }
+        "duplicate_scene" => {
+            let profile_name: String = get_arg(&payload, "profileName")?;
+            let scene_id: String = get_arg(&payload, "sceneId")?;
+            let new_name: Option<String> = get_opt_arg(&payload, "newName")?;
+            let password: Option<String> = get_opt_arg(&payload, "password")?;
+
+            let mut profile = state
+                .profile_manager
+                .load_with_key_decryption(&profile_name, password.as_deref())
+                .await?;
+
+            let original = profile.scenes.iter().find(|s| s.id == scene_id)
+                .ok_or_else(|| format!("Scene {} not found", scene_id))?
+                .clone();
+
+            let mut new_scene = original;
+            new_scene.id = uuid::Uuid::new_v4().to_string();
+            new_scene.name = new_name.unwrap_or_else(|| format!("{} (Copy)", new_scene.name));
+
+            // Generate new layer IDs
+            for layer in &mut new_scene.layers {
+                layer.id = uuid::Uuid::new_v4().to_string();
+            }
+
+            let new_scene_id = new_scene.id.clone();
+            profile.scenes.push(new_scene);
+
+            let settings = state.settings_manager.load()?;
+            state
+                .profile_manager
+                .save_with_key_encryption(&profile, password.as_deref(), settings.encrypt_stream_keys)
+                .await?;
+
+            state.event_bus.emit("scene_duplicated", json!({ "profileName": profile_name, "sceneId": new_scene_id }));
+            Ok(json!({ "sceneId": new_scene_id }))
+        }
+
+        // ====================================================================
+        // Layer Management Commands
+        // ====================================================================
+
+        "add_layer_to_scene" => {
+            let profile_name: String = get_arg(&payload, "profileName")?;
+            let scene_id: String = get_arg(&payload, "sceneId")?;
+            let source_id: String = get_arg(&payload, "sourceId")?;
+            let transform: Option<Transform> = get_opt_arg(&payload, "transform")?;
+            let password: Option<String> = get_opt_arg(&payload, "password")?;
+
+            let mut profile = state
+                .profile_manager
+                .load_with_key_decryption(&profile_name, password.as_deref())
+                .await?;
+
+            // Verify source exists
+            if !profile.sources.iter().any(|s| s.id() == source_id) {
+                return Err(format!("Source {} not found", source_id));
+            }
+
+            let scene = profile.scenes.iter_mut().find(|s| s.id == scene_id)
+                .ok_or_else(|| format!("Scene {} not found", scene_id))?;
+
+            let max_z = scene.layers.iter().map(|l| l.z_index).max().unwrap_or(0);
+            let layer = SourceLayer {
+                id: uuid::Uuid::new_v4().to_string(),
+                source_id: source_id.clone(),
+                visible: true,
+                locked: false,
+                transform: transform.unwrap_or_else(|| Transform {
+                    x: 0,
+                    y: 0,
+                    width: scene.canvas_width,
+                    height: scene.canvas_height,
+                    rotation: 0.0,
+                    crop: None,
+                }),
+                z_index: max_z + 1,
+            };
+
+            let layer_id = layer.id.clone();
+            scene.layers.push(layer);
+
+            // Add audio track if source has audio and not already in mixer
+            if !scene.audio_mixer.tracks.iter().any(|t| t.source_id == source_id) {
+                scene.audio_mixer.tracks.push(AudioTrack {
+                    source_id,
+                    volume: 1.0,
+                    muted: false,
+                    solo: false,
+                });
+            }
+
+            let settings = state.settings_manager.load()?;
+            state
+                .profile_manager
+                .save_with_key_encryption(&profile, password.as_deref(), settings.encrypt_stream_keys)
+                .await?;
+
+            state.event_bus.emit("layer_added", json!({ "profileName": profile_name, "sceneId": scene_id, "layerId": layer_id }));
+            Ok(json!({ "layerId": layer_id }))
+        }
+        "update_layer" => {
+            let profile_name: String = get_arg(&payload, "profileName")?;
+            let scene_id: String = get_arg(&payload, "sceneId")?;
+            let layer_id: String = get_arg(&payload, "layerId")?;
+            let updates: Value = get_arg(&payload, "updates")?;
+            let password: Option<String> = get_opt_arg(&payload, "password")?;
+
+            let mut profile = state
+                .profile_manager
+                .load_with_key_decryption(&profile_name, password.as_deref())
+                .await?;
+
+            let scene_idx = profile.scenes.iter().position(|s| s.id == scene_id)
+                .ok_or_else(|| format!("Scene {} not found", scene_id))?;
+
+            let layer_idx = profile.scenes[scene_idx].layers.iter().position(|l| l.id == layer_id)
+                .ok_or_else(|| format!("Layer {} not found", layer_id))?;
+
+            // Merge updates into existing layer
+            let mut layer_json = serde_json::to_value(&profile.scenes[scene_idx].layers[layer_idx])
+                .map_err(|e| e.to_string())?;
+            if let (Some(obj), Some(upd)) = (layer_json.as_object_mut(), updates.as_object()) {
+                for (k, v) in upd {
+                    obj.insert(k.clone(), v.clone());
+                }
+            }
+            profile.scenes[scene_idx].layers[layer_idx] = serde_json::from_value(layer_json)
+                .map_err(|e| format!("Failed to update layer: {}", e))?;
+
+            let updated_layer = profile.scenes[scene_idx].layers[layer_idx].clone();
+
+            let settings = state.settings_manager.load()?;
+            state
+                .profile_manager
+                .save_with_key_encryption(&profile, password.as_deref(), settings.encrypt_stream_keys)
+                .await?;
+
+            state.event_bus.emit("layer_updated", json!({ "profileName": profile_name, "sceneId": scene_id, "layerId": layer_id }));
+            Ok(json!(updated_layer))
+        }
+        "remove_layer" => {
+            let profile_name: String = get_arg(&payload, "profileName")?;
+            let scene_id: String = get_arg(&payload, "sceneId")?;
+            let layer_id: String = get_arg(&payload, "layerId")?;
+            let password: Option<String> = get_opt_arg(&payload, "password")?;
+
+            let mut profile = state
+                .profile_manager
+                .load_with_key_decryption(&profile_name, password.as_deref())
+                .await?;
+
+            let scene = profile.scenes.iter_mut().find(|s| s.id == scene_id)
+                .ok_or_else(|| format!("Scene {} not found", scene_id))?;
+
+            let initial_len = scene.layers.len();
+            scene.layers.retain(|l| l.id != layer_id);
+
+            if scene.layers.len() == initial_len {
+                return Err(format!("Layer {} not found", layer_id));
+            }
+
+            let settings = state.settings_manager.load()?;
+            state
+                .profile_manager
+                .save_with_key_encryption(&profile, password.as_deref(), settings.encrypt_stream_keys)
+                .await?;
+
+            state.event_bus.emit("layer_removed", json!({ "profileName": profile_name, "sceneId": scene_id, "layerId": layer_id }));
+            Ok(Value::Null)
+        }
+        "reorder_layers" => {
+            let profile_name: String = get_arg(&payload, "profileName")?;
+            let scene_id: String = get_arg(&payload, "sceneId")?;
+            let layer_ids: Vec<String> = get_arg(&payload, "layerIds")?;
+            let password: Option<String> = get_opt_arg(&payload, "password")?;
+
+            let mut profile = state
+                .profile_manager
+                .load_with_key_decryption(&profile_name, password.as_deref())
+                .await?;
+
+            let scene = profile.scenes.iter_mut().find(|s| s.id == scene_id)
+                .ok_or_else(|| format!("Scene {} not found", scene_id))?;
+
+            // Assign z-index based on provided order
+            for (idx, layer_id) in layer_ids.iter().enumerate() {
+                if let Some(layer) = scene.layers.iter_mut().find(|l| &l.id == layer_id) {
+                    layer.z_index = idx as i32;
+                }
+            }
+
+            let settings = state.settings_manager.load()?;
+            state
+                .profile_manager
+                .save_with_key_encryption(&profile, password.as_deref(), settings.encrypt_stream_keys)
+                .await?;
+
+            state.event_bus.emit("layers_reordered", json!({ "profileName": profile_name, "sceneId": scene_id }));
+            Ok(Value::Null)
+        }
+
+        // ====================================================================
+        // Audio Mixer Commands
+        // ====================================================================
+
+        "set_track_volume" => {
+            let profile_name: String = get_arg(&payload, "profileName")?;
+            let scene_id: String = get_arg(&payload, "sceneId")?;
+            let source_id: String = get_arg(&payload, "sourceId")?;
+            let volume: f32 = get_arg(&payload, "volume")?;
+            let password: Option<String> = get_opt_arg(&payload, "password")?;
+
+            let mut profile = state
+                .profile_manager
+                .load_with_key_decryption(&profile_name, password.as_deref())
+                .await?;
+
+            let scene = profile.scenes.iter_mut().find(|s| s.id == scene_id)
+                .ok_or_else(|| format!("Scene {} not found", scene_id))?;
+
+            let track = scene.audio_mixer.tracks.iter_mut().find(|t| t.source_id == source_id)
+                .ok_or_else(|| format!("Audio track for source {} not found", source_id))?;
+
+            track.volume = volume.clamp(0.0, 2.0);
+
+            let settings = state.settings_manager.load()?;
+            state
+                .profile_manager
+                .save_with_key_encryption(&profile, password.as_deref(), settings.encrypt_stream_keys)
+                .await?;
+
+            state.event_bus.emit("track_volume_changed", json!({ "profileName": profile_name, "sceneId": scene_id, "sourceId": source_id, "volume": volume }));
+            Ok(Value::Null)
+        }
+        "set_track_muted" => {
+            let profile_name: String = get_arg(&payload, "profileName")?;
+            let scene_id: String = get_arg(&payload, "sceneId")?;
+            let source_id: String = get_arg(&payload, "sourceId")?;
+            let muted: bool = get_arg(&payload, "muted")?;
+            let password: Option<String> = get_opt_arg(&payload, "password")?;
+
+            let mut profile = state
+                .profile_manager
+                .load_with_key_decryption(&profile_name, password.as_deref())
+                .await?;
+
+            let scene = profile.scenes.iter_mut().find(|s| s.id == scene_id)
+                .ok_or_else(|| format!("Scene {} not found", scene_id))?;
+
+            let track = scene.audio_mixer.tracks.iter_mut().find(|t| t.source_id == source_id)
+                .ok_or_else(|| format!("Audio track for source {} not found", source_id))?;
+
+            track.muted = muted;
+
+            let settings = state.settings_manager.load()?;
+            state
+                .profile_manager
+                .save_with_key_encryption(&profile, password.as_deref(), settings.encrypt_stream_keys)
+                .await?;
+
+            state.event_bus.emit("track_muted_changed", json!({ "profileName": profile_name, "sceneId": scene_id, "sourceId": source_id, "muted": muted }));
+            Ok(Value::Null)
+        }
+        "set_track_solo" => {
+            let profile_name: String = get_arg(&payload, "profileName")?;
+            let scene_id: String = get_arg(&payload, "sceneId")?;
+            let source_id: String = get_arg(&payload, "sourceId")?;
+            let solo: bool = get_arg(&payload, "solo")?;
+            let password: Option<String> = get_opt_arg(&payload, "password")?;
+
+            let mut profile = state
+                .profile_manager
+                .load_with_key_decryption(&profile_name, password.as_deref())
+                .await?;
+
+            let scene = profile.scenes.iter_mut().find(|s| s.id == scene_id)
+                .ok_or_else(|| format!("Scene {} not found", scene_id))?;
+
+            let track = scene.audio_mixer.tracks.iter_mut().find(|t| t.source_id == source_id)
+                .ok_or_else(|| format!("Audio track for source {} not found", source_id))?;
+
+            track.solo = solo;
+
+            let settings = state.settings_manager.load()?;
+            state
+                .profile_manager
+                .save_with_key_encryption(&profile, password.as_deref(), settings.encrypt_stream_keys)
+                .await?;
+
+            state.event_bus.emit("track_solo_changed", json!({ "profileName": profile_name, "sceneId": scene_id, "sourceId": source_id, "solo": solo }));
+            Ok(Value::Null)
+        }
+        "set_master_volume" => {
+            let profile_name: String = get_arg(&payload, "profileName")?;
+            let scene_id: String = get_arg(&payload, "sceneId")?;
+            let volume: f32 = get_arg(&payload, "volume")?;
+            let password: Option<String> = get_opt_arg(&payload, "password")?;
+
+            let mut profile = state
+                .profile_manager
+                .load_with_key_decryption(&profile_name, password.as_deref())
+                .await?;
+
+            let scene = profile.scenes.iter_mut().find(|s| s.id == scene_id)
+                .ok_or_else(|| format!("Scene {} not found", scene_id))?;
+
+            scene.audio_mixer.master_volume = volume.clamp(0.0, 2.0);
+
+            let settings = state.settings_manager.load()?;
+            state
+                .profile_manager
+                .save_with_key_encryption(&profile, password.as_deref(), settings.encrypt_stream_keys)
+                .await?;
+
+            state.event_bus.emit("master_volume_changed", json!({ "profileName": profile_name, "sceneId": scene_id, "volume": volume }));
+            Ok(Value::Null)
+        }
+
+        // ====================================================================
+        // Preview Commands
+        // ====================================================================
+
+        "stop_source_preview" => {
+            let source_id: String = get_arg(&payload, "sourceId")?;
+            state.preview_handler.stop_source_preview(&source_id);
+            Ok(Value::Null)
+        }
+        "stop_all_previews" => {
+            state.preview_handler.stop_all_previews();
+            Ok(Value::Null)
+        }
+
+        // ====================================================================
+        // WebRTC Preview Commands (go2rtc)
+        // ====================================================================
+
+        "start_webrtc_preview" => {
+            let source_id: String = get_arg(&payload, "sourceId")?;
+
+            // Check if go2rtc is available
+            if !state.go2rtc_service.is_available() {
+                return Err("WebRTC preview not available (go2rtc binary not found)".to_string());
+            }
+
+            // Find source from active profile
+            let settings = state.settings_manager.load()?;
+            let profile_name = settings.last_profile
+                .ok_or_else(|| "No active profile".to_string())?;
+
+            let profile = state.profile_manager.load(&profile_name, None).await?;
+            let source = profile.sources.into_iter()
+                .find(|s| s.id() == source_id)
+                .ok_or_else(|| format!("Source {} not found", source_id))?;
+
+            let stream_id = state.go2rtc_service.start_stream(&source).await?;
+            let webrtc_ws_url = state.go2rtc_service.get_webrtc_ws_url(&stream_id);
+
+            Ok(json!({
+                "streamId": stream_id,
+                "webrtcWsUrl": webrtc_ws_url
+            }))
+        }
+        "stop_webrtc_preview" => {
+            let source_id: String = get_arg(&payload, "sourceId")?;
+            state.go2rtc_service.stop_stream(&source_id).await?;
+            Ok(Value::Null)
+        }
+        "get_webrtc_preview_status" => {
+            Ok(json!({
+                "available": state.go2rtc_service.is_available(),
+                "running": state.go2rtc_service.is_running(),
+                "activeStreams": state.go2rtc_service.active_stream_count(),
+                "apiBaseUrl": state.go2rtc_service.api_base_url()
+            }))
+        }
+
         _ => Err(format!("Unknown command: {command}")),
     }
 }
@@ -1088,6 +2155,53 @@ fn get_opt_arg<T: DeserializeOwned>(payload: &Value, key: &str) -> Result<Option
 
 fn parse_host(host: &str) -> IpAddr {
     host.parse().unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST))
+}
+
+/// Find go2rtc binary by searching common locations.
+/// Returns path to go2rtc binary if found.
+fn find_go2rtc_binary(app_data_dir: &std::path::Path) -> Option<String> {
+    // Platform-specific binary name
+    #[cfg(windows)]
+    let binary_name = "go2rtc.exe";
+    #[cfg(not(windows))]
+    let binary_name = "go2rtc";
+
+    // Check common locations
+    let candidates = [
+        // Sidecar location (Tauri bundles)
+        app_data_dir.join("binaries").join(binary_name),
+        // Next to server binary
+        std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.join(binary_name)))
+            .unwrap_or_default(),
+        // CWD
+        std::env::current_dir()
+            .ok()
+            .map(|p| p.join(binary_name))
+            .unwrap_or_default(),
+    ];
+
+    for candidate in candidates {
+        if candidate.exists() {
+            return Some(candidate.to_string_lossy().to_string());
+        }
+    }
+
+    // Check if go2rtc is in PATH
+    if let Ok(output) = std::process::Command::new("which")
+        .arg("go2rtc")
+        .output()
+    {
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path.is_empty() {
+                return Some(path);
+            }
+        }
+    }
+
+    None
 }
 
 /// Find themes directory by searching common relative paths from CWD.
@@ -1274,7 +2388,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let ffmpeg_handler = Arc::new(FFmpegHandler::new_with_custom_path(
         app_data_dir.clone(),
-        custom_ffmpeg_path,
+        custom_ffmpeg_path.clone(),
+    ));
+
+    // Create preview handler using the same FFmpeg path
+    let preview_ffmpeg_path = custom_ffmpeg_path
+        .clone()
+        .filter(|p| !p.is_empty() && std::path::Path::new(p).exists())
+        .unwrap_or_else(|| ffmpeg_handler.get_ffmpeg_path());
+    let preview_handler = Arc::new(PreviewHandler::new(preview_ffmpeg_path.clone()));
+
+    // Create go2rtc service for WebRTC preview
+    // Binary path: check sidecar location or system PATH
+    let go2rtc_binary_path = find_go2rtc_binary(&app_data_dir);
+    let go2rtc_service = Arc::new(Go2rtcService::new(
+        go2rtc_binary_path.unwrap_or_else(|| "go2rtc".to_string()),
     ));
 
     let event_bus = EventBus::new();
@@ -1326,6 +2454,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ffmpeg_handler,
         ffmpeg_downloader: Arc::new(AsyncMutex::new(FFmpegDownloader::new())),
         theme_manager,
+        preview_handler,
+        go2rtc_service,
         event_bus,
         log_dir: log_dir_path,
         app_data_dir,
@@ -1337,11 +2467,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Build CORS layer
     let cors = build_cors_layer();
 
-    // Build CSP header
+    // Build CSP header (allow blob: for preview images)
     let csp_value = HeaderValue::from_static(
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
          connect-src 'self' ws://localhost:* wss://localhost:* http://localhost:* http://127.0.0.1:*; \
-         img-src 'self' data:; font-src 'self'"
+         img-src 'self' data: blob: http://localhost:* http://127.0.0.1:*; font-src 'self'"
     );
 
     // Build router with security layers
@@ -1353,6 +2483,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/files/browse", get(files_browse))
         .route("/api/files/home", get(files_home))
         .route("/api/files/open", post(files_open))
+        // Preview endpoints (MJPEG/snapshot fallback)
+        .route("/api/preview/source/:source_id", get(source_preview_handler))
+        .route("/api/preview/source/:source_id/snapshot", get(source_snapshot_handler))
+        .route("/api/preview/source/:source_id/stop", post(stop_source_preview_handler))
+        .route("/api/preview/stop-all", post(stop_all_previews_handler))
+        // WebRTC preview endpoints (go2rtc)
+        .route("/api/preview/webrtc/start", post(start_webrtc_preview_handler))
+        .route("/api/preview/webrtc/stop", post(stop_webrtc_preview_handler))
+        .route("/api/preview/webrtc/status", get(webrtc_preview_status_handler))
         .layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
 
     // Public routes (no auth required)
