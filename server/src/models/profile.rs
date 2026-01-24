@@ -3,9 +3,10 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, HashMap};
-use crate::models::{OutputGroup, Platform};
+use crate::models::{OutputGroup, Platform, Source, RtmpSource, Scene, SourceLayer, AudioMixer, AudioTrack, Transform};
 
 /// RTMP Input configuration - where the stream enters the system
+/// LEGACY: Kept for backward compatibility, use Sources instead
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RtmpInput {
@@ -48,11 +49,128 @@ pub struct Profile {
     #[serde(default)]
     pub encrypted: bool,
 
-    /// RTMP input configuration
-    pub input: RtmpInput,
+    /// LEGACY: RTMP input configuration (for backward compatibility)
+    /// New profiles should use sources and scenes instead
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input: Option<RtmpInput>,
+
+    /// NEW: Multiple input sources (RTMP, cameras, screens, files, etc.)
+    #[serde(default)]
+    pub sources: Vec<Source>,
+
+    /// NEW: Scene compositions (layouts with positioned sources)
+    #[serde(default)]
+    pub scenes: Vec<Scene>,
+
+    /// NEW: Currently active scene ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_scene_id: Option<String>,
 
     /// Encoding configurations with their targets
     pub output_groups: Vec<OutputGroup>,
+}
+
+impl Profile {
+    /// Migrate legacy profile format to new multi-source format
+    /// Call this after loading a profile to ensure it uses the new format
+    pub fn migrate_if_needed(&mut self) {
+        // Skip if already migrated (has sources)
+        if !self.sources.is_empty() {
+            return;
+        }
+
+        // Check if legacy input exists
+        if let Some(rtmp_input) = self.input.take() {
+            // Convert legacy RtmpInput to Source::Rtmp
+            let source_id = uuid::Uuid::new_v4().to_string();
+            let source = Source::Rtmp(RtmpSource {
+                id: source_id.clone(),
+                name: "Main Input".to_string(),
+                bind_address: rtmp_input.bind_address,
+                port: rtmp_input.port,
+                application: rtmp_input.application,
+            });
+
+            // Create default scene with fullscreen source
+            let scene = Scene {
+                id: uuid::Uuid::new_v4().to_string(),
+                name: "Main".to_string(),
+                canvas_width: 1920,
+                canvas_height: 1080,
+                layers: vec![SourceLayer {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    source_id: source_id.clone(),
+                    visible: true,
+                    locked: false,
+                    transform: Transform {
+                        x: 0,
+                        y: 0,
+                        width: 1920,
+                        height: 1080,
+                        rotation: 0.0,
+                        crop: None,
+                    },
+                    z_index: 0,
+                }],
+                audio_mixer: AudioMixer {
+                    master_volume: 1.0,
+                    tracks: vec![AudioTrack {
+                        source_id: source_id.clone(),
+                        volume: 1.0,
+                        muted: false,
+                        solo: false,
+                    }],
+                },
+            };
+
+            let scene_id = scene.id.clone();
+            self.sources.push(source);
+            self.scenes.push(scene);
+            self.active_scene_id = Some(scene_id);
+        }
+    }
+
+    /// Get the active scene, if any
+    pub fn active_scene(&self) -> Option<&Scene> {
+        self.active_scene_id.as_ref().and_then(|id| {
+            self.scenes.iter().find(|s| &s.id == id)
+        })
+    }
+
+    /// Get the active scene mutably
+    pub fn active_scene_mut(&mut self) -> Option<&mut Scene> {
+        let active_id = self.active_scene_id.clone()?;
+        self.scenes.iter_mut().find(|s| s.id == active_id)
+    }
+
+    /// Get a source by ID
+    pub fn get_source(&self, source_id: &str) -> Option<&Source> {
+        self.sources.iter().find(|s| s.id() == source_id)
+    }
+
+    /// Get incoming URL for the active scene (for FFmpeg handler)
+    /// Returns the RTMP URL if the first source is RTMP, otherwise None
+    pub fn get_incoming_url(&self) -> Option<String> {
+        // First check legacy input
+        if let Some(ref input) = self.input {
+            return Some(format!(
+                "rtmp://{}:{}/{}",
+                input.bind_address, input.port, input.application
+            ));
+        }
+
+        // Check new sources - find first RTMP source
+        for source in &self.sources {
+            if let Source::Rtmp(rtmp) = source {
+                return Some(format!(
+                    "rtmp://{}:{}/{}",
+                    rtmp.bind_address, rtmp.port, rtmp.application
+                ));
+            }
+        }
+
+        None
+    }
 }
 
 impl Profile {
