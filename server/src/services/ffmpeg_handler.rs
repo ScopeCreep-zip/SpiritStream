@@ -1305,8 +1305,10 @@ impl FFmpegHandler {
                 let lookahead_depth = if low_latency { "30" } else { "60" };
 
                 if is_twitch_qsv {
-                    // Twitch-safe QSV: avoid reordering and reduce buffering.
-                    args.push("-bf".to_string()); args.push("0".to_string());
+                    // Twitch QSV: Use 2 B-frames for good compression while maintaining
+                    // compatibility. OBS Forums recommend bf=2 for Twitch streaming.
+                    // Disable lookahead and reduce async depth for lower latency.
+                    args.push("-bf".to_string()); args.push("2".to_string());
                     args.push("-look_ahead".to_string()); args.push("0".to_string());
                     args.push("-async_depth".to_string()); args.push("1".to_string());
                     args.push("-forced_idr".to_string()); args.push("1".to_string());
