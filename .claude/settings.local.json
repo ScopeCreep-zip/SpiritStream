@@ -23,10 +23,14 @@
       "Bash(grep:*)",
       "Bash(timeout:*)",
       "Bash(tasklist:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(powershell -Command \"$env:FFMPEG_DIR=''C:\\\\Users\\\\billb\\\\AppData\\\\Local\\\\SpiritStream\\\\ffmpeg-libs''; cargo check --features ffmpeg-libs\")",
+      "Bash(export FFMPEG_DIR=\"C:/Users/billb/AppData/Local/SpiritStream/ffmpeg-libs\")",
+      "Bash(powershell -NoProfile -Command \"Add-MpExclusion -Path ''D:\\\\SpiritStream'' -ErrorAction SilentlyContinue; Write-Host ''Exclusion added \\(or already exists\\)''\")"
     ],
     "additionalDirectories": [
-      "d:\\SpiritStream\\.claude"
+      "d:\\SpiritStream\\.claude",
+      "C:\\Users\\billb\\AppData\\Local\\SpiritStream\\ffmpeg-libs\\bin"
     ]
   }
 }

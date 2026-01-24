@@ -4,6 +4,10 @@ use std::fs;
 use std::path::PathBuf;
 
 fn main() {
+    // Configure FFmpeg shared libs path for ffmpeg-sys-next when the feature is enabled
+    #[cfg(feature = "ffmpeg-libs")]
+    configure_ffmpeg_libs();
+
     // Read the streaming platforms JSON
     let json_path = PathBuf::from("..").join("data").join("streaming-platforms.json");
 
@@ -118,4 +122,103 @@ fn sanitize_to_variant(name: &str) -> String {
     }
 
     result
+}
+
+/// Configure FFMPEG_DIR for ffmpeg-sys-next when the ffmpeg-libs feature is enabled.
+/// This function looks for FFmpeg shared libs in the standard locations:
+/// 1. FFMPEG_DIR environment variable (if already set)
+/// 2. Downloaded libs in app data directory
+/// 3. System-installed libs (vcpkg, pkg-config)
+#[cfg(feature = "ffmpeg-libs")]
+fn configure_ffmpeg_libs() {
+    // If FFMPEG_DIR is already set, use it
+    if env::var("FFMPEG_DIR").is_ok() {
+        println!("cargo:rerun-if-env-changed=FFMPEG_DIR");
+        return;
+    }
+
+    // Get the expected location for downloaded FFmpeg shared libs
+    let ffmpeg_libs_dir = get_ffmpeg_libs_dir();
+
+    if ffmpeg_libs_dir.exists() && ffmpeg_libs_dir.join("lib").exists() && ffmpeg_libs_dir.join("include").exists() {
+        let ffmpeg_dir = ffmpeg_libs_dir.to_string_lossy();
+        println!("cargo:warning=Using FFmpeg shared libs from: {}", ffmpeg_dir);
+        println!("cargo:rustc-env=FFMPEG_DIR={}", ffmpeg_dir);
+
+        // Also need to tell the linker where to find the libs at runtime
+        #[cfg(target_os = "windows")]
+        {
+            let bin_dir = ffmpeg_libs_dir.join("bin");
+            if bin_dir.exists() {
+                println!("cargo:rustc-link-search=native={}", bin_dir.display());
+            }
+            let lib_dir = ffmpeg_libs_dir.join("lib");
+            if lib_dir.exists() {
+                println!("cargo:rustc-link-search=native={}", lib_dir.display());
+            }
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            let lib_dir = ffmpeg_libs_dir.join("lib");
+            if lib_dir.exists() {
+                println!("cargo:rustc-link-search=native={}", lib_dir.display());
+            }
+        }
+    } else {
+        println!(
+            "cargo:warning=FFmpeg shared libs not found at {}. \
+             Run the app to download them, or set FFMPEG_DIR manually.",
+            ffmpeg_libs_dir.display()
+        );
+        println!(
+            "cargo:warning=Expected structure: {}/{{bin,lib,include}}/",
+            ffmpeg_libs_dir.display()
+        );
+    }
+
+    println!("cargo:rerun-if-env-changed=FFMPEG_DIR");
+}
+
+/// Get the directory for FFmpeg shared libs (mirrors FFmpegDownloader::get_ffmpeg_libs_dir)
+#[cfg(feature = "ffmpeg-libs")]
+fn get_ffmpeg_libs_dir() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(local_app_data) = env::var_os("LOCALAPPDATA") {
+            return PathBuf::from(local_app_data)
+                .join("SpiritStream")
+                .join("ffmpeg-libs");
+        }
+        env::temp_dir().join("spiritstream-ffmpeg-libs")
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(home) = env::var_os("HOME") {
+            return PathBuf::from(home)
+                .join("Library")
+                .join("Application Support")
+                .join("SpiritStream")
+                .join("ffmpeg-libs");
+        }
+        env::temp_dir().join("spiritstream-ffmpeg-libs")
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(home) = env::var_os("HOME") {
+            return PathBuf::from(home)
+                .join(".local")
+                .join("share")
+                .join("spiritstream")
+                .join("ffmpeg-libs");
+        }
+        env::temp_dir().join("spiritstream-ffmpeg-libs")
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+    {
+        env::temp_dir().join("spiritstream-ffmpeg-libs")
+    }
 }

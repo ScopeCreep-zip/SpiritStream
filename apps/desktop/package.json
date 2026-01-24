@@ -6,7 +6,7 @@
   "scripts": {
     "build:server": "tsx ../../scripts/build-server.ts",
     "build:server:release": "tsx ../../scripts/build-server.ts --release",
-    "dev": "pnpm run build:server && tauri dev",
+    "dev": "tsx ../../scripts/dev-desktop.ts",
     "build": "pnpm run build:server:release && tauri build",
     "build:debug": "pnpm run build:server && tauri build --debug",
     "tauri": "tauri"

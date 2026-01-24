@@ -14,7 +14,7 @@ use std::thread::{self, JoinHandle};
 
 use ffmpeg_sys_next as ffi;
 
-use crate::models::OutputGroup;
+use crate::models::{OutputGroup, StreamTarget};
 
 #[derive(Debug, Clone)]
 pub struct InputPipelineConfig {
@@ -225,7 +225,7 @@ fn run_pipeline_loop(
         let in_stream = unsafe { *(*input_ctx).streams.add(stream_index) };
         let codecpar = unsafe { (*in_stream).codecpar };
         let codec_type = unsafe { (*codecpar).codec_type };
-        if codec_type != ffi::AVMEDIA_TYPE_VIDEO && codec_type != ffi::AVMEDIA_TYPE_AUDIO {
+        if codec_type != ffi::AVMediaType::AVMEDIA_TYPE_VIDEO && codec_type != ffi::AVMediaType::AVMEDIA_TYPE_AUDIO {
             unsafe { ffi::av_packet_unref(packet) };
             continue;
         }
@@ -292,9 +292,9 @@ fn find_stream_indices(input_ctx: *mut ffi::AVFormatContext) -> Result<(usize, O
         let stream = unsafe { *(*input_ctx).streams.add(idx) };
         let codecpar = unsafe { (*stream).codecpar };
         let codec_type = unsafe { (*codecpar).codec_type };
-        if codec_type == ffi::AVMEDIA_TYPE_VIDEO && video_stream_index.is_none() {
+        if codec_type == ffi::AVMediaType::AVMEDIA_TYPE_VIDEO && video_stream_index.is_none() {
             video_stream_index = Some(idx);
-        } else if codec_type == ffi::AVMEDIA_TYPE_AUDIO && audio_stream_index.is_none() {
+        } else if codec_type == ffi::AVMediaType::AVMEDIA_TYPE_AUDIO && audio_stream_index.is_none() {
             audio_stream_index = Some(idx);
         }
     }
@@ -330,7 +330,7 @@ fn create_flv_output(
         let in_stream = unsafe { *(*input_ctx).streams.add(idx) };
         let codecpar = unsafe { (*in_stream).codecpar };
         let codec_type = unsafe { (*codecpar).codec_type };
-        if codec_type != ffi::AVMEDIA_TYPE_VIDEO && codec_type != ffi::AVMEDIA_TYPE_AUDIO {
+        if codec_type != ffi::AVMediaType::AVMEDIA_TYPE_VIDEO && codec_type != ffi::AVMediaType::AVMEDIA_TYPE_AUDIO {
             continue;
         }
 
@@ -517,6 +517,20 @@ fn create_transcode_group(
         }
     }
 
+    // Detect if any target is Twitch (for QSV overrides)
+    let is_twitch = targets_contain_twitch(&config.targets);
+
+    // Apply encoder options (preset, profile, Twitch-safe settings)
+    unsafe {
+        apply_encoder_options(
+            video_enc_ctx,
+            &group.video.codec,
+            group.video.preset.as_deref(),
+            group.video.profile.as_deref(),
+            is_twitch,
+        );
+    }
+
     if let (Some(device_ref), Some(hw_fmt)) = (video_hw_device, hw_pix_fmt) {
         let mut frames_ctx = match create_hw_frames_ctx(
             device_ref,
@@ -615,7 +629,7 @@ fn create_transcode_group(
             output_width,
             output_height,
             sw_pix_fmt,
-            ffi::SWS_BILINEAR,
+            ffi::SwsFlags::SWS_BILINEAR as i32,
             ptr::null_mut(),
             ptr::null_mut(),
             ptr::null(),
@@ -683,8 +697,13 @@ fn create_transcode_group(
         let audio_in_stream = unsafe { *(*input_ctx).streams.add(audio_index) };
         let audio_codecpar = unsafe { (*audio_in_stream).codecpar };
         if group.audio.codec.eq_ignore_ascii_case("copy") {
-            if (*audio_codecpar).codec_id != ffi::AV_CODEC_ID_AAC
-                && (*audio_codecpar).codec_id != ffi::AV_CODEC_ID_MP3 {
+            let (is_aac, is_mp3) = unsafe {
+                (
+                    (*audio_codecpar).codec_id == ffi::AVCodecID::AV_CODEC_ID_AAC,
+                    (*audio_codecpar).codec_id == ffi::AVCodecID::AV_CODEC_ID_MP3,
+                )
+            };
+            if !is_aac && !is_mp3 {
                 return Err("Audio copy requires AAC or MP3 input".to_string());
             }
             (None, None, None, ptr::null_mut())
@@ -740,7 +759,7 @@ fn create_transcode_group(
                 ffi::av_channel_layout_default(&mut (*audio_enc_ctx).ch_layout, output_channels);
                 (*audio_enc_ctx).sample_rate = output_sample_rate;
                 (*audio_enc_ctx).time_base = ffi::AVRational { num: 1, den: output_sample_rate };
-                (*audio_enc_ctx).sample_fmt = select_sample_fmt(audio_encoder, ffi::AV_SAMPLE_FMT_FLTP);
+                (*audio_enc_ctx).sample_fmt = select_sample_fmt(audio_encoder, ffi::AVSampleFormat::AV_SAMPLE_FMT_FLTP);
                 if let Some(bit_rate) = parse_bitrate_to_bits(&group.audio.bitrate) {
                     (*audio_enc_ctx).bit_rate = bit_rate;
                 }
@@ -1131,7 +1150,7 @@ fn transcode_audio_packet(
                     + (*group.audio_dec_frame).nb_samples as i64,
                 (*audio_enc_ctx).sample_rate as i64,
                 (*audio_dec_ctx).sample_rate as i64,
-                ffi::AV_ROUND_UP,
+                ffi::AVRounding::AV_ROUND_UP,
             ) as i32
         };
 
@@ -1294,17 +1313,154 @@ fn cleanup_outputs(groups: Vec<GroupOutputs>) {
 
 fn is_hw_encoder(encoder_name: &str) -> bool {
     let name = encoder_name.to_ascii_lowercase();
-    name.contains("nvenc") || name.contains("qsv") || name.contains("amf")
+    name.contains("nvenc") || name.contains("qsv") || name.contains("amf") || name.contains("videotoolbox")
+}
+
+/// Check if any target URL appears to be Twitch
+fn targets_contain_twitch(targets: &[String]) -> bool {
+    targets.iter().any(|url| {
+        let lower = url.to_ascii_lowercase();
+        lower.contains("twitch.tv") || lower.contains("live-video.net")
+    })
+}
+
+/// Check if any stream target is Twitch based on service field or URL
+fn stream_targets_contain_twitch(targets: &[StreamTarget]) -> bool {
+    targets.iter().any(|t| {
+        // Check service name (Platform enum serializes to string like "Twitch")
+        let service_str = format!("{:?}", t.service);
+        if service_str.to_ascii_lowercase().contains("twitch") {
+            return true;
+        }
+        // Fallback: check URL
+        let lower = t.url.to_ascii_lowercase();
+        lower.contains("twitch.tv") || lower.contains("live-video.net")
+    })
+}
+
+/// Apply encoder-specific options via av_opt_set
+/// This must be called BEFORE avcodec_open2
+unsafe fn apply_encoder_options(
+    enc_ctx: *mut ffi::AVCodecContext,
+    encoder_name: &str,
+    preset: Option<&str>,
+    profile: Option<&str>,
+    is_twitch_target: bool,
+) {
+    let name_lower = encoder_name.to_ascii_lowercase();
+
+    // Apply preset if provided
+    if let Some(preset_val) = preset {
+        let preset_c = CString::new(preset_val).unwrap_or_default();
+
+        // Different encoders use different preset option names
+        if name_lower.contains("nvenc") {
+            let key = CString::new("preset").unwrap();
+            // NVENC presets: p1-p7 or names like "fast", "medium", "slow"
+            let preset_lower = preset_val.to_lowercase();
+            let nvenc_preset = match preset_lower.as_str() {
+                "ultrafast" | "superfast" | "veryfast" => "p1",
+                "faster" | "fast" => "p2",
+                "medium" => "p4",
+                "slow" => "p5",
+                "slower" | "veryslow" => "p6",
+                "placebo" => "p7",
+                p if p.starts_with('p') => p, // Already p1-p7 format
+                _ => preset_val,
+            };
+            let val = CString::new(nvenc_preset).unwrap_or_default();
+            ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
+        } else if name_lower.contains("qsv") {
+            let key = CString::new("preset").unwrap();
+            // QSV presets: veryfast, faster, fast, medium, slow, slower, veryslow
+            ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), preset_c.as_ptr(), 0);
+        } else if name_lower.contains("amf") {
+            let key = CString::new("quality").unwrap();
+            // AMF quality: speed, balanced, quality
+            let preset_lower = preset_val.to_lowercase();
+            let amf_quality = match preset_lower.as_str() {
+                "ultrafast" | "superfast" | "veryfast" | "faster" | "fast" => "speed",
+                "medium" => "balanced",
+                "slow" | "slower" | "veryslow" | "placebo" => "quality",
+                _ => preset_val,
+            };
+            let val = CString::new(amf_quality).unwrap_or_default();
+            ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
+        } else if name_lower.contains("videotoolbox") {
+            // VideoToolbox doesn't have presets, it uses realtime flag
+            let preset_lower = preset_val.to_lowercase();
+            if preset_lower.contains("fast") {
+                let key = CString::new("realtime").unwrap();
+                let val = CString::new("1").unwrap();
+                ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
+            }
+        } else {
+            // Software encoders (libx264, libx265)
+            let key = CString::new("preset").unwrap();
+            ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), preset_c.as_ptr(), 0);
+        }
+    }
+
+    // Apply profile if provided
+    if let Some(profile_val) = profile {
+        let key = CString::new("profile").unwrap();
+        let profile_c = CString::new(profile_val).unwrap_or_default();
+        ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), profile_c.as_ptr(), 0);
+    }
+
+    // Apply Twitch-safe QSV overrides
+    // Twitch has strict requirements for QSV: no B-frames, no lookahead, forced IDR
+    if is_twitch_target && name_lower.contains("qsv") {
+        log::info!("Applying Twitch-safe QSV overrides");
+
+        // Disable B-frames
+        (*enc_ctx).max_b_frames = 0;
+
+        // Disable lookahead
+        let key = CString::new("look_ahead").unwrap();
+        let val = CString::new("0").unwrap();
+        ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
+
+        // Reduce async depth (helps with latency and compatibility)
+        let key = CString::new("async_depth").unwrap();
+        let val = CString::new("1").unwrap();
+        ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
+
+        // Force IDR frames at keyframe boundaries
+        let key = CString::new("forced_idr").unwrap();
+        let val = CString::new("1").unwrap();
+        ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
+
+        // Repeat PPS/SPS for each IDR
+        let key = CString::new("repeat_pps").unwrap();
+        let val = CString::new("1").unwrap();
+        ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
+    }
+
+    // Apply common hardware encoder optimizations
+    if name_lower.contains("nvenc") {
+        // NVENC tuning for streaming
+        let key = CString::new("tune").unwrap();
+        let val = CString::new("ll").unwrap(); // low latency
+        ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
+
+        // Use CBR rate control for streaming
+        let key = CString::new("rc").unwrap();
+        let val = CString::new("cbr").unwrap();
+        ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
+    }
 }
 
 fn hw_device_type_for_encoder(encoder_name: &str) -> Option<ffi::AVHWDeviceType> {
     let name = encoder_name.to_ascii_lowercase();
     if name.contains("nvenc") {
-        Some(ffi::AV_HWDEVICE_TYPE_CUDA)
+        Some(ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_CUDA)
     } else if name.contains("qsv") {
-        Some(ffi::AV_HWDEVICE_TYPE_QSV)
+        Some(ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_QSV)
     } else if name.contains("amf") {
-        Some(ffi::AV_HWDEVICE_TYPE_D3D11VA)
+        Some(ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_D3D11VA)
+    } else if name.contains("videotoolbox") {
+        Some(ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_VIDEOTOOLBOX)
     } else {
         None
     }
@@ -1313,11 +1469,16 @@ fn hw_device_type_for_encoder(encoder_name: &str) -> Option<ffi::AVHWDeviceType>
 fn hw_pix_fmt_for_encoder(encoder_name: &str) -> Option<ffi::AVPixelFormat> {
     let name = encoder_name.to_ascii_lowercase();
     if name.contains("nvenc") {
-        Some(ffi::AV_PIX_FMT_CUDA)
+        Some(ffi::AVPixelFormat::AV_PIX_FMT_CUDA)
     } else if name.contains("qsv") {
-        Some(ffi::AV_PIX_FMT_QSV)
+        Some(ffi::AVPixelFormat::AV_PIX_FMT_QSV)
     } else if name.contains("amf") {
-        Some(ffi::AV_PIX_FMT_D3D11)
+        Some(ffi::AVPixelFormat::AV_PIX_FMT_D3D11)
+    } else if name.contains("videotoolbox") {
+        // VideoToolbox can accept software frames directly (NV12/YUV420P)
+        // or hardware surfaces (AV_PIX_FMT_VIDEOTOOLBOX).
+        // For simplicity, we use software frames with device context attached.
+        None
     } else {
         None
     }
@@ -1424,19 +1585,19 @@ fn parse_bitrate_to_bits(value: &str) -> Option<i64> {
 
 fn select_pix_fmt(encoder: *const ffi::AVCodec, prefer_nv12: bool) -> ffi::AVPixelFormat {
     if encoder.is_null() {
-        return ffi::AV_PIX_FMT_YUV420P;
+        return ffi::AVPixelFormat::AV_PIX_FMT_YUV420P;
     }
     unsafe {
         let mut formats = (*encoder).pix_fmts;
         if formats.is_null() {
-            return ffi::AV_PIX_FMT_YUV420P;
+            return ffi::AVPixelFormat::AV_PIX_FMT_YUV420P;
         }
-        let mut fallback = ffi::AV_PIX_FMT_YUV420P;
-        while *formats != ffi::AV_PIX_FMT_NONE {
-            if prefer_nv12 && *formats == ffi::AV_PIX_FMT_NV12 {
+        let mut fallback = ffi::AVPixelFormat::AV_PIX_FMT_YUV420P;
+        while *formats != ffi::AVPixelFormat::AV_PIX_FMT_NONE {
+            if prefer_nv12 && *formats == ffi::AVPixelFormat::AV_PIX_FMT_NV12 {
                 return *formats;
             }
-            if *formats == ffi::AV_PIX_FMT_YUV420P || *formats == ffi::AV_PIX_FMT_NV12 {
+            if *formats == ffi::AVPixelFormat::AV_PIX_FMT_YUV420P || *formats == ffi::AVPixelFormat::AV_PIX_FMT_NV12 {
                 fallback = *formats;
             }
             formats = formats.add(1);
@@ -1454,9 +1615,9 @@ fn select_sample_fmt(encoder: *const ffi::AVCodec, fallback: ffi::AVSampleFormat
         if formats.is_null() {
             return fallback;
         }
-        while *formats != ffi::AV_SAMPLE_FMT_NONE {
-            if *formats == ffi::AV_SAMPLE_FMT_FLTP
-                || *formats == ffi::AV_SAMPLE_FMT_S16 {
+        while *formats != ffi::AVSampleFormat::AV_SAMPLE_FMT_NONE {
+            if *formats == ffi::AVSampleFormat::AV_SAMPLE_FMT_FLTP
+                || *formats == ffi::AVSampleFormat::AV_SAMPLE_FMT_S16 {
                 return *formats;
             }
             formats = formats.add(1);

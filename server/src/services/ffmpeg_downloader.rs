@@ -28,6 +28,8 @@ use thiserror::Error;
 /// Update this deliberately after testing when bumping versions
 /// See .claude/claudedocs/ffmpeg-libs-plan.md for version rationale
 pub const FFMPEG_LIBS_VERSION: &str = "n8.0";
+/// Short version suffix for BtbN release filenames (e.g., "8.0" for "ffmpeg-n8.0-...-8.0.zip")
+const FFMPEG_LIBS_SHORT_VERSION: &str = "8.0";
 
 /// Base URL for BtbN FFmpeg builds
 const BTBN_RELEASE_BASE: &str = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest";
@@ -279,26 +281,28 @@ impl FFmpegDownloader {
         {
             // Windows: BtbN shared libs build with hardware encoders
             // Package contains: bin/ (DLLs), lib/ (import libs), include/ (headers)
+            // Note: BtbN filenames include short version suffix (e.g., "-8.0.zip")
             Ok(SharedLibsDownload {
                 url: format!(
-                    "{}/ffmpeg-{}-latest-win64-gpl-shared.zip",
-                    BTBN_RELEASE_BASE, FFMPEG_LIBS_VERSION
+                    "{}/ffmpeg-{}-latest-win64-gpl-shared-{}.zip",
+                    BTBN_RELEASE_BASE, FFMPEG_LIBS_VERSION, FFMPEG_LIBS_SHORT_VERSION
                 ),
                 archive_type: ArchiveType::Zip,
-                archive_root: format!("ffmpeg-{}-latest-win64-gpl-shared", FFMPEG_LIBS_VERSION),
+                archive_root: format!("ffmpeg-{}-latest-win64-gpl-shared-{}", FFMPEG_LIBS_VERSION, FFMPEG_LIBS_SHORT_VERSION),
             })
         }
 
         #[cfg(target_os = "linux")]
         {
             // Linux: BtbN shared libs build
+            // Note: BtbN filenames include short version suffix
             Ok(SharedLibsDownload {
                 url: format!(
-                    "{}/ffmpeg-{}-latest-linux64-gpl-shared.tar.xz",
-                    BTBN_RELEASE_BASE, FFMPEG_LIBS_VERSION
+                    "{}/ffmpeg-{}-latest-linux64-gpl-shared-{}.tar.xz",
+                    BTBN_RELEASE_BASE, FFMPEG_LIBS_VERSION, FFMPEG_LIBS_SHORT_VERSION
                 ),
                 archive_type: ArchiveType::TarXz,
-                archive_root: format!("ffmpeg-{}-latest-linux64-gpl-shared", FFMPEG_LIBS_VERSION),
+                archive_root: format!("ffmpeg-{}-latest-linux64-gpl-shared-{}", FFMPEG_LIBS_VERSION, FFMPEG_LIBS_SHORT_VERSION),
             })
         }
 

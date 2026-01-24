@@ -11,10 +11,10 @@
  */
 
 import { execSync } from 'child_process';
-import { copyFileSync, mkdirSync, existsSync, writeFileSync, unlinkSync } from 'fs';
+import { copyFileSync, mkdirSync, existsSync, writeFileSync, unlinkSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { tmpdir } from 'os';
+import { tmpdir, homedir } from 'os';
 
 /**
  * Find vcvarsall.bat using vswhere.exe (the standard Visual Studio locator).
@@ -235,5 +235,45 @@ const sourcePath = explicitTarget
 
 console.log(`Copying ${sourcePath} to ${destPath}...`);
 copyFileSync(sourcePath, destPath);
+
+// Copy FFmpeg DLLs when building with ffmpeg-libs feature (Windows only)
+if (features?.includes('ffmpeg-libs') && platform === 'win32') {
+  const ffmpegLibsDir =
+    process.env['FFMPEG_DIR'] ||
+    join(process.env['LOCALAPPDATA'] || join(homedir(), 'AppData', 'Local'), 'SpiritStream', 'ffmpeg-libs');
+  const ffmpegBinDir = join(ffmpegLibsDir, 'bin');
+
+  if (existsSync(ffmpegBinDir)) {
+    console.log(`Copying FFmpeg DLLs from ${ffmpegBinDir}...`);
+
+    // Get all DLL files
+    const dllFiles = readdirSync(ffmpegBinDir).filter((f) => f.endsWith('.dll'));
+
+    // Copy to binaries/ (for production bundling)
+    for (const dll of dllFiles) {
+      const src = join(ffmpegBinDir, dll);
+      const dest = join(binariesDir, dll);
+      copyFileSync(src, dest);
+    }
+    console.log(`Copied ${dllFiles.length} DLLs to binaries/`);
+
+    // Also copy to target/{profile}/ for dev mode
+    const targetDir = explicitTarget
+      ? join(projectRoot, 'apps', 'desktop', 'src-tauri', 'target', explicitTarget, profile)
+      : join(projectRoot, 'apps', 'desktop', 'src-tauri', 'target', profile);
+
+    if (existsSync(targetDir)) {
+      for (const dll of dllFiles) {
+        const src = join(ffmpegBinDir, dll);
+        const dest = join(targetDir, dll);
+        copyFileSync(src, dest);
+      }
+      console.log(`Copied ${dllFiles.length} DLLs to target/${profile}/`);
+    }
+  } else {
+    console.warn(`Warning: FFmpeg libs directory not found at ${ffmpegBinDir}`);
+    console.warn('Run scripts/setup-ffmpeg-libs.ps1 first to download FFmpeg shared libraries.');
+  }
+}
 
 console.log('Server binary built successfully!');
