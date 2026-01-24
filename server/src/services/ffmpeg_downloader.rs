@@ -24,6 +24,14 @@ use serde::Deserialize;
 use crate::services::{emit_event, EventSink, SettingsManager};
 use thiserror::Error;
 
+/// Pinned FFmpeg version for shared libs (for reproducibility)
+/// Update this deliberately after testing when bumping versions
+/// See .claude/claudedocs/ffmpeg-libs-plan.md for version rationale
+pub const FFMPEG_LIBS_VERSION: &str = "n8.0";
+
+/// Base URL for BtbN FFmpeg builds
+const BTBN_RELEASE_BASE: &str = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest";
+
 /// Progress information emitted during download
 #[derive(Debug, Clone, Serialize)]
 pub struct DownloadProgress {
@@ -87,6 +95,15 @@ struct PlatformDownload {
     url: &'static str,
     archive_type: ArchiveType,
     binary_path: &'static str,
+}
+
+/// Platform-specific shared libs download information
+/// Used for FFmpeg libs integration (Phase 0 of FFmpeg libs migration)
+struct SharedLibsDownload {
+    url: String,
+    archive_type: ArchiveType,
+    /// Top-level directory name inside the archive (e.g., "ffmpeg-n7.1-latest-win64-gpl-shared-7.1")
+    archive_root: String,
 }
 
 #[allow(dead_code)] // Variants are used on specific platforms only
@@ -255,6 +272,56 @@ impl FFmpegDownloader {
         }
     }
 
+    /// Get platform-specific shared libs download information
+    /// These are pinned builds for FFmpeg libs integration (linking with ffmpeg-sys-next)
+    fn get_shared_libs_download() -> Result<SharedLibsDownload, DownloadError> {
+        #[cfg(target_os = "windows")]
+        {
+            // Windows: BtbN shared libs build with hardware encoders
+            // Package contains: bin/ (DLLs), lib/ (import libs), include/ (headers)
+            Ok(SharedLibsDownload {
+                url: format!(
+                    "{}/ffmpeg-{}-latest-win64-gpl-shared.zip",
+                    BTBN_RELEASE_BASE, FFMPEG_LIBS_VERSION
+                ),
+                archive_type: ArchiveType::Zip,
+                archive_root: format!("ffmpeg-{}-latest-win64-gpl-shared", FFMPEG_LIBS_VERSION),
+            })
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            // Linux: BtbN shared libs build
+            Ok(SharedLibsDownload {
+                url: format!(
+                    "{}/ffmpeg-{}-latest-linux64-gpl-shared.tar.xz",
+                    BTBN_RELEASE_BASE, FFMPEG_LIBS_VERSION
+                ),
+                archive_type: ArchiveType::TarXz,
+                archive_root: format!("ffmpeg-{}-latest-linux64-gpl-shared", FFMPEG_LIBS_VERSION),
+            })
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            // macOS: evermeet.cx doesn't provide shared libs
+            // Users need Homebrew FFmpeg or we need a different source
+            // For now, return an error - macOS support for libs requires different approach
+            Err(DownloadError::UnsupportedPlatform(
+                "Shared libs download not yet supported on macOS. Use Homebrew: brew install ffmpeg".to_string()
+            ))
+        }
+
+        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+        {
+            Err(DownloadError::UnsupportedPlatform(format!(
+                "Shared libs not supported on {} {}",
+                std::env::consts::OS,
+                std::env::consts::ARCH
+            )))
+        }
+    }
+
     /// Get the system installation path for FFmpeg
     pub fn get_system_install_path() -> PathBuf {
         #[cfg(target_os = "windows")]
@@ -283,6 +350,82 @@ impl FFmpegDownloader {
         {
             PathBuf::from("ffmpeg")
         }
+    }
+
+    /// Get the directory for FFmpeg shared libs (for linking/embedding)
+    /// This is in app data directory - no elevation needed
+    /// Structure: <app_data>/ffmpeg-libs/
+    ///   ├── bin/     (DLLs on Windows, .so on Linux)
+    ///   ├── lib/     (import libraries)
+    ///   ├── include/ (headers for ffmpeg-sys-next)
+    ///   └── version  (version marker file)
+    pub fn get_ffmpeg_libs_dir() -> PathBuf {
+        #[cfg(target_os = "windows")]
+        {
+            // Use %LOCALAPPDATA%/SpiritStream/ffmpeg-libs
+            if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+                return PathBuf::from(local_app_data)
+                    .join("SpiritStream")
+                    .join("ffmpeg-libs");
+            }
+            // Fallback to temp
+            std::env::temp_dir().join("spiritstream-ffmpeg-libs")
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            // Use ~/Library/Application Support/SpiritStream/ffmpeg-libs
+            if let Some(home) = std::env::var_os("HOME") {
+                return PathBuf::from(home)
+                    .join("Library")
+                    .join("Application Support")
+                    .join("SpiritStream")
+                    .join("ffmpeg-libs");
+            }
+            std::env::temp_dir().join("spiritstream-ffmpeg-libs")
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            // Use ~/.local/share/spiritstream/ffmpeg-libs
+            if let Some(home) = std::env::var_os("HOME") {
+                return PathBuf::from(home)
+                    .join(".local")
+                    .join("share")
+                    .join("spiritstream")
+                    .join("ffmpeg-libs");
+            }
+            std::env::temp_dir().join("spiritstream-ffmpeg-libs")
+        }
+
+        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+        {
+            std::env::temp_dir().join("spiritstream-ffmpeg-libs")
+        }
+    }
+
+    /// Check if FFmpeg shared libs are installed
+    pub fn are_shared_libs_installed() -> bool {
+        let libs_dir = Self::get_ffmpeg_libs_dir();
+        let version_file = libs_dir.join("version");
+
+        if !version_file.exists() {
+            return false;
+        }
+
+        // Verify essential directories exist
+        let has_bin = libs_dir.join("bin").exists();
+        let has_lib = libs_dir.join("lib").exists();
+        let has_include = libs_dir.join("include").exists();
+
+        has_bin && has_lib && has_include
+    }
+
+    /// Get the installed shared libs version, if any
+    pub fn get_installed_libs_version() -> Option<String> {
+        let version_file = Self::get_ffmpeg_libs_dir().join("version");
+        std::fs::read_to_string(version_file).ok()
+            .map(|s| s.trim().to_string())
     }
 
     /// Install FFmpeg to system location with privilege elevation
@@ -574,6 +717,126 @@ exit /b %errorlevel%
         // temp_dir is automatically cleaned up when dropped
     }
 
+    /// Download and extract FFmpeg shared libs for linking/embedding
+    /// Unlike the CLI binary, these go to app data directory (no elevation needed)
+    /// This is Phase 0 of the FFmpeg libs migration - required for ffmpeg-sys-next linking
+    pub async fn download_shared_libs(&self, event_sink: &dyn EventSink) -> Result<PathBuf, DownloadError> {
+        self.reset_cancel();
+
+        let libs_dir = Self::get_ffmpeg_libs_dir();
+
+        // Check if already installed with correct version
+        if Self::are_shared_libs_installed() {
+            if let Some(installed_version) = Self::get_installed_libs_version() {
+                if installed_version == FFMPEG_LIBS_VERSION {
+                    log::info!("FFmpeg shared libs already installed at: {libs_dir:?} (version {installed_version})");
+                    self.emit_progress(
+                        event_sink, 100, 100, 100.0, "complete",
+                        Some("FFmpeg shared libs are already installed")
+                    );
+                    return Ok(libs_dir);
+                }
+                log::info!("FFmpeg shared libs version mismatch: {installed_version} != {FFMPEG_LIBS_VERSION}, re-downloading");
+            }
+        }
+
+        // Get platform-specific download info
+        let platform = Self::get_shared_libs_download()?;
+
+        // Create temp directory for download
+        let temp_dir = tempfile::tempdir()?;
+        let archive_path = temp_dir.path().join("ffmpeg_shared_libs_archive");
+
+        // Emit starting phase
+        self.emit_progress(event_sink, 0, 0, 0.0, "starting", Some("Downloading FFmpeg shared libraries..."));
+
+        // Download the file
+        self.download_file(&platform.url, &archive_path.clone(), event_sink).await?;
+
+        if self.is_cancelled() {
+            return Err(DownloadError::Cancelled);
+        }
+
+        // Extract the archive
+        self.emit_progress(event_sink, 0, 0, 0.0, "extracting", Some("Extracting FFmpeg shared libraries..."));
+
+        // Clean existing libs dir if present
+        if libs_dir.exists() {
+            log::info!("Removing existing libs directory: {libs_dir:?}");
+            std::fs::remove_dir_all(&libs_dir)?;
+        }
+        std::fs::create_dir_all(&libs_dir)?;
+
+        // Extract based on archive type
+        match platform.archive_type {
+            ArchiveType::Zip => {
+                self.extract_shared_libs_zip(&archive_path, &libs_dir, &platform.archive_root)?;
+            }
+            ArchiveType::TarXz => {
+                self.extract_shared_libs_tar_xz(&archive_path, &libs_dir, &platform.archive_root)?;
+            }
+            ArchiveType::TarGz => {
+                // Reuse tar.xz logic for tar.gz (similar structure)
+                let file = std::fs::File::open(&archive_path)?;
+                let decompressor = flate2::read::GzDecoder::new(file);
+                let mut archive = tar::Archive::new(decompressor);
+
+                std::fs::create_dir_all(libs_dir.join("bin"))?;
+                std::fs::create_dir_all(libs_dir.join("lib"))?;
+                std::fs::create_dir_all(libs_dir.join("include"))?;
+
+                for entry in archive.entries()? {
+                    let mut entry = entry?;
+                    let path = entry.path()?;
+                    let path_str = path.to_string_lossy();
+
+                    let relative_path = if path_str.starts_with(&platform.archive_root) {
+                        path_str[platform.archive_root.len()..].trim_start_matches('/')
+                    } else {
+                        &path_str
+                    };
+
+                    let should_extract = relative_path.starts_with("bin/")
+                        || relative_path.starts_with("lib/")
+                        || relative_path.starts_with("include/");
+
+                    if should_extract && entry.header().entry_type().is_file() {
+                        let dest_path = libs_dir.join(relative_path);
+                        if let Some(parent) = dest_path.parent() {
+                            std::fs::create_dir_all(parent)?;
+                        }
+                        let mut outfile = std::fs::File::create(&dest_path)?;
+                        std::io::copy(&mut entry, &mut outfile)?;
+                    }
+                }
+            }
+        }
+
+        // Verify essential directories exist
+        let has_bin = libs_dir.join("bin").exists();
+        let has_lib = libs_dir.join("lib").exists();
+        let has_include = libs_dir.join("include").exists();
+
+        if !has_bin || !has_lib || !has_include {
+            return Err(DownloadError::ExtractionFailed(format!(
+                "Missing directories after extraction: bin={has_bin}, lib={has_lib}, include={has_include}"
+            )));
+        }
+
+        // Write version marker
+        let version_file = libs_dir.join("version");
+        std::fs::write(&version_file, FFMPEG_LIBS_VERSION)?;
+        log::info!("Wrote version marker: {version_file:?} = {FFMPEG_LIBS_VERSION}");
+
+        self.emit_progress(
+            event_sink, 100, 100, 100.0, "complete",
+            Some(&format!("FFmpeg shared libs {} installed successfully", FFMPEG_LIBS_VERSION))
+        );
+
+        log::info!("FFmpeg shared libs installed to: {libs_dir:?}");
+        Ok(libs_dir)
+    }
+
     /// Download file with progress reporting
     async fn download_file(
         &self,
@@ -736,6 +999,123 @@ exit /b %errorlevel%
         }
 
         Err(DownloadError::BinaryNotFound)
+    }
+
+    /// Extract shared libs ZIP archive (Windows)
+    /// Extracts bin/, lib/, include/ directories to destination
+    fn extract_shared_libs_zip(
+        &self,
+        archive_path: &Path,
+        dest_dir: &Path,
+        archive_root: &str,
+    ) -> Result<(), DownloadError> {
+        let file = std::fs::File::open(archive_path)?;
+        let mut archive = zip::ZipArchive::new(file)
+            .map_err(|e| DownloadError::ExtractionFailed(e.to_string()))?;
+
+        log::info!("Extracting shared libs from ZIP to: {dest_dir:?}");
+
+        // Create destination directories
+        std::fs::create_dir_all(dest_dir.join("bin"))?;
+        std::fs::create_dir_all(dest_dir.join("lib"))?;
+        std::fs::create_dir_all(dest_dir.join("include"))?;
+
+        let mut extracted_count = 0;
+
+        for i in 0..archive.len() {
+            let mut file = archive.by_index(i)
+                .map_err(|e| DownloadError::ExtractionFailed(e.to_string()))?;
+
+            let file_path = file.name();
+
+            // Skip directories
+            if file_path.ends_with('/') {
+                continue;
+            }
+
+            // Strip the archive root prefix to get relative path
+            let relative_path = if file_path.starts_with(archive_root) {
+                &file_path[archive_root.len()..].trim_start_matches('/')
+            } else {
+                file_path
+            };
+
+            // Only extract files in bin/, lib/, include/
+            let should_extract = relative_path.starts_with("bin/")
+                || relative_path.starts_with("lib/")
+                || relative_path.starts_with("include/");
+
+            if should_extract {
+                let dest_path = dest_dir.join(relative_path);
+
+                // Create parent directories if needed
+                if let Some(parent) = dest_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+
+                let mut outfile = std::fs::File::create(&dest_path)?;
+                std::io::copy(&mut file, &mut outfile)?;
+                extracted_count += 1;
+            }
+        }
+
+        log::info!("Extracted {extracted_count} files from shared libs archive");
+        Ok(())
+    }
+
+    /// Extract shared libs TAR.XZ archive (Linux)
+    fn extract_shared_libs_tar_xz(
+        &self,
+        archive_path: &Path,
+        dest_dir: &Path,
+        archive_root: &str,
+    ) -> Result<(), DownloadError> {
+        let file = std::fs::File::open(archive_path)?;
+        let decompressor = xz2::read::XzDecoder::new(file);
+        let mut archive = tar::Archive::new(decompressor);
+
+        log::info!("Extracting shared libs from TAR.XZ to: {dest_dir:?}");
+
+        // Create destination directories
+        std::fs::create_dir_all(dest_dir.join("bin"))?;
+        std::fs::create_dir_all(dest_dir.join("lib"))?;
+        std::fs::create_dir_all(dest_dir.join("include"))?;
+
+        let mut extracted_count = 0;
+
+        for entry in archive.entries()? {
+            let mut entry = entry?;
+            let path = entry.path()?;
+            let path_str = path.to_string_lossy();
+
+            // Strip the archive root prefix
+            let relative_path = if path_str.starts_with(archive_root) {
+                path_str[archive_root.len()..].trim_start_matches('/')
+            } else {
+                &path_str
+            };
+
+            // Only extract files in bin/, lib/, include/
+            let should_extract = relative_path.starts_with("bin/")
+                || relative_path.starts_with("lib/")
+                || relative_path.starts_with("include/");
+
+            if should_extract && entry.header().entry_type().is_file() {
+                let dest_path = dest_dir.join(relative_path);
+
+                // Create parent directories if needed
+                if let Some(parent) = dest_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+
+                let mut outfile = std::fs::File::create(&dest_path)?;
+                std::io::copy(&mut entry, &mut outfile)?;
+                extracted_count += 1;
+            }
+        }
+
+        log::info!("Extracted {extracted_count} files from shared libs archive");
+        Ok(())
     }
 
     /// Emit progress event to frontend

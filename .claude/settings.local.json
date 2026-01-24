@@ -24,6 +24,9 @@
       "Bash(timeout:*)",
       "Bash(tasklist:*)",
       "Bash(curl:*)"
+    ],
+    "additionalDirectories": [
+      "d:\\SpiritStream\\.claude"
     ]
   }
 }
