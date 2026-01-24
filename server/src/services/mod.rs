@@ -12,6 +12,10 @@ mod platform_registry;
 mod log_manager;
 mod events;
 mod path_validator;
+mod device_discovery;
+mod compositor;
+mod preview_handler;
+mod go2rtc_service;
 
 pub use profile_manager::*;
 pub use ffmpeg_handler::*;
@@ -24,3 +28,7 @@ pub use platform_registry::*;
 pub use log_manager::*;
 pub use events::*;
 pub use path_validator::*;
+pub use device_discovery::*;
+pub use compositor::*;
+pub use preview_handler::*;
+pub use go2rtc_service::*;
