@@ -1063,9 +1063,11 @@ async fn invoke_command(
                 return Err("ffmpeg libs pipeline already running".to_string());
             }
 
+            let expected_stream_key: Option<String> = get_opt_arg(&payload, "expectedStreamKey")?;
             let mut pipeline = InputPipeline::new(InputPipelineConfig {
                 input_id,
                 input_url,
+                expected_stream_key,
             });
             pipeline.add_group_config(OutputGroupConfig {
                 group_id,
@@ -1085,6 +1087,7 @@ async fn invoke_command(
             let group: OutputGroup = get_arg(&payload, "group")?;
             let targets: Vec<String> = get_arg(&payload, "targets")?;
             let input_id: Option<String> = get_opt_arg(&payload, "inputId")?;
+            let expected_stream_key: Option<String> = get_opt_arg(&payload, "expectedStreamKey")?;
 
             if targets.is_empty() {
                 return Err("At least one target URL is required".to_string());
@@ -1103,6 +1106,7 @@ async fn invoke_command(
             let mut pipeline = InputPipeline::new(InputPipelineConfig {
                 input_id,
                 input_url,
+                expected_stream_key,
             });
             pipeline.add_group(group, targets)?;
             pipeline.start()?;
