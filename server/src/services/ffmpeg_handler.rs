@@ -1247,6 +1247,28 @@ impl FFmpegHandler {
     }
 
 
+    /// Build the list of output URLs for a group (skips disabled targets).
+    pub fn build_target_urls(&self, group: &OutputGroup) -> Vec<String> {
+        let disabled = self.disabled_targets.lock().unwrap_or_else(|e| {
+            log::warn!("Disabled targets mutex poisoned (build_target_urls), recovering: {e}");
+            e.into_inner()
+        });
+        let mut target_outputs: Vec<String> = Vec::new();
+        for target in &group.stream_targets {
+            if disabled.contains(&target.id) {
+                continue;
+            }
+
+            let normalized_url = Self::normalize_rtmp_url(&target.url);
+            let normalized_url = self.platform_registry.normalize_url(&target.service, &normalized_url);
+            let resolved_key = Self::resolve_stream_key(&target.stream_key);
+            let full_url = self.platform_registry.build_url_with_key(&target.service, &normalized_url, &resolved_key);
+            target_outputs.push(full_url);
+        }
+
+        target_outputs
+    }
+
     /// Build FFmpeg arguments for an output group
     ///
     /// Groups read from the shared TCP relay so they can restart independently.
@@ -1437,23 +1459,7 @@ impl FFmpegHandler {
         args.push("-stats".to_string());
 
         // Add output targets (skip disabled ones)
-        let disabled = self.disabled_targets.lock().unwrap_or_else(|e| {
-            log::warn!("Disabled targets mutex poisoned (build_args), recovering: {e}");
-            e.into_inner()
-        });
-        let mut target_outputs: Vec<String> = Vec::new();
-        for target in &group.stream_targets {
-            // Skip targets that have been disabled via toggle_target
-            if disabled.contains(&target.id) {
-                continue;
-            }
-
-            let normalized_url = Self::normalize_rtmp_url(&target.url);
-            let normalized_url = self.platform_registry.normalize_url(&target.service, &normalized_url);
-            let resolved_key = Self::resolve_stream_key(&target.stream_key);
-            let full_url = self.platform_registry.build_url_with_key(&target.service, &normalized_url, &resolved_key);
-            target_outputs.push(full_url);
-        }
+        let target_outputs = self.build_target_urls(group);
 
         if target_outputs.is_empty() {
             return args;

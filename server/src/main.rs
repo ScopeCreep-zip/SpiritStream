@@ -102,7 +102,7 @@ struct AppState {
     settings_manager: Arc<SettingsManager>,
     ffmpeg_handler: Arc<FFmpegHandler>,
     #[cfg(feature = "ffmpeg-libs")]
-    ffmpeg_libs_pipeline: Arc<Mutex<Option<InputPipeline>>>,
+    ffmpeg_libs_pipelines: Arc<Mutex<std::collections::HashMap<String, InputPipeline>>>,
     ffmpeg_downloader: Arc<AsyncMutex<FFmpegDownloader>>,
     theme_manager: Arc<ThemeManager>,
     event_bus: EventBus,
@@ -797,6 +797,75 @@ async fn invoke(
     }
 }
 
+#[cfg(feature = "ffmpeg-libs")]
+fn build_libs_targets(state: &AppState, group: &OutputGroup) -> Result<Vec<String>, String> {
+    let targets = state.ffmpeg_handler.build_target_urls(group);
+    if targets.is_empty() {
+        return Err("At least one enabled stream target is required".to_string());
+    }
+    Ok(targets)
+}
+
+#[cfg(feature = "ffmpeg-libs")]
+fn start_libs_pipeline(
+    state: &AppState,
+    group: OutputGroup,
+    incoming_url: &str,
+) -> Result<u32, String> {
+    let group_id = group.id.clone();
+    let targets = build_libs_targets(state, &group)?;
+
+    let mut guard = state.ffmpeg_libs_pipelines
+        .lock()
+        .map_err(|_| "ffmpeg libs pipelines lock poisoned".to_string())?;
+    if guard.contains_key(&group_id) {
+        return Ok(0);
+    }
+
+    let mut pipeline = InputPipeline::new(InputPipelineConfig {
+        input_id: group_id.clone(),
+        input_url: incoming_url.to_string(),
+    });
+    pipeline.add_group(group, targets)?;
+    pipeline.start()?;
+    guard.insert(group_id, pipeline);
+    Ok(0)
+}
+
+#[cfg(feature = "ffmpeg-libs")]
+fn stop_libs_pipeline(state: &AppState, group_id: &str) -> Result<(), String> {
+    let pipeline = {
+        let mut guard = state.ffmpeg_libs_pipelines
+            .lock()
+            .map_err(|_| "ffmpeg libs pipelines lock poisoned".to_string())?;
+        guard.remove(group_id)
+    };
+
+    if let Some(mut pipeline) = pipeline {
+        pipeline.stop();
+        pipeline.join()?;
+    }
+
+    Ok(())
+}
+
+#[cfg(feature = "ffmpeg-libs")]
+fn stop_all_libs_pipelines(state: &AppState) -> Result<(), String> {
+    let pipelines = {
+        let mut guard = state.ffmpeg_libs_pipelines
+            .lock()
+            .map_err(|_| "ffmpeg libs pipelines lock poisoned".to_string())?;
+        guard.drain().map(|(_, pipeline)| pipeline).collect::<Vec<_>>()
+    };
+
+    for mut pipeline in pipelines {
+        pipeline.stop();
+        pipeline.join()?;
+    }
+
+    Ok(())
+}
+
 // ============================================================================
 // Command Handler
 // ============================================================================
@@ -879,25 +948,90 @@ async fn invoke_command(
         "start_stream" => {
             let group: OutputGroup = get_arg(&payload, "group")?;
             let incoming_url: String = get_arg(&payload, "incomingUrl")?;
-            let event_sink: Arc<dyn EventSink> = Arc::new(state.event_bus.clone());
-            let pid = state.ffmpeg_handler.start(&group, &incoming_url, event_sink)?;
-            Ok(json!(pid))
+            #[cfg(feature = "ffmpeg-libs")]
+            {
+                let pid = start_libs_pipeline(state, group, &incoming_url)?;
+                Ok(json!(pid))
+            }
+            #[cfg(not(feature = "ffmpeg-libs"))]
+            {
+                let event_sink: Arc<dyn EventSink> = Arc::new(state.event_bus.clone());
+                let pid = state.ffmpeg_handler.start(&group, &incoming_url, event_sink)?;
+                Ok(json!(pid))
+            }
         }
         "start_all_streams" => {
             let groups: Vec<OutputGroup> = get_arg(&payload, "groups")?;
             let incoming_url: String = get_arg(&payload, "incomingUrl")?;
-            let event_sink: Arc<dyn EventSink> = Arc::new(state.event_bus.clone());
-            let pids = state.ffmpeg_handler.start_all(&groups, &incoming_url, event_sink)?;
-            Ok(json!(pids))
+            #[cfg(feature = "ffmpeg-libs")]
+            {
+                let active_count = state.ffmpeg_libs_pipelines
+                    .lock()
+                    .map(|pipelines| pipelines.len())
+                    .unwrap_or(0);
+                if active_count > 0 {
+                    return Err("Streams already running".to_string());
+                }
+
+                let start_groups: Vec<OutputGroup> = groups
+                    .into_iter()
+                    .filter(|group| !group.stream_targets.is_empty())
+                    .collect();
+                if start_groups.is_empty() {
+                    return Err("At least one stream target is required".to_string());
+                }
+
+                let mut started_groups: Vec<String> = Vec::new();
+                let mut pids: Vec<u32> = Vec::with_capacity(start_groups.len());
+                for group in start_groups {
+                    let group_id = group.id.clone();
+                    match start_libs_pipeline(state, group, &incoming_url) {
+                        Ok(pid) => {
+                            started_groups.push(group_id);
+                            pids.push(pid);
+                        }
+                        Err(error) => {
+                            for started_id in started_groups {
+                                let _ = stop_libs_pipeline(state, &started_id);
+                            }
+                            return Err(error);
+                        }
+                    }
+                }
+
+                Ok(json!(pids))
+            }
+            #[cfg(not(feature = "ffmpeg-libs"))]
+            {
+                let event_sink: Arc<dyn EventSink> = Arc::new(state.event_bus.clone());
+                let pids = state.ffmpeg_handler.start_all(&groups, &incoming_url, event_sink)?;
+                Ok(json!(pids))
+            }
         }
         "stop_stream" => {
             let group_id: String = get_arg(&payload, "groupId")?;
-            state.ffmpeg_handler.stop(&group_id)?;
-            Ok(Value::Null)
+            #[cfg(feature = "ffmpeg-libs")]
+            {
+                stop_libs_pipeline(state, &group_id)?;
+                Ok(Value::Null)
+            }
+            #[cfg(not(feature = "ffmpeg-libs"))]
+            {
+                state.ffmpeg_handler.stop(&group_id)?;
+                Ok(Value::Null)
+            }
         }
         "stop_all_streams" => {
-            state.ffmpeg_handler.stop_all()?;
-            Ok(Value::Null)
+            #[cfg(feature = "ffmpeg-libs")]
+            {
+                stop_all_libs_pipelines(state)?;
+                Ok(Value::Null)
+            }
+            #[cfg(not(feature = "ffmpeg-libs"))]
+            {
+                state.ffmpeg_handler.stop_all()?;
+                Ok(Value::Null)
+            }
         }
         #[cfg(feature = "ffmpeg-libs")]
         "start_ffmpeg_libs_passthrough" => {
@@ -910,25 +1044,31 @@ async fn invoke_command(
                 return Err("At least one target URL is required".to_string());
             }
 
-            let mut guard = state.ffmpeg_libs_pipeline
+            let pipeline_id = group_id.clone()
+                .or_else(|| input_id.clone())
+                .unwrap_or_else(|| "passthrough".to_string());
+            let input_id = input_id.unwrap_or_else(|| pipeline_id.clone());
+            let group_id = group_id.unwrap_or_else(|| pipeline_id.clone());
+
+            let mut guard = state.ffmpeg_libs_pipelines
                 .lock()
-                .map_err(|_| "ffmpeg libs pipeline lock poisoned".to_string())?;
-            if guard.is_some() {
+                .map_err(|_| "ffmpeg libs pipelines lock poisoned".to_string())?;
+            if guard.contains_key(&pipeline_id) {
                 return Err("ffmpeg libs pipeline already running".to_string());
             }
 
             let mut pipeline = InputPipeline::new(InputPipelineConfig {
-                input_id: input_id.unwrap_or_else(|| "default".to_string()),
+                input_id,
                 input_url,
             });
             pipeline.add_group_config(OutputGroupConfig {
-                group_id: group_id.unwrap_or_else(|| "passthrough".to_string()),
+                group_id,
                 mode: OutputGroupMode::Passthrough,
                 targets,
                 group: None,
             });
             pipeline.start()?;
-            *guard = Some(pipeline);
+            guard.insert(pipeline_id, pipeline);
             Ok(Value::Null)
         }
         #[cfg(not(feature = "ffmpeg-libs"))]
@@ -944,58 +1084,116 @@ async fn invoke_command(
                 return Err("At least one target URL is required".to_string());
             }
 
-            let mut guard = state.ffmpeg_libs_pipeline
+            let pipeline_id = group.id.clone();
+            let input_id = input_id.unwrap_or_else(|| pipeline_id.clone());
+
+            let mut guard = state.ffmpeg_libs_pipelines
                 .lock()
-                .map_err(|_| "ffmpeg libs pipeline lock poisoned".to_string())?;
-            if guard.is_some() {
+                .map_err(|_| "ffmpeg libs pipelines lock poisoned".to_string())?;
+            if guard.contains_key(&pipeline_id) {
                 return Err("ffmpeg libs pipeline already running".to_string());
             }
 
             let mut pipeline = InputPipeline::new(InputPipelineConfig {
-                input_id: input_id.unwrap_or_else(|| "default".to_string()),
+                input_id,
                 input_url,
             });
             pipeline.add_group(group, targets)?;
             pipeline.start()?;
-            *guard = Some(pipeline);
+            guard.insert(pipeline_id, pipeline);
             Ok(Value::Null)
         }
         #[cfg(not(feature = "ffmpeg-libs"))]
         "start_ffmpeg_libs_group" => Err("ffmpeg-libs feature not enabled".to_string()),
         #[cfg(feature = "ffmpeg-libs")]
         "stop_ffmpeg_libs_passthrough" => {
-            let mut guard = state.ffmpeg_libs_pipeline
-                .lock()
-                .map_err(|_| "ffmpeg libs pipeline lock poisoned".to_string())?;
-            let pipeline = guard.as_mut().ok_or_else(|| "ffmpeg libs pipeline is not running".to_string())?;
-            pipeline.stop();
-            pipeline.join()?;
-            *guard = None;
+            let has_any = {
+                let guard = state.ffmpeg_libs_pipelines
+                    .lock()
+                    .map_err(|_| "ffmpeg libs pipelines lock poisoned".to_string())?;
+                !guard.is_empty()
+            };
+            if !has_any {
+                return Err("ffmpeg libs pipeline is not running".to_string());
+            }
+            stop_all_libs_pipelines(state)?;
             Ok(Value::Null)
         }
         #[cfg(not(feature = "ffmpeg-libs"))]
         "stop_ffmpeg_libs_passthrough" => Err("ffmpeg-libs feature not enabled".to_string()),
-        "get_active_stream_count" => Ok(json!(state.ffmpeg_handler.active_count())),
+        "get_active_stream_count" => {
+            #[cfg(feature = "ffmpeg-libs")]
+            {
+                let count = state.ffmpeg_libs_pipelines
+                    .lock()
+                    .map(|pipelines| pipelines.len())
+                    .unwrap_or(0);
+                Ok(json!(count))
+            }
+            #[cfg(not(feature = "ffmpeg-libs"))]
+            {
+                Ok(json!(state.ffmpeg_handler.active_count()))
+            }
+        }
         "is_group_streaming" => {
             let group_id: String = get_arg(&payload, "groupId")?;
-            Ok(json!(state.ffmpeg_handler.is_streaming(&group_id)))
+            #[cfg(feature = "ffmpeg-libs")]
+            {
+                let is_streaming = state.ffmpeg_libs_pipelines
+                    .lock()
+                    .map(|pipelines| pipelines.contains_key(&group_id))
+                    .unwrap_or(false);
+                Ok(json!(is_streaming))
+            }
+            #[cfg(not(feature = "ffmpeg-libs"))]
+            {
+                Ok(json!(state.ffmpeg_handler.is_streaming(&group_id)))
+            }
         }
-        "get_active_group_ids" => Ok(json!(state.ffmpeg_handler.get_active_group_ids())),
+        "get_active_group_ids" => {
+            #[cfg(feature = "ffmpeg-libs")]
+            {
+                let mut ids = state.ffmpeg_libs_pipelines
+                    .lock()
+                    .map(|pipelines| pipelines.keys().cloned().collect::<Vec<_>>())
+                    .unwrap_or_default();
+                ids.sort();
+                Ok(json!(ids))
+            }
+            #[cfg(not(feature = "ffmpeg-libs"))]
+            {
+                Ok(json!(state.ffmpeg_handler.get_active_group_ids()))
+            }
+        }
         "toggle_stream_target" => {
             let target_id: String = get_arg(&payload, "targetId")?;
             let enabled: bool = get_arg(&payload, "enabled")?;
             let group: OutputGroup = get_arg(&payload, "group")?;
             let incoming_url: String = get_arg(&payload, "incomingUrl")?;
-            if enabled {
-                state.ffmpeg_handler.enable_target(&target_id);
-            } else {
-                state.ffmpeg_handler.disable_target(&target_id);
+            #[cfg(feature = "ffmpeg-libs")]
+            {
+                if enabled {
+                    state.ffmpeg_handler.enable_target(&target_id);
+                } else {
+                    state.ffmpeg_handler.disable_target(&target_id);
+                }
+                stop_libs_pipeline(state, &group.id)?;
+                let pid = start_libs_pipeline(state, group, &incoming_url)?;
+                Ok(json!(pid))
             }
-            let event_sink: Arc<dyn EventSink> = Arc::new(state.event_bus.clone());
-            let pid = state
-                .ffmpeg_handler
-                .restart_group(&group.id, &group, &incoming_url, event_sink)?;
-            Ok(json!(pid))
+            #[cfg(not(feature = "ffmpeg-libs"))]
+            {
+                if enabled {
+                    state.ffmpeg_handler.enable_target(&target_id);
+                } else {
+                    state.ffmpeg_handler.disable_target(&target_id);
+                }
+                let event_sink: Arc<dyn EventSink> = Arc::new(state.event_bus.clone());
+                let pid = state
+                    .ffmpeg_handler
+                    .restart_group(&group.id, &group, &incoming_url, event_sink)?;
+                Ok(json!(pid))
+            }
         }
         "is_target_disabled" => {
             let target_id: String = get_arg(&payload, "targetId")?;
@@ -1439,7 +1637,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         settings_manager,
         ffmpeg_handler,
         #[cfg(feature = "ffmpeg-libs")]
-        ffmpeg_libs_pipeline: Arc::new(Mutex::new(None)),
+        ffmpeg_libs_pipelines: Arc::new(Mutex::new(std::collections::HashMap::new())),
         ffmpeg_downloader: Arc::new(AsyncMutex::new(FFmpegDownloader::new())),
         theme_manager,
         event_bus,
