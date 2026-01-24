@@ -6,7 +6,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::UdpSocket;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -48,6 +48,7 @@ pub struct FFmpegHandler {
     disabled_targets: Arc<Mutex<HashSet<String>>>,
     relay: Arc<Mutex<Option<RelayProcess>>>,
     active_groups: Arc<Mutex<HashMap<String, ActiveGroupConfig>>>,
+    qsv_repeat_pps_supported: OnceLock<bool>,
     /// Reference count for active groups using the relay
     /// Prevents race condition where relay stops while groups are still active
     relay_refcount: Arc<AtomicUsize>,
@@ -92,6 +93,7 @@ impl FFmpegHandler {
             disabled_targets: Arc::new(Mutex::new(HashSet::new())),
             relay: Arc::new(Mutex::new(None)),
             active_groups: Arc::new(Mutex::new(HashMap::new())),
+            qsv_repeat_pps_supported: OnceLock::new(),
             relay_refcount: Arc::new(AtomicUsize::new(0)),
             platform_registry: PlatformRegistry::new(),
         }
@@ -106,6 +108,7 @@ impl FFmpegHandler {
             disabled_targets: Arc::new(Mutex::new(HashSet::new())),
             relay: Arc::new(Mutex::new(None)),
             active_groups: Arc::new(Mutex::new(HashMap::new())),
+            qsv_repeat_pps_supported: OnceLock::new(),
             relay_refcount: Arc::new(AtomicUsize::new(0)),
             platform_registry: PlatformRegistry::new(),
         }
@@ -1216,6 +1219,33 @@ impl FFmpegHandler {
         }
     }
 
+    fn supports_qsv_repeat_pps(&self) -> bool {
+        *self.qsv_repeat_pps_supported.get_or_init(|| {
+            let mut cmd = Command::new(&self.ffmpeg_path);
+            cmd.args(["-hide_banner", "-h", "encoder=h264_qsv"])
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            #[cfg(windows)]
+            cmd.creation_flags(CREATE_NO_WINDOW);
+
+            match cmd.output() {
+                Ok(output) => {
+                    let mut text = String::new();
+                    text.push_str(&String::from_utf8_lossy(&output.stdout));
+                    text.push_str(&String::from_utf8_lossy(&output.stderr));
+                    let supported = text.contains("repeat_pps");
+                    log::info!("QSV repeat_pps support: {}", if supported { "yes" } else { "no" });
+                    supported
+                }
+                Err(err) => {
+                    log::warn!("Failed to probe h264_qsv encoder options for repeat_pps: {err}");
+                    false
+                }
+            }
+        })
+    }
+
 
     /// Build FFmpeg arguments for an output group
     ///
@@ -1280,6 +1310,9 @@ impl FFmpegHandler {
                     args.push("-look_ahead".to_string()); args.push("0".to_string());
                     args.push("-async_depth".to_string()); args.push("1".to_string());
                     args.push("-forced_idr".to_string()); args.push("1".to_string());
+                    if self.supports_qsv_repeat_pps() {
+                        args.push("-repeat_pps".to_string()); args.push("1".to_string());
+                    }
                 } else {
                     // QSV defaults aligned with OBS: B-frames, async depth, and lookahead.
                     args.push("-bf".to_string()); args.push("3".to_string());
