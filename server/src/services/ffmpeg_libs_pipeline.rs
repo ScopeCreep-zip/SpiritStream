@@ -134,10 +134,12 @@ struct TranscodeGroup {
     video_enc_ctx: *mut ffi::AVCodecContext,
     audio_enc_ctx: Option<*mut ffi::AVCodecContext>,
     video_hw_device: Option<*mut ffi::AVBufferRef>,
+    video_hw_frames_ctx: Option<*mut ffi::AVBufferRef>,
     sws_ctx: *mut ffi::SwsContext,
     swr_ctx: Option<*mut ffi::SwrContext>,
     video_dec_frame: *mut ffi::AVFrame,
-    video_enc_frame: *mut ffi::AVFrame,
+    video_sw_frame: *mut ffi::AVFrame,
+    video_hw_frame: Option<*mut ffi::AVFrame>,
     audio_dec_frame: *mut ffi::AVFrame,
     outputs: Vec<TranscodeOutput>,
 }
@@ -489,13 +491,22 @@ fn create_transcode_group(
     let output_height = if group.video.height > 0 { group.video.height as i32 } else { unsafe { (*video_codecpar).height } };
 
     let prefer_hw = is_hw_encoder(&group.video.codec);
-    let pix_fmt = select_pix_fmt(video_encoder, prefer_hw);
+    let sw_pix_fmt = select_pix_fmt(video_encoder, prefer_hw);
+    let mut video_hw_device = attach_hw_device(&group.video.codec, video_enc_ctx);
+    let hw_pix_fmt = if video_hw_device.is_some() {
+        hw_pix_fmt_for_encoder(&group.video.codec)
+    } else {
+        None
+    };
+    let mut video_hw_frames_ctx = None;
+    let mut video_hw_frame = None;
+    let enc_pix_fmt = hw_pix_fmt.unwrap_or(sw_pix_fmt);
     unsafe {
         (*video_enc_ctx).width = output_width;
         (*video_enc_ctx).height = output_height;
         (*video_enc_ctx).time_base = ffi::AVRational { num: output_fps.den, den: output_fps.num };
         (*video_enc_ctx).framerate = output_fps;
-        (*video_enc_ctx).pix_fmt = pix_fmt;
+        (*video_enc_ctx).pix_fmt = enc_pix_fmt;
         if let Some(bit_rate) = parse_bitrate_to_bits(&group.video.bitrate) {
             (*video_enc_ctx).bit_rate = bit_rate;
         }
@@ -506,19 +517,90 @@ fn create_transcode_group(
         }
     }
 
-    let mut video_hw_device = attach_hw_device(&group.video.codec, video_enc_ctx);
+    if let (Some(device_ref), Some(hw_fmt)) = (video_hw_device, hw_pix_fmt) {
+        let mut frames_ctx = match create_hw_frames_ctx(
+            device_ref,
+            hw_fmt,
+            sw_pix_fmt,
+            output_width,
+            output_height,
+        ) {
+            Ok(ctx) => ctx,
+            Err(err) => {
+                unsafe {
+                    let mut device_ref = device_ref;
+                    ffi::av_buffer_unref(&mut device_ref);
+                    if !(*video_enc_ctx).hw_device_ctx.is_null() {
+                        ffi::av_buffer_unref(&mut (*video_enc_ctx).hw_device_ctx);
+                        (*video_enc_ctx).hw_device_ctx = ptr::null_mut();
+                    }
+                    ffi::avcodec_free_context(&mut (video_enc_ctx as *mut _));
+                    ffi::avcodec_free_context(&mut (video_dec_ctx as *mut _));
+                }
+                return Err(err);
+            }
+        };
+        let frames_ref = unsafe { ffi::av_buffer_ref(frames_ctx) };
+        if frames_ref.is_null() {
+            unsafe {
+                ffi::av_buffer_unref(&mut frames_ctx);
+                let mut device_ref = device_ref;
+                ffi::av_buffer_unref(&mut device_ref);
+                if !(*video_enc_ctx).hw_device_ctx.is_null() {
+                    ffi::av_buffer_unref(&mut (*video_enc_ctx).hw_device_ctx);
+                    (*video_enc_ctx).hw_device_ctx = ptr::null_mut();
+                }
+                ffi::avcodec_free_context(&mut (video_enc_ctx as *mut _));
+                ffi::avcodec_free_context(&mut (video_dec_ctx as *mut _));
+            }
+            return Err("Failed to reference hardware frames context".to_string());
+        }
+        unsafe {
+            (*video_enc_ctx).hw_frames_ctx = frames_ref;
+        }
+        video_hw_frames_ctx = Some(frames_ctx);
+        let hw_frame = unsafe { ffi::av_frame_alloc() };
+        if hw_frame.is_null() {
+            return Err("Failed to allocate hardware video frame".to_string());
+        }
+        video_hw_frame = Some(hw_frame);
+    }
+
     let mut open_enc_ret = unsafe { ffi::avcodec_open2(video_enc_ctx, video_encoder, ptr::null_mut()) };
     if open_enc_ret < 0 && video_hw_device.is_some() {
         unsafe {
             if let Some(mut device_ref) = video_hw_device.take() {
                 ffi::av_buffer_unref(&mut device_ref);
             }
+            if let Some(mut frames_ref) = video_hw_frames_ctx.take() {
+                ffi::av_buffer_unref(&mut frames_ref);
+            }
+            if let Some(mut hw_frame) = video_hw_frame.take() {
+                ffi::av_frame_free(&mut (hw_frame as *mut _));
+            }
+            if !(*video_enc_ctx).hw_device_ctx.is_null() {
+                ffi::av_buffer_unref(&mut (*video_enc_ctx).hw_device_ctx);
+            }
+            if !(*video_enc_ctx).hw_frames_ctx.is_null() {
+                ffi::av_buffer_unref(&mut (*video_enc_ctx).hw_frames_ctx);
+            }
             (*video_enc_ctx).hw_device_ctx = ptr::null_mut();
+            (*video_enc_ctx).hw_frames_ctx = ptr::null_mut();
+            (*video_enc_ctx).pix_fmt = sw_pix_fmt;
         }
         open_enc_ret = unsafe { ffi::avcodec_open2(video_enc_ctx, video_encoder, ptr::null_mut()) };
     }
     if open_enc_ret < 0 {
         unsafe {
+            if let Some(mut hw_frame) = video_hw_frame {
+                ffi::av_frame_free(&mut (hw_frame as *mut _));
+            }
+            if let Some(mut frames_ref) = video_hw_frames_ctx {
+                ffi::av_buffer_unref(&mut frames_ref);
+            }
+            if let Some(mut device_ref) = video_hw_device {
+                ffi::av_buffer_unref(&mut device_ref);
+            }
             ffi::avcodec_free_context(&mut (video_enc_ctx as *mut _));
             ffi::avcodec_free_context(&mut (video_dec_ctx as *mut _));
         }
@@ -532,7 +614,7 @@ fn create_transcode_group(
             (*video_dec_ctx).pix_fmt,
             output_width,
             output_height,
-            (*video_enc_ctx).pix_fmt,
+            sw_pix_fmt,
             ffi::SWS_BILINEAR,
             ptr::null_mut(),
             ptr::null_mut(),
@@ -548,14 +630,23 @@ fn create_transcode_group(
     }
 
     let video_dec_frame = unsafe { ffi::av_frame_alloc() };
-    let video_enc_frame = unsafe { ffi::av_frame_alloc() };
-    if video_dec_frame.is_null() || video_enc_frame.is_null() {
+    let video_sw_frame = unsafe { ffi::av_frame_alloc() };
+    if video_dec_frame.is_null() || video_sw_frame.is_null() {
         unsafe {
             if !video_dec_frame.is_null() {
                 ffi::av_frame_free(&mut (video_dec_frame as *mut _));
             }
-            if !video_enc_frame.is_null() {
-                ffi::av_frame_free(&mut (video_enc_frame as *mut _));
+            if !video_sw_frame.is_null() {
+                ffi::av_frame_free(&mut (video_sw_frame as *mut _));
+            }
+            if let Some(mut hw_frame) = video_hw_frame {
+                ffi::av_frame_free(&mut (hw_frame as *mut _));
+            }
+            if let Some(mut frames_ref) = video_hw_frames_ctx {
+                ffi::av_buffer_unref(&mut frames_ref);
+            }
+            if let Some(mut device_ref) = video_hw_device {
+                ffi::av_buffer_unref(&mut device_ref);
             }
             ffi::sws_freeContext(sws_ctx);
             ffi::avcodec_free_context(&mut (video_enc_ctx as *mut _));
@@ -565,13 +656,22 @@ fn create_transcode_group(
     }
 
     unsafe {
-        (*video_enc_frame).format = (*video_enc_ctx).pix_fmt as i32;
-        (*video_enc_frame).width = (*video_enc_ctx).width;
-        (*video_enc_frame).height = (*video_enc_ctx).height;
-        let buffer_ret = ffi::av_frame_get_buffer(video_enc_frame, 32);
+        (*video_sw_frame).format = sw_pix_fmt as i32;
+        (*video_sw_frame).width = output_width;
+        (*video_sw_frame).height = output_height;
+        let buffer_ret = ffi::av_frame_get_buffer(video_sw_frame, 32);
         if buffer_ret < 0 {
-            ffi::av_frame_free(&mut (video_enc_frame as *mut _));
+            ffi::av_frame_free(&mut (video_sw_frame as *mut _));
             ffi::av_frame_free(&mut (video_dec_frame as *mut _));
+            if let Some(mut hw_frame) = video_hw_frame {
+                ffi::av_frame_free(&mut (hw_frame as *mut _));
+            }
+            if let Some(mut frames_ref) = video_hw_frames_ctx {
+                ffi::av_buffer_unref(&mut frames_ref);
+            }
+            if let Some(mut device_ref) = video_hw_device {
+                ffi::av_buffer_unref(&mut device_ref);
+            }
             ffi::sws_freeContext(sws_ctx);
             ffi::avcodec_free_context(&mut (video_enc_ctx as *mut _));
             ffi::avcodec_free_context(&mut (video_dec_ctx as *mut _));
@@ -720,10 +820,12 @@ fn create_transcode_group(
         video_enc_ctx,
         audio_enc_ctx,
         video_hw_device,
+        video_hw_frames_ctx,
         sws_ctx,
         swr_ctx,
         video_dec_frame,
-        video_enc_frame,
+        video_sw_frame,
+        video_hw_frame,
         audio_dec_frame,
         outputs,
     })
@@ -858,24 +960,47 @@ fn transcode_video_packet(
         }
 
         unsafe {
-            ffi::av_frame_make_writable(group.video_enc_frame);
+            let writable_ret = ffi::av_frame_make_writable(group.video_sw_frame);
+            if writable_ret < 0 {
+                return Err(format!("Video frame not writable: {}", ffmpeg_err(writable_ret)));
+            }
             ffi::sws_scale(
                 group.sws_ctx,
                 (*group.video_dec_frame).data.as_ptr() as *const *const u8,
                 (*group.video_dec_frame).linesize.as_ptr(),
                 0,
                 (*group.video_dec_ctx).height,
-                (*group.video_enc_frame).data.as_mut_ptr(),
-                (*group.video_enc_frame).linesize.as_mut_ptr(),
+                (*group.video_sw_frame).data.as_mut_ptr(),
+                (*group.video_sw_frame).linesize.as_mut_ptr(),
             );
-            (*group.video_enc_frame).pts = ffi::av_rescale_q(
+            (*group.video_sw_frame).pts = ffi::av_rescale_q(
                 (*group.video_dec_frame).pts,
                 (*in_stream).time_base,
                 (*group.video_enc_ctx).time_base,
             );
         }
 
-        let send_enc_ret = unsafe { ffi::avcodec_send_frame(group.video_enc_ctx, group.video_enc_frame) };
+        let mut frame_to_send = group.video_sw_frame;
+        if let (Some(hw_frames_ctx), Some(hw_frame)) = (group.video_hw_frames_ctx, group.video_hw_frame) {
+            unsafe {
+                ffi::av_frame_unref(hw_frame);
+                (*hw_frame).format = (*group.video_enc_ctx).pix_fmt as i32;
+                (*hw_frame).width = (*group.video_enc_ctx).width;
+                (*hw_frame).height = (*group.video_enc_ctx).height;
+                let hw_ret = ffi::av_hwframe_get_buffer(hw_frames_ctx, hw_frame, 0);
+                if hw_ret < 0 {
+                    return Err(format!("Failed to allocate hw frame: {}", ffmpeg_err(hw_ret)));
+                }
+                let transfer_ret = ffi::av_hwframe_transfer_data(hw_frame, group.video_sw_frame, 0);
+                if transfer_ret < 0 {
+                    return Err(format!("Failed to upload hw frame: {}", ffmpeg_err(transfer_ret)));
+                }
+                (*hw_frame).pts = (*group.video_sw_frame).pts;
+                frame_to_send = hw_frame;
+            }
+        }
+
+        let send_enc_ret = unsafe { ffi::avcodec_send_frame(group.video_enc_ctx, frame_to_send) };
         if send_enc_ret < 0 {
             return Err(format!("Video encoder send failed: {}", ffmpeg_err(send_enc_ret)));
         }
@@ -1125,7 +1250,10 @@ fn cleanup_transcode_group(group: TranscodeGroup) {
             ffi::avformat_free_context(output.ctx);
         }
         ffi::av_frame_free(&mut (group.video_dec_frame as *mut _));
-        ffi::av_frame_free(&mut (group.video_enc_frame as *mut _));
+        ffi::av_frame_free(&mut (group.video_sw_frame as *mut _));
+        if let Some(mut hw_frame) = group.video_hw_frame {
+            ffi::av_frame_free(&mut (hw_frame as *mut _));
+        }
         if !group.audio_dec_frame.is_null() {
             ffi::av_frame_free(&mut (group.audio_dec_frame as *mut _));
         }
@@ -1133,6 +1261,9 @@ fn cleanup_transcode_group(group: TranscodeGroup) {
             ffi::swr_free(&mut swr_ctx);
         }
         ffi::sws_freeContext(group.sws_ctx);
+        if let Some(mut frames_ref) = group.video_hw_frames_ctx {
+            ffi::av_buffer_unref(&mut frames_ref);
+        }
         if let Some(mut audio_enc) = group.audio_enc_ctx {
             ffi::avcodec_free_context(&mut audio_enc);
         }
@@ -1179,6 +1310,19 @@ fn hw_device_type_for_encoder(encoder_name: &str) -> Option<ffi::AVHWDeviceType>
     }
 }
 
+fn hw_pix_fmt_for_encoder(encoder_name: &str) -> Option<ffi::AVPixelFormat> {
+    let name = encoder_name.to_ascii_lowercase();
+    if name.contains("nvenc") {
+        Some(ffi::AV_PIX_FMT_CUDA)
+    } else if name.contains("qsv") {
+        Some(ffi::AV_PIX_FMT_QSV)
+    } else if name.contains("amf") {
+        Some(ffi::AV_PIX_FMT_D3D11)
+    } else {
+        None
+    }
+}
+
 fn attach_hw_device(
     encoder_name: &str,
     enc_ctx: *mut ffi::AVCodecContext,
@@ -1204,11 +1348,51 @@ fn attach_hw_device(
         return None;
     }
 
+    let enc_ref = unsafe { ffi::av_buffer_ref(device_ref) };
+    if enc_ref.is_null() {
+        unsafe { ffi::av_buffer_unref(&mut (device_ref as *mut _)) };
+        return None;
+    }
+
     unsafe {
-        (*enc_ctx).hw_device_ctx = device_ref;
+        (*enc_ctx).hw_device_ctx = enc_ref;
     }
 
     Some(device_ref)
+}
+
+fn create_hw_frames_ctx(
+    device_ref: *mut ffi::AVBufferRef,
+    hw_fmt: ffi::AVPixelFormat,
+    sw_fmt: ffi::AVPixelFormat,
+    width: i32,
+    height: i32,
+) -> Result<*mut ffi::AVBufferRef, String> {
+    let mut frames_ref = unsafe { ffi::av_hwframe_ctx_alloc(device_ref) };
+    if frames_ref.is_null() {
+        return Err("Failed to allocate hardware frames context".to_string());
+    }
+
+    unsafe {
+        let frames_ctx = (*frames_ref).data as *mut ffi::AVHWFramesContext;
+        if frames_ctx.is_null() {
+            ffi::av_buffer_unref(&mut frames_ref);
+            return Err("Hardware frames context was null".to_string());
+        }
+        (*frames_ctx).format = hw_fmt;
+        (*frames_ctx).sw_format = sw_fmt;
+        (*frames_ctx).width = width;
+        (*frames_ctx).height = height;
+        (*frames_ctx).initial_pool_size = 20;
+    }
+
+    let init_ret = unsafe { ffi::av_hwframe_ctx_init(frames_ref) };
+    if init_ret < 0 {
+        unsafe { ffi::av_buffer_unref(&mut frames_ref) };
+        return Err(format!("Failed to init hardware frames context: {}", ffmpeg_err(init_ret)));
+    }
+
+    Ok(frames_ref)
 }
 
 fn ffmpeg_err(code: i32) -> String {
