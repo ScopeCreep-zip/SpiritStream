@@ -27,6 +27,7 @@ pub struct OutputGroupConfig {
     pub group_id: String,
     pub mode: OutputGroupMode,
     pub targets: Vec<String>,
+    pub group: Option<OutputGroup>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,9 +68,10 @@ impl InputPipeline {
         };
 
         self.groups.push(OutputGroupConfig {
-            group_id: group.id,
+            group_id: group.id.clone(),
             mode,
             targets,
+            group: Some(group),
         });
 
         Ok(())
@@ -84,15 +86,18 @@ impl InputPipeline {
             return Err("FFmpeg libs pipeline already started".to_string());
         }
 
-        if self.groups.iter().any(|group| group.mode == OutputGroupMode::Transcode) {
-            return Err("Transcode groups are not implemented in ffmpeg-libs pipeline yet".to_string());
+        let transcode_count = self.groups.iter()
+            .filter(|group| group.mode == OutputGroupMode::Transcode)
+            .count();
+        if transcode_count > 1 {
+            return Err("Only one transcode group is supported in ffmpeg-libs pipeline for now".to_string());
         }
 
         let input_url = self.input_url.clone();
         let stop_flag = Arc::clone(&self.stop_flag);
         let groups = self.groups.clone();
 
-        let handle = thread::spawn(move || run_passthrough_loop(&input_url, groups, stop_flag));
+        let handle = thread::spawn(move || run_pipeline_loop(&input_url, groups, stop_flag));
         self.thread = Some(handle);
         Ok(())
     }
@@ -120,7 +125,29 @@ struct GroupOutputs {
     targets: Vec<TargetOutput>,
 }
 
-fn run_passthrough_loop(
+struct TranscodeGroup {
+    group_id: String,
+    video_stream_index: usize,
+    audio_stream_index: Option<usize>,
+    video_dec_ctx: *mut ffi::AVCodecContext,
+    audio_dec_ctx: Option<*mut ffi::AVCodecContext>,
+    video_enc_ctx: *mut ffi::AVCodecContext,
+    audio_enc_ctx: Option<*mut ffi::AVCodecContext>,
+    sws_ctx: *mut ffi::SwsContext,
+    swr_ctx: Option<*mut ffi::SwrContext>,
+    video_dec_frame: *mut ffi::AVFrame,
+    video_enc_frame: *mut ffi::AVFrame,
+    audio_dec_frame: *mut ffi::AVFrame,
+    outputs: Vec<TranscodeOutput>,
+}
+
+struct TranscodeOutput {
+    ctx: *mut ffi::AVFormatContext,
+    video_out_index: i32,
+    audio_out_index: Option<i32>,
+}
+
+fn run_pipeline_loop(
     input_url: &str,
     groups: Vec<OutputGroupConfig>,
     stop_flag: Arc<AtomicBool>,
@@ -151,11 +178,27 @@ fn run_passthrough_loop(
         return Err(format!("Failed to read stream info: {}", ffmpeg_err(info_ret)));
     }
 
+    let (video_stream_index, audio_stream_index) = find_stream_indices(input_ctx)?;
     let group_outputs = create_group_outputs(input_ctx, &groups)?;
+    let transcode_group_config = groups.iter()
+        .find(|group| group.mode == OutputGroupMode::Transcode);
+    let mut transcode_group = if let Some(config) = transcode_group_config {
+        Some(create_transcode_group(
+            input_ctx,
+            config,
+            video_stream_index,
+            audio_stream_index,
+        )?)
+    } else {
+        None
+    };
 
     let mut packet = unsafe { ffi::av_packet_alloc() };
     if packet.is_null() {
         cleanup_outputs(group_outputs);
+        if let Some(group) = transcode_group.take() {
+            cleanup_transcode_group(group);
+        }
         unsafe { ffi::avformat_close_input(&mut input_ctx) };
         return Err("Failed to allocate AVPacket".to_string());
     }
@@ -184,43 +227,30 @@ fn run_passthrough_loop(
             continue;
         }
 
-        for group in &group_outputs {
-            for target in &group.targets {
-                if stream_index >= target.out_streams.len() {
-                    continue;
-                }
-
-                let out_stream = target.out_streams[stream_index];
-                if out_stream.is_null() {
-                    continue;
-                }
-
-                let mut pkt_clone = unsafe { ffi::av_packet_clone(packet) };
-                if pkt_clone.is_null() {
-                    continue;
-                }
-
-                unsafe {
-                    ffi::av_packet_rescale_ts(pkt_clone, (*in_stream).time_base, (*out_stream).time_base);
-                    (*pkt_clone).stream_index = (*out_stream).index;
-                    let write_ret = ffi::av_interleaved_write_frame(target.ctx, pkt_clone);
-                    if write_ret < 0 {
-                        log::warn!(
-                            "FFmpeg libs write failed for group {}: {}",
-                            group.group_id,
-                            ffmpeg_err(write_ret)
-                        );
-                    }
-                    ffi::av_packet_free(&mut pkt_clone);
-                }
+        if stream_index == video_stream_index {
+            write_passthrough_packet(packet, in_stream, &group_outputs);
+            if let Some(group) = transcode_group.as_mut() {
+                transcode_video_packet(group, in_stream, packet)?;
+            }
+        } else if audio_stream_index == Some(stream_index) {
+            write_passthrough_packet(packet, in_stream, &group_outputs);
+            if let Some(group) = transcode_group.as_mut() {
+                transcode_audio_packet(group, in_stream, packet)?;
             }
         }
 
         unsafe { ffi::av_packet_unref(packet) };
     }
 
+    if let Some(group) = transcode_group.as_mut() {
+        flush_transcode_group(group)?;
+    }
+
     unsafe { ffi::av_packet_free(&mut packet) };
     cleanup_outputs(group_outputs);
+    if let Some(group) = transcode_group.take() {
+        cleanup_transcode_group(group);
+    }
     unsafe { ffi::avformat_close_input(&mut input_ctx) };
 
     Ok(())
@@ -249,6 +279,25 @@ fn create_group_outputs(
     }
 
     Ok(outputs)
+}
+
+fn find_stream_indices(input_ctx: *mut ffi::AVFormatContext) -> Result<(usize, Option<usize>), String> {
+    let stream_count = unsafe { (*input_ctx).nb_streams as usize };
+    let mut video_stream_index = None;
+    let mut audio_stream_index = None;
+    for idx in 0..stream_count {
+        let stream = unsafe { *(*input_ctx).streams.add(idx) };
+        let codecpar = unsafe { (*stream).codecpar };
+        let codec_type = unsafe { (*codecpar).codec_type };
+        if codec_type == ffi::AVMEDIA_TYPE_VIDEO && video_stream_index.is_none() {
+            video_stream_index = Some(idx);
+        } else if codec_type == ffi::AVMEDIA_TYPE_AUDIO && audio_stream_index.is_none() {
+            audio_stream_index = Some(idx);
+        }
+    }
+
+    let video_index = video_stream_index.ok_or_else(|| "No video stream found".to_string())?;
+    Ok((video_index, audio_stream_index))
 }
 
 fn create_flv_output(
@@ -335,6 +384,753 @@ fn create_flv_output(
     })
 }
 
+fn write_passthrough_packet(
+    packet: *mut ffi::AVPacket,
+    in_stream: *mut ffi::AVStream,
+    group_outputs: &[GroupOutputs],
+) {
+    for group in group_outputs {
+        for target in &group.targets {
+            let stream_index = unsafe { (*packet).stream_index as usize };
+            if stream_index >= target.out_streams.len() {
+                continue;
+            }
+
+            let out_stream = target.out_streams[stream_index];
+            if out_stream.is_null() {
+                continue;
+            }
+
+            let mut pkt_clone = unsafe { ffi::av_packet_clone(packet) };
+            if pkt_clone.is_null() {
+                continue;
+            }
+
+            unsafe {
+                ffi::av_packet_rescale_ts(pkt_clone, (*in_stream).time_base, (*out_stream).time_base);
+                (*pkt_clone).stream_index = (*out_stream).index;
+                let write_ret = ffi::av_interleaved_write_frame(target.ctx, pkt_clone);
+                if write_ret < 0 {
+                    log::warn!(
+                        "FFmpeg libs write failed for group {}: {}",
+                        group.group_id,
+                        ffmpeg_err(write_ret)
+                    );
+                }
+                ffi::av_packet_free(&mut pkt_clone);
+            }
+        }
+    }
+}
+
+fn create_transcode_group(
+    input_ctx: *mut ffi::AVFormatContext,
+    config: &OutputGroupConfig,
+    video_stream_index: usize,
+    audio_stream_index: Option<usize>,
+) -> Result<TranscodeGroup, String> {
+    let group = config.group.as_ref()
+        .ok_or_else(|| "Transcode group settings are missing".to_string())?;
+
+    let video_in_stream = unsafe { *(*input_ctx).streams.add(video_stream_index) };
+    let video_codecpar = unsafe { (*video_in_stream).codecpar };
+
+    let video_decoder = unsafe { ffi::avcodec_find_decoder((*video_codecpar).codec_id) };
+    if video_decoder.is_null() {
+        return Err("Failed to find video decoder".to_string());
+    }
+
+    let video_dec_ctx = unsafe { ffi::avcodec_alloc_context3(video_decoder) };
+    if video_dec_ctx.is_null() {
+        return Err("Failed to allocate video decoder context".to_string());
+    }
+
+    let dec_ret = unsafe { ffi::avcodec_parameters_to_context(video_dec_ctx, video_codecpar) };
+    if dec_ret < 0 {
+        unsafe { ffi::avcodec_free_context(&mut (video_dec_ctx as *mut _)) };
+        return Err(format!("Failed to copy video decoder parameters: {}", ffmpeg_err(dec_ret)));
+    }
+
+    let open_dec_ret = unsafe { ffi::avcodec_open2(video_dec_ctx, video_decoder, ptr::null_mut()) };
+    if open_dec_ret < 0 {
+        unsafe { ffi::avcodec_free_context(&mut (video_dec_ctx as *mut _)) };
+        return Err(format!("Failed to open video decoder: {}", ffmpeg_err(open_dec_ret)));
+    }
+
+    let video_encoder_name = CString::new(group.video.codec.clone())
+        .map_err(|_| "Video codec contains null byte".to_string())?;
+    let video_encoder = unsafe { ffi::avcodec_find_encoder_by_name(video_encoder_name.as_ptr()) };
+    if video_encoder.is_null() {
+        unsafe { ffi::avcodec_free_context(&mut (video_dec_ctx as *mut _)) };
+        return Err(format!("Video encoder not found: {}", group.video.codec));
+    }
+
+    let video_enc_ctx = unsafe { ffi::avcodec_alloc_context3(video_encoder) };
+    if video_enc_ctx.is_null() {
+        unsafe { ffi::avcodec_free_context(&mut (video_dec_ctx as *mut _)) };
+        return Err("Failed to allocate video encoder context".to_string());
+    }
+
+    let input_fps = unsafe {
+        let fr = (*video_in_stream).avg_frame_rate;
+        if fr.num > 0 && fr.den > 0 {
+            fr
+        } else {
+            ffi::AVRational { num: 30, den: 1 }
+        }
+    };
+    let output_fps = if group.video.fps > 0 {
+        ffi::AVRational { num: group.video.fps as i32, den: 1 }
+    } else {
+        input_fps
+    };
+    let output_width = if group.video.width > 0 { group.video.width as i32 } else { unsafe { (*video_codecpar).width } };
+    let output_height = if group.video.height > 0 { group.video.height as i32 } else { unsafe { (*video_codecpar).height } };
+
+    let pix_fmt = select_pix_fmt(video_encoder, ffi::AV_PIX_FMT_YUV420P);
+    unsafe {
+        (*video_enc_ctx).width = output_width;
+        (*video_enc_ctx).height = output_height;
+        (*video_enc_ctx).time_base = ffi::AVRational { num: output_fps.den, den: output_fps.num };
+        (*video_enc_ctx).framerate = output_fps;
+        (*video_enc_ctx).pix_fmt = pix_fmt;
+        if let Some(bit_rate) = parse_bitrate_to_bits(&group.video.bitrate) {
+            (*video_enc_ctx).bit_rate = bit_rate;
+        }
+        if let Some(interval) = group.video.keyframe_interval_seconds {
+            if output_fps.num > 0 {
+                (*video_enc_ctx).gop_size = (output_fps.num as i32).saturating_mul(interval as i32);
+            }
+        }
+    }
+
+    let open_enc_ret = unsafe { ffi::avcodec_open2(video_enc_ctx, video_encoder, ptr::null_mut()) };
+    if open_enc_ret < 0 {
+        unsafe {
+            ffi::avcodec_free_context(&mut (video_enc_ctx as *mut _));
+            ffi::avcodec_free_context(&mut (video_dec_ctx as *mut _));
+        }
+        return Err(format!("Failed to open video encoder: {}", ffmpeg_err(open_enc_ret)));
+    }
+
+    let sws_ctx = unsafe {
+        ffi::sws_getContext(
+            (*video_dec_ctx).width,
+            (*video_dec_ctx).height,
+            (*video_dec_ctx).pix_fmt,
+            output_width,
+            output_height,
+            (*video_enc_ctx).pix_fmt,
+            ffi::SWS_BILINEAR,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null(),
+        )
+    };
+    if sws_ctx.is_null() {
+        unsafe {
+            ffi::avcodec_free_context(&mut (video_enc_ctx as *mut _));
+            ffi::avcodec_free_context(&mut (video_dec_ctx as *mut _));
+        }
+        return Err("Failed to create sws context".to_string());
+    }
+
+    let video_dec_frame = unsafe { ffi::av_frame_alloc() };
+    let video_enc_frame = unsafe { ffi::av_frame_alloc() };
+    if video_dec_frame.is_null() || video_enc_frame.is_null() {
+        unsafe {
+            if !video_dec_frame.is_null() {
+                ffi::av_frame_free(&mut (video_dec_frame as *mut _));
+            }
+            if !video_enc_frame.is_null() {
+                ffi::av_frame_free(&mut (video_enc_frame as *mut _));
+            }
+            ffi::sws_freeContext(sws_ctx);
+            ffi::avcodec_free_context(&mut (video_enc_ctx as *mut _));
+            ffi::avcodec_free_context(&mut (video_dec_ctx as *mut _));
+        }
+        return Err("Failed to allocate video frames".to_string());
+    }
+
+    unsafe {
+        (*video_enc_frame).format = (*video_enc_ctx).pix_fmt as i32;
+        (*video_enc_frame).width = (*video_enc_ctx).width;
+        (*video_enc_frame).height = (*video_enc_ctx).height;
+        let buffer_ret = ffi::av_frame_get_buffer(video_enc_frame, 32);
+        if buffer_ret < 0 {
+            ffi::av_frame_free(&mut (video_enc_frame as *mut _));
+            ffi::av_frame_free(&mut (video_dec_frame as *mut _));
+            ffi::sws_freeContext(sws_ctx);
+            ffi::avcodec_free_context(&mut (video_enc_ctx as *mut _));
+            ffi::avcodec_free_context(&mut (video_dec_ctx as *mut _));
+            return Err(format!("Failed to allocate video frame buffer: {}", ffmpeg_err(buffer_ret)));
+        }
+    }
+
+    let (audio_dec_ctx, audio_enc_ctx, swr_ctx, audio_dec_frame) = if let Some(audio_index) = audio_stream_index {
+        let audio_in_stream = unsafe { *(*input_ctx).streams.add(audio_index) };
+        let audio_codecpar = unsafe { (*audio_in_stream).codecpar };
+        if group.audio.codec.eq_ignore_ascii_case("copy") {
+            if (*audio_codecpar).codec_id != ffi::AV_CODEC_ID_AAC
+                && (*audio_codecpar).codec_id != ffi::AV_CODEC_ID_MP3 {
+                return Err("Audio copy requires AAC or MP3 input".to_string());
+            }
+            (None, None, None, ptr::null_mut())
+        } else {
+            let audio_decoder = unsafe { ffi::avcodec_find_decoder((*audio_codecpar).codec_id) };
+            if audio_decoder.is_null() {
+                return Err("Failed to find audio decoder".to_string());
+            }
+
+            let audio_dec_ctx = unsafe { ffi::avcodec_alloc_context3(audio_decoder) };
+            if audio_dec_ctx.is_null() {
+                return Err("Failed to allocate audio decoder context".to_string());
+            }
+
+            let dec_ret = unsafe { ffi::avcodec_parameters_to_context(audio_dec_ctx, audio_codecpar) };
+            if dec_ret < 0 {
+                unsafe { ffi::avcodec_free_context(&mut (audio_dec_ctx as *mut _)) };
+                return Err(format!("Failed to copy audio decoder parameters: {}", ffmpeg_err(dec_ret)));
+            }
+
+            let open_dec_ret = unsafe { ffi::avcodec_open2(audio_dec_ctx, audio_decoder, ptr::null_mut()) };
+            if open_dec_ret < 0 {
+                unsafe { ffi::avcodec_free_context(&mut (audio_dec_ctx as *mut _)) };
+                return Err(format!("Failed to open audio decoder: {}", ffmpeg_err(open_dec_ret)));
+            }
+
+            let audio_encoder_name = CString::new(group.audio.codec.clone())
+                .map_err(|_| "Audio codec contains null byte".to_string())?;
+            let audio_encoder = unsafe { ffi::avcodec_find_encoder_by_name(audio_encoder_name.as_ptr()) };
+            if audio_encoder.is_null() {
+                unsafe { ffi::avcodec_free_context(&mut (audio_dec_ctx as *mut _)) };
+                return Err(format!("Audio encoder not found: {}", group.audio.codec));
+            }
+
+            let audio_enc_ctx = unsafe { ffi::avcodec_alloc_context3(audio_encoder) };
+            if audio_enc_ctx.is_null() {
+                unsafe { ffi::avcodec_free_context(&mut (audio_dec_ctx as *mut _)) };
+                return Err("Failed to allocate audio encoder context".to_string());
+            }
+
+            let output_sample_rate = if group.audio.sample_rate > 0 {
+                group.audio.sample_rate as i32
+            } else {
+                unsafe { (*audio_dec_ctx).sample_rate }
+            };
+            let output_channels = if group.audio.channels > 0 {
+                group.audio.channels as i32
+            } else {
+                unsafe { (*audio_dec_ctx).ch_layout.nb_channels }
+            };
+
+            unsafe {
+                ffi::av_channel_layout_default(&mut (*audio_enc_ctx).ch_layout, output_channels);
+                (*audio_enc_ctx).sample_rate = output_sample_rate;
+                (*audio_enc_ctx).time_base = ffi::AVRational { num: 1, den: output_sample_rate };
+                (*audio_enc_ctx).sample_fmt = select_sample_fmt(audio_encoder, ffi::AV_SAMPLE_FMT_FLTP);
+                if let Some(bit_rate) = parse_bitrate_to_bits(&group.audio.bitrate) {
+                    (*audio_enc_ctx).bit_rate = bit_rate;
+                }
+            }
+
+            let open_enc_ret = unsafe { ffi::avcodec_open2(audio_enc_ctx, audio_encoder, ptr::null_mut()) };
+            if open_enc_ret < 0 {
+                unsafe {
+                    ffi::avcodec_free_context(&mut (audio_enc_ctx as *mut _));
+                    ffi::avcodec_free_context(&mut (audio_dec_ctx as *mut _));
+                }
+                return Err(format!("Failed to open audio encoder: {}", ffmpeg_err(open_enc_ret)));
+            }
+
+            let mut swr_ctx: *mut ffi::SwrContext = ptr::null_mut();
+            let swr_ret = unsafe {
+                ffi::swr_alloc_set_opts2(
+                    &mut swr_ctx,
+                    &(*audio_enc_ctx).ch_layout,
+                    (*audio_enc_ctx).sample_fmt,
+                    (*audio_enc_ctx).sample_rate,
+                    &(*audio_dec_ctx).ch_layout,
+                    (*audio_dec_ctx).sample_fmt,
+                    (*audio_dec_ctx).sample_rate,
+                    0,
+                    ptr::null_mut(),
+                )
+            };
+            if swr_ret < 0 || swr_ctx.is_null() {
+                unsafe {
+                    ffi::avcodec_free_context(&mut (audio_enc_ctx as *mut _));
+                    ffi::avcodec_free_context(&mut (audio_dec_ctx as *mut _));
+                }
+                return Err(format!("Failed to allocate swr context: {}", ffmpeg_err(swr_ret)));
+            }
+            let swr_init_ret = unsafe { ffi::swr_init(swr_ctx) };
+            if swr_init_ret < 0 {
+                unsafe {
+                    ffi::swr_free(&mut swr_ctx);
+                    ffi::avcodec_free_context(&mut (audio_enc_ctx as *mut _));
+                    ffi::avcodec_free_context(&mut (audio_dec_ctx as *mut _));
+                }
+                return Err(format!("Failed to init swr: {}", ffmpeg_err(swr_init_ret)));
+            }
+
+            let audio_dec_frame = unsafe { ffi::av_frame_alloc() };
+            if audio_dec_frame.is_null() {
+                unsafe {
+                    ffi::swr_free(&mut swr_ctx);
+                    ffi::avcodec_free_context(&mut (audio_enc_ctx as *mut _));
+                    ffi::avcodec_free_context(&mut (audio_dec_ctx as *mut _));
+                }
+                return Err("Failed to allocate audio frame".to_string());
+            }
+
+            (Some(audio_dec_ctx), Some(audio_enc_ctx), Some(swr_ctx), audio_dec_frame)
+        }
+    } else {
+        (None, None, None, ptr::null_mut())
+    };
+
+    let outputs = create_transcode_outputs(
+        input_ctx,
+        group,
+        video_enc_ctx,
+        audio_enc_ctx,
+        audio_stream_index,
+        &config.targets,
+    )?;
+
+    Ok(TranscodeGroup {
+        group_id: config.group_id.clone(),
+        video_stream_index,
+        audio_stream_index,
+        video_dec_ctx,
+        audio_dec_ctx,
+        video_enc_ctx,
+        audio_enc_ctx,
+        sws_ctx,
+        swr_ctx,
+        video_dec_frame,
+        video_enc_frame,
+        audio_dec_frame,
+        outputs,
+    })
+}
+
+fn create_transcode_outputs(
+    input_ctx: *mut ffi::AVFormatContext,
+    group: &OutputGroup,
+    video_enc_ctx: *mut ffi::AVCodecContext,
+    audio_enc_ctx: Option<*mut ffi::AVCodecContext>,
+    audio_stream_index: Option<usize>,
+    targets: &[String],
+) -> Result<Vec<TranscodeOutput>, String> {
+    let mut outputs = Vec::new();
+    for target_url in targets {
+        let mut output_ctx: *mut ffi::AVFormatContext = ptr::null_mut();
+        let url_c = CString::new(target_url.as_str())
+            .map_err(|_| "Output URL contains null byte".to_string())?;
+        let alloc_ret = unsafe {
+            ffi::avformat_alloc_output_context2(
+                &mut output_ctx,
+                ptr::null_mut(),
+                CString::new("flv").unwrap().as_ptr(),
+                url_c.as_ptr(),
+            )
+        };
+        if alloc_ret < 0 || output_ctx.is_null() {
+            return Err(format!("Failed to allocate output context: {}", ffmpeg_err(alloc_ret)));
+        }
+
+        let video_stream = unsafe { ffi::avformat_new_stream(output_ctx, ptr::null()) };
+        if video_stream.is_null() {
+            unsafe { ffi::avformat_free_context(output_ctx) };
+            return Err("Failed to create video output stream".to_string());
+        }
+        let video_copy_ret = unsafe { ffi::avcodec_parameters_from_context((*video_stream).codecpar, video_enc_ctx) };
+        if video_copy_ret < 0 {
+            unsafe { ffi::avformat_free_context(output_ctx) };
+            return Err(format!("Failed to copy video encoder params: {}", ffmpeg_err(video_copy_ret)));
+        }
+        unsafe {
+            (*video_stream).time_base = (*video_enc_ctx).time_base;
+        }
+
+        let mut audio_out_index = None;
+        if let Some(audio_idx) = audio_stream_index {
+            if group.audio.codec.eq_ignore_ascii_case("copy") {
+                let in_stream = unsafe { *(*input_ctx).streams.add(audio_idx) };
+                let out_stream = unsafe { ffi::avformat_new_stream(output_ctx, ptr::null()) };
+                if out_stream.is_null() {
+                    unsafe { ffi::avformat_free_context(output_ctx) };
+                    return Err("Failed to create audio output stream".to_string());
+                }
+                let copy_ret = unsafe { ffi::avcodec_parameters_copy((*out_stream).codecpar, (*in_stream).codecpar) };
+                if copy_ret < 0 {
+                    unsafe { ffi::avformat_free_context(output_ctx) };
+                    return Err(format!("Failed to copy audio codec params: {}", ffmpeg_err(copy_ret)));
+                }
+                unsafe {
+                    (*out_stream).time_base = (*in_stream).time_base;
+                }
+                audio_out_index = Some(unsafe { (*out_stream).index });
+            } else if let Some(audio_enc_ctx) = audio_enc_ctx {
+                let out_stream = unsafe { ffi::avformat_new_stream(output_ctx, ptr::null()) };
+                if out_stream.is_null() {
+                    unsafe { ffi::avformat_free_context(output_ctx) };
+                    return Err("Failed to create audio output stream".to_string());
+                }
+                let copy_ret = unsafe { ffi::avcodec_parameters_from_context((*out_stream).codecpar, audio_enc_ctx) };
+                if copy_ret < 0 {
+                    unsafe { ffi::avformat_free_context(output_ctx) };
+                    return Err(format!("Failed to copy audio encoder params: {}", ffmpeg_err(copy_ret)));
+                }
+                unsafe {
+                    (*out_stream).time_base = (*audio_enc_ctx).time_base;
+                }
+                audio_out_index = Some(unsafe { (*out_stream).index });
+            }
+        }
+
+        let mut opts: *mut ffi::AVDictionary = ptr::null_mut();
+        unsafe {
+            ffi::av_dict_set(&mut opts, CString::new("flvflags").unwrap().as_ptr(), CString::new("no_duration_filesize").unwrap().as_ptr(), 0);
+        }
+        let open_ret = unsafe {
+            if (*(*output_ctx).oformat).flags & ffi::AVFMT_NOFILE == 0 {
+                ffi::avio_open2(&mut (*output_ctx).pb, url_c.as_ptr(), ffi::AVIO_FLAG_WRITE, ptr::null_mut(), &mut opts)
+            } else {
+                0
+            }
+        };
+        if open_ret < 0 {
+            unsafe { ffi::avformat_free_context(output_ctx) };
+            return Err(format!("Failed to open output: {}", ffmpeg_err(open_ret)));
+        }
+
+        let header_ret = unsafe { ffi::avformat_write_header(output_ctx, &mut opts) };
+        if header_ret < 0 {
+            unsafe {
+                if (*(*output_ctx).oformat).flags & ffi::AVFMT_NOFILE == 0 {
+                    ffi::avio_closep(&mut (*output_ctx).pb);
+                }
+                ffi::avformat_free_context(output_ctx);
+            }
+            return Err(format!("Failed to write output header: {}", ffmpeg_err(header_ret)));
+        }
+
+        outputs.push(TranscodeOutput {
+            ctx: output_ctx,
+            video_out_index: unsafe { (*video_stream).index },
+            audio_out_index,
+        });
+    }
+
+    Ok(outputs)
+}
+
+fn transcode_video_packet(
+    group: &mut TranscodeGroup,
+    in_stream: *mut ffi::AVStream,
+    packet: *mut ffi::AVPacket,
+) -> Result<(), String> {
+    let send_ret = unsafe { ffi::avcodec_send_packet(group.video_dec_ctx, packet) };
+    if send_ret < 0 {
+        return Err(format!("Video decoder send failed: {}", ffmpeg_err(send_ret)));
+    }
+
+    loop {
+        let receive_ret = unsafe { ffi::avcodec_receive_frame(group.video_dec_ctx, group.video_dec_frame) };
+        if receive_ret < 0 {
+            break;
+        }
+
+        unsafe {
+            ffi::av_frame_make_writable(group.video_enc_frame);
+            ffi::sws_scale(
+                group.sws_ctx,
+                (*group.video_dec_frame).data.as_ptr() as *const *const u8,
+                (*group.video_dec_frame).linesize.as_ptr(),
+                0,
+                (*group.video_dec_ctx).height,
+                (*group.video_enc_frame).data.as_mut_ptr(),
+                (*group.video_enc_frame).linesize.as_mut_ptr(),
+            );
+            (*group.video_enc_frame).pts = ffi::av_rescale_q(
+                (*group.video_dec_frame).pts,
+                (*in_stream).time_base,
+                (*group.video_enc_ctx).time_base,
+            );
+        }
+
+        let send_enc_ret = unsafe { ffi::avcodec_send_frame(group.video_enc_ctx, group.video_enc_frame) };
+        if send_enc_ret < 0 {
+            return Err(format!("Video encoder send failed: {}", ffmpeg_err(send_enc_ret)));
+        }
+
+        let mut enc_pkt = unsafe { ffi::av_packet_alloc() };
+        if enc_pkt.is_null() {
+            return Err("Failed to allocate video packet".to_string());
+        }
+        loop {
+            let recv_ret = unsafe { ffi::avcodec_receive_packet(group.video_enc_ctx, enc_pkt) };
+            if recv_ret < 0 {
+                break;
+            }
+            write_encoded_packet(enc_pkt, group, true)?;
+            unsafe { ffi::av_packet_unref(enc_pkt) };
+        }
+        unsafe { ffi::av_packet_free(&mut enc_pkt) };
+        unsafe { ffi::av_frame_unref(group.video_dec_frame) };
+    }
+
+    Ok(())
+}
+
+fn write_encoded_packet(
+    enc_pkt: *mut ffi::AVPacket,
+    group: &mut TranscodeGroup,
+    is_video: bool,
+) -> Result<(), String> {
+    for output in &group.outputs {
+        let out_index = if is_video {
+            output.video_out_index
+        } else {
+            match output.audio_out_index {
+                Some(idx) => idx,
+                None => continue,
+            }
+        };
+
+        let mut pkt_clone = unsafe { ffi::av_packet_clone(enc_pkt) };
+        if pkt_clone.is_null() {
+            continue;
+        }
+        unsafe {
+            let out_stream = *(*output.ctx).streams.add(out_index as usize);
+            let time_base = if is_video {
+                (*group.video_enc_ctx).time_base
+            } else {
+                (*group.audio_enc_ctx.unwrap()).time_base
+            };
+            ffi::av_packet_rescale_ts(pkt_clone, time_base, (*out_stream).time_base);
+            (*pkt_clone).stream_index = out_index;
+            let write_ret = ffi::av_interleaved_write_frame(output.ctx, pkt_clone);
+            if write_ret < 0 {
+                log::warn!(
+                    "FFmpeg libs transcode write failed for group {}: {}",
+                    group.group_id,
+                    ffmpeg_err(write_ret)
+                );
+            }
+            ffi::av_packet_free(&mut pkt_clone);
+        }
+    }
+    Ok(())
+}
+
+fn transcode_audio_packet(
+    group: &mut TranscodeGroup,
+    in_stream: *mut ffi::AVStream,
+    packet: *mut ffi::AVPacket,
+) -> Result<(), String> {
+    if group.audio_stream_index.is_none() {
+        return Ok(());
+    }
+
+    if group.audio_dec_ctx.is_none() || group.audio_enc_ctx.is_none() {
+        // Audio copy path.
+        let mut pkt_clone = unsafe { ffi::av_packet_clone(packet) };
+        if pkt_clone.is_null() {
+            return Ok(());
+        }
+
+        for output in &group.outputs {
+            let out_index = match output.audio_out_index {
+                Some(idx) => idx,
+                None => continue,
+            };
+
+            let mut pkt_target = unsafe { ffi::av_packet_clone(pkt_clone) };
+            if pkt_target.is_null() {
+                continue;
+            }
+            unsafe {
+                let out_stream = *(*output.ctx).streams.add(out_index as usize);
+                ffi::av_packet_rescale_ts(pkt_target, (*in_stream).time_base, (*out_stream).time_base);
+                (*pkt_target).stream_index = out_index;
+                let write_ret = ffi::av_interleaved_write_frame(output.ctx, pkt_target);
+                if write_ret < 0 {
+                    log::warn!(
+                        "FFmpeg libs audio copy write failed for group {}: {}",
+                        group.group_id,
+                        ffmpeg_err(write_ret)
+                    );
+                }
+                ffi::av_packet_free(&mut pkt_target);
+            }
+        }
+
+        unsafe { ffi::av_packet_free(&mut pkt_clone) };
+        return Ok(());
+    }
+
+    let audio_dec_ctx = group.audio_dec_ctx.unwrap();
+    let audio_enc_ctx = group.audio_enc_ctx.unwrap();
+    let send_ret = unsafe { ffi::avcodec_send_packet(audio_dec_ctx, packet) };
+    if send_ret < 0 {
+        return Err(format!("Audio decoder send failed: {}", ffmpeg_err(send_ret)));
+    }
+
+    loop {
+        let recv_ret = unsafe { ffi::avcodec_receive_frame(audio_dec_ctx, group.audio_dec_frame) };
+        if recv_ret < 0 {
+            break;
+        }
+
+        let out_samples = unsafe {
+            ffi::av_rescale_rnd(
+                ffi::swr_get_delay(group.swr_ctx.unwrap(), (*audio_dec_ctx).sample_rate as i64)
+                    + (*group.audio_dec_frame).nb_samples as i64,
+                (*audio_enc_ctx).sample_rate as i64,
+                (*audio_dec_ctx).sample_rate as i64,
+                ffi::AV_ROUND_UP,
+            ) as i32
+        };
+
+        let mut out_frame = unsafe { ffi::av_frame_alloc() };
+        if out_frame.is_null() {
+            return Err("Failed to allocate audio output frame".to_string());
+        }
+        unsafe {
+            (*out_frame).nb_samples = out_samples;
+            (*out_frame).format = (*audio_enc_ctx).sample_fmt as i32;
+            (*out_frame).sample_rate = (*audio_enc_ctx).sample_rate;
+            ffi::av_channel_layout_copy(&mut (*out_frame).ch_layout, &(*audio_enc_ctx).ch_layout);
+            let buffer_ret = ffi::av_frame_get_buffer(out_frame, 0);
+            if buffer_ret < 0 {
+                ffi::av_frame_free(&mut out_frame);
+                return Err(format!("Failed to allocate audio buffer: {}", ffmpeg_err(buffer_ret)));
+            }
+        }
+
+        let convert_ret = unsafe {
+            ffi::swr_convert(
+                group.swr_ctx.unwrap(),
+                (*out_frame).data.as_mut_ptr(),
+                out_samples,
+                (*group.audio_dec_frame).data.as_ptr() as *const *const u8,
+                (*group.audio_dec_frame).nb_samples,
+            )
+        };
+        if convert_ret < 0 {
+            unsafe { ffi::av_frame_free(&mut out_frame) };
+            return Err(format!("Audio resample failed: {}", ffmpeg_err(convert_ret)));
+        }
+
+        unsafe {
+            (*out_frame).pts = ffi::av_rescale_q(
+                (*group.audio_dec_frame).pts,
+                (*in_stream).time_base,
+                (*audio_enc_ctx).time_base,
+            );
+        }
+
+        let send_enc_ret = unsafe { ffi::avcodec_send_frame(audio_enc_ctx, out_frame) };
+        if send_enc_ret < 0 {
+            unsafe { ffi::av_frame_free(&mut out_frame) };
+            return Err(format!("Audio encoder send failed: {}", ffmpeg_err(send_enc_ret)));
+        }
+
+        let mut enc_pkt = unsafe { ffi::av_packet_alloc() };
+        if enc_pkt.is_null() {
+            unsafe { ffi::av_frame_free(&mut out_frame) };
+            return Err("Failed to allocate audio packet".to_string());
+        }
+        loop {
+            let recv_ret = unsafe { ffi::avcodec_receive_packet(audio_enc_ctx, enc_pkt) };
+            if recv_ret < 0 {
+                break;
+            }
+            write_encoded_packet(enc_pkt, group, false)?;
+            unsafe { ffi::av_packet_unref(enc_pkt) };
+        }
+        unsafe { ffi::av_packet_free(&mut enc_pkt) };
+        unsafe { ffi::av_frame_free(&mut out_frame) };
+        unsafe { ffi::av_frame_unref(group.audio_dec_frame) };
+    }
+
+    Ok(())
+}
+
+fn flush_transcode_group(group: &mut TranscodeGroup) -> Result<(), String> {
+    let send_ret = unsafe { ffi::avcodec_send_frame(group.video_enc_ctx, ptr::null()) };
+    if send_ret >= 0 {
+        let mut enc_pkt = unsafe { ffi::av_packet_alloc() };
+        if enc_pkt.is_null() {
+            return Err("Failed to allocate flush packet".to_string());
+        }
+        loop {
+            let recv_ret = unsafe { ffi::avcodec_receive_packet(group.video_enc_ctx, enc_pkt) };
+            if recv_ret < 0 {
+                break;
+            }
+            write_encoded_packet(enc_pkt, group, true)?;
+            unsafe { ffi::av_packet_unref(enc_pkt) };
+        }
+        unsafe { ffi::av_packet_free(&mut enc_pkt) };
+    }
+
+    if let Some(audio_enc_ctx) = group.audio_enc_ctx {
+        let send_ret = unsafe { ffi::avcodec_send_frame(audio_enc_ctx, ptr::null()) };
+        if send_ret >= 0 {
+            let mut enc_pkt = unsafe { ffi::av_packet_alloc() };
+            if enc_pkt.is_null() {
+                return Err("Failed to allocate audio flush packet".to_string());
+            }
+            loop {
+                let recv_ret = unsafe { ffi::avcodec_receive_packet(audio_enc_ctx, enc_pkt) };
+                if recv_ret < 0 {
+                    break;
+                }
+                write_encoded_packet(enc_pkt, group, false)?;
+                unsafe { ffi::av_packet_unref(enc_pkt) };
+            }
+            unsafe { ffi::av_packet_free(&mut enc_pkt) };
+        }
+    }
+
+    Ok(())
+}
+
+fn cleanup_transcode_group(group: TranscodeGroup) {
+    unsafe {
+        for output in group.outputs {
+            let _ = ffi::av_write_trailer(output.ctx);
+            if (*(*output.ctx).oformat).flags & ffi::AVFMT_NOFILE == 0 {
+                let _ = ffi::avio_closep(&mut (*output.ctx).pb);
+            }
+            ffi::avformat_free_context(output.ctx);
+        }
+        ffi::av_frame_free(&mut (group.video_dec_frame as *mut _));
+        ffi::av_frame_free(&mut (group.video_enc_frame as *mut _));
+        if !group.audio_dec_frame.is_null() {
+            ffi::av_frame_free(&mut (group.audio_dec_frame as *mut _));
+        }
+        if let Some(mut swr_ctx) = group.swr_ctx {
+            ffi::swr_free(&mut swr_ctx);
+        }
+        ffi::sws_freeContext(group.sws_ctx);
+        if let Some(mut audio_enc) = group.audio_enc_ctx {
+            ffi::avcodec_free_context(&mut audio_enc);
+        }
+        if let Some(mut audio_dec) = group.audio_dec_ctx {
+            ffi::avcodec_free_context(&mut audio_dec);
+        }
+        ffi::avcodec_free_context(&mut (group.video_enc_ctx as *mut _));
+        ffi::avcodec_free_context(&mut (group.video_dec_ctx as *mut _));
+    }
+}
+
 fn cleanup_outputs(groups: Vec<GroupOutputs>) {
     for group in groups {
         for mut target in group.targets {
@@ -355,4 +1151,63 @@ fn ffmpeg_err(code: i32) -> String {
         ffi::av_strerror(code, buf.as_mut_ptr(), buf.len());
         CStr::from_ptr(buf.as_ptr()).to_string_lossy().into_owned()
     }
+}
+
+fn parse_bitrate_to_bits(value: &str) -> Option<i64> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let split_at = trimmed
+        .find(|c: char| !c.is_ascii_digit() && c != '.')
+        .unwrap_or(trimmed.len());
+    let (num_str, suffix) = trimmed.split_at(split_at);
+    let number: f64 = num_str.parse().ok()?;
+    let multiplier = match suffix.trim().to_ascii_lowercase().as_str() {
+        "k" | "kbps" | "kbit" | "kbits" | "kbit/s" | "kbits/s" => 1_000.0,
+        "m" | "mbps" | "mbit" | "mbits" | "mbit/s" | "mbits/s" => 1_000_000.0,
+        "g" | "gbps" | "gbit" | "gbits" | "gbit/s" | "gbits/s" => 1_000_000_000.0,
+        _ => 1.0,
+    };
+    Some((number * multiplier) as i64)
+}
+
+fn select_pix_fmt(encoder: *const ffi::AVCodec, fallback: ffi::AVPixelFormat) -> ffi::AVPixelFormat {
+    if encoder.is_null() {
+        return fallback;
+    }
+    unsafe {
+        let mut formats = (*encoder).pix_fmts;
+        if formats.is_null() {
+            return fallback;
+        }
+        while *formats != ffi::AV_PIX_FMT_NONE {
+            if *formats == ffi::AV_PIX_FMT_YUV420P
+                || *formats == ffi::AV_PIX_FMT_NV12 {
+                return *formats;
+            }
+            formats = formats.add(1);
+        }
+    }
+    fallback
+}
+
+fn select_sample_fmt(encoder: *const ffi::AVCodec, fallback: ffi::AVSampleFormat) -> ffi::AVSampleFormat {
+    if encoder.is_null() {
+        return fallback;
+    }
+    unsafe {
+        let mut formats = (*encoder).sample_fmts;
+        if formats.is_null() {
+            return fallback;
+        }
+        while *formats != ffi::AV_SAMPLE_FMT_NONE {
+            if *formats == ffi::AV_SAMPLE_FMT_FLTP
+                || *formats == ffi::AV_SAMPLE_FMT_S16 {
+                return *formats;
+            }
+            formats = formats.add(1);
+        }
+    }
+    fallback
 }

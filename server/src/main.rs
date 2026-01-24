@@ -925,6 +925,7 @@ async fn invoke_command(
                 group_id: group_id.unwrap_or_else(|| "passthrough".to_string()),
                 mode: OutputGroupMode::Passthrough,
                 targets,
+                group: None,
             });
             pipeline.start()?;
             *guard = Some(pipeline);
@@ -932,6 +933,35 @@ async fn invoke_command(
         }
         #[cfg(not(feature = "ffmpeg-libs"))]
         "start_ffmpeg_libs_passthrough" => Err("ffmpeg-libs feature not enabled".to_string()),
+        #[cfg(feature = "ffmpeg-libs")]
+        "start_ffmpeg_libs_group" => {
+            let input_url: String = get_arg(&payload, "inputUrl")?;
+            let group: OutputGroup = get_arg(&payload, "group")?;
+            let targets: Vec<String> = get_arg(&payload, "targets")?;
+            let input_id: Option<String> = get_opt_arg(&payload, "inputId")?;
+
+            if targets.is_empty() {
+                return Err("At least one target URL is required".to_string());
+            }
+
+            let mut guard = state.ffmpeg_libs_pipeline
+                .lock()
+                .map_err(|_| "ffmpeg libs pipeline lock poisoned".to_string())?;
+            if guard.is_some() {
+                return Err("ffmpeg libs pipeline already running".to_string());
+            }
+
+            let mut pipeline = InputPipeline::new(InputPipelineConfig {
+                input_id: input_id.unwrap_or_else(|| "default".to_string()),
+                input_url,
+            });
+            pipeline.add_group(group, targets)?;
+            pipeline.start()?;
+            *guard = Some(pipeline);
+            Ok(Value::Null)
+        }
+        #[cfg(not(feature = "ffmpeg-libs"))]
+        "start_ffmpeg_libs_group" => Err("ffmpeg-libs feature not enabled".to_string()),
         #[cfg(feature = "ffmpeg-libs")]
         "stop_ffmpeg_libs_passthrough" => {
             let mut guard = state.ffmpeg_libs_pipeline
