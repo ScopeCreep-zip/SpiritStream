@@ -11,14 +11,15 @@
     "build:server:release": "tsx scripts/build-server.ts --release",
 
     "dev": "pnpm run dev:desktop",
-    "dev:web": "pnpm --filter @spiritstream/web dev",
+    "dev:clean": "tsx scripts/ensure-dev-clean.ts",
+    "dev:web": "pnpm run dev:clean -- --ports 1420 && pnpm --filter @spiritstream/web dev",
     "dev:desktop": "pnpm --filter @spiritstream/desktop dev",
 
     "build": "turbo run build",
     "build:web": "pnpm --filter @spiritstream/web build",
     "build:desktop": "pnpm --filter @spiritstream/desktop build",
 
-    "backend:dev": "cargo run --manifest-path server/Cargo.toml",
+    "backend:dev": "pnpm run dev:clean -- --ports 8008 && cargo run --manifest-path server/Cargo.toml",
     "backend:build": "cargo build --manifest-path server/Cargo.toml --release",
 
     "typecheck": "turbo run typecheck",

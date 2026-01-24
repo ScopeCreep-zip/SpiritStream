@@ -1,5 +1,6 @@
 #!/usr/bin/env tsx
 import { spawnSync } from 'child_process';
+import { fileURLToPath } from 'url';
 
 function parseFeatures(args: string[]): { features: string | null; remaining: string[] } {
   let features = '';
@@ -51,5 +52,8 @@ if (features) {
   env.SPIRITSTREAM_SERVER_FEATURES = features;
 }
 
+const ensureCleanPath = fileURLToPath(new URL('./ensure-dev-clean.ts', import.meta.url));
+
+runCommand('pnpm', ['exec', 'tsx', ensureCleanPath], env);
 runCommand('pnpm', ['run', 'build:server'], env);
 runCommand('pnpm', ['exec', 'tauri', 'dev', ...remaining], env);
