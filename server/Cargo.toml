@@ -10,7 +10,7 @@ rust-version = "1.77.2"
 
 [dependencies]
 # HTTP/WS
-axum = { version = "0.7", features = ["json", "ws"] }
+axum = { version = "0.7", features = ["json", "ws", "macros"] }
 tower-http = { version = "0.5", features = ["cors", "fs", "set-header"] }
 tokio = { version = "1.0", features = ["full"] }
 tower-cookies = "0.10"
@@ -39,6 +39,8 @@ regex = "1.10"
 notify = "6"
 dirs-next = "2.0"
 opener = "0.7"
+bytes = "1.5"
+tokio-stream = { version = "0.1", features = ["sync"] }
 
 # FFmpeg Download
 reqwest = { version = "0.11", features = ["stream", "json"] }
