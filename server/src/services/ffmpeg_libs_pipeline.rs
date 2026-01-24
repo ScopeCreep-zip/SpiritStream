@@ -163,14 +163,24 @@ fn run_pipeline_loop(
     let input_url_c = CString::new(input_url)
         .map_err(|_| "Input URL contains null byte".to_string())?;
 
+    let mut opts: *mut ffi::AVDictionary = ptr::null_mut();
+    if input_url.starts_with("rtmp://") || input_url.starts_with("rtmps://") {
+        let listen_key = CString::new("listen").unwrap_or_default();
+        let listen_val = CString::new("1").unwrap_or_default();
+        unsafe {
+            ffi::av_dict_set(&mut opts, listen_key.as_ptr(), listen_val.as_ptr(), 0);
+        }
+    }
+
     let open_ret = unsafe {
         ffi::avformat_open_input(
             &mut input_ctx,
             input_url_c.as_ptr(),
             ptr::null_mut(),
-            ptr::null_mut(),
+            &mut opts,
         )
     };
+    unsafe { ffi::av_dict_free(&mut opts) };
     if open_ret < 0 {
         return Err(format!("Failed to open input: {}", ffmpeg_err(open_ret)));
     }
