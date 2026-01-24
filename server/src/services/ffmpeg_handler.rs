@@ -1259,9 +1259,19 @@ impl FFmpegHandler {
                 continue;
             }
 
+            let mut resolved_key = Self::resolve_stream_key(&target.stream_key);
+
+            // Use default stream key if empty - RTMP requires a stream name
+            if resolved_key.is_empty() {
+                log::info!(
+                    "Target '{}' ({:?}) has empty stream key, using default 'stream'",
+                    target.name, target.service
+                );
+                resolved_key = "stream".to_string();
+            }
+
             let normalized_url = Self::normalize_rtmp_url(&target.url);
             let normalized_url = self.platform_registry.normalize_url(&target.service, &normalized_url);
-            let resolved_key = Self::resolve_stream_key(&target.stream_key);
             let full_url = self.platform_registry.build_url_with_key(&target.service, &normalized_url, &resolved_key);
             target_outputs.push(full_url);
         }

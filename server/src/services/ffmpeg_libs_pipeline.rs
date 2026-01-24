@@ -638,53 +638,46 @@ fn create_transcode_group(
         );
     }
 
+    // Try to create hardware frames context - some encoders (like AMF) may fail here
+    // but can still work with just the device context and software frames
     if let (Some(device_ref), Some(hw_fmt)) = (video_hw_device, hw_pix_fmt) {
-        let mut frames_ctx = match create_hw_frames_ctx(
+        match create_hw_frames_ctx(
             device_ref,
             hw_fmt,
             sw_pix_fmt,
             output_width,
             output_height,
         ) {
-            Ok(ctx) => ctx,
-            Err(err) => {
-                unsafe {
-                    let mut device_ref = device_ref;
-                    ffi::av_buffer_unref(&mut device_ref);
-                    if !(*video_enc_ctx).hw_device_ctx.is_null() {
-                        ffi::av_buffer_unref(&mut (*video_enc_ctx).hw_device_ctx);
-                        (*video_enc_ctx).hw_device_ctx = ptr::null_mut();
+            Ok(mut frames_ctx) => {
+                let frames_ref = unsafe { ffi::av_buffer_ref(frames_ctx) };
+                if frames_ref.is_null() {
+                    log::warn!("Failed to reference hardware frames context, falling back to device-only mode");
+                    unsafe {
+                        ffi::av_buffer_unref(&mut frames_ctx);
+                        // Use software pixel format when falling back
+                        (*video_enc_ctx).pix_fmt = sw_pix_fmt;
                     }
-                    ffi::avcodec_free_context(&mut (video_enc_ctx as *mut _));
-                    ffi::avcodec_free_context(&mut (video_dec_ctx as *mut _));
+                } else {
+                    unsafe {
+                        (*video_enc_ctx).hw_frames_ctx = frames_ref;
+                    }
+                    video_hw_frames_ctx = Some(frames_ctx);
+                    let hw_frame = unsafe { ffi::av_frame_alloc() };
+                    if !hw_frame.is_null() {
+                        video_hw_frame = Some(hw_frame);
+                    }
                 }
-                return Err(err);
+            }
+            Err(err) => {
+                // AMF and some other encoders may fail to create frames context but still work
+                // with device context only - the encoder will handle frame upload internally
+                log::warn!("Hardware frames context creation failed: {}. Continuing with device-only mode.", err);
+                // Use software pixel format when falling back
+                unsafe {
+                    (*video_enc_ctx).pix_fmt = sw_pix_fmt;
+                }
             }
         };
-        let frames_ref = unsafe { ffi::av_buffer_ref(frames_ctx) };
-        if frames_ref.is_null() {
-            unsafe {
-                ffi::av_buffer_unref(&mut frames_ctx);
-                let mut device_ref = device_ref;
-                ffi::av_buffer_unref(&mut device_ref);
-                if !(*video_enc_ctx).hw_device_ctx.is_null() {
-                    ffi::av_buffer_unref(&mut (*video_enc_ctx).hw_device_ctx);
-                    (*video_enc_ctx).hw_device_ctx = ptr::null_mut();
-                }
-                ffi::avcodec_free_context(&mut (video_enc_ctx as *mut _));
-                ffi::avcodec_free_context(&mut (video_dec_ctx as *mut _));
-            }
-            return Err("Failed to reference hardware frames context".to_string());
-        }
-        unsafe {
-            (*video_enc_ctx).hw_frames_ctx = frames_ref;
-        }
-        video_hw_frames_ctx = Some(frames_ctx);
-        let hw_frame = unsafe { ffi::av_frame_alloc() };
-        if hw_frame.is_null() {
-            return Err("Failed to allocate hardware video frame".to_string());
-        }
-        video_hw_frame = Some(hw_frame);
     }
 
     let mut open_enc_ret = unsafe { ffi::avcodec_open2(video_enc_ctx, video_encoder, ptr::null_mut()) };
