@@ -69,19 +69,6 @@ export type View =
  * This separation ensures that backend-dependent hooks only run after server is ready.
  */
 function App() {
-    // TEST: Fire a notification on app load to verify plugin works
-    useEffect(() => {
-      (async () => {
-        const { requestPermission, sendNotification } = await import('@tauri-apps/plugin-notification');
-        const permission = await requestPermission();
-        if (permission === 'granted') {
-          sendNotification({ title: 'Test Notification', body: 'If you see this, notifications are working.' });
-        } else {
-          // eslint-disable-next-line no-console
-          console.warn('Notification permission not granted:', permission);
-        }
-      })();
-    }, []);
   const { t } = useTranslation();
 
   // Server health check state

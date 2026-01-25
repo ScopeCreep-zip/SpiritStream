@@ -23,7 +23,8 @@
       "Bash(grep:*)",
       "Bash(timeout:*)",
       "Bash(tasklist:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(powershell -Command:*)"
     ]
   }
 }
