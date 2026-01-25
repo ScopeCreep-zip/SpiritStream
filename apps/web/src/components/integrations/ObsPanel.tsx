@@ -85,6 +85,11 @@ export function ObsPanel() {
   // Sync form with config when loaded
   useEffect(() => {
     if (config) {
+      console.log('[OBS Panel] Config loaded:', {
+        passwordLength: config.password?.length ?? 0,
+        passwordPreview: config.password?.substring(0, 10) ?? '',
+        useAuth: config.useAuth,
+      });
       setHost(config.host || 'localhost');
       setPort(String(config.port || 4455));
       setPassword(config.password || '');
@@ -276,7 +281,7 @@ export function ObsPanel() {
             {useAuth && (
               <div className="relative">
                 <Input
-                  label={t('obs.password')}
+                  label={`${t('obs.password')} ${showPassword ? '(visible)' : '(hidden)'}`}
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -284,9 +289,21 @@ export function ObsPanel() {
                   placeholder={t('obs.passwordPlaceholder')}
                   disabled={isConnected}
                 />
+                {/* Debug: show password length */}
+                <div className="text-xs text-[var(--text-tertiary)] mt-1">
+                  Debug: {password.length} chars, showPassword={String(showPassword)}, preview="{password.substring(0, 3)}..."
+                </div>
                 <button
                   type="button"
-                  onClick={() => setShowPassword(!showPassword)}
+                  onClick={() => {
+                    console.log('[OBS Panel] Toggle password visibility:', {
+                      currentShowPassword: showPassword,
+                      newShowPassword: !showPassword,
+                      passwordValue: password,
+                      passwordLength: password.length,
+                    });
+                    setShowPassword(!showPassword);
+                  }}
                   className={cn(
                     'absolute right-3 top-[34px]',
                     'p-1 rounded-md',
