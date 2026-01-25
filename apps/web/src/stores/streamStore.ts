@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { api } from '@/lib/backend';
+import { showSystemNotification } from '@/lib/notification';
+import { useSettingsStore } from './settingsStore';
 import type { OutputGroup } from '@/types/profile';
 import type { StreamStats, StreamStatusType, TargetStats } from '@/types/stream';
 
@@ -383,7 +385,19 @@ export const useStreamStore = create<StreamState>((set, get) => ({
 
   incrementUptime: () => set({ uptime: get().uptime + 1 }),
 
-  setGlobalStatus: (status: StreamStatusType) => set({ globalStatus: status }),
+  setGlobalStatus: (status: StreamStatusType) => {
+    const prevStatus = get().globalStatus;
+    set({ globalStatus: status });
+    // Only notify on transition between offline <-> live
+    const showNotifications = useSettingsStore.getState().showNotifications;
+    if (showNotifications) {
+      if (prevStatus !== 'live' && status === 'live') {
+        showSystemNotification('Stream Started', 'Your stream is now live.');
+      } else if (prevStatus === 'live' && status === 'offline') {
+        showSystemNotification('Stream Stopped', 'Your stream has stopped.');
+      }
+    }
+  },
 
   setError: (error) => set({ error }),
 

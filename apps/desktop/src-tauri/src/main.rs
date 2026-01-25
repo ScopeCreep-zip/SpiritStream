@@ -1,7 +1,6 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 // SpiritStream Desktop - Minimal Tauri wrapper
 // Spawns the backend server and displays the UI
-
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::{Deserialize, Serialize};
 use std::{env, sync::Mutex, time::Duration};
@@ -35,11 +34,13 @@ struct Settings {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(ServerProcess(Mutex::new(None)))
+        .invoke_handler(tauri::generate_handler![])
         .setup(|app| {
             let mut targets = vec![
                 Target::new(TargetKind::LogDir {
