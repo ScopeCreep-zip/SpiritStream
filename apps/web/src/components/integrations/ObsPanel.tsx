@@ -5,7 +5,6 @@ import {
   Wifi,
   WifiOff,
   Loader2,
-  Play,
   Square,
   Eye,
   EyeOff,
@@ -61,8 +60,6 @@ export function ObsPanel() {
     updateConfig,
     connect,
     disconnect,
-    startStream,
-    stopStream,
   } = useObsStore();
 
   // Local form state
@@ -133,25 +130,8 @@ export function ObsPanel() {
     }
   }, [disconnect, t]);
 
-  const handleStartStream = useCallback(async () => {
-    try {
-      await startStream();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
-    }
-  }, [startStream]);
-
-  const handleStopStream = useCallback(async () => {
-    try {
-      await stopStream();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
-    }
-  }, [stopStream]);
-
   const isConnected = connectionStatus === 'connected';
   const isConnecting = connectionStatus === 'connecting';
-  const isStreaming = streamStatus === 'active';
 
   const getStatusIcon = () => {
     switch (connectionStatus) {
@@ -334,43 +314,17 @@ export function ObsPanel() {
               </div>
             )}
 
-            {/* Stream Control */}
+            {/* OBS Stream Status (read-only indicator) */}
             {isConnected && (
-              <div className="space-y-3">
-                <div className="text-sm font-medium text-[var(--text-primary)]">
-                  {t('obs.streamControl')}
-                </div>
-                <div className="flex items-center justify-between p-3 rounded-lg bg-[var(--bg-base)]">
-                  <div className="flex items-center gap-2">
-                    {isStreaming ? (
-                      <CheckCircle2 className="w-4 h-4 text-[var(--status-live)]" />
-                    ) : (
-                      <Square className="w-4 h-4 text-[var(--text-tertiary)]" />
-                    )}
-                    <span className="text-sm text-[var(--text-primary)]">
-                      {isStreaming ? t('obs.streaming') : t('obs.notStreaming')}
-                    </span>
-                  </div>
-                  {isStreaming ? (
-                    <Button
-                      variant="destructive"
-                      onClick={handleStopStream}
-                      disabled={isLoading}
-                    >
-                      <Square className="w-4 h-4" />
-                      {t('obs.stopStream')}
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="primary"
-                      onClick={handleStartStream}
-                      disabled={isLoading}
-                    >
-                      <Play className="w-4 h-4" />
-                      {t('obs.startStream')}
-                    </Button>
-                  )}
-                </div>
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-[var(--bg-base)]">
+                {streamStatus === 'active' ? (
+                  <CheckCircle2 className="w-4 h-4 text-[var(--status-live)]" />
+                ) : (
+                  <Square className="w-4 h-4 text-[var(--text-tertiary)]" />
+                )}
+                <span className="text-sm text-[var(--text-primary)]">
+                  {streamStatus === 'active' ? t('obs.streaming') : t('obs.notStreaming')}
+                </span>
               </div>
             )}
           </CardBody>

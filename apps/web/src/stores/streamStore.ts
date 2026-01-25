@@ -1,7 +1,53 @@
 import { create } from 'zustand';
 import { api } from '@/lib/backend';
+import { api as httpApi } from '@/lib/backend/httpApi';
 import type { OutputGroup } from '@/types/profile';
 import type { StreamStats, StreamStatusType, TargetStats } from '@/types/stream';
+import type { ObsIntegrationDirection } from '@/types/api';
+
+// OBS integration delay (in ms) before triggering OBS after SpiritStream starts
+const OBS_TRIGGER_DELAY_MS = 1500;
+
+/**
+ * Trigger OBS stream start/stop based on integration direction
+ */
+async function triggerObsIfEnabled(action: 'start' | 'stop'): Promise<void> {
+  try {
+    // Get OBS config to check direction
+    const config = await httpApi.obs.getConfig();
+    const direction: ObsIntegrationDirection = config.direction;
+
+    // Check if SpiritStream should trigger OBS
+    const shouldTrigger =
+      direction === 'spiritstream-to-obs' || direction === 'bidirectional';
+
+    if (!shouldTrigger) {
+      return;
+    }
+
+    // Check if connected to OBS
+    const isConnected = await httpApi.obs.isConnected();
+    if (!isConnected) {
+      console.log('[StreamStore] OBS not connected, skipping trigger');
+      return;
+    }
+
+    // Add delay before triggering OBS
+    await new Promise((resolve) => setTimeout(resolve, OBS_TRIGGER_DELAY_MS));
+
+    // Trigger OBS
+    if (action === 'start') {
+      console.log('[StreamStore] Triggering OBS stream start');
+      await httpApi.obs.startStream();
+    } else {
+      console.log('[StreamStore] Triggering OBS stream stop');
+      await httpApi.obs.stopStream();
+    }
+  } catch (error) {
+    // Don't fail the main stream action if OBS trigger fails
+    console.error('[StreamStore] Failed to trigger OBS:', error);
+  }
+}
 
 /**
  * Real-time streaming statistics from the FFmpeg backend.
@@ -143,12 +189,18 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     try {
       await api.stream.start(group, incomingUrl);
       const activeGroups = new Set(get().activeGroups);
+      const wasStreaming = activeGroups.size > 0;
       activeGroups.add(group.id);
       set({
         activeGroups,
         isStreaming: true,
         globalStatus: 'live',
       });
+
+      // Trigger OBS if this is the first group to start
+      if (!wasStreaming) {
+        triggerObsIfEnabled('start');
+      }
     } catch (error) {
       set({ error: String(error), globalStatus: 'error' });
     }
@@ -166,6 +218,11 @@ export const useStreamStore = create<StreamState>((set, get) => ({
         isStreaming,
         globalStatus: isStreaming ? 'live' : 'offline',
       });
+
+      // Trigger OBS stop if this was the last group
+      if (!isStreaming) {
+        triggerObsIfEnabled('stop');
+      }
     } catch (error) {
       set({ error: String(error) });
     }
@@ -194,6 +251,9 @@ export const useStreamStore = create<StreamState>((set, get) => ({
         isStreaming: true,
         globalStatus: 'live',
       });
+
+      // Trigger OBS stream start (non-blocking, with delay)
+      triggerObsIfEnabled('start');
     } catch (error) {
       set({ error: String(error), globalStatus: 'error' });
       throw error; // Re-throw so UI can catch it
@@ -212,6 +272,9 @@ export const useStreamStore = create<StreamState>((set, get) => ({
         groupStats: {},
         stats: initialStats,
       });
+
+      // Trigger OBS stream stop (non-blocking, with delay)
+      triggerObsIfEnabled('stop');
     } catch (error) {
       set({ error: String(error) });
     }
