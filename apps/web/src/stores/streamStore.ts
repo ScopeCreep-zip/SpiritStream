@@ -218,7 +218,6 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       if (wasLive) {
         const showNotifications = useSettingsStore.getState().showNotifications;
         if (showNotifications) {
-          console.log('[streamStore] Triggering stream stopped notification');
           showSystemNotification('Stream Stopped', 'Your stream has stopped.');
         }
       }
@@ -395,17 +394,13 @@ export const useStreamStore = create<StreamState>((set, get) => ({
 
   setGlobalStatus: (status: StreamStatusType) => {
     const prevStatus = get().globalStatus;
-    console.log('[streamStore] setGlobalStatus called:', { prevStatus, status });
     set({ globalStatus: status });
     // Only notify on transition between offline <-> live
     const showNotifications = useSettingsStore.getState().showNotifications;
-    console.log('[streamStore] showNotifications setting:', showNotifications);
     if (showNotifications) {
       if (prevStatus !== 'live' && status === 'live') {
-        console.log('[streamStore] Triggering stream started notification');
         showSystemNotification('Stream Started', 'Your stream is now live.');
       } else if (prevStatus === 'live' && status === 'offline') {
-        console.log('[streamStore] Triggering stream stopped notification');
         showSystemNotification('Stream Stopped', 'Your stream has stopped.');
       }
     }
