@@ -9,6 +9,7 @@
     "outputGroups": "Output Groups",
     "streamTargets": "Stream Targets",
     "system": "System",
+    "integrations": "Integrations",
     "logs": "Logs",
     "settings": "Settings"
   },
@@ -44,6 +45,10 @@
     "settings": {
       "title": "Settings",
       "description": "Configure application preferences"
+    },
+    "integrations": {
+      "title": "Integrations",
+      "description": "Connect with external applications"
     }
   },
   "dashboard": {
@@ -697,5 +702,53 @@
     "fileNameRequired": "File name is required",
     "selectFileFirst": "Please select a file",
     "selectedDirectory": "Selected directory:"
+  },
+  "obs": {
+    "title": "OBS Integration",
+    "description": "Connect to OBS Studio via WebSocket",
+    "connection": "Connection",
+    "connectionSettings": "Connection Settings",
+    "host": "Host",
+    "hostPlaceholder": "localhost",
+    "port": "Port",
+    "authentication": "Authentication",
+    "password": "Password",
+    "passwordPlaceholder": "Enter password",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
+    "useAuthentication": "Use Authentication",
+    "autoConnect": "Auto-connect on startup",
+    "status": "Status",
+    "connected": "Connected",
+    "connecting": "Connecting...",
+    "disconnected": "Disconnected",
+    "error": "Error",
+    "connect": "Connect",
+    "disconnect": "Disconnect",
+    "integration": "Integration",
+    "integrationDirection": "Sync Direction",
+    "integrationDirectionDescription": "Control how streams sync between OBS and SpiritStream",
+    "directions": {
+      "disabled": "Disabled",
+      "disabledDescription": "No automatic sync between OBS and SpiritStream",
+      "obsToSpiritstream": "OBS to SpiritStream",
+      "obsToSpiritstreamDescription": "When OBS starts streaming, SpiritStream starts",
+      "spiritstreamToObs": "SpiritStream to OBS",
+      "spiritstreamToObsDescription": "When SpiritStream starts streaming, OBS starts",
+      "bidirectional": "Bidirectional",
+      "bidirectionalDescription": "Either can trigger the other to start/stop"
+    },
+    "streamControl": "Stream Control",
+    "startStream": "Start Stream",
+    "stopStream": "Stop Stream",
+    "streaming": "Streaming",
+    "notStreaming": "Not Streaming",
+    "obsVersion": "OBS Version",
+    "websocketVersion": "WebSocket Version",
+    "connectionError": "Connection Error",
+    "connectFailed": "Failed to connect to OBS",
+    "disconnectFailed": "Failed to disconnect from OBS",
+    "configSaved": "OBS configuration saved",
+    "configSaveFailed": "Failed to save OBS configuration"
   }
 }

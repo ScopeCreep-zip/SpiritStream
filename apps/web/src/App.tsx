@@ -11,6 +11,7 @@ import {
   Cog,
   Play,
   Square,
+  Plug,
 } from 'lucide-react';
 
 import { AppShell } from '@/components/layout/AppShell';
@@ -50,6 +51,7 @@ import {
   StreamTargets,
   Logs,
   Settings,
+  Integrations,
 } from '@/views';
 
 export type View =
@@ -60,7 +62,8 @@ export type View =
   | 'outputs'
   | 'targets'
   | 'logs'
-  | 'settings';
+  | 'settings'
+  | 'integrations';
 
 // View meta is now handled via translations using keys like header.dashboard.title
 
@@ -299,6 +302,8 @@ function AppContent() {
         return <Logs />;
       case 'settings':
         return <Settings />;
+      case 'integrations':
+        return <Integrations />;
       default:
         return (
           <Dashboard
@@ -399,6 +404,12 @@ function AppContent() {
             />
           </NavSection>
           <NavSection title={t('nav.system')}>
+            <NavItem
+              icon={<Plug className="w-5 h-5" />}
+              label={t('nav.integrations')}
+              active={currentView === 'integrations'}
+              onClick={() => setCurrentView('integrations')}
+            />
             <NavItem
               icon={<FileText className="w-5 h-5" />}
               label={t('nav.logs')}
