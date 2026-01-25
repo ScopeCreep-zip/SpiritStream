@@ -237,6 +237,7 @@ fn run_pipeline_loop(
         };
     }
     let input_url = input_url.to_string();
+    let mut open_url = input_url.clone();
 
     let mut opts: *mut ffi::AVDictionary = ptr::null_mut();
     if input_url.starts_with("rtmp://") || input_url.starts_with("rtmps://") {
@@ -249,19 +250,21 @@ fn run_pipeline_loop(
             ffi::av_dict_set(&mut opts, rtmp_listen_key.as_ptr(), listen_val.as_ptr(), 0);
         }
 
-        // If a stream key is configured, parse the URL and set rtmp_app/rtmp_playpath
-        // to only accept streams with the matching key
+        // Parse the URL so we can open on the base host and set app/playpath explicitly.
         let (base_url, app, _) = parse_rtmp_listen_url(&input_url);
+        open_url = base_url.clone();
+
+        if let Some(ref app_name) = app {
+            let rtmp_app_key = CString::new("rtmp_app").unwrap_or_default();
+            let rtmp_app_val = CString::new(app_name.as_str()).unwrap_or_default();
+            unsafe {
+                ffi::av_dict_set(&mut opts, rtmp_app_key.as_ptr(), rtmp_app_val.as_ptr(), 0);
+            }
+        }
+
         if let Some(key) = expected_stream_key {
             if !key.is_empty() {
                 log::info!("RTMP listener expecting stream key (filtered mode)");
-                if let Some(ref app_name) = app {
-                    let rtmp_app_key = CString::new("rtmp_app").unwrap_or_default();
-                    let rtmp_app_val = CString::new(app_name.as_str()).unwrap_or_default();
-                    unsafe {
-                        ffi::av_dict_set(&mut opts, rtmp_app_key.as_ptr(), rtmp_app_val.as_ptr(), 0);
-                    }
-                }
                 let rtmp_playpath_key = CString::new("rtmp_playpath").unwrap_or_default();
                 let rtmp_playpath_val = CString::new(key).unwrap_or_default();
                 unsafe {
@@ -276,7 +279,7 @@ fn run_pipeline_loop(
         log::debug!("RTMP listen base URL: {}", base_url);
     }
 
-    let input_url_c = CString::new(input_url.clone())
+    let input_url_c = CString::new(open_url)
         .map_err(|_| "Input URL contains null byte".to_string())?;
 
     let open_ret = unsafe {
