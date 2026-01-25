@@ -666,5 +666,24 @@
     "groupRemoved": "Grupo de salida eliminado",
     "keyRotationSuccess": "Llave de la máquina girada. {{profiles}} perfiles actualizados, {{keys}} claves recifradas.",
     "keyRotationFailed": "Falló la rotación de clave: {{error}}"
+  },
+  "notifications": {
+    "streamStartedTitle": "Transmisión Iniciada",
+    "streamStartedBody": "Tu transmisión está en vivo.",
+    "streamStoppedTitle": "Transmisión Detenida",
+    "streamStoppedBody": "Tu transmisión ha terminado.",
+    "obsConnectedTitle": "OBS Conectado",
+    "obsConnectedBody": "Conectado exitosamente a OBS WebSocket.",
+    "obsDisconnectedTitle": "OBS Desconectado",
+    "obsDisconnectedBody": "Desconectado de OBS WebSocket."
+  },
+  "connection": {
+    "reconnected": "Reconectado al backend",
+    "reconnectedTitle": "Conexión Restaurada",
+    "reconnectedBody": "Reconectado al servidor backend.",
+    "lost": "Conexión al backend perdida. Intentando reconectar...",
+    "lostWithError": "Conexión perdida: {{error}}",
+    "lostTitle": "Conexión Perdida",
+    "lostBody": "Se perdió la conexión con el servidor backend."
   }
 }

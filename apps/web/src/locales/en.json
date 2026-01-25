@@ -752,5 +752,24 @@
     "disconnectFailed": "Failed to disconnect from OBS",
     "configSaved": "OBS configuration saved",
     "configSaveFailed": "Failed to save OBS configuration"
+  },
+  "notifications": {
+    "streamStartedTitle": "Stream Started",
+    "streamStartedBody": "Your stream is now live.",
+    "streamStoppedTitle": "Stream Stopped",
+    "streamStoppedBody": "Your stream has stopped.",
+    "obsConnectedTitle": "OBS Connected",
+    "obsConnectedBody": "Successfully connected to OBS WebSocket.",
+    "obsDisconnectedTitle": "OBS Disconnected",
+    "obsDisconnectedBody": "Disconnected from OBS WebSocket."
+  },
+  "connection": {
+    "reconnected": "Reconnected to backend",
+    "reconnectedTitle": "Connection Restored",
+    "reconnectedBody": "Reconnected to the backend server.",
+    "lost": "Connection to backend lost. Attempting to reconnect...",
+    "lostWithError": "Connection lost: {{error}}",
+    "lostTitle": "Connection Lost",
+    "lostBody": "Lost connection to the backend server."
   }
 }

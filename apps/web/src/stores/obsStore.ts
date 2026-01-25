@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { api } from '@/lib/backend/httpApi';
 import { showSystemNotification } from '@/lib/notification';
 import { useSettingsStore } from './settingsStore';
+import i18n from '@/lib/i18n';
 import type {
   ObsConnectionStatus,
   ObsStreamStatus,
@@ -183,9 +184,15 @@ export const useObsStore = create<ObsStoreState>((set, get) => ({
     const showNotifications = useSettingsStore.getState().showNotifications;
     if (showNotifications && newConnectionStatus !== prevConnectionStatus) {
       if (newConnectionStatus === 'connected' && prevConnectionStatus !== 'connected') {
-        showSystemNotification('OBS Connected', 'Successfully connected to OBS WebSocket.');
+        showSystemNotification(
+          i18n.t('notifications.obsConnectedTitle', 'OBS Connected'),
+          i18n.t('notifications.obsConnectedBody', 'Successfully connected to OBS WebSocket.')
+        );
       } else if (newConnectionStatus === 'disconnected' && prevConnectionStatus === 'connected') {
-        showSystemNotification('OBS Disconnected', 'Disconnected from OBS WebSocket.');
+        showSystemNotification(
+          i18n.t('notifications.obsDisconnectedTitle', 'OBS Disconnected'),
+          i18n.t('notifications.obsDisconnectedBody', 'Disconnected from OBS WebSocket.')
+        );
       }
     }
   },

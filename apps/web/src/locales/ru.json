@@ -241,11 +241,11 @@
       "854x480": "480p (854x480)"
     },
     "frameRates": {
-      "60": "60 FPS",
-      "50": "50 FPS",
-      "30": "30 FPS",
+      "24": "24 FPS",
       "25": "25 FPS",
-      "24": "24 FPS"
+      "30": "30 FPS",
+      "50": "50 FPS",
+      "60": "60 FPS"
     }
   },
   "audio": {
@@ -255,18 +255,18 @@
       "libopus": "Опус"
     },
     "bitrates": {
+      "64": "64 кбит/с (низкая)",
+      "96": "96 кбит/с",
+      "128": "128 кбит/с (стандарт)",
+      "192": "192 кбит/с",
+      "256": "256 кбит/с",
       "320": "320 кбит/с (лучшее)",
       "320k": "320 кбит/с (лучшее)",
-      "256": "256 кбит/с",
       "256k": "256 кбит/с",
-      "192": "192 кбит/с",
       "192k": "192 кбит/с",
       "160k": "160 кбит/с",
-      "128": "128 кбит/с (стандарт)",
       "128k": "128 кбит/с",
-      "96": "96 кбит/с",
       "96k": "96 кбит/с",
-      "64": "64 кбит/с (низкая)",
       "64k": "64 кбит/с"
     }
   },
@@ -666,5 +666,24 @@
     "groupRemoved": "Группа выходов удалена.",
     "keyRotationSuccess": "Машинный ключ повернут. Профили {{profiles}} обновлены, ключи {{keys}} повторно зашифрованы.",
     "keyRotationFailed": "Не удалось выполнить ротацию ключей: {{error}}"
+  },
+  "notifications": {
+    "streamStartedTitle": "Stream Started",
+    "streamStartedBody": "Your stream is now live.",
+    "streamStoppedTitle": "Stream Stopped",
+    "streamStoppedBody": "Your stream has stopped.",
+    "obsConnectedTitle": "OBS Connected",
+    "obsConnectedBody": "Successfully connected to OBS WebSocket.",
+    "obsDisconnectedTitle": "OBS Disconnected",
+    "obsDisconnectedBody": "Disconnected from OBS WebSocket."
+  },
+  "connection": {
+    "reconnected": "Reconnected to backend",
+    "reconnectedTitle": "Connection Restored",
+    "reconnectedBody": "Reconnected to the backend server.",
+    "lost": "Connection to backend lost. Attempting to reconnect...",
+    "lostWithError": "Connection lost: {{error}}",
+    "lostTitle": "Connection Lost",
+    "lostBody": "Lost connection to the backend server."
   }
 }

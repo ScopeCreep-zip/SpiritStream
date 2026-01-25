@@ -241,11 +241,11 @@
       "854x480": "480p (854x480)"
     },
     "frameRates": {
-      "60": "60 FPS",
-      "50": "50 FPS",
-      "30": "30 FPS",
+      "24": "24 FPS",
       "25": "25 FPS",
-      "24": "24 FPS"
+      "30": "30 FPS",
+      "50": "50 FPS",
+      "60": "60 FPS"
     }
   },
   "audio": {
@@ -255,18 +255,18 @@
       "libopus": "Opus"
     },
     "bitrates": {
+      "64": "64 kbps (Niedrig)",
+      "96": "96 kbit/s",
+      "128": "128 kbit/s (Standard)",
+      "192": "192 kbit/s",
+      "256": "256 kbit/s",
       "320": "320 kbps (Beste)",
       "320k": "320 kbps (Beste)",
-      "256": "256 kbit/s",
       "256k": "256 kbit/s",
-      "192": "192 kbit/s",
       "192k": "192 kbit/s",
       "160k": "160 kbit/s",
-      "128": "128 kbit/s (Standard)",
       "128k": "128 kbps (Standard)",
-      "96": "96 kbit/s",
       "96k": "96 kbit/s",
-      "64": "64 kbps (Niedrig)",
       "64k": "64 kbps (Niedrig)"
     }
   },
@@ -666,5 +666,24 @@
     "groupRemoved": "Ausgabegruppe entfernt",
     "keyRotationSuccess": "Maschinenschlüssel gedreht. {{profiles}}-Profile aktualisiert, {{keys}}-Schlüssel neu verschlüsselt.",
     "keyRotationFailed": "Schlüsselrotation fehlgeschlagen: {{error}}"
+  },
+  "notifications": {
+    "streamStartedTitle": "Stream Started",
+    "streamStartedBody": "Your stream is now live.",
+    "streamStoppedTitle": "Stream Stopped",
+    "streamStoppedBody": "Your stream has stopped.",
+    "obsConnectedTitle": "OBS Connected",
+    "obsConnectedBody": "Successfully connected to OBS WebSocket.",
+    "obsDisconnectedTitle": "OBS Disconnected",
+    "obsDisconnectedBody": "Disconnected from OBS WebSocket."
+  },
+  "connection": {
+    "reconnected": "Reconnected to backend",
+    "reconnectedTitle": "Connection Restored",
+    "reconnectedBody": "Reconnected to the backend server.",
+    "lost": "Connection to backend lost. Attempting to reconnect...",
+    "lostWithError": "Connection lost: {{error}}",
+    "lostTitle": "Connection Lost",
+    "lostBody": "Lost connection to the backend server."
   }
 }

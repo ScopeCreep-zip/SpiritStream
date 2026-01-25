@@ -241,11 +241,11 @@
       "854x480": "480 بكسل (854 × 480)"
     },
     "frameRates": {
-      "60": "60 FPS",
-      "50": "50 FPS",
-      "30": "30 FPS",
+      "24": "24 FPS",
       "25": "25 FPS",
-      "24": "24 FPS"
+      "30": "30 FPS",
+      "50": "50 FPS",
+      "60": "60 FPS"
     }
   },
   "audio": {
@@ -255,18 +255,18 @@
       "libopus": "التأليف"
     },
     "bitrates": {
+      "64": "64 كيلوبت في الثانية (منخفض)",
+      "96": "96 كيلو بايت في الثانية",
+      "128": "128 كيلوبت في الثانية (قياسي)",
+      "192": "192 كيلو بايت في الثانية",
+      "256": "256 كيلو بايت في الثانية",
       "320": "320 كيلو بايت في الثانية (الأفضل)",
       "320k": "320 كيلو بايت في الثانية (الأفضل)",
-      "256": "256 كيلو بايت في الثانية",
       "256k": "256 كيلو بايت في الثانية",
-      "192": "192 كيلو بايت في الثانية",
       "192k": "192 كيلو بايت في الثانية",
       "160k": "160 كيلو بايت في الثانية",
-      "128": "128 كيلوبت في الثانية (قياسي)",
       "128k": "128 كيلو بايت في الثانية",
-      "96": "96 كيلو بايت في الثانية",
       "96k": "96 كيلو بايت في الثانية",
-      "64": "64 كيلوبت في الثانية (منخفض)",
       "64k": "64 كيلو بايت في الثانية"
     }
   },
@@ -666,5 +666,24 @@
     "groupRemoved": "تمت إزالة مجموعة الإخراج",
     "keyRotationSuccess": "تم تدوير مفتاح الآلة. تم تحديث ملفات تعريف {{profiles}}، وإعادة تشفير مفاتيح {{keys}}.",
     "keyRotationFailed": "فشل تدوير المفتاح: {{error}}"
+  },
+  "notifications": {
+    "streamStartedTitle": "Stream Started",
+    "streamStartedBody": "Your stream is now live.",
+    "streamStoppedTitle": "Stream Stopped",
+    "streamStoppedBody": "Your stream has stopped.",
+    "obsConnectedTitle": "OBS Connected",
+    "obsConnectedBody": "Successfully connected to OBS WebSocket.",
+    "obsDisconnectedTitle": "OBS Disconnected",
+    "obsDisconnectedBody": "Disconnected from OBS WebSocket."
+  },
+  "connection": {
+    "reconnected": "Reconnected to backend",
+    "reconnectedTitle": "Connection Restored",
+    "reconnectedBody": "Reconnected to the backend server.",
+    "lost": "Connection to backend lost. Attempting to reconnect...",
+    "lostWithError": "Connection lost: {{error}}",
+    "lostTitle": "Connection Lost",
+    "lostBody": "Lost connection to the backend server."
   }
 }

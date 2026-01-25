@@ -4,6 +4,7 @@ import { showSystemNotification } from '@/lib/notification';
 import { useSettingsStore } from './settingsStore';
 import { api as httpApi } from '@/lib/backend/httpApi';
 import { useObsStore } from '@/stores/obsStore';
+import i18n from '@/lib/i18n';
 import type { OutputGroup } from '@/types/profile';
 import type { StreamStats, StreamStatusType, TargetStats } from '@/types/stream';
 import type { ObsIntegrationDirection } from '@/types/api';
@@ -454,9 +455,15 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     const showNotifications = useSettingsStore.getState().showNotifications;
     if (showNotifications) {
       if (prevStatus !== 'live' && status === 'live') {
-        showSystemNotification('Stream Started', 'Your stream is now live.');
+        showSystemNotification(
+          i18n.t('notifications.streamStartedTitle', 'Stream Started'),
+          i18n.t('notifications.streamStartedBody', 'Your stream is now live.')
+        );
       } else if (prevStatus === 'live' && status === 'offline') {
-        showSystemNotification('Stream Stopped', 'Your stream has stopped.');
+        showSystemNotification(
+          i18n.t('notifications.streamStoppedTitle', 'Stream Stopped'),
+          i18n.t('notifications.streamStoppedBody', 'Your stream has stopped.')
+        );
       }
     }
   },

@@ -27,7 +27,8 @@
       "Bash(powershell -Command:*)",
       "Read(//d/**)",
       "Bash(pnpm typecheck:*)",
-      "Bash(cmd /c \"taskkill /F /PID 29700\")"
+      "Bash(cmd /c \"taskkill /F /PID 29700\")",
+      "Bash(xxd:*)"
     ]
   }
 }

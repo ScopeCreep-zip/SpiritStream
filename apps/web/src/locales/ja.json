@@ -241,11 +241,11 @@
       "854x480": "480p (854x480)"
     },
     "frameRates": {
-      "60": "60 FPS",
-      "50": "50 FPS",
-      "30": "30 FPS",
+      "24": "24 FPS",
       "25": "25 FPS",
-      "24": "24 FPS"
+      "30": "30 FPS",
+      "50": "50 FPS",
+      "60": "60 FPS"
     }
   },
   "audio": {
@@ -255,18 +255,18 @@
       "libopus": "オーパス"
     },
     "bitrates": {
+      "64": "64 kbps（低品質）",
+      "96": "96kbps",
+      "128": "128 kbps（標準）",
+      "192": "192kbps",
+      "256": "256kbps",
       "320": "320 kbps（最高品質）",
       "320k": "320 kbps??????",
-      "256": "256kbps",
       "256k": "256kbps",
-      "192": "192kbps",
       "192k": "192kbps",
       "160k": "160kbps",
-      "128": "128 kbps（標準）",
       "128k": "128 kbps????",
-      "96": "96kbps",
       "96k": "96kbps",
-      "64": "64 kbps（低品質）",
       "64k": "64 kbps?????"
     }
   },
@@ -666,5 +666,24 @@
     "groupRemoved": "出力グループを削除しました",
     "keyRotationSuccess": "マシンキーが回転しました。 {{profiles}} プロファイルが更新され、{{keys}} キーが再暗号化されました。",
     "keyRotationFailed": "キーのローテーションが失敗しました: {{error}}"
+  },
+  "notifications": {
+    "streamStartedTitle": "Stream Started",
+    "streamStartedBody": "Your stream is now live.",
+    "streamStoppedTitle": "Stream Stopped",
+    "streamStoppedBody": "Your stream has stopped.",
+    "obsConnectedTitle": "OBS Connected",
+    "obsConnectedBody": "Successfully connected to OBS WebSocket.",
+    "obsDisconnectedTitle": "OBS Disconnected",
+    "obsDisconnectedBody": "Disconnected from OBS WebSocket."
+  },
+  "connection": {
+    "reconnected": "Reconnected to backend",
+    "reconnectedTitle": "Connection Restored",
+    "reconnectedBody": "Reconnected to the backend server.",
+    "lost": "Connection to backend lost. Attempting to reconnect...",
+    "lostWithError": "Connection lost: {{error}}",
+    "lostTitle": "Connection Lost",
+    "lostBody": "Lost connection to the backend server."
   }
 }
