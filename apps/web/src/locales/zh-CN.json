@@ -9,6 +9,7 @@
     "outputGroups": "输出组",
     "streamTargets": "流目标",
     "system": "系统",
+    "integrations": "Integrations",
     "logs": "日志",
     "settings": "设置"
   },
@@ -44,6 +45,10 @@
     "settings": {
       "title": "设置",
       "description": "配置应用程序首选项"
+    },
+    "integrations": {
+      "title": "Integrations",
+      "description": "Connect with external applications"
     }
   },
   "dashboard": {
@@ -53,11 +58,11 @@
     "uptime": "正常运行时间",
     "streaming": "流媒体",
     "readyToStart": "准备开始",
-    "active": "积极的",
+    "active": "活动",
     "noActiveStreams": "无活动流",
     "noIssues": "没有问题",
     "checkConnection": "检查连接",
-    "live": "居住",
+    "live": "直播",
     "notStreaming": "不流式传输",
     "activeProfile": "活动档案",
     "activeProfileDescription": "当前选择的流配置",
@@ -80,7 +85,7 @@
     "noTargetsConfigured": "未配置流目标",
     "viewers": "观众",
     "bitrate": "比特率",
-    "fps": "__学期_FPS__",
+    "fps": "FPS",
     "targetsCount": "{{count}} 个目标",
     "noStreamTargets": "未配置流目标",
     "outputGroups": "输出组",
@@ -102,7 +107,7 @@
     "resolution": "解决",
     "targets": "目标",
     "targetsCount": "{{count}} 个目标",
-    "active": "积极的",
+    "active": "活动",
     "edit": "编辑",
     "duplicate": "复制",
     "delete": "删除",
@@ -139,7 +144,7 @@
     "defaultGroupName": "输出组",
     "uptime": "正常运行时间",
     "bitrate": "比特率",
-    "fps": "__学期_FPS__",
+    "fps": "FPS",
     "totalBandwidth": "上传总量"
   },
   "encoder": {
@@ -175,7 +180,7 @@
     "rateControlHelper": "建议使用 CBR 进行流式传输",
     "resolution": "解决",
     "frameRate": "帧率",
-    "fps": "__学期_FPS__",
+    "fps": "FPS",
     "videoBitrate": "视频比特率",
     "videoBitrateKbps": "视频比特率 (kbps)",
     "videoBitrateHelper": "建议：1080p 4500-6000，720p 3000-4500",
@@ -241,32 +246,32 @@
       "854x480": "480p (854x480)"
     },
     "frameRates": {
-      "24": "24 __学期_FPS__",
-      "25": "25__学期_FPS__",
-      "30": "30 __学期_FPS__",
-      "50": "50 __学期_FPS__",
-      "60": "60 __学期_FPS__"
+      "60": "60 FPS",
+      "50": "50 FPS",
+      "30": "30 FPS",
+      "25": "25FPS",
+      "24": "24 FPS"
     }
   },
   "audio": {
     "codecs": {
-      "aac": "__学期_AAC__",
-      "libmp3lame": "__学期_MP3__",
-      "libopus": "__学期_作品__"
+      "aac": "AAC",
+      "libmp3lame": "MP3",
+      "libopus": "Opus"
     },
     "bitrates": {
-      "64": "64 kbps（低）",
-      "96": "96kbps",
-      "128": "128 kbps（标准）",
-      "192": "192kbps",
-      "256": "256kbps",
       "320": "320 kbps（最佳）",
       "320k": "320 kbps（最佳）",
+      "256": "256kbps",
       "256k": "256kbps",
+      "192": "192kbps",
       "192k": "192kbps",
       "160k": "160kbps",
+      "128": "128 kbps（标准）",
       "128k": "128kbps",
+      "96": "96kbps",
       "96k": "96kbps",
+      "64": "64 kbps（低）",
       "64k": "64kbps"
     }
   },
@@ -533,24 +538,37 @@
   },
   "platforms": {
     "youtube": "YouTube",
-    "twitch": "__学期_Twitch__",
-    "kick": "__学期_踢__",
+    "twitch": "Twitch",
+    "kick": "Kick",
     "facebook": "Facebook 直播",
     "custom": "自定义 RTMP"
   },
   "status": {
-    "live": "居住",
+    "live": "直播",
     "offline": "离线",
     "connecting": "正在连接",
     "error": "错误",
     "ready": "准备好",
-    "active": "积极的",
+    "active": "活动",
     "noActiveStreams": "无活动流",
     "streaming": "流媒体",
     "readyToStart": "准备开始",
     "noIssues": "没有问题",
     "checkConnection": "检查连接",
     "notStreaming": "不流式传输"
+  },
+  "connection": {
+    "connected": "Connected",
+    "connecting": "Connecting...",
+    "reconnecting": "Reconnecting...",
+    "disconnected": "Disconnected",
+    "reconnected": "Reconnected to backend",
+    "reconnectedTitle": "Connection Restored",
+    "reconnectedBody": "Reconnected to the backend server.",
+    "lost": "Connection to backend lost. Attempting to reconnect...",
+    "lostWithError": "Connection lost: {{error}}",
+    "lostTitle": "Connection Lost",
+    "lostBody": "Lost connection to the backend server."
   },
   "common": {
     "save": "节省",
@@ -667,6 +685,78 @@
     "keyRotationSuccess": "机器钥匙旋转。更新了 {{profiles}} 配置文件，重新加密了 {{keys}} 密钥。",
     "keyRotationFailed": "密钥轮换失败：{{error}}"
   },
+  "fileBrowser": {
+    "selectDirectory": "Select Directory",
+    "selectFile": "Select File",
+    "saveFile": "Save File",
+    "goUp": "Go up",
+    "goHome": "Go home",
+    "refresh": "Refresh",
+    "typePath": "Type a path and press Enter...",
+    "goToPath": "Go to path (Enter)",
+    "quickPaths": "Quick paths:",
+    "accessDenied": "This location is outside the allowed browsing area. You can browse your home directory and common system folders.",
+    "directoryNotFound": "Directory not found.",
+    "notADirectory": "The selected path is not a directory.",
+    "readError": "Unable to read directory contents. Check permissions.",
+    "noSubdirectories": "No subdirectories",
+    "noFiles": "No matching files",
+    "fileName": "File name",
+    "enterFileName": "Enter file name",
+    "fileNameRequired": "File name is required",
+    "selectFileFirst": "Please select a file",
+    "selectedDirectory": "Selected directory:"
+  },
+  "obs": {
+    "title": "OBS Integration",
+    "description": "Connect to OBS Studio via WebSocket",
+    "connection": "Connection",
+    "connectionSettings": "Connection Settings",
+    "host": "Host",
+    "hostPlaceholder": "localhost",
+    "port": "Port",
+    "authentication": "Authentication",
+    "password": "Password",
+    "passwordPlaceholder": "Enter password",
+    "passwordSetPlaceholder": "Password set (type to change)",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
+    "useAuthentication": "Use Authentication",
+    "autoConnect": "Auto-connect on startup",
+    "status": "Status",
+    "connected": "Connected",
+    "connecting": "Connecting...",
+    "disconnected": "Disconnected",
+    "error": "Error",
+    "connect": "Connect",
+    "disconnect": "Disconnect",
+    "integration": "Integration",
+    "integrationDirection": "Sync Direction",
+    "integrationDirectionDescription": "Control how streams sync between OBS and SpiritStream",
+    "directions": {
+      "disabled": "Disabled",
+      "disabledDescription": "No automatic sync between OBS and SpiritStream",
+      "obsToSpiritstream": "OBS to SpiritStream",
+      "obsToSpiritstreamDescription": "When OBS starts streaming, SpiritStream starts",
+      "spiritstreamToObs": "SpiritStream to OBS",
+      "spiritstreamToObsDescription": "When SpiritStream starts streaming, OBS starts",
+      "bidirectional": "Bidirectional",
+      "bidirectionalDescription": "Either can trigger the other to start/stop"
+    },
+    "streamControl": "Stream Control",
+    "startStream": "Start Stream",
+    "stopStream": "Stop Stream",
+    "streaming": "Streaming",
+    "notStreaming": "Not Streaming",
+    "versionInfo": "OBS {{obsVersion}} / WS {{wsVersion}}",
+    "obsVersion": "OBS Version",
+    "websocketVersion": "WebSocket Version",
+    "connectionError": "Connection Error",
+    "connectFailed": "Failed to connect to OBS",
+    "disconnectFailed": "Failed to disconnect from OBS",
+    "configSaved": "OBS configuration saved",
+    "configSaveFailed": "Failed to save OBS configuration"
+  },
   "notifications": {
     "streamStartedTitle": "Stream Started",
     "streamStartedBody": "Your stream is now live.",
@@ -676,14 +766,5 @@
     "obsConnectedBody": "Successfully connected to OBS WebSocket.",
     "obsDisconnectedTitle": "OBS Disconnected",
     "obsDisconnectedBody": "Disconnected from OBS WebSocket."
-  },
-  "connection": {
-    "reconnected": "Reconnected to backend",
-    "reconnectedTitle": "Connection Restored",
-    "reconnectedBody": "Reconnected to the backend server.",
-    "lost": "Connection to backend lost. Attempting to reconnect...",
-    "lostWithError": "Connection lost: {{error}}",
-    "lostTitle": "Connection Lost",
-    "lostBody": "Lost connection to the backend server."
   }
 }
