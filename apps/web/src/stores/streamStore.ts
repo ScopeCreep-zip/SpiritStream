@@ -203,6 +203,7 @@ export const useStreamStore = create<StreamState>((set, get) => ({
         activeGroups,
         isStreaming: true,
       });
+      get().setGlobalStatus('live');
 
       // Trigger OBS if this is the first stream starting
       if (!wasStreaming) {
@@ -224,6 +225,7 @@ export const useStreamStore = create<StreamState>((set, get) => ({
         activeGroups,
         isStreaming,
       });
+      get().setGlobalStatus(isStreaming ? 'live' : 'offline');
     } catch (error) {
       set({ error: String(error) });
     }
@@ -246,12 +248,8 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       for (const group of eligibleGroups) {
         activeGroups.add(group.id);
       }
-      set({ activeGroups });
-
-      set({
-        isStreaming: true,
-        globalStatus: 'live',
-      });
+      set({ activeGroups, isStreaming: true });
+      get().setGlobalStatus('live');
     } catch (error) {
       set({ error: String(error), globalStatus: 'error' });
       throw error; // Re-throw so UI can catch it
@@ -271,8 +269,8 @@ export const useStreamStore = create<StreamState>((set, get) => ({
         uptime: 0,
         groupStats: {},
         stats: initialStats,
-        globalStatus: 'offline',
       });
+      get().setGlobalStatus('offline');
 
       // Trigger OBS stop if we were live
       if (wasLive) {

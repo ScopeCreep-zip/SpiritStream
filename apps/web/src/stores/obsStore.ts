@@ -179,15 +179,13 @@ export const useObsStore = create<ObsStoreState>((set, get) => ({
       websocketVersion: state.websocketVersion ?? get().websocketVersion,
     });
 
-    // Notify on OBS connection state changes
+    // Notify on OBS connection state changes (only actual connect/disconnect, not errors)
     const showNotifications = useSettingsStore.getState().showNotifications;
     if (showNotifications && newConnectionStatus !== prevConnectionStatus) {
       if (newConnectionStatus === 'connected' && prevConnectionStatus !== 'connected') {
         showSystemNotification('OBS Connected', 'Successfully connected to OBS WebSocket.');
       } else if (newConnectionStatus === 'disconnected' && prevConnectionStatus === 'connected') {
         showSystemNotification('OBS Disconnected', 'Disconnected from OBS WebSocket.');
-      } else if (newConnectionStatus === 'error') {
-        showSystemNotification('OBS Connection Error', state.errorMessage ?? 'Failed to connect to OBS.');
       }
     }
   },
