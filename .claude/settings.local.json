@@ -24,7 +24,8 @@
       "Bash(timeout:*)",
       "Bash(tasklist:*)",
       "Bash(curl:*)",
-      "Read(//d/**)"
+      "Read(//d/**)",
+      "Bash(pnpm typecheck:*)"
     ]
   }
 }

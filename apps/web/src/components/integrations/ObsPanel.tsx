@@ -348,13 +348,11 @@ export function ObsPanel() {
                   // Auto-save direction changes
                   updateConfig({ direction: option.value }).catch(console.error);
                 }}
-                disabled={isConnected}
                 className={cn(
                   'p-4 rounded-lg border text-left transition-all',
                   direction === option.value
                     ? 'border-[var(--primary)] bg-[var(--primary)]/10'
-                    : 'border-[var(--border-default)] bg-[var(--bg-base)] hover:border-[var(--border-strong)]',
-                  isConnected && 'opacity-50 cursor-not-allowed'
+                    : 'border-[var(--border-default)] bg-[var(--bg-base)] hover:border-[var(--border-strong)]'
                 )}
               >
                 <div className="text-sm font-medium text-[var(--text-primary)]">

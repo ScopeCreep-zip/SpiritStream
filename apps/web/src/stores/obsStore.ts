@@ -22,8 +22,14 @@ interface ObsStoreState {
   // UI state
   showPassword: boolean;
 
+  // Integration state
+  // When true, the next OBS stream state change was triggered by SpiritStream
+  // and should not trigger SpiritStream back (prevents loops)
+  triggeredByUs: boolean;
+
   // Actions
   setShowPassword: (show: boolean) => void;
+  setTriggeredByUs: (value: boolean) => void;
   loadState: () => Promise<void>;
   loadConfig: () => Promise<void>;
   updateConfig: (config: Partial<ObsConfig> & { password?: string }) => Promise<void>;
@@ -44,8 +50,10 @@ export const useObsStore = create<ObsStoreState>((set, get) => ({
   config: null,
   isLoading: false,
   showPassword: false,
+  triggeredByUs: false,
 
   setShowPassword: (show) => set({ showPassword: show }),
+  setTriggeredByUs: (value) => set({ triggeredByUs: value }),
 
   loadState: async () => {
     try {

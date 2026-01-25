@@ -35,6 +35,7 @@ import { useLogListener } from '@/hooks/useLogListener';
 import { useConnectionStatus } from '@/hooks/useConnectionStatus';
 import { useBackendConnection } from '@/hooks/useBackendConnection';
 import { useDataSync } from '@/hooks/useDataSync';
+import { useObsEvents } from '@/hooks/useObsEvents';
 import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValidation';
 import { toast } from '@/hooks/useToast';
 import { useThemeStore } from '@/stores/themeStore';
@@ -168,6 +169,9 @@ function AppContent() {
 
   // Sync data when other clients make changes (HTTP mode only)
   useDataSync();
+
+  // Listen for OBS WebSocket events and handle OBS -> SpiritStream triggering
+  useObsEvents();
 
   // Initialize theme store on app startup
   useThemeStore((state) => state.currentThemeId);

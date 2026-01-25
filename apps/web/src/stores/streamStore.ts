@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { api } from '@/lib/backend';
 import { api as httpApi } from '@/lib/backend/httpApi';
+import { useObsStore } from '@/stores/obsStore';
 import type { OutputGroup } from '@/types/profile';
 import type { StreamStats, StreamStatusType, TargetStats } from '@/types/stream';
 import type { ObsIntegrationDirection } from '@/types/api';
@@ -32,8 +33,11 @@ async function triggerObsIfEnabled(action: 'start' | 'stop'): Promise<void> {
       return;
     }
 
-    // Add delay before triggering OBS
+    // Add delay before triggering OBS to allow SpiritStream services to fully start
     await new Promise((resolve) => setTimeout(resolve, OBS_TRIGGER_DELAY_MS));
+
+    // Mark that we're triggering OBS to prevent loop back
+    useObsStore.getState().setTriggeredByUs(true);
 
     // Trigger OBS
     if (action === 'start') {
@@ -46,6 +50,8 @@ async function triggerObsIfEnabled(action: 'start' | 'stop'): Promise<void> {
   } catch (error) {
     // Don't fail the main stream action if OBS trigger fails
     console.error('[StreamStore] Failed to trigger OBS:', error);
+    // Reset the flag on error
+    useObsStore.getState().setTriggeredByUs(false);
   }
 }
 
