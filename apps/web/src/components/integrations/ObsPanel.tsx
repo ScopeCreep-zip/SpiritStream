@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Radio,
@@ -19,6 +19,9 @@ import { useObsStore } from '@/stores/obsStore';
 import { toast } from '@/hooks/useToast';
 import { cn } from '@/lib/cn';
 import type { ObsIntegrationDirection } from '@/types/api';
+
+// Debounce delay for auto-save (ms)
+const AUTO_SAVE_DELAY = 500;
 
 const directionOptions: { value: ObsIntegrationDirection; labelKey: string; descKey: string }[] = [
   {
@@ -69,8 +72,10 @@ export function ObsPanel() {
   const [useAuth, setUseAuth] = useState(false);
   const [direction, setDirection] = useState<ObsIntegrationDirection>('disabled');
   const [autoConnect, setAutoConnect] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
   const [hasPasswordSet, setHasPasswordSet] = useState(false);
+
+  // Debounce timer ref
+  const saveTimeoutRef = useRef<number | null>(null);
 
   // Load initial state and config
   useEffect(() => {
@@ -91,26 +96,77 @@ export function ObsPanel() {
     }
   }, [config]);
 
-  const handleSave = useCallback(async () => {
-    setIsSaving(true);
-    try {
-      await updateConfig({
-        host,
-        port: parseInt(port, 10) || 4455,
-        password: password || undefined,
-        useAuth,
-        direction,
-        autoConnect,
-      });
-      setPassword(''); // Clear password field after save
-      toast.success(t('obs.configSaved'));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      toast.error(t('obs.configSaveFailed') + ': ' + message);
-    } finally {
-      setIsSaving(false);
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        window.clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Auto-save with debounce
+  const autoSave = useCallback(
+    (updates: Parameters<typeof updateConfig>[0]) => {
+      if (saveTimeoutRef.current) {
+        window.clearTimeout(saveTimeoutRef.current);
+      }
+
+      saveTimeoutRef.current = window.setTimeout(async () => {
+        try {
+          await updateConfig(updates);
+          // Clear password after saving
+          if (updates.password) {
+            setPassword('');
+            setHasPasswordSet(true);
+          }
+        } catch (error) {
+          console.error('Failed to save OBS config:', error);
+        }
+      }, AUTO_SAVE_DELAY);
+    },
+    [updateConfig]
+  );
+
+  // Handle host change with auto-save on blur
+  const handleHostBlur = useCallback(() => {
+    if (config && host !== config.host) {
+      autoSave({ host });
     }
-  }, [host, port, password, useAuth, direction, autoConnect, updateConfig, t]);
+  }, [host, config, autoSave]);
+
+  // Handle port change with auto-save on blur
+  const handlePortBlur = useCallback(() => {
+    const portNum = parseInt(port, 10) || 4455;
+    if (config && portNum !== config.port) {
+      autoSave({ port: portNum });
+    }
+  }, [port, config, autoSave]);
+
+  // Handle password change with auto-save on blur
+  const handlePasswordBlur = useCallback(() => {
+    if (password) {
+      autoSave({ password });
+    }
+  }, [password, autoSave]);
+
+  // Handle useAuth toggle with immediate save
+  const handleUseAuthChange = useCallback(
+    (checked: boolean) => {
+      setUseAuth(checked);
+      autoSave({ useAuth: checked });
+    },
+    [autoSave]
+  );
+
+  // Handle autoConnect toggle with immediate save
+  const handleAutoConnectChange = useCallback(
+    (checked: boolean) => {
+      setAutoConnect(checked);
+      autoSave({ autoConnect: checked });
+    },
+    [autoSave]
+  );
 
   const handleConnect = useCallback(async () => {
     try {
@@ -186,6 +242,7 @@ export function ObsPanel() {
                   label={t('obs.host')}
                   value={host}
                   onChange={(e) => setHost(e.target.value)}
+                  onBlur={handleHostBlur}
                   placeholder={t('obs.hostPlaceholder')}
                   disabled={isConnected}
                 />
@@ -196,6 +253,7 @@ export function ObsPanel() {
                   type="number"
                   value={port}
                   onChange={(e) => setPort(e.target.value)}
+                  onBlur={handlePortBlur}
                   disabled={isConnected}
                 />
               </div>
@@ -204,7 +262,7 @@ export function ObsPanel() {
             {/* Authentication Toggle */}
             <Toggle
               checked={useAuth}
-              onChange={setUseAuth}
+              onChange={handleUseAuthChange}
               label={t('obs.useAuthentication')}
               disabled={isConnected}
             />
@@ -217,6 +275,7 @@ export function ObsPanel() {
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  onBlur={handlePasswordBlur}
                   placeholder={hasPasswordSet ? '********' : t('obs.passwordPlaceholder')}
                   disabled={isConnected}
                 />
@@ -239,24 +298,9 @@ export function ObsPanel() {
             {/* Auto-connect Toggle */}
             <Toggle
               checked={autoConnect}
-              onChange={setAutoConnect}
+              onChange={handleAutoConnectChange}
               label={t('obs.autoConnect')}
-              disabled={isConnected}
             />
-
-            {/* Save Button */}
-            <Button
-              variant="secondary"
-              onClick={handleSave}
-              disabled={isConnected || isSaving}
-              className="w-full"
-            >
-              {isSaving ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                t('common.save')
-              )}
-            </Button>
           </CardBody>
         </Card>
 

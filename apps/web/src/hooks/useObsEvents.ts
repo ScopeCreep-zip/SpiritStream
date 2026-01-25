@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { events } from '@/lib/backend';
 import { useObsStore } from '@/stores/obsStore';
 import { useStreamStore } from '@/stores/streamStore';
@@ -20,19 +20,45 @@ interface ObsStreamStateEvent {
   active: boolean;
 }
 
+// Auto-connect retry settings
+const INITIAL_RETRY_DELAY = 2000; // 2 seconds
+const MAX_RETRY_DELAY = 30000; // 30 seconds
+const RETRY_BACKOFF_MULTIPLIER = 1.5;
+
 /**
  * Hook that listens for OBS WebSocket events and handles:
  * 1. Connection status updates to the OBS store
  * 2. Stream state changes that may trigger SpiritStream start/stop
  *    (when direction is obs-to-spiritstream or bidirectional)
+ * 3. Auto-connect on startup and reconnection on disconnect
  */
 export function useObsEvents() {
-  const { updateFromEvent, config, loadConfig, triggeredByUs, setTriggeredByUs } = useObsStore();
+  const {
+    updateFromEvent,
+    config,
+    loadConfig,
+    triggeredByUs,
+    setTriggeredByUs,
+    connectionStatus,
+    connect,
+  } = useObsStore();
   const { startAllGroups, stopAllGroups, isStreaming, activeGroups } = useStreamStore();
   const { current: currentProfile } = useProfileStore();
 
   // Track previous stream status to detect changes
   const prevStreamStatus = useRef<ObsStreamStatus>('unknown');
+
+  // Auto-connect state
+  const autoConnectAttempted = useRef(false);
+  const retryTimeoutRef = useRef<number | null>(null);
+  const currentRetryDelay = useRef(INITIAL_RETRY_DELAY);
+  const manuallyDisconnected = useRef(false);
+  const connectRef = useRef(connect);
+
+  // Keep connect ref up to date
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   // Load OBS config on mount if not already loaded
   useEffect(() => {
@@ -40,6 +66,130 @@ export function useObsEvents() {
       loadConfig();
     }
   }, [config, loadConfig]);
+
+  // Schedule a retry with exponential backoff
+  const scheduleRetry = useCallback(() => {
+    if (manuallyDisconnected.current) {
+      return;
+    }
+
+    if (retryTimeoutRef.current) {
+      window.clearTimeout(retryTimeoutRef.current);
+    }
+
+    console.log(`[useObsEvents] Scheduling retry in ${currentRetryDelay.current}ms`);
+
+    retryTimeoutRef.current = window.setTimeout(async () => {
+      retryTimeoutRef.current = null;
+
+      if (manuallyDisconnected.current) {
+        console.log('[useObsEvents] Skipping auto-connect - manually disconnected');
+        return;
+      }
+
+      try {
+        console.log('[useObsEvents] Attempting OBS auto-connect...');
+        await connectRef.current(false); // false = not manual, this is auto-connect
+        // Reset retry delay on successful connection
+        currentRetryDelay.current = INITIAL_RETRY_DELAY;
+      } catch (error) {
+        console.log('[useObsEvents] Auto-connect failed, will retry:', error);
+        scheduleRetry();
+      }
+    }, currentRetryDelay.current);
+
+    // Increase delay for next retry (exponential backoff)
+    currentRetryDelay.current = Math.min(
+      currentRetryDelay.current * RETRY_BACKOFF_MULTIPLIER,
+      MAX_RETRY_DELAY
+    );
+  }, []);
+
+  // Attempt to connect to OBS (isManual=false for auto-connect)
+  const attemptConnect = useCallback(async () => {
+    if (manuallyDisconnected.current) {
+      console.log('[useObsEvents] Skipping auto-connect - manually disconnected');
+      return;
+    }
+
+    try {
+      console.log('[useObsEvents] Attempting OBS auto-connect...');
+      await connectRef.current(false); // false = not manual, this is auto-connect
+      // Reset retry delay on successful connection
+      currentRetryDelay.current = INITIAL_RETRY_DELAY;
+    } catch (error) {
+      console.log('[useObsEvents] Auto-connect failed, will retry:', error);
+      scheduleRetry();
+    }
+  }, [scheduleRetry]);
+
+  // Auto-connect on startup if enabled
+  useEffect(() => {
+    if (!config || autoConnectAttempted.current) {
+      return;
+    }
+
+    if (config.autoConnect && connectionStatus === 'disconnected') {
+      autoConnectAttempted.current = true;
+      // Small delay to let the app fully initialize
+      const timeout = window.setTimeout(() => {
+        attemptConnect();
+      }, 1000);
+
+      return () => window.clearTimeout(timeout);
+    }
+  }, [config, connectionStatus, attemptConnect]);
+
+  // Handle disconnection - retry if auto-connect is enabled
+  useEffect(() => {
+    if (!config?.autoConnect) {
+      return;
+    }
+
+    // If we were connected and now disconnected (not manually), schedule retry
+    if (connectionStatus === 'disconnected' && !manuallyDisconnected.current) {
+      scheduleRetry();
+    }
+
+    // If we're connected, clear any pending retry
+    if (connectionStatus === 'connected' && retryTimeoutRef.current) {
+      window.clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
+  }, [connectionStatus, config?.autoConnect, scheduleRetry]);
+
+  // Cleanup retry timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (retryTimeoutRef.current) {
+        window.clearTimeout(retryTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Track manual disconnection to prevent auto-reconnect
+  useEffect(() => {
+    const handleManualDisconnect = () => {
+      manuallyDisconnected.current = true;
+      if (retryTimeoutRef.current) {
+        window.clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
+      }
+    };
+
+    const handleManualConnect = () => {
+      manuallyDisconnected.current = false;
+    };
+
+    // These events are triggered by the obsStore when user clicks connect/disconnect
+    window.addEventListener('obs:manual-disconnect', handleManualDisconnect);
+    window.addEventListener('obs:manual-connect', handleManualConnect);
+
+    return () => {
+      window.removeEventListener('obs:manual-disconnect', handleManualDisconnect);
+      window.removeEventListener('obs:manual-connect', handleManualConnect);
+    };
+  }, []);
 
   useEffect(() => {
     let unlistenStatus: (() => void) | null = null;

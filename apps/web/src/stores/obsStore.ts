@@ -33,8 +33,8 @@ interface ObsStoreState {
   loadState: () => Promise<void>;
   loadConfig: () => Promise<void>;
   updateConfig: (config: Partial<ObsConfig> & { password?: string }) => Promise<void>;
-  connect: () => Promise<void>;
-  disconnect: () => Promise<void>;
+  connect: (isManual?: boolean) => Promise<void>;
+  disconnect: (isManual?: boolean) => Promise<void>;
   startStream: () => Promise<void>;
   stopStream: () => Promise<void>;
   updateFromEvent: (state: Partial<ObsState>) => void;
@@ -108,8 +108,12 @@ export const useObsStore = create<ObsStoreState>((set, get) => ({
     }
   },
 
-  connect: async () => {
+  connect: async (isManual = true) => {
     try {
+      // Notify that this is a manual connect (re-enables auto-reconnect)
+      if (isManual) {
+        window.dispatchEvent(new CustomEvent('obs:manual-connect'));
+      }
       set({ connectionStatus: 'connecting', errorMessage: null });
       await api.obs.connect();
       // State will be updated via WebSocket events
@@ -123,8 +127,12 @@ export const useObsStore = create<ObsStoreState>((set, get) => ({
     }
   },
 
-  disconnect: async () => {
+  disconnect: async (isManual = true) => {
     try {
+      // Notify that this is a manual disconnect (disables auto-reconnect)
+      if (isManual) {
+        window.dispatchEvent(new CustomEvent('obs:manual-disconnect'));
+      }
       await api.obs.disconnect();
       set({
         connectionStatus: 'disconnected',
