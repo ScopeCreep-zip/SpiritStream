@@ -172,30 +172,18 @@ impl ObsWebSocketHandler {
         }));
 
         // Decrypt password if encrypted
-        log::debug!("[OBS] connect - use_auth: {}, password length: {}, password encrypted: {}",
-            config.use_auth,
-            config.password.len(),
-            config.password.starts_with("ENC::"));
-
         let password = if config.use_auth && !config.password.is_empty() {
             if Encryption::is_stream_key_encrypted(&config.password) {
-                let decrypted = Encryption::decrypt_stream_key(&config.password, &self.app_data_dir)
-                    .map_err(|e| format!("Failed to decrypt OBS password: {e}"))?;
-                log::debug!("[OBS] connect - decrypted password length: {}", decrypted.len());
-                Some(decrypted)
+                Some(Encryption::decrypt_stream_key(&config.password, &self.app_data_dir)
+                    .map_err(|e| format!("Failed to decrypt OBS password: {e}"))?)
             } else {
-                log::debug!("[OBS] connect - using plain text password");
                 Some(config.password.clone())
             }
         } else {
-            log::debug!("[OBS] connect - not using authentication (use_auth={}, password_empty={})",
-                config.use_auth, config.password.is_empty());
             None
         };
 
         // Connect to OBS - Client::connect(host, port, password)
-        log::debug!("[OBS] connect - calling Client::connect with password: {}",
-            if password.is_some() { "Some(...)" } else { "None" });
         let connect_result = Client::connect(&config.host, config.port, password).await;
 
         match connect_result {

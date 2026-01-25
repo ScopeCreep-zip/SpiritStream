@@ -85,11 +85,6 @@ export function ObsPanel() {
   // Sync form with config when loaded
   useEffect(() => {
     if (config) {
-      console.log('[OBS Panel] Config loaded:', {
-        passwordLength: config.password?.length ?? 0,
-        passwordPreview: config.password?.substring(0, 10) ?? '',
-        useAuth: config.useAuth,
-      });
       setHost(config.host || 'localhost');
       setPort(String(config.port || 4455));
       setPassword(config.password || '');
@@ -281,7 +276,7 @@ export function ObsPanel() {
             {useAuth && (
               <div className="relative">
                 <Input
-                  label={`${t('obs.password')} ${showPassword ? '(visible)' : '(hidden)'}`}
+                  label={t('obs.password')}
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -289,21 +284,9 @@ export function ObsPanel() {
                   placeholder={t('obs.passwordPlaceholder')}
                   disabled={isConnected}
                 />
-                {/* Debug: show password length */}
-                <div className="text-xs text-[var(--text-tertiary)] mt-1">
-                  Debug: {password.length} chars, showPassword={String(showPassword)}, preview="{password.substring(0, 3)}..."
-                </div>
                 <button
                   type="button"
-                  onClick={() => {
-                    console.log('[OBS Panel] Toggle password visibility:', {
-                      currentShowPassword: showPassword,
-                      newShowPassword: !showPassword,
-                      passwordValue: password,
-                      passwordLength: password.length,
-                    });
-                    setShowPassword(!showPassword);
-                  }}
+                  onClick={() => setShowPassword(!showPassword)}
                   className={cn(
                     'absolute right-3 top-[34px]',
                     'p-1 rounded-md',
@@ -415,7 +398,7 @@ export function ObsPanel() {
                   updateConfig({ direction: option.value }).catch(console.error);
                 }}
                 className={cn(
-                  'p-4 rounded-lg border text-left transition-all',
+                  'p-4 rounded-lg border text-left transition-all cursor-pointer',
                   direction === option.value
                     ? 'border-[var(--primary)] bg-[var(--primary)]/10'
                     : 'border-[var(--border-default)] bg-[var(--bg-base)] hover:border-[var(--border-strong)]'

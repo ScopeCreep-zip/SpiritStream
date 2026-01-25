@@ -1084,45 +1084,24 @@ async fn invoke_command(
         }
         "obs_get_config" => {
             let config = state.obs_handler.get_config().await;
-            log::debug!("[OBS] get_config - config.password length: {}, encrypted: {}",
-                config.password.len(),
-                config.password.starts_with("ENC::"));
             let mut response = json!(config);
-            log::debug!("[OBS] get_config - JSON keys: {:?}",
-                response.as_object().map(|o| o.keys().collect::<Vec<_>>()));
 
             // Decrypt the password if it's encrypted
             if let Some(obj) = response.as_object_mut() {
                 if let Some(pass_value) = obj.get("password") {
                     let pass_str = pass_value.as_str().unwrap_or("");
-                    log::debug!("[OBS] get_config - JSON password length: {}, starts with ENC::: {}",
-                        pass_str.len(),
-                        pass_str.starts_with("ENC::"));
-                    if !pass_str.is_empty() {
-                        // Check if encrypted and decrypt
-                        if Encryption::is_stream_key_encrypted(pass_str) {
-                            log::debug!("[OBS] get_config - attempting to decrypt password");
-                            match Encryption::decrypt_stream_key(pass_str, &state.app_data_dir) {
-                                Ok(decrypted) => {
-                                    log::debug!("[OBS] get_config - decrypted password length: {}", decrypted.len());
-                                    obj.insert("password".to_string(), json!(decrypted));
-                                }
-                                Err(e) => {
-                                    log::warn!("Failed to decrypt OBS password: {}", e);
-                                    obj.insert("password".to_string(), json!(""));
-                                }
+                    if !pass_str.is_empty() && Encryption::is_stream_key_encrypted(pass_str) {
+                        match Encryption::decrypt_stream_key(pass_str, &state.app_data_dir) {
+                            Ok(decrypted) => {
+                                obj.insert("password".to_string(), json!(decrypted));
                             }
-                        } else {
-                            log::debug!("[OBS] get_config - password is not encrypted (plain text)");
+                            Err(e) => {
+                                log::warn!("Failed to decrypt OBS password: {}", e);
+                                obj.insert("password".to_string(), json!(""));
+                            }
                         }
-                    } else {
-                        log::debug!("[OBS] get_config - password is empty");
                     }
-                } else {
-                    log::debug!("[OBS] get_config - 'password' key not found in JSON object");
                 }
-            } else {
-                log::debug!("[OBS] get_config - response is not a JSON object");
             }
             Ok(response)
         }
@@ -1134,26 +1113,17 @@ async fn invoke_command(
             let direction: String = get_arg(&payload, "direction")?;
             let auto_connect: bool = get_arg(&payload, "autoConnect")?;
 
-            log::debug!("[OBS] set_config - password provided: {}, use_auth: {}",
-                password.is_some(),
-                use_auth);
-
             // Get current config to preserve existing password if not provided
             let current_config = state.obs_handler.get_config().await;
 
             // Encrypt password if provided, otherwise keep existing
             let encrypted_password = if let Some(ref pass) = password {
                 if pass.is_empty() {
-                    log::debug!("[OBS] set_config - clearing password (empty string provided)");
                     String::new()
                 } else {
-                    let encrypted = state.obs_handler.encrypt_password(pass)?;
-                    log::debug!("[OBS] set_config - encrypted password, result starts with ENC::: {}",
-                        encrypted.starts_with("ENC::"));
-                    encrypted
+                    state.obs_handler.encrypt_password(pass)?
                 }
             } else {
-                log::debug!("[OBS] set_config - preserving existing password");
                 current_config.password
             };
 
@@ -1177,11 +1147,10 @@ async fn invoke_command(
             state.obs_handler.set_config(config).await;
 
             // Also save to settings
-            log::debug!("[OBS] set_config - saving to settings file");
             let mut settings = state.settings_manager.load()?;
-            settings.obs_host = host.clone();
+            settings.obs_host = host;
             settings.obs_port = port;
-            settings.obs_password = encrypted_password.clone();
+            settings.obs_password = encrypted_password;
             settings.obs_use_auth = use_auth;
             settings.obs_direction = match dir {
                 spiritstream_server::services::IntegrationDirection::ObsToSpiritstream => ObsIntegrationDirection::ObsToSpiritstream,
@@ -1191,8 +1160,6 @@ async fn invoke_command(
             };
             settings.obs_auto_connect = auto_connect;
             state.settings_manager.save(&settings)?;
-            log::debug!("[OBS] set_config - settings saved successfully. obs_password length: {}, use_auth: {}",
-                settings.obs_password.len(), settings.obs_use_auth);
 
             Ok(Value::Null)
         }
@@ -1495,9 +1462,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load OBS config from settings if available
     if let Some(ref settings) = settings {
-        log::debug!("[OBS] Loading config from settings - password length: {}, starts with ENC::: {}",
-            settings.obs_password.len(),
-            settings.obs_password.starts_with("ENC::"));
         let obs_config = ObsConfig {
             host: settings.obs_host.clone(),
             port: settings.obs_port,
