@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { api } from '@/lib/backend';
+import { showSystemNotification } from '@/lib/notification';
+import { useSettingsStore } from './settingsStore';
 import type { OutputGroup } from '@/types/profile';
 import type { StreamStats, StreamStatusType, TargetStats } from '@/types/stream';
 
@@ -147,8 +149,8 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       set({
         activeGroups,
         isStreaming: true,
-        globalStatus: 'live',
       });
+      get().setGlobalStatus('live');
     } catch (error) {
       set({ error: String(error), globalStatus: 'error' });
     }
@@ -164,8 +166,8 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       set({
         activeGroups,
         isStreaming,
-        globalStatus: isStreaming ? 'live' : 'offline',
       });
+      get().setGlobalStatus(isStreaming ? 'live' : 'offline');
     } catch (error) {
       set({ error: String(error) });
     }
@@ -188,12 +190,8 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       for (const group of eligibleGroups) {
         activeGroups.add(group.id);
       }
-      set({ activeGroups });
-
-      set({
-        isStreaming: true,
-        globalStatus: 'live',
-      });
+      set({ activeGroups, isStreaming: true });
+      get().setGlobalStatus('live');
     } catch (error) {
       set({ error: String(error), globalStatus: 'error' });
       throw error; // Re-throw so UI can catch it
@@ -203,15 +201,26 @@ export const useStreamStore = create<StreamState>((set, get) => ({
   // Stop all streams
   stopAllGroups: async () => {
     try {
+      // Capture if we were live before stopping (for notification)
+      const wasLive = get().globalStatus === 'live';
+
       await api.stream.stopAll();
       set({
         activeGroups: new Set(),
         isStreaming: false,
-        globalStatus: 'offline',
         uptime: 0,
         groupStats: {},
         stats: initialStats,
+        globalStatus: 'offline',
       });
+
+      // Trigger notification if we were actually live
+      if (wasLive) {
+        const showNotifications = useSettingsStore.getState().showNotifications;
+        if (showNotifications) {
+          showSystemNotification('Stream Stopped', 'Your stream has stopped.');
+        }
+      }
     } catch (error) {
       set({ error: String(error) });
     }
@@ -383,7 +392,19 @@ export const useStreamStore = create<StreamState>((set, get) => ({
 
   incrementUptime: () => set({ uptime: get().uptime + 1 }),
 
-  setGlobalStatus: (status: StreamStatusType) => set({ globalStatus: status }),
+  setGlobalStatus: (status: StreamStatusType) => {
+    const prevStatus = get().globalStatus;
+    set({ globalStatus: status });
+    // Only notify on transition between offline <-> live
+    const showNotifications = useSettingsStore.getState().showNotifications;
+    if (showNotifications) {
+      if (prevStatus !== 'live' && status === 'live') {
+        showSystemNotification('Stream Started', 'Your stream is now live.');
+      } else if (prevStatus === 'live' && status === 'offline') {
+        showSystemNotification('Stream Stopped', 'Your stream has stopped.');
+      }
+    }
+  },
 
   setError: (error) => set({ error }),
 
