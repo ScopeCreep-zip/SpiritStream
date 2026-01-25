@@ -24,6 +24,7 @@
       "Bash(timeout:*)",
       "Bash(tasklist:*)",
       "Bash(curl:*)",
+      "Bash(powershell -Command:*)",
       "Read(//d/**)",
       "Bash(pnpm typecheck:*)"
     ]

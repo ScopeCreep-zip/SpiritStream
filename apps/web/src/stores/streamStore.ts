@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { api } from '@/lib/backend';
+import { showSystemNotification } from '@/lib/notification';
+import { useSettingsStore } from './settingsStore';
 import { api as httpApi } from '@/lib/backend/httpApi';
 import { useObsStore } from '@/stores/obsStore';
 import type { OutputGroup } from '@/types/profile';
@@ -200,13 +202,7 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       set({
         activeGroups,
         isStreaming: true,
-        globalStatus: 'live',
       });
-
-      // Trigger OBS if this is the first group to start
-      if (!wasStreaming) {
-        triggerObsIfEnabled('start');
-      }
     } catch (error) {
       set({ error: String(error), globalStatus: 'error' });
     }
@@ -222,13 +218,7 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       set({
         activeGroups,
         isStreaming,
-        globalStatus: isStreaming ? 'live' : 'offline',
       });
-
-      // Trigger OBS stop if this was the last group
-      if (!isStreaming) {
-        triggerObsIfEnabled('stop');
-      }
     } catch (error) {
       set({ error: String(error) });
     }
@@ -257,9 +247,6 @@ export const useStreamStore = create<StreamState>((set, get) => ({
         isStreaming: true,
         globalStatus: 'live',
       });
-
-      // Trigger OBS stream start (non-blocking, with delay)
-      triggerObsIfEnabled('start');
     } catch (error) {
       set({ error: String(error), globalStatus: 'error' });
       throw error; // Re-throw so UI can catch it
@@ -269,18 +256,18 @@ export const useStreamStore = create<StreamState>((set, get) => ({
   // Stop all streams
   stopAllGroups: async () => {
     try {
+      // Capture if we were live before stopping (for notification)
+      const wasLive = get().globalStatus === 'live';
+
       await api.stream.stopAll();
       set({
         activeGroups: new Set(),
         isStreaming: false,
-        globalStatus: 'offline',
         uptime: 0,
         groupStats: {},
         stats: initialStats,
+        globalStatus: 'offline',
       });
-
-      // Trigger OBS stream stop (non-blocking, with delay)
-      triggerObsIfEnabled('stop');
     } catch (error) {
       set({ error: String(error) });
     }
@@ -452,7 +439,19 @@ export const useStreamStore = create<StreamState>((set, get) => ({
 
   incrementUptime: () => set({ uptime: get().uptime + 1 }),
 
-  setGlobalStatus: (status: StreamStatusType) => set({ globalStatus: status }),
+  setGlobalStatus: (status: StreamStatusType) => {
+    const prevStatus = get().globalStatus;
+    set({ globalStatus: status });
+    // Only notify on transition between offline <-> live
+    const showNotifications = useSettingsStore.getState().showNotifications;
+    if (showNotifications) {
+      if (prevStatus !== 'live' && status === 'live') {
+        showSystemNotification('Stream Started', 'Your stream is now live.');
+      } else if (prevStatus === 'live' && status === 'offline') {
+        showSystemNotification('Stream Stopped', 'Your stream has stopped.');
+      }
+    }
+  },
 
   setError: (error) => set({ error }),
 
