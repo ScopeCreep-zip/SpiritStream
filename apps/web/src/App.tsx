@@ -21,6 +21,8 @@ import { Header } from '@/components/layout/Header';
 import { NavSection } from '@/components/navigation/NavSection';
 import { NavItem } from '@/components/navigation/NavItem';
 import { Button } from '@/components/ui/Button';
+import { Modal } from '@/components/ui/Modal';
+import { Toggle } from '@/components/ui/Toggle';
 import { ToastContainer } from '@/components/ui/Toast';
 import { ConnectionStatus } from '@/components/ui/ConnectionStatus';
 import { ConnectionError } from '@/components/ui/ConnectionError';
@@ -63,6 +65,8 @@ export type View =
   | 'settings';
 
 // View meta is now handled via translations using keys like header.dashboard.title
+const streamKeyWarningStorageKey = (profileId: string) =>
+  `spiritstream:profile:${profileId}:skip-empty-stream-key-warning`;
 
 /**
  * Main App component - handles server health checking before rendering main content.
@@ -146,6 +150,7 @@ function App() {
  */
 function AppContent() {
   const { t } = useTranslation();
+  const tDynamic = t as (key: string, options?: { defaultValue?: string }) => string;
 
   // Initialize backend connection (HTTP mode only)
   // IMPORTANT: This hook and others below only run after server is confirmed healthy
@@ -182,12 +187,17 @@ function AppContent() {
 
   // Modal state
   const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [profileModalMode, setProfileModalMode] = useState<'create' | 'edit'>('create');
   const [targetModalOpen, setTargetModalOpen] = useState(false);
   const [outputGroupModalOpen, setOutputGroupModalOpen] = useState(false);
   const [loginModalOpen, setLoginModalOpen] = useState(false);
+  const [streamKeyWarningOpen, setStreamKeyWarningOpen] = useState(false);
+  const [streamKeyWarningNeverShow, setStreamKeyWarningNeverShow] = useState(false);
+  const [streamKeyWarningProfileId, setStreamKeyWarningProfileId] = useState<string | null>(null);
 
   // Streaming validation state
   const [isValidating, setIsValidating] = useState(false);
+
 
   // Handle authentication requirement events from backend
   useEffect(() => {
@@ -211,6 +221,35 @@ function AppContent() {
       }
     });
   }, []);
+
+  useEffect(() => {
+    if (!current) {
+      setStreamKeyWarningOpen(false);
+      return;
+    }
+
+    const streamKey = current.input.streamKey?.trim() ?? '';
+    if (streamKey.length > 0) {
+      setStreamKeyWarningOpen(false);
+      return;
+    }
+
+    let skipWarning = false;
+    try {
+      skipWarning = localStorage.getItem(streamKeyWarningStorageKey(current.id)) === '1';
+    } catch (error) {
+      console.warn('[App] Failed to read stream key warning preference:', error);
+    }
+
+    if (skipWarning) {
+      setStreamKeyWarningOpen(false);
+      return;
+    }
+
+    setStreamKeyWarningProfileId(current.id);
+    setStreamKeyWarningNeverShow(false);
+    setStreamKeyWarningOpen(true);
+  }, [current?.id, current?.input.streamKey]);
 
   // Handle successful login
   const handleLoginSuccess = () => {
@@ -270,6 +309,19 @@ function AppContent() {
     await stopAllGroups();
   };
 
+  const handleOpenCreateProfileModal = () => {
+    setProfileModalMode('create');
+    setProfileModalOpen(true);
+  };
+
+  const handleOpenEditProfileModal = () => {
+    if (!current) {
+      return;
+    }
+    setProfileModalMode('edit');
+    setProfileModalOpen(true);
+  };
+
   // Navigation handler to pass to views
   const handleNavigate = (view: View) => {
     setCurrentView(view);
@@ -281,7 +333,7 @@ function AppContent() {
         return (
           <Dashboard
             onNavigate={handleNavigate}
-            onOpenProfileModal={() => setProfileModalOpen(true)}
+            onOpenProfileModal={handleOpenCreateProfileModal}
             onOpenTargetModal={() => setTargetModalOpen(true)}
           />
         );
@@ -328,7 +380,7 @@ function AppContent() {
         );
       case 'profiles':
         return (
-          <Button onClick={() => setProfileModalOpen(true)}>{t('profiles.newProfile')}</Button>
+          <Button onClick={handleOpenCreateProfileModal}>{t('profiles.newProfile')}</Button>
         );
       case 'targets':
         return (
@@ -348,6 +400,22 @@ function AppContent() {
       default:
         return null;
     }
+  };
+
+  const handleDismissStreamKeyWarning = () => {
+    if (streamKeyWarningNeverShow && streamKeyWarningProfileId) {
+      try {
+        localStorage.setItem(streamKeyWarningStorageKey(streamKeyWarningProfileId), '1');
+      } catch (error) {
+        console.warn('[App] Failed to store stream key warning preference:', error);
+      }
+    }
+    setStreamKeyWarningOpen(false);
+  };
+
+  const handleEditStreamKeyWarningProfile = () => {
+    handleDismissStreamKeyWarning();
+    handleOpenEditProfileModal();
   };
 
   return (
@@ -430,7 +498,8 @@ function AppContent() {
       <ProfileModal
         open={profileModalOpen}
         onClose={() => setProfileModalOpen(false)}
-        mode="create"
+        mode={profileModalMode}
+        profile={profileModalMode === 'edit' ? current ?? undefined : undefined}
       />
 
       <TargetModal
@@ -459,6 +528,46 @@ function AppContent() {
         open={loginModalOpen}
         onSuccess={handleLoginSuccess}
       />
+
+      <Modal
+        open={streamKeyWarningOpen}
+        onClose={handleDismissStreamKeyWarning}
+        title={tDynamic('modals.profileStreamKeyWarningTitle', { defaultValue: 'Stream key missing' })}
+        footer={
+          <>
+            <Button
+              variant="ghost"
+              onClick={handleDismissStreamKeyWarning}
+              className="border border-solid border-[var(--border-muted)]"
+            >
+              {tDynamic('common.ok', { defaultValue: 'OK' })}
+            </Button>
+            <Button onClick={handleEditStreamKeyWarningProfile} disabled={!current}>
+              {tDynamic('modals.profileStreamKeyWarningEdit', { defaultValue: 'Edit profile' })}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3 text-[var(--text-secondary)]">
+          <p>
+            {tDynamic('modals.profileStreamKeyWarningBody', {
+              defaultValue:
+                'This profile does not have an input stream key. Leaving it blank can cause connection errors on some RTMP servers and increases the security risk of unintended publishers.',
+            })}
+          </p>
+          <div className="flex items-center justify-between rounded-lg border border-[var(--border-default)] bg-[var(--bg-muted)] px-3 py-2">
+            <span className="text-sm text-[var(--text-secondary)]">
+              {tDynamic('modals.profileStreamKeyWarningNeverShow', {
+                defaultValue: 'Never show this warning for this profile',
+              })}
+            </span>
+            <Toggle
+              checked={streamKeyWarningNeverShow}
+              onChange={setStreamKeyWarningNeverShow}
+            />
+          </div>
+        </div>
+      </Modal>
 
       {/* Toast notifications */}
       <ToastContainer />

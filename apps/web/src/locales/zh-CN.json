@@ -1,4 +1,4 @@
-{
+﻿{
   "nav": {
     "main": "主要的",
     "dashboard": "仪表板",
@@ -431,6 +431,10 @@
     "createNewProfile": "创建新的个人资料",
     "editProfile": "编辑个人资料",
     "createProfile": "创建个人资料",
+    "profileStreamKeyWarningTitle": "Stream key missing",
+    "profileStreamKeyWarningBody": "This profile does not have an input stream key. Leaving it blank can cause connection errors on some RTMP servers and increases the security risk of unintended publishers.",
+    "profileStreamKeyWarningNeverShow": "Never show this warning for this profile",
+    "profileStreamKeyWarningEdit": "Edit profile",
     "profileName": "个人资料名称",
     "profileNamePlaceholder": "例如，游戏流",
     "incomingRtmpUrl": "传入 RTMP URL",

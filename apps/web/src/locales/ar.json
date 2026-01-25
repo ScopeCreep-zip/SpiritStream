@@ -1,4 +1,4 @@
-{
+﻿{
   "nav": {
     "main": "رئيسي",
     "dashboard": "لوحة القيادة",
@@ -431,6 +431,10 @@
     "createNewProfile": "إنشاء ملف تعريف جديد",
     "editProfile": "تحرير الملف الشخصي",
     "createProfile": "إنشاء الملف الشخصي",
+    "profileStreamKeyWarningTitle": "Stream key missing",
+    "profileStreamKeyWarningBody": "This profile does not have an input stream key. Leaving it blank can cause connection errors on some RTMP servers and increases the security risk of unintended publishers.",
+    "profileStreamKeyWarningNeverShow": "Never show this warning for this profile",
+    "profileStreamKeyWarningEdit": "Edit profile",
     "profileName": "اسم الملف الشخصي",
     "profileNamePlaceholder": "على سبيل المثال، بث الألعاب",
     "incomingRtmpUrl": "عنوان URL الوارد RTMP",

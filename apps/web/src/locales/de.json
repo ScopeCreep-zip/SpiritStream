@@ -1,4 +1,4 @@
-{
+﻿{
   "nav": {
     "main": "Hauptmenü",
     "dashboard": "Übersicht",
@@ -431,6 +431,10 @@
     "createNewProfile": "Neues Profil erstellen",
     "editProfile": "Profil bearbeiten",
     "createProfile": "Profil erstellen",
+    "profileStreamKeyWarningTitle": "Stream key missing",
+    "profileStreamKeyWarningBody": "This profile does not have an input stream key. Leaving it blank can cause connection errors on some RTMP servers and increases the security risk of unintended publishers.",
+    "profileStreamKeyWarningNeverShow": "Never show this warning for this profile",
+    "profileStreamKeyWarningEdit": "Edit profile",
     "profileName": "Profilname",
     "profileNamePlaceholder": "z.B. Gaming-Stream",
     "incomingRtmpUrl": "Eingehende RTMP-URL",

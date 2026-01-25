@@ -76,7 +76,8 @@ export function Modal({ open, onClose, title, children, footer, maxWidth = '500p
       requestAnimationFrame(() => {
         const focusable = getFocusableElements();
         if (focusable.length > 0) {
-          focusable[0].focus();
+          const preferred = focusable.find((el) => !el.hasAttribute('data-modal-close'));
+          (preferred ?? focusable[0]).focus();
         }
       });
     } else {
@@ -141,11 +142,12 @@ export function ModalHeader({ title, onClose }: ModalHeaderProps) {
         onClick={onClose}
         className={cn(
           'w-8 h-8 flex items-center justify-center rounded-md',
-          'text-[var(--text-tertiary)] bg-transparent border-none cursor-pointer',
+          'text-[var(--text-tertiary)] bg-transparent border border-solid border-[var(--border-muted)] cursor-pointer',
           'hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]',
           'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ring-default)]',
           'transition-all duration-150'
         )}
+        data-modal-close
         aria-label="Close modal"
       >
         <X className="w-4 h-4" />

@@ -23,6 +23,7 @@ interface FormData {
   bindAddress: string;
   port: string;
   application: string;
+  streamKey: string;
   // Password protection
   usePassword: boolean;
   password: string;
@@ -34,6 +35,7 @@ const defaultFormData: FormData = {
   bindAddress: '0.0.0.0',
   port: '1935',
   application: 'live',
+  streamKey: '',
   usePassword: false,
   password: '',
   confirmPassword: '',
@@ -59,6 +61,7 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
           bindAddress: profile.input.bindAddress,
           port: String(profile.input.port),
           application: profile.input.application,
+          streamKey: profile.input.streamKey ?? '',
           usePassword: false,
           password: '',
           confirmPassword: '',
@@ -122,6 +125,7 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
       bindAddress: formData.bindAddress,
       port: parseInt(formData.port),
       application: formData.application,
+      streamKey: formData.streamKey.trim() || undefined,
     };
 
     try {
@@ -137,12 +141,14 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
   };
 
   const persistProfile = async () => {
+    const streamKey = formData.streamKey.trim();
     // Build RTMP input object
     const input: RtmpInput = {
       type: 'rtmp',
       bindAddress: formData.bindAddress,
       port: parseInt(formData.port),
       application: formData.application,
+      streamKey: streamKey.length > 0 ? streamKey : undefined,
     };
 
     if (mode === 'create') {
@@ -282,6 +288,18 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
               onChange={handleChange('application')}
               error={errors.application}
               helper={t('modals.applicationHelper')}
+            />
+          </div>
+          <div style={{ marginTop: '12px' }}>
+            <Input
+              label={tDynamic('modals.profileStreamKeyLabel', { defaultValue: 'Stream Key (optional)' })}
+              placeholder={tDynamic('modals.profileStreamKeyPlaceholder', { defaultValue: 'Leave blank to accept any stream name' })}
+              value={formData.streamKey}
+              onChange={handleChange('streamKey')}
+              error={errors.streamKey}
+              helper={tDynamic('modals.profileStreamKeyHelper', {
+                defaultValue: 'If set, SpiritStream will expect OBS to publish this stream key.'
+              })}
             />
           </div>
           <div style={{ marginTop: '8px', fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
