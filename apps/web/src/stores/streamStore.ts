@@ -203,6 +203,11 @@ export const useStreamStore = create<StreamState>((set, get) => ({
         activeGroups,
         isStreaming: true,
       });
+
+      // Trigger OBS if this is the first stream starting
+      if (!wasStreaming) {
+        triggerObsIfEnabled('start');
+      }
     } catch (error) {
       set({ error: String(error), globalStatus: 'error' });
     }
@@ -256,7 +261,7 @@ export const useStreamStore = create<StreamState>((set, get) => ({
   // Stop all streams
   stopAllGroups: async () => {
     try {
-      // Capture if we were live before stopping (for notification)
+      // Capture if we were live before stopping (for OBS trigger)
       const wasLive = get().globalStatus === 'live';
 
       await api.stream.stopAll();
@@ -268,6 +273,11 @@ export const useStreamStore = create<StreamState>((set, get) => ({
         stats: initialStats,
         globalStatus: 'offline',
       });
+
+      // Trigger OBS stop if we were live
+      if (wasLive) {
+        triggerObsIfEnabled('stop');
+      }
     } catch (error) {
       set({ error: String(error) });
     }

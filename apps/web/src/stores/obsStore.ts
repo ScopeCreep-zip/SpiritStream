@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { api } from '@/lib/backend/httpApi';
+import { showSystemNotification } from '@/lib/notification';
+import { useSettingsStore } from './settingsStore';
 import type {
   ObsConnectionStatus,
   ObsStreamStatus,
@@ -166,12 +168,27 @@ export const useObsStore = create<ObsStoreState>((set, get) => ({
   },
 
   updateFromEvent: (state) => {
+    const prevConnectionStatus = get().connectionStatus;
+    const newConnectionStatus = state.connectionStatus ?? prevConnectionStatus;
+
     set({
-      connectionStatus: state.connectionStatus ?? get().connectionStatus,
+      connectionStatus: newConnectionStatus,
       streamStatus: state.streamStatus ?? get().streamStatus,
       errorMessage: state.errorMessage ?? get().errorMessage,
       obsVersion: state.obsVersion ?? get().obsVersion,
       websocketVersion: state.websocketVersion ?? get().websocketVersion,
     });
+
+    // Notify on OBS connection state changes
+    const showNotifications = useSettingsStore.getState().showNotifications;
+    if (showNotifications && newConnectionStatus !== prevConnectionStatus) {
+      if (newConnectionStatus === 'connected' && prevConnectionStatus !== 'connected') {
+        showSystemNotification('OBS Connected', 'Successfully connected to OBS WebSocket.');
+      } else if (newConnectionStatus === 'disconnected' && prevConnectionStatus === 'connected') {
+        showSystemNotification('OBS Disconnected', 'Disconnected from OBS WebSocket.');
+      } else if (newConnectionStatus === 'error') {
+        showSystemNotification('OBS Connection Error', state.errorMessage ?? 'Failed to connect to OBS.');
+      }
+    }
   },
 }));
