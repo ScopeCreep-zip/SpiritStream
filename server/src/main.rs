@@ -1084,15 +1084,26 @@ async fn invoke_command(
         }
         "obs_get_config" => {
             let config = state.obs_handler.get_config().await;
-            // Mask the password in the response
             let mut response = json!(config);
+
+            // Decrypt the password if it's encrypted
             if let Some(obj) = response.as_object_mut() {
-                if let Some(pass) = obj.get("password") {
-                    if !pass.as_str().unwrap_or("").is_empty() {
-                        obj.insert("password".to_string(), json!("********"));
-                        obj.insert("hasPassword".to_string(), json!(true));
-                    } else {
-                        obj.insert("hasPassword".to_string(), json!(false));
+                if let Some(pass_value) = obj.get("password") {
+                    let pass_str = pass_value.as_str().unwrap_or("");
+                    if !pass_str.is_empty() {
+                        // Check if encrypted and decrypt
+                        if Encryption::is_stream_key_encrypted(pass_str) {
+                            match Encryption::decrypt_stream_key(pass_str, &state.app_data_dir) {
+                                Ok(decrypted) => {
+                                    obj.insert("password".to_string(), json!(decrypted));
+                                }
+                                Err(e) => {
+                                    log::warn!("Failed to decrypt OBS password: {}", e);
+                                    obj.insert("password".to_string(), json!(""));
+                                }
+                            }
+                        }
+                        // Password is set (either decrypted or was plain text)
                     }
                 }
             }

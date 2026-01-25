@@ -72,7 +72,6 @@ export function ObsPanel() {
   const [useAuth, setUseAuth] = useState(false);
   const [direction, setDirection] = useState<ObsIntegrationDirection>('disabled');
   const [autoConnect, setAutoConnect] = useState(false);
-  const [hasPasswordSet, setHasPasswordSet] = useState(false);
 
   // Debounce timer ref
   const saveTimeoutRef = useRef<number | null>(null);
@@ -88,11 +87,10 @@ export function ObsPanel() {
     if (config) {
       setHost(config.host || 'localhost');
       setPort(String(config.port || 4455));
+      setPassword(config.password || '');
       setUseAuth(config.useAuth);
       setDirection(config.direction);
       setAutoConnect(config.autoConnect);
-      setHasPasswordSet(config.hasPassword || false);
-      // Don't set password - it's masked
     }
   }, [config]);
 
@@ -115,11 +113,6 @@ export function ObsPanel() {
       saveTimeoutRef.current = window.setTimeout(async () => {
         try {
           await updateConfig(updates);
-          // Clear password after saving
-          if (updates.password) {
-            setPassword('');
-            setHasPasswordSet(true);
-          }
         } catch (error) {
           console.error('Failed to save OBS config:', error);
         }
@@ -145,27 +138,39 @@ export function ObsPanel() {
 
   // Handle password change with auto-save on blur
   const handlePasswordBlur = useCallback(() => {
-    if (password) {
+    if (config && password !== config.password) {
       autoSave({ password });
     }
-  }, [password, autoSave]);
+  }, [password, config, autoSave]);
 
-  // Handle useAuth toggle with immediate save
+  // Handle useAuth toggle with immediate save (no debounce to avoid race conditions)
   const handleUseAuthChange = useCallback(
-    (checked: boolean) => {
+    async (checked: boolean) => {
       setUseAuth(checked);
-      autoSave({ useAuth: checked });
+      // Clear password field when disabling auth
+      if (!checked) {
+        setPassword('');
+      }
+      try {
+        await updateConfig({ useAuth: checked });
+      } catch (error) {
+        console.error('Failed to save useAuth:', error);
+      }
     },
-    [autoSave]
+    [updateConfig]
   );
 
-  // Handle autoConnect toggle with immediate save
+  // Handle autoConnect toggle with immediate save (no debounce)
   const handleAutoConnectChange = useCallback(
-    (checked: boolean) => {
+    async (checked: boolean) => {
       setAutoConnect(checked);
-      autoSave({ autoConnect: checked });
+      try {
+        await updateConfig({ autoConnect: checked });
+      } catch (error) {
+        console.error('Failed to save autoConnect:', error);
+      }
     },
-    [autoSave]
+    [updateConfig]
   );
 
   const handleConnect = useCallback(async () => {
@@ -276,7 +281,7 @@ export function ObsPanel() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   onBlur={handlePasswordBlur}
-                  placeholder={hasPasswordSet ? '********' : t('obs.passwordPlaceholder')}
+                  placeholder={t('obs.passwordPlaceholder')}
                   disabled={isConnected}
                 />
                 <button

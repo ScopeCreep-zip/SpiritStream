@@ -714,6 +714,7 @@
     "authentication": "Authentication",
     "password": "Password",
     "passwordPlaceholder": "Enter password",
+    "passwordSetPlaceholder": "Password set (type to change)",
     "showPassword": "Show password",
     "hidePassword": "Hide password",
     "useAuthentication": "Use Authentication",
