@@ -325,7 +325,7 @@ export function ObsPanel() {
                   </div>
                   {isConnected && obsVersion && (
                     <div className="text-xs text-[var(--text-tertiary)]">
-                      OBS {obsVersion} / WS {websocketVersion}
+                      {t('obs.versionInfo', { obsVersion, wsVersion: websocketVersion })}
                     </div>
                   )}
                 </div>

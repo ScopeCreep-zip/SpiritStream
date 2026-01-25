@@ -744,6 +744,7 @@
     "stopStream": "Stop Stream",
     "streaming": "Streaming",
     "notStreaming": "Not Streaming",
+    "versionInfo": "OBS {{obsVersion}} / WS {{wsVersion}}",
     "obsVersion": "OBS Version",
     "websocketVersion": "WebSocket Version",
     "connectionError": "Connection Error",
