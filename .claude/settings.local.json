@@ -28,7 +28,8 @@
       "Read(//d/**)",
       "Bash(pnpm typecheck:*)",
       "Bash(cmd /c \"taskkill /F /PID 29700\")",
-      "Bash(xxd:*)"
+      "Bash(xxd:*)",
+      "Bash(cargo clippy:*)"
     ]
   }
 }

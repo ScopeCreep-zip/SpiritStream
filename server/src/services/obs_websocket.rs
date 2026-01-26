@@ -13,40 +13,30 @@ use crate::services::{EventSink, Encryption};
 // ============================================================================
 
 /// OBS connection status
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ObsConnectionStatus {
+    #[default]
     Disconnected,
     Connecting,
     Connected,
     Error,
 }
 
-impl Default for ObsConnectionStatus {
-    fn default() -> Self {
-        Self::Disconnected
-    }
-}
-
 /// OBS streaming status
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ObsStreamStatus {
     Inactive,
     Starting,
     Active,
     Stopping,
+    #[default]
     Unknown,
 }
 
-impl Default for ObsStreamStatus {
-    fn default() -> Self {
-        Self::Unknown
-    }
-}
-
 /// Integration directionality - controls how stream state syncs
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum IntegrationDirection {
     /// OBS controls SpiritStream (OBS start -> SpiritStream start)
@@ -56,13 +46,8 @@ pub enum IntegrationDirection {
     /// Bidirectional sync (either can trigger the other)
     Bidirectional,
     /// No automatic sync
+    #[default]
     Disabled,
-}
-
-impl Default for IntegrationDirection {
-    fn default() -> Self {
-        Self::Disabled
-    }
 }
 
 /// OBS WebSocket configuration (stored in settings)
