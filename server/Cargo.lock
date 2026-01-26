@@ -2061,6 +2061,7 @@ dependencies = [
  "futures-util",
  "governor",
  "hex",
+ "libloading",
  "log",
  "notify",
  "opener",
