@@ -20,6 +20,13 @@ export interface AppSettings {
   backendHost: string;
   backendPort: number;
   backendToken: string;
+  // OBS WebSocket settings
+  obsHost: string;
+  obsPort: number;
+  obsPassword: string;
+  obsUseAuth: boolean;
+  obsDirection: ObsIntegrationDirection;
+  obsAutoConnect: boolean;
   lastProfile: string | null;
 }
 
@@ -57,4 +64,52 @@ export interface FFmpegVersionInfo {
   update_available: boolean;
   /** Human-readable status message */
   status: string;
+}
+
+// ============================================================================
+// OBS WebSocket Types
+// ============================================================================
+
+/**
+ * OBS connection status
+ */
+export type ObsConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
+
+/**
+ * OBS streaming status
+ */
+export type ObsStreamStatus = 'inactive' | 'starting' | 'active' | 'stopping' | 'unknown';
+
+/**
+ * OBS integration direction
+ */
+export type ObsIntegrationDirection =
+  | 'obs-to-spiritstream'
+  | 'spiritstream-to-obs'
+  | 'bidirectional'
+  | 'disabled';
+
+/**
+ * OBS WebSocket configuration
+ */
+export interface ObsConfig {
+  host: string;
+  port: number;
+  password: string;
+  useAuth: boolean;
+  direction: ObsIntegrationDirection;
+  autoConnect: boolean;
+  /** Indicates if a password is set (password itself is masked) */
+  hasPassword?: boolean;
+}
+
+/**
+ * Current OBS state
+ */
+export interface ObsState {
+  connectionStatus: ObsConnectionStatus;
+  streamStatus: ObsStreamStatus;
+  errorMessage: string | null;
+  obsVersion: string | null;
+  websocketVersion: string | null;
 }

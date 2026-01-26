@@ -15,6 +15,29 @@ fn default_backend_port() -> u16 {
     8008
 }
 
+fn default_obs_host() -> String {
+    "localhost".to_string()
+}
+
+fn default_obs_port() -> u16 {
+    4455
+}
+
+/// OBS WebSocket integration direction
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ObsIntegrationDirection {
+    /// OBS controls SpiritStream (OBS start -> SpiritStream start)
+    ObsToSpiritstream,
+    /// SpiritStream controls OBS (SpiritStream start -> OBS start)
+    SpiritstreamToObs,
+    /// Bidirectional sync (either can trigger the other)
+    Bidirectional,
+    /// No automatic sync
+    #[default]
+    Disabled,
+}
+
 /// Application settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -51,6 +74,20 @@ pub struct Settings {
     #[serde(default)]
     pub backend_token: String,
 
+    // OBS WebSocket integration
+    #[serde(default = "default_obs_host")]
+    pub obs_host: String,
+    #[serde(default = "default_obs_port")]
+    pub obs_port: u16,
+    #[serde(default)]
+    pub obs_password: String,
+    #[serde(default)]
+    pub obs_use_auth: bool,
+    #[serde(default)]
+    pub obs_direction: ObsIntegrationDirection,
+    #[serde(default)]
+    pub obs_auto_connect: bool,
+
     // Last used profile
     pub last_profile: Option<String>,
 }
@@ -71,6 +108,12 @@ impl Default for Settings {
             backend_host: default_backend_host(),
             backend_port: default_backend_port(),
             backend_token: String::new(),
+            obs_host: default_obs_host(),
+            obs_port: default_obs_port(),
+            obs_password: String::new(),
+            obs_use_auth: false,
+            obs_direction: ObsIntegrationDirection::default(),
+            obs_auto_connect: false,
             last_profile: None,
         }
     }

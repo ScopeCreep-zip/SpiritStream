@@ -2,8 +2,61 @@ import { create } from 'zustand';
 import { api } from '@/lib/backend';
 import { showSystemNotification } from '@/lib/notification';
 import { useSettingsStore } from './settingsStore';
+import { api as httpApi } from '@/lib/backend/httpApi';
+import { useObsStore } from '@/stores/obsStore';
+import i18n from '@/lib/i18n';
 import type { OutputGroup } from '@/types/profile';
 import type { StreamStats, StreamStatusType, TargetStats } from '@/types/stream';
+import type { ObsIntegrationDirection } from '@/types/api';
+
+// OBS integration delay (in ms) before triggering OBS after SpiritStream starts
+const OBS_TRIGGER_DELAY_MS = 1500;
+
+/**
+ * Trigger OBS stream start/stop based on integration direction
+ */
+async function triggerObsIfEnabled(action: 'start' | 'stop'): Promise<void> {
+  try {
+    // Get OBS config to check direction
+    const config = await httpApi.obs.getConfig();
+    const direction: ObsIntegrationDirection = config.direction;
+
+    // Check if SpiritStream should trigger OBS
+    const shouldTrigger =
+      direction === 'spiritstream-to-obs' || direction === 'bidirectional';
+
+    if (!shouldTrigger) {
+      return;
+    }
+
+    // Check if connected to OBS
+    const isConnected = await httpApi.obs.isConnected();
+    if (!isConnected) {
+      console.log('[StreamStore] OBS not connected, skipping trigger');
+      return;
+    }
+
+    // Add delay before triggering OBS to allow SpiritStream services to fully start
+    await new Promise((resolve) => setTimeout(resolve, OBS_TRIGGER_DELAY_MS));
+
+    // Mark that we're triggering OBS to prevent loop back
+    useObsStore.getState().setTriggeredByUs(true);
+
+    // Trigger OBS
+    if (action === 'start') {
+      console.log('[StreamStore] Triggering OBS stream start');
+      await httpApi.obs.startStream();
+    } else {
+      console.log('[StreamStore] Triggering OBS stream stop');
+      await httpApi.obs.stopStream();
+    }
+  } catch (error) {
+    // Don't fail the main stream action if OBS trigger fails
+    console.error('[StreamStore] Failed to trigger OBS:', error);
+    // Reset the flag on error
+    useObsStore.getState().setTriggeredByUs(false);
+  }
+}
 
 /**
  * Real-time streaming statistics from the FFmpeg backend.
@@ -145,12 +198,18 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     try {
       await api.stream.start(group, incomingUrl);
       const activeGroups = new Set(get().activeGroups);
+      const wasStreaming = activeGroups.size > 0;
       activeGroups.add(group.id);
       set({
         activeGroups,
         isStreaming: true,
       });
       get().setGlobalStatus('live');
+
+      // Trigger OBS if this is the first stream starting
+      if (!wasStreaming) {
+        triggerObsIfEnabled('start');
+      }
     } catch (error) {
       set({ error: String(error), globalStatus: 'error' });
     }
@@ -201,7 +260,7 @@ export const useStreamStore = create<StreamState>((set, get) => ({
   // Stop all streams
   stopAllGroups: async () => {
     try {
-      // Capture if we were live before stopping (for notification)
+      // Capture if we were live before stopping (for OBS trigger)
       const wasLive = get().globalStatus === 'live';
 
       await api.stream.stopAll();
@@ -211,15 +270,12 @@ export const useStreamStore = create<StreamState>((set, get) => ({
         uptime: 0,
         groupStats: {},
         stats: initialStats,
-        globalStatus: 'offline',
       });
+      get().setGlobalStatus('offline');
 
-      // Trigger notification if we were actually live
+      // Trigger OBS stop if we were live
       if (wasLive) {
-        const showNotifications = useSettingsStore.getState().showNotifications;
-        if (showNotifications) {
-          showSystemNotification('Stream Stopped', 'Your stream has stopped.');
-        }
+        triggerObsIfEnabled('stop');
       }
     } catch (error) {
       set({ error: String(error) });
@@ -399,9 +455,15 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     const showNotifications = useSettingsStore.getState().showNotifications;
     if (showNotifications) {
       if (prevStatus !== 'live' && status === 'live') {
-        showSystemNotification('Stream Started', 'Your stream is now live.');
+        showSystemNotification(
+          i18n.t('notifications.streamStartedTitle', 'Stream Started'),
+          i18n.t('notifications.streamStartedBody', 'Your stream is now live.')
+        );
       } else if (prevStatus === 'live' && status === 'offline') {
-        showSystemNotification('Stream Stopped', 'Your stream has stopped.');
+        showSystemNotification(
+          i18n.t('notifications.streamStoppedTitle', 'Stream Stopped'),
+          i18n.t('notifications.streamStoppedBody', 'Your stream has stopped.')
+        );
       }
     }
   },

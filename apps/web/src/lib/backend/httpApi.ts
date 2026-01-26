@@ -1,6 +1,14 @@
 import type { Profile, ProfileSummary, OutputGroup, RtmpInput } from '@/types/profile';
 import type { Encoders } from '@/types/stream';
-import type { AppSettings, FFmpegVersionInfo, RotationReport, RtmpTestResult } from '@/types/api';
+import type {
+  AppSettings,
+  FFmpegVersionInfo,
+  RotationReport,
+  RtmpTestResult,
+  ObsConfig,
+  ObsState,
+  ObsIntegrationDirection,
+} from '@/types/api';
 import type { ThemeSummary } from '@/types/theme';
 import { getBackendBaseUrl, safeFetch } from './env';
 
@@ -136,5 +144,30 @@ export const api = {
       invokeHttp<Record<string, string>>('get_theme_tokens', { themeId }),
     install: (themePath: string) => invokeHttp<ThemeSummary>('install_theme', { themePath }),
     refresh: () => invokeHttp<ThemeSummary[]>('refresh_themes'),
+  },
+  obs: {
+    /** Get current OBS connection and stream state */
+    getState: () => invokeHttp<ObsState>('obs_get_state'),
+    /** Get OBS WebSocket configuration (password is masked) */
+    getConfig: () => invokeHttp<ObsConfig>('obs_get_config'),
+    /** Update OBS WebSocket configuration */
+    setConfig: (config: {
+      host: string;
+      port: number;
+      password?: string;
+      useAuth: boolean;
+      direction: ObsIntegrationDirection;
+      autoConnect: boolean;
+    }) => invokeHttp<void>('obs_set_config', config),
+    /** Connect to OBS WebSocket server */
+    connect: () => invokeHttp<void>('obs_connect'),
+    /** Disconnect from OBS WebSocket server */
+    disconnect: () => invokeHttp<void>('obs_disconnect'),
+    /** Start streaming in OBS */
+    startStream: () => invokeHttp<void>('obs_start_stream'),
+    /** Stop streaming in OBS */
+    stopStream: () => invokeHttp<void>('obs_stop_stream'),
+    /** Check if connected to OBS */
+    isConnected: () => invokeHttp<boolean>('obs_is_connected'),
   },
 };

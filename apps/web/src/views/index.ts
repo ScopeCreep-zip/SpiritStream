@@ -6,3 +6,4 @@ export { OutputGroups } from './OutputGroups';
 export { StreamTargets } from './StreamTargets';
 export { Logs } from './Logs';
 export { Settings } from './Settings';
+export { Integrations } from './Integrations';
