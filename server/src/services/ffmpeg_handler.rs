@@ -907,12 +907,14 @@ impl FFmpegHandler {
         if let Ok(mut stopping) = self.stopping_groups.lock() {
             stopping.insert(group_id.to_string());
         }
-        let (removed, should_stop_relay) = {
+        let (removed, should_stop_relay, should_update_relay) = {
             let mut processes = self.processes.lock()
                 .map_err(|e| format!("Lock poisoned: {e}"))?;
             let removed = processes.remove(group_id);
             let should_stop_relay = processes.is_empty();
-            (removed, should_stop_relay)
+            // Update relay if other groups are still running
+            let should_update_relay = !should_stop_relay && removed.is_some();
+            (removed, should_stop_relay, should_update_relay)
         };
 
         if let Some(mut info) = removed {
@@ -920,9 +922,19 @@ impl FFmpegHandler {
             // Free the port assignment for this group
             self.free_port_offset(group_id);
         }
+
         if should_stop_relay {
             self.stop_relay();
+        } else if should_update_relay {
+            // Restart relay with remaining active groups
+            let incoming_url = self.resolve_active_incoming_url()?;
+            let remaining_groups = self.collect_active_group_ids()?;
+            if !remaining_groups.is_empty() {
+                log::info!("[FFmpeg] Updating relay after stopping group {group_id}");
+                self.ensure_relay_running(&incoming_url, &remaining_groups)?;
+            }
         }
+
         Ok(())
     }
 
@@ -1019,7 +1031,9 @@ impl FFmpegHandler {
                 return Err("Incoming URL differs from active relay input".to_string());
             }
 
-            if relay.output_groups.is_superset(requested_groups) {
+            // Only skip restart if relay has EXACTLY the requested groups
+            // (not just a superset, to handle group removal)
+            if relay.output_groups == *requested_groups {
                 return Ok(());
             }
         }
@@ -1028,12 +1042,8 @@ impl FFmpegHandler {
             return Err("No output groups provided for relay fan-out".to_string());
         }
 
-        let mut relay_groups = if let Some(relay) = relay_guard.as_ref() {
-            relay.output_groups.clone()
-        } else {
-            HashSet::new()
-        };
-        relay_groups.extend(requested_groups.iter().cloned());
+        // Use the exact requested groups list (don't extend existing)
+        let relay_groups = requested_groups.clone();
 
         if let Some(mut relay) = relay_guard.take() {
             let _ = relay.child.kill();

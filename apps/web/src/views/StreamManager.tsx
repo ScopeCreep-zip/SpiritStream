@@ -27,6 +27,7 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
   const {
     isStreaming,
     activeGroups,
+    enabledGroups,
     enabledTargets,
     globalStatus,
     groupStats,
@@ -36,24 +37,34 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
     activeStreamCount,
     startAllGroups,
     stopAllGroups,
+    startGroup,
+    stopGroup,
+    setGroupEnabled,
     setTargetEnabled,
   } = useStreamStore();
 
   const [isValidating, setIsValidating] = useState(false);
 
-  // Enable all targets by default when profile changes
+  // Enable all groups and targets by default when profile changes
   useEffect(() => {
     if (current) {
+      // Enable all output groups
+      const allGroupIds = current.outputGroups.map((g) => g.id);
+      allGroupIds.forEach((id) => {
+        if (!enabledGroups.has(id)) {
+          setGroupEnabled(id, true);
+        }
+      });
+
+      // Enable all targets
       const allTargetIds = current.outputGroups.flatMap((g) => g.streamTargets.map((t) => t.id));
-      // Only add targets that aren't already in enabledTargets
       allTargetIds.forEach((id) => {
         if (!enabledTargets.has(id)) {
           setTargetEnabled(id, true);
         }
       });
     }
-    // Only re-run when profile ID changes, not on every target enable/disable
-    // current/enabledTargets/setTargetEnabled are intentionally excluded
+    // Only re-run when profile ID changes, not on every enable/disable
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.id]);
 
@@ -100,6 +111,37 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
       toast.error(
         t('toast.stopFailed', { error: err instanceof Error ? err.message : String(err) })
       );
+    }
+  };
+
+  const handleGroupToggle = async (groupId: string, enabled: boolean) => {
+    setGroupEnabled(groupId, enabled);
+
+    // If streaming and toggling off, stop the group
+    if (isStreaming && !enabled && activeGroups.has(groupId)) {
+      try {
+        await stopGroup(groupId);
+        toast.info(t('toast.groupStopped'));
+      } catch (err) {
+        toast.error(
+          t('toast.stopFailed', { error: err instanceof Error ? err.message : String(err) })
+        );
+      }
+    }
+    // If streaming and toggling on, start the group
+    else if (isStreaming && enabled && !activeGroups.has(groupId)) {
+      const group = current?.outputGroups.find((g) => g.id === groupId);
+      if (group && current) {
+        try {
+          const incomingUrl = `rtmp://${current.input.bindAddress}:${current.input.port}/${current.input.application}`;
+          await startGroup(group, incomingUrl);
+          toast.success(t('toast.groupStarted'));
+        } catch (err) {
+          toast.error(
+            t('toast.startFailed', { error: err instanceof Error ? err.message : String(err) })
+          );
+        }
+      }
     }
   };
 
@@ -279,6 +321,13 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
                 info={getGroupInfo(group)}
                 status={getGroupStatus(group.id)}
                 defaultExpanded={isGroupActive}
+                headerAction={
+                  <Toggle
+                    checked={enabledGroups.has(group.id)}
+                    onChange={(checked) => handleGroupToggle(group.id, checked)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                }
               >
                 {/* Real-time stats when streaming */}
                 {isGroupActive && stats && (
