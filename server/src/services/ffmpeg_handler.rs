@@ -1439,22 +1439,23 @@ impl FFmpegHandler {
 
     /// Add RTMP protocol options to a URL for connection resilience
     ///
-    /// Matches OBS Studio's RTMP configuration:
+    /// Matches OBS Studio's RTMP configuration for maximum stability:
     /// - timeout: 30 seconds (matching OBS receive timeout)
-    /// - rtmp_buffer: 30 seconds (matching OBS buffer)
-    /// - tcp_keepalive: Enabled to detect dead connections
-    /// - rtmp_live: Set to 'live' for live streaming
+    /// - rtmp_buffer: 30 seconds (matching OBS buffer, 10x default)
+    /// - tcp_keepalive: Enabled to detect dead connections via TCP probes
+    /// - rtmp_live: Live stream mode (optimizes for live rather than VOD)
     fn add_rtmp_options(url: &str) -> String {
         if !url.starts_with("rtmp://") && !url.starts_with("rtmps://") {
             return url.to_string();
         }
 
-        // FFmpeg RTMP options for connection resilience
+        // FFmpeg RTMP protocol options verified in FFmpeg documentation
+        // https://ffmpeg.org/ffmpeg-protocols.html#rtmp
         let options = [
-            ("timeout", "30000000"),      // 30 seconds in microseconds
-            ("rtmp_buffer", "30000"),     // 30 second buffer in milliseconds
-            ("tcp_keepalive", "1"),       // Enable TCP keepalive
-            ("rtmp_live", "live"),        // Live stream mode
+            ("timeout", "30000000"),    // 30 seconds in microseconds (receive timeout)
+            ("rtmp_buffer", "30000"),   // 30 seconds in milliseconds (client buffer)
+            ("tcp_keepalive", "1"),     // Enable TCP keepalive probes
+            ("rtmp_live", "live"),      // Live stream mode
         ];
 
         // Check if URL already has query parameters
@@ -1626,17 +1627,14 @@ impl FFmpegHandler {
 
         let meter_output = Self::meter_output_url_for_group(&group.id);
 
+        // Always use onfail=ignore for RTMP outputs to prevent one failed connection
+        // from killing the stats meter and potentially other outputs
         let mut tee_outputs: Vec<String> = Vec::new();
-        if target_outputs.len() == 1 {
-            let output = &target_outputs[0];
-            tee_outputs.push(format!("[f={}]{output}", group.container.format));
-        } else {
-            tee_outputs.extend(
-                target_outputs
-                    .iter()
-                    .map(|output| format!("[f={}:onfail=ignore]{output}", group.container.format))
-            );
-        }
+        tee_outputs.extend(
+            target_outputs
+                .iter()
+                .map(|output| format!("[f={}:onfail=ignore]{output}", group.container.format))
+        );
         tee_outputs.push(format!("[f=mpegts:onfail=ignore]{meter_output}"));
 
         args.push("-f".to_string());
