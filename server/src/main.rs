@@ -159,7 +159,13 @@ impl Log for ServerLogger {
         let line = format!("[{date}][{time}][{target}][{level}] {message}");
 
         if let Ok(mut file) = self.file.try_lock() {
-            let _ = writeln!(file, "{line}");
+            if let Err(e) = writeln!(file, "{line}") {
+                eprintln!("Failed to write log: {e}");
+            }
+            // Flush after every write to ensure logs persist on crash
+            if let Err(e) = file.flush() {
+                eprintln!("Failed to flush log: {e}");
+            }
         }
 
         let level_number = match level {
@@ -176,7 +182,11 @@ impl Log for ServerLogger {
         );
     }
 
-    fn flush(&self) {}
+    fn flush(&self) {
+        if let Ok(mut file) = self.file.try_lock() {
+            let _ = file.flush();
+        }
+    }
 }
 
 // ============================================================================
@@ -875,6 +885,8 @@ async fn invoke_command(
             let incoming_url: String = get_arg(&payload, "incomingUrl")?;
             let event_sink: Arc<dyn EventSink> = Arc::new(state.event_bus.clone());
             let pid = state.ffmpeg_handler.start(&group, &incoming_url, event_sink)?;
+            // Reset reconnection state on successful manual start
+            state.ffmpeg_handler.reset_reconnection_state(&group.id);
             Ok(json!(pid))
         }
         "start_all_streams" => {
@@ -892,6 +904,15 @@ async fn invoke_command(
         "stop_all_streams" => {
             state.ffmpeg_handler.stop_all()?;
             Ok(Value::Null)
+        }
+        "retry_stream" => {
+            let group_id: String = get_arg(&payload, "groupId")?;
+            let event_sink: Arc<dyn EventSink> = Arc::new(state.event_bus.clone());
+            let (pid, next_delay) = state.ffmpeg_handler.retry_group(&group_id, event_sink)?;
+            Ok(json!({
+                "pid": pid,
+                "nextDelaySecs": next_delay.map(|d| d.as_secs())
+            }))
         }
         "get_active_stream_count" => Ok(json!(state.ffmpeg_handler.active_count())),
         "is_group_streaming" => {

@@ -14,6 +14,60 @@ use crate::services::{emit_event, EventSink};
 use crate::models::{OutputGroup, StreamStats};
 use crate::services::PlatformRegistry;
 
+/// Reconnection configuration and state
+#[derive(Debug, Clone)]
+struct ReconnectionConfig {
+    max_retries: u32,
+    initial_delay_secs: u64,
+    max_delay_secs: u64,
+}
+
+impl Default for ReconnectionConfig {
+    fn default() -> Self {
+        Self {
+            max_retries: 5,
+            initial_delay_secs: 5,
+            max_delay_secs: 120,
+        }
+    }
+}
+
+/// Tracks reconnection attempts for a group
+#[derive(Debug, Clone)]
+struct ReconnectionState {
+    attempt: u32,
+    last_attempt: Option<Instant>,
+}
+
+impl ReconnectionState {
+    fn new() -> Self {
+        Self {
+            attempt: 0,
+            last_attempt: None,
+        }
+    }
+
+    fn increment(&mut self) {
+        self.attempt += 1;
+        self.last_attempt = Some(Instant::now());
+    }
+
+    fn reset(&mut self) {
+        self.attempt = 0;
+        self.last_attempt = None;
+    }
+
+    fn should_retry(&self, config: &ReconnectionConfig) -> bool {
+        self.attempt < config.max_retries
+    }
+
+    fn next_delay(&self, config: &ReconnectionConfig) -> Duration {
+        // Exponential backoff: initial * 2^attempt, capped at max_delay
+        let delay_secs = config.initial_delay_secs * (1 << self.attempt.min(6));
+        Duration::from_secs(delay_secs.min(config.max_delay_secs))
+    }
+}
+
 // Windows: Hide console windows for spawned processes
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -25,6 +79,7 @@ struct ProcessInfo {
     child: Child,
     start_time: Instant,
     group_id: String,
+    reconnection_state: ReconnectionState,
 }
 
 /// Cached configuration for restarting groups when relay output set changes
@@ -53,6 +108,8 @@ pub struct FFmpegHandler {
     relay_refcount: Arc<AtomicUsize>,
     /// Platform registry for URL normalization and redaction
     platform_registry: PlatformRegistry,
+    /// Reconnection configuration
+    reconnection_config: ReconnectionConfig,
 }
 
 impl FFmpegHandler {
@@ -70,6 +127,43 @@ impl FFmpegHandler {
     const METER_PORT_BASE: u16 = 40000;
     const METER_PORT_RANGE: u16 = 10000;
     const METER_UDP_QUERY: &'static str = "pkt_size=1316";
+
+    /// Parse Windows error codes and FFmpeg error codes from log lines
+    fn parse_error_details(lines: &VecDeque<String>) -> Option<String> {
+        for line in lines.iter().rev() {
+            // Windows socket error codes
+            if line.contains("10054") {
+                return Some("Connection reset by remote server (10054 - WSAECONNRESET)".to_string());
+            }
+            if line.contains("10053") {
+                return Some("Connection aborted by network (10053 - WSAECONNABORTED)".to_string());
+            }
+            if line.contains("10060") {
+                return Some("Connection timed out (10060 - WSAETIMEDOUT)".to_string());
+            }
+            if line.contains("10061") {
+                return Some("Connection refused by server (10061 - WSAECONNREFUSED)".to_string());
+            }
+            if line.contains("10065") {
+                return Some("No route to host (10065 - WSAEHOSTUNREACH)".to_string());
+            }
+
+            // FFmpeg error codes
+            if line.contains("error code: -5") || line.contains("code -5") {
+                return Some("I/O error (-5 - EIO): Network connection lost".to_string());
+            }
+            if line.contains("Connection refused") {
+                return Some("RTMP server refused connection".to_string());
+            }
+            if line.contains("Connection timed out") {
+                return Some("RTMP server connection timed out".to_string());
+            }
+            if line.contains("error muxing packet") {
+                return Some("Failed to send packet to server (possible network issue)".to_string());
+            }
+        }
+        None
+    }
 
     /// Create FFmpegHandler with optional custom FFmpeg path from settings
     /// Falls back to auto-discovery if custom path is empty or invalid
@@ -94,6 +188,7 @@ impl FFmpegHandler {
             active_groups: Arc::new(Mutex::new(HashMap::new())),
             relay_refcount: Arc::new(AtomicUsize::new(0)),
             platform_registry: PlatformRegistry::new(),
+            reconnection_config: ReconnectionConfig::default(),
         }
     }
 
@@ -108,6 +203,7 @@ impl FFmpegHandler {
             active_groups: Arc::new(Mutex::new(HashMap::new())),
             relay_refcount: Arc::new(AtomicUsize::new(0)),
             platform_registry: PlatformRegistry::new(),
+            reconnection_config: ReconnectionConfig::default(),
         }
     }
 
@@ -368,6 +464,7 @@ impl FFmpegHandler {
                 child,
                 start_time: Instant::now(),
                 group_id: group_id.clone(),
+                reconnection_state: ReconnectionState::new(),
             });
         }
 
@@ -699,6 +796,9 @@ impl FFmpegHandler {
                 }
             }
 
+            // Parse error details from recent log lines
+            let error_details = Self::parse_error_details(&recent_lines);
+
             // Determine if this was a crash or normal exit
             let error_message = match exit_status {
                 Some(status) if status.success() => {
@@ -709,29 +809,44 @@ impl FFmpegHandler {
                 Some(status) => {
                     // FFmpeg exited with error
                     let code = status.code().unwrap_or(-1);
-                    Some(format!("FFmpeg exited with code {code}"))
+                    let base_msg = format!("FFmpeg exited with code {code}");
+
+                    // Append detailed error if available
+                    if let Some(details) = error_details {
+                        Some(format!("{base_msg}: {details}"))
+                    } else {
+                        Some(base_msg)
+                    }
                 }
                 None => {
                     // Couldn't get exit status
-                    Some("FFmpeg process terminated unexpectedly".to_string())
+                    let base_msg = "FFmpeg process terminated unexpectedly".to_string();
+                    if let Some(details) = error_details {
+                        Some(format!("{base_msg}: {details}"))
+                    } else {
+                        Some(base_msg)
+                    }
                 }
             };
 
             if let Some(error) = error_message {
-                log::warn!("[FFmpeg:{group_id}] Stream error: {error}");
+                log::error!("[FFmpeg:{group_id}] Stream crashed: {error}");
                 if !recent_lines.is_empty() {
-                    log::warn!("[FFmpeg:{group_id}] Last stderr lines:");
-                    for entry in recent_lines {
-                        log::warn!("[FFmpeg:{group_id}] {entry}");
+                    log::warn!("[FFmpeg:{group_id}] Last 10 stderr lines:");
+                    for entry in recent_lines.iter().rev().take(10).rev() {
+                        log::warn!("[FFmpeg:{group_id}]   {entry}");
                     }
                 }
-                // Emit stream_error event with group_id and error message
+
+                // Emit stream_error event with group_id, error message, and reconnection hint
                 emit_event(
                     event_sink.as_ref(),
                     "stream_error",
                     &serde_json::json!({
                         "groupId": group_id,
-                        "error": error
+                        "error": error,
+                        "canRetry": true,
+                        "suggestion": "Stream connection lost. Click retry to reconnect automatically."
                     }),
                 );
             } else {
@@ -982,6 +1097,111 @@ impl FFmpegHandler {
 
         // Start with updated target list (disabled targets will be filtered out)
         self.start(group, incoming_url, event_sink)
+    }
+
+    /// Retry a failed group with exponential backoff
+    /// Returns the delay that should be waited before the next retry
+    pub fn retry_group(
+        &self,
+        group_id: &str,
+        event_sink: Arc<dyn EventSink>,
+    ) -> Result<(u32, Option<Duration>), String> {
+        // Get the active group configuration
+        let active_groups = self.active_groups.lock()
+            .map_err(|e| format!("Lock poisoned: {e}"))?;
+
+        let config = active_groups.get(group_id)
+            .ok_or_else(|| "Group not found in active groups".to_string())?;
+
+        let group = config.group.clone();
+        drop(active_groups);
+
+        // Check if the group is already running
+        if self.is_streaming(group_id) {
+            return Err("Group is already streaming".to_string());
+        }
+
+        // Get or create reconnection state
+        let mut reconnection_state = {
+            let processes = self.processes.lock()
+                .map_err(|e| format!("Lock poisoned: {e}"))?;
+
+            processes.get(group_id)
+                .map(|info| info.reconnection_state.clone())
+                .unwrap_or_else(ReconnectionState::new)
+        };
+
+        // Check if we should retry
+        if !reconnection_state.should_retry(&self.reconnection_config) {
+            return Err(format!(
+                "Maximum retry attempts ({}) reached",
+                self.reconnection_config.max_retries
+            ));
+        }
+
+        // Calculate backoff delay
+        let delay = reconnection_state.next_delay(&self.reconnection_config);
+
+        // Log retry attempt
+        log::info!(
+            "[FFmpeg:{group_id}] Retrying stream (attempt {}/{}) after {} seconds",
+            reconnection_state.attempt + 1,
+            self.reconnection_config.max_retries,
+            delay.as_secs()
+        );
+
+        // Emit reconnecting event
+        emit_event(
+            event_sink.as_ref(),
+            "stream_reconnecting",
+            &serde_json::json!({
+                "groupId": group_id,
+                "attempt": reconnection_state.attempt + 1,
+                "maxAttempts": self.reconnection_config.max_retries,
+                "delaySecs": delay.as_secs()
+            }),
+        );
+
+        // Sleep for backoff delay
+        thread::sleep(delay);
+
+        // Increment retry counter
+        reconnection_state.increment();
+
+        // Attempt to start the stream
+        match self.start_group_process(&group, event_sink.clone()) {
+            Ok(pid) => {
+                // Success - update reconnection state in process info
+                if let Ok(mut processes) = self.processes.lock() {
+                    if let Some(info) = processes.get_mut(group_id) {
+                        info.reconnection_state = reconnection_state.clone();
+                    }
+                }
+
+                // Calculate next retry delay in case this one fails
+                let next_delay = if reconnection_state.should_retry(&self.reconnection_config) {
+                    Some(reconnection_state.next_delay(&self.reconnection_config))
+                } else {
+                    None
+                };
+
+                log::info!("[FFmpeg:{group_id}] Stream reconnected successfully (PID: {pid})");
+                Ok((pid, next_delay))
+            }
+            Err(e) => {
+                log::error!("[FFmpeg:{group_id}] Reconnection failed: {e}");
+                Err(format!("Failed to reconnect: {e}"))
+            }
+        }
+    }
+
+    /// Reset reconnection state for a group (called on successful manual start)
+    pub fn reset_reconnection_state(&self, group_id: &str) {
+        if let Ok(mut processes) = self.processes.lock() {
+            if let Some(info) = processes.get_mut(group_id) {
+                info.reconnection_state.reset();
+            }
+        }
     }
 
     /// Resolve stream key - supports ${ENV_VAR} syntax
