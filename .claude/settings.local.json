@@ -29,7 +29,10 @@
       "Bash(pnpm typecheck:*)",
       "Bash(cmd /c \"taskkill /F /PID 29700\")",
       "Bash(xxd:*)",
-      "Bash(cargo clippy:*)"
+      "Bash(cargo clippy:*)",
+      "Bash(cmd /c \"dir /b /s \"\"%APPDATA%\\\\com.spiritstream.desktop\\\\*.log\"\" 2>nul\")",
+      "Bash(cmd /c \"dir /b /a:d \"\"%APPDATA%\\\\com.spiritstream.desktop\"\" 2>nul\")",
+      "Bash(cmd /c \"dir /s /b \"\"%LOCALAPPDATA%\\\\SpiritStream\\\\*.log\"\" 2>nul\")"
     ]
   }
 }
