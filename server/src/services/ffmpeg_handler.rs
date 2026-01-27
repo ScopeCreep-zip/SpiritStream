@@ -1437,6 +1437,39 @@ impl FFmpegHandler {
     }
 
 
+    /// Add RTMP protocol options to a URL for connection resilience
+    ///
+    /// Matches OBS Studio's RTMP configuration:
+    /// - timeout: 30 seconds (matching OBS receive timeout)
+    /// - rtmp_buffer: 30 seconds (matching OBS buffer)
+    /// - tcp_keepalive: Enabled to detect dead connections
+    /// - rtmp_live: Set to 'live' for live streaming
+    fn add_rtmp_options(url: &str) -> String {
+        if !url.starts_with("rtmp://") && !url.starts_with("rtmps://") {
+            return url.to_string();
+        }
+
+        // FFmpeg RTMP options for connection resilience
+        let options = [
+            ("timeout", "30000000"),      // 30 seconds in microseconds
+            ("rtmp_buffer", "30000"),     // 30 second buffer in milliseconds
+            ("tcp_keepalive", "1"),       // Enable TCP keepalive
+            ("rtmp_live", "live"),        // Live stream mode
+        ];
+
+        // Check if URL already has query parameters
+        let separator = if url.contains('?') { "&" } else { "?" };
+
+        // Build query string
+        let query = options
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join("&");
+
+        format!("{url}{separator}{query}")
+    }
+
     /// Build FFmpeg arguments for an output group
     ///
     /// Groups read from the shared TCP relay so they can restart independently.
@@ -1581,7 +1614,10 @@ impl FFmpegHandler {
             let normalized_url = self.platform_registry.normalize_url(&target.service, &normalized_url);
             let resolved_key = Self::resolve_stream_key(&target.stream_key);
             let full_url = self.platform_registry.build_url_with_key(&target.service, &normalized_url, &resolved_key);
-            target_outputs.push(full_url);
+
+            // Add RTMP protocol options for connection resilience (matches OBS configuration)
+            let full_url_with_options = Self::add_rtmp_options(&full_url);
+            target_outputs.push(full_url_with_options);
         }
 
         if target_outputs.is_empty() {
