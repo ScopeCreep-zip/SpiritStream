@@ -7,7 +7,7 @@ use std::net::UdpSocket;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU16, AtomicU64, AtomicUsize, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 use crate::services::{emit_event, EventSink};
@@ -110,13 +110,19 @@ pub struct FFmpegHandler {
     platform_registry: PlatformRegistry,
     /// Reconnection configuration
     reconnection_config: ReconnectionConfig,
+    /// Port assignments for groups (group_id -> port_offset)
+    /// Simplified sequential port allocation instead of hash-based
+    port_assignments: Arc<Mutex<HashMap<String, u16>>>,
+    /// Next available port offset for new groups
+    next_port_offset: Arc<AtomicU16>,
 }
 
 impl FFmpegHandler {
-    // Unicast relay fan-out using deterministic local TCP ports per group
+    // Simplified sequential port allocation for relay fan-out
+    // Since only one profile is active at a time, we can use simple sequential ports
+    // Each output group gets: relay_port = BASE + (index * 2), meter_port = BASE + (index * 2) + 1
     const RELAY_HOST: &'static str = "localhost";
-    const RELAY_PORT_BASE: u16 = 20000;
-    const RELAY_PORT_RANGE: u16 = 20000;
+    const RELAY_PORT_BASE: u16 = 20000;  // First group: 20000 (relay), 20001 (meter)
     const RELAY_TCP_OUT_QUERY: &'static str = "tcp_nodelay=1";
     const RELAY_TCP_IN_QUERY: &'static str = "listen=1&tcp_nodelay=1";
     const RELAY_RTMP_TIMEOUT_SECS: u32 = 604_800;
@@ -124,8 +130,6 @@ impl FFmpegHandler {
     const RELAY_TEE_FIFO_OPTIONS: &'static str =
         "fifo_format=mpegts:queue_size=512:drop_pkts_on_overflow=1:attempt_recovery=1:recover_any_error=1";
     const METER_HOST: &'static str = "127.0.0.1";
-    const METER_PORT_BASE: u16 = 40000;
-    const METER_PORT_RANGE: u16 = 10000;
     const METER_UDP_QUERY: &'static str = "pkt_size=1316";
 
     /// Parse Windows error codes and FFmpeg error codes from log lines
@@ -189,6 +193,8 @@ impl FFmpegHandler {
             relay_refcount: Arc::new(AtomicUsize::new(0)),
             platform_registry: PlatformRegistry::new(),
             reconnection_config: ReconnectionConfig::default(),
+            port_assignments: Arc::new(Mutex::new(HashMap::new())),
+            next_port_offset: Arc::new(AtomicU16::new(0)),
         }
     }
 
@@ -204,6 +210,8 @@ impl FFmpegHandler {
             relay_refcount: Arc::new(AtomicUsize::new(0)),
             platform_registry: PlatformRegistry::new(),
             reconnection_config: ReconnectionConfig::default(),
+            port_assignments: Arc::new(Mutex::new(HashMap::new())),
+            next_port_offset: Arc::new(AtomicU16::new(0)),
         }
     }
 
@@ -472,10 +480,12 @@ impl FFmpegHandler {
 
         let event_sink_clone = Arc::clone(&event_sink);
         let processes_clone = Arc::clone(&self.processes);
-        let meter_bytes = Self::start_bitrate_meter(&group_id, Arc::clone(&processes_clone));
+        let meter_bytes = self.start_bitrate_meter(&group_id, Arc::clone(&processes_clone));
         let relay_clone = Arc::clone(&self.relay);
         let stopping_clone = Arc::clone(&self.stopping_groups);
         let relay_refcount_clone = Arc::clone(&self.relay_refcount);
+        let port_assignments_clone = Arc::clone(&self.port_assignments);
+        let next_port_offset_clone = Arc::clone(&self.next_port_offset);
         let group_id_clone = group_id.clone();
 
         thread::spawn(move || {
@@ -488,6 +498,8 @@ impl FFmpegHandler {
                 stopping_clone,
                 relay_clone,
                 relay_refcount_clone,
+                port_assignments_clone,
+                next_port_offset_clone,
             );
         });
 
@@ -593,10 +605,11 @@ impl FFmpegHandler {
     }
 
     fn start_bitrate_meter(
+        &self,
         group_id: &str,
         processes: Arc<Mutex<HashMap<String, ProcessInfo>>>,
     ) -> Option<Arc<AtomicU64>> {
-        let port = Self::meter_port_for_group(group_id);
+        let port = self.meter_port_for_group(group_id);
         let bind_addr = format!("{}:{}", Self::METER_HOST, port);
         let socket = match UdpSocket::bind(&bind_addr) {
             Ok(socket) => socket,
@@ -654,6 +667,8 @@ impl FFmpegHandler {
         stopping_groups: Arc<Mutex<HashSet<String>>>,
         relay: Arc<Mutex<Option<RelayProcess>>>,
         relay_refcount: Arc<AtomicUsize>,
+        port_assignments: Arc<Mutex<HashMap<String, u16>>>,
+        next_port_offset: Arc<AtomicU16>,
     ) {
         let reader = BufReader::new(stderr);
         let mut stats = StreamStats::new(group_id.clone());
@@ -775,6 +790,18 @@ impl FFmpegHandler {
             let exit_status = {
                 if let Ok(mut procs) = processes.lock() {
                     if let Some(mut info) = procs.remove(&group_id) {
+                        // Free the port assignment for this crashed group
+                        if let Ok(mut assignments) = port_assignments.lock() {
+                            if let Some(offset) = assignments.remove(&group_id) {
+                                log::debug!("Freed port offset {offset} from crashed group {group_id}");
+                                // Reset counter if all assignments are freed
+                                if assignments.is_empty() {
+                                    next_port_offset.store(0, Ordering::SeqCst);
+                                    log::debug!("All ports freed after crash, reset counter to 0");
+                                }
+                            }
+                        }
+
                         // Try to get exit status
                         match info.child.try_wait() {
                             Ok(Some(status)) => Some(status),
@@ -890,6 +917,8 @@ impl FFmpegHandler {
 
         if let Some(mut info) = removed {
             self.stop_child(&mut info.child);
+            // Free the port assignment for this group
+            self.free_port_offset(group_id);
         }
         if should_stop_relay {
             self.stop_relay();
@@ -911,6 +940,14 @@ impl FFmpegHandler {
             self.stop_child(&mut info.child);
         }
         self.stop_relay();
+
+        // Clear all port assignments since all groups are stopped
+        if let Ok(mut assignments) = self.port_assignments.lock() {
+            assignments.clear();
+            self.next_port_offset.store(0, Ordering::SeqCst);
+            log::debug!("All groups stopped, cleared all port assignments");
+        }
+
         Ok(())
     }
 
@@ -1238,7 +1275,7 @@ impl FFmpegHandler {
             return Err("Relay fan-out requires at least one group".to_string());
         }
 
-        let outputs = Self::relay_tee_output_list(group_ids);
+        let outputs = self.relay_tee_output_list(group_ids);
         let listen_url = Self::normalize_relay_input_url(incoming_url);
         Ok(vec![
             "-listen".to_string(),
@@ -1267,68 +1304,94 @@ impl FFmpegHandler {
         ])
     }
 
-    fn relay_port_for_group(group_id: &str) -> u16 {
-        const FNV_OFFSET: u32 = 2166136261;
-        const FNV_PRIME: u32 = 16777619;
+    /// Get or assign a port offset for a group (simplified sequential allocation)
+    fn get_port_offset(&self, group_id: &str) -> u16 {
+        let mut assignments = self.port_assignments.lock()
+            .unwrap_or_else(|e| {
+                log::warn!("Port assignments mutex poisoned, recovering: {e}");
+                e.into_inner()
+            });
 
-        let mut hash = FNV_OFFSET;
-        for &b in group_id.as_bytes() {
-            hash ^= b as u32;
-            hash = hash.wrapping_mul(FNV_PRIME);
+        // Return existing assignment if found
+        if let Some(&offset) = assignments.get(group_id) {
+            return offset;
         }
 
-        let range = Self::RELAY_PORT_RANGE as u32;
-        let port = Self::RELAY_PORT_BASE as u32 + (hash % range);
-        port as u16
+        // Assign next available offset
+        let offset = self.next_port_offset.fetch_add(1, Ordering::SeqCst);
+        assignments.insert(group_id.to_string(), offset);
+
+        log::debug!("Assigned port offset {offset} to group {group_id} (relay: {}, meter: {})",
+            Self::RELAY_PORT_BASE + (offset * 2),
+            Self::RELAY_PORT_BASE + (offset * 2) + 1
+        );
+
+        offset
     }
 
-    fn relay_output_url_for_group(group_id: &str) -> String {
+    /// Free port assignment when a group stops
+    fn free_port_offset(&self, group_id: &str) {
+        let mut assignments = self.port_assignments.lock()
+            .unwrap_or_else(|e| {
+                log::warn!("Port assignments mutex poisoned, recovering: {e}");
+                e.into_inner()
+            });
+
+        if let Some(offset) = assignments.remove(group_id) {
+            log::debug!("Freed port offset {offset} from group {group_id}");
+
+            // Reset counter if all assignments are freed
+            if assignments.is_empty() {
+                self.next_port_offset.store(0, Ordering::SeqCst);
+                log::debug!("All ports freed, reset counter to 0");
+            }
+        }
+    }
+
+    fn relay_port_for_group(&self, group_id: &str) -> u16 {
+        let offset = self.get_port_offset(group_id);
+        // Each group gets: relay_port = BASE + (offset * 2)
+        Self::RELAY_PORT_BASE + (offset * 2)
+    }
+
+    fn relay_output_url_for_group(&self, group_id: &str) -> String {
         format!(
             "tcp://{}:{}?{}",
             Self::RELAY_HOST,
-            Self::relay_port_for_group(group_id),
+            self.relay_port_for_group(group_id),
             Self::RELAY_TCP_OUT_QUERY
         )
     }
 
-    fn relay_input_url_for_group(group_id: &str) -> String {
+    fn relay_input_url_for_group(&self, group_id: &str) -> String {
         format!(
             "tcp://{}:{}?{}",
             Self::RELAY_HOST,
-            Self::relay_port_for_group(group_id),
+            self.relay_port_for_group(group_id),
             Self::RELAY_TCP_IN_QUERY
         )
     }
 
-    fn meter_port_for_group(group_id: &str) -> u16 {
-        const FNV_OFFSET: u32 = 2166136261;
-        const FNV_PRIME: u32 = 16777619;
-
-        let mut hash = FNV_OFFSET;
-        for &b in group_id.as_bytes() {
-            hash ^= b as u32;
-            hash = hash.wrapping_mul(FNV_PRIME);
-        }
-
-        let range = Self::METER_PORT_RANGE as u32;
-        let port = Self::METER_PORT_BASE as u32 + (hash % range);
-        port as u16
+    fn meter_port_for_group(&self, group_id: &str) -> u16 {
+        let offset = self.get_port_offset(group_id);
+        // Each group gets: meter_port = BASE + (offset * 2) + 1
+        Self::RELAY_PORT_BASE + (offset * 2) + 1
     }
 
-    fn meter_output_url_for_group(group_id: &str) -> String {
+    fn meter_output_url_for_group(&self, group_id: &str) -> String {
         format!(
             "udp://{}:{}?{}",
             Self::METER_HOST,
-            Self::meter_port_for_group(group_id),
+            self.meter_port_for_group(group_id),
             Self::METER_UDP_QUERY
         )
     }
 
-    fn relay_tee_output_list(group_ids: &HashSet<String>) -> String {
+    fn relay_tee_output_list(&self, group_ids: &HashSet<String>) -> String {
         let mut ids: Vec<&String> = group_ids.iter().collect();
         ids.sort();
         ids.into_iter()
-            .map(|id| format!("[f=mpegts]{}", Self::relay_output_url_for_group(id)))
+            .map(|id| format!("[f=mpegts]{}", self.relay_output_url_for_group(id)))
             .collect::<Vec<String>>()
             .join("|")
     }
@@ -1485,7 +1548,7 @@ impl FFmpegHandler {
 
         let mut args = vec![
             "-i".to_string(),
-            Self::relay_input_url_for_group(&group.id),
+            self.relay_input_url_for_group(&group.id),
         ];
 
         if use_stream_copy {
@@ -1625,7 +1688,7 @@ impl FFmpegHandler {
             return args;
         }
 
-        let meter_output = Self::meter_output_url_for_group(&group.id);
+        let meter_output = self.meter_output_url_for_group(&group.id);
 
         // Always use onfail=ignore for RTMP outputs to prevent one failed connection
         // from killing the stats meter and potentially other outputs
