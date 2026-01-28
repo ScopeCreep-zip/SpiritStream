@@ -8,6 +8,14 @@
   },
   "services": [
     {
+      "name": "Custom",
+      "displayName": "Custom RTMP Server",
+      "defaultUrl": "rtmp://",
+      "streamKeyPlacement": "append",
+      "abbreviation": "CU",
+      "color": "#9489A8"
+    },
+    {
       "name": "YouTube - RTMPS",
       "displayName": "YouTube",
       "defaultUrl": "rtmps://a.rtmps.youtube.com:443/live2",

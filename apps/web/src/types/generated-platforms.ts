@@ -7,6 +7,7 @@
  * All platforms use RTMP/RTMPS with either "append" or "in_url_template" stream key placement
  */
 export type Platform =
+  | 'Custom'
   | 'YouTube - RTMPS'
   | 'Twitch'
   | 'Kick'
@@ -107,6 +108,14 @@ export const PLATFORMS: Record<Platform, {
   defaultServer: string;
   streamKeyPlacement: 'append' | 'in_url_template';
 }> = {
+  'Custom': {
+    displayName: 'Custom RTMP Server',
+    abbreviation: 'CU',
+    color: '#9489A8',
+    textColor: '#000000',
+    defaultServer: 'rtmp:',
+    streamKeyPlacement: 'append',
+  },
   'YouTube - RTMPS': {
     displayName: 'YouTube',
     abbreviation: 'YT',
