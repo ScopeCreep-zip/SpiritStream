@@ -10,7 +10,8 @@ use tokio::sync::broadcast;
 use tokio::time::timeout;
 use bytes::Bytes;
 
-use crate::models::Source;
+use crate::models::{Scene, Source};
+use crate::services::Compositor;
 
 /// Timeout for snapshot capture (prevents indefinite blocking)
 const SNAPSHOT_TIMEOUT_SECS: u64 = 10;
@@ -646,12 +647,13 @@ impl PreviewHandler {
         if !self.is_preview_running(&source_id) {
             log::info!("Starting persistent preview for source {} (triggered by snapshot request)", source_id);
 
-            // Start the preview with default params for caching
+            // Start the preview with high quality params for caching
+            // Use at least 720p for good quality, 15fps for smooth preview
             let preview_params = PreviewParams {
-                width: params.width.max(320),  // Use at least 320px for decent quality
-                height: params.height.max(180),
-                fps: 10,  // Lower FPS for background preview
-                quality: params.quality,
+                width: params.width.max(1280),
+                height: params.height.max(720),
+                fps: 15,
+                quality: params.quality.min(3),  // Ensure good quality (lower = better)
             };
 
             match self.start_source_preview(source, preview_params) {
@@ -761,6 +763,203 @@ impl PreviewHandler {
                 let _ = preview.child.kill();
                 let _ = preview.child.wait();
                 log::info!("Stopped preview for source: {}", source_id);
+            }
+        }
+    }
+
+    /// Start a composed scene preview using Compositor service
+    /// Returns a broadcast receiver for the MJPEG frames
+    pub fn start_scene_preview(
+        &self,
+        scene: &Scene,
+        sources: &[Source],
+        params: PreviewParams,
+    ) -> Result<broadcast::Receiver<Bytes>, String> {
+        let scene_id = scene.id.clone();
+
+        // Stop any existing scene preview
+        self.stop_scene_preview();
+
+        // Build FFmpeg command using Compositor
+        // 1. Build input args for all sources used in the scene
+        let input_args = Compositor::build_input_args(scene, sources);
+
+        if input_args.is_empty() {
+            return Err("No sources configured for scene".to_string());
+        }
+
+        // 2. Build video filter_complex for compositing (video only for preview)
+        let video_filter = Compositor::build_video_filter(scene, sources);
+
+        // 3. Build MJPEG output args
+        let mjpeg_output_args = vec![
+            // Map the composed video output
+            "-map".to_string(), "[vout]".to_string(),
+            // Scale to preview size
+            "-vf".to_string(), format!("scale={}:{}", params.width, params.height),
+            // MJPEG output codec
+            "-c:v".to_string(), "mjpeg".to_string(),
+            // Quality (1-31, lower is better)
+            "-q:v".to_string(), params.quality.to_string(),
+            // Frame rate
+            "-r".to_string(), params.fps.to_string(),
+            // Disable audio for preview
+            "-an".to_string(),
+            // Output format: motion JPEG with multipart boundary
+            "-f".to_string(), "mpjpeg".to_string(),
+            "-boundary_tag".to_string(), MJPEG_BOUNDARY.to_string(),
+            // Output to stdout
+            "pipe:1".to_string(),
+        ];
+
+        // Assemble full command
+        let mut args = Vec::new();
+        args.push("-hide_banner".to_string());
+        args.push("-loglevel".to_string());
+        args.push("warning".to_string());
+        args.extend(input_args);
+        args.extend(["-filter_complex".to_string(), video_filter]);
+        args.extend(mjpeg_output_args);
+
+        log::info!("Starting scene preview for {}: {} {}",
+            scene_id, self.ffmpeg_path, args.join(" "));
+
+        // Verify FFmpeg exists
+        if !std::path::Path::new(&self.ffmpeg_path).exists() {
+            return Err(format!("FFmpeg not found at path: {}", self.ffmpeg_path));
+        }
+
+        // Spawn FFmpeg process
+        let mut cmd = Command::new(&self.ffmpeg_path);
+        cmd.args(&args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+
+        let mut child = cmd.spawn()
+            .map_err(|e| format!("Failed to start FFmpeg scene preview: {} (path: {})", e, self.ffmpeg_path))?;
+
+        log::info!("FFmpeg scene preview process started with PID: {}", child.id());
+
+        let stdout = child.stdout.take()
+            .ok_or_else(|| "Failed to capture FFmpeg stdout".to_string())?;
+
+        // Create broadcast channel for frames
+        let (tx, rx) = broadcast::channel::<Bytes>(16);
+
+        // Create shared cache for latest frame
+        let latest_frame: Arc<Mutex<Option<Bytes>>> = Arc::new(Mutex::new(None));
+        let latest_frame_clone = Arc::clone(&latest_frame);
+
+        // Spawn reader thread
+        let scene_id_clone = scene_id.clone();
+        std::thread::spawn(move || {
+            Self::read_mjpeg_stream(stdout, tx, latest_frame_clone, format!("scene:{}", scene_id_clone));
+        });
+
+        // Log stderr in background
+        if let Some(stderr) = child.stderr.take() {
+            let scene_id_log = scene_id.clone();
+            std::thread::spawn(move || {
+                let reader = BufReader::new(stderr);
+                for line in reader.lines().map_while(Result::ok) {
+                    if line.contains("error") || line.contains("Error") || line.contains("Invalid") {
+                        log::warn!("[ScenePreview:{}] {}", scene_id_log, line);
+                    } else if !line.trim().is_empty() {
+                        log::debug!("[ScenePreview:{}] {}", scene_id_log, line);
+                    }
+                }
+                log::debug!("[ScenePreview:{}] stderr reader finished", scene_id_log);
+            });
+        }
+
+        // Store the process with frame cache
+        {
+            let mut scene_preview = self.scene_preview.lock()
+                .map_err(|e| format!("Lock poisoned: {}", e))?;
+
+            *scene_preview = Some(PreviewProcess {
+                child,
+                last_accessed: Instant::now(),
+                latest_frame,
+            });
+        }
+
+        Ok(rx)
+    }
+
+    /// Get cached frame from the scene preview (if available)
+    pub fn get_scene_cached_frame(&self) -> Option<Vec<u8>> {
+        let preview = self.scene_preview.lock().ok()?;
+        let proc = preview.as_ref()?;
+        let frame = proc.latest_frame.lock().ok()?;
+        frame.as_ref().map(|b| b.to_vec())
+    }
+
+    /// Check if scene preview is running
+    pub fn is_scene_preview_running(&self) -> bool {
+        self.scene_preview.lock()
+            .map(|p| p.is_some())
+            .unwrap_or(false)
+    }
+
+    /// Capture a scene snapshot - tries cached frame first, else starts preview
+    pub async fn capture_scene_snapshot(
+        &self,
+        scene: &Scene,
+        sources: &[Source],
+        params: &PreviewParams,
+    ) -> Result<Vec<u8>, String> {
+        // First, try to get a cached frame from a running scene preview
+        if let Some(cached_frame) = self.get_scene_cached_frame() {
+            log::debug!("Returning cached scene frame ({} bytes)", cached_frame.len());
+            return Ok(cached_frame);
+        }
+
+        // No cached frame - try to start a persistent scene preview
+        if !self.is_scene_preview_running() {
+            log::info!("Starting persistent scene preview (triggered by snapshot request)");
+
+            // Start the preview with good quality params for caching
+            let preview_params = PreviewParams {
+                width: params.width.max(1280),
+                height: params.height.max(720),
+                fps: 15,
+                quality: params.quality.min(3),
+            };
+
+            match self.start_scene_preview(scene, sources, preview_params) {
+                Ok(_rx) => {
+                    // Preview started - wait briefly for first frame
+                    for _ in 0..30 { // Wait up to 3 seconds (30 * 100ms)
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        if let Some(cached_frame) = self.get_scene_cached_frame() {
+                            log::debug!("Got first cached scene frame ({} bytes)", cached_frame.len());
+                            return Ok(cached_frame);
+                        }
+                    }
+                    log::warn!("Scene preview started but no frame received within 3 seconds");
+                }
+                Err(e) => {
+                    log::warn!("Failed to start scene preview: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+
+        Err("Failed to capture scene snapshot".to_string())
+    }
+
+    /// Stop the scene preview
+    pub fn stop_scene_preview(&self) {
+        if let Ok(mut scene) = self.scene_preview.lock() {
+            if let Some(mut preview) = scene.take() {
+                let _ = preview.child.kill();
+                let _ = preview.child.wait();
+                log::info!("Stopped scene preview");
             }
         }
     }
