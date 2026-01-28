@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/Button';
 import { Toggle } from '@/components/ui/Toggle';
 import { useProfileStore } from '@/stores/profileStore';
 import { useSourceStore } from '@/stores/sourceStore';
+import { usePermissionCheck, type SourcePermissionType } from '@/stores/permissionStore';
 import { dialogs } from '@/lib/backend/dialogs';
 import type {
   SourceType,
@@ -62,26 +63,29 @@ const SOURCE_TYPES: { type: SourceType; icon: React.ReactNode }[] = [
 
 export function AddSourceModal({ open, onClose, profileName }: AddSourceModalProps) {
   const { t } = useTranslation();
-  const { reloadProfile } = useProfileStore();
+  const { setCurrentSources } = useProfileStore();
   const { addSource, devices, discoverDevices } = useSourceStore();
+  const { ensurePermission } = usePermissionCheck();
 
   const [step, setStep] = useState<ModalStep>('select-type');
   const [selectedType, setSelectedType] = useState<SourceType | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [permissionError, setPermissionError] = useState<{ type: SourcePermissionType; message: string } | null>(null);
   const [formData, setFormData] = useState<Source | null>(null);
 
   // Reset state when modal opens/closes
+  // NOTE: We do NOT call discoverDevices() here to avoid triggering camera/screen access
+  // before the user selects a source type and permission is checked
   useEffect(() => {
     if (open) {
       setStep('select-type');
       setSelectedType(null);
       setFormData(null);
       setError(null);
-      // Refresh devices when modal opens
-      discoverDevices();
+      setPermissionError(null);
     }
-  }, [open, discoverDevices]);
+  }, [open]);
 
   // Auto-select first device when devices finish loading (if none selected yet)
   useEffect(() => {
@@ -102,7 +106,41 @@ export function AddSourceModal({ open, onClose, profileName }: AddSourceModalPro
     }
   }, [devices, formData]);
 
-  const handleSelectType = (type: SourceType) => {
+  const handleSelectType = async (type: SourceType) => {
+    setPermissionError(null);
+    setError(null);
+
+    // Check permissions for device-based sources BEFORE device discovery
+    // This ensures macOS permission dialogs appear before camera LED lights up
+    if (type === 'camera' || type === 'screenCapture' || type === 'audioDevice') {
+      const result = await ensurePermission(type);
+      if (!result.granted && result.permission) {
+        const permissionLabels: Record<SourcePermissionType, string> = {
+          camera: t('permissions.camera', { defaultValue: 'Camera' }),
+          microphone: t('permissions.microphone', { defaultValue: 'Microphone' }),
+          screenRecording: t('permissions.screenRecording', { defaultValue: 'Screen Recording' }),
+        };
+        // Use guidance from backend if available, otherwise use generic message
+        const message = result.guidance ||
+          t('permissions.denied', {
+            permission: permissionLabels[result.permission],
+            defaultValue: `${permissionLabels[result.permission]} permission is required.`,
+          });
+        setPermissionError({
+          type: result.permission,
+          message,
+        });
+        return;
+      }
+    }
+
+    // Permission granted or not required - now discover devices
+    // This triggers device enumeration AFTER permission dialog, so camera LED
+    // won't light up until permission is granted
+    if (type === 'camera' || type === 'screenCapture' || type === 'captureCard' || type === 'audioDevice') {
+      await discoverDevices();
+    }
+
     setSelectedType(type);
     // Initialize form data with defaults for selected type, auto-selecting first available device
     switch (type) {
@@ -153,6 +191,7 @@ export function AddSourceModal({ open, onClose, profileName }: AddSourceModalPro
     setSelectedType(null);
     setFormData(null);
     setError(null);
+    setPermissionError(null);
   };
 
   const handleSave = async () => {
@@ -190,8 +229,10 @@ export function AddSourceModal({ open, onClose, profileName }: AddSourceModalPro
     setError(null);
 
     try {
-      await addSource(profileName, formData);
-      await reloadProfile();
+      // addSource saves to backend and returns updated sources list
+      const updatedSources = await addSource(profileName, formData);
+      // Update local state with new sources - don't reload profile to avoid overwriting local edits
+      setCurrentSources(updatedSources);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -612,6 +653,14 @@ export function AddSourceModal({ open, onClose, profileName }: AddSourceModalPro
       {error && (
         <div className="mb-4 p-3 bg-destructive/20 border border-destructive/30 rounded text-destructive text-sm font-medium">
           {error}
+        </div>
+      )}
+      {permissionError && (
+        <div className="mb-4 p-3 bg-[var(--warning-subtle)] border border-[var(--warning-border)] rounded text-[var(--warning-text)] text-sm">
+          <p className="font-medium mb-1">
+            {t('permissions.required', { defaultValue: 'Permission Required' })}
+          </p>
+          <p>{permissionError.message}</p>
         </div>
       )}
       {step === 'select-type' ? renderTypeSelection() : renderConfigForm()}

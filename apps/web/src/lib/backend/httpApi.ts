@@ -2,6 +2,13 @@ import type { Profile, ProfileSummary, OutputGroup, RtmpInput } from '@/types/pr
 import type { Encoders } from '@/types/stream';
 import type { AppSettings, FFmpegVersionInfo, RotationReport, RtmpTestResult } from '@/types/api';
 import type { ThemeSummary } from '@/types/theme';
+import type {
+  Source,
+  CameraDevice,
+  DisplayInfo,
+  AudioInputDevice,
+  CaptureCardDevice,
+} from '@/types/source';
 import { getBackendBaseUrl, safeFetch } from './env';
 
 interface InvokeOk<T> {
@@ -159,32 +166,34 @@ export const api = {
       invokeHttp<void>('stop_source_preview', { sourceId }),
     /** Stop all active previews */
     stopAllPreviews: () => invokeHttp<void>('stop_all_previews'),
-
-    // WebRTC Preview (go2rtc)
-
-    /**
-     * Start WebRTC preview for a source.
-     * Returns stream ID and WebSocket URL for WebRTC signaling.
-     * Requires go2rtc binary to be installed.
-     */
-    startWebrtcPreview: (sourceId: string) =>
-      invokeHttp<{ streamId: string; webrtcWsUrl: string }>('start_webrtc_preview', { sourceId }),
-
-    /**
-     * Stop WebRTC preview for a source.
-     */
-    stopWebrtcPreview: (sourceId: string) =>
-      invokeHttp<void>('stop_webrtc_preview', { sourceId }),
-
-    /**
-     * Get WebRTC preview status (availability, running state, active streams).
-     */
-    getWebrtcStatus: () =>
+  },
+  device: {
+    /** Refresh all device types at once */
+    refreshAll: () =>
       invokeHttp<{
-        available: boolean;
-        running: boolean;
-        activeStreams: number;
-        apiBaseUrl: string;
-      }>('get_webrtc_preview_status'),
+        cameras: CameraDevice[];
+        displays: DisplayInfo[];
+        audioDevices: AudioInputDevice[];
+        captureCards: CaptureCardDevice[];
+      }>('refresh_devices'),
+    /** List available cameras */
+    listCameras: () => invokeHttp<CameraDevice[]>('list_cameras'),
+    /** List available displays for screen capture */
+    listDisplays: () => invokeHttp<DisplayInfo[]>('list_displays'),
+    /** List available audio input devices */
+    listAudioDevices: () => invokeHttp<AudioInputDevice[]>('list_audio_devices'),
+    /** List available capture cards */
+    listCaptureCards: () => invokeHttp<CaptureCardDevice[]>('list_capture_cards'),
+  },
+  source: {
+    /** Add a source to a profile. Returns updated sources array. */
+    add: (profileName: string, source: Source, password?: string) =>
+      invokeHttp<Source[]>('add_source', { profileName, source, password }),
+    /** Update a source in a profile. Returns the updated source. */
+    update: (profileName: string, sourceId: string, updates: Partial<Source>, password?: string) =>
+      invokeHttp<Source>('update_source', { profileName, sourceId, updates, password }),
+    /** Remove a source from a profile. */
+    remove: (profileName: string, sourceId: string, password?: string) =>
+      invokeHttp<void>('remove_source', { profileName, sourceId, password }),
   },
 };
