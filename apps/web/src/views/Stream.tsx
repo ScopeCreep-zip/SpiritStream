@@ -171,6 +171,7 @@ export function Stream() {
             sources={current.sources}
             selectedLayerId={selectedLayerId}
             onSelectLayer={selectLayer}
+            profileName={current.name}
           />
         </div>
 
