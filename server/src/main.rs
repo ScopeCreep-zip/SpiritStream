@@ -966,6 +966,179 @@ async fn source_snapshot_handler(
     }
 }
 
+/// GET /api/preview/scene/:profile/:scene_id - Stream MJPEG preview for a composed scene
+async fn scene_preview_handler(
+    State(state): State<AppState>,
+    Path((profile_name, scene_id)): Path<(String, String)>,
+    Query(query): Query<PreviewQuery>,
+    cookies: Cookies,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    log::info!("Scene preview request for profile:{} scene:{}", profile_name, scene_id);
+
+    // Authentication check
+    if let Some(expected) = state.auth_token.as_deref() {
+        let authenticated = cookies.get(AUTH_COOKIE_NAME).is_some()
+            || bearer_token(&headers).is_some_and(|t| verify_token(expected, t));
+
+        if !authenticated {
+            log::warn!("Scene preview request unauthorized");
+            return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+        }
+    }
+
+    let params: PreviewParams = query.into();
+    log::debug!("Scene preview params: {}x{} @ {} fps, quality {}", params.width, params.height, params.fps, params.quality);
+
+    // Load profile and find scene
+    let (scene, sources) = {
+        match state.profile_manager.load(&profile_name, None).await {
+            Ok(profile) => {
+                let scene = profile.scenes.into_iter().find(|s| s.id == scene_id);
+                let sources = profile.sources;
+                match scene {
+                    Some(s) => (s, sources),
+                    None => {
+                        log::warn!("Scene {} not found in profile {}", scene_id, profile_name);
+                        return (StatusCode::NOT_FOUND, "Scene not found").into_response();
+                    }
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to load profile for scene preview: {}", e);
+                return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load profile").into_response();
+            }
+        }
+    };
+
+    // Start scene preview
+    let rx = match state.preview_handler.start_scene_preview(&scene, &sources, params) {
+        Ok(rx) => rx,
+        Err(e) => {
+            log::error!("Failed to start scene preview: {}", e);
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to start preview: {}", e)).into_response();
+        }
+    };
+
+    // Convert broadcast receiver to stream
+    let stream = BroadcastStream::new(rx);
+
+    // Build MJPEG streaming response
+    let body_stream = stream.filter_map(move |result| {
+        async move {
+            match result {
+                Ok(frame_data) => {
+                    let header = format!(
+                        "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: {}\r\n\r\n",
+                        frame_data.len()
+                    );
+                    let mut response = Vec::with_capacity(frame_data.len() + header.len() + 2);
+                    response.extend_from_slice(header.as_bytes());
+                    response.extend_from_slice(&frame_data);
+                    response.extend_from_slice(b"\r\n");
+                    Some(Ok::<_, std::io::Error>(axum::body::Bytes::from(response)))
+                }
+                Err(_) => None,
+            }
+        }
+    });
+
+    let body = Body::from_stream(body_stream);
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(
+            header::CONTENT_TYPE,
+            "multipart/x-mixed-replace; boundary=frame",
+        )
+        .header(header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")
+        .header(header::PRAGMA, "no-cache")
+        .header(header::EXPIRES, "0")
+        .body(body)
+        .unwrap()
+        .into_response()
+}
+
+/// GET /api/preview/scene/:profile/:scene_id/snapshot - Get a single JPEG snapshot of composed scene
+async fn scene_snapshot_handler(
+    State(state): State<AppState>,
+    Path((profile_name, scene_id)): Path<(String, String)>,
+    Query(query): Query<PreviewQuery>,
+    cookies: Cookies,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    log::debug!("Scene snapshot request for profile:{} scene:{}", profile_name, scene_id);
+
+    // Authentication check
+    if let Some(expected) = state.auth_token.as_deref() {
+        let authenticated = cookies.get(AUTH_COOKIE_NAME).is_some()
+            || bearer_token(&headers).is_some_and(|t| verify_token(expected, t));
+
+        if !authenticated {
+            return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+        }
+    }
+
+    let params: PreviewParams = query.into();
+
+    // Load profile and find scene
+    let (scene, sources) = {
+        match state.profile_manager.load(&profile_name, None).await {
+            Ok(profile) => {
+                let scene = profile.scenes.into_iter().find(|s| s.id == scene_id);
+                let sources = profile.sources;
+                match scene {
+                    Some(s) => (s, sources),
+                    None => {
+                        return (StatusCode::NOT_FOUND, "Scene not found").into_response();
+                    }
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to load profile for scene snapshot: {}", e);
+                return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load profile").into_response();
+            }
+        }
+    };
+
+    // Capture scene snapshot
+    match state.preview_handler.capture_scene_snapshot(&scene, &sources, &params).await {
+        Ok(jpeg_data) => {
+            Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, "image/jpeg")
+                .header(header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")
+                .body(Body::from(jpeg_data))
+                .unwrap()
+                .into_response()
+        }
+        Err(e) => {
+            log::warn!("Scene snapshot capture failed: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, format!("Snapshot failed: {}", e)).into_response()
+        }
+    }
+}
+
+/// POST /api/preview/scene/stop - Stop the scene preview
+async fn stop_scene_preview_handler(
+    State(state): State<AppState>,
+    cookies: Cookies,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    // Authentication check
+    if let Some(expected) = state.auth_token.as_deref() {
+        let authenticated = cookies.get(AUTH_COOKIE_NAME).is_some()
+            || bearer_token(&headers).is_some_and(|t| verify_token(expected, t));
+
+        if !authenticated {
+            return (StatusCode::UNAUTHORIZED, Json(json!({ "ok": false, "error": "Unauthorized" })));
+        }
+    }
+
+    state.preview_handler.stop_scene_preview();
+    (StatusCode::OK, Json(json!({ "ok": true })))
+}
+
 async fn ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
@@ -1493,6 +1666,9 @@ async fn invoke_command(
             if profile.sources.len() == initial_len {
                 return Err(format!("Source {} not found", source_id));
             }
+
+            // Stop any running preview for this source
+            state.preview_handler.stop_source_preview(&source_id);
 
             // Also remove from all scenes
             for scene in &mut profile.scenes {
@@ -2626,6 +2802,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/preview/source/:source_id/snapshot", get(source_snapshot_handler))
         .route("/api/preview/source/:source_id/stop", post(stop_source_preview_handler))
         .route("/api/preview/stop-all", post(stop_all_previews_handler))
+        // Scene preview endpoints (composed output)
+        .route("/api/preview/scene/:profile/:scene_id", get(scene_preview_handler))
+        .route("/api/preview/scene/:profile/:scene_id/snapshot", get(scene_snapshot_handler))
+        .route("/api/preview/scene/stop", post(stop_scene_preview_handler))
         // Device discovery endpoints
         .route("/api/devices/cameras", get(list_cameras_handler))
         .route("/api/devices/displays", get(list_displays_handler))
