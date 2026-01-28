@@ -318,6 +318,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   },
 
   // Remove a source locally without triggering save (used after removeSource API)
+  // Also removes from all scenes (layers and audio tracks) to match backend behavior
   removeCurrentSource: (sourceId) => {
     const current = get().current;
     if (current) {
@@ -325,6 +326,15 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         current: {
           ...current,
           sources: current.sources.filter((s) => s.id !== sourceId),
+          // Also remove from all scenes (layers and audio mixer tracks)
+          scenes: current.scenes.map((scene) => ({
+            ...scene,
+            layers: scene.layers.filter((l) => l.sourceId !== sourceId),
+            audioMixer: {
+              ...scene.audioMixer,
+              tracks: scene.audioMixer.tracks.filter((t) => t.sourceId !== sourceId),
+            },
+          })),
         },
       });
     }

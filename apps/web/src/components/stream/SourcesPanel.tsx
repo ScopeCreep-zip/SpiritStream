@@ -97,7 +97,7 @@ function SourceThumbnail({ sourceId, sourceType }: { sourceId: string; sourceTyp
       }
 
       // Generate URL with timestamp to prevent caching
-      const url = api.preview.getSourceSnapshotUrl(sourceId, 80, 45, 8);
+      const url = api.preview.getSourceSnapshotUrl(sourceId, 192, 108, 3);
       isPendingRef.current = true;
       setSnapshotUrl(url);
     };
@@ -129,7 +129,7 @@ function SourceThumbnail({ sourceId, sourceType }: { sourceId: string; sourceTyp
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
       if (mountedRef.current) {
-        const url = api.preview.getSourceSnapshotUrl(sourceId, 80, 45, 8);
+        const url = api.preview.getSourceSnapshotUrl(sourceId, 192, 108, 3);
         isPendingRef.current = true;
         setSnapshotUrl(url);
       }
@@ -161,7 +161,7 @@ function SourceThumbnail({ sourceId, sourceType }: { sourceId: string; sourceTyp
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
       if (mountedRef.current) {
-        const url = api.preview.getSourceSnapshotUrl(sourceId, 80, 45, 8);
+        const url = api.preview.getSourceSnapshotUrl(sourceId, 192, 108, 3);
         isPendingRef.current = true;
         setSnapshotUrl(url);
       }
@@ -241,6 +241,13 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
   const handleRemoveSource = async (source: Source) => {
     if (confirm(t('stream.confirmRemoveSource', { name: source.name, defaultValue: `Remove "${source.name}" from profile? This will also remove it from all scenes.` }))) {
       try {
+        // Stop any running preview for this source first
+        try {
+          await api.preview.stopSourcePreview(source.id);
+        } catch {
+          // Ignore errors - preview may not be running
+        }
+
         await removeSource(profile.name, source.id);
         // Update local state without reloading entire profile to avoid overwriting local edits
         removeCurrentSource(source.id);
