@@ -7,9 +7,13 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
+use tokio::time::timeout;
 use bytes::Bytes;
 
 use crate::models::Source;
+
+/// Timeout for snapshot capture (prevents indefinite blocking)
+const SNAPSHOT_TIMEOUT_SECS: u64 = 10;
 
 // Windows: Hide console windows for spawned processes
 #[cfg(windows)]
@@ -586,12 +590,14 @@ impl PreviewHandler {
 
     /// Capture a single JPEG snapshot from a source
     /// This is more reliable than MJPEG streaming for WebKit-based browsers
-    pub fn capture_snapshot(
+    /// Uses async tokio::process with timeout to prevent indefinite blocking
+    pub async fn capture_snapshot(
         &self,
         source: &Source,
         params: &PreviewParams,
     ) -> Result<Vec<u8>, String> {
-        let source_id = source.id();
+        let source_id = source.id().to_string();
+        let ffmpeg_path = self.ffmpeg_path.clone();
 
         // Build FFmpeg command for single frame capture
         let mut input_args = self.build_source_input_args(source)?;
@@ -618,27 +624,49 @@ impl PreviewHandler {
         ]);
 
         log::debug!("Capturing snapshot for source {}: {} {}",
-            source_id, self.ffmpeg_path, args.join(" "));
+            source_id, ffmpeg_path, args.join(" "));
 
-        // Spawn FFmpeg process
-        let mut cmd = Command::new(&self.ffmpeg_path);
-        cmd.args(&args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+        // Use tokio::process::Command for async execution with timeout
+        let capture_future = async {
+            let mut cmd = tokio::process::Command::new(&ffmpeg_path);
+            cmd.args(&args)
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
 
-        #[cfg(windows)]
-        cmd.creation_flags(CREATE_NO_WINDOW);
+            #[cfg(windows)]
+            cmd.creation_flags(CREATE_NO_WINDOW);
 
-        let output = cmd.output()
-            .map_err(|e| format!("Failed to run FFmpeg snapshot: {}", e))?;
+            // kill_on_drop ensures the process is killed if the future is dropped (e.g., on timeout)
+            cmd.kill_on_drop(true);
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("FFmpeg snapshot failed: {}", stderr.trim()));
-        }
+            let output = cmd.output()
+                .await
+                .map_err(|e| format!("Failed to run FFmpeg snapshot: {}", e))?;
 
-        let jpeg_data = output.stdout;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!("FFmpeg snapshot failed: {}", stderr.trim()));
+            }
+
+            Ok::<Vec<u8>, String>(output.stdout)
+        };
+
+        // Apply timeout to prevent indefinite blocking
+        let jpeg_data = match timeout(
+            Duration::from_secs(SNAPSHOT_TIMEOUT_SECS),
+            capture_future
+        ).await {
+            Ok(result) => result?,
+            Err(_) => {
+                log::warn!("Snapshot capture timed out after {}s for source {}",
+                    SNAPSHOT_TIMEOUT_SECS, source_id);
+                return Err(format!(
+                    "Snapshot capture timed out after {} seconds. Device may be unavailable or permission denied.",
+                    SNAPSHOT_TIMEOUT_SECS
+                ));
+            }
+        };
 
         // Validate JPEG magic bytes
         if jpeg_data.len() < 3 || jpeg_data[0] != 0xFF || jpeg_data[1] != 0xD8 {

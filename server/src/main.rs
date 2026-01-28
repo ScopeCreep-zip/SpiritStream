@@ -46,7 +46,14 @@ use spiritstream_server::models::{
 use spiritstream_server::services::{
     prune_logs, read_recent_logs, validate_extension, validate_path_within_any,
     Encryption, EventSink, FFmpegDownloader, FFmpegHandler, ProfileManager, SettingsManager,
-    ThemeManager, DeviceDiscovery, PreviewHandler, PreviewParams, Go2rtcService,
+    ThemeManager, DeviceDiscovery, PreviewHandler, PreviewParams,
+    // Native capture services
+    ScreenCaptureService, ScreenCaptureConfig, AudioCaptureService, AudioCaptureConfig,
+    CameraCaptureService, CameraCaptureConfig,
+    NativePreviewService,
+    RecordingService, RecordingConfig, RecordingFormat,
+    CaptureIndicatorService, CaptureType,
+    PermissionsService,
 };
 
 // ============================================================================
@@ -104,7 +111,6 @@ struct AppState {
     ffmpeg_downloader: Arc<AsyncMutex<FFmpegDownloader>>,
     theme_manager: Arc<ThemeManager>,
     preview_handler: Arc<PreviewHandler>,
-    go2rtc_service: Arc<Go2rtcService>,
     event_bus: EventBus,
     log_dir: PathBuf,
     app_data_dir: PathBuf,
@@ -112,6 +118,13 @@ struct AppState {
     rate_limiter: Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>,
     // Allowed export directories for path validation
     home_dir: Option<PathBuf>,
+    // Native capture services
+    screen_capture: Arc<ScreenCaptureService>,
+    audio_capture: Arc<AudioCaptureService>,
+    camera_capture: Arc<CameraCaptureService>,
+    native_preview: Arc<NativePreviewService>,
+    recording_service: Arc<RecordingService>,
+    capture_indicator: Arc<CaptureIndicatorService>,
 }
 
 #[derive(Serialize)]
@@ -802,14 +815,13 @@ async fn source_preview_handler(
     // Convert broadcast receiver to stream
     let stream = BroadcastStream::new(rx);
 
-    // Build MJPEG streaming response
-    // Format based on go2rtc (proven browser-compatible):
+    // Build MJPEG streaming response using standard multipart format:
     // "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: <len>\r\n\r\n" + jpeg_data + "\r\n"
     let body_stream = stream.filter_map(move |result| {
         async move {
             match result {
                 Ok(frame_data) => {
-                    // Build multipart MJPEG frame matching go2rtc format exactly
+                    // Build multipart MJPEG frame
                     let header = format!(
                         "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: {}\r\n\r\n",
                         frame_data.len()
@@ -936,8 +948,8 @@ async fn source_snapshot_handler(
         }
     };
 
-    // Capture snapshot
-    match state.preview_handler.capture_snapshot(&source, &params) {
+    // Capture snapshot (async with timeout to prevent blocking)
+    match state.preview_handler.capture_snapshot(&source, &params).await {
         Ok(jpeg_data) => {
             Response::builder()
                 .status(StatusCode::OK)
@@ -948,159 +960,10 @@ async fn source_snapshot_handler(
                 .into_response()
         }
         Err(e) => {
-            log::error!("Snapshot capture failed: {}", e);
+            log::warn!("Snapshot capture failed: {}", e);
             (StatusCode::INTERNAL_SERVER_ERROR, format!("Snapshot failed: {}", e)).into_response()
         }
     }
-}
-
-// ============================================================================
-// WebRTC Preview Endpoints (go2rtc)
-// ============================================================================
-
-/// POST /api/preview/webrtc/start - Start WebRTC preview for a source
-async fn start_webrtc_preview_handler(
-    State(state): State<AppState>,
-    cookies: Cookies,
-    headers: HeaderMap,
-    Json(payload): Json<Value>,
-) -> impl IntoResponse {
-    // Authentication check
-    if let Some(expected) = state.auth_token.as_deref() {
-        let authenticated = cookies.get(AUTH_COOKIE_NAME).is_some()
-            || bearer_token(&headers).is_some_and(|t| verify_token(expected, t));
-
-        if !authenticated {
-            return (StatusCode::UNAUTHORIZED, Json(json!({ "ok": false, "error": "Unauthorized" }))).into_response();
-        }
-    }
-
-    let source_id = match payload.get("sourceId").and_then(|v| v.as_str()) {
-        Some(id) => id.to_string(),
-        None => {
-            return (StatusCode::BAD_REQUEST, Json(json!({ "ok": false, "error": "Missing sourceId" }))).into_response();
-        }
-    };
-
-    // Check if go2rtc is available
-    if !state.go2rtc_service.is_available() {
-        return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({
-            "ok": false,
-            "error": "WebRTC preview not available (go2rtc binary not found)"
-        }))).into_response();
-    }
-
-    // Find source from active profile
-    let source = {
-        let settings = match state.settings_manager.load() {
-            Ok(s) => s,
-            Err(e) => {
-                log::error!("Failed to load settings for WebRTC preview: {}", e);
-                return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "ok": false, "error": "Failed to load settings" }))).into_response();
-            }
-        };
-
-        let profile_name = match settings.last_profile.as_ref() {
-            Some(name) => name.clone(),
-            None => {
-                return (StatusCode::BAD_REQUEST, Json(json!({ "ok": false, "error": "No active profile" }))).into_response();
-            }
-        };
-
-        match state.profile_manager.load(&profile_name, None).await {
-            Ok(profile) => profile.sources.into_iter().find(|s| s.id() == source_id),
-            Err(e) => {
-                log::error!("Failed to load profile for WebRTC preview: {}", e);
-                return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "ok": false, "error": "Failed to load profile" }))).into_response();
-            }
-        }
-    };
-
-    let source = match source {
-        Some(s) => s,
-        None => {
-            return (StatusCode::NOT_FOUND, Json(json!({ "ok": false, "error": "Source not found" }))).into_response();
-        }
-    };
-
-    // Start WebRTC stream
-    match state.go2rtc_service.start_stream(&source).await {
-        Ok(stream_id) => {
-            let webrtc_ws_url = state.go2rtc_service.get_webrtc_ws_url(&stream_id);
-            (StatusCode::OK, Json(json!({
-                "ok": true,
-                "data": {
-                    "streamId": stream_id,
-                    "webrtcWsUrl": webrtc_ws_url,
-                    "go2rtcAvailable": true
-                }
-            }))).into_response()
-        }
-        Err(e) => {
-            log::error!("Failed to start WebRTC preview: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "ok": false, "error": format!("Failed to start preview: {}", e) }))).into_response()
-        }
-    }
-}
-
-/// POST /api/preview/webrtc/stop - Stop WebRTC preview for a source
-async fn stop_webrtc_preview_handler(
-    State(state): State<AppState>,
-    cookies: Cookies,
-    headers: HeaderMap,
-    Json(payload): Json<Value>,
-) -> impl IntoResponse {
-    // Authentication check
-    if let Some(expected) = state.auth_token.as_deref() {
-        let authenticated = cookies.get(AUTH_COOKIE_NAME).is_some()
-            || bearer_token(&headers).is_some_and(|t| verify_token(expected, t));
-
-        if !authenticated {
-            return (StatusCode::UNAUTHORIZED, Json(json!({ "ok": false, "error": "Unauthorized" })));
-        }
-    }
-
-    let source_id = match payload.get("sourceId").and_then(|v| v.as_str()) {
-        Some(id) => id.to_string(),
-        None => {
-            return (StatusCode::BAD_REQUEST, Json(json!({ "ok": false, "error": "Missing sourceId" })));
-        }
-    };
-
-    match state.go2rtc_service.stop_stream(&source_id).await {
-        Ok(_) => (StatusCode::OK, Json(json!({ "ok": true }))),
-        Err(e) => {
-            log::error!("Failed to stop WebRTC preview: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "ok": false, "error": format!("Failed to stop preview: {}", e) })))
-        }
-    }
-}
-
-/// GET /api/preview/webrtc/status - Get WebRTC preview availability and status
-async fn webrtc_preview_status_handler(
-    State(state): State<AppState>,
-    cookies: Cookies,
-    headers: HeaderMap,
-) -> impl IntoResponse {
-    // Authentication check
-    if let Some(expected) = state.auth_token.as_deref() {
-        let authenticated = cookies.get(AUTH_COOKIE_NAME).is_some()
-            || bearer_token(&headers).is_some_and(|t| verify_token(expected, t));
-
-        if !authenticated {
-            return (StatusCode::UNAUTHORIZED, Json(json!({ "ok": false, "error": "Unauthorized" })));
-        }
-    }
-
-    (StatusCode::OK, Json(json!({
-        "ok": true,
-        "data": {
-            "available": state.go2rtc_service.is_available(),
-            "running": state.go2rtc_service.is_running(),
-            "activeStreams": state.go2rtc_service.active_stream_count(),
-            "apiBaseUrl": state.go2rtc_service.api_base_url()
-        }
-    })))
 }
 
 async fn ws_handler(
@@ -1129,6 +992,49 @@ async fn handle_socket(mut socket: WebSocket, mut receiver: broadcast::Receiver<
             if socket.send(Message::Text(payload)).await.is_err() {
                 break;
             }
+        }
+    }
+}
+
+/// WebSocket handler for preview JPEG frame streaming
+/// GET /ws/preview/{source_id}
+async fn ws_preview_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+    Path(source_id): Path<String>,
+    Query(query): Query<AuthQuery>,
+    cookies: Cookies,
+) -> impl IntoResponse {
+    // Check authentication
+    let authenticated = state.auth_token.is_none()
+        || cookies.get(AUTH_COOKIE_NAME).is_some()
+        || query.token.as_deref().is_some_and(|token| {
+            state.auth_token.as_deref().is_some_and(|expected| verify_token(expected, token))
+        });
+
+    if !authenticated {
+        return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+    }
+
+    // Check if preview exists
+    if !state.native_preview.has_preview(&source_id) {
+        return (StatusCode::NOT_FOUND, format!("Preview not found: {}", source_id)).into_response();
+    }
+
+    // Subscribe to the preview
+    let receiver = match state.native_preview.subscribe_preview(&source_id) {
+        Some(rx) => rx,
+        None => return (StatusCode::NOT_FOUND, "Preview no longer available").into_response(),
+    };
+
+    ws.on_upgrade(move |socket| handle_preview_socket(socket, receiver))
+}
+
+async fn handle_preview_socket(mut socket: WebSocket, mut receiver: broadcast::Receiver<bytes::Bytes>) {
+    while let Ok(frame) = receiver.recv().await {
+        // Send JPEG frame as binary
+        if socket.send(Message::Binary(frame.to_vec())).await.is_err() {
+            break;
         }
     }
 }
@@ -2069,50 +1975,6 @@ async fn invoke_command(
             Ok(Value::Null)
         }
 
-        // ====================================================================
-        // WebRTC Preview Commands (go2rtc)
-        // ====================================================================
-
-        "start_webrtc_preview" => {
-            let source_id: String = get_arg(&payload, "sourceId")?;
-
-            // Check if go2rtc is available
-            if !state.go2rtc_service.is_available() {
-                return Err("WebRTC preview not available (go2rtc binary not found)".to_string());
-            }
-
-            // Find source from active profile
-            let settings = state.settings_manager.load()?;
-            let profile_name = settings.last_profile
-                .ok_or_else(|| "No active profile".to_string())?;
-
-            let profile = state.profile_manager.load(&profile_name, None).await?;
-            let source = profile.sources.into_iter()
-                .find(|s| s.id() == source_id)
-                .ok_or_else(|| format!("Source {} not found", source_id))?;
-
-            let stream_id = state.go2rtc_service.start_stream(&source).await?;
-            let webrtc_ws_url = state.go2rtc_service.get_webrtc_ws_url(&stream_id);
-
-            Ok(json!({
-                "streamId": stream_id,
-                "webrtcWsUrl": webrtc_ws_url
-            }))
-        }
-        "stop_webrtc_preview" => {
-            let source_id: String = get_arg(&payload, "sourceId")?;
-            state.go2rtc_service.stop_stream(&source_id).await?;
-            Ok(Value::Null)
-        }
-        "get_webrtc_preview_status" => {
-            Ok(json!({
-                "available": state.go2rtc_service.is_available(),
-                "running": state.go2rtc_service.is_running(),
-                "activeStreams": state.go2rtc_service.active_stream_count(),
-                "apiBaseUrl": state.go2rtc_service.api_base_url()
-            }))
-        }
-
         _ => Err(format!("Unknown command: {command}")),
     }
 }
@@ -2150,58 +2012,323 @@ fn get_opt_arg<T: DeserializeOwned>(payload: &Value, key: &str) -> Result<Option
 }
 
 // ============================================================================
+// Native Capture API Handlers
+// ============================================================================
+
+// --- Device Discovery ---
+
+/// GET /api/devices/cameras - List available cameras
+async fn list_cameras_handler(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let cameras = state.camera_capture.list_cameras();
+    Json(json!({ "ok": true, "data": cameras }))
+}
+
+/// GET /api/devices/displays - List available displays
+async fn list_displays_handler() -> impl IntoResponse {
+    let displays = ScreenCaptureService::list_displays();
+    Json(json!({ "ok": true, "data": displays }))
+}
+
+/// GET /api/devices/audio/input - List audio input devices (microphones)
+async fn list_audio_input_handler(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let devices = state.audio_capture.list_input_devices();
+    Json(json!({ "ok": true, "data": devices }))
+}
+
+/// GET /api/devices/audio/output - List audio output devices
+async fn list_audio_output_handler(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let devices = state.audio_capture.list_output_devices();
+    Json(json!({ "ok": true, "data": devices }))
+}
+
+// --- Capture Control ---
+
+#[derive(Debug, Deserialize)]
+struct CameraCaptureRequest {
+    device_id: String,
+}
+
+/// POST /api/capture/camera/start - Start camera capture
+async fn start_camera_capture_handler(
+    State(state): State<AppState>,
+    Json(req): Json<CameraCaptureRequest>,
+) -> impl IntoResponse {
+    match state.camera_capture.start_capture(&req.device_id, CameraCaptureConfig::default()) {
+        Ok(_) => {
+            state.capture_indicator.register_capture(
+                CaptureType::Camera(req.device_id.clone()),
+                Some(&state.event_bus),
+            );
+            Json(json!({ "ok": true, "data": null }))
+        }
+        Err(e) => Json(json!({ "ok": false, "error": e })),
+    }
+}
+
+/// POST /api/capture/camera/stop - Stop camera capture
+async fn stop_camera_capture_handler(
+    State(state): State<AppState>,
+    Json(req): Json<CameraCaptureRequest>,
+) -> impl IntoResponse {
+    let _ = state.camera_capture.stop_capture(&req.device_id);
+    state.capture_indicator.unregister_capture(
+        &CaptureType::Camera(req.device_id.clone()),
+        Some(&state.event_bus),
+    );
+    Json(json!({ "ok": true, "data": null }))
+}
+
+#[derive(Debug, Deserialize)]
+struct ScreenCaptureRequest {
+    display_id: String,
+}
+
+/// POST /api/capture/screen/start - Start screen capture
+async fn start_screen_capture_handler(
+    State(state): State<AppState>,
+    Json(req): Json<ScreenCaptureRequest>,
+) -> impl IntoResponse {
+    let display_id: u32 = match req.display_id.parse() {
+        Ok(id) => id,
+        Err(_) => return Json(json!({ "ok": false, "error": "Invalid display_id: must be a number" })),
+    };
+
+    match state.screen_capture.start_display_capture(display_id, ScreenCaptureConfig::default()) {
+        Ok(_) => {
+            state.capture_indicator.register_capture(
+                CaptureType::Screen(req.display_id.clone()),
+                Some(&state.event_bus),
+            );
+            Json(json!({ "ok": true, "data": null }))
+        }
+        Err(e) => Json(json!({ "ok": false, "error": e })),
+    }
+}
+
+/// POST /api/capture/screen/stop - Stop screen capture
+async fn stop_screen_capture_handler(
+    State(state): State<AppState>,
+    Json(req): Json<ScreenCaptureRequest>,
+) -> impl IntoResponse {
+    let capture_id = format!("display_{}", req.display_id);
+
+    let _ = state.screen_capture.stop_capture(&capture_id);
+    state.capture_indicator.unregister_capture(
+        &CaptureType::Screen(req.display_id.clone()),
+        Some(&state.event_bus),
+    );
+    Json(json!({ "ok": true, "data": null }))
+}
+
+#[derive(Debug, Deserialize)]
+struct AudioCaptureRequest {
+    device_id: String,
+    #[serde(default)]
+    is_loopback: bool,
+}
+
+/// POST /api/capture/audio/start - Start audio capture
+async fn start_audio_capture_handler(
+    State(state): State<AppState>,
+    Json(req): Json<AudioCaptureRequest>,
+) -> impl IntoResponse {
+    let result = if req.is_loopback {
+        state.audio_capture.start_loopback_capture(&req.device_id, AudioCaptureConfig::default())
+    } else {
+        state.audio_capture.start_input_capture(&req.device_id, AudioCaptureConfig::default())
+    };
+
+    match result {
+        Ok(_) => {
+            let capture_type = if req.is_loopback {
+                CaptureType::SystemAudio
+            } else {
+                CaptureType::Microphone(req.device_id.clone())
+            };
+            state.capture_indicator.register_capture(capture_type, Some(&state.event_bus));
+            Json(json!({ "ok": true, "data": null }))
+        }
+        Err(e) => Json(json!({ "ok": false, "error": e })),
+    }
+}
+
+/// POST /api/capture/audio/stop - Stop audio capture
+async fn stop_audio_capture_handler(
+    State(state): State<AppState>,
+    Json(req): Json<AudioCaptureRequest>,
+) -> impl IntoResponse {
+    let _ = state.audio_capture.stop_capture(&req.device_id);
+    let capture_type = if req.is_loopback {
+        CaptureType::SystemAudio
+    } else {
+        CaptureType::Microphone(req.device_id.clone())
+    };
+    state.capture_indicator.unregister_capture(&capture_type, Some(&state.event_bus));
+    Json(json!({ "ok": true, "data": null }))
+}
+
+/// GET /api/capture/status - Get capture status
+async fn capture_status_handler(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let status = state.capture_indicator.get_status();
+    Json(json!({ "ok": true, "data": status }))
+}
+
+// --- Recording ---
+
+#[derive(Debug, Deserialize)]
+struct StartRecordingRequest {
+    name: String,
+    #[serde(default)]
+    format: Option<String>,
+    #[serde(default)]
+    encrypt: bool,
+    #[serde(default)]
+    password: Option<String>,
+}
+
+/// POST /api/recording/start - Start recording
+/// This is a simplified implementation - full version would need to track group info
+async fn start_recording_handler(
+    State(state): State<AppState>,
+    Json(req): Json<StartRecordingRequest>,
+) -> impl IntoResponse {
+    let format = match req.format.as_deref() {
+        Some("mkv") => RecordingFormat::Mkv,
+        Some("mov") => RecordingFormat::Mov,
+        Some("webm") => RecordingFormat::Webm,
+        Some("ts") => RecordingFormat::Ts,
+        Some("flv") => RecordingFormat::Flv,
+        _ => RecordingFormat::Mp4,
+    };
+
+    let config = RecordingConfig {
+        name: req.name,
+        format,
+        encrypt: req.encrypt,
+        password: req.password,
+    };
+
+    // Get active output group IDs to record from
+    let active_ids = state.ffmpeg_handler.get_active_group_ids();
+    if active_ids.is_empty() {
+        return Json(json!({ "ok": false, "error": "No active streams to record from" }));
+    }
+
+    // Use the default passthrough group for recording
+    let group = OutputGroup::default();
+    let relay_url = format!("rtmp://localhost:1935/relay/{}", active_ids[0]);
+
+    match state.recording_service.start_recording_from_relay(config, &group, &relay_url) {
+        Ok(id) => Json(json!({ "ok": true, "data": { "id": id } })),
+        Err(e) => Json(json!({ "ok": false, "error": e })),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct StopRecordingRequest {
+    id: String,
+}
+
+/// POST /api/recording/stop - Stop recording
+async fn stop_recording_handler(
+    State(state): State<AppState>,
+    Json(req): Json<StopRecordingRequest>,
+) -> impl IntoResponse {
+    match state.recording_service.stop_recording(&req.id) {
+        Ok(info) => Json(json!({ "ok": true, "data": info })),
+        Err(e) => Json(json!({ "ok": false, "error": e })),
+    }
+}
+
+/// GET /api/recordings - List all recordings
+async fn list_recordings_handler(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let recordings = state.recording_service.list_recordings();
+    Json(json!({ "ok": true, "data": recordings }))
+}
+
+#[derive(Debug, Deserialize)]
+struct ExportRecordingRequest {
+    id: String,
+    #[serde(default)]
+    password: Option<String>,
+    dest_path: String,
+}
+
+/// POST /api/recording/export - Export a recording
+async fn export_recording_handler(
+    State(state): State<AppState>,
+    Json(req): Json<ExportRecordingRequest>,
+) -> impl IntoResponse {
+    match state.recording_service.export_recording(
+        &req.id,
+        req.password.as_deref(),
+        std::path::Path::new(&req.dest_path),
+    ) {
+        Ok(()) => Json(json!({ "ok": true, "data": null })),
+        Err(e) => Json(json!({ "ok": false, "error": e })),
+    }
+}
+
+/// DELETE /api/recording/:id - Delete a recording
+async fn delete_recording_handler(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    match state.recording_service.delete_recording(&id) {
+        Ok(()) => Json(json!({ "ok": true, "data": null })),
+        Err(e) => Json(json!({ "ok": false, "error": e })),
+    }
+}
+
+// --- Permissions ---
+
+/// GET /api/permissions/status - Get permission status
+async fn permissions_status_handler() -> impl IntoResponse {
+    let status = PermissionsService::get_status();
+    Json(json!({ "ok": true, "data": status }))
+}
+
+#[derive(Debug, Deserialize)]
+struct RequestPermissionsRequest {
+    types: Vec<String>,
+}
+
+/// POST /api/permissions/request - Request permissions
+async fn request_permissions_handler(
+    Json(req): Json<RequestPermissionsRequest>,
+) -> impl IntoResponse {
+    let mut results = std::collections::HashMap::new();
+
+    for perm_type in &req.types {
+        let granted = match perm_type.as_str() {
+            "camera" => PermissionsService::request_camera_permission(),
+            "microphone" => PermissionsService::request_microphone_permission(),
+            "screen" | "screenRecording" => PermissionsService::request_screen_recording_permission(),
+            _ => false,
+        };
+        results.insert(perm_type.clone(), granted);
+    }
+
+    let status = PermissionsService::get_status();
+    Json(json!({ "ok": true, "data": { "results": results, "status": status } }))
+}
+
+// ============================================================================
 // Main Entry Point
 // ============================================================================
 
 fn parse_host(host: &str) -> IpAddr {
     host.parse().unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST))
-}
-
-/// Find go2rtc binary by searching common locations.
-/// Returns path to go2rtc binary if found.
-fn find_go2rtc_binary(app_data_dir: &std::path::Path) -> Option<String> {
-    // Platform-specific binary name
-    #[cfg(windows)]
-    let binary_name = "go2rtc.exe";
-    #[cfg(not(windows))]
-    let binary_name = "go2rtc";
-
-    // Check common locations
-    let candidates = [
-        // Sidecar location (Tauri bundles)
-        app_data_dir.join("binaries").join(binary_name),
-        // Next to server binary
-        std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|d| d.join(binary_name)))
-            .unwrap_or_default(),
-        // CWD
-        std::env::current_dir()
-            .ok()
-            .map(|p| p.join(binary_name))
-            .unwrap_or_default(),
-    ];
-
-    for candidate in candidates {
-        if candidate.exists() {
-            return Some(candidate.to_string_lossy().to_string());
-        }
-    }
-
-    // Check if go2rtc is in PATH
-    if let Ok(output) = std::process::Command::new("which")
-        .arg("go2rtc")
-        .output()
-    {
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() {
-                return Some(path);
-            }
-        }
-    }
-
-    None
 }
 
 /// Find themes directory by searching common relative paths from CWD.
@@ -2398,13 +2525,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|| ffmpeg_handler.get_ffmpeg_path());
     let preview_handler = Arc::new(PreviewHandler::new(preview_ffmpeg_path.clone()));
 
-    // Create go2rtc service for WebRTC preview
-    // Binary path: check sidecar location or system PATH
-    let go2rtc_binary_path = find_go2rtc_binary(&app_data_dir);
-    let go2rtc_service = Arc::new(Go2rtcService::new(
-        go2rtc_binary_path.unwrap_or_else(|| "go2rtc".to_string()),
-    ));
-
     let event_bus = EventBus::new();
     init_logger(&log_dir_path, event_bus.clone())?;
 
@@ -2448,6 +2568,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Get home directory for path validation
     let home_dir = dirs_next::home_dir();
 
+    // Initialize native capture services
+    let screen_capture = Arc::new(ScreenCaptureService::new());
+    let audio_capture = Arc::new(AudioCaptureService::new());
+    let camera_capture = Arc::new(CameraCaptureService::new(preview_ffmpeg_path.clone()));
+    let native_preview = Arc::new(NativePreviewService::new());
+    let recording_service = Arc::new(
+        RecordingService::new(preview_ffmpeg_path.clone(), app_data_dir.clone())
+            .expect("Failed to initialize recording service")
+    );
+    let capture_indicator = Arc::new(CaptureIndicatorService::new());
+
     let state = AppState {
         profile_manager,
         settings_manager,
@@ -2455,13 +2586,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ffmpeg_downloader: Arc::new(AsyncMutex::new(FFmpegDownloader::new())),
         theme_manager,
         preview_handler,
-        go2rtc_service,
         event_bus,
         log_dir: log_dir_path,
         app_data_dir,
         auth_token,
         rate_limiter,
         home_dir,
+        // Native capture services
+        screen_capture,
+        audio_capture,
+        camera_capture,
+        native_preview,
+        recording_service,
+        capture_indicator,
     };
 
     // Build CORS layer
@@ -2479,19 +2616,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let protected_routes = Router::new()
         .route("/api/invoke/:command", post(invoke))
         .route("/ws", get(ws_handler))
+        .route("/ws/preview/:source_id", get(ws_preview_handler))
         // File browser endpoints for HTTP mode dialogs
         .route("/api/files/browse", get(files_browse))
         .route("/api/files/home", get(files_home))
         .route("/api/files/open", post(files_open))
-        // Preview endpoints (MJPEG/snapshot fallback)
+        // Preview endpoints (MJPEG/snapshot)
         .route("/api/preview/source/:source_id", get(source_preview_handler))
         .route("/api/preview/source/:source_id/snapshot", get(source_snapshot_handler))
         .route("/api/preview/source/:source_id/stop", post(stop_source_preview_handler))
         .route("/api/preview/stop-all", post(stop_all_previews_handler))
-        // WebRTC preview endpoints (go2rtc)
-        .route("/api/preview/webrtc/start", post(start_webrtc_preview_handler))
-        .route("/api/preview/webrtc/stop", post(stop_webrtc_preview_handler))
-        .route("/api/preview/webrtc/status", get(webrtc_preview_status_handler))
+        // Device discovery endpoints
+        .route("/api/devices/cameras", get(list_cameras_handler))
+        .route("/api/devices/displays", get(list_displays_handler))
+        .route("/api/devices/audio/input", get(list_audio_input_handler))
+        .route("/api/devices/audio/output", get(list_audio_output_handler))
+        // Capture control endpoints
+        .route("/api/capture/camera/start", post(start_camera_capture_handler))
+        .route("/api/capture/camera/stop", post(stop_camera_capture_handler))
+        .route("/api/capture/screen/start", post(start_screen_capture_handler))
+        .route("/api/capture/screen/stop", post(stop_screen_capture_handler))
+        .route("/api/capture/audio/start", post(start_audio_capture_handler))
+        .route("/api/capture/audio/stop", post(stop_audio_capture_handler))
+        .route("/api/capture/status", get(capture_status_handler))
+        // Recording endpoints
+        .route("/api/recording/start", post(start_recording_handler))
+        .route("/api/recording/stop", post(stop_recording_handler))
+        .route("/api/recordings", get(list_recordings_handler))
+        .route("/api/recording/export", post(export_recording_handler))
+        .route("/api/recording/:id", axum::routing::delete(delete_recording_handler))
+        // Permissions endpoints
+        .route("/api/permissions/status", get(permissions_status_handler))
+        .route("/api/permissions/request", post(request_permissions_handler))
         .layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
 
     // Public routes (no auth required)
