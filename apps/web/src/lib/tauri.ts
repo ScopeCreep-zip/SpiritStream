@@ -96,9 +96,34 @@ export const api = {
       const baseUrl = 'http://127.0.0.1:8008';
       return `${baseUrl}/api/preview/source/${sourceId}/snapshot?width=${width}&height=${height}&quality=${quality}&t=${Date.now()}`;
     },
+    /** Get the MJPEG preview URL for a composed scene (streaming) */
+    getScenePreviewUrl: (
+      profileName: string,
+      sceneId: string,
+      width = 1280,
+      height = 720,
+      fps = 15,
+      quality = 5
+    ) => {
+      const baseUrl = 'http://127.0.0.1:8008';
+      return `${baseUrl}/api/preview/scene/${encodeURIComponent(profileName)}/${sceneId}?width=${width}&height=${height}&fps=${fps}&quality=${quality}`;
+    },
+    /** Get a single snapshot URL for a composed scene */
+    getSceneSnapshotUrl: (
+      profileName: string,
+      sceneId: string,
+      width = 1280,
+      height = 720,
+      quality = 5
+    ) => {
+      const baseUrl = 'http://127.0.0.1:8008';
+      return `${baseUrl}/api/preview/scene/${encodeURIComponent(profileName)}/${sceneId}/snapshot?width=${width}&height=${height}&quality=${quality}&t=${Date.now()}`;
+    },
     /** Stop a specific source preview */
     stopSourcePreview: (sourceId: string) =>
       invoke<void>('stop_source_preview', { sourceId }),
+    /** Stop the scene preview */
+    stopScenePreview: () => invoke<void>('stop_scene_preview'),
     /** Stop all active previews */
     stopAllPreviews: () => invoke<void>('stop_all_previews'),
   },

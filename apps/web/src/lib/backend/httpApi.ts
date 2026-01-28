@@ -161,9 +161,35 @@ export const api = {
       // Add timestamp to prevent caching
       return `${baseUrl}/api/preview/source/${sourceId}/snapshot?width=${width}&height=${height}&quality=${quality}&t=${Date.now()}`;
     },
+    /** Get the MJPEG preview URL for a composed scene (streaming) */
+    getScenePreviewUrl: (
+      profileName: string,
+      sceneId: string,
+      width = 1280,
+      height = 720,
+      fps = 15,
+      quality = 5
+    ) => {
+      const baseUrl = getBackendBaseUrl();
+      return `${baseUrl}/api/preview/scene/${encodeURIComponent(profileName)}/${sceneId}?width=${width}&height=${height}&fps=${fps}&quality=${quality}`;
+    },
+    /** Get a single snapshot URL for a composed scene */
+    getSceneSnapshotUrl: (
+      profileName: string,
+      sceneId: string,
+      width = 1280,
+      height = 720,
+      quality = 5
+    ) => {
+      const baseUrl = getBackendBaseUrl();
+      // Add timestamp to prevent caching
+      return `${baseUrl}/api/preview/scene/${encodeURIComponent(profileName)}/${sceneId}/snapshot?width=${width}&height=${height}&quality=${quality}&t=${Date.now()}`;
+    },
     /** Stop a specific source preview */
     stopSourcePreview: (sourceId: string) =>
       invokeHttp<void>('stop_source_preview', { sourceId }),
+    /** Stop the scene preview */
+    stopScenePreview: () => invokeHttp<void>('stop_scene_preview'),
     /** Stop all active previews */
     stopAllPreviews: () => invokeHttp<void>('stop_all_previews'),
   },
