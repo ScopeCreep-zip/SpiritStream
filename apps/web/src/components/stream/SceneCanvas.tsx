@@ -6,16 +6,26 @@
  * - Edit: Shows individual layer previews with resize handles
  * - Preview: Shows composed scene output from backend Compositor
  *
- * Prevents layout flash by calculating initial dimensions synchronously
- * based on viewport size, then refining with ResizeObserver.
+ * Features:
+ * - Drag layers to reposition
+ * - Resize layers via corner handles
+ * - GPU-accelerated movement via CSS transforms
+ * - Adaptive framerate preview polling (no rate limiting)
  */
 import { useRef, useState, useLayoutEffect, useMemo, useEffect, useCallback } from 'react';
 import { Card } from '@/components/ui/Card';
-import type { Scene, SourceLayer } from '@/types/scene';
+import type { Scene, SourceLayer, Transform } from '@/types/scene';
 import type { Source } from '@/types/source';
 import { api } from '@/lib/backend';
+import { useSceneStore } from '@/stores/sceneStore';
+import { useProfileStore } from '@/stores/profileStore';
 
 type ViewMode = 'edit' | 'preview';
+type ResizeDirection = 'nw' | 'ne' | 'sw' | 'se' | null;
+
+// Fixed preview dimensions for stable polling (no rate limiting)
+const PREVIEW_WIDTH = 640;
+const PREVIEW_HEIGHT = 360;
 
 // Calculate canvas dimensions that fit within available space
 function calculateCanvasDimensions(
@@ -28,13 +38,11 @@ function calculateCanvasDimensions(
   let width = availableWidth;
   let height = width / aspectRatio;
 
-  // If too tall, constrain by height
   if (height > availableHeight) {
     height = availableHeight;
     width = height * aspectRatio;
   }
 
-  // Don't exceed native resolution
   if (width > canvasWidth) {
     width = canvasWidth;
     height = canvasHeight;
@@ -60,14 +68,14 @@ export function SceneCanvas({
 }: SceneCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
+  const { updateLayer } = useSceneStore();
+  const { reloadProfile } = useProfileStore();
 
   // Calculate initial dimensions synchronously based on viewport
-  // This prevents flash by having a reasonable size immediately
   const initialDimensions = useMemo(() => {
     if (!scene) return { width: 640, height: 360 };
-    // Estimate available space: viewport minus sidebar (260px), panels (2*224px), gaps, padding
     const estimatedWidth = Math.max(400, window.innerWidth - 260 - 448 - 64);
-    const estimatedHeight = Math.max(300, window.innerHeight - 300); // Header, bars, mixer
+    const estimatedHeight = Math.max(300, window.innerHeight - 300);
     return calculateCanvasDimensions(
       scene.canvasWidth,
       scene.canvasHeight,
@@ -78,12 +86,10 @@ export function SceneCanvas({
 
   const [dimensions, setDimensions] = useState(initialDimensions);
 
-  // Reset dimensions when scene changes (initialDimensions recalculated by useMemo)
   useLayoutEffect(() => {
     setDimensions(initialDimensions);
   }, [initialDimensions]);
 
-  // Refine dimensions when container is measured
   useLayoutEffect(() => {
     if (!containerRef.current || !scene) return;
 
@@ -113,6 +119,26 @@ export function SceneCanvas({
     return () => observer.disconnect();
   }, [scene?.canvasWidth, scene?.canvasHeight]);
 
+  // Handle layer transform updates (debounced save to backend)
+  const handleLayerTransformChange = useCallback(
+    async (layerId: string, newTransform: Partial<Transform>) => {
+      if (!profileName || !scene) return;
+
+      const layer = scene.layers.find((l) => l.id === layerId);
+      if (!layer) return;
+
+      try {
+        await updateLayer(profileName, scene.id, layerId, {
+          transform: { ...layer.transform, ...newTransform },
+        });
+        await reloadProfile();
+      } catch (err) {
+        console.error('Failed to update layer transform:', err);
+      }
+    },
+    [profileName, scene, updateLayer, reloadProfile]
+  );
+
   if (!scene) {
     return (
       <Card className="h-full flex items-center justify-center">
@@ -126,15 +152,9 @@ export function SceneCanvas({
 
   const sortedLayers = [...scene.layers].sort((a, b) => a.zIndex - b.zIndex);
 
-  const getSource = (sourceId: string) => {
-    return sources.find((s) => s.id === sourceId);
-  };
+  const getSource = (sourceId: string) => sources.find((s) => s.id === sourceId);
+  const getSourceName = (sourceId: string) => getSource(sourceId)?.name ?? 'Unknown Source';
 
-  const getSourceName = (sourceId: string) => {
-    return getSource(sourceId)?.name ?? 'Unknown Source';
-  };
-
-  // Calculate scale for layer positioning
   const scale = dimensions.width / scene.canvasWidth;
 
   return (
@@ -170,27 +190,17 @@ export function SceneCanvas({
         </div>
       </div>
 
-      {/* Container for measurement */}
+      {/* Canvas container */}
       <div
         ref={containerRef}
         className="flex-1 flex items-center justify-center bg-[var(--bg-sunken)] cursor-default overflow-hidden"
         onClick={() => onSelectLayer(null)}
       >
-        {/*
-          Canvas with explicit dimensions.
-          Initial dimensions are calculated synchronously from viewport,
-          then refined by ResizeObserver. This prevents the flash because
-          we always have reasonable dimensions, never 0x0.
-        */}
         <div
           className="relative bg-[var(--bg-base)] shadow-2xl"
-          style={{
-            width: dimensions.width,
-            height: dimensions.height,
-          }}
+          style={{ width: dimensions.width, height: dimensions.height }}
         >
           {viewMode === 'preview' && profileName ? (
-            /* Preview mode: composed scene from backend */
             <ComposedPreview
               profileName={profileName}
               sceneId={scene.id}
@@ -200,22 +210,24 @@ export function SceneCanvas({
               canvasHeight={scene.canvasHeight}
             />
           ) : (
-            /* Edit mode: individual layer previews */
             sortedLayers.map((layer) => (
               <LayerPreview
                 key={layer.id}
                 layer={layer}
                 scale={scale}
+                canvasWidth={scene.canvasWidth}
+                canvasHeight={scene.canvasHeight}
                 sourceName={getSourceName(layer.sourceId)}
                 source={getSource(layer.sourceId)}
                 isSelected={layer.id === selectedLayerId}
                 onClick={() => onSelectLayer(layer.id)}
+                onTransformChange={(transform) => handleLayerTransformChange(layer.id, transform)}
               />
             ))
           )}
 
           {/* Canvas size indicator */}
-          <div className="absolute bottom-2 right-2 text-sm text-[var(--text-muted)] bg-[var(--bg-elevated)] px-2 py-1 rounded shadow">
+          <div className="absolute bottom-2 right-2 text-sm text-[var(--text-muted)] bg-[var(--bg-elevated)] px-2 py-1 rounded shadow pointer-events-none">
             {scene.canvasWidth}x{scene.canvasHeight}
             {viewMode === 'preview' && (
               <span className="ml-2 text-[var(--status-live)]">Live</span>
@@ -230,70 +242,75 @@ export function SceneCanvas({
 interface LayerPreviewProps {
   layer: SourceLayer;
   scale: number;
+  canvasWidth: number;
+  canvasHeight: number;
   sourceName: string;
   source: Source | undefined;
   isSelected: boolean;
   onClick: () => void;
+  onTransformChange: (transform: Partial<Transform>) => void;
 }
 
 /**
- * LayerPreview - Live preview for a layer in the scene canvas
- * Uses snapshot polling (like SourcesPanel) for reliable WebKit compatibility
+ * LayerPreview - Live preview for a layer with drag/resize support
+ * Uses fixed preview dimensions for stable polling (no rate limiting)
+ * Uses CSS transforms for GPU-accelerated drag/resize
  */
 function LayerPreview({
   layer,
   scale,
+  canvasWidth,
+  canvasHeight,
   sourceName,
   source,
   isSelected,
   onClick,
+  onTransformChange,
 }: LayerPreviewProps) {
   const { transform, visible } = layer;
   const [previewError, setPreviewError] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(true);
   const [snapshotUrl, setSnapshotUrl] = useState<string | null>(null);
 
+  // Drag/resize state
+  const [isDragging, setIsDragging] = useState(false);
+  const [isResizing, setIsResizing] = useState<ResizeDirection>(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [resizeOffset, setResizeOffset] = useState({ width: 0, height: 0, x: 0, y: 0 });
+  const dragStartRef = useRef({ mouseX: 0, mouseY: 0, layerX: 0, layerY: 0, width: 0, height: 0 });
+
+  // Preview polling refs
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const errorCountRef = useRef(0);
   const isPendingRef = useRef(false);
-  const backoffDelayRef = useRef(100); // Start faster for canvas (100ms = 10fps)
+  const backoffDelayRef = useRef(150);
   const mountedRef = useRef(true);
 
-  // Check if source has video
   const hasVideo = source?.type !== 'audioDevice';
 
-  // Calculate preview dimensions based on layer size
-  // Use higher resolution for better quality (browser will downscale smoothly)
-  // Request 2x the display size for retina/HiDPI displays, capped at 1280x720
-  const previewWidth = Math.min(Math.max(Math.round(transform.width * scale * 2), 320), 1280);
-  const previewHeight = Math.min(Math.max(Math.round(transform.height * scale * 2), 180), 720);
-
-  // Snapshot polling with pending tracking and exponential backoff
+  // Stable snapshot polling with fixed dimensions (prevents rate limiting)
   useEffect(() => {
     if (!hasVideo || !source) return;
 
-    // Reset state on mount
     mountedRef.current = true;
     setPreviewError(false);
     setPreviewLoading(true);
     errorCountRef.current = 0;
-    backoffDelayRef.current = 100;
+    backoffDelayRef.current = 150;
     isPendingRef.current = false;
 
     const fetchSnapshot = () => {
-      // Don't start new request if one is already pending
       if (isPendingRef.current || !mountedRef.current) {
         timeoutRef.current = setTimeout(fetchSnapshot, backoffDelayRef.current);
         return;
       }
 
-      // Generate URL with timestamp to prevent caching
-      const url = api.preview.getSourceSnapshotUrl(source.id, previewWidth, previewHeight, 2);
+      // Use fixed dimensions for stable polling
+      const url = api.preview.getSourceSnapshotUrl(source.id, PREVIEW_WIDTH, PREVIEW_HEIGHT, 2);
       isPendingRef.current = true;
       setSnapshotUrl(url);
     };
 
-    // Fetch first snapshot immediately
     fetchSnapshot();
 
     return () => {
@@ -304,7 +321,7 @@ function LayerPreview({
         timeoutRef.current = null;
       }
     };
-  }, [source?.id, hasVideo, previewWidth, previewHeight]);
+  }, [source?.id, hasVideo]); // Only depend on source ID, not dimensions
 
   const handleLoad = useCallback(() => {
     if (!mountedRef.current || !source) return;
@@ -313,34 +330,28 @@ function LayerPreview({
     setPreviewLoading(false);
     setPreviewError(false);
     errorCountRef.current = 0;
-    // Reset backoff on success
-    backoffDelayRef.current = 100;
+    backoffDelayRef.current = 150;
 
-    // Schedule next fetch
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
       if (mountedRef.current && source) {
-        const url = api.preview.getSourceSnapshotUrl(source.id, previewWidth, previewHeight, 2);
+        const url = api.preview.getSourceSnapshotUrl(source.id, PREVIEW_WIDTH, PREVIEW_HEIGHT, 2);
         isPendingRef.current = true;
         setSnapshotUrl(url);
       }
     }, backoffDelayRef.current);
-  }, [source?.id, previewWidth, previewHeight]);
+  }, [source?.id]);
 
   const handleError = useCallback(() => {
     if (!mountedRef.current || !source) return;
 
     isPendingRef.current = false;
     errorCountRef.current += 1;
-
-    // Exponential backoff on errors (max 3 seconds for canvas)
     backoffDelayRef.current = Math.min(backoffDelayRef.current * 1.5, 3000);
 
-    // Only show error after 5 consecutive failures
     if (errorCountRef.current >= 5) {
       setPreviewLoading(false);
       setPreviewError(true);
-      // Stop polling on persistent error
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
@@ -348,35 +359,176 @@ function LayerPreview({
       return;
     }
 
-    // Schedule retry with backoff
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
       if (mountedRef.current && source) {
-        const url = api.preview.getSourceSnapshotUrl(source.id, previewWidth, previewHeight, 2);
+        const url = api.preview.getSourceSnapshotUrl(source.id, PREVIEW_WIDTH, PREVIEW_HEIGHT, 2);
         isPendingRef.current = true;
         setSnapshotUrl(url);
       }
     }, backoffDelayRef.current);
-  }, [source?.id, previewWidth, previewHeight]);
+  }, [source?.id]);
+
+  // Drag handlers
+  const handleDragStart = useCallback(
+    (e: React.MouseEvent) => {
+      if (!isSelected || isResizing) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      setIsDragging(true);
+      dragStartRef.current = {
+        mouseX: e.clientX,
+        mouseY: e.clientY,
+        layerX: transform.x,
+        layerY: transform.y,
+        width: transform.width,
+        height: transform.height,
+      };
+    },
+    [isSelected, isResizing, transform]
+  );
+
+  const handleResizeStart = useCallback(
+    (e: React.MouseEvent, direction: ResizeDirection) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      setIsResizing(direction);
+      dragStartRef.current = {
+        mouseX: e.clientX,
+        mouseY: e.clientY,
+        layerX: transform.x,
+        layerY: transform.y,
+        width: transform.width,
+        height: transform.height,
+      };
+    },
+    [transform]
+  );
+
+  // Global mouse move/up handlers
+  useEffect(() => {
+    if (!isDragging && !isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const deltaX = (e.clientX - dragStartRef.current.mouseX) / scale;
+      const deltaY = (e.clientY - dragStartRef.current.mouseY) / scale;
+
+      if (isDragging) {
+        // Calculate new position with bounds checking
+        const newX = Math.max(0, Math.min(canvasWidth - transform.width, dragStartRef.current.layerX + deltaX));
+        const newY = Math.max(0, Math.min(canvasHeight - transform.height, dragStartRef.current.layerY + deltaY));
+        setDragOffset({ x: newX - transform.x, y: newY - transform.y });
+      } else if (isResizing) {
+        let newWidth = dragStartRef.current.width;
+        let newHeight = dragStartRef.current.height;
+        let newX = dragStartRef.current.layerX;
+        let newY = dragStartRef.current.layerY;
+
+        // Calculate resize based on direction
+        switch (isResizing) {
+          case 'se':
+            newWidth = Math.max(50, dragStartRef.current.width + deltaX);
+            newHeight = Math.max(50, dragStartRef.current.height + deltaY);
+            break;
+          case 'sw':
+            newWidth = Math.max(50, dragStartRef.current.width - deltaX);
+            newHeight = Math.max(50, dragStartRef.current.height + deltaY);
+            newX = dragStartRef.current.layerX + (dragStartRef.current.width - newWidth);
+            break;
+          case 'ne':
+            newWidth = Math.max(50, dragStartRef.current.width + deltaX);
+            newHeight = Math.max(50, dragStartRef.current.height - deltaY);
+            newY = dragStartRef.current.layerY + (dragStartRef.current.height - newHeight);
+            break;
+          case 'nw':
+            newWidth = Math.max(50, dragStartRef.current.width - deltaX);
+            newHeight = Math.max(50, dragStartRef.current.height - deltaY);
+            newX = dragStartRef.current.layerX + (dragStartRef.current.width - newWidth);
+            newY = dragStartRef.current.layerY + (dragStartRef.current.height - newHeight);
+            break;
+        }
+
+        // Clamp to canvas bounds
+        newX = Math.max(0, Math.min(canvasWidth - 50, newX));
+        newY = Math.max(0, Math.min(canvasHeight - 50, newY));
+        newWidth = Math.min(newWidth, canvasWidth - newX);
+        newHeight = Math.min(newHeight, canvasHeight - newY);
+
+        setResizeOffset({
+          width: newWidth - transform.width,
+          height: newHeight - transform.height,
+          x: newX - transform.x,
+          y: newY - transform.y,
+        });
+      }
+    };
+
+    const handleMouseUp = () => {
+      if (isDragging) {
+        const newX = transform.x + dragOffset.x;
+        const newY = transform.y + dragOffset.y;
+        if (dragOffset.x !== 0 || dragOffset.y !== 0) {
+          onTransformChange({ x: Math.round(newX), y: Math.round(newY) });
+        }
+        setDragOffset({ x: 0, y: 0 });
+        setIsDragging(false);
+      }
+
+      if (isResizing) {
+        const newWidth = transform.width + resizeOffset.width;
+        const newHeight = transform.height + resizeOffset.height;
+        const newX = transform.x + resizeOffset.x;
+        const newY = transform.y + resizeOffset.y;
+        if (resizeOffset.width !== 0 || resizeOffset.height !== 0) {
+          onTransformChange({
+            x: Math.round(newX),
+            y: Math.round(newY),
+            width: Math.round(newWidth),
+            height: Math.round(newHeight),
+          });
+        }
+        setResizeOffset({ width: 0, height: 0, x: 0, y: 0 });
+        setIsResizing(null);
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, isResizing, scale, transform, dragOffset, resizeOffset, canvasWidth, canvasHeight, onTransformChange]);
 
   if (!visible) return null;
 
+  // Calculate display position with drag/resize offsets (GPU-accelerated via transform)
+  const displayX = (transform.x + dragOffset.x + resizeOffset.x) * scale;
+  const displayY = (transform.y + dragOffset.y + resizeOffset.y) * scale;
+  const displayWidth = (transform.width + resizeOffset.width) * scale;
+  const displayHeight = (transform.height + resizeOffset.height) * scale;
+
   return (
     <div
-      className={`absolute cursor-pointer transition-shadow ${
+      className={`absolute cursor-move transition-shadow ${
         isSelected ? 'ring-2 ring-primary shadow-lg' : 'hover:ring-1 hover:ring-primary/30'
-      }`}
+      } ${isDragging || isResizing ? 'cursor-grabbing' : ''}`}
       style={{
-        left: transform.x * scale,
-        top: transform.y * scale,
-        width: transform.width * scale,
-        height: transform.height * scale,
-        transform: transform.rotation ? `rotate(${transform.rotation}deg)` : undefined,
+        left: 0,
+        top: 0,
+        width: displayWidth,
+        height: displayHeight,
+        transform: `translate(${displayX}px, ${displayY}px) ${transform.rotation ? `rotate(${transform.rotation}deg)` : ''}`,
+        willChange: isDragging || isResizing ? 'transform, width, height' : 'auto',
       }}
       onClick={(e) => {
         e.stopPropagation();
         onClick();
       }}
+      onMouseDown={handleDragStart}
     >
       {/* Live preview or fallback */}
       <div className="w-full h-full bg-[var(--bg-sunken)] overflow-hidden">
@@ -391,14 +543,14 @@ function LayerPreview({
               <img
                 src={snapshotUrl}
                 alt={sourceName}
-                className="w-full h-full object-cover"
+                className="w-full h-full object-cover pointer-events-none"
+                draggable={false}
                 onLoad={handleLoad}
                 onError={handleError}
               />
             )}
           </>
         ) : (
-          // Fallback placeholder for errors or audio-only sources
           <div className="w-full h-full bg-gradient-to-br from-[var(--bg-elevated)] to-[var(--bg-sunken)] flex items-center justify-center">
             <span className="text-[var(--text-muted)] text-xs text-center px-2 truncate">
               {sourceName}
@@ -407,23 +559,31 @@ function LayerPreview({
         )}
       </div>
 
-      {/* Selection handles - larger for better grabbing (16px visible, 24px hit area) */}
+      {/* Resize handles - only show when selected */}
       {isSelected && (
         <>
-          {/* Top-left handle */}
-          <div className="absolute -top-2 -left-2 w-6 h-6 flex items-center justify-center cursor-nw-resize">
+          <div
+            className="absolute -top-2 -left-2 w-6 h-6 flex items-center justify-center cursor-nw-resize z-10"
+            onMouseDown={(e) => handleResizeStart(e, 'nw')}
+          >
             <div className="w-4 h-4 bg-primary rounded-full border-2 border-primary-foreground shadow-md" />
           </div>
-          {/* Top-right handle */}
-          <div className="absolute -top-2 -right-2 w-6 h-6 flex items-center justify-center cursor-ne-resize">
+          <div
+            className="absolute -top-2 -right-2 w-6 h-6 flex items-center justify-center cursor-ne-resize z-10"
+            onMouseDown={(e) => handleResizeStart(e, 'ne')}
+          >
             <div className="w-4 h-4 bg-primary rounded-full border-2 border-primary-foreground shadow-md" />
           </div>
-          {/* Bottom-left handle */}
-          <div className="absolute -bottom-2 -left-2 w-6 h-6 flex items-center justify-center cursor-sw-resize">
+          <div
+            className="absolute -bottom-2 -left-2 w-6 h-6 flex items-center justify-center cursor-sw-resize z-10"
+            onMouseDown={(e) => handleResizeStart(e, 'sw')}
+          >
             <div className="w-4 h-4 bg-primary rounded-full border-2 border-primary-foreground shadow-md" />
           </div>
-          {/* Bottom-right handle */}
-          <div className="absolute -bottom-2 -right-2 w-6 h-6 flex items-center justify-center cursor-se-resize">
+          <div
+            className="absolute -bottom-2 -right-2 w-6 h-6 flex items-center justify-center cursor-se-resize z-10"
+            onMouseDown={(e) => handleResizeStart(e, 'se')}
+          >
             <div className="w-4 h-4 bg-primary rounded-full border-2 border-primary-foreground shadow-md" />
           </div>
         </>
@@ -443,7 +603,7 @@ interface ComposedPreviewProps {
 
 /**
  * ComposedPreview - Shows the composed scene output from the backend
- * Uses snapshot polling similar to LayerPreview for reliable rendering
+ * Uses fixed preview dimensions for stable polling
  */
 function ComposedPreview({
   profileName,
@@ -463,11 +623,10 @@ function ComposedPreview({
   const backoffDelayRef = useRef(150);
   const mountedRef = useRef(true);
 
-  // Request preview at display resolution (2x for retina), capped at 1920x1080
+  // Use fixed preview dimensions
   const previewWidth = Math.min(Math.max(width * 2, 640), 1920);
   const previewHeight = Math.min(Math.max(height * 2, 360), 1080);
 
-  // Snapshot polling with exponential backoff on errors
   useEffect(() => {
     mountedRef.current = true;
     setPreviewError(false);
@@ -482,14 +641,7 @@ function ComposedPreview({
         return;
       }
 
-      // Generate URL with timestamp to prevent caching
-      const url = api.preview.getSceneSnapshotUrl(
-        profileName,
-        sceneId,
-        previewWidth,
-        previewHeight,
-        3 // Quality
-      );
+      const url = api.preview.getSceneSnapshotUrl(profileName, sceneId, previewWidth, previewHeight, 3);
       isPendingRef.current = true;
       setSnapshotUrl(url);
     };
@@ -504,7 +656,7 @@ function ComposedPreview({
         timeoutRef.current = null;
       }
     };
-  }, [profileName, sceneId, previewWidth, previewHeight]);
+  }, [profileName, sceneId]); // Only depend on profile/scene, not dimensions
 
   const handleLoad = useCallback(() => {
     if (!mountedRef.current) return;
@@ -515,17 +667,10 @@ function ComposedPreview({
     errorCountRef.current = 0;
     backoffDelayRef.current = 150;
 
-    // Schedule next fetch
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
       if (mountedRef.current) {
-        const url = api.preview.getSceneSnapshotUrl(
-          profileName,
-          sceneId,
-          previewWidth,
-          previewHeight,
-          3
-        );
+        const url = api.preview.getSceneSnapshotUrl(profileName, sceneId, previewWidth, previewHeight, 3);
         isPendingRef.current = true;
         setSnapshotUrl(url);
       }
@@ -539,7 +684,6 @@ function ComposedPreview({
     errorCountRef.current += 1;
     backoffDelayRef.current = Math.min(backoffDelayRef.current * 1.5, 5000);
 
-    // Show error after 5 consecutive failures
     if (errorCountRef.current >= 5) {
       setPreviewLoading(false);
       setPreviewError(true);
@@ -550,17 +694,10 @@ function ComposedPreview({
       return;
     }
 
-    // Retry with backoff
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
       if (mountedRef.current) {
-        const url = api.preview.getSceneSnapshotUrl(
-          profileName,
-          sceneId,
-          previewWidth,
-          previewHeight,
-          3
-        );
+        const url = api.preview.getSceneSnapshotUrl(profileName, sceneId, previewWidth, previewHeight, 3);
         isPendingRef.current = true;
         setSnapshotUrl(url);
       }
@@ -594,13 +731,7 @@ function ComposedPreview({
             setPreviewLoading(true);
             errorCountRef.current = 0;
             backoffDelayRef.current = 150;
-            const url = api.preview.getSceneSnapshotUrl(
-              profileName,
-              sceneId,
-              previewWidth,
-              previewHeight,
-              3
-            );
+            const url = api.preview.getSceneSnapshotUrl(profileName, sceneId, previewWidth, previewHeight, 3);
             isPendingRef.current = true;
             setSnapshotUrl(url);
           }}
