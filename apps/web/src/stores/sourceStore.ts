@@ -63,12 +63,7 @@ export const useSourceStore = create<SourceState>((set) => ({
     }));
 
     try {
-      const result = await api.invoke<{
-        cameras: CameraDevice[];
-        displays: DisplayInfo[];
-        audioDevices: AudioInputDevice[];
-        captureCards: CaptureCardDevice[];
-      }>('refresh_devices', {});
+      const result = await api.device.refreshAll();
 
       set({
         devices: {
@@ -90,7 +85,7 @@ export const useSourceStore = create<SourceState>((set) => ({
 
   listCameras: async () => {
     try {
-      const cameras = await api.invoke<CameraDevice[]>('list_cameras', {});
+      const cameras = await api.device.listCameras();
       set((state) => ({
         devices: { ...state.devices, cameras },
       }));
@@ -103,7 +98,7 @@ export const useSourceStore = create<SourceState>((set) => ({
 
   listDisplays: async () => {
     try {
-      const displays = await api.invoke<DisplayInfo[]>('list_displays', {});
+      const displays = await api.device.listDisplays();
       set((state) => ({
         devices: { ...state.devices, displays },
       }));
@@ -116,7 +111,7 @@ export const useSourceStore = create<SourceState>((set) => ({
 
   listAudioDevices: async () => {
     try {
-      const audioDevices = await api.invoke<AudioInputDevice[]>('list_audio_devices', {});
+      const audioDevices = await api.device.listAudioDevices();
       set((state) => ({
         devices: { ...state.devices, audioDevices },
       }));
@@ -129,7 +124,7 @@ export const useSourceStore = create<SourceState>((set) => ({
 
   listCaptureCards: async () => {
     try {
-      const captureCards = await api.invoke<CaptureCardDevice[]>('list_capture_cards', {});
+      const captureCards = await api.device.listCaptureCards();
       set((state) => ({
         devices: { ...state.devices, captureCards },
       }));
@@ -142,11 +137,7 @@ export const useSourceStore = create<SourceState>((set) => ({
 
   addSource: async (profileName, source, password) => {
     try {
-      const sources = await api.invoke<Source[]>('add_source', {
-        profileName,
-        source,
-        password,
-      });
+      const sources = await api.source.add(profileName, source, password);
       return sources;
     } catch (err) {
       set({ error: err instanceof Error ? err.message : String(err) });
@@ -156,12 +147,7 @@ export const useSourceStore = create<SourceState>((set) => ({
 
   updateSource: async (profileName, sourceId, updates, password) => {
     try {
-      const source = await api.invoke<Source>('update_source', {
-        profileName,
-        sourceId,
-        updates,
-        password,
-      });
+      const source = await api.source.update(profileName, sourceId, updates, password);
       return source;
     } catch (err) {
       set({ error: err instanceof Error ? err.message : String(err) });
@@ -171,11 +157,7 @@ export const useSourceStore = create<SourceState>((set) => ({
 
   removeSource: async (profileName, sourceId, password) => {
     try {
-      await api.invoke('remove_source', {
-        profileName,
-        sourceId,
-        password,
-      });
+      await api.source.remove(profileName, sourceId, password);
     } catch (err) {
       set({ error: err instanceof Error ? err.message : String(err) });
       throw err;

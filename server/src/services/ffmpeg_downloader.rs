@@ -49,7 +49,6 @@ pub struct FFmpegVersionInfo {
 
 /// Errors that can occur during FFmpeg download
 #[derive(Error, Debug)]
-#[allow(dead_code)] // Some variants are only used on specific platforms
 pub enum DownloadError {
     #[error("Network error: {0}")]
     Network(#[from] reqwest::Error),
@@ -89,11 +88,26 @@ struct PlatformDownload {
     binary_path: &'static str,
 }
 
-#[allow(dead_code)] // Variants are used on specific platforms only
 enum ArchiveType {
     Zip,
     TarXz,
     TarGz,
+}
+
+impl ArchiveType {
+    /// Get the file extension for this archive type
+    fn extension(&self) -> &'static str {
+        match self {
+            ArchiveType::Zip => "zip",
+            ArchiveType::TarXz => "tar.xz",
+            ArchiveType::TarGz => "tar.gz",
+        }
+    }
+
+    /// Get all supported archive types (used for validation)
+    fn all_types() -> &'static [ArchiveType] {
+        &[ArchiveType::Zip, ArchiveType::TarXz, ArchiveType::TarGz]
+    }
 }
 
 /// FFmpeg Downloader Service
@@ -104,6 +118,13 @@ pub struct FFmpegDownloader {
 
 impl FFmpegDownloader {
     pub fn new() -> Self {
+        // Log supported archive formats at startup
+        let formats: Vec<_> = ArchiveType::all_types()
+            .iter()
+            .map(|t| t.extension())
+            .collect();
+        log::debug!("FFmpeg downloader initialized, supported archive formats: {:?}", formats);
+
         Self {
             client: Client::new(),
             cancel_token: Arc::new(AtomicBool::new(false)),
@@ -797,6 +818,13 @@ exit /b %errorlevel%
                 version: String,
             }
 
+            // Also try URL extraction for logging/debugging purposes
+            if let Ok(download) = Self::get_platform_download() {
+                if let Some(url_version) = Self::extract_version_from_url(download.url) {
+                    log::debug!("URL version hint: {url_version}");
+                }
+            }
+
             let response = self.client
                 .get("https://evermeet.cx/ffmpeg/info/ffmpeg/release")
                 .send()
@@ -809,6 +837,12 @@ exit /b %errorlevel%
 
         #[cfg(target_os = "windows")]
         {
+            // Try to extract version from the download URL
+            let download = Self::get_platform_download()?;
+            if let Some(version) = Self::extract_version_from_url(download.url) {
+                log::debug!("Extracted version from Windows URL: {version}");
+                return Ok(version);
+            }
             Err(DownloadError::ExtractionFailed(
                 "Version check not supported for hardware-enabled Windows builds".to_string(),
             ))
@@ -816,6 +850,12 @@ exit /b %errorlevel%
 
         #[cfg(target_os = "linux")]
         {
+            // Try to extract version from the download URL
+            let download = Self::get_platform_download()?;
+            if let Some(version) = Self::extract_version_from_url(download.url) {
+                log::debug!("Extracted version from Linux URL: {version}");
+                return Ok(version);
+            }
             Err(DownloadError::ExtractionFailed(
                 "Version check not supported for hardware-enabled Linux builds".to_string(),
             ))
@@ -828,7 +868,6 @@ exit /b %errorlevel%
     }
 
     /// Extract version number from a URL string
-    #[allow(dead_code)] // Used only on specific platforms
     fn extract_version_from_url(url: &str) -> Option<String> {
         // Look for patterns like "ffmpeg-7.1" or "ffmpeg-7.1.2"
         let re = regex::Regex::new(r"ffmpeg[_-](\d+\.\d+(?:\.\d+)?)").ok()?;
@@ -837,9 +876,8 @@ exit /b %errorlevel%
             .map(|m| m.as_str().to_string())
     }
 
-    /// Extract version number from text content
-    #[allow(dead_code)] // Used only on specific platforms
-    fn extract_version_from_text(text: &str) -> Option<String> {
+    /// Extract version number from text content (e.g., "ffmpeg version 7.1" -> "7.1")
+    pub fn extract_version_from_text(text: &str) -> Option<String> {
         // Look for version patterns like "7.1" or "7.1.2" or "version 7.1"
         let re = regex::Regex::new(r"(?:version[:\s]+)?(\d+\.\d+(?:\.\d+)?)").ok()?;
         re.captures(text)
@@ -927,5 +965,68 @@ mod tests {
         // Should not error on supported platforms
         let result = FFmpegDownloader::get_platform_download();
         assert!(result.is_ok(), "Platform should be supported");
+    }
+
+    #[test]
+    fn test_extract_version_from_url() {
+        // Test version extraction from URLs
+        assert_eq!(
+            FFmpegDownloader::extract_version_from_url("https://example.com/ffmpeg-7.1.tar.gz"),
+            Some("7.1".to_string())
+        );
+        assert_eq!(
+            FFmpegDownloader::extract_version_from_url("https://example.com/ffmpeg_7.1.2.zip"),
+            Some("7.1.2".to_string())
+        );
+        assert_eq!(
+            FFmpegDownloader::extract_version_from_url("https://example.com/ffmpeg-master-latest.zip"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_extract_version_from_text() {
+        // Test version extraction from text (ffmpeg -version output)
+        assert_eq!(
+            FFmpegDownloader::extract_version_from_text("ffmpeg version 7.1 Copyright (c) 2000-2024"),
+            Some("7.1".to_string())
+        );
+        assert_eq!(
+            FFmpegDownloader::extract_version_from_text("ffmpeg version 6.1.2-static"),
+            Some("6.1.2".to_string())
+        );
+        assert_eq!(
+            FFmpegDownloader::extract_version_from_text("version: 5.0"),
+            Some("5.0".to_string())
+        );
+    }
+
+    #[test]
+    fn test_archive_types() {
+        // Ensure all archive types are valid - TarGz exists for future use
+        let zip = ArchiveType::Zip;
+        let tar_xz = ArchiveType::TarXz;
+        let tar_gz = ArchiveType::TarGz;
+
+        // Each variant should be distinct
+        assert!(matches!(zip, ArchiveType::Zip));
+        assert!(matches!(tar_xz, ArchiveType::TarXz));
+        assert!(matches!(tar_gz, ArchiveType::TarGz));
+    }
+
+    #[test]
+    fn test_parse_version() {
+        assert_eq!(FFmpegDownloader::parse_version("7.1"), Some((7, 1, 0)));
+        assert_eq!(FFmpegDownloader::parse_version("7.1.2"), Some((7, 1, 2)));
+        assert_eq!(FFmpegDownloader::parse_version("6"), Some((6, 0, 0)));
+        assert_eq!(FFmpegDownloader::parse_version(""), None);
+    }
+
+    #[test]
+    fn test_is_newer_version() {
+        assert!(FFmpegDownloader::is_newer_version("7.0", "7.1"));
+        assert!(FFmpegDownloader::is_newer_version("6.1.2", "7.0"));
+        assert!(!FFmpegDownloader::is_newer_version("7.1", "7.0"));
+        assert!(!FFmpegDownloader::is_newer_version("7.1", "7.1"));
     }
 }

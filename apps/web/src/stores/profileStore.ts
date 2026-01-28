@@ -7,6 +7,7 @@ import {
   type OutputGroup,
   type StreamTarget,
   type Platform,
+  type Source,
   createDefaultProfile,
 } from '@/types/profile';
 
@@ -46,6 +47,11 @@ interface ProfileState {
   selectProfile: (name: string) => Promise<void>;
   reloadProfile: () => Promise<void>;
   duplicateProfile: (name: string) => Promise<void>;
+
+  // Source management (local state updates without auto-save)
+  // Use these after source API calls to sync local state without reloading entire profile
+  setCurrentSources: (sources: Source[]) => void;
+  removeCurrentSource: (sourceId: string) => void;
 
   // Profile mutations (local state updates + auto-save)
   updateProfile: (updates: Partial<Profile>) => Promise<void>;
@@ -122,9 +128,12 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     try {
       // Use the new getSummaries endpoint that returns all summaries with services
       const summaries = await api.profile.getSummaries();
-      set({ profiles: summaries, loading: false });
+      set({ profiles: summaries });
     } catch (error) {
-      set({ error: String(error), loading: false });
+      set({ error: String(error) });
+    } finally {
+      // Always clear loading state to prevent "Loading..." stuck on all pages
+      set({ loading: false });
     }
   },
 
@@ -144,15 +153,14 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       // Check if profile is encrypted and no password provided
       const isEncrypted = await api.profile.isEncrypted(name);
       if (isEncrypted && !password) {
-        // Trigger password modal
-        set({ loading: false, pendingPasswordProfile: name });
+        // Trigger password modal - loading already cleared below in finally
+        set({ pendingPasswordProfile: name });
         return;
       }
 
       const profile = await api.profile.load(name, password);
       set({
         current: profile,
-        loading: false,
         pendingPasswordProfile: null,
         passwordError: null,
       });
@@ -178,10 +186,13 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       const errorMsg = String(error);
       // If password was wrong, set password error
       if (password && errorMsg.includes('decrypt')) {
-        set({ passwordError: 'Incorrect password', loading: false });
+        set({ passwordError: 'Incorrect password' });
       } else {
-        set({ error: errorMsg, loading: false, pendingPasswordProfile: null });
+        set({ error: errorMsg, pendingPasswordProfile: null });
       }
+    } finally {
+      // Always clear loading state to prevent "Loading..." stuck on all pages
+      set({ loading: false });
     }
   },
 
@@ -270,10 +281,12 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       set({
         profiles,
         current: current?.name === name ? null : current,
-        loading: false,
       });
     } catch (error) {
-      set({ error: String(error), loading: false });
+      set({ error: String(error) });
+    } finally {
+      // Always clear loading state
+      set({ loading: false });
     }
   },
 
@@ -295,6 +308,27 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   setCurrentProfile: (profile) => set({ current: profile }),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
+
+  // Update sources without triggering save (used after source API calls)
+  setCurrentSources: (sources) => {
+    const current = get().current;
+    if (current) {
+      set({ current: { ...current, sources } });
+    }
+  },
+
+  // Remove a source locally without triggering save (used after removeSource API)
+  removeCurrentSource: (sourceId) => {
+    const current = get().current;
+    if (current) {
+      set({
+        current: {
+          ...current,
+          sources: current.sources.filter((s) => s.id !== sourceId),
+        },
+      });
+    }
+  },
 
   // Select and load a profile by name
   selectProfile: async (name) => {

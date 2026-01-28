@@ -133,6 +133,10 @@ impl ThemeManager {
             self.project_themes_dir,
             self.project_themes_dir.exists()
         );
+        log::debug!(
+            "  has_embedded_fallback: {}",
+            super::embedded_themes::is_embedded_theme(theme_id)
+        );
 
         // FIRST: Try to load from theme files (normal path)
         match self.find_theme_by_id(theme_id) {

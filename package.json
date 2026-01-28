@@ -20,6 +20,7 @@
 
     "backend:dev": "cargo run --manifest-path server/Cargo.toml",
     "backend:build": "cargo build --manifest-path server/Cargo.toml --release",
+    "backend:kill": "bash scripts/kill-server.sh",
 
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",

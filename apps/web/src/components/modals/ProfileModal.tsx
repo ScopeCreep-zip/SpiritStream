@@ -146,30 +146,36 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
       application: formData.application,
     };
 
-    if (mode === 'create') {
-      // Create new profile with default passthrough group
-      // The default profile factory already includes the passthrough output group
-      const newProfile = createDefaultProfile(formData.name);
-      newProfile.input = input;
+    try {
+      if (mode === 'create') {
+        // Create new profile with default passthrough group
+        // The default profile factory already includes the passthrough output group
+        const newProfile = createDefaultProfile(formData.name);
+        newProfile.input = input;
 
-      // Save to backend via store (with password if enabled)
-      const password = formData.usePassword ? formData.password : undefined;
-      await api.profile.save(newProfile, password);
-      // Reload profiles to update the list
-      const { loadProfiles, loadProfile } = useProfileStore.getState();
-      await loadProfiles();
-      // Load profile (will require password if encrypted)
-      await loadProfile(newProfile.name, password);
-    } else if (mode === 'edit' && current) {
-      // Update existing profile's name and input settings only
-      // Do NOT modify output groups - those are configured separately
-      updateProfile({
-        name: formData.name,
-        input,
-      });
+        // Save to backend via store (with password if enabled)
+        const password = formData.usePassword ? formData.password : undefined;
+        await api.profile.save(newProfile, password);
+        // Reload profiles to update the list
+        const { loadProfiles, loadProfile } = useProfileStore.getState();
+        await loadProfiles();
+        // Load profile (will require password if encrypted)
+        await loadProfile(newProfile.name, password);
+      } else if (mode === 'edit' && current) {
+        // Update existing profile's name and input settings only
+        // Do NOT modify output groups - those are configured separately
+        updateProfile({
+          name: formData.name,
+          input,
+        });
 
-      // Save to backend
-      await saveProfile();
+        // Save to backend
+        await saveProfile();
+      }
+    } finally {
+      // Ensure loading state is always cleared, even if loadProfile returns early
+      // This prevents "Loading..." stuck state on all pages
+      useProfileStore.setState({ loading: false });
     }
 
     onClose();

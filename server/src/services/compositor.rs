@@ -440,7 +440,7 @@ impl Compositor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{RtmpSource, MediaFileSource, AudioMixer, AudioTrack};
+    use crate::models::{RtmpSource, MediaFileSource, AudioMixer, AudioTrack, Transform};
 
     fn create_test_scene() -> Scene {
         Scene {

@@ -3,6 +3,13 @@ import type { Profile, ProfileSummary, OutputGroup, RtmpInput } from '@/types/pr
 import type { Encoders } from '@/types/stream';
 import type { AppSettings, FFmpegVersionInfo, RotationReport, RtmpTestResult } from '@/types/api';
 import type { ThemeSummary } from '@/types/theme';
+import type {
+  Source,
+  CameraDevice,
+  DisplayInfo,
+  AudioInputDevice,
+  CaptureCardDevice,
+} from '@/types/source';
 
 /**
  * Type-safe Tauri API wrapper
@@ -77,5 +84,51 @@ export const api = {
     getTokens: (themeId: string) => invoke<Record<string, string>>('get_theme_tokens', { themeId }),
     install: (themePath: string) => invoke<ThemeSummary>('install_theme', { themePath }),
     refresh: () => invoke<ThemeSummary[]>('refresh_themes'),
+  },
+  preview: {
+    /** Get the MJPEG preview URL for a source */
+    getSourcePreviewUrl: (sourceId: string, width = 640, height = 360, fps = 15, quality = 10) => {
+      const baseUrl = 'http://127.0.0.1:8008';
+      return `${baseUrl}/api/preview/source/${sourceId}?width=${width}&height=${height}&fps=${fps}&quality=${quality}`;
+    },
+    /** Get a single snapshot URL for a source */
+    getSourceSnapshotUrl: (sourceId: string, width = 640, height = 360, quality = 5) => {
+      const baseUrl = 'http://127.0.0.1:8008';
+      return `${baseUrl}/api/preview/source/${sourceId}/snapshot?width=${width}&height=${height}&quality=${quality}&t=${Date.now()}`;
+    },
+    /** Stop a specific source preview */
+    stopSourcePreview: (sourceId: string) =>
+      invoke<void>('stop_source_preview', { sourceId }),
+    /** Stop all active previews */
+    stopAllPreviews: () => invoke<void>('stop_all_previews'),
+  },
+  device: {
+    /** Refresh all device types at once */
+    refreshAll: () =>
+      invoke<{
+        cameras: CameraDevice[];
+        displays: DisplayInfo[];
+        audioDevices: AudioInputDevice[];
+        captureCards: CaptureCardDevice[];
+      }>('refresh_devices'),
+    /** List available cameras */
+    listCameras: () => invoke<CameraDevice[]>('list_cameras'),
+    /** List available displays for screen capture */
+    listDisplays: () => invoke<DisplayInfo[]>('list_displays'),
+    /** List available audio input devices */
+    listAudioDevices: () => invoke<AudioInputDevice[]>('list_audio_devices'),
+    /** List available capture cards */
+    listCaptureCards: () => invoke<CaptureCardDevice[]>('list_capture_cards'),
+  },
+  source: {
+    /** Add a source to a profile. Returns updated sources array. */
+    add: (profileName: string, source: Source, password?: string) =>
+      invoke<Source[]>('add_source', { profileName, source, password }),
+    /** Update a source in a profile. Returns the updated source. */
+    update: (profileName: string, sourceId: string, updates: Partial<Source>, password?: string) =>
+      invoke<Source>('update_source', { profileName, sourceId, updates, password }),
+    /** Remove a source from a profile. */
+    remove: (profileName: string, sourceId: string, password?: string) =>
+      invoke<void>('remove_source', { profileName, sourceId, password }),
   },
 };

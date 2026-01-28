@@ -79,7 +79,6 @@ pub fn get_embedded_theme_tokens(theme_id: &str) -> Option<HashMap<String, Strin
 }
 
 /// Check if a theme ID has embedded tokens
-#[allow(dead_code)]
 pub fn is_embedded_theme(theme_id: &str) -> bool {
     get_embedded_theme_tokens(theme_id).is_some()
 }

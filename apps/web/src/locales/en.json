@@ -652,6 +652,13 @@
     "passwordMismatch": "Passwords do not match",
     "passwordsDoNotMatch": "Passwords do not match"
   },
+  "permissions": {
+    "camera": "Camera",
+    "microphone": "Microphone",
+    "screenRecording": "Screen Recording",
+    "required": "Permission Required",
+    "denied": "{{permission}} permission is required. Please enable it in System Settings > Privacy & Security."
+  },
   "toast": {
     "profileSaved": "Profile saved successfully",
     "profileDeleted": "Profile deleted",

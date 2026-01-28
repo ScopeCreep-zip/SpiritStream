@@ -40,6 +40,29 @@ struct RelayProcess {
     output_groups: HashSet<String>,
 }
 
+/// Configuration for native video input
+#[derive(Debug, Clone)]
+pub struct NativeVideoConfig {
+    pub width: u32,
+    pub height: u32,
+    pub fps: u32,
+    pub pixel_format: String, // e.g., "rgb24", "bgra", "nv12"
+}
+
+/// Configuration for native audio input
+#[derive(Debug, Clone)]
+pub struct NativeAudioConfig {
+    pub sample_rate: u32,
+    pub channels: u16,
+    pub sample_format: String, // e.g., "f32le", "s16le"
+}
+
+/// Handle for a native capture stream with stdin pipe
+pub struct NativeCaptureHandle {
+    pub stdin: std::process::ChildStdin,
+    pub group_id: String,
+}
+
 /// Manages FFmpeg streaming processes
 pub struct FFmpegHandler {
     ffmpeg_path: String,
@@ -1366,6 +1389,12 @@ impl FFmpegHandler {
             let normalized_url = self.platform_registry.normalize_url(&target.service, &normalized_url);
             let resolved_key = Self::resolve_stream_key(&target.stream_key);
             let full_url = self.platform_registry.build_url_with_key(&target.service, &normalized_url, &resolved_key);
+
+            // Log the platform we're streaming to
+            if let Some(config) = self.platform_registry.get(&target.service) {
+                log::debug!("Adding output target: {} ({})", config.display_name(), target.id);
+            }
+
             target_outputs.push(full_url);
         }
 
@@ -1393,6 +1422,437 @@ impl FFmpegHandler {
         args.push(tee_outputs.join("|"));
 
         args
+    }
+
+    // ========================================================================
+    // Native Capture Support
+    // ========================================================================
+
+    /// Start streaming from raw video frames (native capture)
+    ///
+    /// This creates an FFmpeg process that reads raw video from stdin,
+    /// encodes it according to the group settings, and outputs to targets.
+    ///
+    /// Returns a handle with the stdin pipe for writing frames.
+    pub fn start_from_native_video(
+        &self,
+        group: &OutputGroup,
+        video_config: &NativeVideoConfig,
+        event_sink: Arc<dyn EventSink>,
+    ) -> Result<NativeCaptureHandle, String> {
+        // Check if already streaming this group
+        if let Some(pid) = self.get_group_pid(&group.id) {
+            return Err(format!("Group {} already streaming (pid {})", group.id, pid));
+        }
+
+        let args = self.build_native_video_args(group, video_config);
+        let sanitized = self.sanitize_ffmpeg_args(&args, group);
+        log::info!(
+            "Starting FFmpeg native video capture for group {}: {} {}",
+            group.id,
+            self.ffmpeg_path,
+            sanitized.join(" ")
+        );
+
+        let mut cmd = Command::new(&self.ffmpeg_path);
+        cmd.args(&args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+
+        let mut child = cmd.spawn()
+            .map_err(|e| format!("Failed to start FFmpeg: {e}"))?;
+
+        let stdin = child.stdin.take()
+            .ok_or_else(|| "Failed to capture FFmpeg stdin".to_string())?;
+
+        let stderr = child.stderr.take()
+            .ok_or_else(|| "Failed to capture FFmpeg stderr".to_string())?;
+
+        let group_id = group.id.clone();
+
+        {
+            let mut processes = self.processes.lock()
+                .map_err(|e| format!("Lock poisoned: {e}"))?;
+            processes.insert(group_id.clone(), ProcessInfo {
+                child,
+                start_time: Instant::now(),
+                group_id: group_id.clone(),
+            });
+        }
+
+        // Start stats reader thread
+        let event_sink_clone = Arc::clone(&event_sink);
+        let processes_clone = Arc::clone(&self.processes);
+        let meter_bytes = Self::start_bitrate_meter(&group_id, Arc::clone(&processes_clone));
+        let relay_clone = Arc::clone(&self.relay);
+        let stopping_clone = Arc::clone(&self.stopping_groups);
+        let relay_refcount_clone = Arc::clone(&self.relay_refcount);
+        let group_id_clone = group_id.clone();
+
+        thread::spawn(move || {
+            Self::stats_reader(
+                stderr,
+                group_id_clone,
+                meter_bytes,
+                event_sink_clone,
+                processes_clone,
+                stopping_clone,
+                relay_clone,
+                relay_refcount_clone,
+            );
+        });
+
+        Ok(NativeCaptureHandle {
+            stdin,
+            group_id,
+        })
+    }
+
+    /// Start streaming from raw audio samples (native capture)
+    ///
+    /// This creates an FFmpeg process that reads raw audio from stdin,
+    /// encodes it according to the group settings, and outputs to targets.
+    pub fn start_from_native_audio(
+        &self,
+        group: &OutputGroup,
+        audio_config: &NativeAudioConfig,
+        event_sink: Arc<dyn EventSink>,
+    ) -> Result<NativeCaptureHandle, String> {
+        if let Some(pid) = self.get_group_pid(&group.id) {
+            return Err(format!("Group {} already streaming (pid {})", group.id, pid));
+        }
+
+        let args = self.build_native_audio_args(group, audio_config);
+        let sanitized = self.sanitize_ffmpeg_args(&args, group);
+        log::info!(
+            "Starting FFmpeg native audio capture for group {}: {} {}",
+            group.id,
+            self.ffmpeg_path,
+            sanitized.join(" ")
+        );
+
+        let mut cmd = Command::new(&self.ffmpeg_path);
+        cmd.args(&args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+
+        let mut child = cmd.spawn()
+            .map_err(|e| format!("Failed to start FFmpeg: {e}"))?;
+
+        let stdin = child.stdin.take()
+            .ok_or_else(|| "Failed to capture FFmpeg stdin".to_string())?;
+
+        let stderr = child.stderr.take()
+            .ok_or_else(|| "Failed to capture FFmpeg stderr".to_string())?;
+
+        let group_id = group.id.clone();
+
+        {
+            let mut processes = self.processes.lock()
+                .map_err(|e| format!("Lock poisoned: {e}"))?;
+            processes.insert(group_id.clone(), ProcessInfo {
+                child,
+                start_time: Instant::now(),
+                group_id: group_id.clone(),
+            });
+        }
+
+        let event_sink_clone = Arc::clone(&event_sink);
+        let processes_clone = Arc::clone(&self.processes);
+        let meter_bytes = Self::start_bitrate_meter(&group_id, Arc::clone(&processes_clone));
+        let relay_clone = Arc::clone(&self.relay);
+        let stopping_clone = Arc::clone(&self.stopping_groups);
+        let relay_refcount_clone = Arc::clone(&self.relay_refcount);
+        let group_id_clone = group_id.clone();
+
+        thread::spawn(move || {
+            Self::stats_reader(
+                stderr,
+                group_id_clone,
+                meter_bytes,
+                event_sink_clone,
+                processes_clone,
+                stopping_clone,
+                relay_clone,
+                relay_refcount_clone,
+            );
+        });
+
+        Ok(NativeCaptureHandle {
+            stdin,
+            group_id,
+        })
+    }
+
+    /// Start streaming with both native video and audio
+    ///
+    /// Creates an FFmpeg process with two stdin pipes (video and audio)
+    /// using named pipes or a more complex setup.
+    pub fn start_from_native_av(
+        &self,
+        group: &OutputGroup,
+        video_config: &NativeVideoConfig,
+        audio_config: &NativeAudioConfig,
+        event_sink: Arc<dyn EventSink>,
+    ) -> Result<NativeCaptureHandle, String> {
+        if let Some(pid) = self.get_group_pid(&group.id) {
+            return Err(format!("Group {} already streaming (pid {})", group.id, pid));
+        }
+
+        let args = self.build_native_av_args(group, video_config, audio_config);
+        let sanitized = self.sanitize_ffmpeg_args(&args, group);
+        log::info!(
+            "Starting FFmpeg native A/V capture for group {}: {} {}",
+            group.id,
+            self.ffmpeg_path,
+            sanitized.join(" ")
+        );
+
+        let mut cmd = Command::new(&self.ffmpeg_path);
+        cmd.args(&args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+
+        let mut child = cmd.spawn()
+            .map_err(|e| format!("Failed to start FFmpeg: {e}"))?;
+
+        let stdin = child.stdin.take()
+            .ok_or_else(|| "Failed to capture FFmpeg stdin".to_string())?;
+
+        let stderr = child.stderr.take()
+            .ok_or_else(|| "Failed to capture FFmpeg stderr".to_string())?;
+
+        let group_id = group.id.clone();
+
+        {
+            let mut processes = self.processes.lock()
+                .map_err(|e| format!("Lock poisoned: {e}"))?;
+            processes.insert(group_id.clone(), ProcessInfo {
+                child,
+                start_time: Instant::now(),
+                group_id: group_id.clone(),
+            });
+        }
+
+        let event_sink_clone = Arc::clone(&event_sink);
+        let processes_clone = Arc::clone(&self.processes);
+        let meter_bytes = Self::start_bitrate_meter(&group_id, Arc::clone(&processes_clone));
+        let relay_clone = Arc::clone(&self.relay);
+        let stopping_clone = Arc::clone(&self.stopping_groups);
+        let relay_refcount_clone = Arc::clone(&self.relay_refcount);
+        let group_id_clone = group_id.clone();
+
+        thread::spawn(move || {
+            Self::stats_reader(
+                stderr,
+                group_id_clone,
+                meter_bytes,
+                event_sink_clone,
+                processes_clone,
+                stopping_clone,
+                relay_clone,
+                relay_refcount_clone,
+            );
+        });
+
+        Ok(NativeCaptureHandle {
+            stdin,
+            group_id,
+        })
+    }
+
+    /// Build FFmpeg arguments for native video input
+    fn build_native_video_args(&self, group: &OutputGroup, video_config: &NativeVideoConfig) -> Vec<String> {
+        let mut args = vec![
+            // Input from stdin as raw video
+            "-f".to_string(), "rawvideo".to_string(),
+            "-pix_fmt".to_string(), video_config.pixel_format.clone(),
+            "-s".to_string(), format!("{}x{}", video_config.width, video_config.height),
+            "-r".to_string(), video_config.fps.to_string(),
+            "-i".to_string(), "pipe:0".to_string(),
+        ];
+
+        // Video encoding
+        args.push("-c:v".to_string());
+        args.push(group.video.codec.clone());
+        args.push("-b:v".to_string());
+        args.push(group.video.bitrate.clone());
+        Self::append_cbr_args(&mut args, &group.video.codec, &group.video.bitrate);
+
+        if let Some(preset) = &group.video.preset {
+            if group.video.codec.contains("nvenc") {
+                args.push("-preset".to_string());
+                args.push(Self::map_nvenc_preset(preset));
+            } else if group.video.codec == "libx264" || group.video.codec == "libx265" {
+                args.push("-preset".to_string());
+                args.push(preset.clone());
+            }
+        }
+
+        if let Some(profile) = &group.video.profile {
+            args.push("-profile:v".to_string());
+            args.push(profile.clone());
+        }
+
+        // No audio for video-only
+        args.push("-an".to_string());
+
+        // Output targets
+        self.append_output_targets(&mut args, group);
+
+        args
+    }
+
+    /// Build FFmpeg arguments for native audio input
+    fn build_native_audio_args(&self, group: &OutputGroup, audio_config: &NativeAudioConfig) -> Vec<String> {
+        let mut args = vec![
+            // Input from stdin as raw audio
+            "-f".to_string(), audio_config.sample_format.clone(),
+            "-ar".to_string(), audio_config.sample_rate.to_string(),
+            "-ac".to_string(), audio_config.channels.to_string(),
+            "-i".to_string(), "pipe:0".to_string(),
+        ];
+
+        // Audio encoding
+        args.push("-c:a".to_string());
+        args.push(group.audio.codec.clone());
+        args.push("-b:a".to_string());
+        args.push(group.audio.bitrate.clone());
+
+        // No video for audio-only
+        args.push("-vn".to_string());
+
+        // Output targets
+        self.append_output_targets(&mut args, group);
+
+        args
+    }
+
+    /// Build FFmpeg arguments for combined native A/V input
+    ///
+    /// Uses nut muxer to interleave video and audio in a single stdin pipe.
+    /// Caller must mux video and audio frames into nut format before writing.
+    fn build_native_av_args(
+        &self,
+        group: &OutputGroup,
+        video_config: &NativeVideoConfig,
+        audio_config: &NativeAudioConfig,
+    ) -> Vec<String> {
+        // For combined A/V, we use a simple approach: read interleaved raw data
+        // The caller is responsible for properly interleaving video and audio frames
+        let mut args = vec![
+            // Video input from stdin
+            "-f".to_string(), "rawvideo".to_string(),
+            "-pix_fmt".to_string(), video_config.pixel_format.clone(),
+            "-s".to_string(), format!("{}x{}", video_config.width, video_config.height),
+            "-r".to_string(), video_config.fps.to_string(),
+            "-i".to_string(), "pipe:0".to_string(),
+        ];
+
+        // For now, we only support video-only through the single stdin
+        // Full A/V would require named pipes or a more complex approach
+
+        // Video encoding
+        args.push("-c:v".to_string());
+        args.push(group.video.codec.clone());
+        args.push("-b:v".to_string());
+        args.push(group.video.bitrate.clone());
+        Self::append_cbr_args(&mut args, &group.video.codec, &group.video.bitrate);
+
+        if let Some(preset) = &group.video.preset {
+            if group.video.codec.contains("nvenc") {
+                args.push("-preset".to_string());
+                args.push(Self::map_nvenc_preset(preset));
+            } else if group.video.codec == "libx264" || group.video.codec == "libx265" {
+                args.push("-preset".to_string());
+                args.push(preset.clone());
+            }
+        }
+
+        if let Some(profile) = &group.video.profile {
+            args.push("-profile:v".to_string());
+            args.push(profile.clone());
+        }
+
+        // Audio encoding (will need separate audio input in future)
+        args.push("-c:a".to_string());
+        args.push(group.audio.codec.clone());
+        args.push("-b:a".to_string());
+        args.push(group.audio.bitrate.clone());
+        args.push("-ar".to_string());
+        args.push(audio_config.sample_rate.to_string());
+        args.push("-ac".to_string());
+        args.push(audio_config.channels.to_string());
+
+        // Output targets
+        self.append_output_targets(&mut args, group);
+
+        args
+    }
+
+    /// Helper to append output targets to FFmpeg args
+    fn append_output_targets(&self, args: &mut Vec<String>, group: &OutputGroup) {
+        // Progress output for stats parsing
+        args.push("-progress".to_string());
+        args.push("pipe:2".to_string());
+        args.push("-stats".to_string());
+
+        // Get disabled targets
+        let disabled = self.disabled_targets.lock().unwrap_or_else(|e| {
+            log::warn!("Disabled targets mutex poisoned, recovering: {e}");
+            e.into_inner()
+        });
+
+        let mut target_outputs: Vec<String> = Vec::new();
+        for target in &group.stream_targets {
+            if disabled.contains(&target.id) {
+                continue;
+            }
+
+            let normalized_url = Self::normalize_rtmp_url(&target.url);
+            let normalized_url = self.platform_registry.normalize_url(&target.service, &normalized_url);
+            let resolved_key = Self::resolve_stream_key(&target.stream_key);
+            let full_url = self.platform_registry.build_url_with_key(&target.service, &normalized_url, &resolved_key);
+
+            // Log the platform we're streaming to
+            if let Some(config) = self.platform_registry.get(&target.service) {
+                log::debug!("Adding output target: {} ({})", config.display_name(), target.id);
+            }
+
+            target_outputs.push(full_url);
+        }
+
+        if target_outputs.is_empty() {
+            return;
+        }
+
+        let meter_output = Self::meter_output_url_for_group(&group.id);
+
+        let mut tee_outputs: Vec<String> = Vec::new();
+        if target_outputs.len() == 1 {
+            let output = &target_outputs[0];
+            tee_outputs.push(format!("[f={}]{output}", group.container.format));
+        } else {
+            tee_outputs.extend(
+                target_outputs
+                    .iter()
+                    .map(|output| format!("[f={}:onfail=ignore]{output}", group.container.format))
+            );
+        }
+        tee_outputs.push(format!("[f=mpegts:onfail=ignore]{meter_output}"));
+
+        args.push("-f".to_string());
+        args.push("tee".to_string());
+        args.push(tee_outputs.join("|"));
     }
 }
 

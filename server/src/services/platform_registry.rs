@@ -16,12 +16,11 @@ pub enum StreamKeyPlacement {
 /// Platform-specific configuration
 #[derive(Debug, Clone)]
 pub struct PlatformConfig {
-    /// Display name
-    #[allow(dead_code)] // Reserved for future UI display
+    /// Display name for the platform
     pub name: &'static str,
 
     /// Default RTMP server URL (may contain {stream_key} template)
-    pub default_server: &'static str, // Used in InUrlTemplate redaction
+    pub default_server: &'static str,
 
     /// Stream key placement strategy
     pub placement: StreamKeyPlacement,
@@ -31,7 +30,14 @@ pub struct PlatformConfig {
     pub default_app_path: Option<&'static str>,
 
     /// Stream key position in URL path (0 = no masking, 1 = /KEY, 2 = /app/KEY, etc.)
-    pub stream_key_position: usize, // Used in Append redaction
+    pub stream_key_position: usize,
+}
+
+impl PlatformConfig {
+    /// Get the display name for this platform
+    pub fn display_name(&self) -> &str {
+        self.name
+    }
 }
 
 impl PlatformConfig {

@@ -287,6 +287,14 @@ pub fn test_ffmpeg() -> Result<String, String> {
     Ok(version_line)
 }
 
+/// Get just the FFmpeg version number (e.g., "7.1" instead of full version line)
+pub fn get_ffmpeg_version() -> Result<String, String> {
+    let version_line = test_ffmpeg()?;
+    // Use the ffmpeg_downloader's version extraction
+    crate::services::FFmpegDownloader::extract_version_from_text(&version_line)
+        .ok_or_else(|| format!("Could not parse version from: {version_line}"))
+}
+
 /// Result of testing an RTMP target
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct RtmpTestResult {

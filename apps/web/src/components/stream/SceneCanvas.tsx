@@ -9,7 +9,7 @@ import { useRef, useState, useLayoutEffect, useMemo, useEffect, useCallback } fr
 import { Card } from '@/components/ui/Card';
 import type { Scene, SourceLayer } from '@/types/scene';
 import type { Source } from '@/types/source';
-import { api } from '@/lib/backend/httpApi';
+import { api } from '@/lib/backend';
 
 // Calculate canvas dimensions that fit within available space
 function calculateCanvasDimensions(
