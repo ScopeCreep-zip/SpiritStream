@@ -181,6 +181,10 @@ interface LayerPreviewProps {
   onClick: () => void;
 }
 
+/**
+ * LayerPreview - Live preview for a layer in the scene canvas
+ * Uses snapshot polling (like SourcesPanel) for reliable WebKit compatibility
+ */
 function LayerPreview({
   layer,
   scale,
@@ -192,67 +196,111 @@ function LayerPreview({
   const { transform, visible } = layer;
   const [previewError, setPreviewError] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(true);
+  const [snapshotUrl, setSnapshotUrl] = useState<string | null>(null);
+
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const errorCountRef = useRef(0);
+  const isPendingRef = useRef(false);
+  const backoffDelayRef = useRef(100); // Start faster for canvas (100ms = 10fps)
+  const mountedRef = useRef(true);
 
   // Check if source has video
   const hasVideo = source?.type !== 'audioDevice';
 
   // Calculate preview dimensions based on layer size (with reasonable limits)
-  const previewWidth = Math.min(Math.round(transform.width * scale), 640);
-  const previewHeight = Math.min(Math.round(transform.height * scale), 360);
+  const previewWidth = Math.min(Math.max(Math.round(transform.width * scale), 160), 640);
+  const previewHeight = Math.min(Math.max(Math.round(transform.height * scale), 90), 360);
 
-  // Get preview URL for video sources
-  const previewUrl = hasVideo && source
-    ? api.preview.getSourcePreviewUrl(source.id, previewWidth, previewHeight, 15, 5)
-    : null;
+  // Snapshot polling with pending tracking and exponential backoff
+  useEffect(() => {
+    if (!hasVideo || !source) return;
+
+    // Reset state on mount
+    mountedRef.current = true;
+    setPreviewError(false);
+    setPreviewLoading(true);
+    errorCountRef.current = 0;
+    backoffDelayRef.current = 100;
+    isPendingRef.current = false;
+
+    const fetchSnapshot = () => {
+      // Don't start new request if one is already pending
+      if (isPendingRef.current || !mountedRef.current) {
+        timeoutRef.current = setTimeout(fetchSnapshot, backoffDelayRef.current);
+        return;
+      }
+
+      // Generate URL with timestamp to prevent caching
+      const url = api.preview.getSourceSnapshotUrl(source.id, previewWidth, previewHeight, 5);
+      isPendingRef.current = true;
+      setSnapshotUrl(url);
+    };
+
+    // Fetch first snapshot immediately
+    fetchSnapshot();
+
+    return () => {
+      mountedRef.current = false;
+      isPendingRef.current = false;
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
+  }, [source?.id, hasVideo, previewWidth, previewHeight]);
 
   const handleLoad = useCallback(() => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
+    if (!mountedRef.current || !source) return;
+
+    isPendingRef.current = false;
     setPreviewLoading(false);
     setPreviewError(false);
-  }, []);
+    errorCountRef.current = 0;
+    // Reset backoff on success
+    backoffDelayRef.current = 100;
+
+    // Schedule next fetch
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      if (mountedRef.current && source) {
+        const url = api.preview.getSourceSnapshotUrl(source.id, previewWidth, previewHeight, 5);
+        isPendingRef.current = true;
+        setSnapshotUrl(url);
+      }
+    }, backoffDelayRef.current);
+  }, [source?.id, previewWidth, previewHeight]);
 
   const handleError = useCallback(() => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
-    setPreviewLoading(false);
-    setPreviewError(true);
-    console.warn(`[Preview] Failed to load layer preview for source: ${source?.id}`);
-  }, [source?.id]);
+    if (!mountedRef.current || !source) return;
 
-  // Cleanup preview on unmount
-  useEffect(() => {
-    return () => {
+    isPendingRef.current = false;
+    errorCountRef.current += 1;
+
+    // Exponential backoff on errors (max 3 seconds for canvas)
+    backoffDelayRef.current = Math.min(backoffDelayRef.current * 1.5, 3000);
+
+    // Only show error after 5 consecutive failures
+    if (errorCountRef.current >= 5) {
+      setPreviewLoading(false);
+      setPreviewError(true);
+      // Stop polling on persistent error
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
       }
-      if (source && hasVideo) {
-        api.preview.stopSourcePreview(source.id).catch(() => {});
-      }
-    };
-  }, [source?.id, hasVideo]);
-
-  // Reset state when source changes and set timeout for slow streams
-  useEffect(() => {
-    setPreviewLoading(true);
-    setPreviewError(false);
-
-    // Give stream 5 seconds to start
-    if (hasVideo) {
-      timeoutRef.current = setTimeout(() => {
-        setPreviewLoading(false);
-      }, 5000);
+      return;
     }
 
-    return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
+    // Schedule retry with backoff
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      if (mountedRef.current && source) {
+        const url = api.preview.getSourceSnapshotUrl(source.id, previewWidth, previewHeight, 5);
+        isPendingRef.current = true;
+        setSnapshotUrl(url);
       }
-    };
-  }, [source?.id, hasVideo]);
+    }, backoffDelayRef.current);
+  }, [source?.id, previewWidth, previewHeight]);
 
   if (!visible) return null;
 
@@ -275,20 +323,22 @@ function LayerPreview({
     >
       {/* Live preview or fallback */}
       <div className="w-full h-full bg-[var(--bg-sunken)] overflow-hidden">
-        {previewUrl && !previewError ? (
+        {hasVideo && !previewError ? (
           <>
             {previewLoading && (
               <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[var(--bg-elevated)] to-[var(--bg-sunken)]">
                 <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
               </div>
             )}
-            <img
-              src={previewUrl}
-              alt={sourceName}
-              className="w-full h-full object-cover"
-              onLoad={handleLoad}
-              onError={handleError}
-            />
+            {snapshotUrl && (
+              <img
+                src={snapshotUrl}
+                alt={sourceName}
+                className="w-full h-full object-cover"
+                onLoad={handleLoad}
+                onError={handleError}
+              />
+            )}
           </>
         ) : (
           // Fallback placeholder for errors or audio-only sources

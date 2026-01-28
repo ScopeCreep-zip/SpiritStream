@@ -36,10 +36,12 @@ const MAX_SOURCE_PREVIEWS: usize = 5;
 /// Cleanup timeout for orphaned previews (seconds)
 const ORPHAN_TIMEOUT_SECS: u64 = 30;
 
-/// Tracks a running preview process
+/// Tracks a running preview process with cached latest frame
 struct PreviewProcess {
     child: Child,
     last_accessed: Instant,
+    /// Cached latest frame for snapshot requests
+    latest_frame: Arc<Mutex<Option<Bytes>>>,
 }
 
 /// Preview parameters from HTTP query
@@ -440,10 +442,14 @@ impl PreviewHandler {
         // Create broadcast channel for frames
         let (tx, rx) = broadcast::channel::<Bytes>(16);
 
+        // Create shared cache for latest frame (used by snapshot endpoint)
+        let latest_frame: Arc<Mutex<Option<Bytes>>> = Arc::new(Mutex::new(None));
+        let latest_frame_clone = Arc::clone(&latest_frame);
+
         // Spawn reader thread
         let source_id_clone = source_id.clone();
         std::thread::spawn(move || {
-            Self::read_mjpeg_stream(stdout, tx, source_id_clone);
+            Self::read_mjpeg_stream(stdout, tx, latest_frame_clone, source_id_clone);
         });
 
         // Log stderr in background - capture all output for debugging
@@ -463,7 +469,7 @@ impl PreviewHandler {
             });
         }
 
-        // Store the process
+        // Store the process with frame cache
         {
             let mut previews = self.source_previews.lock()
                 .map_err(|e| format!("Lock poisoned: {}", e))?;
@@ -471,16 +477,18 @@ impl PreviewHandler {
             previews.insert(source_id, PreviewProcess {
                 child,
                 last_accessed: Instant::now(),
+                latest_frame,
             });
         }
 
         Ok(rx)
     }
 
-    /// Read MJPEG frames from FFmpeg stdout and broadcast them
+    /// Read MJPEG frames from FFmpeg stdout, broadcast them, and cache the latest
     fn read_mjpeg_stream(
         mut stdout: std::process::ChildStdout,
         tx: broadcast::Sender<Bytes>,
+        latest_frame: Arc<Mutex<Option<Bytes>>>,
         source_id: String,
     ) {
         let mut buffer = Vec::with_capacity(64 * 1024);
@@ -526,7 +534,14 @@ impl PreviewHandler {
                                 source_id, frame_count, preview);
                         }
 
-                        match tx.send(Bytes::from(frame)) {
+                        let frame_bytes = Bytes::from(frame);
+
+                        // Cache the latest frame for snapshot requests
+                        if let Ok(mut cached) = latest_frame.lock() {
+                            *cached = Some(frame_bytes.clone());
+                        }
+
+                        match tx.send(frame_bytes) {
                             Ok(receiver_count) => {
                                 if frame_count == 1 {
                                     log::info!("[Preview:{}] First frame broadcast to {} receivers",
@@ -534,10 +549,12 @@ impl PreviewHandler {
                                 }
                             }
                             Err(_) => {
-                                // No receivers, stop reading
-                                log::info!("[Preview:{}] No receivers after {} frames, stopping",
-                                    source_id, frame_count);
-                                return;
+                                // No receivers, but keep running for snapshot cache
+                                // Don't stop - snapshots may still need the cached frame
+                                if frame_count == 1 {
+                                    log::debug!("[Preview:{}] No broadcast receivers, continuing for snapshot cache",
+                                        source_id);
+                                }
                             }
                         }
                     }
@@ -588,15 +605,75 @@ impl PreviewHandler {
         haystack.windows(needle.len()).position(|w| w == needle)
     }
 
+    /// Get cached frame from a running preview (if available)
+    pub fn get_cached_frame(&self, source_id: &str) -> Option<Vec<u8>> {
+        let previews = self.source_previews.lock().ok()?;
+        let preview = previews.get(source_id)?;
+
+        // Update last accessed time
+        // Note: Can't mutate through shared ref, but that's ok for now
+
+        let frame = preview.latest_frame.lock().ok()?;
+        frame.as_ref().map(|b| b.to_vec())
+    }
+
+    /// Check if a preview is running for a source
+    pub fn is_preview_running(&self, source_id: &str) -> bool {
+        self.source_previews.lock()
+            .map(|p| p.contains_key(source_id))
+            .unwrap_or(false)
+    }
+
     /// Capture a single JPEG snapshot from a source
-    /// This is more reliable than MJPEG streaming for WebKit-based browsers
-    /// Uses async tokio::process with timeout to prevent indefinite blocking
+    /// First tries to get a cached frame from a running preview.
+    /// If no preview is running, starts one and waits for the first frame.
+    /// Falls back to spawning a one-shot FFmpeg process if preview fails.
     pub async fn capture_snapshot(
         &self,
         source: &Source,
         params: &PreviewParams,
     ) -> Result<Vec<u8>, String> {
         let source_id = source.id().to_string();
+
+        // First, try to get a cached frame from a running preview
+        // This is much faster and doesn't require spawning a new process
+        if let Some(cached_frame) = self.get_cached_frame(&source_id) {
+            log::debug!("Returning cached frame for source {} ({} bytes)", source_id, cached_frame.len());
+            return Ok(cached_frame);
+        }
+
+        // No cached frame - try to start a persistent preview
+        if !self.is_preview_running(&source_id) {
+            log::info!("Starting persistent preview for source {} (triggered by snapshot request)", source_id);
+
+            // Start the preview with default params for caching
+            let preview_params = PreviewParams {
+                width: params.width.max(320),  // Use at least 320px for decent quality
+                height: params.height.max(180),
+                fps: 10,  // Lower FPS for background preview
+                quality: params.quality,
+            };
+
+            match self.start_source_preview(source, preview_params) {
+                Ok(_rx) => {
+                    // Preview started - wait briefly for first frame
+                    for _ in 0..30 {  // Wait up to 3 seconds (30 * 100ms)
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        if let Some(cached_frame) = self.get_cached_frame(&source_id) {
+                            log::debug!("Got first cached frame for source {} ({} bytes)", source_id, cached_frame.len());
+                            return Ok(cached_frame);
+                        }
+                    }
+                    log::warn!("Preview started but no frame received within 3 seconds for source {}", source_id);
+                }
+                Err(e) => {
+                    log::warn!("Failed to start preview for source {}: {}", source_id, e);
+                }
+            }
+        }
+
+        // Fall back to spawning a one-shot FFmpeg process
+        log::debug!("Falling back to one-shot FFmpeg for source {}", source_id);
         let ffmpeg_path = self.ffmpeg_path.clone();
 
         // Build FFmpeg command for single frame capture
