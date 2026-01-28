@@ -24,8 +24,7 @@ import { useSceneStore } from '@/stores/sceneStore';
 import { useSourceStore } from '@/stores/sourceStore';
 import { useProfileStore } from '@/stores/profileStore';
 import { toast } from '@/hooks/useToast';
-import { api } from '@/lib/backend/httpApi';
-import { Go2rtcClient } from '@/lib/webrtc/go2rtcClient';
+import { api } from '@/lib/backend';
 
 interface SourcesPanelProps {
   profile: Profile;
@@ -53,138 +52,121 @@ const SourceIcon = ({ type }: { type: Source['type'] }) => {
 };
 
 /**
- * Live thumbnail preview for a source
- * Tries WebRTC first for smooth real-time preview, falls back to snapshot polling
+ * Live thumbnail preview for a source using snapshot polling
+ * Features:
+ * - Prevents request accumulation by tracking pending state
+ * - Uses exponential backoff on errors
+ * - Automatic cleanup on unmount
  */
 function SourceThumbnail({ sourceId, sourceType }: { sourceId: string; sourceType: Source['type'] }) {
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [useWebRTC, setUseWebRTC] = useState(true);
   const [snapshotUrl, setSnapshotUrl] = useState<string | null>(null);
 
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const clientRef = useRef<Go2rtcClient | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const errorCountRef = useRef(0);
-  const webrtcAttemptedRef = useRef(false);
+  const isPendingRef = useRef(false);
+  const backoffDelayRef = useRef(500); // Start with 500ms, exponential backoff on errors
+  const mountedRef = useRef(true);
 
   // Only show preview for video sources
   const hasVideo = sourceType !== 'audioDevice';
 
-  // WebRTC preview
+  // Snapshot polling with pending tracking and exponential backoff
   useEffect(() => {
-    if (!hasVideo || !useWebRTC) return;
+    if (!hasVideo) return;
 
-    let cancelled = false;
-    webrtcAttemptedRef.current = true;
-
-    const startWebRTC = async () => {
-      try {
-        // Request WebRTC stream from backend
-        const result = await api.preview.startWebrtcPreview(sourceId);
-
-        if (cancelled) return;
-
-        // Create WebRTC client with the signaling URL
-        const client = new Go2rtcClient({
-          wsUrl: result.webrtcWsUrl,
-          onConnectionStateChange: (state) => {
-            if (state === 'connected') {
-              setLoading(false);
-              setError(false);
-            } else if (state === 'failed' || state === 'closed') {
-              // Fall back to snapshot polling
-              console.log('[Preview] WebRTC failed, falling back to snapshots');
-              setUseWebRTC(false);
-            }
-          },
-          onError: () => {
-            // Fall back to snapshot polling
-            console.log('[Preview] WebRTC error, falling back to snapshots');
-            setUseWebRTC(false);
-          },
-        });
-
-        clientRef.current = client;
-
-        const stream = await client.connect();
-
-        if (cancelled) {
-          client.disconnect();
-          return;
-        }
-
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-        }
-      } catch (err) {
-        if (cancelled) return;
-        console.log('[Preview] WebRTC not available, using snapshots:', err);
-        setUseWebRTC(false);
-      }
-    };
-
-    startWebRTC();
-
-    return () => {
-      cancelled = true;
-      if (clientRef.current) {
-        clientRef.current.disconnect();
-        clientRef.current = null;
-      }
-      // Stop WebRTC preview on backend
-      api.preview.stopWebrtcPreview(sourceId).catch(() => {});
-    };
-  }, [sourceId, hasVideo, useWebRTC]);
-
-  // Snapshot fallback polling - fetch new frame every 200ms (5 fps for thumbnails)
-  useEffect(() => {
-    if (!hasVideo || useWebRTC) return;
-
-    // Reset state for snapshot mode
+    // Reset state on mount
+    mountedRef.current = true;
     setError(false);
     setLoading(true);
     errorCountRef.current = 0;
+    backoffDelayRef.current = 500;
+    isPendingRef.current = false;
+
+    const scheduleNextFetch = () => {
+      if (!mountedRef.current) return;
+      timeoutRef.current = setTimeout(fetchSnapshot, backoffDelayRef.current);
+    };
 
     const fetchSnapshot = () => {
+      // Don't start new request if one is already pending
+      if (isPendingRef.current || !mountedRef.current) {
+        scheduleNextFetch();
+        return;
+      }
+
       // Generate URL with timestamp to prevent caching
       const url = api.preview.getSourceSnapshotUrl(sourceId, 80, 45, 8);
+      isPendingRef.current = true;
       setSnapshotUrl(url);
     };
 
     // Fetch first snapshot immediately
     fetchSnapshot();
 
-    // Then poll at interval
-    intervalRef.current = setInterval(fetchSnapshot, 200);
-
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
+      mountedRef.current = false;
+      isPendingRef.current = false;
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
       }
     };
-  }, [sourceId, hasVideo, useWebRTC]);
+  }, [sourceId, hasVideo]);
 
   const handleLoad = useCallback(() => {
+    if (!mountedRef.current) return;
+
+    isPendingRef.current = false;
     setLoading(false);
     setError(false);
     errorCountRef.current = 0;
-  }, []);
+    // Reset backoff on success
+    backoffDelayRef.current = 500;
+
+    // Schedule next fetch
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      if (mountedRef.current) {
+        const url = api.preview.getSourceSnapshotUrl(sourceId, 80, 45, 8);
+        isPendingRef.current = true;
+        setSnapshotUrl(url);
+      }
+    }, backoffDelayRef.current);
+  }, [sourceId]);
 
   const handleError = useCallback(() => {
+    if (!mountedRef.current) return;
+
+    isPendingRef.current = false;
     errorCountRef.current += 1;
+
+    // Exponential backoff on errors (max 5 seconds)
+    backoffDelayRef.current = Math.min(backoffDelayRef.current * 1.5, 5000);
+
     // Only show error after 3 consecutive failures (allow time for camera init)
     if (errorCountRef.current >= 3) {
       setLoading(false);
       setError(true);
-      // Stop polling on persistent error
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
+      // Stop polling on persistent error - don't accumulate requests
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
       }
+      return;
     }
-  }, []);
+
+    // Schedule retry with backoff
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      if (mountedRef.current) {
+        const url = api.preview.getSourceSnapshotUrl(sourceId, 80, 45, 8);
+        isPendingRef.current = true;
+        setSnapshotUrl(url);
+      }
+    }, backoffDelayRef.current);
+  }, [sourceId]);
 
   if (!hasVideo) {
     // Audio-only placeholder
@@ -210,25 +192,14 @@ function SourceThumbnail({ sourceId, sourceType }: { sourceId: string; sourceTyp
           <div className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
         </div>
       )}
-      {useWebRTC ? (
-        <video
-          ref={videoRef}
-          autoPlay
-          muted
-          playsInline
+      {snapshotUrl && (
+        <img
+          src={snapshotUrl}
+          alt="Preview"
           className="w-full h-full object-cover"
-          onLoadedData={handleLoad}
+          onLoad={handleLoad}
+          onError={handleError}
         />
-      ) : (
-        snapshotUrl && (
-          <img
-            src={snapshotUrl}
-            alt="Preview"
-            className="w-full h-full object-cover"
-            onLoad={handleLoad}
-            onError={handleError}
-          />
-        )
       )}
     </div>
   );
@@ -238,7 +209,7 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
   const { t } = useTranslation();
   const { addLayer } = useSceneStore();
   const { removeSource } = useSourceStore();
-  const { reloadProfile } = useProfileStore();
+  const { reloadProfile, removeCurrentSource } = useProfileStore();
   const [showAddModal, setShowAddModal] = useState(false);
 
   // Check if source is used in active scene
@@ -271,7 +242,8 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
     if (confirm(t('stream.confirmRemoveSource', { name: source.name, defaultValue: `Remove "${source.name}" from profile? This will also remove it from all scenes.` }))) {
       try {
         await removeSource(profile.name, source.id);
-        await reloadProfile();
+        // Update local state without reloading entire profile to avoid overwriting local edits
+        removeCurrentSource(source.id);
         toast.success(t('stream.sourceRemoved', { name: source.name, defaultValue: `Removed ${source.name}` }));
       } catch (err) {
         toast.error(t('stream.sourceRemoveFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to remove source: ${err instanceof Error ? err.message : String(err)}` }));
