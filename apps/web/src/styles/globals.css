@@ -73,15 +73,6 @@
   --shadow-xl: var(--shadow-xl);
 }
 
-/* Reset */
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
 /* Base */
 html {
   font-size: 16px;

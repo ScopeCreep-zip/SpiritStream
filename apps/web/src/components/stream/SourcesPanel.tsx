@@ -260,7 +260,7 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
 
   return (
     <Card className="h-full flex flex-col">
-      <CardHeader className="flex-shrink-0">
+      <CardHeader className="flex-shrink-0" style={{ padding: '12px 16px' }}>
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm">{t('stream.sources', { defaultValue: 'Sources' })}</CardTitle>
           <Button
@@ -274,7 +274,7 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
           </Button>
         </div>
       </CardHeader>
-      <CardBody className="flex-1 overflow-y-auto p-2">
+      <CardBody className="flex-1 overflow-y-auto" style={{ padding: '12px' }}>
         {profile.sources.length === 0 ? (
           <div className="text-center text-muted text-sm py-8">
             <p>{t('stream.noSources', { defaultValue: 'No sources' })}</p>

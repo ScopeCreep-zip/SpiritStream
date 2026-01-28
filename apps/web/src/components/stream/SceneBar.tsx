@@ -79,8 +79,8 @@ export function SceneBar({ profile, activeSceneId }: SceneBarProps) {
   };
 
   return (
-    <div className="flex items-center gap-2 p-2 bg-card rounded border border-border overflow-x-auto">
-      <span className="text-xs font-medium text-muted px-2">{t('stream.scenes', { defaultValue: 'Scenes' })}</span>
+    <div className="flex items-center gap-2 px-4 py-3 bg-card rounded border border-border overflow-x-auto">
+      <span className="text-xs font-medium text-muted">{t('stream.scenes', { defaultValue: 'Scenes' })}</span>
 
       {/* Scene tabs */}
       {profile.scenes.map((scene) => (

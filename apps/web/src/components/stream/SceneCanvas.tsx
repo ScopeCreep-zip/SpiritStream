@@ -140,7 +140,7 @@ export function SceneCanvas({
   return (
     <Card className="h-full flex flex-col overflow-hidden">
       {/* View mode toggle */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
         <span className="text-sm font-medium text-[var(--text-secondary)]">Canvas</span>
         <div className="flex items-center gap-1 bg-[var(--bg-sunken)] p-1 rounded-lg">
           <button

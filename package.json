@@ -9,28 +9,22 @@
     "generate:platforms": "tsx scripts/generate-platforms.ts",
     "build:server": "tsx scripts/build-server.ts",
     "build:server:release": "tsx scripts/build-server.ts --release",
-
     "dev": "pnpm run dev:desktop",
     "dev:web": "pnpm --filter @spiritstream/web dev",
     "dev:desktop": "pnpm --filter @spiritstream/desktop dev",
-
     "build": "turbo run build",
     "build:web": "pnpm --filter @spiritstream/web build",
     "build:desktop": "pnpm --filter @spiritstream/desktop build",
-
     "backend:dev": "cargo run --manifest-path server/Cargo.toml",
     "backend:build": "cargo build --manifest-path server/Cargo.toml --release",
     "backend:kill": "bash scripts/kill-server.sh",
-
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
     "lint:fix": "pnpm --filter @spiritstream/web lint:fix",
     "format": "prettier --write \"apps/**/*.{ts,tsx,css,json}\" \"packages/**/*.{ts,tsx,css,json}\"",
     "format:check": "prettier --check \"apps/**/*.{ts,tsx,css,json}\" \"packages/**/*.{ts,tsx,css,json}\"",
-
     "check:server": "cargo check --manifest-path server/Cargo.toml",
     "check:desktop": "cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml",
-
     "clean": "rm -rf .turbo apps/*/.turbo apps/*/dist apps/*/node_modules/.vite apps/*/node_modules/.cache",
     "clean:all": "pnpm clean && rm -rf server/target apps/desktop/src-tauri/target",
     "clean:build": "pnpm clean && pnpm build",
@@ -61,6 +55,7 @@
   "homepage": "https://github.com/ScopeCreep-zip/SpiritStream#readme",
   "devDependencies": {
     "prettier": "^3.4.0",
+    "puppeteer": "^24.36.1",
     "tsx": "^4.21.0",
     "turbo": "^2.5.4"
   }

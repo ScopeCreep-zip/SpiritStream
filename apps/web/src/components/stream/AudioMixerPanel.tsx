@@ -2,6 +2,7 @@
  * Audio Mixer Panel
  * Bottom panel with audio track controls
  */
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Volume2, VolumeX } from 'lucide-react';
 import { Card, CardBody } from '@/components/ui/Card';
@@ -73,7 +74,7 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
 
   return (
     <Card>
-      <CardBody className="py-3">
+      <CardBody style={{ padding: '12px 16px' }}>
         <div className="flex items-end gap-4 overflow-x-auto pb-2">
           {/* Master volume */}
           <AudioTrackControl
@@ -134,17 +135,51 @@ function AudioTrackControl({
   onMuteToggle,
   onSoloToggle,
 }: AudioTrackControlProps) {
-  // Convert 0-2 range to percentage for display
-  const volumePercent = Math.round(volume * 100);
+  // Local volume state for responsive UI during drag
+  const [localVolume, setLocalVolume] = useState(volume);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isDraggingRef = useRef(false);
+
+  // Sync local volume when prop changes (from server)
+  useEffect(() => {
+    if (!isDraggingRef.current) {
+      setLocalVolume(volume);
+    }
+  }, [volume]);
+
+  // Debounced save to server
+  const debouncedSave = useCallback((newVolume: number) => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+    debounceRef.current = setTimeout(() => {
+      onVolumeChange(newVolume);
+      isDraggingRef.current = false;
+    }, 300); // Save 300ms after last change
+  }, [onVolumeChange]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+    };
+  }, []);
+
+  // Convert 0-1 range to percentage for display (0% to 100%)
+  const volumePercent = Math.round(localVolume * 100);
 
   // Handle vertical slider interaction via click/drag on the track
   const handleSliderInteraction = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const y = e.clientY - rect.top;
     const height = rect.height;
-    // Invert: top = max (2), bottom = min (0)
-    const newVolume = Math.max(0, Math.min(2, (1 - y / height) * 2));
-    onVolumeChange(newVolume);
+    // Invert: top = max (1.0), bottom = min (0)
+    const newVolume = Math.max(0, Math.min(1, 1 - y / height));
+    isDraggingRef.current = true;
+    setLocalVolume(newVolume);
+    debouncedSave(newVolume);
   };
 
   const handleDrag = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -169,19 +204,19 @@ function AudioTrackControl({
       >
         {/* Fill bar */}
         <div
-          className={`absolute bottom-0 left-0 right-0 rounded-full transition-all ${
+          className={`absolute bottom-0 left-0 right-0 rounded-full ${
             muted ? 'bg-muted' : 'bg-primary'
           }`}
-          style={{ height: `${(volume / 2) * 100}%` }}
+          style={{ height: `${localVolume * 100}%` }}
         />
         {/* Thumb indicator */}
         <div
-          className={`absolute left-1/2 -translate-x-1/2 w-4 h-4 rounded-full border-2 shadow-md transition-all ${
+          className={`absolute left-1/2 -translate-x-1/2 w-4 h-4 rounded-full border-2 shadow-md ${
             muted
               ? 'bg-muted border-muted'
               : 'bg-primary border-primary-foreground'
           }`}
-          style={{ bottom: `calc(${(volume / 2) * 100}% - 8px)` }}
+          style={{ bottom: `calc(${localVolume * 100}% - 8px)` }}
         />
       </div>
 

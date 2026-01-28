@@ -54,10 +54,10 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
   if (!layer) {
     return (
       <Card className="h-full">
-        <CardHeader>
+        <CardHeader style={{ padding: '12px 16px' }}>
           <CardTitle className="text-sm">{t('stream.properties', { defaultValue: 'Properties' })}</CardTitle>
         </CardHeader>
-        <CardBody>
+        <CardBody style={{ padding: '12px 16px' }}>
           <p className="text-muted text-sm">{t('stream.selectLayer', { defaultValue: 'Select a layer to edit its properties' })}</p>
         </CardBody>
       </Card>
@@ -117,7 +117,7 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
 
   return (
     <Card className="h-full flex flex-col">
-      <CardHeader className="flex-shrink-0">
+      <CardHeader className="flex-shrink-0" style={{ padding: '12px 16px' }}>
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm">{t('stream.properties', { defaultValue: 'Properties' })}</CardTitle>
           <div className="flex items-center gap-1">
@@ -150,7 +150,7 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
         <p className="text-xs text-muted truncate">{source?.name ?? t('stream.unknownSource', { defaultValue: 'Unknown Source' })}</p>
       </CardHeader>
 
-      <CardBody className="flex-1 overflow-y-auto space-y-4">
+      <CardBody className="flex-1 overflow-y-auto space-y-4" style={{ padding: '12px 16px' }}>
         {/* Lock indicator banner */}
         {layer.locked && (
           <div className="flex items-center gap-2 p-2 bg-warning/10 border border-warning/20 rounded text-warning text-sm">

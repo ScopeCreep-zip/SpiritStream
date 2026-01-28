@@ -8,7 +8,7 @@ export interface MainContentProps {
 export function MainContent({ children, className }: MainContentProps) {
   return (
     <main
-      className={cn('flex-1 flex flex-col min-h-screen', className)}
+      className={cn('flex-1 flex flex-col h-screen', className)}
       style={{ marginLeft: '260px' }}
     >
       {children}
