@@ -32,3 +32,25 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 # Utilities
 log = "0.4"
 tauri-plugin-http = "2"
+
+# Native Capture
+crabcamera = "0.4"
+cpal = { version = "0.17", features = ["jack"] }
+scap = "0.0.8"
+
+# macOS Permissions (using native APIs via crabcamera and scap)
+[target.'cfg(target_os = "macos")'.dependencies]
+# crabcamera handles camera permissions, scap handles screen recording
+
+# Linux Permissions (xdg-desktop-portal via ashpd)
+[target.'cfg(target_os = "linux")'.dependencies]
+ashpd = { version = "0.9", features = ["tokio"] }
+
+# Windows Permissions (WinRT MediaCapture API)
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.58", features = [
+    "Media_Capture",
+    "Security_Authorization_AppCapabilityAccess",
+    "Foundation",
+    "Foundation_Collections"
+] }

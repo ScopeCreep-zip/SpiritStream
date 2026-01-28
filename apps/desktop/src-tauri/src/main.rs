@@ -12,6 +12,8 @@ use tauri_plugin_shell::{
     ShellExt,
 };
 
+mod permissions;
+
 /// Holds the server child process so we can kill it on exit
 struct ServerProcess(Mutex<Option<CommandChild>>);
 
@@ -39,6 +41,12 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![
+            permissions::check_permissions,
+            permissions::request_permission,
+            permissions::get_permission_guidance,
+            permissions::get_platform,
+        ])
         .manage(ServerProcess(Mutex::new(None)))
         .setup(|app| {
             let mut targets = vec![
@@ -66,6 +74,10 @@ fn main() {
                     }
                 }
             }
+
+            // Note: Permission checking is now done on-demand when the user tries to
+            // add a source that requires permissions. This avoids issues with calling
+            // macOS APIs from non-main threads on startup.
 
             // Launch the backend server
             launch(app.handle());
