@@ -6,7 +6,6 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Volume2, VolumeX } from 'lucide-react';
 import { Card, CardBody } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
 import type { Profile, Scene } from '@/types/profile';
 import { useSceneStore } from '@/stores/sceneStore';
 import { useProfileStore } from '@/stores/profileStore';
@@ -75,39 +74,59 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
   return (
     <Card>
       <CardBody style={{ padding: '12px 16px' }}>
-        <div className="flex items-end gap-4 overflow-x-auto pb-2">
-          {/* Master volume */}
-          <AudioTrackControl
-            label={t('stream.master', { defaultValue: 'Master' })}
-            volume={scene.audioMixer.masterVolume}
-            muted={false}
-            solo={false}
-            isMaster
-            onVolumeChange={handleMasterVolumeChange}
-            onMuteToggle={() => {}}
-            onSoloToggle={() => {}}
-          />
+        <div className="flex items-stretch overflow-x-auto pb-2">
+          {/* INPUT SECTION */}
+          <div className="flex flex-col min-w-0 flex-1">
+            <h4 className="text-sm font-medium text-[var(--text-secondary)] mb-3">
+              {t('stream.input', { defaultValue: 'Input' })}
+            </h4>
+            <div className="flex items-end gap-4 flex-1">
+              {scene.audioMixer.tracks.length > 0 ? (
+                scene.audioMixer.tracks.map((track) => (
+                  <AudioTrackControl
+                    key={track.sourceId}
+                    label={getSourceName(track.sourceId)}
+                    volume={track.volume}
+                    muted={track.muted}
+                    solo={track.solo}
+                    onVolumeChange={(v) => handleVolumeChange(track.sourceId, v)}
+                    onMuteToggle={(m) => handleMuteToggle(track.sourceId, m)}
+                    onSoloToggle={(s) => handleSoloToggle(track.sourceId, s)}
+                  />
+                ))
+              ) : (
+                <div className="flex items-center justify-center h-full min-h-[140px] px-4">
+                  <p className="text-[var(--text-muted)] text-sm">
+                    {t('stream.noAudioTracks', { defaultValue: 'No audio tracks' })}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
 
           {/* Divider */}
-          <div className="w-px h-28 bg-border" />
+          <div className="flex flex-col mx-4 py-1">
+            <div className="w-px flex-1 bg-[var(--border-default)]" />
+          </div>
 
-          {/* Source tracks */}
-          {scene.audioMixer.tracks.map((track) => (
-            <AudioTrackControl
-              key={track.sourceId}
-              label={getSourceName(track.sourceId)}
-              volume={track.volume}
-              muted={track.muted}
-              solo={track.solo}
-              onVolumeChange={(v) => handleVolumeChange(track.sourceId, v)}
-              onMuteToggle={(m) => handleMuteToggle(track.sourceId, m)}
-              onSoloToggle={(s) => handleSoloToggle(track.sourceId, s)}
-            />
-          ))}
-
-          {scene.audioMixer.tracks.length === 0 && (
-            <p className="text-muted text-sm">{t('stream.noAudioTracks', { defaultValue: 'No audio tracks' })}</p>
-          )}
+          {/* OUTPUT SECTION */}
+          <div className="flex flex-col">
+            <h4 className="text-sm font-medium text-[var(--text-secondary)] mb-3">
+              {t('stream.output', { defaultValue: 'Output' })}
+            </h4>
+            <div className="flex items-end gap-4 flex-1">
+              <AudioTrackControl
+                label={t('stream.master', { defaultValue: 'Master' })}
+                volume={scene.audioMixer.masterVolume}
+                muted={false}
+                solo={false}
+                isMaster
+                onVolumeChange={handleMasterVolumeChange}
+                onMuteToggle={() => {}}
+                onSoloToggle={() => {}}
+              />
+            </div>
+          </div>
         </div>
       </CardBody>
     </Card>
@@ -190,9 +209,46 @@ function AudioTrackControl({
 
   return (
     <div className="flex flex-col items-center gap-2 min-w-[80px]">
-      {/* Volume icon for master */}
-      {isMaster && (
-        <Volume2 className="w-4 h-4 text-primary" />
+      {/* Mute/Mono buttons above slider (non-master tracks) */}
+      {!isMaster ? (
+        <div className="flex gap-1 mb-2">
+          <button
+            type="button"
+            className={`w-7 h-7 rounded-md flex items-center justify-center transition-all border ${
+              muted
+                ? 'bg-destructive/20 border-destructive text-destructive'
+                : 'bg-[var(--bg-sunken)] border-transparent text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-secondary)]'
+            }`}
+            onClick={() => onMuteToggle(!muted)}
+            title={muted ? 'Unmute' : 'Mute'}
+          >
+            {muted ? (
+              <VolumeX className="w-4 h-4" />
+            ) : (
+              <Volume2 className="w-4 h-4" />
+            )}
+          </button>
+          <button
+            type="button"
+            className={`w-7 h-7 rounded-md flex items-center justify-center transition-all border ${
+              solo
+                ? 'bg-primary/20 border-primary text-primary'
+                : 'bg-[var(--bg-sunken)] border-transparent text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-secondary)]'
+            }`}
+            onClick={() => onSoloToggle(!solo)}
+            title={solo ? 'Disable Mono' : 'Enable Mono'}
+          >
+            {/* Mono icon: single filled circle representing one channel */}
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="12" cy="12" r="6" />
+            </svg>
+          </button>
+        </div>
+      ) : (
+        /* Volume icon for master */
+        <div className="h-7 mb-2 flex items-center justify-center">
+          <Volume2 className="w-5 h-5 text-primary" />
+        </div>
       )}
 
       {/* Volume slider (vertical) - custom implementation for better UX */}
@@ -222,34 +278,6 @@ function AudioTrackControl({
 
       {/* Volume indicator */}
       <span className="text-xs text-muted tabular-nums">{volumePercent}%</span>
-
-      {/* Mute/Solo buttons - increased to 32px for better touch targets */}
-      {!isMaster && (
-        <div className="flex gap-1">
-          <Button
-            variant={muted ? 'destructive' : 'ghost'}
-            size="sm"
-            className="w-8 h-8 p-0 min-w-[32px]"
-            onClick={() => onMuteToggle(!muted)}
-            title={muted ? 'Unmute' : 'Mute'}
-          >
-            {muted ? (
-              <VolumeX className="w-4 h-4" />
-            ) : (
-              <Volume2 className="w-4 h-4" />
-            )}
-          </Button>
-          <Button
-            variant={solo ? 'primary' : 'ghost'}
-            size="sm"
-            className="w-8 h-8 p-0 min-w-[32px]"
-            onClick={() => onSoloToggle(!solo)}
-            title={solo ? 'Unsolo' : 'Solo'}
-          >
-            <span className="text-sm font-bold">S</span>
-          </Button>
-        </div>
-      )}
 
       {/* Label with tooltip for truncated text */}
       <span className="text-xs text-center truncate max-w-[80px]" title={label}>
