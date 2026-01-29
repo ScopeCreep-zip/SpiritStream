@@ -17,9 +17,15 @@ export type BackendMode = 'tauri' | 'http';
  * Check if we're running inside a Tauri webview.
  * Note: This doesn't determine the backend mode - even in Tauri, we use HTTP
  * by default because the desktop app spawns a backend server.
+ *
+ * In Tauri 2.x, __TAURI__ is only available after importing @tauri-apps/api.
+ * We check for __TAURI_INTERNALS__ which is injected by the runtime immediately.
  */
 export const isTauri = (): boolean => {
-  return typeof window !== 'undefined' && '__TAURI__' in window;
+  if (typeof window === 'undefined') return false;
+  // Tauri 2.x injects __TAURI_INTERNALS__ before any JS runs
+  // __TAURI__ is only available after importing @tauri-apps/api
+  return '__TAURI_INTERNALS__' in window || '__TAURI__' in window;
 };
 
 /**

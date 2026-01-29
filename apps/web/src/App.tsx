@@ -39,7 +39,7 @@ import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValid
 import { getIncomingUrl } from '@/types/profile';
 import { toast } from '@/hooks/useToast';
 import { useThemeStore } from '@/stores/themeStore';
-import { checkAuth, checkServerHealth, checkServerReady } from '@/lib/backend/env';
+import { isTauri, checkAuth, checkServerHealth, checkServerReady } from '@/lib/backend/env';
 import { initConnection } from '@/lib/backend/httpEvents';
 
 // Import all views
@@ -80,13 +80,65 @@ function App() {
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
 
   // Check server health on mount
+  // In Tauri mode: Listen for 'server-ready' event from Rust launcher (no polling errors)
+  // In HTTP mode: Fall back to polling /health endpoint (for Docker/remote browser access)
   useEffect(() => {
     let cancelled = false;
+    let unlisten: (() => void) | null = null;
 
-    const checkHealth = async () => {
+    const initHealthCheck = async () => {
       setIsCheckingHealth(true);
 
-      // Give the server time to start (especially in Tauri where launcher is spawning it)
+      // In Tauri, wait for the Rust launcher to signal server is ready
+      // This avoids redundant polling and console errors during startup
+      if (isTauri()) {
+        try {
+          const { listen } = await import('@tauri-apps/api/event');
+
+          let resolved = false;
+          const markReady = () => {
+            if (resolved || cancelled) return;
+            resolved = true;
+            setServerHealthy(true);
+            setIsCheckingHealth(false);
+          };
+
+          const markFailed = (error?: string) => {
+            if (resolved || cancelled) return;
+            resolved = true;
+            console.error('Server startup failed:', error);
+            setServerHealthy(false);
+            setIsCheckingHealth(false);
+          };
+
+          // Set up listener for server-ready event from Rust launcher
+          unlisten = await listen('server-ready', markReady);
+
+          // Also listen for server-error event
+          await listen('server-error', (event) => markFailed(event.payload as string));
+
+          // The Rust launcher waits for health check, then emits server-ready,
+          // then shows the window. By that point, our listener should be ready.
+          // We don't make any HTTP requests here to avoid console errors.
+
+          // Fallback: If event doesn't arrive within 20 seconds, something is wrong.
+          // This handles edge cases where event system fails entirely.
+          setTimeout(() => {
+            if (resolved || cancelled) return;
+            markFailed('Server startup timeout - no ready signal received');
+          }, 20000);
+        } catch (error) {
+          console.warn('Failed to set up Tauri event listener, falling back to polling:', error);
+          // Fall through to HTTP polling below
+          await pollHealthCheck();
+        }
+      } else {
+        // Not in Tauri - use HTTP polling (Docker, remote browser access)
+        await pollHealthCheck();
+      }
+    };
+
+    const pollHealthCheck = async () => {
       const healthy = await checkServerHealth(10, 500);
       if (cancelled) return;
 
@@ -103,10 +155,13 @@ function App() {
       setIsCheckingHealth(false);
     };
 
-    checkHealth();
+    initHealthCheck();
 
     return () => {
       cancelled = true;
+      if (unlisten) {
+        unlisten();
+      }
     };
   }, []);
 

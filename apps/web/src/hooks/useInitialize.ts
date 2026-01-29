@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useProfileStore } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
-import { useThemeStore } from '@/stores/themeStore';
+import { useThemeStore, initThemeEventListener } from '@/stores/themeStore';
 import { api } from '@/lib/backend';
 
 /**
@@ -15,13 +15,18 @@ export function useInitialize() {
   const loadProfile = useProfileStore((state) => state.loadProfile);
   const syncWithBackend = useStreamStore((state) => state.syncWithBackend);
   const setTheme = useThemeStore((state) => state.setTheme);
+  const refreshThemes = useThemeStore((state) => state.refreshThemes);
 
   useEffect(() => {
     if (!initialized.current) {
       initialized.current = true;
 
-      // Load profiles and sync stream state in parallel
-      Promise.all([loadProfiles(), syncWithBackend()])
+      // Load profiles, themes, and sync stream state in parallel
+      // NOTE: refreshThemes is called here (not in themeStore hydration) to ensure
+      // the server is ready - App component's health check runs before this hook
+      // Also initialize theme event listener for live theme updates
+      initThemeEventListener();
+      Promise.all([loadProfiles(), syncWithBackend(), refreshThemes()])
         .then(async () => {
           // After profiles are loaded, try to restore last used profile
           try {

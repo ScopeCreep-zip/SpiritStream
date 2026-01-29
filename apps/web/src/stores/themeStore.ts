@@ -264,16 +264,24 @@ export const useThemeStore = create<ThemeState>()(
             applyTheme(state.currentThemeId, mode as ThemeMode, state.currentTokens);
           }
 
-          // Load themes list - setTheme will be called by useInitialize
-          // which gets the authoritative themeId from backend settings
-          state.refreshThemes();
+          // NOTE: Don't call refreshThemes() here - it will fail if the server isn't ready yet.
+          // The App component's health check ensures the server is ready before rendering AppContent,
+          // and useInitialize will call refreshThemes() at the appropriate time.
+          // This prevents "Could not connect to server" errors on startup.
         }
       },
     }
   )
 );
 
-if (typeof window !== 'undefined') {
+// Event listener for theme changes - setup is deferred to avoid connection errors on startup.
+// The listener is registered when initThemeEventListener() is called from useInitialize.
+let themeEventListenerInitialized = false;
+
+export function initThemeEventListener(): void {
+  if (themeEventListenerInitialized || typeof window === 'undefined') return;
+  themeEventListenerInitialized = true;
+
   // Listen for theme file changes from backend
   events.on<ThemeSummary[]>('themes_updated', (payload) => {
     const themes = payload;
