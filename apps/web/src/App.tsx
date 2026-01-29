@@ -117,9 +117,24 @@ function App() {
           // Also listen for server-error event
           await listen('server-error', (event) => markFailed(event.payload as string));
 
-          // The Rust launcher waits for health check, then emits server-ready,
-          // then shows the window. By that point, our listener should be ready.
-          // We don't make any HTTP requests here to avoid console errors.
+          // Race condition fix: The server-ready event might have been emitted
+          // before our listener was set up. Wait a bit longer then check.
+          // Use 500ms delay to give server time to start, avoiding console errors.
+          setTimeout(async () => {
+            if (resolved || cancelled) return;
+            try {
+              const healthy = await checkServerHealth(1, 0);
+              if (healthy && !resolved && !cancelled) {
+                const ready = await checkServerReady(1, 0);
+                if (ready && !resolved && !cancelled) {
+                  console.log('[App] Server already ready (caught race condition)');
+                  markReady();
+                }
+              }
+            } catch {
+              // Ignore errors - we still have the event listener as backup
+            }
+          }, 500); // Wait 500ms to avoid console errors from early failed requests
 
           // Fallback: If event doesn't arrive within 20 seconds, something is wrong.
           // This handles edge cases where event system fails entirely.
