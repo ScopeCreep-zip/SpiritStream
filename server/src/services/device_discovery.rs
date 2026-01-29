@@ -190,6 +190,8 @@ impl DeviceDiscovery {
                                 displays.push(DisplayInfo {
                                     display_id: idx.to_string(),
                                     name: format!("Display {}", displays.len() + 1),
+                                    // Store the actual AVFoundation device name for go2rtc
+                                    device_name: Some(name),
                                     width: 1920,  // Default, actual resolution needs screen query
                                     height: 1080,
                                     is_primary: displays.is_empty(),
@@ -206,6 +208,7 @@ impl DeviceDiscovery {
             displays.push(DisplayInfo {
                 display_id: "0".to_string(),
                 name: "Main Display".to_string(),
+                device_name: Some("Capture screen 0".to_string()),
                 width: 1920,
                 height: 1080,
                 is_primary: true,

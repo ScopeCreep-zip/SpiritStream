@@ -54,6 +54,10 @@ use spiritstream_server::services::{
     RecordingService, RecordingConfig, RecordingFormat,
     CaptureIndicatorService, CaptureType,
     PermissionsService,
+    // WebRTC services
+    Go2RtcManager, unavailable_webrtc_info,
+    // H264 capture service for native screen capture to WebRTC
+    H264CaptureService,
 };
 
 // ============================================================================
@@ -125,6 +129,12 @@ struct AppState {
     native_preview: Arc<NativePreviewService>,
     recording_service: Arc<RecordingService>,
     capture_indicator: Arc<CaptureIndicatorService>,
+    // WebRTC preview service
+    go2rtc_manager: Arc<Go2RtcManager>,
+    // H264 capture service for native screen capture → WebRTC
+    h264_capture: Arc<H264CaptureService>,
+    // Server port for constructing HTTP URLs
+    server_port: u16,
 }
 
 #[derive(Serialize)]
@@ -1137,6 +1147,303 @@ async fn stop_scene_preview_handler(
 
     state.preview_handler.stop_scene_preview();
     (StatusCode::OK, Json(json!({ "ok": true })))
+}
+
+// ============================================================================
+// WebRTC Preview Endpoints (go2rtc integration)
+// ============================================================================
+
+/// GET /api/webrtc/available - Check if go2rtc WebRTC server is available
+async fn webrtc_available_handler(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let available = state.go2rtc_manager.is_available();
+    Json(json!({ "ok": true, "data": available }))
+}
+
+/// GET /api/webrtc/info/:source_id - Get WebRTC streaming info for a source
+async fn webrtc_info_handler(
+    State(state): State<AppState>,
+    Path(source_id): Path<String>,
+) -> impl IntoResponse {
+    if !state.go2rtc_manager.is_available() {
+        return Json(json!({ "ok": true, "data": unavailable_webrtc_info() }));
+    }
+
+    let info = state.go2rtc_manager.client().get_webrtc_info(&source_id);
+    Json(json!({ "ok": true, "data": info }))
+}
+
+/// POST /api/webrtc/start/:source_id - Register a source with go2rtc for WebRTC streaming
+async fn webrtc_start_handler(
+    State(state): State<AppState>,
+    Path(source_id): Path<String>,
+    cookies: Cookies,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    // Authentication check
+    if let Some(expected) = state.auth_token.as_deref() {
+        let authenticated = cookies.get(AUTH_COOKIE_NAME).is_some()
+            || bearer_token(&headers).is_some_and(|t| verify_token(expected, t));
+
+        if !authenticated {
+            return Json(json!({ "ok": false, "error": "Unauthorized" }));
+        }
+    }
+
+    if !state.go2rtc_manager.is_available() {
+        return Json(json!({ "ok": false, "error": "go2rtc is not available" }));
+    }
+
+    // Find source from active profile
+    let source = {
+        let settings = match state.settings_manager.load() {
+            Ok(s) => s,
+            Err(e) => {
+                log::error!("Failed to load settings for WebRTC: {}", e);
+                return Json(json!({ "ok": false, "error": "Failed to load settings" }));
+            }
+        };
+
+        let profile_name = match settings.last_profile.as_ref() {
+            Some(name) => name.clone(),
+            None => {
+                return Json(json!({ "ok": false, "error": "No active profile" }));
+            }
+        };
+
+        match state.profile_manager.load(&profile_name, None).await {
+            Ok(profile) => profile.sources.into_iter().find(|s| s.id() == source_id),
+            Err(e) => {
+                log::error!("Failed to load profile for WebRTC: {}", e);
+                return Json(json!({ "ok": false, "error": "Failed to load profile" }));
+            }
+        }
+    };
+
+    let source = match source {
+        Some(s) => s,
+        None => {
+            return Json(json!({ "ok": false, "error": "Source not found" }));
+        }
+    };
+
+    // Build go2rtc source URL based on source type
+    // go2rtc uses native source formats like ffmpeg:device for cameras
+    let go2rtc_source = match &source {
+        Source::Camera(cam) => {
+            // Parse device_id - it may be numeric index or device name
+            let device_index = cam.device_id.parse::<u32>().unwrap_or(0);
+            // Use go2rtc's native ffmpeg:device source
+            format!("ffmpeg:device?video={}&video_size=1280x720&framerate=30#video=h264", device_index)
+        }
+        Source::ScreenCapture(screen) => {
+            // Check screen recording permission first (macOS)
+            #[cfg(target_os = "macos")]
+            {
+                // Check if we have screen recording permission
+                let has_permission = ScreenCaptureService::has_permission_async().await;
+                if !has_permission {
+                    // Try to request permission (will show system prompt)
+                    let granted = ScreenCaptureService::request_permission_async().await;
+                    if !granted {
+                        return Json(json!({
+                            "ok": false,
+                            "error": "Screen Recording permission required. Please grant permission in System Settings > Privacy & Security > Screen Recording, then try again."
+                        }));
+                    }
+                }
+            }
+
+            // For screen capture, we use native scap capture + H264 encoding via our server.
+            // This approach:
+            // 1. Uses scap (which has screen recording permission via our server process)
+            // 2. Encodes to H264 MPEG-TS using FFmpeg
+            // 3. Serves the stream via HTTP endpoint
+            // 4. go2rtc consumes the HTTP stream and serves via WebRTC
+            //
+            // This works around go2rtc's spawned ffmpeg not having macOS screen recording permission.
+
+            // Start H264 capture if not already running
+            if let Err(e) = state.h264_capture.start_capture(&screen, None) {
+                // If already capturing, that's fine - just log and continue
+                if !e.contains("Already capturing") {
+                    log::error!("Failed to start H264 capture: {}", e);
+                    return Json(json!({ "ok": false, "error": format!("Failed to start screen capture: {}", e) }));
+                }
+                log::debug!("H264 capture already running for {}", source_id);
+            }
+
+            // Build HTTP URL pointing to our MPEG-TS stream endpoint
+            // go2rtc will consume this HTTP stream
+            let http_url = format!(
+                "http://127.0.0.1:{}/api/capture/{}/stream",
+                state.server_port,
+                source_id
+            );
+
+            log::info!("Screen capture using HTTP source: {}", http_url);
+
+            http_url
+        }
+        Source::CaptureCard(card) => {
+            // Capture cards as video devices
+            let device_index = card.device_id.parse::<u32>().unwrap_or(0);
+            format!("ffmpeg:device?video={}&video_size=1920x1080&framerate=30#video=h264", device_index)
+        }
+        Source::AudioDevice(_) => {
+            return Json(json!({ "ok": false, "error": "Audio-only sources not supported for WebRTC video" }));
+        }
+        Source::MediaFile(media) => {
+            // Use ffmpeg source for media files
+            format!("ffmpeg:{}#video=h264", media.file_path)
+        }
+        Source::Rtmp(rtmp) => {
+            // RTMP sources can be used directly
+            format!("rtmp://{}:{}/{}", rtmp.bind_address, rtmp.port, rtmp.application)
+        }
+    };
+
+    log::debug!("Registering go2rtc source '{}': {}", source_id, go2rtc_source);
+
+    match state.go2rtc_manager.register_source(&source_id, &go2rtc_source).await {
+        Ok(_) => {
+            let info = state.go2rtc_manager.client().get_webrtc_info(&source_id);
+            Json(json!({ "ok": true, "data": info }))
+        }
+        Err(e) => {
+            log::error!("Failed to register source with go2rtc: {}", e);
+            Json(json!({ "ok": false, "error": e }))
+        }
+    }
+}
+
+/// POST /api/webrtc/stop/:source_id - Unregister a source from go2rtc
+async fn webrtc_stop_handler(
+    State(state): State<AppState>,
+    Path(source_id): Path<String>,
+    cookies: Cookies,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    // Authentication check
+    if let Some(expected) = state.auth_token.as_deref() {
+        let authenticated = cookies.get(AUTH_COOKIE_NAME).is_some()
+            || bearer_token(&headers).is_some_and(|t| verify_token(expected, t));
+
+        if !authenticated {
+            return Json(json!({ "ok": false, "error": "Unauthorized" }));
+        }
+    }
+
+    if let Err(e) = state.go2rtc_manager.unregister_source(&source_id).await {
+        log::warn!("Failed to unregister source from go2rtc: {}", e);
+    }
+
+    // Also stop H264 capture if it was running for this source
+    if state.h264_capture.is_capturing(&source_id) {
+        if let Err(e) = state.h264_capture.stop_capture(&source_id) {
+            log::warn!("Failed to stop H264 capture for {}: {}", source_id, e);
+        }
+    }
+
+    Json(json!({ "ok": true }))
+}
+
+/// GET /api/capture/:source_id/stream - Stream H264 MPEG-TS for a screen capture source
+/// Used by go2rtc to consume native screen capture as an HTTP source
+async fn h264_capture_stream_handler(
+    State(state): State<AppState>,
+    Path(source_id): Path<String>,
+    cookies: Cookies,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    log::info!("H264 capture stream request for source: {}", source_id);
+
+    // Authentication check
+    if let Some(expected) = state.auth_token.as_deref() {
+        let authenticated = cookies.get(AUTH_COOKIE_NAME).is_some()
+            || bearer_token(&headers).is_some_and(|t| verify_token(expected, t));
+
+        if !authenticated {
+            log::warn!("H264 capture stream request unauthorized for source: {}", source_id);
+            return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+        }
+    }
+
+    // Find source from active profile
+    let source = {
+        let settings = match state.settings_manager.load() {
+            Ok(s) => s,
+            Err(e) => {
+                log::error!("Failed to load settings for H264 capture: {}", e);
+                return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load settings").into_response();
+            }
+        };
+
+        let profile_name = match settings.last_profile.as_ref() {
+            Some(name) => name.clone(),
+            None => {
+                return (StatusCode::BAD_REQUEST, "No active profile").into_response();
+            }
+        };
+
+        match state.profile_manager.load(&profile_name, None).await {
+            Ok(profile) => profile.sources.into_iter().find(|s| s.id() == source_id),
+            Err(e) => {
+                log::error!("Failed to load profile for H264 capture: {}", e);
+                return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load profile").into_response();
+            }
+        }
+    };
+
+    let source = match source {
+        Some(Source::ScreenCapture(screen)) => screen,
+        Some(_) => {
+            log::warn!("Source {} is not a screen capture source", source_id);
+            return (StatusCode::BAD_REQUEST, "Source is not a screen capture").into_response();
+        }
+        None => {
+            log::warn!("Source {} not found", source_id);
+            return (StatusCode::NOT_FOUND, "Source not found").into_response();
+        }
+    };
+
+    // Get or start H264 capture stream
+    let rx = match state.h264_capture.get_or_start_stream(&source) {
+        Ok(rx) => rx,
+        Err(e) => {
+            log::error!("Failed to start H264 capture: {}", e);
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to start capture: {}", e)).into_response();
+        }
+    };
+
+    log::info!("Starting H264 MPEG-TS stream for source: {}", source_id);
+
+    // Convert broadcast receiver to stream
+    let stream = BroadcastStream::new(rx);
+
+    // Stream MPEG-TS chunks directly
+    let body_stream = stream.filter_map(|result| async move {
+        match result {
+            Ok(chunk) => Some(Ok::<_, std::io::Error>(chunk)),
+            Err(e) => {
+                log::debug!("H264 stream receive error: {:?}", e);
+                None
+            }
+        }
+    });
+
+    // Build streaming response with MPEG-TS content type
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "video/mp2t")
+        .header(header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")
+        .header(header::PRAGMA, "no-cache")
+        .header(header::EXPIRES, "0")
+        .header("X-Content-Type-Options", "nosniff")
+        .body(Body::from_stream(body_stream))
+        .unwrap()
+        .into_response()
 }
 
 async fn ws_handler(
@@ -2813,6 +3120,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let capture_indicator = Arc::new(CaptureIndicatorService::new());
 
+    // Initialize go2rtc manager for WebRTC preview streaming
+    let go2rtc_manager = Arc::new(Go2RtcManager::new());
+    // Try to start go2rtc in background (non-blocking, will set is_available when ready)
+    {
+        let manager = go2rtc_manager.clone();
+        tokio::spawn(async move {
+            match manager.start().await {
+                Ok(()) => log::info!("go2rtc WebRTC server started successfully"),
+                Err(e) => log::warn!("go2rtc not available (WebRTC preview disabled): {}", e),
+            }
+        });
+    }
+
+    // Initialize H264 capture service for native screen capture → WebRTC
+    let h264_capture = Arc::new(H264CaptureService::new(
+        screen_capture.clone(),
+        preview_ffmpeg_path.clone(),
+    ));
+
     let state = AppState {
         profile_manager,
         settings_manager,
@@ -2833,6 +3159,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         native_preview,
         recording_service,
         capture_indicator,
+        go2rtc_manager,
+        h264_capture,
+        server_port: port,
     };
 
     // Build CORS layer
@@ -2886,6 +3215,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Permissions endpoints
         .route("/api/permissions/status", get(permissions_status_handler))
         .route("/api/permissions/request", post(request_permissions_handler))
+        // WebRTC preview endpoints (go2rtc integration)
+        .route("/api/webrtc/available", get(webrtc_available_handler))
+        .route("/api/webrtc/info/:source_id", get(webrtc_info_handler))
+        .route("/api/webrtc/start/:source_id", post(webrtc_start_handler))
+        .route("/api/webrtc/stop/:source_id", post(webrtc_stop_handler))
+        // H264 capture stream endpoint (for go2rtc HTTP source)
+        .route("/api/capture/:source_id/stream", get(h264_capture_stream_handler))
         .layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
 
     // Public routes (no auth required)

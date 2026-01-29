@@ -127,6 +127,10 @@ pub struct ScreenCaptureSource {
     pub name: String,
     /// Platform-specific display identifier
     pub display_id: String,
+    /// The actual device name as reported by the OS (e.g., "Capture screen 0" on macOS)
+    /// Used for go2rtc registration
+    #[serde(default)]
+    pub device_name: Option<String>,
     /// Whether to capture the cursor
     #[serde(default = "default_true")]
     pub capture_cursor: bool,
@@ -220,6 +224,10 @@ pub struct Resolution {
 pub struct DisplayInfo {
     pub display_id: String,
     pub name: String,
+    /// The actual device name as reported by the OS (e.g., "Capture screen 0" on macOS)
+    /// Used for go2rtc registration
+    #[serde(default)]
+    pub device_name: Option<String>,
     pub width: u32,
     pub height: u32,
     pub is_primary: bool,

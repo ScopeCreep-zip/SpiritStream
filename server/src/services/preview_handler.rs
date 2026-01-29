@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
@@ -37,12 +38,19 @@ const MAX_SOURCE_PREVIEWS: usize = 5;
 /// Cleanup timeout for orphaned previews (seconds)
 const ORPHAN_TIMEOUT_SECS: u64 = 30;
 
+/// Maximum age for a cached frame before considered stale (seconds)
+const STALE_FRAME_THRESHOLD_SECS: u64 = 5;
+
 /// Tracks a running preview process with cached latest frame
 struct PreviewProcess {
     child: Child,
     last_accessed: Instant,
     /// Cached latest frame for snapshot requests
     latest_frame: Arc<Mutex<Option<Bytes>>>,
+    /// When the last frame was received (for staleness detection)
+    last_frame_time: Arc<Mutex<Instant>>,
+    /// Whether the reader thread is still alive
+    is_alive: Arc<AtomicBool>,
 }
 
 /// Preview parameters from HTTP query
@@ -447,10 +455,19 @@ impl PreviewHandler {
         let latest_frame: Arc<Mutex<Option<Bytes>>> = Arc::new(Mutex::new(None));
         let latest_frame_clone = Arc::clone(&latest_frame);
 
+        // Create liveness tracking for the reader thread
+        let last_frame_time: Arc<Mutex<Instant>> = Arc::new(Mutex::new(Instant::now()));
+        let last_frame_time_clone = Arc::clone(&last_frame_time);
+        let is_alive: Arc<AtomicBool> = Arc::new(AtomicBool::new(true));
+        let is_alive_clone = Arc::clone(&is_alive);
+
         // Spawn reader thread
         let source_id_clone = source_id.clone();
         std::thread::spawn(move || {
-            Self::read_mjpeg_stream(stdout, tx, latest_frame_clone, source_id_clone);
+            Self::read_mjpeg_stream(
+                stdout, tx, latest_frame_clone, last_frame_time_clone,
+                is_alive_clone, source_id_clone
+            );
         });
 
         // Log stderr in background - capture all output for debugging
@@ -479,6 +496,8 @@ impl PreviewHandler {
                 child,
                 last_accessed: Instant::now(),
                 latest_frame,
+                last_frame_time,
+                is_alive,
             });
         }
 
@@ -490,6 +509,8 @@ impl PreviewHandler {
         mut stdout: std::process::ChildStdout,
         tx: broadcast::Sender<Bytes>,
         latest_frame: Arc<Mutex<Option<Bytes>>>,
+        last_frame_time: Arc<Mutex<Instant>>,
+        is_alive: Arc<AtomicBool>,
         source_id: String,
     ) {
         let mut buffer = Vec::with_capacity(64 * 1024);
@@ -537,9 +558,12 @@ impl PreviewHandler {
 
                         let frame_bytes = Bytes::from(frame);
 
-                        // Cache the latest frame for snapshot requests
+                        // Cache the latest frame and update timestamp for staleness detection
                         if let Ok(mut cached) = latest_frame.lock() {
                             *cached = Some(frame_bytes.clone());
+                        }
+                        if let Ok(mut time) = last_frame_time.lock() {
+                            *time = Instant::now();
                         }
 
                         match tx.send(frame_bytes) {
@@ -566,6 +590,10 @@ impl PreviewHandler {
                 }
             }
         }
+
+        // Mark reader as dead so snapshot requests know to restart preview
+        is_alive.store(false, Ordering::SeqCst);
+        log::info!("[Preview:{}] Reader thread exiting, marked as not alive", source_id);
     }
 
     /// Extract a complete JPEG frame from the buffer
@@ -607,22 +635,52 @@ impl PreviewHandler {
     }
 
     /// Get cached frame from a running preview (if available)
+    /// Returns None if the preview is dead or frame is stale
     pub fn get_cached_frame(&self, source_id: &str) -> Option<Vec<u8>> {
         let previews = self.source_previews.lock().ok()?;
         let preview = previews.get(source_id)?;
 
-        // Update last accessed time
-        // Note: Can't mutate through shared ref, but that's ok for now
+        // Check if the reader thread is still alive
+        if !preview.is_alive.load(Ordering::SeqCst) {
+            log::debug!("[Preview:{}] Reader thread is dead, returning None", source_id);
+            return None;
+        }
+
+        // Check if the frame is stale (no new frames for too long)
+        if let Ok(last_time) = preview.last_frame_time.lock() {
+            let age = last_time.elapsed();
+            if age.as_secs() > STALE_FRAME_THRESHOLD_SECS {
+                log::debug!("[Preview:{}] Cached frame is stale ({:.1}s old), returning None",
+                    source_id, age.as_secs_f32());
+                return None;
+            }
+        }
 
         let frame = preview.latest_frame.lock().ok()?;
         frame.as_ref().map(|b| b.to_vec())
     }
 
-    /// Check if a preview is running for a source
+    /// Check if a preview is running for a source (and actually alive)
     pub fn is_preview_running(&self, source_id: &str) -> bool {
         self.source_previews.lock()
-            .map(|p| p.contains_key(source_id))
+            .map(|p| {
+                p.get(source_id)
+                    .map(|preview| preview.is_alive.load(Ordering::SeqCst))
+                    .unwrap_or(false)
+            })
             .unwrap_or(false)
+    }
+
+    /// Clean up dead preview processes from the hashmap
+    pub fn cleanup_dead_preview(&self, source_id: &str) {
+        if let Ok(mut previews) = self.source_previews.lock() {
+            if let Some(preview) = previews.get(source_id) {
+                if !preview.is_alive.load(Ordering::SeqCst) {
+                    log::info!("[Preview:{}] Removing dead preview from cache", source_id);
+                    previews.remove(source_id);
+                }
+            }
+        }
     }
 
     /// Capture a single JPEG snapshot from a source
@@ -643,8 +701,10 @@ impl PreviewHandler {
             return Ok(cached_frame);
         }
 
-        // No cached frame - try to start a persistent preview
+        // No cached frame - clean up dead preview if exists, then start a new one
         if !self.is_preview_running(&source_id) {
+            // Clean up any dead preview entry before starting a new one
+            self.cleanup_dead_preview(&source_id);
             log::info!("Starting persistent preview for source {} (triggered by snapshot request)", source_id);
 
             // Start the preview with high quality params for caching
@@ -850,14 +910,25 @@ impl PreviewHandler {
         // Create broadcast channel for frames
         let (tx, rx) = broadcast::channel::<Bytes>(16);
 
-        // Create shared cache for latest frame
+        // Create shared cache for latest frame and liveness tracking
         let latest_frame: Arc<Mutex<Option<Bytes>>> = Arc::new(Mutex::new(None));
         let latest_frame_clone = Arc::clone(&latest_frame);
+        let last_frame_time: Arc<Mutex<Instant>> = Arc::new(Mutex::new(Instant::now()));
+        let last_frame_time_clone = Arc::clone(&last_frame_time);
+        let is_alive: Arc<AtomicBool> = Arc::new(AtomicBool::new(true));
+        let is_alive_clone = Arc::clone(&is_alive);
 
         // Spawn reader thread
         let scene_id_clone = scene_id.clone();
         std::thread::spawn(move || {
-            Self::read_mjpeg_stream(stdout, tx, latest_frame_clone, format!("scene:{}", scene_id_clone));
+            Self::read_mjpeg_stream(
+                stdout,
+                tx,
+                latest_frame_clone,
+                last_frame_time_clone,
+                is_alive_clone,
+                format!("scene:{}", scene_id_clone),
+            );
         });
 
         // Log stderr in background
@@ -885,6 +956,8 @@ impl PreviewHandler {
                 child,
                 last_accessed: Instant::now(),
                 latest_frame,
+                last_frame_time,
+                is_alive,
             });
         }
 
@@ -892,18 +965,52 @@ impl PreviewHandler {
     }
 
     /// Get cached frame from the scene preview (if available)
+    /// Returns None if the preview is dead or frame is stale
     pub fn get_scene_cached_frame(&self) -> Option<Vec<u8>> {
         let preview = self.scene_preview.lock().ok()?;
         let proc = preview.as_ref()?;
+
+        // Check if the reader thread is still alive
+        if !proc.is_alive.load(Ordering::SeqCst) {
+            log::debug!("[ScenePreview] Reader thread is dead, returning None");
+            return None;
+        }
+
+        // Check if the frame is stale (no new frames for too long)
+        if let Ok(last_time) = proc.last_frame_time.lock() {
+            let age = last_time.elapsed();
+            if age.as_secs() > STALE_FRAME_THRESHOLD_SECS {
+                log::debug!("[ScenePreview] Cached frame is stale ({:.1}s old), returning None",
+                    age.as_secs_f32());
+                return None;
+            }
+        }
+
         let frame = proc.latest_frame.lock().ok()?;
         frame.as_ref().map(|b| b.to_vec())
     }
 
-    /// Check if scene preview is running
+    /// Check if scene preview is running (and actually alive)
     pub fn is_scene_preview_running(&self) -> bool {
         self.scene_preview.lock()
-            .map(|p| p.is_some())
+            .map(|p| {
+                p.as_ref()
+                    .map(|proc| proc.is_alive.load(Ordering::SeqCst))
+                    .unwrap_or(false)
+            })
             .unwrap_or(false)
+    }
+
+    /// Clean up dead scene preview
+    pub fn cleanup_dead_scene_preview(&self) {
+        if let Ok(mut preview) = self.scene_preview.lock() {
+            if let Some(proc) = preview.as_ref() {
+                if !proc.is_alive.load(Ordering::SeqCst) {
+                    log::info!("[ScenePreview] Removing dead scene preview from cache");
+                    *preview = None;
+                }
+            }
+        }
     }
 
     /// Capture a scene snapshot - tries cached frame first, else starts preview
@@ -919,8 +1026,10 @@ impl PreviewHandler {
             return Ok(cached_frame);
         }
 
-        // No cached frame - try to start a persistent scene preview
+        // No cached frame - clean up dead preview if exists, then start a new one
         if !self.is_scene_preview_running() {
+            // Clean up any dead scene preview entry before starting a new one
+            self.cleanup_dead_scene_preview();
             log::info!("Starting persistent scene preview (triggered by snapshot request)");
 
             // Start the preview with good quality params for caching
