@@ -15,7 +15,10 @@ use tauri_plugin_shell::{
 mod permissions;
 
 /// Holds the server child process so we can kill it on exit
-struct ServerProcess(Mutex<Option<CommandChild>>);
+struct ServerProcess {
+    child: Mutex<Option<CommandChild>>,
+    pid: Mutex<Option<u32>>,
+}
 
 const DEFAULT_HOST: &str = "127.0.0.1";
 const DEFAULT_PORT: &str = "8008";
@@ -47,7 +50,10 @@ fn main() {
             permissions::get_permission_guidance,
             permissions::get_platform,
         ])
-        .manage(ServerProcess(Mutex::new(None)))
+        .manage(ServerProcess {
+            child: Mutex::new(None),
+            pid: Mutex::new(None),
+        })
         .setup(|app| {
             let mut targets = vec![
                 Target::new(TargetKind::LogDir {
@@ -93,13 +99,30 @@ fn main() {
                 log::info!("SpiritStream Desktop exiting");
                 // Kill the server process on exit
                 if let Some(server_state) = app_handle.try_state::<ServerProcess>() {
-                    if let Ok(mut guard) = server_state.0.lock() {
-                        if let Some(child) = guard.take() {
-                            log::info!("Terminating backend server process");
-                            if let Err(e) = child.kill() {
-                                log::warn!("Failed to kill server process: {e}");
-                            }
+                    // First try to get the PID and kill via system command (more reliable)
+                    let pid = server_state.pid.lock().ok().and_then(|g| *g);
+                    if let Some(pid) = pid {
+                        log::info!("Killing server process (PID: {})", pid);
+                        #[cfg(unix)]
+                        {
+                            use std::process::Command;
+                            let _ = Command::new("kill")
+                                .args(["-9", &pid.to_string()])
+                                .output();
                         }
+                        #[cfg(windows)]
+                        {
+                            use std::process::Command;
+                            let _ = Command::new("taskkill")
+                                .args(["/F", "/PID", &pid.to_string()])
+                                .output();
+                        }
+                        log::info!("Server process terminated");
+                    }
+
+                    // Also drop the child handle to clean up
+                    if let Ok(mut guard) = server_state.child.lock() {
+                        let _ = guard.take();
                     }
                 }
             }
@@ -141,7 +164,7 @@ async fn run_launcher<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let port = env::var("SPIRITSTREAM_PORT").unwrap_or(settings_port);
 
     // Kill any zombie server processes from previous runs to avoid port conflicts
-    kill_existing_servers();
+    kill_existing_processes();
 
     spawn_server(app, &host, &port, settings_token.as_deref())?;
 
@@ -362,10 +385,17 @@ fn spawn_server<R: Runtime>(
         format!("Failed to spawn server: {e}")
     })?;
 
-    // Store the child process handle so we can kill it on exit
+    // Get the PID for reliable process termination
+    let pid = child.pid();
+    log::info!("Server spawned with PID: {}", pid);
+
+    // Store the child process handle and PID so we can kill it on exit
     if let Some(server_state) = app.try_state::<ServerProcess>() {
-        if let Ok(mut guard) = server_state.0.lock() {
+        if let Ok(mut guard) = server_state.child.lock() {
             *guard = Some(child);
+        }
+        if let Ok(mut guard) = server_state.pid.lock() {
+            *guard = Some(pid);
         }
     }
 
@@ -436,52 +466,81 @@ fn load_settings<R: Runtime>(app: &AppHandle<R>) -> Option<Settings> {
     serde_json::from_str(&content).ok()
 }
 
-/// Kill any existing spiritstream-server processes to avoid port conflicts
-fn kill_existing_servers() {
+/// Kill any existing SpiritStream processes to avoid conflicts
+fn kill_existing_processes() {
     #[cfg(unix)]
     {
         use std::process::Command;
+
         // Kill any existing spiritstream-server processes
         let _ = Command::new("pkill")
-            .args(["-f", "spiritstream-server"])
-            .output();
-        // Give processes time to terminate and release the port
-        std::thread::sleep(Duration::from_millis(1000));
-        log::info!("Killed any existing spiritstream-server processes");
-    }
-    #[cfg(windows)]
-    {
-        use std::process::Command;
-        // Try taskkill first
-        let result = Command::new("taskkill")
-            .args(["/F", "/IM", "spiritstream-server.exe"])
+            .args(["-9", "-f", "spiritstream-server"])
             .output();
 
-        if let Ok(output) = &result {
-            if output.status.success() {
-                log::info!("Taskkill succeeded for spiritstream-server.exe");
-            }
-        }
+        // Kill any existing desktop app instances (but not ourselves)
+        // Use pattern that matches the binary name
+        let _ = Command::new("pkill")
+            .args(["-9", "-f", "spiritstream-desktop"])
+            .output();
 
-        // Wait for process to fully terminate and release the port
-        std::thread::sleep(Duration::from_millis(1500));
+        // Also kill any go2rtc instances that might be orphaned
+        let _ = Command::new("pkill")
+            .args(["-9", "-f", "go2rtc"])
+            .output();
 
-        // Verify port 8008 is free, if not wait a bit more
-        for attempt in 1..=3 {
+        // Give processes time to terminate and release ports
+        std::thread::sleep(Duration::from_millis(500));
+
+        // Verify port 8008 is free
+        for attempt in 1..=5 {
             if is_port_available(8008) {
                 log::info!("Port 8008 is available after {} attempt(s)", attempt);
                 break;
             }
             log::warn!("Port 8008 still in use, waiting... (attempt {})", attempt);
-            std::thread::sleep(Duration::from_millis(1000));
+            std::thread::sleep(Duration::from_millis(500));
         }
 
-        log::info!("Killed any existing spiritstream-server processes");
+        log::info!("Cleaned up any existing SpiritStream processes");
+    }
+    #[cfg(windows)]
+    {
+        use std::process::Command;
+
+        // Kill server
+        let _ = Command::new("taskkill")
+            .args(["/F", "/IM", "spiritstream-server.exe"])
+            .output();
+
+        // Kill desktop app
+        let _ = Command::new("taskkill")
+            .args(["/F", "/IM", "spiritstream-desktop.exe"])
+            .output();
+
+        // Kill go2rtc
+        let _ = Command::new("taskkill")
+            .args(["/F", "/IM", "go2rtc.exe"])
+            .output();
+
+        // Wait for processes to fully terminate and release ports
+        std::thread::sleep(Duration::from_millis(1000));
+
+        // Verify port 8008 is free
+        for attempt in 1..=5 {
+            if is_port_available(8008) {
+                log::info!("Port 8008 is available after {} attempt(s)", attempt);
+                break;
+            }
+            log::warn!("Port 8008 still in use, waiting... (attempt {})", attempt);
+            std::thread::sleep(Duration::from_millis(500));
+        }
+
+        log::info!("Cleaned up any existing SpiritStream processes");
     }
 }
 
 /// Check if a port is available for binding
-#[cfg(windows)]
+/// Check if a port is available for binding
 fn is_port_available(port: u16) -> bool {
     use std::net::TcpListener;
     TcpListener::bind(format!("127.0.0.1:{}", port)).is_ok()
