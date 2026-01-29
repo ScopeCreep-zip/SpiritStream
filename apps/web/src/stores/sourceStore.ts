@@ -41,6 +41,7 @@ interface SourceState {
     password?: string
   ) => Promise<Source>;
   removeSource: (profileName: string, sourceId: string, password?: string) => Promise<void>;
+  reorderSources: (profileName: string, sourceIds: string[], password?: string) => Promise<Source[]>;
 
   clearError: () => void;
 }
@@ -158,6 +159,16 @@ export const useSourceStore = create<SourceState>((set) => ({
   removeSource: async (profileName, sourceId, password) => {
     try {
       await api.source.remove(profileName, sourceId, password);
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : String(err) });
+      throw err;
+    }
+  },
+
+  reorderSources: async (profileName, sourceIds, password) => {
+    try {
+      const sources = await api.source.reorder(profileName, sourceIds, password);
+      return sources;
     } catch (err) {
       set({ error: err instanceof Error ? err.message : String(err) });
       throw err;

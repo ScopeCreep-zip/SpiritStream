@@ -221,6 +221,9 @@ export const api = {
     /** Remove a source from a profile. */
     remove: (profileName: string, sourceId: string, password?: string) =>
       invokeHttp<void>('remove_source', { profileName, sourceId, password }),
+    /** Reorder sources in a profile. Returns updated sources array. */
+    reorder: (profileName: string, sourceIds: string[], password?: string) =>
+      invokeHttp<Source[]>('reorder_sources', { profileName, sourceIds, password }),
   },
   webrtc: {
     /** Check if go2rtc WebRTC server is available */
