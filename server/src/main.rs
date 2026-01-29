@@ -2239,8 +2239,9 @@ async fn list_cameras_handler(
 }
 
 /// GET /api/devices/displays - List available displays
+/// Uses async version with spawn_blocking and timeout protection
 async fn list_displays_handler() -> impl IntoResponse {
-    let displays = ScreenCaptureService::list_displays();
+    let displays = ScreenCaptureService::list_displays_async().await;
     Json(json!({ "ok": true, "data": displays }))
 }
 
@@ -2303,6 +2304,7 @@ struct ScreenCaptureRequest {
 }
 
 /// POST /api/capture/screen/start - Start screen capture
+/// Uses spawn_blocking because scap::get_all_targets() can block/hang on macOS
 async fn start_screen_capture_handler(
     State(state): State<AppState>,
     Json(req): Json<ScreenCaptureRequest>,
@@ -2312,15 +2314,24 @@ async fn start_screen_capture_handler(
         Err(_) => return Json(json!({ "ok": false, "error": "Invalid display_id: must be a number" })),
     };
 
-    match state.screen_capture.start_display_capture(display_id, ScreenCaptureConfig::default()) {
-        Ok(_) => {
+    // Clone what we need for the blocking task
+    let screen_capture = state.screen_capture.clone();
+
+    // Run in spawn_blocking because start_display_capture calls scap::get_all_targets()
+    let result = tokio::task::spawn_blocking(move || {
+        screen_capture.start_display_capture(display_id, ScreenCaptureConfig::default())
+    }).await;
+
+    match result {
+        Ok(Ok(_)) => {
             state.capture_indicator.register_capture(
                 CaptureType::Screen(req.display_id.clone()),
                 Some(&state.event_bus),
             );
             Json(json!({ "ok": true, "data": null }))
         }
-        Err(e) => Json(json!({ "ok": false, "error": e })),
+        Ok(Err(e)) => Json(json!({ "ok": false, "error": e })),
+        Err(join_err) => Json(json!({ "ok": false, "error": format!("Task panicked: {}", join_err) })),
     }
 }
 
@@ -2506,8 +2517,9 @@ async fn delete_recording_handler(
 // --- Permissions ---
 
 /// GET /api/permissions/status - Get permission status
+/// Uses async-safe permission checks that run scap calls in spawn_blocking on macOS
 async fn permissions_status_handler() -> impl IntoResponse {
-    let status = PermissionsService::get_status();
+    let status = PermissionsService::get_status_async().await;
     Json(json!({ "ok": true, "data": status }))
 }
 
@@ -2517,6 +2529,8 @@ struct RequestPermissionsRequest {
 }
 
 /// POST /api/permissions/request - Request permissions
+/// On macOS, screen recording permission opens System Preferences
+/// On Windows/Linux, permissions are handled via picker dialogs when capture starts
 async fn request_permissions_handler(
     Json(req): Json<RequestPermissionsRequest>,
 ) -> impl IntoResponse {
@@ -2526,13 +2540,15 @@ async fn request_permissions_handler(
         let granted = match perm_type.as_str() {
             "camera" => PermissionsService::request_camera_permission(),
             "microphone" => PermissionsService::request_microphone_permission(),
-            "screen" | "screenRecording" => PermissionsService::request_screen_recording_permission(),
+            "screen" | "screenRecording" => {
+                PermissionsService::request_screen_recording_permission_async().await
+            }
             _ => false,
         };
         results.insert(perm_type.clone(), granted);
     }
 
-    let status = PermissionsService::get_status();
+    let status = PermissionsService::get_status_async().await;
     Json(json!({ "ok": true, "data": { "results": results, "status": status } }))
 }
 
@@ -2780,6 +2796,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Get home directory for path validation
     let home_dir = dirs_next::home_dir();
+
+    // NOTE: We do NOT call PermissionsService::init_permission_cache() here.
+    // The scap permission check can block/hang for 3-10 seconds and calling it
+    // within the tokio runtime starves other tasks. Permission checks are done
+    // lazily via spawn_blocking when actually needed.
 
     // Initialize native capture services
     let screen_capture = Arc::new(ScreenCaptureService::new());

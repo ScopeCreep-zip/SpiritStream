@@ -1,6 +1,6 @@
 // Cross-Platform Permission Handling
 // Provides functions to check and request camera, microphone, and screen recording permissions
-// Uses native APIs: crabcamera/scap (macOS), windows crate (Windows), ashpd (Linux)
+// Uses native APIs: AVFoundation/CoreGraphics (macOS), windows crate (Windows), ashpd (Linux)
 
 use serde::{Deserialize, Serialize};
 use tauri::command;
@@ -56,17 +56,53 @@ impl Default for PermissionStatus {
 #[cfg(target_os = "macos")]
 mod macos {
     use super::*;
-    use crabcamera::commands::permissions::{check_camera_permission_status, request_camera_permission};
-    use crabcamera::permissions::PermissionStatus as CrabPermissionStatus;
 
-    /// Check camera permission using the async API (safe from any thread)
+    // Link to CoreGraphics for screen capture permission APIs
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGPreflightScreenCaptureAccess() -> bool;
+        fn CGRequestScreenCaptureAccess() -> bool;
+    }
+
+    // AVAuthorizationStatus values from AVFoundation
+    // https://developer.apple.com/documentation/avfoundation/avauthorizationstatus
+    const AV_AUTH_STATUS_NOT_DETERMINED: i32 = 0;
+    const AV_AUTH_STATUS_RESTRICTED: i32 = 1;
+    const AV_AUTH_STATUS_DENIED: i32 = 2;
+    const AV_AUTH_STATUS_AUTHORIZED: i32 = 3;
+
+    /// Check camera permission using AVFoundation directly
+    /// This avoids crabcamera's FFI issues that cause panics
     pub async fn check_camera() -> PermissionState {
-        match check_camera_permission_status().await {
-            Ok(info) => match info.status {
-                CrabPermissionStatus::Granted => PermissionState::Granted,
-                CrabPermissionStatus::Denied => PermissionState::Denied,
-                CrabPermissionStatus::NotDetermined => PermissionState::NotDetermined,
-                CrabPermissionStatus::Restricted => PermissionState::Restricted,
+        // Run in spawn_blocking since we're calling into ObjC
+        let result = tokio::task::spawn_blocking(|| {
+            // Use objc crate to call AVCaptureDevice.authorizationStatus(for: .video)
+            unsafe {
+                use objc::{class, msg_send, sel, sel_impl};
+                use objc::runtime::{Class, Object};
+
+                let av_capture_device: &Class = class!(AVCaptureDevice);
+
+                // AVMediaTypeVideo is the string "vide"
+                let media_type: *mut Object = objc::rc::autoreleasepool(|| {
+                    let ns_string_class: &Class = class!(NSString);
+                    msg_send![ns_string_class, stringWithUTF8String: b"vide\0".as_ptr()]
+                });
+
+                // authorizationStatusForMediaType: returns AVAuthorizationStatus (NSInteger)
+                let status: i32 = msg_send![av_capture_device, authorizationStatusForMediaType: media_type];
+                status
+            }
+        })
+        .await;
+
+        match result {
+            Ok(status) => match status {
+                AV_AUTH_STATUS_AUTHORIZED => PermissionState::Granted,
+                AV_AUTH_STATUS_DENIED => PermissionState::Denied,
+                AV_AUTH_STATUS_NOT_DETERMINED => PermissionState::NotDetermined,
+                AV_AUTH_STATUS_RESTRICTED => PermissionState::Restricted,
+                _ => PermissionState::Unknown,
             },
             Err(e) => {
                 log::warn!("Failed to check camera permission: {}", e);
@@ -75,41 +111,73 @@ mod macos {
         }
     }
 
-    pub fn check_screen_recording() -> PermissionState {
-        // scap::has_permission() is safe to call from any thread
-        if scap::has_permission() {
+    pub async fn check_screen_recording() -> PermissionState {
+        // Use CoreGraphics directly instead of scap to avoid FFI panics
+        // CGPreflightScreenCaptureAccess is safe and fast
+        let result = tokio::task::spawn_blocking(|| {
+            unsafe { CGPreflightScreenCaptureAccess() }
+        })
+        .await
+        .unwrap_or(false);
+
+        if result {
             PermissionState::Granted
         } else {
-            // scap doesn't distinguish between denied and not determined
             PermissionState::NotDetermined
         }
     }
 
     pub fn check_microphone() -> PermissionState {
-        // cpal (audio library) handles microphone access on first use
-        // There's no pre-check API, so we return Unknown
+        // Return Unknown - microphone permission will be requested on first use
+        // Checking it via AVFoundation would have the same FFI issues
         PermissionState::Unknown
     }
 
+    /// Request camera permission using AVFoundation directly
     pub async fn request_camera() -> bool {
-        match request_camera_permission().await {
-            Ok(info) => {
-                log::info!("Camera permission request result: {:?}", info);
-                matches!(info.status, CrabPermissionStatus::Granted)
+        use std::sync::mpsc;
+
+        let (tx, rx) = mpsc::channel();
+
+        // Run in spawn_blocking since we're calling into ObjC
+        tokio::task::spawn_blocking(move || {
+            unsafe {
+                use objc::{class, msg_send, sel, sel_impl};
+                use objc::runtime::{Class, Object};
+                use block::ConcreteBlock;
+
+                let av_capture_device: &Class = class!(AVCaptureDevice);
+
+                // AVMediaTypeVideo
+                let ns_string_class: &Class = class!(NSString);
+                let media_type: *mut Object = msg_send![ns_string_class, stringWithUTF8String: b"vide\0".as_ptr()];
+
+                // Create completion handler block
+                let tx_clone = tx.clone();
+                let block = ConcreteBlock::new(move |granted: bool| {
+                    let _ = tx_clone.send(granted);
+                });
+                let block = block.copy();
+
+                // requestAccessForMediaType:completionHandler:
+                let _: () = msg_send![av_capture_device, requestAccessForMediaType: media_type completionHandler: &*block];
             }
-            Err(e) => {
-                log::warn!("Camera permission request failed: {}", e);
-                false
-            }
-        }
+        })
+        .await
+        .ok();
+
+        // Wait for the callback with a timeout
+        rx.recv_timeout(std::time::Duration::from_secs(30)).unwrap_or(false)
     }
 
-    pub fn request_screen_recording() -> bool {
-        // scap::request_permission() opens System Preferences
-        // User must manually grant permission there
-        scap::request_permission();
-        // Return true to indicate request was initiated (not necessarily granted)
-        true
+    pub async fn request_screen_recording() -> bool {
+        // Use CoreGraphics directly instead of scap
+        // CGRequestScreenCaptureAccess opens System Preferences
+        tokio::task::spawn_blocking(|| {
+            unsafe { CGRequestScreenCaptureAccess() }
+        })
+        .await
+        .unwrap_or(false)
     }
 
     pub fn request_microphone() -> bool {
@@ -282,7 +350,7 @@ pub async fn check_permissions() -> PermissionStatus {
         PermissionStatus {
             camera: macos::check_camera().await,
             microphone: macos::check_microphone(),
-            screen_recording: macos::check_screen_recording(),
+            screen_recording: macos::check_screen_recording().await,
         }
     }
 
@@ -326,7 +394,7 @@ pub async fn request_permission(perm_type: PermissionType) -> Result<bool, Strin
         let result = match perm_type {
             PermissionType::Camera => macos::request_camera().await,
             PermissionType::Microphone => macos::request_microphone(),
-            PermissionType::ScreenRecording => macos::request_screen_recording(),
+            PermissionType::ScreenRecording => macos::request_screen_recording().await,
         };
         Ok(result)
     }

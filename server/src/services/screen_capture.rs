@@ -1,5 +1,11 @@
 // Screen Capture Service
 // Uses scap for native screen capture with OS permission handling
+//
+// Threading Safety:
+// - list_displays(), list_windows(): Safe on any thread (scap::get_all_targets is thread-safe)
+// - has_permission(): Use has_permission_cached() for sync contexts, or check via PermissionsService
+// - start_*_capture(): Safe - capture runs in dedicated thread with dispatch queues
+// - stop_capture(): Safe on any thread
 
 use scap::{
     capturer::{Capturer, Options, Resolution},
@@ -10,6 +16,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::broadcast;
+
+use super::permissions::PermissionsService;
 
 /// Information about an available display
 #[derive(Debug, Clone, serde::Serialize)]
@@ -65,20 +73,36 @@ impl ScreenCaptureService {
 
     /// Check if screen capture is supported on this platform
     pub fn is_supported() -> bool {
-        scap::is_supported()
+        PermissionsService::is_screen_capture_supported()
     }
 
-    /// Check if screen capture permission has been granted
-    pub fn has_permission() -> bool {
-        scap::has_permission()
+    /// Check if screen capture permission has been granted (cached, safe for sync contexts)
+    /// For async contexts, use PermissionsService::check_screen_recording_permission_async()
+    pub fn has_permission_cached() -> bool {
+        use super::permissions::PermissionStatus;
+        matches!(
+            PermissionsService::check_screen_recording_permission_cached(),
+            PermissionStatus::Granted | PermissionStatus::PickerBased
+        )
     }
 
-    /// Request screen capture permission (macOS only, shows system dialog)
-    pub fn request_permission() -> bool {
-        scap::request_permission()
+    /// Check if screen capture permission has been granted (async, safe for tokio)
+    pub async fn has_permission_async() -> bool {
+        use super::permissions::PermissionStatus;
+        matches!(
+            PermissionsService::check_screen_recording_permission_async().await,
+            PermissionStatus::Granted | PermissionStatus::PickerBased
+        )
     }
 
-    /// List available displays/monitors
+    /// Request screen capture permission (async, safe for tokio)
+    /// On macOS, this opens System Preferences - user must grant permission manually
+    pub async fn request_permission_async() -> bool {
+        PermissionsService::request_screen_recording_permission_async().await
+    }
+
+    /// List available displays/monitors (sync version - use list_displays_async in async contexts)
+    /// WARNING: scap::get_all_targets() can block for 3-10 seconds on macOS
     pub fn list_displays() -> Vec<DisplayInfo> {
         let targets = scap::get_all_targets();
 
@@ -97,7 +121,28 @@ impl ScreenCaptureService {
             .collect()
     }
 
-    /// List available windows
+    /// List available displays/monitors (async version - safe for tokio)
+    /// Uses spawn_blocking with timeout protection since scap can hang
+    pub async fn list_displays_async() -> Vec<DisplayInfo> {
+        use std::time::Duration;
+
+        let list_future = tokio::task::spawn_blocking(Self::list_displays);
+
+        match tokio::time::timeout(Duration::from_secs(5), list_future).await {
+            Ok(Ok(displays)) => displays,
+            Ok(Err(_)) => {
+                log::warn!("list_displays task panicked");
+                Vec::new()
+            }
+            Err(_) => {
+                log::warn!("list_displays timed out after 5 seconds");
+                Vec::new()
+            }
+        }
+    }
+
+    /// List available windows (sync version - use list_windows_async in async contexts)
+    /// WARNING: scap::get_all_targets() can block for 3-10 seconds on macOS
     pub fn list_windows() -> Vec<WindowInfo> {
         let targets = scap::get_all_targets();
 
@@ -116,15 +161,35 @@ impl ScreenCaptureService {
             .collect()
     }
 
+    /// List available windows (async version - safe for tokio)
+    /// Uses spawn_blocking with timeout protection since scap can hang
+    pub async fn list_windows_async() -> Vec<WindowInfo> {
+        use std::time::Duration;
+
+        let list_future = tokio::task::spawn_blocking(Self::list_windows);
+
+        match tokio::time::timeout(Duration::from_secs(5), list_future).await {
+            Ok(Ok(windows)) => windows,
+            Ok(Err(_)) => {
+                log::warn!("list_windows task panicked");
+                Vec::new()
+            }
+            Err(_) => {
+                log::warn!("list_windows timed out after 5 seconds");
+                Vec::new()
+            }
+        }
+    }
+
     /// Start capturing a display
     pub fn start_display_capture(
         &self,
         display_id: u32,
         config: ScreenCaptureConfig,
     ) -> Result<broadcast::Receiver<Arc<Frame>>, String> {
-        // Check permission first
-        if !Self::has_permission() {
-            return Err("Screen capture permission not granted. Please grant permission in System Preferences.".to_string());
+        // Check permission first (uses cached value on macOS, picker-based on Windows/Linux)
+        if !Self::has_permission_cached() {
+            return Err("Screen capture permission not granted. Please grant permission in System Settings > Privacy & Security > Screen Recording.".to_string());
         }
 
         let capture_id = format!("display_{}", display_id);
@@ -208,9 +273,9 @@ impl ScreenCaptureService {
         window_id: u32,
         config: ScreenCaptureConfig,
     ) -> Result<broadcast::Receiver<Arc<Frame>>, String> {
-        // Check permission first
-        if !Self::has_permission() {
-            return Err("Screen capture permission not granted. Please grant permission in System Preferences.".to_string());
+        // Check permission first (uses cached value on macOS, picker-based on Windows/Linux)
+        if !Self::has_permission_cached() {
+            return Err("Screen capture permission not granted. Please grant permission in System Settings > Privacy & Security > Screen Recording.".to_string());
         }
 
         let capture_id = format!("window_{}", window_id);
@@ -354,7 +419,7 @@ mod tests {
 
     #[test]
     fn test_list_displays() {
-        if ScreenCaptureService::is_supported() && ScreenCaptureService::has_permission() {
+        if ScreenCaptureService::is_supported() && ScreenCaptureService::has_permission_cached() {
             let displays = ScreenCaptureService::list_displays();
             println!("Found {} displays:", displays.len());
             for display in displays {
@@ -365,7 +430,7 @@ mod tests {
 
     #[test]
     fn test_list_windows() {
-        if ScreenCaptureService::is_supported() && ScreenCaptureService::has_permission() {
+        if ScreenCaptureService::is_supported() && ScreenCaptureService::has_permission_cached() {
             let windows = ScreenCaptureService::list_windows();
             println!("Found {} windows:", windows.len());
             for window in &windows[..windows.len().min(10)] {
