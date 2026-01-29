@@ -109,7 +109,7 @@ function SourceThumbnail({ sourceId, sourceType }: { sourceId: string; sourceTyp
 
 export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
   const { t } = useTranslation();
-  const { addLayer } = useSceneStore();
+  const { addLayer, updateLayer } = useSceneStore();
   const { removeSource } = useSourceStore();
   const { reloadProfile, removeCurrentSource } = useProfileStore();
   const [showAddModal, setShowAddModal] = useState(false);
@@ -119,9 +119,14 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
     return activeScene?.layers.some((l) => l.sourceId === sourceId) ?? false;
   };
 
+  // Get the layer for a source in the active scene
+  const getLayerForSource = (sourceId: string) => {
+    return activeScene?.layers.find((l) => l.sourceId === sourceId);
+  };
+
   // Check if source is visible in the scene (layer.visible)
   const isSourceVisible = (sourceId: string) => {
-    const layer = activeScene?.layers.find((l) => l.sourceId === sourceId);
+    const layer = getLayerForSource(sourceId);
     return layer?.visible ?? false;
   };
 
@@ -157,6 +162,20 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
       } catch (err) {
         toast.error(t('stream.sourceRemoveFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to remove source: ${err instanceof Error ? err.message : String(err)}` }));
       }
+    }
+  };
+
+  const handleToggleVisibility = async (sourceId: string) => {
+    if (!activeScene) return;
+
+    const layer = getLayerForSource(sourceId);
+    if (!layer) return;
+
+    try {
+      await updateLayer(profile.name, activeScene.id, layer.id, { visible: !layer.visible });
+      await reloadProfile();
+    } catch (err) {
+      toast.error(t('stream.visibilityToggleFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to toggle visibility: ${err instanceof Error ? err.message : String(err)}` }));
     }
   };
 
@@ -215,15 +234,20 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
                     </div>
                   </div>
                   {inScene && (
-                    isVisible ? (
-                      <span title={t('stream.visibleInScene', { defaultValue: 'Visible in scene' })}>
+                    <button
+                      className="p-1.5 rounded hover:bg-muted/50 transition-colors min-w-[28px] min-h-[28px] flex items-center justify-center"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleVisibility(source.id);
+                      }}
+                      title={isVisible ? t('stream.hideInScene', { defaultValue: 'Hide in scene' }) : t('stream.showInScene', { defaultValue: 'Show in scene' })}
+                    >
+                      {isVisible ? (
                         <Eye className="w-4 h-4 text-primary" />
-                      </span>
-                    ) : (
-                      <span title={t('stream.hiddenInScene', { defaultValue: 'Hidden in scene' })}>
+                      ) : (
                         <EyeOff className="w-4 h-4 text-muted" />
-                      </span>
-                    )
+                      )}
+                    </button>
                   )}
                   <button
                     className="opacity-40 group-hover:opacity-100 p-1.5 hover:bg-destructive/20 rounded transition-opacity min-w-[28px] min-h-[28px] flex items-center justify-center"
