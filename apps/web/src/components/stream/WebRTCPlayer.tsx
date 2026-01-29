@@ -16,6 +16,8 @@ interface WebRTCPlayerProps {
   width: number;
   height: number;
   className?: string;
+  /** Pass deviceId/displayId to force reconnect when device changes */
+  refreshKey?: string;
 }
 
 export function WebRTCPlayer({
@@ -24,8 +26,9 @@ export function WebRTCPlayer({
   width,
   height,
   className = '',
+  refreshKey,
 }: WebRTCPlayerProps) {
-  const { status, videoRef, error, retry } = useWebRTCPreview(sourceId);
+  const { status, videoRef, error, retry } = useWebRTCPreview(sourceId, refreshKey);
 
   return (
     <div

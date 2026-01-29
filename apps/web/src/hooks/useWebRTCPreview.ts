@@ -162,7 +162,7 @@ async function connectMSE(
   });
 }
 
-export function useWebRTCPreview(sourceId: string): WebRTCPreviewResult {
+export function useWebRTCPreview(sourceId: string, refreshKey?: string | number): WebRTCPreviewResult {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [status, setStatus] = useState<WebRTCStatus>('loading');
   const [error, setError] = useState<string>();
@@ -310,7 +310,7 @@ export function useWebRTCPreview(sourceId: string): WebRTCPreviewResult {
         });
       }
     };
-  }, [sourceId, retryCount]); // Only reconnect when sourceId changes or retry is triggered
+  }, [sourceId, retryCount, refreshKey]); // Reconnect when sourceId, refreshKey, or retry changes
 
   return {
     status,

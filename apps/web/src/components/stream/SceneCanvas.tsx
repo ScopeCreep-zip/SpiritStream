@@ -476,6 +476,7 @@ function LayerPreview({
             sourceName={sourceName}
             width={displayWidth}
             height={displayHeight}
+            refreshKey={'deviceId' in source ? source.deviceId : 'displayId' in source ? source.displayId : undefined}
           />
         ) : (
           <div className="w-full h-full bg-gradient-to-br from-[var(--bg-elevated)] to-[var(--bg-sunken)] flex items-center justify-center">

@@ -74,8 +74,8 @@ const SourceIcon = ({ type }: { type: Source['type'] }) => {
  * Live thumbnail preview for a source using WebRTC
  * Uses the same WebRTC system as the scene canvas for consistency
  */
-function SourceThumbnail({ sourceId, sourceType }: { sourceId: string; sourceType: Source['type'] }) {
-  const { status, videoRef, retry } = useWebRTCPreview(sourceId);
+function SourceThumbnail({ sourceId, sourceType, refreshKey }: { sourceId: string; sourceType: Source['type']; refreshKey?: string }) {
+  const { status, videoRef, retry } = useWebRTCPreview(sourceId, refreshKey);
 
   // Only show preview for video sources
   const hasVideo = sourceType !== 'audioDevice';
@@ -183,8 +183,12 @@ function SortableLayerItem({
       {...attributes}
       {...listeners}
     >
-      {/* Live thumbnail preview */}
-      <SourceThumbnail sourceId={source.id} sourceType={source.type} />
+      {/* Live thumbnail preview - refreshKey forces reconnect when device changes */}
+      <SourceThumbnail
+        sourceId={source.id}
+        sourceType={source.type}
+        refreshKey={'deviceId' in source ? source.deviceId : 'displayId' in source ? source.displayId : undefined}
+      />
 
       {/* Source name and icon */}
       <div className="flex-1 min-w-0">

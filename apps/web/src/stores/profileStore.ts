@@ -51,6 +51,7 @@ interface ProfileState {
   // Source management (local state updates without auto-save)
   // Use these after source API calls to sync local state without reloading entire profile
   setCurrentSources: (sources: Source[]) => void;
+  updateCurrentSource: (source: Source) => void;
   removeCurrentSource: (sourceId: string) => void;
 
   // Profile mutations (local state updates + auto-save)
@@ -314,6 +315,19 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     const current = get().current;
     if (current) {
       set({ current: { ...current, sources } });
+    }
+  },
+
+  // Update a single source locally without triggering save (used after updateSource API)
+  updateCurrentSource: (source) => {
+    const current = get().current;
+    if (current) {
+      set({
+        current: {
+          ...current,
+          sources: current.sources.map((s) => (s.id === source.id ? source : s)),
+        },
+      });
     }
   },
 

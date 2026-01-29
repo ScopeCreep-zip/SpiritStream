@@ -4,12 +4,15 @@
  */
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Eye, EyeOff, Lock, Unlock, Trash2, Maximize, Move } from 'lucide-react';
+import { Eye, EyeOff, Lock, Unlock, Trash2, Maximize, Move, RefreshCw } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardBody } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
 import type { Profile, Scene, SourceLayer, Source } from '@/types/profile';
 import { useSceneStore } from '@/stores/sceneStore';
 import { useProfileStore } from '@/stores/profileStore';
+import { useSourceStore } from '@/stores/sourceStore';
+import { api } from '@/lib/backend';
 import { toast } from '@/hooks/useToast';
 
 interface PropertiesPanelProps {
@@ -23,12 +26,15 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
   const { t } = useTranslation();
   const { updateLayer, removeLayer, selectLayer } = useSceneStore();
   const { reloadProfile } = useProfileStore();
+  const { devices, discoverDevices, updateSource } = useSourceStore();
+  const { updateCurrentSource } = useProfileStore();
 
   // Local state for editing
   const [x, setX] = useState(0);
   const [y, setY] = useState(0);
   const [width, setWidth] = useState(0);
   const [height, setHeight] = useState(0);
+  const [sourceName, setSourceName] = useState('');
 
   // Sync local state with layer
   useEffect(() => {
@@ -39,6 +45,22 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
       setHeight(layer.transform.height);
     }
   }, [layer]);
+
+  // Sync source name with source
+  useEffect(() => {
+    if (source) {
+      setSourceName(source.name);
+    }
+  }, [source?.name]);
+
+  // Discover devices when source type needs it
+  useEffect(() => {
+    if (source && ['camera', 'captureCard', 'audioDevice', 'screenCapture'].includes(source.type)) {
+      if (!devices.lastDiscovery) {
+        discoverDevices();
+      }
+    }
+  }, [source?.type, devices.lastDiscovery, discoverDevices]);
 
   if (!scene) {
     return (
@@ -148,6 +170,84 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
     }
   };
 
+  const handleChangeDevice = async (newDeviceId: string) => {
+    if (!source) return;
+
+    try {
+      // Stop the current preview so go2rtc releases the old device
+      try {
+        await api.preview.stopSourcePreview(source.id);
+      } catch {
+        // Ignore - preview may not be running
+      }
+
+      // Build the update based on source type
+      const updates: Record<string, string> = source.type === 'screenCapture'
+        ? { displayId: newDeviceId }
+        : { deviceId: newDeviceId };
+
+      const updatedSource = await updateSource(profile.name, source.id, updates as Partial<Source>);
+      // Update local state immediately with the returned source
+      updateCurrentSource(updatedSource);
+      // The preview will restart automatically with the new device when the component re-renders
+    } catch (err) {
+      toast.error(t('stream.updateFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to update: ${err instanceof Error ? err.message : String(err)}` }));
+    }
+  };
+
+  const handleUpdateName = async () => {
+    if (!source || sourceName === source.name) return;
+
+    try {
+      const updatedSource = await updateSource(profile.name, source.id, { name: sourceName } as Partial<Source>);
+      updateCurrentSource(updatedSource);
+    } catch (err) {
+      toast.error(t('stream.updateFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to update: ${err instanceof Error ? err.message : String(err)}` }));
+      // Reset to original name on error
+      setSourceName(source.name);
+    }
+  };
+
+  // Get device options based on source type
+  const getDeviceOptions = () => {
+    if (!source) return [];
+
+    switch (source.type) {
+      case 'camera':
+        return devices.cameras.map((c) => ({ value: c.deviceId, label: c.name }));
+      case 'captureCard':
+        return devices.captureCards.map((c) => ({ value: c.deviceId, label: c.name }));
+      case 'audioDevice':
+        return devices.audioDevices.map((d) => ({
+          value: d.deviceId,
+          label: `${d.name}${d.isDefault ? ' (Default)' : ''}`
+        }));
+      case 'screenCapture':
+        return devices.displays.map((d) => ({ value: d.displayId, label: d.name }));
+      default:
+        return [];
+    }
+  };
+
+  // Get current device ID based on source type
+  const getCurrentDeviceId = () => {
+    if (!source) return '';
+    switch (source.type) {
+      case 'camera':
+      case 'captureCard':
+      case 'audioDevice':
+        return source.deviceId;
+      case 'screenCapture':
+        return source.displayId;
+      default:
+        return '';
+    }
+  };
+
+  const deviceOptions = getDeviceOptions();
+  const currentDeviceId = getCurrentDeviceId();
+  const hasDeviceSelector = deviceOptions.length > 0;
+
   return (
     <Card className="h-full flex flex-col">
       <CardHeader className="flex-shrink-0" style={{ padding: '12px 16px' }}>
@@ -180,7 +280,6 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
             </button>
           </div>
         </div>
-        <p className="text-xs text-[var(--text-muted)] truncate mt-1">{source?.name ?? t('stream.unknownSource', { defaultValue: 'Unknown Source' })}</p>
       </CardHeader>
 
       <CardBody className="flex-1 overflow-y-auto" style={{ padding: '12px 16px' }}>
@@ -190,6 +289,51 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
             <div className="flex items-center gap-2 px-3 py-2 bg-[var(--warning)]/10 border border-[var(--warning)]/20 rounded-md text-[var(--warning)] text-xs">
               <Lock className="w-3.5 h-3.5 flex-shrink-0" />
               <span>{t('stream.layerLocked', { defaultValue: 'Layer is locked. Unlock to edit.' })}</span>
+            </div>
+          )}
+
+          {/* Source name */}
+          <div>
+            <h4 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide mb-3">
+              {t('stream.sourceName', { defaultValue: 'Name' })}
+            </h4>
+            <Input
+              type="text"
+              value={sourceName}
+              onChange={(e) => setSourceName(e.target.value)}
+              onBlur={handleUpdateName}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.currentTarget.blur();
+                }
+              }}
+              placeholder={t('stream.sourceNamePlaceholder', { defaultValue: 'Enter source name' })}
+            />
+          </div>
+
+          {/* Device selector for device-based sources */}
+          {hasDeviceSelector && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">
+                  {t('stream.device', { defaultValue: 'Device' })}
+                </h4>
+                <button
+                  type="button"
+                  className="p-1 rounded hover:bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+                  onClick={() => discoverDevices()}
+                  disabled={devices.isDiscovering}
+                  title={t('stream.refreshDevices', { defaultValue: 'Refresh devices' })}
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${devices.isDiscovering ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+              <Select
+                value={currentDeviceId}
+                onChange={(e) => handleChangeDevice(e.target.value)}
+                options={deviceOptions}
+                disabled={devices.isDiscovering}
+              />
             </div>
           )}
 
