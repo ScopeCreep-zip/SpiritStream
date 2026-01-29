@@ -4,9 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "cleanup": "../../scripts/kill-server.sh",
     "build:server": "tsx ../../scripts/build-server.ts",
     "build:server:release": "tsx ../../scripts/build-server.ts --release",
-    "dev": "pnpm run build:server && tauri dev",
+    "dev": "pnpm run cleanup && pnpm run build:server && tauri dev",
     "build": "pnpm run build:server:release && tauri build",
     "build:debug": "pnpm run build:server && tauri build --debug",
     "tauri": "tauri"
