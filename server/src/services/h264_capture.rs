@@ -55,7 +55,7 @@ impl Default for H264EncodingConfig {
     fn default() -> Self {
         Self {
             bitrate_kbps: 4000,
-            keyframe_interval: 30,
+            keyframe_interval: 15, // Reduced from 30 for faster initial frame
             preset: "ultrafast".to_string(),
             use_hw_accel: true,
         }
@@ -99,6 +99,7 @@ impl H264CaptureService {
             }
         }
 
+        let start_time = Instant::now();
         log::info!("Starting H264 capture for source: {}", source_id);
 
         // Find the correct scap display ID
@@ -107,7 +108,8 @@ impl H264CaptureService {
         let scap_display_id = self.find_scap_display_id(source)?;
 
         log::debug!(
-            "Resolved display_id '{}' (device_name: {:?}) to scap display ID {}",
+            "[{:?}] Resolved display_id '{}' (device_name: {:?}) to scap display ID {}",
+            start_time.elapsed(),
             source.display_id,
             source.device_name,
             scap_display_id
@@ -123,13 +125,14 @@ impl H264CaptureService {
 
         // Start native screen capture
         let frame_rx = self.screen_capture.start_display_capture(scap_display_id, capture_config)?;
+        log::debug!("[{:?}] Screen capture started", start_time.elapsed());
 
         // Create output broadcast channel
         let (output_tx, output_rx) = broadcast::channel::<Bytes>(DEFAULT_CHANNEL_CAPACITY);
 
-        // Get frame dimensions from first frame
-        // We need to wait for a frame to determine dimensions
+        // Get frame dimensions from display list (not blocking on frames)
         let (width, height) = self.get_frame_dimensions(&source_id)?;
+        log::debug!("[{:?}] Got frame dimensions: {}x{}", start_time.elapsed(), width, height);
 
         // Create session state
         let stop_flag = Arc::new(AtomicBool::new(false));
@@ -179,7 +182,8 @@ impl H264CaptureService {
         }
 
         log::info!(
-            "H264 capture started for source {} ({}x{} @ {}fps)",
+            "[{:?}] H264 capture started for source {} ({}x{} @ {}fps)",
+            start_time.elapsed(),
             source_id, width, height, fps
         );
 
@@ -394,6 +398,8 @@ fn run_capture_encoding_loop(
     source_id: String,
     capture_audio: bool,
 ) {
+    let encoding_start = Instant::now();
+
     // Wait for the first frame to get actual dimensions
     let (width, height) = match wait_for_first_frame(&mut frame_rx, &stop_flag) {
         Some((w, h)) => (w, h),
@@ -404,15 +410,21 @@ fn run_capture_encoding_loop(
     };
 
     log::debug!(
-        "First frame received for {}: {}x{} (initial estimate was {}x{})",
+        "[{:?}] First frame received for {}: {}x{} (initial estimate was {}x{})",
+        encoding_start.elapsed(),
         source_id, width, height, initial_width, initial_height
     );
 
     // Build FFmpeg command for encoding
+    // Use low-latency flags to reduce startup time
     let mut ffmpeg_args = vec![
         "-hide_banner".to_string(),
         "-v".to_string(),
         "error".to_string(),
+        "-fflags".to_string(),
+        "+genpts+nobuffer".to_string(), // Generate PTS, minimize buffering
+        "-flags".to_string(),
+        "low_delay".to_string(),
         // Input 0: raw video from stdin
         "-f".to_string(),
         "rawvideo".to_string(),
@@ -471,9 +483,9 @@ fn run_capture_encoding_loop(
         }
     }
 
-    // Add video encoder settings
+    // Add video encoder settings with low-latency focus
     if encoding.use_hw_accel && cfg!(target_os = "macos") {
-        // Use VideoToolbox hardware encoder on macOS
+        // Use VideoToolbox hardware encoder on macOS with low-latency settings
         ffmpeg_args.extend([
             "-c:v".to_string(),
             "h264_videotoolbox".to_string(),
@@ -481,9 +493,13 @@ fn run_capture_encoding_loop(
             "1".to_string(),
             "-allow_sw".to_string(),
             "1".to_string(), // Fallback to software if HW unavailable
+            "-profile:v".to_string(),
+            "baseline".to_string(), // Faster encoding, simpler profile
+            "-level".to_string(),
+            "3.1".to_string(),
         ]);
     } else {
-        // Use libx264 software encoder
+        // Use libx264 software encoder with zerolatency tune
         ffmpeg_args.extend([
             "-c:v".to_string(),
             "libx264".to_string(),
@@ -491,6 +507,8 @@ fn run_capture_encoding_loop(
             encoding.preset.clone(),
             "-tune".to_string(),
             "zerolatency".to_string(),
+            "-profile:v".to_string(),
+            "baseline".to_string(),
         ]);
     }
 
@@ -522,10 +540,14 @@ fn run_capture_encoding_loop(
         ffmpeg_args.push("-an".to_string()); // No audio
     }
 
-    // Output: MPEG-TS to stdout
+    // Output: MPEG-TS to stdout with low-latency settings
     ffmpeg_args.extend([
+        "-flush_packets".to_string(),
+        "1".to_string(), // Flush packets immediately for lower latency
         "-f".to_string(),
         "mpegts".to_string(),
+        "-muxdelay".to_string(),
+        "0".to_string(), // No muxing delay
         "pipe:1".to_string(),
     ]);
 
@@ -547,7 +569,7 @@ fn run_capture_encoding_loop(
     };
 
     let ffmpeg_pid = ffmpeg.id();
-    log::info!("FFmpeg started for H264 capture (PID: {})", ffmpeg_pid);
+    log::info!("[{:?}] FFmpeg started for H264 capture (PID: {})", encoding_start.elapsed(), ffmpeg_pid);
 
     let mut stdin = ffmpeg.stdin.take().expect("Failed to get FFmpeg stdin");
     let stdout = ffmpeg.stdout.take().expect("Failed to get FFmpeg stdout");
@@ -611,7 +633,7 @@ fn wait_for_first_frame(
     stop_flag: &Arc<AtomicBool>,
 ) -> Option<(u32, u32)> {
     let start = Instant::now();
-    let timeout = Duration::from_secs(10);
+    let timeout = Duration::from_secs(5); // Reduced from 10s
 
     loop {
         if stop_flag.load(Ordering::SeqCst) {
@@ -623,19 +645,20 @@ fn wait_for_first_frame(
             return None;
         }
 
-        match frame_rx.try_recv() {
+        // Use blocking_recv with a short timeout instead of polling
+        // This is more efficient than try_recv + sleep
+        match frame_rx.blocking_recv() {
             Ok(frame) => {
-                // Extract dimensions from frame
+                let elapsed = start.elapsed();
+                log::debug!("First frame received in {:?}", elapsed);
                 let (width, height) = get_frame_dimensions(&frame);
                 return Some((width, height));
             }
-            Err(broadcast::error::TryRecvError::Empty) => {
-                std::thread::sleep(Duration::from_millis(10));
+            Err(broadcast::error::RecvError::Lagged(n)) => {
+                log::debug!("Lagged by {} frames while waiting for first frame", n);
+                // Continue to get the next frame
             }
-            Err(broadcast::error::TryRecvError::Lagged(_)) => {
-                // Try again
-            }
-            Err(broadcast::error::TryRecvError::Closed) => {
+            Err(broadcast::error::RecvError::Closed) => {
                 return None;
             }
         }

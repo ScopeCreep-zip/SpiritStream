@@ -54,6 +54,7 @@ async function connectWHEP(
   await pc.setLocalDescription(offer);
 
   // Wait for ICE gathering to complete (or timeout)
+  // For localhost connections, ICE gathering is very fast
   if (pc.iceGatheringState !== 'complete') {
     await new Promise<void>((resolve) => {
       const checkState = () => {
@@ -63,8 +64,8 @@ async function connectWHEP(
         }
       };
       pc.addEventListener('icegatheringstatechange', checkState);
-      // Timeout after 3 seconds
-      setTimeout(resolve, 3000);
+      // Timeout after 500ms - localhost doesn't need long STUN gathering
+      setTimeout(resolve, 500);
     });
   }
 
