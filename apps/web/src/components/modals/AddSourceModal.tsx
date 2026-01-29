@@ -116,7 +116,7 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
       setFormData({ ...formData, deviceId: first.deviceId, name: formData.name || first.name });
     } else if (formData.type === 'screenCapture' && !formData.displayId && devices.displays.length > 0) {
       const first = devices.displays[0];
-      setFormData({ ...formData, displayId: first.displayId, deviceName: first.deviceName, name: formData.name || first.name });
+      setFormData({ ...formData, displayId: first.displayId, deviceName: first.deviceName });
     } else if (formData.type === 'captureCard' && !formData.deviceId && devices.captureCards.length > 0) {
       const first = devices.captureCards[0];
       setFormData({ ...formData, deviceId: first.deviceId, name: formData.name || first.name });
@@ -173,7 +173,7 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
       case 'screenCapture': {
         const firstDisplay = devices.displays[0];
         setFormData(createDefaultScreenCaptureSource(
-          firstDisplay?.name || 'Screen Capture',
+          '', // Leave name blank so user must enter one
           firstDisplay?.displayId || '',
           firstDisplay?.deviceName
         ));
@@ -411,7 +411,13 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
               value={data.displayId}
               onChange={(e) => {
                 const selectedDisplay = devices.displays.find(d => d.displayId === e.target.value);
-                setFormData({ ...data, displayId: e.target.value, deviceName: selectedDisplay?.deviceName });
+                setFormData({
+                  ...data,
+                  displayId: e.target.value,
+                  deviceName: selectedDisplay?.deviceName,
+                  // Auto-fill name only if user hasn't entered one
+                  name: data.name || selectedDisplay?.name || '',
+                });
               }}
               options={displayOptions}
               disabled={devices.isDiscovering}

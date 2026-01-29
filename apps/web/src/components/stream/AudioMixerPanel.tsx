@@ -92,7 +92,7 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
                 <Plus className="w-4 h-4" />
               </button>
             </div>
-            <div className="flex items-end gap-4 flex-1">
+            <div className="flex items-start gap-4 flex-1">
               {scene.audioMixer.tracks.length > 0 ? (
                 scene.audioMixer.tracks.map((track) => (
                   <AudioTrackControl
@@ -126,7 +126,7 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
             <h4 className="text-sm font-medium text-[var(--text-secondary)] mb-3">
               {t('stream.output', { defaultValue: 'Output' })}
             </h4>
-            <div className="flex items-end gap-4 flex-1">
+            <div className="flex items-start gap-4 flex-1">
               <AudioTrackControl
                 label={t('stream.master', { defaultValue: 'Master' })}
                 volume={scene.audioMixer.masterVolume}
@@ -299,8 +299,8 @@ function AudioTrackControl({
       {/* Volume indicator */}
       <span className="text-xs text-muted tabular-nums">{volumePercent}%</span>
 
-      {/* Label with tooltip for truncated text */}
-      <span className="text-xs text-center truncate max-w-[80px]" title={label}>
+      {/* Label */}
+      <span className="text-xs text-center break-words max-w-[80px]">
         {label}
       </span>
     </div>

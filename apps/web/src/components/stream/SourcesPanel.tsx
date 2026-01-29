@@ -209,9 +209,9 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
                   {/* Live thumbnail preview */}
                   <SourceThumbnail sourceId={source.id} sourceType={source.type} />
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-start gap-1">
                       <SourceIcon type={source.type} />
-                      <span className="text-sm truncate" title={source.name}>{source.name}</span>
+                      <span className="text-sm break-words">{source.name}</span>
                     </div>
                   </div>
                   {inScene && (
