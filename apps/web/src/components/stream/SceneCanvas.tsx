@@ -273,44 +273,74 @@ function LayerPreview({
   const [resizeOffset, setResizeOffset] = useState({ width: 0, height: 0, x: 0, y: 0 });
   const dragStartRef = useRef({ mouseX: 0, mouseY: 0, layerX: 0, layerY: 0, width: 0, height: 0 });
 
+  // Use refs to track dragging state for the reset effect
+  // This allows us to check the state without including it in dependencies
+  const isDraggingRef = useRef(false);
+  const isResizingRef = useRef<ResizeDirection>(null);
+
+  // Keep refs in sync with state (runs synchronously during render)
+  isDraggingRef.current = isDragging;
+  isResizingRef.current = isResizing;
+
+  // Reset offsets only when transform actually changes from server
+  // Using refs to check dragging state prevents the effect from running when dragging state changes
+  useEffect(() => {
+    if (!isDraggingRef.current && !isResizingRef.current) {
+      setDragOffset({ x: 0, y: 0 });
+      setResizeOffset({ width: 0, height: 0, x: 0, y: 0 });
+    }
+  }, [transform.x, transform.y, transform.width, transform.height]);
+
   const hasVideo = source?.type !== 'audioDevice';
 
   // Drag handlers
   const handleDragStart = useCallback(
     (e: React.MouseEvent) => {
-      if (!isSelected || isResizing) return;
+      if (!isSelected || isResizing || layer.locked) return;
       e.preventDefault();
       e.stopPropagation();
+
+      // Capture the current visual position (including any pending offset from previous drag)
+      // This prevents jumps when starting a new drag before server responds
+      const visualX = transform.x + dragOffset.x;
+      const visualY = transform.y + dragOffset.y;
 
       setIsDragging(true);
       dragStartRef.current = {
         mouseX: e.clientX,
         mouseY: e.clientY,
-        layerX: transform.x,
-        layerY: transform.y,
-        width: transform.width,
-        height: transform.height,
+        layerX: visualX,
+        layerY: visualY,
+        width: transform.width + resizeOffset.width,
+        height: transform.height + resizeOffset.height,
       };
     },
-    [isSelected, isResizing, transform]
+    [isSelected, isResizing, transform, layer.locked, dragOffset, resizeOffset]
   );
 
   const handleResizeStart = useCallback(
     (e: React.MouseEvent, direction: ResizeDirection) => {
+      if (layer.locked) return;
       e.preventDefault();
       e.stopPropagation();
+
+      // Capture the current visual position and size (including any pending offsets)
+      const visualX = transform.x + dragOffset.x + resizeOffset.x;
+      const visualY = transform.y + dragOffset.y + resizeOffset.y;
+      const visualWidth = transform.width + resizeOffset.width;
+      const visualHeight = transform.height + resizeOffset.height;
 
       setIsResizing(direction);
       dragStartRef.current = {
         mouseX: e.clientX,
         mouseY: e.clientY,
-        layerX: transform.x,
-        layerY: transform.y,
-        width: transform.width,
-        height: transform.height,
+        layerX: visualX,
+        layerY: visualY,
+        width: visualWidth,
+        height: visualHeight,
       };
     },
-    [transform]
+    [transform, layer.locked, dragOffset, resizeOffset]
   );
 
   // Global mouse move/up handlers
@@ -378,7 +408,7 @@ function LayerPreview({
         if (dragOffset.x !== 0 || dragOffset.y !== 0) {
           onTransformChange({ x: Math.round(newX), y: Math.round(newY) });
         }
-        setDragOffset({ x: 0, y: 0 });
+        // Don't reset dragOffset here - the useEffect will reset it when transform updates
         setIsDragging(false);
       }
 
@@ -395,7 +425,7 @@ function LayerPreview({
             height: Math.round(newHeight),
           });
         }
-        setResizeOffset({ width: 0, height: 0, x: 0, y: 0 });
+        // Don't reset resizeOffset here - the useEffect will reset it when transform updates
         setIsResizing(null);
       }
     };
@@ -419,7 +449,9 @@ function LayerPreview({
 
   return (
     <div
-      className={`absolute cursor-move transition-shadow ${
+      className={`absolute transition-shadow ${
+        layer.locked ? 'cursor-not-allowed' : 'cursor-move'
+      } ${
         isSelected ? 'ring-2 ring-primary shadow-lg' : 'hover:ring-1 hover:ring-primary/30'
       } ${isDragging || isResizing ? 'cursor-grabbing' : ''}`}
       style={{
@@ -454,8 +486,8 @@ function LayerPreview({
         )}
       </div>
 
-      {/* Resize handles - only show when selected */}
-      {isSelected && (
+      {/* Resize handles - only show when selected and not locked */}
+      {isSelected && !layer.locked && (
         <>
           <div
             className="absolute -top-2 -left-2 w-6 h-6 flex items-center justify-center cursor-nw-resize z-10"
