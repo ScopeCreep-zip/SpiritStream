@@ -156,4 +156,55 @@ export const api = {
     remove: (profileName: string, sourceId: string, password?: string) =>
       invoke<void>('remove_source', { profileName, sourceId, password }),
   },
+  webrtc: {
+    /** Check if go2rtc WebRTC server is available */
+    isAvailable: async (): Promise<boolean> => {
+      const baseUrl = 'http://127.0.0.1:8008';
+      try {
+        const response = await fetch(`${baseUrl}/api/webrtc/available`, {
+          credentials: 'include',
+        });
+        const data = await response.json();
+        return data.data as boolean;
+      } catch {
+        return false;
+      }
+    },
+    /** Get WebRTC streaming info for a source */
+    getInfo: async (sourceId: string): Promise<WebRtcInfo> => {
+      const baseUrl = 'http://127.0.0.1:8008';
+      const response = await fetch(`${baseUrl}/api/webrtc/info/${sourceId}`, {
+        credentials: 'include',
+      });
+      const data = await response.json();
+      return data.data as WebRtcInfo;
+    },
+    /** Start WebRTC streaming for a source */
+    start: async (sourceId: string): Promise<WebRtcInfo> => {
+      const baseUrl = 'http://127.0.0.1:8008';
+      const response = await fetch(`${baseUrl}/api/webrtc/start/${sourceId}`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.error || 'Failed to start WebRTC stream');
+      return data.data as WebRtcInfo;
+    },
+    /** Stop WebRTC streaming for a source */
+    stop: async (sourceId: string): Promise<void> => {
+      const baseUrl = 'http://127.0.0.1:8008';
+      await fetch(`${baseUrl}/api/webrtc/stop/${sourceId}`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+    },
+  },
 };
+
+/** WebRTC streaming info returned by go2rtc */
+export interface WebRtcInfo {
+  available: boolean;
+  whepUrl?: string;
+  wsUrl?: string;
+  streamName?: string;
+}

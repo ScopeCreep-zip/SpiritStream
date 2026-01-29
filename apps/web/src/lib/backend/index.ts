@@ -11,3 +11,4 @@ export {
   checkAuth,
   login,
 } from './env';
+export type { WebRtcInfo } from '@/lib/tauri';

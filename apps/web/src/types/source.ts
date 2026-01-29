@@ -48,6 +48,8 @@ export interface MediaFileSource extends BaseSource {
 export interface ScreenCaptureSource extends BaseSource {
   type: 'screenCapture';
   displayId: string;
+  /** The actual device name as reported by the OS (e.g., "Capture screen 0" on macOS) */
+  deviceName?: string;
   captureCursor: boolean;
   captureAudio: boolean;
   fps: number;
@@ -120,6 +122,8 @@ export interface CameraDevice {
 export interface DisplayInfo {
   displayId: string;
   name: string;
+  /** The actual device name as reported by the OS (e.g., "Capture screen 0" on macOS) */
+  deviceName?: string;
   width: number;
   height: number;
   isPrimary: boolean;
@@ -209,13 +213,15 @@ export function createDefaultMediaFileSource(
 
 export function createDefaultScreenCaptureSource(
   name = 'Screen Capture',
-  displayId = ''
+  displayId = '',
+  deviceName?: string
 ): ScreenCaptureSource {
   return {
     type: 'screenCapture',
     id: crypto.randomUUID(),
     name,
     displayId,
+    deviceName,
     captureCursor: true,
     captureAudio: false,
     fps: 30,

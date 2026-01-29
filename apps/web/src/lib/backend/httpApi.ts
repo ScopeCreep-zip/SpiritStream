@@ -222,4 +222,51 @@ export const api = {
     remove: (profileName: string, sourceId: string, password?: string) =>
       invokeHttp<void>('remove_source', { profileName, sourceId, password }),
   },
+  webrtc: {
+    /** Check if go2rtc WebRTC server is available */
+    isAvailable: async () => {
+      const baseUrl = getBackendBaseUrl();
+      const response = await safeFetch(`${baseUrl}/api/webrtc/available`, {
+        credentials: 'include',
+      });
+      const data = await response.json();
+      return data.data as boolean;
+    },
+    /** Get WebRTC streaming info for a source */
+    getInfo: async (sourceId: string) => {
+      const baseUrl = getBackendBaseUrl();
+      const response = await safeFetch(`${baseUrl}/api/webrtc/info/${sourceId}`, {
+        credentials: 'include',
+      });
+      const data = await response.json();
+      return data.data as WebRtcInfo;
+    },
+    /** Start WebRTC streaming for a source */
+    start: async (sourceId: string) => {
+      const baseUrl = getBackendBaseUrl();
+      const response = await safeFetch(`${baseUrl}/api/webrtc/start/${sourceId}`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.error || 'Failed to start WebRTC stream');
+      return data.data as WebRtcInfo;
+    },
+    /** Stop WebRTC streaming for a source */
+    stop: async (sourceId: string) => {
+      const baseUrl = getBackendBaseUrl();
+      await safeFetch(`${baseUrl}/api/webrtc/stop/${sourceId}`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+    },
+  },
 };
+
+/** WebRTC streaming info returned by go2rtc */
+export interface WebRtcInfo {
+  available: boolean;
+  whepUrl?: string;
+  wsUrl?: string;
+  streamName?: string;
+}

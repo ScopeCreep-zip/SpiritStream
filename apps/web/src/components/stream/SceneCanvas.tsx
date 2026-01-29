@@ -19,13 +19,10 @@ import type { Source } from '@/types/source';
 import { api } from '@/lib/backend';
 import { useSceneStore } from '@/stores/sceneStore';
 import { useProfileStore } from '@/stores/profileStore';
+import { WebRTCPlayer } from './WebRTCPlayer';
 
 type ViewMode = 'edit' | 'preview';
 type ResizeDirection = 'nw' | 'ne' | 'sw' | 'se' | null;
-
-// Fixed preview dimensions for stable polling (no rate limiting)
-const PREVIEW_WIDTH = 640;
-const PREVIEW_HEIGHT = 360;
 
 // Calculate canvas dimensions that fit within available space
 function calculateCanvasDimensions(
@@ -268,9 +265,6 @@ function LayerPreview({
   onTransformChange,
 }: LayerPreviewProps) {
   const { transform, visible } = layer;
-  const [previewError, setPreviewError] = useState(false);
-  const [previewLoading, setPreviewLoading] = useState(true);
-  const [snapshotUrl, setSnapshotUrl] = useState<string | null>(null);
 
   // Drag/resize state
   const [isDragging, setIsDragging] = useState(false);
@@ -279,95 +273,7 @@ function LayerPreview({
   const [resizeOffset, setResizeOffset] = useState({ width: 0, height: 0, x: 0, y: 0 });
   const dragStartRef = useRef({ mouseX: 0, mouseY: 0, layerX: 0, layerY: 0, width: 0, height: 0 });
 
-  // Preview polling refs
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const errorCountRef = useRef(0);
-  const isPendingRef = useRef(false);
-  const backoffDelayRef = useRef(150);
-  const mountedRef = useRef(true);
-
   const hasVideo = source?.type !== 'audioDevice';
-
-  // Stable snapshot polling with fixed dimensions (prevents rate limiting)
-  useEffect(() => {
-    if (!hasVideo || !source) return;
-
-    mountedRef.current = true;
-    setPreviewError(false);
-    setPreviewLoading(true);
-    errorCountRef.current = 0;
-    backoffDelayRef.current = 150;
-    isPendingRef.current = false;
-
-    const fetchSnapshot = () => {
-      if (isPendingRef.current || !mountedRef.current) {
-        timeoutRef.current = setTimeout(fetchSnapshot, backoffDelayRef.current);
-        return;
-      }
-
-      // Use fixed dimensions for stable polling
-      const url = api.preview.getSourceSnapshotUrl(source.id, PREVIEW_WIDTH, PREVIEW_HEIGHT, 2);
-      isPendingRef.current = true;
-      setSnapshotUrl(url);
-    };
-
-    fetchSnapshot();
-
-    return () => {
-      mountedRef.current = false;
-      isPendingRef.current = false;
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
-    };
-  }, [source?.id, hasVideo]); // Only depend on source ID, not dimensions
-
-  const handleLoad = useCallback(() => {
-    if (!mountedRef.current || !source) return;
-
-    isPendingRef.current = false;
-    setPreviewLoading(false);
-    setPreviewError(false);
-    errorCountRef.current = 0;
-    backoffDelayRef.current = 150;
-
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => {
-      if (mountedRef.current && source) {
-        const url = api.preview.getSourceSnapshotUrl(source.id, PREVIEW_WIDTH, PREVIEW_HEIGHT, 2);
-        isPendingRef.current = true;
-        setSnapshotUrl(url);
-      }
-    }, backoffDelayRef.current);
-  }, [source?.id]);
-
-  const handleError = useCallback(() => {
-    if (!mountedRef.current || !source) return;
-
-    isPendingRef.current = false;
-    errorCountRef.current += 1;
-    backoffDelayRef.current = Math.min(backoffDelayRef.current * 1.5, 3000);
-
-    if (errorCountRef.current >= 5) {
-      setPreviewLoading(false);
-      setPreviewError(true);
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
-      return;
-    }
-
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => {
-      if (mountedRef.current && source) {
-        const url = api.preview.getSourceSnapshotUrl(source.id, PREVIEW_WIDTH, PREVIEW_HEIGHT, 2);
-        isPendingRef.current = true;
-        setSnapshotUrl(url);
-      }
-    }, backoffDelayRef.current);
-  }, [source?.id]);
 
   // Drag handlers
   const handleDragStart = useCallback(
@@ -530,26 +436,15 @@ function LayerPreview({
       }}
       onMouseDown={handleDragStart}
     >
-      {/* Live preview or fallback */}
-      <div className="w-full h-full bg-[var(--bg-sunken)] overflow-hidden">
-        {hasVideo && !previewError ? (
-          <>
-            {previewLoading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[var(--bg-elevated)] to-[var(--bg-sunken)]">
-                <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-              </div>
-            )}
-            {snapshotUrl && (
-              <img
-                src={snapshotUrl}
-                alt={sourceName}
-                className="w-full h-full object-cover pointer-events-none"
-                draggable={false}
-                onLoad={handleLoad}
-                onError={handleError}
-              />
-            )}
-          </>
+      {/* Live preview via WebRTC */}
+      <div className="w-full h-full bg-[var(--bg-sunken)] overflow-hidden pointer-events-none">
+        {hasVideo && source ? (
+          <WebRTCPlayer
+            sourceId={source.id}
+            sourceName={sourceName}
+            width={displayWidth}
+            height={displayHeight}
+          />
         ) : (
           <div className="w-full h-full bg-gradient-to-br from-[var(--bg-elevated)] to-[var(--bg-sunken)] flex items-center justify-center">
             <span className="text-[var(--text-muted)] text-xs text-center px-2 truncate">
