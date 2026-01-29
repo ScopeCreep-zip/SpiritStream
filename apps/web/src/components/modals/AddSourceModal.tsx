@@ -52,6 +52,8 @@ export interface AddSourceModalProps {
   filterType?: SourceType;
   /** If provided, hide these source types from the selection */
   excludeTypes?: SourceType[];
+  /** Called after a source is successfully added, with the new source */
+  onSourceAdded?: (source: Source) => void;
 }
 
 type ModalStep = 'select-type' | 'configure';
@@ -65,7 +67,7 @@ const SOURCE_TYPES: { type: SourceType; icon: React.ReactNode }[] = [
   { type: 'audioDevice', icon: <Mic className="w-5 h-5" /> },
 ];
 
-export function AddSourceModal({ open, onClose, profileName, filterType, excludeTypes = [] }: AddSourceModalProps) {
+export function AddSourceModal({ open, onClose, profileName, filterType, excludeTypes = [], onSourceAdded }: AddSourceModalProps) {
   const { t } = useTranslation();
   const { setCurrentSources } = useProfileStore();
   const { addSource, devices, discoverDevices } = useSourceStore();
@@ -259,6 +261,8 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
       const updatedSources = await addSource(profileName, formData);
       // Update local state with new sources - don't reload profile to avoid overwriting local edits
       setCurrentSources(updatedSources);
+      // Notify parent of the newly added source
+      onSourceAdded?.(formData);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
