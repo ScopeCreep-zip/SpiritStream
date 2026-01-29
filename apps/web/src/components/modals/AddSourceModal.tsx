@@ -48,6 +48,10 @@ export interface AddSourceModalProps {
   open: boolean;
   onClose: () => void;
   profileName: string;
+  /** If provided, skip type selection and go directly to configuring this source type */
+  filterType?: SourceType;
+  /** If provided, hide these source types from the selection */
+  excludeTypes?: SourceType[];
 }
 
 type ModalStep = 'select-type' | 'configure';
@@ -61,7 +65,7 @@ const SOURCE_TYPES: { type: SourceType; icon: React.ReactNode }[] = [
   { type: 'audioDevice', icon: <Mic className="w-5 h-5" /> },
 ];
 
-export function AddSourceModal({ open, onClose, profileName }: AddSourceModalProps) {
+export function AddSourceModal({ open, onClose, profileName, filterType, excludeTypes = [] }: AddSourceModalProps) {
   const { t } = useTranslation();
   const { setCurrentSources } = useProfileStore();
   const { addSource, devices, discoverDevices } = useSourceStore();
@@ -79,13 +83,29 @@ export function AddSourceModal({ open, onClose, profileName }: AddSourceModalPro
   // before the user selects a source type and permission is checked
   useEffect(() => {
     if (open) {
-      setStep('select-type');
-      setSelectedType(null);
-      setFormData(null);
       setError(null);
       setPermissionError(null);
+
+      // If filterType is provided, skip type selection and go directly to configure
+      if (filterType) {
+        setSelectedType(filterType);
+        setStep('configure');
+
+        // Initialize form data and discover devices for the filtered type
+        if (filterType === 'audioDevice') {
+          discoverDevices().then(() => {
+            // Form data will be set by the auto-select device useEffect
+          });
+          setFormData(createDefaultAudioDeviceSource('Audio Device', ''));
+        }
+        // Add other filterType cases here if needed in the future
+      } else {
+        setStep('select-type');
+        setSelectedType(null);
+        setFormData(null);
+      }
     }
-  }, [open]);
+  }, [open, filterType, discoverDevices]);
 
   // Auto-select first device when devices finish loading (if none selected yet)
   useEffect(() => {
@@ -188,6 +208,11 @@ export function AddSourceModal({ open, onClose, profileName }: AddSourceModalPro
   };
 
   const handleBack = () => {
+    // If filterType is provided, close the modal instead of going back to type selection
+    if (filterType) {
+      onClose();
+      return;
+    }
     setStep('select-type');
     setSelectedType(null);
     setFormData(null);
@@ -253,9 +278,11 @@ export function AddSourceModal({ open, onClose, profileName }: AddSourceModalPro
     }
   };
 
-  const renderTypeSelection = () => (
+  const renderTypeSelection = () => {
+    const availableTypes = SOURCE_TYPES.filter(({ type }) => !excludeTypes.includes(type));
+    return (
     <div className="grid grid-cols-2 gap-3">
-      {SOURCE_TYPES.map(({ type, icon }) => (
+      {availableTypes.map(({ type, icon }) => (
         <button
           key={type}
           className="flex items-center gap-3 p-5 min-h-[72px] rounded-lg border border-border hover:border-primary hover:bg-primary/5 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-colors text-left"
@@ -271,7 +298,8 @@ export function AddSourceModal({ open, onClose, profileName }: AddSourceModalPro
         </button>
       ))}
     </div>
-  );
+    );
+  };
 
   const renderConfigForm = () => {
     if (!formData) return null;

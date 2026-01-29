@@ -4,8 +4,9 @@
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Volume2, VolumeX } from 'lucide-react';
+import { Volume2, VolumeX, Plus } from 'lucide-react';
 import { Card, CardBody } from '@/components/ui/Card';
+import { AddSourceModal } from '@/components/modals/AddSourceModal';
 import type { Profile, Scene } from '@/types/profile';
 import { useSceneStore } from '@/stores/sceneStore';
 import { useProfileStore } from '@/stores/profileStore';
@@ -20,6 +21,7 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
   const { t } = useTranslation();
   const { setTrackVolume, setTrackMuted, setTrackSolo, setMasterVolume } = useSceneStore();
   const { reloadProfile } = useProfileStore();
+  const [showAddModal, setShowAddModal] = useState(false);
 
   if (!scene) {
     return (
@@ -77,9 +79,19 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
         <div className="flex items-stretch overflow-x-auto pb-2">
           {/* INPUT SECTION */}
           <div className="flex flex-col min-w-0 flex-1">
-            <h4 className="text-sm font-medium text-[var(--text-secondary)] mb-3">
-              {t('stream.input', { defaultValue: 'Input' })}
-            </h4>
+            <div className="flex items-center gap-2 mb-3">
+              <h4 className="text-sm font-medium text-[var(--text-secondary)]">
+                {t('stream.input', { defaultValue: 'Input' })}
+              </h4>
+              <button
+                type="button"
+                className="w-6 h-6 flex items-center justify-center rounded bg-[var(--bg-sunken)] hover:bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+                onClick={() => setShowAddModal(true)}
+                title={t('stream.addAudioSource', { defaultValue: 'Add Audio Source' })}
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
             <div className="flex items-end gap-4 flex-1">
               {scene.audioMixer.tracks.length > 0 ? (
                 scene.audioMixer.tracks.map((track) => (
@@ -129,6 +141,14 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
           </div>
         </div>
       </CardBody>
+
+      {/* Add Audio Source Modal */}
+      <AddSourceModal
+        open={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        profileName={profile.name}
+        filterType="audioDevice"
+      />
     </Card>
   );
 }

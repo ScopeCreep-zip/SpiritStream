@@ -247,6 +247,7 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
         open={showAddModal}
         onClose={() => setShowAddModal(false)}
         profileName={profile.name}
+        excludeTypes={['audioDevice']}
       />
     </Card>
   );
