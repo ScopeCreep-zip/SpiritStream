@@ -2,7 +2,7 @@
  * Sources Panel
  * Left sidebar showing available sources with add functionality
  */
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Plus,
@@ -25,6 +25,7 @@ import { useSourceStore } from '@/stores/sourceStore';
 import { useProfileStore } from '@/stores/profileStore';
 import { toast } from '@/hooks/useToast';
 import { api } from '@/lib/backend';
+import { useWebRTCPreview } from '@/hooks/useWebRTCPreview';
 
 interface SourcesPanelProps {
   profile: Profile;
@@ -52,121 +53,14 @@ const SourceIcon = ({ type }: { type: Source['type'] }) => {
 };
 
 /**
- * Live thumbnail preview for a source using snapshot polling
- * Features:
- * - Prevents request accumulation by tracking pending state
- * - Uses exponential backoff on errors
- * - Automatic cleanup on unmount
+ * Live thumbnail preview for a source using WebRTC
+ * Uses the same WebRTC system as the scene canvas for consistency
  */
 function SourceThumbnail({ sourceId, sourceType }: { sourceId: string; sourceType: Source['type'] }) {
-  const [error, setError] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [snapshotUrl, setSnapshotUrl] = useState<string | null>(null);
-
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const errorCountRef = useRef(0);
-  const isPendingRef = useRef(false);
-  const backoffDelayRef = useRef(500); // Start with 500ms, exponential backoff on errors
-  const mountedRef = useRef(true);
+  const { status, videoRef, retry } = useWebRTCPreview(sourceId);
 
   // Only show preview for video sources
   const hasVideo = sourceType !== 'audioDevice';
-
-  // Snapshot polling with pending tracking and exponential backoff
-  useEffect(() => {
-    if (!hasVideo) return;
-
-    // Reset state on mount
-    mountedRef.current = true;
-    setError(false);
-    setLoading(true);
-    errorCountRef.current = 0;
-    backoffDelayRef.current = 500;
-    isPendingRef.current = false;
-
-    const scheduleNextFetch = () => {
-      if (!mountedRef.current) return;
-      timeoutRef.current = setTimeout(fetchSnapshot, backoffDelayRef.current);
-    };
-
-    const fetchSnapshot = () => {
-      // Don't start new request if one is already pending
-      if (isPendingRef.current || !mountedRef.current) {
-        scheduleNextFetch();
-        return;
-      }
-
-      // Generate URL with timestamp to prevent caching
-      const url = api.preview.getSourceSnapshotUrl(sourceId, 192, 108, 3);
-      isPendingRef.current = true;
-      setSnapshotUrl(url);
-    };
-
-    // Fetch first snapshot immediately
-    fetchSnapshot();
-
-    return () => {
-      mountedRef.current = false;
-      isPendingRef.current = false;
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
-    };
-  }, [sourceId, hasVideo]);
-
-  const handleLoad = useCallback(() => {
-    if (!mountedRef.current) return;
-
-    isPendingRef.current = false;
-    setLoading(false);
-    setError(false);
-    errorCountRef.current = 0;
-    // Reset backoff on success
-    backoffDelayRef.current = 500;
-
-    // Schedule next fetch
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => {
-      if (mountedRef.current) {
-        const url = api.preview.getSourceSnapshotUrl(sourceId, 192, 108, 3);
-        isPendingRef.current = true;
-        setSnapshotUrl(url);
-      }
-    }, backoffDelayRef.current);
-  }, [sourceId]);
-
-  const handleError = useCallback(() => {
-    if (!mountedRef.current) return;
-
-    isPendingRef.current = false;
-    errorCountRef.current += 1;
-
-    // Exponential backoff on errors (max 5 seconds)
-    backoffDelayRef.current = Math.min(backoffDelayRef.current * 1.5, 5000);
-
-    // Only show error after 3 consecutive failures (allow time for camera init)
-    if (errorCountRef.current >= 3) {
-      setLoading(false);
-      setError(true);
-      // Stop polling on persistent error - don't accumulate requests
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
-      return;
-    }
-
-    // Schedule retry with backoff
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => {
-      if (mountedRef.current) {
-        const url = api.preview.getSourceSnapshotUrl(sourceId, 192, 108, 3);
-        isPendingRef.current = true;
-        setSnapshotUrl(url);
-      }
-    }, backoffDelayRef.current);
-  }, [sourceId]);
 
   if (!hasVideo) {
     // Audio-only placeholder
@@ -177,29 +71,37 @@ function SourceThumbnail({ sourceId, sourceType }: { sourceId: string; sourceTyp
     );
   }
 
-  if (error) {
-    return (
-      <div className="w-16 h-9 bg-[var(--bg-sunken)] rounded flex items-center justify-center flex-shrink-0" title="Preview unavailable - check source configuration">
-        <SourceIcon type={sourceType} />
-      </div>
-    );
-  }
-
   return (
     <div className="relative w-16 h-9 bg-[var(--bg-sunken)] rounded overflow-hidden flex-shrink-0">
-      {loading && (
+      {/* Video element for WebRTC */}
+      <video
+        ref={videoRef}
+        autoPlay
+        muted
+        playsInline
+        className="w-full h-full object-cover"
+        style={{ display: status === 'playing' ? 'block' : 'none' }}
+      />
+
+      {/* Loading state */}
+      {(status === 'loading' || status === 'connecting') && (
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
         </div>
       )}
-      {snapshotUrl && (
-        <img
-          src={snapshotUrl}
-          alt="Preview"
-          className="w-full h-full object-cover"
-          onLoad={handleLoad}
-          onError={handleError}
-        />
+
+      {/* Error/Unavailable state - show icon with retry on click */}
+      {(status === 'error' || status === 'unavailable') && (
+        <div
+          className="absolute inset-0 flex items-center justify-center cursor-pointer hover:bg-muted/20 transition-colors"
+          onClick={(e) => {
+            e.stopPropagation();
+            retry();
+          }}
+          title="Click to retry preview"
+        >
+          <SourceIcon type={sourceType} />
+        </div>
       )}
     </div>
   );
