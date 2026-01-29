@@ -36,11 +36,12 @@ tauri-plugin-http = "2"
 # Native Capture
 crabcamera = "0.4"
 cpal = { version = "0.17", features = ["jack"] }
-scap = "0.0.8"
+# scap removed - using CoreGraphics directly for screen recording permissions
 
-# macOS Permissions (using native APIs via crabcamera and scap)
+# macOS Permissions (using native APIs via AVFoundation and CoreGraphics)
 [target.'cfg(target_os = "macos")'.dependencies]
-# crabcamera handles camera permissions, scap handles screen recording
+objc = "0.2"
+block = "0.1"
 
 # Linux Permissions (xdg-desktop-portal via ashpd)
 [target.'cfg(target_os = "linux")'.dependencies]
