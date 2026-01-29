@@ -22,6 +22,9 @@ mod native_preview;
 mod recording_service;
 mod capture_indicator;
 mod permissions;
+mod go2rtc_client;
+mod go2rtc_manager;
+mod h264_capture;
 
 pub use profile_manager::*;
 pub use ffmpeg_handler::*;
@@ -44,3 +47,6 @@ pub use native_preview::*;
 pub use recording_service::*;
 pub use capture_indicator::*;
 pub use permissions::*;
+pub use go2rtc_client::*;
+pub use go2rtc_manager::*;
+pub use h264_capture::*;
