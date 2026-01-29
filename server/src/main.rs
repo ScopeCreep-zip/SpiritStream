@@ -1265,13 +1265,41 @@ async fn webrtc_start_handler(
             // This works around go2rtc's spawned ffmpeg not having macOS screen recording permission.
 
             // Start H264 capture if not already running
-            if let Err(e) = state.h264_capture.start_capture(&screen, None) {
-                // If already capturing, that's fine - just log and continue
-                if !e.contains("Already capturing") {
-                    log::error!("Failed to start H264 capture: {}", e);
-                    return Json(json!({ "ok": false, "error": format!("Failed to start screen capture: {}", e) }));
+            // IMPORTANT: start_capture is a blocking function that calls scap::get_all_targets()
+            // which can block for 3-10 seconds on macOS. We must run it via spawn_blocking.
+            let h264_capture = state.h264_capture.clone();
+            let screen_clone = screen.clone();
+
+            let capture_result = tokio::task::spawn_blocking(move || {
+                // Wrap in catch_unwind to handle any panics from scap
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    h264_capture.start_capture(&screen_clone, None)
+                }))
+            }).await;
+
+            match capture_result {
+                Ok(Ok(Ok(_receiver))) => {
+                    // Success - H264 capture started
+                    log::debug!("H264 capture started for {}", source_id);
                 }
-                log::debug!("H264 capture already running for {}", source_id);
+                Ok(Ok(Err(e))) => {
+                    // start_capture returned an error
+                    if !e.contains("Already capturing") {
+                        log::error!("Failed to start H264 capture: {}", e);
+                        return Json(json!({ "ok": false, "error": format!("Failed to start screen capture: {}", e) }));
+                    }
+                    log::debug!("H264 capture already running for {}", source_id);
+                }
+                Ok(Err(_panic)) => {
+                    // start_capture panicked
+                    log::error!("H264 capture panicked for source {}", source_id);
+                    return Json(json!({ "ok": false, "error": "Screen capture failed unexpectedly (panic)" }));
+                }
+                Err(join_err) => {
+                    // spawn_blocking task failed to join
+                    log::error!("H264 capture task failed: {}", join_err);
+                    return Json(json!({ "ok": false, "error": "Screen capture task failed" }));
+                }
             }
 
             // Build HTTP URL pointing to our MPEG-TS stream endpoint
@@ -1991,6 +2019,47 @@ async fn invoke_command(
 
             state.event_bus.emit("source_removed", json!({ "profileName": profile_name, "sourceId": source_id }));
             Ok(Value::Null)
+        }
+        "reorder_sources" => {
+            let profile_name: String = get_arg(&payload, "profileName")?;
+            let source_ids: Vec<String> = get_arg(&payload, "sourceIds")?;
+            let password: Option<String> = get_opt_arg(&payload, "password")?;
+
+            let mut profile = state
+                .profile_manager
+                .load_with_key_decryption(&profile_name, password.as_deref())
+                .await?;
+
+            // Validate that all IDs exist
+            for id in &source_ids {
+                if !profile.sources.iter().any(|s| s.id() == *id) {
+                    return Err(format!("Source {} not found", id));
+                }
+            }
+
+            // Reorder sources based on the new order
+            let mut reordered: Vec<Source> = Vec::with_capacity(source_ids.len());
+            for id in &source_ids {
+                if let Some(source) = profile.sources.iter().find(|s| s.id() == *id) {
+                    reordered.push(source.clone());
+                }
+            }
+            // Add any sources not in the list at the end (safety measure)
+            for source in &profile.sources {
+                if !source_ids.iter().any(|id| id == source.id()) {
+                    reordered.push(source.clone());
+                }
+            }
+            profile.sources = reordered;
+
+            let settings = state.settings_manager.load()?;
+            state
+                .profile_manager
+                .save_with_key_encryption(&profile, password.as_deref(), settings.encrypt_stream_keys)
+                .await?;
+
+            state.event_bus.emit("sources_reordered", json!({ "profileName": profile_name }));
+            Ok(json!(profile.sources))
         }
 
         // ====================================================================
