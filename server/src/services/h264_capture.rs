@@ -1,0 +1,779 @@
+// H264 Capture Service
+// Captures screen frames via scap and encodes to H264 MPEG-TS using FFmpeg
+// Outputs HTTP-streamable MPEG-TS for consumption by go2rtc
+
+use std::collections::HashMap;
+use std::io::{Read, Write};
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+use bytes::Bytes;
+use scap::capturer::Resolution;
+use scap::frame::Frame;
+use tokio::sync::broadcast;
+
+use super::screen_capture::{ScreenCaptureConfig, ScreenCaptureService};
+use crate::models::ScreenCaptureSource;
+
+const DEFAULT_CHANNEL_CAPACITY: usize = 64;
+const ORPHAN_TIMEOUT_SECS: u64 = 60;
+
+/// Active H264 capture session
+struct H264CaptureSession {
+    /// Stop flag for graceful shutdown
+    stop_flag: Arc<AtomicBool>,
+    /// Output broadcast sender
+    output_tx: broadcast::Sender<Bytes>,
+    /// Last time a subscriber accessed this session
+    last_accessed: Arc<Mutex<Instant>>,
+    /// Screen capture thread handle
+    _capture_handle: std::thread::JoinHandle<()>,
+    /// Width of captured frames
+    width: u32,
+    /// Height of captured frames
+    height: u32,
+    /// Display ID for stopping the underlying screen capture
+    display_id: u32,
+}
+
+/// Configuration for H264 encoding
+#[derive(Debug, Clone)]
+pub struct H264EncodingConfig {
+    /// Video bitrate in kbps (default: 4000)
+    pub bitrate_kbps: u32,
+    /// Keyframe interval in frames (default: 30 = 1 second at 30fps)
+    pub keyframe_interval: u32,
+    /// Encoding preset (ultrafast, superfast, veryfast, faster, fast, medium)
+    pub preset: String,
+    /// Use hardware encoding if available (VideoToolbox on macOS)
+    pub use_hw_accel: bool,
+}
+
+impl Default for H264EncodingConfig {
+    fn default() -> Self {
+        Self {
+            bitrate_kbps: 4000,
+            keyframe_interval: 30,
+            preset: "ultrafast".to_string(),
+            use_hw_accel: true,
+        }
+    }
+}
+
+/// Service for capturing screen to H264 MPEG-TS stream
+pub struct H264CaptureService {
+    sessions: Mutex<HashMap<String, H264CaptureSession>>,
+    screen_capture: Arc<ScreenCaptureService>,
+    ffmpeg_path: String,
+}
+
+impl H264CaptureService {
+    /// Create a new H264CaptureService
+    pub fn new(screen_capture: Arc<ScreenCaptureService>, ffmpeg_path: String) -> Self {
+        Self {
+            sessions: Mutex::new(HashMap::new()),
+            screen_capture,
+            ffmpeg_path,
+        }
+    }
+
+    /// Start capturing a screen source and encoding to H264 MPEG-TS
+    /// Returns a broadcast receiver for the MPEG-TS stream
+    pub fn start_capture(
+        &self,
+        source: &ScreenCaptureSource,
+        encoding_config: Option<H264EncodingConfig>,
+    ) -> Result<broadcast::Receiver<Bytes>, String> {
+        let source_id = source.id.clone();
+        let encoding = encoding_config.unwrap_or_default();
+
+        // Check if already capturing
+        {
+            let sessions = self.sessions.lock().unwrap();
+            if let Some(session) = sessions.get(&source_id) {
+                // Update last accessed and return existing receiver
+                *session.last_accessed.lock().unwrap() = Instant::now();
+                return Ok(session.output_tx.subscribe());
+            }
+        }
+
+        log::info!("Starting H264 capture for source: {}", source_id);
+
+        // Find the correct scap display ID
+        // The source.display_id might be an AVFoundation index (e.g., "5") which doesn't match scap's IDs
+        // We need to find the matching scap display
+        let scap_display_id = self.find_scap_display_id(source)?;
+
+        log::debug!(
+            "Resolved display_id '{}' (device_name: {:?}) to scap display ID {}",
+            source.display_id,
+            source.device_name,
+            scap_display_id
+        );
+
+        // Configure screen capture
+        let capture_config = ScreenCaptureConfig {
+            fps: source.fps,
+            show_cursor: source.capture_cursor,
+            show_highlight: false,
+            output_resolution: Resolution::Captured,
+        };
+
+        // Start native screen capture
+        let frame_rx = self.screen_capture.start_display_capture(scap_display_id, capture_config)?;
+
+        // Create output broadcast channel
+        let (output_tx, output_rx) = broadcast::channel::<Bytes>(DEFAULT_CHANNEL_CAPACITY);
+
+        // Get frame dimensions from first frame
+        // We need to wait for a frame to determine dimensions
+        let (width, height) = self.get_frame_dimensions(&source_id)?;
+
+        // Create session state
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let last_accessed = Arc::new(Mutex::new(Instant::now()));
+
+        // Clone values for the capture thread
+        let stop_flag_clone = stop_flag.clone();
+        let output_tx_clone = output_tx.clone();
+        let last_accessed_clone = last_accessed.clone();
+        let ffmpeg_path = self.ffmpeg_path.clone();
+        let fps = source.fps;
+        let source_id_clone = source_id.clone();
+        let capture_audio = source.capture_audio;
+
+        // Spawn the capture + encoding thread
+        let capture_handle = std::thread::spawn(move || {
+            run_capture_encoding_loop(
+                frame_rx,
+                output_tx_clone,
+                stop_flag_clone,
+                last_accessed_clone,
+                ffmpeg_path,
+                width,
+                height,
+                fps,
+                encoding,
+                source_id_clone,
+                capture_audio,
+            );
+        });
+
+        // Store the session
+        {
+            let mut sessions = self.sessions.lock().unwrap();
+            sessions.insert(
+                source_id.clone(),
+                H264CaptureSession {
+                    stop_flag,
+                    output_tx,
+                    last_accessed,
+                    _capture_handle: capture_handle,
+                    width,
+                    height,
+                    display_id: scap_display_id,
+                },
+            );
+        }
+
+        log::info!(
+            "H264 capture started for source {} ({}x{} @ {}fps)",
+            source_id, width, height, fps
+        );
+
+        Ok(output_rx)
+    }
+
+    /// Get or start a stream for a source
+    /// If the stream is already running, returns a new subscriber
+    /// Otherwise starts a new capture session
+    pub fn get_or_start_stream(
+        &self,
+        source: &ScreenCaptureSource,
+    ) -> Result<broadcast::Receiver<Bytes>, String> {
+        let source_id = &source.id;
+
+        // Check for existing session first
+        {
+            let sessions = self.sessions.lock().unwrap();
+            if let Some(session) = sessions.get(source_id) {
+                *session.last_accessed.lock().unwrap() = Instant::now();
+                return Ok(session.output_tx.subscribe());
+            }
+        }
+
+        // Start new capture
+        self.start_capture(source, None)
+    }
+
+    /// Get a stream receiver for an existing capture session
+    pub fn subscribe(&self, source_id: &str) -> Option<broadcast::Receiver<Bytes>> {
+        let sessions = self.sessions.lock().unwrap();
+        sessions.get(source_id).map(|session| {
+            *session.last_accessed.lock().unwrap() = Instant::now();
+            session.output_tx.subscribe()
+        })
+    }
+
+    /// Check if a capture session is active
+    pub fn is_capturing(&self, source_id: &str) -> bool {
+        let sessions = self.sessions.lock().unwrap();
+        sessions.contains_key(source_id)
+    }
+
+    /// Stop a capture session
+    pub fn stop_capture(&self, source_id: &str) -> Result<(), String> {
+        let mut sessions = self.sessions.lock().unwrap();
+
+        if let Some(session) = sessions.remove(source_id) {
+            log::info!("Stopping H264 capture for source: {}", source_id);
+            session.stop_flag.store(true, Ordering::SeqCst);
+
+            // Also stop the underlying screen capture using the stored display_id
+            let capture_id = format!("display_{}", session.display_id);
+            let _ = self.screen_capture.stop_capture(&capture_id);
+
+            Ok(())
+        } else {
+            Err(format!("No active capture for source: {}", source_id))
+        }
+    }
+
+    /// Stop all capture sessions
+    pub fn stop_all(&self) {
+        let mut sessions = self.sessions.lock().unwrap();
+
+        for (source_id, session) in sessions.drain() {
+            log::info!("Stopping H264 capture for source: {}", source_id);
+            session.stop_flag.store(true, Ordering::SeqCst);
+        }
+
+        // Also stop all screen captures
+        self.screen_capture.stop_all();
+    }
+
+    /// Get info about active captures
+    pub fn active_captures(&self) -> Vec<(String, u32, u32)> {
+        let sessions = self.sessions.lock().unwrap();
+        sessions
+            .iter()
+            .map(|(id, session)| (id.clone(), session.width, session.height))
+            .collect()
+    }
+
+    /// Clean up orphaned sessions that have no subscribers
+    pub fn cleanup_orphans(&self) {
+        let mut sessions = self.sessions.lock().unwrap();
+        let now = Instant::now();
+
+        let orphans: Vec<String> = sessions
+            .iter()
+            .filter(|(_, session)| {
+                let last = *session.last_accessed.lock().unwrap();
+                // Check if no subscribers and timeout exceeded
+                session.output_tx.receiver_count() == 0
+                    && now.duration_since(last).as_secs() > ORPHAN_TIMEOUT_SECS
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+
+        for source_id in orphans {
+            if let Some(session) = sessions.remove(&source_id) {
+                log::info!("Cleaning up orphaned H264 capture: {}", source_id);
+                session.stop_flag.store(true, Ordering::SeqCst);
+            }
+        }
+    }
+
+    /// Find the scap display ID that corresponds to the source's display_id
+    /// The source's display_id is typically an AVFoundation index which doesn't match scap's IDs
+    fn find_scap_display_id(&self, source: &ScreenCaptureSource) -> Result<u32, String> {
+        // Get list of scap displays
+        let displays = ScreenCaptureService::list_displays();
+
+        if displays.is_empty() {
+            return Err("No displays available for capture".to_string());
+        }
+
+        log::debug!(
+            "Finding scap display for source display_id='{}', device_name={:?}. Available scap displays: {:?}",
+            source.display_id,
+            source.device_name,
+            displays.iter().map(|d| (d.id, &d.name)).collect::<Vec<_>>()
+        );
+
+        // Strategy 1: Try to match by device_name if available
+        // The device_name might be something like "Capture screen 0" which could match scap's display title
+        if let Some(ref device_name) = source.device_name {
+            for display in &displays {
+                // Check if the scap display name contains relevant parts of the device name
+                // or if the device name contains the display index
+                if display.name.contains(device_name) || device_name.contains(&display.name) {
+                    log::debug!("Matched display by device_name: scap ID {} ('{}')", display.id, display.name);
+                    return Ok(display.id);
+                }
+
+                // Check if device_name contains "screen X" and matches display index pattern
+                if let Some(screen_num) = extract_screen_number(device_name) {
+                    // Try matching by screen number position
+                    if screen_num < displays.len() {
+                        let matched_display = &displays[screen_num];
+                        log::debug!(
+                            "Matched display by screen number {}: scap ID {} ('{}')",
+                            screen_num, matched_display.id, matched_display.name
+                        );
+                        return Ok(matched_display.id);
+                    }
+                }
+            }
+        }
+
+        // Strategy 2: Try to use display_id as an index into the display list
+        if let Ok(index) = source.display_id.parse::<usize>() {
+            if index < displays.len() {
+                let display = &displays[index];
+                log::debug!(
+                    "Matched display by index {}: scap ID {} ('{}')",
+                    index, display.id, display.name
+                );
+                return Ok(display.id);
+            }
+        }
+
+        // Strategy 3: Fall back to first (usually primary) display
+        let primary = &displays[0];
+        log::warn!(
+            "Could not match display_id '{}', falling back to first display: scap ID {} ('{}')",
+            source.display_id, primary.id, primary.name
+        );
+        Ok(primary.id)
+    }
+
+    /// Get frame dimensions from the display
+    fn get_frame_dimensions(&self, source_id: &str) -> Result<(u32, u32), String> {
+        // Parse display ID from source_id and get dimensions from display info
+        // For now, use common defaults - the actual frame dimensions come from scap
+        // We'll update this when we receive the first frame
+
+        // Try to get from screen capture service by listing displays
+        let displays = ScreenCaptureService::list_displays();
+
+        // Find matching display
+        for display in &displays {
+            if display.id.to_string() == *source_id || display.name.contains(source_id) {
+                // Use a reasonable default based on typical display sizes
+                // The actual frame dimensions will be determined from the first frame
+                return Ok((1920, 1080));
+            }
+        }
+
+        // Default fallback
+        Ok((1920, 1080))
+    }
+}
+
+impl Drop for H264CaptureService {
+    fn drop(&mut self) {
+        self.stop_all();
+    }
+}
+
+/// Main capture and encoding loop running in a separate thread
+fn run_capture_encoding_loop(
+    mut frame_rx: broadcast::Receiver<Arc<Frame>>,
+    output_tx: broadcast::Sender<Bytes>,
+    stop_flag: Arc<AtomicBool>,
+    last_accessed: Arc<Mutex<Instant>>,
+    ffmpeg_path: String,
+    initial_width: u32,
+    initial_height: u32,
+    fps: u32,
+    encoding: H264EncodingConfig,
+    source_id: String,
+    capture_audio: bool,
+) {
+    // Wait for the first frame to get actual dimensions
+    let (width, height) = match wait_for_first_frame(&mut frame_rx, &stop_flag) {
+        Some((w, h)) => (w, h),
+        None => {
+            log::warn!("No frames received for H264 capture: {}", source_id);
+            return;
+        }
+    };
+
+    log::debug!(
+        "First frame received for {}: {}x{} (initial estimate was {}x{})",
+        source_id, width, height, initial_width, initial_height
+    );
+
+    // Build FFmpeg command for encoding
+    let mut ffmpeg_args = vec![
+        "-hide_banner".to_string(),
+        "-v".to_string(),
+        "error".to_string(),
+        // Input 0: raw video from stdin
+        "-f".to_string(),
+        "rawvideo".to_string(),
+        "-pix_fmt".to_string(),
+        "bgra".to_string(),
+        "-s".to_string(),
+        format!("{}x{}", width, height),
+        "-r".to_string(),
+        fps.to_string(),
+        "-i".to_string(),
+        "pipe:0".to_string(),
+    ];
+
+    // Add audio input if capture_audio is enabled
+    // On macOS: Use avfoundation to capture default audio input
+    // On Windows: Use dshow audio capture
+    // On Linux: Use ALSA/PulseAudio
+    // Note: True desktop/system audio capture on macOS requires BlackHole or similar virtual device
+    if capture_audio {
+        #[cfg(target_os = "macos")]
+        {
+            // macOS: capture from default audio input device (typically microphone)
+            // :0 is typically the first/default audio input device
+            // For system audio, user needs to configure BlackHole/Soundflower
+            ffmpeg_args.extend([
+                "-f".to_string(),
+                "avfoundation".to_string(),
+                "-i".to_string(),
+                ":0".to_string(), // First audio input device (typically default mic)
+            ]);
+            log::info!("Audio capture enabled (macOS avfoundation audio device :0)");
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            // Windows: capture from default audio input
+            ffmpeg_args.extend([
+                "-f".to_string(),
+                "dshow".to_string(),
+                "-i".to_string(),
+                "audio=default".to_string(),
+            ]);
+            log::info!("Audio capture enabled (Windows dshow default input)");
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            // Linux: capture from default PulseAudio source
+            ffmpeg_args.extend([
+                "-f".to_string(),
+                "pulse".to_string(),
+                "-i".to_string(),
+                "default".to_string(),
+            ]);
+            log::info!("Audio capture enabled (Linux PulseAudio default)");
+        }
+    }
+
+    // Add video encoder settings
+    if encoding.use_hw_accel && cfg!(target_os = "macos") {
+        // Use VideoToolbox hardware encoder on macOS
+        ffmpeg_args.extend([
+            "-c:v".to_string(),
+            "h264_videotoolbox".to_string(),
+            "-realtime".to_string(),
+            "1".to_string(),
+            "-allow_sw".to_string(),
+            "1".to_string(), // Fallback to software if HW unavailable
+        ]);
+    } else {
+        // Use libx264 software encoder
+        ffmpeg_args.extend([
+            "-c:v".to_string(),
+            "libx264".to_string(),
+            "-preset".to_string(),
+            encoding.preset.clone(),
+            "-tune".to_string(),
+            "zerolatency".to_string(),
+        ]);
+    }
+
+    // Video encoding options
+    ffmpeg_args.extend([
+        "-g".to_string(),
+        encoding.keyframe_interval.to_string(),
+        "-b:v".to_string(),
+        format!("{}k", encoding.bitrate_kbps),
+        "-maxrate".to_string(),
+        format!("{}k", encoding.bitrate_kbps * 2),
+        "-bufsize".to_string(),
+        format!("{}k", encoding.bitrate_kbps),
+        "-pix_fmt".to_string(),
+        "yuv420p".to_string(),
+    ]);
+
+    // Add audio encoder or disable audio
+    if capture_audio {
+        ffmpeg_args.extend([
+            "-c:a".to_string(),
+            "aac".to_string(),
+            "-b:a".to_string(),
+            "128k".to_string(),
+            "-ar".to_string(),
+            "48000".to_string(),
+        ]);
+    } else {
+        ffmpeg_args.push("-an".to_string()); // No audio
+    }
+
+    // Output: MPEG-TS to stdout
+    ffmpeg_args.extend([
+        "-f".to_string(),
+        "mpegts".to_string(),
+        "pipe:1".to_string(),
+    ]);
+
+    log::debug!("FFmpeg command: {} {:?}", ffmpeg_path, ffmpeg_args);
+
+    // Spawn FFmpeg process
+    let mut ffmpeg = match Command::new(&ffmpeg_path)
+        .args(&ffmpeg_args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(e) => {
+            log::error!("Failed to spawn FFmpeg for H264 capture: {}", e);
+            return;
+        }
+    };
+
+    let ffmpeg_pid = ffmpeg.id();
+    log::info!("FFmpeg started for H264 capture (PID: {})", ffmpeg_pid);
+
+    let mut stdin = ffmpeg.stdin.take().expect("Failed to get FFmpeg stdin");
+    let stdout = ffmpeg.stdout.take().expect("Failed to get FFmpeg stdout");
+
+    // Spawn thread to read FFmpeg output and broadcast MPEG-TS chunks
+    let output_tx_clone = output_tx.clone();
+    let stop_flag_clone = stop_flag.clone();
+    let source_id_clone = source_id.clone();
+
+    let output_thread = std::thread::spawn(move || {
+        read_mpegts_output(stdout, output_tx_clone, stop_flag_clone, source_id_clone);
+    });
+
+    // Main loop: read frames and write to FFmpeg stdin
+    let frame_size = (width * height * 4) as usize; // BGRA = 4 bytes per pixel
+
+    while !stop_flag.load(Ordering::SeqCst) {
+        // Update last accessed
+        *last_accessed.lock().unwrap() = Instant::now();
+
+        // Use blocking_recv() since we're in a sync thread
+        match frame_rx.blocking_recv() {
+            Ok(frame) => {
+                // Extract raw frame data
+                if let Some(data) = extract_frame_data(&frame, frame_size) {
+                    if let Err(e) = stdin.write_all(&data) {
+                        log::error!("Failed to write frame to FFmpeg: {}", e);
+                        break;
+                    }
+                }
+            }
+            Err(broadcast::error::RecvError::Lagged(n)) => {
+                log::warn!("H264 capture lagged by {} frames for {}", n, source_id);
+                // Continue processing
+            }
+            Err(broadcast::error::RecvError::Closed) => {
+                log::info!("Screen capture channel closed for {}", source_id);
+                break;
+            }
+        }
+    }
+
+    // Cleanup
+    log::info!("Stopping H264 capture encoding loop for {}", source_id);
+
+    // Close stdin to signal FFmpeg to finish
+    drop(stdin);
+
+    // Wait for FFmpeg to exit
+    let _ = ffmpeg.wait();
+
+    // Wait for output thread
+    let _ = output_thread.join();
+
+    log::info!("H264 capture stopped for {}", source_id);
+}
+
+/// Wait for the first frame to determine actual dimensions
+fn wait_for_first_frame(
+    frame_rx: &mut broadcast::Receiver<Arc<Frame>>,
+    stop_flag: &Arc<AtomicBool>,
+) -> Option<(u32, u32)> {
+    let start = Instant::now();
+    let timeout = Duration::from_secs(10);
+
+    loop {
+        if stop_flag.load(Ordering::SeqCst) {
+            return None;
+        }
+
+        if start.elapsed() > timeout {
+            log::warn!("Timeout waiting for first frame");
+            return None;
+        }
+
+        match frame_rx.try_recv() {
+            Ok(frame) => {
+                // Extract dimensions from frame
+                let (width, height) = get_frame_dimensions(&frame);
+                return Some((width, height));
+            }
+            Err(broadcast::error::TryRecvError::Empty) => {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(broadcast::error::TryRecvError::Lagged(_)) => {
+                // Try again
+            }
+            Err(broadcast::error::TryRecvError::Closed) => {
+                return None;
+            }
+        }
+    }
+}
+
+/// Get dimensions from a scap Frame
+fn get_frame_dimensions(frame: &Frame) -> (u32, u32) {
+    match frame {
+        Frame::BGRA(bgra) => (bgra.width as u32, bgra.height as u32),
+        Frame::RGB(rgb) => (rgb.width as u32, rgb.height as u32),
+        Frame::YUVFrame(yuv) => (yuv.width as u32, yuv.height as u32),
+        _ => (1920, 1080), // Fallback for other formats
+    }
+}
+
+/// Extract raw frame data from a scap Frame
+fn extract_frame_data(frame: &Frame, expected_size: usize) -> Option<Vec<u8>> {
+    let data = match frame {
+        Frame::BGRA(bgra) => bgra.data.clone(),
+        _ => {
+            log::warn!("Unexpected frame format, expected BGRA");
+            return None;
+        }
+    };
+
+    // Verify size
+    if data.len() < expected_size {
+        log::warn!(
+            "Frame data size mismatch: expected {}, got {}",
+            expected_size,
+            data.len()
+        );
+    }
+
+    Some(data)
+}
+
+/// Read MPEG-TS output from FFmpeg stdout and broadcast chunks
+fn read_mpegts_output(
+    mut stdout: std::process::ChildStdout,
+    output_tx: broadcast::Sender<Bytes>,
+    stop_flag: Arc<AtomicBool>,
+    source_id: String,
+) {
+    // Read in 188-byte TS packet multiples (188 * 7 = 1316 bytes is common)
+    const CHUNK_SIZE: usize = 188 * 7;
+    let mut buffer = vec![0u8; CHUNK_SIZE];
+
+    log::debug!("Starting MPEG-TS output reader for {}", source_id);
+
+    loop {
+        if stop_flag.load(Ordering::SeqCst) {
+            break;
+        }
+
+        match stdout.read(&mut buffer) {
+            Ok(0) => {
+                // EOF
+                log::debug!("FFmpeg stdout EOF for {}", source_id);
+                break;
+            }
+            Ok(n) => {
+                let chunk = Bytes::copy_from_slice(&buffer[..n]);
+
+                // Broadcast chunk to all subscribers
+                match output_tx.send(chunk) {
+                    Ok(subscriber_count) => {
+                        if subscriber_count == 0 {
+                            // No subscribers, but keep running
+                            // Orphan cleanup will handle this eventually
+                        }
+                    }
+                    Err(_) => {
+                        // Channel closed, all receivers dropped
+                        log::debug!("No subscribers for MPEG-TS output: {}", source_id);
+                    }
+                }
+            }
+            Err(e) => {
+                if e.kind() != std::io::ErrorKind::Interrupted {
+                    log::error!("Error reading FFmpeg output: {}", e);
+                    break;
+                }
+            }
+        }
+    }
+
+    log::debug!("MPEG-TS output reader stopped for {}", source_id);
+}
+
+/// Extract screen number from a device name like "Capture screen 0" or "Screen 1"
+fn extract_screen_number(device_name: &str) -> Option<usize> {
+    // Try to find patterns like "screen 0", "Screen 1", "screen0", etc.
+    let lower = device_name.to_lowercase();
+
+    // Look for "screen" followed by a number
+    if let Some(pos) = lower.find("screen") {
+        let after_screen = &device_name[pos + 6..];
+        // Skip any whitespace
+        let trimmed = after_screen.trim_start();
+        // Try to parse the number
+        let num_str: String = trimmed.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if !num_str.is_empty() {
+            return num_str.parse().ok();
+        }
+    }
+
+    // Try to find just a trailing number
+    let num_str: String = device_name.chars().rev().take_while(|c| c.is_ascii_digit()).collect();
+    if !num_str.is_empty() {
+        let reversed: String = num_str.chars().rev().collect();
+        return reversed.parse().ok();
+    }
+
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_encoding_config_defaults() {
+        let config = H264EncodingConfig::default();
+        assert_eq!(config.bitrate_kbps, 4000);
+        assert_eq!(config.keyframe_interval, 30);
+        assert_eq!(config.preset, "ultrafast");
+        assert!(config.use_hw_accel);
+    }
+
+    #[test]
+    fn test_extract_screen_number() {
+        assert_eq!(extract_screen_number("Capture screen 0"), Some(0));
+        assert_eq!(extract_screen_number("Capture screen 1"), Some(1));
+        assert_eq!(extract_screen_number("Screen 2"), Some(2));
+        assert_eq!(extract_screen_number("screen0"), Some(0));
+        assert_eq!(extract_screen_number("Display 3"), Some(3));
+        assert_eq!(extract_screen_number("Main Display"), None);
+    }
+}
