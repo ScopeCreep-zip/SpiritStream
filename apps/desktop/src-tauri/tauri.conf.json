@@ -25,9 +25,9 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: http://127.0.0.1:* http://localhost:*; media-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:8008 http://localhost:8008 ws://127.0.0.1:8008 ws://localhost:8008 http://127.0.0.1:1984 ws://127.0.0.1:1984; frame-src 'self' http://127.0.0.1:* http://localhost:*",
-      "devCsp": "default-src 'self' http://localhost:1420 http://127.0.0.1:1420; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: http://127.0.0.1:* http://localhost:*; media-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost http://localhost:1420 http://127.0.0.1:1420 ws://localhost:1420 ws://127.0.0.1:1420 http://localhost:8008 http://127.0.0.1:8008 ws://localhost:8008 ws://127.0.0.1:8008 http://127.0.0.1:1984 ws://127.0.0.1:1984; frame-src 'self' http://127.0.0.1:* http://localhost:*",
-      "dangerousDisableAssetCspModification": ["style-src", "img-src", "media-src"]
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: http://127.0.0.1:* http://localhost:*; media-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; frame-src 'self' http://127.0.0.1:* http://localhost:* https://* http://*",
+      "devCsp": "default-src 'self' http://localhost:1420 http://127.0.0.1:1420; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: http://127.0.0.1:* http://localhost:*; media-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost http://localhost:1420 http://127.0.0.1:1420 ws://localhost:1420 ws://127.0.0.1:1420 http://localhost:8008 http://127.0.0.1:8008 ws://localhost:8008 ws://127.0.0.1:8008 http://127.0.0.1:1984 ws://127.0.0.1:1984; frame-src 'self' http://127.0.0.1:* http://localhost:* https://* http://*",
+      "dangerousDisableAssetCspModification": true
     }
   },
   "bundle": {
