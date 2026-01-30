@@ -11,6 +11,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Logo } from '@/components/layout/Logo';
 import { FFmpegDownloadProgress } from '@/components/settings/FFmpegDownloadProgress';
 import { KeyRotationSection } from '@/components/settings/KeyRotationSection';
+import { HotkeySettings } from '@/components/settings/HotkeySettings';
 import { api, dialogs } from '@/lib/backend';
 import { backendMode } from '@/lib/backend/env';
 import { useFileBrowser } from '@/hooks/useFileBrowser';
@@ -578,6 +579,9 @@ export function Settings() {
           />
         </CardBody>
       </Card>
+
+      {/* Keyboard Shortcuts */}
+      <HotkeySettings />
 
       {/* About */}
       <Card>

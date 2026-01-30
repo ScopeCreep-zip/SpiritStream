@@ -4,7 +4,7 @@
  */
 import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Play, Square, AlertTriangle, Plus } from 'lucide-react';
+import { Play, Square, AlertTriangle, Plus, LayoutGrid } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Alert } from '@/components/ui/Alert';
 import { SourcesPanel } from '@/components/stream/SourcesPanel';
@@ -12,11 +12,15 @@ import { SceneCanvas } from '@/components/stream/SceneCanvas';
 import { PropertiesPanel } from '@/components/stream/PropertiesPanel';
 import { SceneBar } from '@/components/stream/SceneBar';
 import { AudioMixerPanel } from '@/components/stream/AudioMixerPanel';
+import { StudioModeLayout } from '@/components/stream/StudioModeLayout';
 import { useProfileStore } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
 import { useSceneStore } from '@/stores/sceneStore';
 import { useSourceStore } from '@/stores/sourceStore';
+import { useStudioStore } from '@/stores/studioStore';
+import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/useToast';
+import { useHotkeys } from '@/hooks/useHotkeys';
 import { getIncomingUrl, migrateProfileIfNeeded } from '@/types/profile';
 import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValidation';
 
@@ -39,6 +43,12 @@ export function Stream() {
   const selectLayer = useSceneStore((s) => s.selectLayer);
 
   const discoverDevices = useSourceStore((s) => s.discoverDevices);
+
+  const studioEnabled = useStudioStore((s) => s.enabled);
+  const toggleStudioMode = useStudioStore((s) => s.toggleStudioMode);
+
+  // Activate global hotkeys for the Stream view
+  useHotkeys();
 
   const [isValidating, setIsValidating] = useState(false);
 
@@ -151,6 +161,21 @@ export function Stream() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Studio Mode toggle */}
+          <button
+            onClick={toggleStudioMode}
+            className={cn(
+              'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+              studioEnabled
+                ? 'bg-[var(--primary)] text-white'
+                : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+            )}
+            title={t('stream.studioMode', { defaultValue: 'Studio Mode' })}
+          >
+            <LayoutGrid className="w-4 h-4" />
+            <span className="hidden sm:inline">{t('stream.studio', { defaultValue: 'Studio' })}</span>
+          </button>
+
           {isStreaming ? (
             <Button variant="destructive" onClick={handleStopStreaming}>
               <Square className="w-4 h-4 mr-2" />
@@ -175,36 +200,62 @@ export function Stream() {
       </div>
 
       {/* Main content area */}
-      <div className="flex flex-1 gap-4 min-h-0">
-        {/* Sources panel (left) */}
-        <div className="w-56 lg:w-64 flex-shrink-0">
-          <SourcesPanel
-            profile={current}
-            activeScene={activeScene}
-          />
-        </div>
+      {studioEnabled ? (
+        // Studio Mode: Dual-pane layout
+        <div className="flex flex-1 gap-2 min-h-0">
+          {/* Sources panel (left) */}
+          <div className="w-56 lg:w-64 flex-shrink-0">
+            <SourcesPanel profile={current} activeScene={activeScene} />
+          </div>
 
-        {/* Scene canvas (center) */}
-        <div className="flex-1 min-w-0">
-          <SceneCanvas
-            scene={activeScene}
+          {/* Studio Mode Layout (center) */}
+          <StudioModeLayout
+            profile={current}
             sources={current.sources}
             selectedLayerId={selectedLayerId}
             onSelectLayer={selectLayer}
-            profileName={current.name}
           />
-        </div>
 
-        {/* Properties panel (right) */}
-        <div className="w-56 lg:w-64 flex-shrink-0">
-          <PropertiesPanel
-            profile={current}
-            scene={activeScene}
-            layer={selectedLayer}
-            source={selectedLayer ? current.sources.find((s) => s.id === selectedLayer.sourceId) : undefined}
-          />
+          {/* Properties panel (right) */}
+          <div className="w-56 lg:w-64 flex-shrink-0">
+            <PropertiesPanel
+              profile={current}
+              scene={activeScene}
+              layer={selectedLayer}
+              source={selectedLayer ? current.sources.find((s) => s.id === selectedLayer.sourceId) : undefined}
+            />
+          </div>
         </div>
-      </div>
+      ) : (
+        // Normal Mode: Single canvas
+        <div className="flex flex-1 gap-4 min-h-0">
+          {/* Sources panel (left) */}
+          <div className="w-56 lg:w-64 flex-shrink-0">
+            <SourcesPanel profile={current} activeScene={activeScene} />
+          </div>
+
+          {/* Scene canvas (center) */}
+          <div className="flex-1 min-w-0">
+            <SceneCanvas
+              scene={activeScene}
+              sources={current.sources}
+              selectedLayerId={selectedLayerId}
+              onSelectLayer={selectLayer}
+              profileName={current.name}
+            />
+          </div>
+
+          {/* Properties panel (right) */}
+          <div className="w-56 lg:w-64 flex-shrink-0">
+            <PropertiesPanel
+              profile={current}
+              scene={activeScene}
+              layer={selectedLayer}
+              source={selectedLayer ? current.sources.find((s) => s.id === selectedLayer.sourceId) : undefined}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Scene bar */}
       <SceneBar

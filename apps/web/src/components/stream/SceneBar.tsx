@@ -13,7 +13,10 @@ import type { Profile } from '@/types/profile';
 import type { Scene } from '@/types/scene';
 import { useSceneStore } from '@/stores/sceneStore';
 import { useProfileStore } from '@/stores/profileStore';
+import { useStudioStore } from '@/stores/studioStore';
+import { useTransitionStore } from '@/stores/transitionStore';
 import { toast } from '@/hooks/useToast';
+import { cn } from '@/lib/utils';
 
 interface SceneBarProps {
   profile: Profile;
@@ -24,6 +27,8 @@ export function SceneBar({ profile, activeSceneId }: SceneBarProps) {
   const { t } = useTranslation();
   const { createScene, deleteScene, duplicateScene, setActiveScene } = useSceneStore();
   const { addCurrentScene, removeCurrentScene, setCurrentActiveScene, reloadProfile } = useProfileStore();
+  const { enabled: studioEnabled, previewSceneId, programSceneId, setPreviewScene } = useStudioStore();
+  const { isTransitioning } = useTransitionStore();
   const [showNewSceneInput, setShowNewSceneInput] = useState(false);
   const [newSceneName, setNewSceneName] = useState('');
 
@@ -89,6 +94,18 @@ export function SceneBar({ profile, activeSceneId }: SceneBarProps) {
   }, [profile.name, duplicateScene, addCurrentScene, reloadProfile, t]);
 
   const handleSelectScene = useCallback(async (sceneId: string) => {
+    // Prevent clicks during transition
+    if (isTransitioning) return;
+
+    // In Studio Mode, clicking loads to Preview only
+    if (studioEnabled) {
+      if (sceneId !== previewSceneId) {
+        setPreviewScene(sceneId);
+      }
+      return;
+    }
+
+    // Normal mode: switch active scene
     if (sceneId === activeSceneId) return;
 
     try {
@@ -98,50 +115,78 @@ export function SceneBar({ profile, activeSceneId }: SceneBarProps) {
     } catch (err) {
       toast.error(t('stream.sceneSwitchFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to switch scene: ${err instanceof Error ? err.message : String(err)}` }));
     }
-  }, [activeSceneId, profile.name, setActiveScene, setCurrentActiveScene, t]);
+  }, [activeSceneId, profile.name, setActiveScene, setCurrentActiveScene, t, studioEnabled, previewSceneId, setPreviewScene, isTransitioning]);
 
   return (
     <div className="flex items-center gap-2 px-4 py-3 bg-card rounded border border-border overflow-x-auto">
       <span className="text-xs font-medium text-muted">{t('stream.scenes', { defaultValue: 'Scenes' })}</span>
 
       {/* Scene tabs */}
-      {profile.scenes.map((scene) => (
-        <div
-          key={scene.id}
-          className={`group flex items-center gap-2 px-4 py-2 rounded cursor-pointer transition-colors min-h-[40px] ${
-            scene.id === activeSceneId
-              ? 'bg-primary text-primary-foreground'
-              : 'bg-muted/30 hover:bg-muted/50'
-          }`}
-          onClick={() => handleSelectScene(scene.id)}
-        >
-          <span className="text-sm font-medium">{scene.name}</span>
-          <div className="flex items-center gap-1 opacity-40 group-hover:opacity-100 transition-opacity">
-            <button
-              className="p-1 hover:bg-white/20 rounded min-w-[24px] min-h-[24px] flex items-center justify-center"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDuplicateScene(scene.id);
-              }}
-              title={t('common.duplicate')}
-            >
-              <Copy className="w-3.5 h-3.5" />
-            </button>
-            {profile.scenes.length > 1 && (
+      {profile.scenes.map((scene) => {
+        const isActive = scene.id === activeSceneId;
+        const isPreview = studioEnabled && scene.id === previewSceneId;
+        const isProgram = studioEnabled && scene.id === programSceneId;
+        const hasTransitionOverride = !!scene.transitionIn;
+
+        return (
+          <div
+            key={scene.id}
+            className={cn(
+              'group relative flex items-center gap-2 px-4 py-2 rounded cursor-pointer transition-all min-h-[40px]',
+              // Normal mode styling
+              !studioEnabled && isActive && 'bg-primary text-primary-foreground',
+              !studioEnabled && !isActive && 'bg-muted/30 hover:bg-muted/50',
+              // Studio mode styling
+              studioEnabled && isPreview && 'ring-2 ring-green-500 bg-green-500/10',
+              studioEnabled && isProgram && 'ring-2 ring-red-500 bg-red-500/10',
+              studioEnabled && !isPreview && !isProgram && 'bg-muted/30 hover:bg-muted/50',
+              // Transition in progress
+              isTransitioning && 'opacity-50 cursor-not-allowed'
+            )}
+            onClick={() => handleSelectScene(scene.id)}
+          >
+            {/* Transition override indicator */}
+            {hasTransitionOverride && (
+              <span className="absolute -top-1 -right-1 w-2 h-2 bg-[var(--accent)] rounded-full" />
+            )}
+
+            <span className="text-sm font-medium">{scene.name}</span>
+
+            {/* Live indicator in Studio Mode */}
+            {isProgram && (
+              <span className="text-[10px] font-bold text-red-500 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
+                LIVE
+              </span>
+            )}
+
+            <div className="flex items-center gap-1 opacity-40 group-hover:opacity-100 transition-opacity">
               <button
-                className="p-1 hover:bg-destructive/50 rounded min-w-[24px] min-h-[24px] flex items-center justify-center"
+                className="p-1 hover:bg-white/20 rounded min-w-[24px] min-h-[24px] flex items-center justify-center"
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleDeleteScene(scene.id, scene.name);
+                  handleDuplicateScene(scene.id);
                 }}
-                title={t('common.delete')}
+                title={t('common.duplicate')}
               >
-                <Trash2 className="w-3.5 h-3.5" />
+                <Copy className="w-3.5 h-3.5" />
               </button>
-            )}
+              {profile.scenes.length > 1 && (
+                <button
+                  className="p-1 hover:bg-destructive/50 rounded min-w-[24px] min-h-[24px] flex items-center justify-center"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteScene(scene.id, scene.name);
+                  }}
+                  title={t('common.delete')}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       {/* New scene input */}
       {showNewSceneInput ? (
