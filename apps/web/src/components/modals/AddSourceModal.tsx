@@ -276,7 +276,7 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
 
   const handleBrowseFile = async () => {
     const filters = [
-      { name: 'Media Files', extensions: ['mp4', 'mkv', 'avi', 'mov', 'webm', 'mp3', 'wav', 'flac', 'ogg'] }
+      { name: 'Media Files', extensions: ['mp4', 'mkv', 'avi', 'mov', 'webm', 'mp3', 'wav', 'flac', 'ogg', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'html', 'htm'] }
     ];
     const result = backendMode === 'http'
       ? await browserOpenFile({ filters })

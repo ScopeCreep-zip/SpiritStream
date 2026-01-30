@@ -721,6 +721,122 @@ struct AuthQuery {
 }
 
 // ============================================================================
+// Static File Serving Endpoint
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+struct StaticFileQuery {
+    path: String,
+}
+
+/// GET /api/static - Serve a static file (images, HTML) from the file system
+/// Query params: path (required, the absolute file path to serve)
+async fn static_file_handler(
+    State(state): State<AppState>,
+    Query(params): Query<StaticFileQuery>,
+) -> impl IntoResponse {
+    let file_path = PathBuf::from(&params.path);
+
+    // Security: Validate file exists
+    if !file_path.exists() {
+        return (
+            StatusCode::NOT_FOUND,
+            [("Content-Type", "text/plain")],
+            "File not found".to_string(),
+        )
+            .into_response();
+    }
+
+    // Security: Must be a file, not a directory
+    if !file_path.is_file() {
+        return (
+            StatusCode::BAD_REQUEST,
+            [("Content-Type", "text/plain")],
+            "Path is not a file".to_string(),
+        )
+            .into_response();
+    }
+
+    // Security: Validate path is within allowed directories (home or app data)
+    let mut allowed_dirs: Vec<&std::path::Path> = vec![state.app_data_dir.as_path()];
+    if let Some(ref home) = state.home_dir {
+        allowed_dirs.push(home.as_path());
+    }
+    // Also allow common media directories
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(ref home) = state.home_dir {
+            let movies = home.join("Movies");
+            let pictures = home.join("Pictures");
+            let downloads = home.join("Downloads");
+            let desktop = home.join("Desktop");
+            let documents = home.join("Documents");
+            // Check if file is under any of these
+            let is_allowed = [&movies, &pictures, &downloads, &desktop, &documents]
+                .iter()
+                .any(|dir| file_path.starts_with(dir));
+            if !is_allowed && !allowed_dirs.iter().any(|d| file_path.starts_with(d)) {
+                return (
+                    StatusCode::FORBIDDEN,
+                    [("Content-Type", "text/plain")],
+                    "Access denied".to_string(),
+                )
+                    .into_response();
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        if !allowed_dirs.iter().any(|d| file_path.starts_with(d)) {
+            return (
+                StatusCode::FORBIDDEN,
+                [("Content-Type", "text/plain")],
+                "Access denied".to_string(),
+            )
+                .into_response();
+        }
+    }
+
+    // Read the file
+    let content = match std::fs::read(&file_path) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            log::error!("Failed to read static file {:?}: {}", file_path, e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                [("Content-Type", "text/plain")],
+                "Failed to read file".to_string(),
+            )
+                .into_response();
+        }
+    };
+
+    // Determine content type based on file extension
+    let content_type = match file_path.extension().and_then(|e| e.to_str()) {
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("svg") => "image/svg+xml",
+        Some("bmp") => "image/bmp",
+        Some("html") | Some("htm") => "text/html",
+        Some("css") => "text/css",
+        Some("js") => "application/javascript",
+        _ => "application/octet-stream",
+    };
+
+    (
+        StatusCode::OK,
+        [
+            ("Content-Type", content_type),
+            ("Cache-Control", "public, max-age=3600"),
+        ],
+        content,
+    )
+        .into_response()
+}
+
+// ============================================================================
 // Preview Endpoints
 // ============================================================================
 
@@ -3253,6 +3369,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/files/browse", get(files_browse))
         .route("/api/files/home", get(files_home))
         .route("/api/files/open", post(files_open))
+        // Static file serving (images, HTML)
+        .route("/api/static", get(static_file_handler))
         // Preview endpoints (MJPEG/snapshot)
         .route("/api/preview/source/:source_id", get(source_preview_handler))
         .route("/api/preview/source/:source_id/snapshot", get(source_snapshot_handler))

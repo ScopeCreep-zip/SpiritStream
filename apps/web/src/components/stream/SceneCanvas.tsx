@@ -20,8 +20,30 @@ import { api } from '@/lib/backend';
 import { useSceneStore } from '@/stores/sceneStore';
 import { useProfileStore } from '@/stores/profileStore';
 import { SharedWebRTCPlayer } from './SharedWebRTCPlayer';
+import { StaticMediaPlayer } from './StaticMediaPlayer';
 
 type ViewMode = 'edit' | 'preview';
+
+// File extensions for static media (images, HTML) that don't need WebRTC streaming
+const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'];
+const HTML_EXTENSIONS = ['html', 'htm'];
+const STATIC_EXTENSIONS = [...IMAGE_EXTENSIONS, ...HTML_EXTENSIONS];
+
+/**
+ * Check if a file path is a static media file (image or HTML)
+ */
+function isStaticMediaFile(filePath: string): boolean {
+  const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
+  return STATIC_EXTENSIONS.includes(ext);
+}
+
+/**
+ * Check if a file path is an image file
+ */
+function isImageFile(filePath: string): boolean {
+  const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
+  return IMAGE_EXTENSIONS.includes(ext);
+}
 type ResizeDirection = 'nw' | 'ne' | 'sw' | 'se' | null;
 
 // Calculate canvas dimensions that fit within available space
@@ -470,17 +492,30 @@ const LayerPreview = React.memo(function LayerPreview({
       }}
       onMouseDown={handleDragStart}
     >
-      {/* Live preview via shared WebRTC (deduplicates connections for same source) */}
+      {/* Live preview via shared WebRTC, or static rendering for images/HTML */}
       <div className="w-full h-full bg-[var(--bg-sunken)] overflow-hidden pointer-events-none">
         {hasVideo && source ? (
-          <SharedWebRTCPlayer
-            sourceId={source.id}
-            sourceName={sourceName}
-            sourceType={source.type}
-            width={displayWidth}
-            height={displayHeight}
-            refreshKey={'deviceId' in source ? source.deviceId : 'displayId' in source ? source.displayId : undefined}
-          />
+          // Check if this is a static media file (image/HTML) that doesn't need WebRTC
+          source.type === 'mediaFile' && 'filePath' in source && isStaticMediaFile(source.filePath) ? (
+            <StaticMediaPlayer
+              filePath={source.filePath}
+              isImage={isImageFile(source.filePath)}
+              width={displayWidth}
+              height={displayHeight}
+              sourceName={sourceName}
+              nativeWidth={canvasWidth}
+              nativeHeight={canvasHeight}
+            />
+          ) : (
+            <SharedWebRTCPlayer
+              sourceId={source.id}
+              sourceName={sourceName}
+              sourceType={source.type}
+              width={displayWidth}
+              height={displayHeight}
+              refreshKey={'deviceId' in source ? source.deviceId : 'displayId' in source ? source.displayId : undefined}
+            />
+          )
         ) : (
           <div className="w-full h-full bg-gradient-to-br from-[var(--bg-elevated)] to-[var(--bg-sunken)] flex items-center justify-center">
             <span className="text-[var(--text-muted)] text-xs text-center px-2 truncate">

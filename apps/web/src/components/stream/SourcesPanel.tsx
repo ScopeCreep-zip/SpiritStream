@@ -71,11 +71,28 @@ const SourceIcon = ({ type }: { type: Source['type'] }) => {
   }
 };
 
+// File extensions for static media (images, HTML) that don't need WebRTC streaming
+const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'];
+const HTML_EXTENSIONS = ['html', 'htm'];
+const STATIC_EXTENSIONS = [...IMAGE_EXTENSIONS, ...HTML_EXTENSIONS];
+
+function isStaticMediaFile(filePath: string): boolean {
+  const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
+  return STATIC_EXTENSIONS.includes(ext);
+}
+
+function isImageFile(filePath: string): boolean {
+  const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
+  return IMAGE_EXTENSIONS.includes(ext);
+}
+
 interface SourceThumbnailProps {
   sourceId: string;
   sourceType: Source['type'];
   visible: boolean;
   refreshKey?: string;
+  /** For mediaFile sources, the file path to check if it's a static image/HTML */
+  filePath?: string;
 }
 
 /**
@@ -89,9 +106,17 @@ const SourceThumbnail = memo(function SourceThumbnail({
   sourceType,
   visible,
   refreshKey,
+  filePath,
 }: SourceThumbnailProps) {
-  // Only connect WebRTC when layer is visible - pass empty sourceId to disable connection
-  const { status, stream, retry } = useSharedWebRTCPreview(visible ? sourceId : '', refreshKey);
+  // Check if this is a static media file (image/HTML) that doesn't need WebRTC
+  const isStatic = filePath && isStaticMediaFile(filePath);
+  const isImage = filePath && isImageFile(filePath);
+
+  // Only connect WebRTC when layer is visible AND not a static file
+  const { status, stream, retry } = useSharedWebRTCPreview(
+    visible && !isStatic ? sourceId : '',
+    refreshKey
+  );
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoReady, setVideoReady] = useState(false);
   const mountedRef = useRef(true);
@@ -181,6 +206,31 @@ const SourceThumbnail = memo(function SourceThumbnail({
     return (
       <div className="w-16 h-9 bg-[var(--bg-sunken)] rounded flex items-center justify-center flex-shrink-0">
         <Mic className="w-4 h-4 text-muted" />
+      </div>
+    );
+  }
+
+  // Static media file (image/HTML) - render directly without WebRTC
+  if (isStatic && filePath) {
+    const fileUrl = api.preview.getStaticFileUrl(filePath);
+    return (
+      <div className="relative w-16 h-9 bg-[var(--bg-sunken)] rounded overflow-hidden flex-shrink-0">
+        {isImage ? (
+          <img
+            src={fileUrl}
+            alt=""
+            className="w-full h-full object-cover"
+            onError={(e) => {
+              // Hide broken image and show fallback
+              e.currentTarget.style.display = 'none';
+            }}
+          />
+        ) : (
+          // HTML file - just show an icon
+          <div className="w-full h-full flex items-center justify-center">
+            <SourceIcon type={sourceType} />
+          </div>
+        )}
       </div>
     );
   }
@@ -294,6 +344,7 @@ const SortableLayerItem = memo(function SortableLayerItem({
         sourceType={source.type}
         visible={layer.visible}
         refreshKey={'deviceId' in source ? source.deviceId : 'displayId' in source ? source.displayId : undefined}
+        filePath={source.type === 'mediaFile' && 'filePath' in source ? source.filePath : undefined}
       />
 
       {/* Source name and icon */}

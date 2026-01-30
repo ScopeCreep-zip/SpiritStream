@@ -192,6 +192,11 @@ export const api = {
     stopScenePreview: () => invokeHttp<void>('stop_scene_preview'),
     /** Stop all active previews */
     stopAllPreviews: () => invokeHttp<void>('stop_all_previews'),
+    /** Get URL for a static file (images, HTML) served by the backend */
+    getStaticFileUrl: (filePath: string) => {
+      const baseUrl = getBackendBaseUrl();
+      return `${baseUrl}/api/static?path=${encodeURIComponent(filePath)}`;
+    },
   },
   device: {
     /** Refresh all device types at once */
