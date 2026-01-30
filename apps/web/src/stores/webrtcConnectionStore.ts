@@ -179,8 +179,22 @@ export const useWebRTCConnectionStore = create<WebRTCConnectionState>()(
       set({ connections: { ...connections, [sourceId]: conn } });
 
       try {
-        // Check if go2rtc is available
-        const available = await api.webrtc.isAvailable();
+        // Check if go2rtc is available (with retries since it may still be starting)
+        let available = false;
+        const maxRetries = 5;
+        const retryDelay = 1000; // 1 second between retries
+
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+          if (conn.abortController?.signal.aborted) return;
+
+          available = await api.webrtc.isAvailable();
+          if (available) break;
+
+          if (attempt < maxRetries - 1) {
+            console.log(`[WebRTCStore] go2rtc not ready, retrying (${attempt + 1}/${maxRetries})...`);
+            await new Promise((resolve) => setTimeout(resolve, retryDelay));
+          }
+        }
 
         if (conn.abortController?.signal.aborted) return;
 

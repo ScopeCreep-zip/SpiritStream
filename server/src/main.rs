@@ -1374,11 +1374,12 @@ async fn webrtc_start_handler(
             // For screen capture, we use native scap capture + H264 encoding via our server.
             // This approach:
             // 1. Uses scap (which has screen recording permission via our server process)
-            // 2. Encodes to H264 MPEG-TS using FFmpeg
+            // 2. Encodes to H264 MPEG-TS using FFmpeg with bt709 color space
             // 3. Serves the stream via HTTP endpoint
-            // 4. go2rtc consumes the HTTP stream and serves via WebRTC
+            // 4. go2rtc consumes with #video=copy to PASSTHROUGH (no re-encoding!)
             //
-            // This works around go2rtc's spawned ffmpeg not having macOS screen recording permission.
+            // The #video=copy flag is critical - it tells go2rtc to not re-encode,
+            // preserving our bt709 color space metadata and reducing latency.
 
             // Start H264 capture if not already running
             // IMPORTANT: start_capture is a blocking function that calls scap::get_all_targets()
@@ -1389,14 +1390,14 @@ async fn webrtc_start_handler(
             let capture_result = tokio::task::spawn_blocking(move || {
                 // Wrap in catch_unwind to handle any panics from scap
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    h264_capture.start_capture(&screen_clone, None)
+                    h264_capture.start_capture_http(&screen_clone, None)
                 }))
             }).await;
 
             match capture_result {
                 Ok(Ok(Ok(_receiver))) => {
                     // Success - H264 capture started
-                    log::debug!("H264 capture started for {}", source_id);
+                    log::debug!("H264 capture started for {} (HTTP mode)", source_id);
                 }
                 Ok(Ok(Err(e))) => {
                     // start_capture returned an error
@@ -1419,14 +1420,15 @@ async fn webrtc_start_handler(
             }
 
             // Build HTTP URL pointing to our MPEG-TS stream endpoint
-            // go2rtc will consume this HTTP stream
+            // CRITICAL: Add #video=copy to tell go2rtc to passthrough without re-encoding!
+            // This preserves bt709 color space and reduces latency.
             let http_url = format!(
-                "http://127.0.0.1:{}/api/capture/{}/stream",
+                "http://127.0.0.1:{}/api/capture/{}/stream#video=copy",
                 state.server_port,
                 source_id
             );
 
-            log::info!("Screen capture using HTTP source: {}", http_url);
+            log::info!("Screen capture using HTTP source with passthrough: {}", http_url);
 
             http_url
         }
@@ -1491,103 +1493,6 @@ async fn webrtc_stop_handler(
     }
 
     Json(json!({ "ok": true }))
-}
-
-/// GET /api/capture/:source_id/stream - Stream H264 MPEG-TS for a screen capture source
-/// Used by go2rtc to consume native screen capture as an HTTP source
-async fn h264_capture_stream_handler(
-    State(state): State<AppState>,
-    Path(source_id): Path<String>,
-    cookies: Cookies,
-    headers: HeaderMap,
-) -> impl IntoResponse {
-    log::info!("H264 capture stream request for source: {}", source_id);
-
-    // Authentication check
-    if let Some(expected) = state.auth_token.as_deref() {
-        let authenticated = cookies.get(AUTH_COOKIE_NAME).is_some()
-            || bearer_token(&headers).is_some_and(|t| verify_token(expected, t));
-
-        if !authenticated {
-            log::warn!("H264 capture stream request unauthorized for source: {}", source_id);
-            return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
-        }
-    }
-
-    // Find source from active profile
-    let source = {
-        let settings = match state.settings_manager.load() {
-            Ok(s) => s,
-            Err(e) => {
-                log::error!("Failed to load settings for H264 capture: {}", e);
-                return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load settings").into_response();
-            }
-        };
-
-        let profile_name = match settings.last_profile.as_ref() {
-            Some(name) => name.clone(),
-            None => {
-                return (StatusCode::BAD_REQUEST, "No active profile").into_response();
-            }
-        };
-
-        match state.profile_manager.load(&profile_name, None).await {
-            Ok(profile) => profile.sources.into_iter().find(|s| s.id() == source_id),
-            Err(e) => {
-                log::error!("Failed to load profile for H264 capture: {}", e);
-                return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load profile").into_response();
-            }
-        }
-    };
-
-    let source = match source {
-        Some(Source::ScreenCapture(screen)) => screen,
-        Some(_) => {
-            log::warn!("Source {} is not a screen capture source", source_id);
-            return (StatusCode::BAD_REQUEST, "Source is not a screen capture").into_response();
-        }
-        None => {
-            log::warn!("Source {} not found", source_id);
-            return (StatusCode::NOT_FOUND, "Source not found").into_response();
-        }
-    };
-
-    // Get or start H264 capture stream
-    let rx = match state.h264_capture.get_or_start_stream(&source) {
-        Ok(rx) => rx,
-        Err(e) => {
-            log::error!("Failed to start H264 capture: {}", e);
-            return (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to start capture: {}", e)).into_response();
-        }
-    };
-
-    log::info!("Starting H264 MPEG-TS stream for source: {}", source_id);
-
-    // Convert broadcast receiver to stream
-    let stream = BroadcastStream::new(rx);
-
-    // Stream MPEG-TS chunks directly
-    let body_stream = stream.filter_map(|result| async move {
-        match result {
-            Ok(chunk) => Some(Ok::<_, std::io::Error>(chunk)),
-            Err(e) => {
-                log::debug!("H264 stream receive error: {:?}", e);
-                None
-            }
-        }
-    });
-
-    // Build streaming response with MPEG-TS content type
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "video/mp2t")
-        .header(header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")
-        .header(header::PRAGMA, "no-cache")
-        .header(header::EXPIRES, "0")
-        .header("X-Content-Type-Options", "nosniff")
-        .body(Body::from_stream(body_stream))
-        .unwrap()
-        .into_response()
 }
 
 async fn ws_handler(
@@ -2897,6 +2802,61 @@ async fn capture_status_handler(
     Json(json!({ "ok": true, "data": status }))
 }
 
+/// GET /api/capture/{source_id}/stream - Stream MPEG-TS H264 capture to go2rtc
+/// This endpoint serves the H264 encoded MPEG-TS stream from our capture service.
+/// go2rtc uses this with #video=copy to passthrough without re-encoding.
+async fn capture_stream_handler(
+    State(state): State<AppState>,
+    Path(source_id): Path<String>,
+) -> impl IntoResponse {
+    // Get a subscriber to the existing stream
+    let rx = match state.h264_capture.subscribe_to_stream(&source_id) {
+        Some(rx) => rx,
+        None => {
+            log::warn!("No H264 capture stream found for source: {}", source_id);
+            return (
+                StatusCode::NOT_FOUND,
+                [(header::CONTENT_TYPE, "text/plain")],
+                axum::body::Body::from("Stream not found"),
+            ).into_response();
+        }
+    };
+
+    log::info!("Starting MPEG-TS stream for source: {}", source_id);
+
+    // Create a streaming response using the broadcast receiver
+    let stream = async_stream::stream! {
+        let mut rx = rx;
+        loop {
+            match rx.recv().await {
+                Ok(chunk) => {
+                    yield Ok::<_, std::io::Error>(chunk);
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    log::warn!("Stream consumer lagged by {} chunks for {}", n, source_id);
+                    // Continue receiving
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    log::info!("H264 capture stream closed for {}", source_id);
+                    break;
+                }
+            }
+        }
+    };
+
+    let body = axum::body::Body::from_stream(stream);
+
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "video/mp2t"),
+            (header::CACHE_CONTROL, "no-cache, no-store"),
+            (header::CONNECTION, "keep-alive"),
+        ],
+        body,
+    ).into_response()
+}
+
 // --- Recording ---
 
 #[derive(Debug, Deserialize)]
@@ -3393,6 +3353,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/capture/audio/start", post(start_audio_capture_handler))
         .route("/api/capture/audio/stop", post(stop_audio_capture_handler))
         .route("/api/capture/status", get(capture_status_handler))
+        // H264 MPEG-TS streaming endpoint (for go2rtc #video=copy passthrough)
+        .route("/api/capture/:source_id/stream", get(capture_stream_handler))
         // Recording endpoints
         .route("/api/recording/start", post(start_recording_handler))
         .route("/api/recording/stop", post(stop_recording_handler))
@@ -3407,8 +3369,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/webrtc/info/:source_id", get(webrtc_info_handler))
         .route("/api/webrtc/start/:source_id", post(webrtc_start_handler))
         .route("/api/webrtc/stop/:source_id", post(webrtc_stop_handler))
-        // H264 capture stream endpoint (for go2rtc HTTP source)
-        .route("/api/capture/:source_id/stream", get(h264_capture_stream_handler))
         .layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
 
     // Public routes (no auth required)

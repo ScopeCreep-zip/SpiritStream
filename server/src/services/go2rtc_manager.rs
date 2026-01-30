@@ -277,16 +277,19 @@ log:
         // Screen capture requires different handling per platform
         // On macOS, AVFoundation can capture screens - the display index comes after camera indices
         // On Windows/Linux, we may need different approaches
+        //
+        // IMPORTANT: We cap resolution at 1920x1080 for low latency - native resolution
+        // captures (e.g., 2560x1440, 3840x2160) cause significant encoding latency.
         let source = if cfg!(target_os = "macos") {
             // macOS: screen capture devices are listed after cameras in AVFoundation
-            // Typically screen 0 would be at a higher index
-            format!("ffmpeg:device?video={}&framerate=30#video=h264", display_id)
+            // Use 1920x1080 cap and 30fps for low latency preview
+            format!("ffmpeg:device?video={}&video_size=1920x1080&framerate=30#video=h264", display_id)
         } else if cfg!(target_os = "windows") {
-            // Windows: gdigrab for desktop capture - use pipe transport
-            format!("ffmpeg:desktop#video=h264")
+            // Windows: gdigrab for desktop capture with resolution cap
+            format!("ffmpeg:desktop?video_size=1920x1080&framerate=30#video=h264")
         } else {
-            // Linux: x11grab for desktop capture
-            format!("ffmpeg:display#video=h264")
+            // Linux: x11grab for desktop capture with resolution cap
+            format!("ffmpeg:display?video_size=1920x1080&framerate=30#video=h264")
         };
 
         self.register_source(source_id, &source).await

@@ -43,6 +43,7 @@ dirs-next = "2.0"
 opener = "0.7"
 bytes = "1.5"
 tokio-stream = { version = "0.1", features = ["sync"] }
+async-stream = "0.3"
 
 # Native Capture
 scap = "0.0.8"

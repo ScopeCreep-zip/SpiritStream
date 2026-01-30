@@ -114,6 +114,33 @@ impl Go2RtcClient {
         self.register_stream(name, &source).await
     }
 
+    /// Register an empty stream (placeholder for incoming push)
+    /// This creates a stream that can receive data via RTSP or HTTP push
+    pub async fn register_empty_stream(&self, name: &str) -> Result<String, String> {
+        // Register with empty source - go2rtc will accept incoming pushes to this stream
+        let url = format!("{}/api/streams?name={}", self.base_url, name);
+
+        let response = self.client
+            .put(&url)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to register empty stream: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!("go2rtc returned {}: {}", status, body));
+        }
+
+        log::info!("Registered empty stream '{}' with go2rtc (ready for push)", name);
+        Ok(self.get_whep_url(name))
+    }
+
+    /// Get the HTTP MPEG-TS push URL for a stream
+    pub fn get_ts_push_url(&self, name: &str) -> String {
+        format!("{}/api/stream.ts?dst={}", self.base_url, name)
+    }
+
     /// Unregister (remove) a stream from go2rtc
     pub async fn unregister_stream(&self, name: &str) -> Result<(), String> {
         let url = format!("{}/api/streams?src={}", self.base_url, name);
