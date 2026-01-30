@@ -24,6 +24,8 @@ import { useProfileStore } from '@/stores/profileStore';
 import { useSourceStore } from '@/stores/sourceStore';
 import { usePermissionCheck, type SourcePermissionType } from '@/stores/permissionStore';
 import { dialogs } from '@/lib/backend/dialogs';
+import { backendMode } from '@/lib/backend/env';
+import { useFileBrowser } from '@/hooks/useFileBrowser';
 import type {
   SourceType,
   Source,
@@ -72,6 +74,7 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
   const { setCurrentSources } = useProfileStore();
   const { addSource, devices, discoverDevices } = useSourceStore();
   const { ensurePermission } = usePermissionCheck();
+  const { FileBrowser, openFilePath: browserOpenFile } = useFileBrowser();
 
   const [step, setStep] = useState<ModalStep>('select-type');
   const [selectedType, setSelectedType] = useState<SourceType | null>(null);
@@ -272,11 +275,12 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
   };
 
   const handleBrowseFile = async () => {
-    const result = await dialogs.openFilePath?.({
-      filters: [
-        { name: 'Media Files', extensions: ['mp4', 'mkv', 'avi', 'mov', 'webm', 'mp3', 'wav', 'flac', 'ogg'] }
-      ]
-    });
+    const filters = [
+      { name: 'Media Files', extensions: ['mp4', 'mkv', 'avi', 'mov', 'webm', 'mp3', 'wav', 'flac', 'ogg'] }
+    ];
+    const result = backendMode === 'http'
+      ? await browserOpenFile({ filters })
+      : await dialogs.openFilePath?.({ filters });
     if (result && formData?.type === 'mediaFile') {
       setFormData({ ...formData, filePath: result });
     }
@@ -706,6 +710,9 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
         </div>
       )}
       {step === 'select-type' ? renderTypeSelection() : renderConfigForm()}
+
+      {/* File browser modal for HTTP mode */}
+      <FileBrowser />
     </Modal>
   );
 }
