@@ -16,6 +16,9 @@ import {
   Trash2,
   Eye,
   EyeOff,
+  Palette,
+  Type,
+  Globe,
 } from 'lucide-react';
 import {
   DndContext,
@@ -66,6 +69,12 @@ const SourceIcon = ({ type }: { type: Source['type'] }) => {
       return <Usb className={iconClass} />;
     case 'audioDevice':
       return <Mic className={iconClass} />;
+    case 'color':
+      return <Palette className={iconClass} />;
+    case 'text':
+      return <Type className={iconClass} />;
+    case 'browser':
+      return <Globe className={iconClass} />;
     default:
       return null;
   }
@@ -76,6 +85,9 @@ const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'];
 const HTML_EXTENSIONS = ['html', 'htm'];
 const STATIC_EXTENSIONS = [...IMAGE_EXTENSIONS, ...HTML_EXTENSIONS];
 
+// Source types that are client-rendered (CSS/iframe) and don't need WebRTC
+const CLIENT_RENDERED_SOURCE_TYPES = ['color', 'text', 'browser'];
+
 function isStaticMediaFile(filePath: string): boolean {
   const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
   return STATIC_EXTENSIONS.includes(ext);
@@ -84,6 +96,10 @@ function isStaticMediaFile(filePath: string): boolean {
 function isImageFile(filePath: string): boolean {
   const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
   return IMAGE_EXTENSIONS.includes(ext);
+}
+
+function isClientRenderedSource(sourceType: Source['type']): boolean {
+  return CLIENT_RENDERED_SOURCE_TYPES.includes(sourceType);
 }
 
 interface SourceThumbnailProps {
@@ -107,10 +123,13 @@ const SourceThumbnail = memo(function SourceThumbnail({
   // Check if this is a static media file (image/HTML) that doesn't need WebRTC
   const isStatic = filePath && isStaticMediaFile(filePath);
   const isImage = filePath && isImageFile(filePath);
+  // Check if this is a client-rendered source (color, text, browser) that doesn't need WebRTC
+  const isClientRendered = isClientRenderedSource(sourceType);
 
   // Get WebRTC stream from persistent connection store
   // Connection is managed by WebRTCConnectionManager, not this component
-  const { status, stream, retry } = useWebRTCStream(isStatic ? '' : sourceId);
+  // Skip WebRTC for static media files and client-rendered sources
+  const { status, stream, retry } = useWebRTCStream(isStatic || isClientRendered ? '' : sourceId);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoReady, setVideoReady] = useState(false);
   const mountedRef = useRef(true);
@@ -225,6 +244,17 @@ const SourceThumbnail = memo(function SourceThumbnail({
             <SourceIcon type={sourceType} />
           </div>
         )}
+      </div>
+    );
+  }
+
+  // Client-rendered sources (color, text, browser) - show placeholder with icon
+  if (isClientRendered) {
+    return (
+      <div className="relative w-16 h-9 bg-[var(--bg-sunken)] rounded overflow-hidden flex-shrink-0">
+        <div className="w-full h-full flex items-center justify-center">
+          <SourceIcon type={sourceType} />
+        </div>
       </div>
     );
   }

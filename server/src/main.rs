@@ -825,15 +825,27 @@ async fn static_file_handler(
         _ => "application/octet-stream",
     };
 
-    (
-        StatusCode::OK,
-        [
-            ("Content-Type", content_type),
-            ("Cache-Control", "public, max-age=3600"),
-        ],
-        content,
-    )
-        .into_response()
+    // Build response with appropriate headers
+    let mut response = Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", content_type)
+        .header("Cache-Control", "public, max-age=3600");
+
+    // For HTML files, add a permissive CSP to allow external resources (fonts, stylesheets, etc.)
+    // This is necessary because user-provided HTML content may include external dependencies
+    if content_type == "text/html" {
+        response = response.header(
+            "Content-Security-Policy",
+            "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; \
+             script-src * 'unsafe-inline' 'unsafe-eval'; \
+             style-src * 'unsafe-inline' https:; \
+             font-src * data: https:; \
+             img-src * data: blob: https: http:; \
+             connect-src * https: http: ws: wss:"
+        );
+    }
+
+    response.body(Body::from(content)).unwrap().into_response()
 }
 
 // ============================================================================
@@ -1447,6 +1459,11 @@ async fn webrtc_start_handler(
         Source::Rtmp(rtmp) => {
             // RTMP sources can be used directly
             format!("rtmp://{}:{}/{}", rtmp.bind_address, rtmp.port, rtmp.application)
+        }
+        // Client-rendered sources (Color, Text, Browser) are not supported for WebRTC
+        // These are rendered purely in the browser and don't need go2rtc
+        Source::Color(_) | Source::Text(_) | Source::Browser(_) => {
+            return Json(json!({ "ok": false, "error": "Client-rendered sources (Color, Text, Browser) don't require WebRTC registration" }));
         }
     };
 
@@ -2106,6 +2123,7 @@ async fn invoke_command(
                 canvas_height: height.unwrap_or(1080),
                 layers: Vec::new(),
                 audio_mixer: Default::default(),
+                transition_in: None,
             };
 
             let scene_id = scene.id.clone();
@@ -3312,11 +3330,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Build CORS layer
     let cors = build_cors_layer();
 
-    // Build CSP header (allow blob: for preview images)
+    // Build CSP header (allow blob: for preview images, Google Fonts, and inline scripts)
     let csp_value = HeaderValue::from_static(
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
-         connect-src 'self' ws://localhost:* wss://localhost:* http://localhost:* http://127.0.0.1:*; \
-         img-src 'self' data: blob: http://localhost:* http://127.0.0.1:*; font-src 'self'"
+        "default-src 'self'; \
+         script-src 'self' 'unsafe-inline'; \
+         style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; \
+         font-src 'self' https://fonts.gstatic.com; \
+         connect-src 'self' ws://localhost:* wss://localhost:* http://localhost:* http://127.0.0.1:* ws://127.0.0.1:*; \
+         img-src 'self' data: blob: http://localhost:* http://127.0.0.1:*; \
+         media-src 'self' blob:; \
+         frame-src 'self' http://127.0.0.1:* http://localhost:* https://* http://*"
     );
 
     // Build router with security layers

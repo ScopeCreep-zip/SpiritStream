@@ -21,6 +21,9 @@ import { useSceneStore } from '@/stores/sceneStore';
 import { useProfileStore } from '@/stores/profileStore';
 import { SharedWebRTCPlayer } from './SharedWebRTCPlayer';
 import { StaticMediaPlayer } from './StaticMediaPlayer';
+import { TextSourceRenderer } from './TextSourceRenderer';
+import { BrowserSourceRenderer } from './BrowserSourceRenderer';
+import type { ColorSource, TextSource, BrowserSource } from '@/types/source';
 
 type ViewMode = 'edit' | 'preview';
 
@@ -492,10 +495,34 @@ const LayerPreview = React.memo(function LayerPreview({
       }}
       onMouseDown={handleDragStart}
     >
-      {/* Live preview via shared WebRTC, or static rendering for images/HTML */}
+      {/* Live preview via shared WebRTC, CSS rendering, or static rendering for images/HTML */}
       <div className="w-full h-full bg-[var(--bg-sunken)] overflow-hidden pointer-events-none">
         {hasVideo && source ? (
-          // Check if this is a static media file (image/HTML) that doesn't need WebRTC
+          // Color source - pure CSS rendering
+          source.type === 'color' ? (
+            <div
+              style={{
+                backgroundColor: (source as ColorSource).color,
+                opacity: (source as ColorSource).opacity,
+                width: '100%',
+                height: '100%',
+              }}
+            />
+          ) : // Text source - CSS rendering
+          source.type === 'text' ? (
+            <TextSourceRenderer
+              source={source as TextSource}
+              width={displayWidth}
+              height={displayHeight}
+            />
+          ) : // Browser source - iframe rendering
+          source.type === 'browser' ? (
+            <BrowserSourceRenderer
+              source={source as BrowserSource}
+              width={displayWidth}
+              height={displayHeight}
+            />
+          ) : // Static media file (image/HTML) - no WebRTC needed
           source.type === 'mediaFile' && 'filePath' in source && isStaticMediaFile(source.filePath) ? (
             <StaticMediaPlayer
               filePath={source.filePath}
@@ -507,6 +534,7 @@ const LayerPreview = React.memo(function LayerPreview({
               nativeHeight={canvasHeight}
             />
           ) : (
+            // All other sources use WebRTC
             <SharedWebRTCPlayer
               sourceId={source.id}
               sourceName={sourceName}

@@ -166,6 +166,29 @@ impl Compositor {
                     vec![]
                 }
             }
+            // Client-rendered sources (Color, Text, Browser) generate solid color placeholders
+            // The actual rendering happens in the browser; FFmpeg only sees a placeholder
+            Source::Color(color) => {
+                let hex = color.color.trim_start_matches('#');
+                vec![
+                    "-f".to_string(), "lavfi".to_string(),
+                    "-i".to_string(), format!("color=c=0x{}:s=1920x1080:r=30:d=3600", hex),
+                ]
+            }
+            Source::Text(_) => {
+                // Text is rendered client-side, use transparent placeholder for FFmpeg
+                vec![
+                    "-f".to_string(), "lavfi".to_string(),
+                    "-i".to_string(), "color=c=black@0:s=1920x1080:r=30:d=3600".to_string(),
+                ]
+            }
+            Source::Browser(_) => {
+                // Browser source is rendered client-side only, use placeholder for FFmpeg
+                vec![
+                    "-f".to_string(), "lavfi".to_string(),
+                    "-i".to_string(), "color=c=gray:s=1920x1080:r=30:d=3600".to_string(),
+                ]
+            }
         }
     }
 

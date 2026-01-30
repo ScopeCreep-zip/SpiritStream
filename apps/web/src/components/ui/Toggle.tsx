@@ -9,7 +9,23 @@ export interface ToggleProps {
   description?: string;
   className?: string;
   id?: string;
+  /** Size variant - 'sm' for compact tables, 'default' for normal usage */
+  size?: 'sm' | 'default';
 }
+
+// Size configurations
+const sizes = {
+  default: {
+    track: 'w-11 h-6',
+    thumb: 'w-[18px] h-[18px] left-[3px] bottom-[3px]',
+    thumbTranslate: 'peer-checked:translate-x-5',
+  },
+  sm: {
+    track: 'w-8 h-4',
+    thumb: 'w-3 h-3 left-[2px] bottom-[2px]',
+    thumbTranslate: 'peer-checked:translate-x-4',
+  },
+};
 
 export function Toggle({
   checked = false,
@@ -19,10 +35,12 @@ export function Toggle({
   description,
   className,
   id,
+  size = 'default',
 }: ToggleProps) {
   const generatedId = useId();
   const toggleId = id || generatedId;
   const descriptionId = description ? `${toggleId}-description` : undefined;
+  const sizeConfig = sizes[size];
 
   return (
     <label
@@ -33,7 +51,7 @@ export function Toggle({
       )}
       style={{ gap: '12px' }}
     >
-      <span className="relative w-11 h-6 flex-shrink-0">
+      <span className={cn('relative flex-shrink-0', sizeConfig.track)}>
         <input
           type="checkbox"
           id={toggleId}
@@ -56,10 +74,11 @@ export function Toggle({
         />
         <span
           className={cn(
-            'absolute w-[18px] h-[18px] left-[3px] bottom-[3px]',
+            'absolute',
+            sizeConfig.thumb,
             'bg-white rounded-full shadow-[var(--shadow-sm)]',
             'transition-transform duration-200',
-            'peer-checked:translate-x-5'
+            sizeConfig.thumbTranslate
           )}
         />
       </span>

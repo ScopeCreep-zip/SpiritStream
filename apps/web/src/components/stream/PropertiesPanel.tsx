@@ -3,12 +3,15 @@
  * Right sidebar showing selected layer properties
  */
 import { useState, useEffect, useMemo } from 'react';
+import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
-import { Eye, EyeOff, Lock, Unlock, Trash2, Maximize, Move, RefreshCw } from 'lucide-react';
+import { Eye, EyeOff, Lock, Unlock, Trash2, Maximize, Move, RefreshCw, RefreshCcw, Monitor } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardBody } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
-import type { Profile, Scene, SourceLayer, Source } from '@/types/profile';
+import type { Profile, Scene, SourceLayer, Source, SceneTransition, TransitionType } from '@/types/profile';
+import type { ColorSource, TextSource, BrowserSource } from '@/types/source';
+import { TRANSITION_TYPES, getTransitionTypeLabel, DEFAULT_TRANSITION } from '@/types/scene';
 import { useSceneStore } from '@/stores/sceneStore';
 import { useProfileStore } from '@/stores/profileStore';
 import { useSourceStore } from '@/stores/sourceStore';
@@ -113,13 +116,18 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
   }
 
   if (!layer) {
+    // Show scene properties when no layer is selected
     return (
       <Card className="h-full flex flex-col">
         <CardHeader className="flex-shrink-0" style={{ padding: '12px 16px' }}>
-          <CardTitle className="text-sm">{t('stream.properties', { defaultValue: 'Properties' })}</CardTitle>
+          <CardTitle className="text-sm">{t('stream.sceneProperties', { defaultValue: 'Scene Properties' })}</CardTitle>
         </CardHeader>
-        <CardBody className="flex-1 flex items-center justify-center" style={{ padding: '12px 16px' }}>
-          <p className="text-[var(--text-muted)] text-sm text-center">{t('stream.selectLayer', { defaultValue: 'Select a layer to edit its properties' })}</p>
+        <CardBody className="flex-1 overflow-y-auto" style={{ padding: '12px 16px' }}>
+          <ScenePropertiesSection
+            profile={profile}
+            scene={scene}
+            t={t}
+          />
         </CardBody>
       </Card>
     );
@@ -339,6 +347,39 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
             </div>
           )}
 
+          {/* Color source editor */}
+          {source?.type === 'color' && (
+            <ColorSourceEditor
+              source={source as ColorSource}
+              profileName={profile.name}
+              updateSource={updateSource}
+              updateCurrentSource={updateCurrentSource}
+              t={t}
+            />
+          )}
+
+          {/* Text source editor */}
+          {source?.type === 'text' && (
+            <TextSourceEditor
+              source={source as TextSource}
+              profileName={profile.name}
+              updateSource={updateSource}
+              updateCurrentSource={updateCurrentSource}
+              t={t}
+            />
+          )}
+
+          {/* Browser source editor */}
+          {source?.type === 'browser' && (
+            <BrowserSourceEditor
+              source={source as BrowserSource}
+              profileName={profile.name}
+              updateSource={updateSource}
+              updateCurrentSource={updateCurrentSource}
+              t={t}
+            />
+          )}
+
           {/* Transform section */}
           <div className={layer.locked ? 'opacity-50 pointer-events-none' : ''}>
             <h4 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide mb-3">
@@ -427,5 +468,567 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
         </div>
       </CardBody>
     </Card>
+  );
+}
+
+/**
+ * Color Source Editor
+ */
+interface ColorSourceEditorProps {
+  source: ColorSource;
+  profileName: string;
+  updateSource: (profileName: string, sourceId: string, updates: Partial<Source>) => Promise<Source>;
+  updateCurrentSource: (source: Source) => void;
+  t: TFunction;
+}
+
+function ColorSourceEditor({
+  source,
+  profileName,
+  updateSource,
+  updateCurrentSource,
+  t,
+}: ColorSourceEditorProps) {
+  const presetColors = ['#000000', '#FFFFFF', '#EF4444', '#22C55E', '#3B82F6', '#7C3AED', '#EC4899', '#F59E0B'];
+
+  const handleUpdate = async (updates: Partial<ColorSource>) => {
+    try {
+      const updated = await updateSource(profileName, source.id, updates as Partial<Source>);
+      updateCurrentSource(updated);
+    } catch (err) {
+      toast.error(`Failed to update: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <h4 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">
+        {t('stream.colorSettings', { defaultValue: 'Color Settings' })}
+      </h4>
+      <div className="space-y-3">
+        <div className="flex gap-2">
+          <input
+            type="color"
+            value={source.color}
+            onChange={(e) => handleUpdate({ color: e.target.value })}
+            className="w-12 h-10 rounded cursor-pointer border border-[var(--border-default)] bg-transparent"
+          />
+          <Input
+            value={source.color}
+            onChange={(e) => handleUpdate({ color: e.target.value })}
+            placeholder="#7C3AED"
+            className="flex-1"
+          />
+        </div>
+        <div className="flex gap-1.5 flex-wrap">
+          {presetColors.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => handleUpdate({ color: c })}
+              className={`w-6 h-6 rounded border-2 transition-colors ${
+                source.color.toLowerCase() === c.toLowerCase()
+                  ? 'border-primary'
+                  : 'border-transparent hover:border-[var(--border-strong)]'
+              }`}
+              style={{ backgroundColor: c }}
+              title={c}
+            />
+          ))}
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs text-[var(--text-muted)]">
+            {t('stream.opacity', { defaultValue: 'Opacity' })}: {Math.round(source.opacity * 100)}%
+          </label>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={source.opacity * 100}
+            onChange={(e) => handleUpdate({ opacity: Number(e.target.value) / 100 })}
+            className="w-full h-2 bg-[var(--bg-sunken)] rounded-lg appearance-none cursor-pointer accent-primary"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Text Source Editor
+ */
+interface TextSourceEditorProps {
+  source: TextSource;
+  profileName: string;
+  updateSource: (profileName: string, sourceId: string, updates: Partial<Source>) => Promise<Source>;
+  updateCurrentSource: (source: Source) => void;
+  t: TFunction;
+}
+
+function TextSourceEditor({
+  source,
+  profileName,
+  updateSource,
+  updateCurrentSource,
+  t,
+}: TextSourceEditorProps) {
+  const handleUpdate = async (updates: Partial<TextSource>) => {
+    try {
+      const updated = await updateSource(profileName, source.id, updates as Partial<Source>);
+      updateCurrentSource(updated);
+    } catch (err) {
+      toast.error(`Failed to update: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <h4 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">
+        {t('stream.textSettings', { defaultValue: 'Text Settings' })}
+      </h4>
+      <div className="space-y-3">
+        {/* Text content */}
+        <div>
+          <label className="text-xs text-[var(--text-muted)] mb-1 block">
+            {t('stream.content', { defaultValue: 'Content' })}
+          </label>
+          <textarea
+            value={source.content}
+            onChange={(e) => handleUpdate({ content: e.target.value })}
+            className="w-full h-20 px-3 py-2 bg-[var(--bg-sunken)] border border-[var(--border-default)] rounded-lg resize-none text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+            placeholder={t('stream.enterText', { defaultValue: 'Enter text...' })}
+          />
+        </div>
+
+        {/* Font controls */}
+        <div className="grid grid-cols-2 gap-2">
+          <Select
+            label={t('stream.font', { defaultValue: 'Font' })}
+            value={source.fontFamily}
+            onChange={(e) => handleUpdate({ fontFamily: e.target.value })}
+            options={[
+              { value: 'Arial', label: 'Arial' },
+              { value: 'Helvetica', label: 'Helvetica' },
+              { value: 'Times New Roman', label: 'Times' },
+              { value: 'Georgia', label: 'Georgia' },
+              { value: 'Verdana', label: 'Verdana' },
+              { value: 'Impact', label: 'Impact' },
+            ]}
+          />
+          <Input
+            label={t('stream.size', { defaultValue: 'Size' })}
+            type="number"
+            value={source.fontSize}
+            onChange={(e) => handleUpdate({ fontSize: parseInt(e.target.value) || 48 })}
+          />
+        </div>
+
+        {/* Style toggles */}
+        <div className="flex gap-1">
+          <button
+            type="button"
+            onClick={() => handleUpdate({ fontWeight: source.fontWeight === 'bold' ? 'normal' : 'bold' })}
+            className={`px-3 py-1.5 rounded text-sm font-bold transition-colors ${
+              source.fontWeight === 'bold'
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-[var(--bg-sunken)] hover:bg-[var(--bg-elevated)]'
+            }`}
+          >
+            B
+          </button>
+          <button
+            type="button"
+            onClick={() => handleUpdate({ fontStyle: source.fontStyle === 'italic' ? 'normal' : 'italic' })}
+            className={`px-3 py-1.5 rounded text-sm italic transition-colors ${
+              source.fontStyle === 'italic'
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-[var(--bg-sunken)] hover:bg-[var(--bg-elevated)]'
+            }`}
+          >
+            I
+          </button>
+          <div className="flex-1" />
+          {(['left', 'center', 'right'] as const).map((align) => (
+            <button
+              key={align}
+              type="button"
+              onClick={() => handleUpdate({ textAlign: align })}
+              className={`px-3 py-1.5 rounded text-xs transition-colors ${
+                source.textAlign === align
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-[var(--bg-sunken)] hover:bg-[var(--bg-elevated)]'
+              }`}
+            >
+              {align.charAt(0).toUpperCase()}
+            </button>
+          ))}
+        </div>
+
+        {/* Colors */}
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-xs text-[var(--text-muted)] mb-1 block">
+              {t('stream.textColor', { defaultValue: 'Text' })}
+            </label>
+            <input
+              type="color"
+              value={source.textColor}
+              onChange={(e) => handleUpdate({ textColor: e.target.value })}
+              className="w-full h-8 rounded cursor-pointer border border-[var(--border-default)] bg-transparent"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-[var(--text-muted)] mb-1 block">
+              {t('stream.background', { defaultValue: 'Background' })}
+            </label>
+            <div className="flex gap-1">
+              <input
+                type="color"
+                value={source.backgroundColor || '#000000'}
+                onChange={(e) => handleUpdate({ backgroundColor: e.target.value })}
+                className="flex-1 h-8 rounded cursor-pointer border border-[var(--border-default)] bg-transparent"
+              />
+              <button
+                type="button"
+                onClick={() => handleUpdate({ backgroundColor: undefined })}
+                className={`px-2 h-8 rounded border text-xs transition-colors ${
+                  !source.backgroundColor
+                    ? 'border-primary text-primary'
+                    : 'border-[var(--border-default)] text-[var(--text-muted)] hover:border-[var(--border-strong)]'
+                }`}
+                title={t('stream.noBackground', { defaultValue: 'No background' })}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Browser Source Editor
+ */
+interface BrowserSourceEditorProps {
+  source: BrowserSource;
+  profileName: string;
+  updateSource: (profileName: string, sourceId: string, updates: Partial<Source>) => Promise<Source>;
+  updateCurrentSource: (source: Source) => void;
+  t: TFunction;
+}
+
+function BrowserSourceEditor({
+  source,
+  profileName,
+  updateSource,
+  updateCurrentSource,
+  t,
+}: BrowserSourceEditorProps) {
+  // Local state for editing - prevents API calls on every keystroke
+  const [url, setUrl] = useState(source.url);
+  const [width, setWidth] = useState(source.width);
+  const [height, setHeight] = useState(source.height);
+
+  // Sync local state with source when it changes externally
+  useEffect(() => {
+    setUrl(source.url);
+    setWidth(source.width);
+    setHeight(source.height);
+  }, [source.url, source.width, source.height]);
+
+  const handleUpdate = async (updates: Partial<BrowserSource>) => {
+    try {
+      const updated = await updateSource(profileName, source.id, updates as Partial<Source>);
+      updateCurrentSource(updated);
+    } catch (err) {
+      toast.error(`Failed to update: ${err instanceof Error ? err.message : String(err)}`);
+      // Reset local state on error
+      setUrl(source.url);
+      setWidth(source.width);
+      setHeight(source.height);
+    }
+  };
+
+  const handleRefresh = () => {
+    // Trigger a refresh by updating the refreshToken
+    handleUpdate({ refreshToken: crypto.randomUUID() });
+  };
+
+  return (
+    <div className="space-y-4">
+      <h4 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">
+        {t('stream.browserSettings', { defaultValue: 'Browser Settings' })}
+      </h4>
+      <div className="space-y-3">
+        <Input
+          label={t('stream.url', { defaultValue: 'URL' })}
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          onBlur={() => {
+            if (url !== source.url) {
+              handleUpdate({ url });
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.currentTarget.blur();
+            }
+          }}
+          placeholder="https://example.com"
+        />
+        <div className="grid grid-cols-2 gap-2">
+          <Input
+            label={t('stream.width', { defaultValue: 'Width' })}
+            type="number"
+            value={width}
+            onChange={(e) => setWidth(parseInt(e.target.value) || 1920)}
+            onBlur={() => {
+              if (width !== source.width) {
+                handleUpdate({ width });
+              }
+            }}
+          />
+          <Input
+            label={t('stream.height', { defaultValue: 'Height' })}
+            type="number"
+            value={height}
+            onChange={(e) => setHeight(parseInt(e.target.value) || 1080)}
+            onBlur={() => {
+              if (height !== source.height) {
+                handleUpdate({ height });
+              }
+            }}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={handleRefresh}
+          className="flex items-center justify-center gap-2 w-full px-3 py-2 bg-[var(--bg-sunken)] hover:bg-[var(--bg-elevated)] rounded-lg text-sm transition-colors"
+        >
+          <RefreshCcw className="w-4 h-4" />
+          {t('stream.refreshPage', { defaultValue: 'Refresh Page' })}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Scene Properties Section
+ * Shown when no layer is selected - allows editing scene name and transition settings
+ */
+interface ScenePropertiesSectionProps {
+  profile: Profile;
+  scene: Scene;
+  t: TFunction;
+}
+
+function ScenePropertiesSection({ profile, scene, t }: ScenePropertiesSectionProps) {
+  const { updateCurrentScene, updateCurrentProfile } = useProfileStore();
+  const { updateScene } = useSceneStore();
+
+  const [sceneName, setSceneName] = useState(scene.name);
+
+  // Sync local state with scene
+  useEffect(() => {
+    setSceneName(scene.name);
+  }, [scene.name]);
+
+  // Get effective transition (scene override or profile default)
+  const effectiveTransition = scene.transitionIn || profile.defaultTransition || DEFAULT_TRANSITION;
+  const hasOverride = !!scene.transitionIn;
+
+  const handleUpdateSceneName = async () => {
+    if (sceneName === scene.name) return;
+    try {
+      await updateScene(profile.name, scene.id, { name: sceneName });
+      updateCurrentScene(scene.id, { name: sceneName });
+    } catch (err) {
+      toast.error(`Failed to update: ${err instanceof Error ? err.message : String(err)}`);
+      setSceneName(scene.name);
+    }
+  };
+
+  const handleUpdateSceneTransition = async (updates: Partial<SceneTransition>) => {
+    try {
+      const newTransition: SceneTransition = {
+        ...effectiveTransition,
+        ...updates,
+      };
+      await updateScene(profile.name, scene.id, { transitionIn: newTransition });
+      updateCurrentScene(scene.id, { transitionIn: newTransition });
+    } catch (err) {
+      toast.error(`Failed to update: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const handleUseDefaultTransition = async () => {
+    try {
+      await updateScene(profile.name, scene.id, { transitionIn: undefined });
+      updateCurrentScene(scene.id, { transitionIn: undefined });
+    } catch (err) {
+      toast.error(`Failed to update: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const handleUpdateProfileDefaultTransition = async (updates: Partial<SceneTransition>) => {
+    try {
+      const newTransition: SceneTransition = {
+        ...(profile.defaultTransition || DEFAULT_TRANSITION),
+        ...updates,
+      };
+      // Update profile default transition
+      await api.profile.save({ ...profile, defaultTransition: newTransition });
+      updateCurrentProfile({ defaultTransition: newTransition });
+    } catch (err) {
+      toast.error(`Failed to update: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  return (
+    <div className="space-y-5">
+      {/* Scene name */}
+      <div>
+        <h4 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide mb-3">
+          {t('stream.sceneName', { defaultValue: 'Name' })}
+        </h4>
+        <Input
+          type="text"
+          value={sceneName}
+          onChange={(e) => setSceneName(e.target.value)}
+          onBlur={handleUpdateSceneName}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.currentTarget.blur();
+            }
+          }}
+          placeholder={t('stream.sceneNamePlaceholder', { defaultValue: 'Scene name' })}
+        />
+      </div>
+
+      {/* Canvas dimensions (read-only info) */}
+      <div>
+        <h4 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide mb-3">
+          {t('stream.canvas', { defaultValue: 'Canvas' })}
+        </h4>
+        <div className="flex items-center gap-2 px-3 py-2 bg-[var(--bg-sunken)] rounded-lg">
+          <Monitor className="w-4 h-4 text-[var(--text-muted)]" />
+          <span className="text-sm text-[var(--text-secondary)]">
+            {scene.canvasWidth} × {scene.canvasHeight}
+          </span>
+        </div>
+      </div>
+
+      {/* Transition settings */}
+      <div className="border-t border-[var(--border-default)] pt-4">
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">
+            {t('stream.transitionIn', { defaultValue: 'Transition In' })}
+          </h4>
+          {hasOverride && (
+            <button
+              type="button"
+              onClick={handleUseDefaultTransition}
+              className="text-xs text-primary hover:text-primary/80 transition-colors"
+            >
+              {t('stream.useDefault', { defaultValue: 'Use Default' })}
+            </button>
+          )}
+        </div>
+
+        <div className="space-y-3">
+          {/* Transition type selector */}
+          <Select
+            label={t('stream.transitionType', { defaultValue: 'Type' })}
+            value={effectiveTransition.type}
+            onChange={(e) => {
+              const newType = e.target.value as TransitionType;
+              if (hasOverride || !profile.defaultTransition) {
+                handleUpdateSceneTransition({ type: newType });
+              } else {
+                // If using default, create an override
+                handleUpdateSceneTransition({ type: newType, durationMs: effectiveTransition.durationMs });
+              }
+            }}
+            options={TRANSITION_TYPES.map((type) => ({
+              value: type,
+              label: getTransitionTypeLabel(type),
+            }))}
+          />
+
+          {/* Duration slider (hidden for 'cut' which is instant) */}
+          {effectiveTransition.type !== 'cut' && (
+            <div className="space-y-1">
+              <label className="text-xs text-[var(--text-muted)]">
+                {t('stream.duration', { defaultValue: 'Duration' })}: {effectiveTransition.durationMs}ms
+              </label>
+              <input
+                type="range"
+                min="100"
+                max="2000"
+                step="50"
+                value={effectiveTransition.durationMs}
+                onChange={(e) => {
+                  const durationMs = Number(e.target.value);
+                  if (hasOverride || !profile.defaultTransition) {
+                    handleUpdateSceneTransition({ durationMs });
+                  } else {
+                    handleUpdateSceneTransition({ type: effectiveTransition.type, durationMs });
+                  }
+                }}
+                className="w-full h-2 bg-[var(--bg-sunken)] rounded-lg appearance-none cursor-pointer accent-primary"
+              />
+              <div className="flex justify-between text-[10px] text-[var(--text-muted)]">
+                <span>100ms</span>
+                <span>2000ms</span>
+              </div>
+            </div>
+          )}
+
+          {/* Override indicator */}
+          {hasOverride && (
+            <div className="flex items-center gap-2 px-2 py-1.5 bg-primary/10 border border-primary/20 rounded text-xs text-primary">
+              <span>{t('stream.customTransition', { defaultValue: 'Custom transition for this scene' })}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Profile default transition section */}
+      <div className="border-t border-[var(--border-default)] pt-4">
+        <h4 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide mb-3">
+          {t('stream.defaultTransition', { defaultValue: 'Profile Default' })}
+        </h4>
+        <div className="space-y-3">
+          <Select
+            label={t('stream.transitionType', { defaultValue: 'Type' })}
+            value={(profile.defaultTransition || DEFAULT_TRANSITION).type}
+            onChange={(e) => handleUpdateProfileDefaultTransition({ type: e.target.value as TransitionType })}
+            options={TRANSITION_TYPES.map((type) => ({
+              value: type,
+              label: getTransitionTypeLabel(type),
+            }))}
+          />
+          {(profile.defaultTransition || DEFAULT_TRANSITION).type !== 'cut' && (
+            <div className="space-y-1">
+              <label className="text-xs text-[var(--text-muted)]">
+                {t('stream.duration', { defaultValue: 'Duration' })}: {(profile.defaultTransition || DEFAULT_TRANSITION).durationMs}ms
+              </label>
+              <input
+                type="range"
+                min="100"
+                max="2000"
+                step="50"
+                value={(profile.defaultTransition || DEFAULT_TRANSITION).durationMs}
+                onChange={(e) => handleUpdateProfileDefaultTransition({ durationMs: Number(e.target.value) })}
+                className="w-full h-2 bg-[var(--bg-sunken)] rounded-lg appearance-none cursor-pointer accent-primary"
+              />
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

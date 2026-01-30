@@ -345,6 +345,35 @@ impl PreviewHandler {
                     format!("color=c=darkblue:s={}x{}:d=3600", DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT),
                 ])
             }
+            // Client-rendered sources (Color, Text, Browser) - these are rendered by the browser
+            // For preview purposes, we generate placeholder visuals
+            Source::Color(color) => {
+                let hex = color.color.trim_start_matches('#');
+                Ok(vec![
+                    "-f".to_string(),
+                    "lavfi".to_string(),
+                    "-i".to_string(),
+                    format!("color=c=0x{}:s={}x{}:d=3600", hex, DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT),
+                ])
+            }
+            Source::Text(_) => {
+                // Text sources are rendered purely in the browser
+                Ok(vec![
+                    "-f".to_string(),
+                    "lavfi".to_string(),
+                    "-i".to_string(),
+                    format!("color=c=black:s={}x{}:d=3600", DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT),
+                ])
+            }
+            Source::Browser(_) => {
+                // Browser sources are rendered purely in the browser
+                Ok(vec![
+                    "-f".to_string(),
+                    "lavfi".to_string(),
+                    "-i".to_string(),
+                    format!("color=c=gray:s={}x{}:d=3600", DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT),
+                ])
+            }
         }
     }
 

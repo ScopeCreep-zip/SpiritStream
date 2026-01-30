@@ -14,6 +14,9 @@ import {
   ArrowLeft,
   FolderOpen,
   RefreshCw,
+  Palette,
+  Type,
+  Globe,
 } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
@@ -35,6 +38,9 @@ import type {
   CameraSource,
   CaptureCardSource,
   AudioDeviceSource,
+  ColorSource,
+  TextSource,
+  BrowserSource,
 } from '@/types/source';
 import {
   createDefaultRtmpSource,
@@ -43,6 +49,9 @@ import {
   createDefaultCameraSource,
   createDefaultCaptureCardSource,
   createDefaultAudioDeviceSource,
+  createDefaultColorSource,
+  createDefaultTextSource,
+  createDefaultBrowserSource,
   getSourceTypeLabel,
 } from '@/types/source';
 
@@ -67,6 +76,9 @@ const SOURCE_TYPES: { type: SourceType; icon: React.ReactNode }[] = [
   { type: 'camera', icon: <Camera className="w-5 h-5" /> },
   { type: 'captureCard', icon: <Usb className="w-5 h-5" /> },
   { type: 'audioDevice', icon: <Mic className="w-5 h-5" /> },
+  { type: 'color', icon: <Palette className="w-5 h-5" /> },
+  { type: 'text', icon: <Type className="w-5 h-5" /> },
+  { type: 'browser', icon: <Globe className="w-5 h-5" /> },
 ];
 
 export function AddSourceModal({ open, onClose, profileName, filterType, excludeTypes = [], onSourceAdded }: AddSourceModalProps) {
@@ -208,6 +220,15 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
         ));
         break;
       }
+      case 'color':
+        setFormData(createDefaultColorSource());
+        break;
+      case 'text':
+        setFormData(createDefaultTextSource());
+        break;
+      case 'browser':
+        setFormData(createDefaultBrowserSource());
+        break;
     }
     setStep('configure');
   };
@@ -325,6 +346,12 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
         return renderCaptureCardForm(formData);
       case 'audioDevice':
         return renderAudioDeviceForm(formData);
+      case 'color':
+        return renderColorForm(formData);
+      case 'text':
+        return renderTextForm(formData);
+      case 'browser':
+        return renderBrowserForm(formData);
       default:
         return null;
     }
@@ -669,6 +696,257 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
     );
   };
 
+  const renderColorForm = (data: ColorSource) => {
+    const presetColors = ['#000000', '#FFFFFF', '#EF4444', '#22C55E', '#3B82F6', '#7C3AED', '#EC4899', '#F59E0B'];
+
+    return (
+      <div className="flex flex-col gap-4">
+        <Input
+          label={t('stream.sourceName', { defaultValue: 'Source Name' })}
+          value={data.name}
+          onChange={(e) => setFormData({ ...data, name: e.target.value })}
+          placeholder="Color Fill"
+        />
+        <div className="space-y-2">
+          <label className="text-sm font-medium">{t('stream.color', { defaultValue: 'Color' })}</label>
+          <div className="flex gap-2">
+            <input
+              type="color"
+              value={data.color}
+              onChange={(e) => setFormData({ ...data, color: e.target.value })}
+              className="w-12 h-12 rounded cursor-pointer border border-border bg-transparent"
+            />
+            <Input
+              value={data.color}
+              onChange={(e) => setFormData({ ...data, color: e.target.value })}
+              placeholder="#7C3AED"
+              className="flex-1"
+            />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-medium">{t('stream.presetColors', { defaultValue: 'Preset Colors' })}</label>
+          <div className="flex gap-2 flex-wrap">
+            {presetColors.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setFormData({ ...data, color: c })}
+                className={`w-8 h-8 rounded border-2 transition-colors ${
+                  data.color.toLowerCase() === c.toLowerCase()
+                    ? 'border-primary'
+                    : 'border-transparent hover:border-[var(--border-strong)]'
+                }`}
+                style={{ backgroundColor: c }}
+                title={c}
+              />
+            ))}
+          </div>
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-medium">
+            {t('stream.opacity', { defaultValue: 'Opacity' })}: {Math.round(data.opacity * 100)}%
+          </label>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={data.opacity * 100}
+            onChange={(e) => setFormData({ ...data, opacity: Number(e.target.value) / 100 })}
+            className="w-full h-2 bg-[var(--bg-sunken)] rounded-lg appearance-none cursor-pointer accent-primary"
+          />
+        </div>
+      </div>
+    );
+  };
+
+  const renderTextForm = (data: TextSource) => {
+    const fontOptions: SelectOption[] = [
+      { value: 'Arial', label: 'Arial' },
+      { value: 'Helvetica', label: 'Helvetica' },
+      { value: 'Times New Roman', label: 'Times New Roman' },
+      { value: 'Georgia', label: 'Georgia' },
+      { value: 'Verdana', label: 'Verdana' },
+      { value: 'Courier New', label: 'Courier New' },
+      { value: 'Impact', label: 'Impact' },
+    ];
+
+    return (
+      <div className="flex flex-col gap-4">
+        <Input
+          label={t('stream.sourceName', { defaultValue: 'Source Name' })}
+          value={data.name}
+          onChange={(e) => setFormData({ ...data, name: e.target.value })}
+          placeholder="Text"
+        />
+        <div className="space-y-2">
+          <label className="text-sm font-medium">{t('stream.textContent', { defaultValue: 'Text Content' })}</label>
+          <textarea
+            value={data.content}
+            onChange={(e) => setFormData({ ...data, content: e.target.value })}
+            className="w-full h-24 px-3 py-2 bg-[var(--bg-sunken)] border border-border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+            placeholder={t('stream.enterText', { defaultValue: 'Enter your text...' })}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Select
+            label={t('stream.font', { defaultValue: 'Font' })}
+            value={data.fontFamily}
+            onChange={(e) => setFormData({ ...data, fontFamily: e.target.value })}
+            options={fontOptions}
+          />
+          <Input
+            label={t('stream.fontSize', { defaultValue: 'Size' })}
+            type="number"
+            value={String(data.fontSize)}
+            onChange={(e) => setFormData({ ...data, fontSize: parseInt(e.target.value) || 48 })}
+          />
+        </div>
+        <div className="flex gap-2">
+          <label className="text-sm font-medium mr-2">{t('stream.style', { defaultValue: 'Style' })}</label>
+          <button
+            type="button"
+            onClick={() => setFormData({ ...data, fontWeight: data.fontWeight === 'bold' ? 'normal' : 'bold' })}
+            className={`px-4 py-2 rounded font-bold transition-colors ${
+              data.fontWeight === 'bold'
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-[var(--bg-sunken)] hover:bg-[var(--bg-elevated)]'
+            }`}
+          >
+            B
+          </button>
+          <button
+            type="button"
+            onClick={() => setFormData({ ...data, fontStyle: data.fontStyle === 'italic' ? 'normal' : 'italic' })}
+            className={`px-4 py-2 rounded italic transition-colors ${
+              data.fontStyle === 'italic'
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-[var(--bg-sunken)] hover:bg-[var(--bg-elevated)]'
+            }`}
+          >
+            I
+          </button>
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-medium">{t('stream.alignment', { defaultValue: 'Alignment' })}</label>
+          <div className="flex gap-1 bg-[var(--bg-sunken)] p-1 rounded-lg">
+            {(['left', 'center', 'right'] as const).map((align) => (
+              <button
+                key={align}
+                type="button"
+                onClick={() => setFormData({ ...data, textAlign: align })}
+                className={`flex-1 px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                  data.textAlign === align
+                    ? 'bg-[var(--bg-base)] text-[var(--text-primary)] shadow-sm'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                }`}
+              >
+                {align.charAt(0).toUpperCase() + align.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">{t('stream.textColor', { defaultValue: 'Text Color' })}</label>
+            <input
+              type="color"
+              value={data.textColor}
+              onChange={(e) => setFormData({ ...data, textColor: e.target.value })}
+              className="w-full h-10 rounded cursor-pointer border border-border bg-transparent"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">{t('stream.backgroundColor', { defaultValue: 'Background' })}</label>
+            <div className="flex gap-2">
+              <input
+                type="color"
+                value={data.backgroundColor || '#000000'}
+                onChange={(e) => setFormData({ ...data, backgroundColor: e.target.value })}
+                className="flex-1 h-10 rounded cursor-pointer border border-border bg-transparent"
+              />
+              <button
+                type="button"
+                onClick={() => setFormData({ ...data, backgroundColor: undefined })}
+                className={`px-3 rounded border transition-colors ${
+                  !data.backgroundColor
+                    ? 'border-primary text-primary'
+                    : 'border-border text-muted hover:border-[var(--border-strong)]'
+                }`}
+                title={t('stream.noBackground', { defaultValue: 'No background' })}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderBrowserForm = (data: BrowserSource) => {
+    const dimensionPresets = [
+      { label: '1080p', w: 1920, h: 1080 },
+      { label: '720p', w: 1280, h: 720 },
+      { label: '480p', w: 854, h: 480 },
+    ];
+
+    return (
+      <div className="flex flex-col gap-4">
+        <Input
+          label={t('stream.sourceName', { defaultValue: 'Source Name' })}
+          value={data.name}
+          onChange={(e) => setFormData({ ...data, name: e.target.value })}
+          placeholder="Browser"
+        />
+        <div className="space-y-2">
+          <Input
+            label={t('stream.url', { defaultValue: 'URL' })}
+            value={data.url}
+            onChange={(e) => setFormData({ ...data, url: e.target.value })}
+            placeholder="https://example.com"
+          />
+          <p className="text-xs text-muted">
+            {t('stream.browserUrlHelper', { defaultValue: 'Note: Some sites block iframe embedding' })}
+          </p>
+        </div>
+        <div className="space-y-2">
+          <label className="text-sm font-medium">{t('stream.dimensions', { defaultValue: 'Dimensions' })}</label>
+          <div className="flex gap-2">
+            {dimensionPresets.map((preset) => (
+              <button
+                key={preset.label}
+                type="button"
+                onClick={() => setFormData({ ...data, width: preset.w, height: preset.h })}
+                className={`px-3 py-1.5 rounded text-sm transition-colors ${
+                  data.width === preset.w && data.height === preset.h
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-[var(--bg-sunken)] hover:bg-[var(--bg-elevated)]'
+                }`}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-2 mt-2">
+            <Input
+              label={t('stream.width', { defaultValue: 'Width' })}
+              type="number"
+              value={String(data.width)}
+              onChange={(e) => setFormData({ ...data, width: parseInt(e.target.value) || 1920 })}
+            />
+            <Input
+              label={t('stream.height', { defaultValue: 'Height' })}
+              type="number"
+              value={String(data.height)}
+              onChange={(e) => setFormData({ ...data, height: parseInt(e.target.value) || 1080 })}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const title = step === 'select-type'
     ? t('stream.addSource', { defaultValue: 'Add Source' })
     : t('stream.configureSource', { defaultValue: `Configure ${getSourceTypeLabel(selectedType!)}` });
@@ -731,5 +1009,11 @@ function getSourceTypeDescription(type: SourceType): string {
       return 'HDMI/SDI capture device';
     case 'audioDevice':
       return 'Microphone or line input';
+    case 'color':
+      return 'Solid color fill layer';
+    case 'text':
+      return 'Text overlay with styling';
+    case 'browser':
+      return 'Web page or widget';
   }
 }
