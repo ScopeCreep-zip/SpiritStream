@@ -21,12 +21,15 @@ interface DeviceDiscoveryState {
   lastDiscovery: Date | null;
 }
 
+// Cache TTL for device discovery (30 seconds)
+const DEVICE_CACHE_TTL_MS = 30000;
+
 interface SourceState {
   devices: DeviceDiscoveryState;
   error: string | null;
 
   // Actions
-  discoverDevices: () => Promise<void>;
+  discoverDevices: (force?: boolean) => Promise<void>;
   listCameras: () => Promise<CameraDevice[]>;
   listDisplays: () => Promise<DisplayInfo[]>;
   listAudioDevices: () => Promise<AudioInputDevice[]>;
@@ -46,7 +49,7 @@ interface SourceState {
   clearError: () => void;
 }
 
-export const useSourceStore = create<SourceState>((set) => ({
+export const useSourceStore = create<SourceState>((set, get) => ({
   devices: {
     cameras: [],
     displays: [],
@@ -57,7 +60,16 @@ export const useSourceStore = create<SourceState>((set) => ({
   },
   error: null,
 
-  discoverDevices: async () => {
+  discoverDevices: async (force = false) => {
+    const { lastDiscovery, isDiscovering } = get().devices;
+
+    // Skip if already discovering
+    if (isDiscovering) return;
+
+    // Skip if cache is fresh (within TTL) and not forced
+    const isFresh = lastDiscovery && (Date.now() - lastDiscovery.getTime() < DEVICE_CACHE_TTL_MS);
+    if (isFresh && !force) return;
+
     set((state) => ({
       devices: { ...state.devices, isDiscovering: true },
       error: null,

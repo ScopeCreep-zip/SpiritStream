@@ -2,7 +2,7 @@
  * Stream Page
  * Multi-input streaming with scene composition
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Play, Square, AlertTriangle, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
@@ -22,10 +22,24 @@ import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValid
 
 export function Stream() {
   const { t } = useTranslation();
-  const { current, loading, error, updateProfile, saveProfile } = useProfileStore();
-  const { isStreaming, activeGroups, startAllGroups, stopAllGroups } = useStreamStore();
-  const { selectedLayerId, selectLayer } = useSceneStore();
-  const { discoverDevices } = useSourceStore();
+
+  // Use individual selectors to prevent unnecessary re-renders
+  const current = useProfileStore((s) => s.current);
+  const loading = useProfileStore((s) => s.loading);
+  const error = useProfileStore((s) => s.error);
+  const updateProfile = useProfileStore((s) => s.updateProfile);
+  const saveProfile = useProfileStore((s) => s.saveProfile);
+
+  const isStreaming = useStreamStore((s) => s.isStreaming);
+  const activeGroups = useStreamStore((s) => s.activeGroups);
+  const startAllGroups = useStreamStore((s) => s.startAllGroups);
+  const stopAllGroups = useStreamStore((s) => s.stopAllGroups);
+
+  const selectedLayerId = useSceneStore((s) => s.selectedLayerId);
+  const selectLayer = useSceneStore((s) => s.selectLayer);
+
+  const discoverDevices = useSourceStore((s) => s.discoverDevices);
+
   const [isValidating, setIsValidating] = useState(false);
 
   // Discover devices on mount
@@ -47,6 +61,12 @@ export function Stream() {
   // Get active scene
   const activeScene = current?.scenes.find((s) => s.id === current.activeSceneId);
   const selectedLayer = activeScene?.layers.find((l) => l.id === selectedLayerId);
+
+  // Memoize whether streaming is possible (has at least one target configured)
+  const canStream = useMemo(
+    () => current?.outputGroups.some((g) => g.streamTargets.length > 0) ?? false,
+    [current?.outputGroups]
+  );
 
   const handleStartStreaming = async () => {
     if (!current) return;
@@ -140,9 +160,9 @@ export function Stream() {
             <Button
               variant="primary"
               onClick={handleStartStreaming}
-              disabled={isValidating || current.outputGroups.every((g) => g.streamTargets.length === 0)}
+              disabled={isValidating || !canStream}
               title={
-                current.outputGroups.every((g) => g.streamTargets.length === 0)
+                !canStream
                   ? t('stream.noTargetsConfigured', { defaultValue: 'Configure output targets in profile settings before streaming' })
                   : undefined
               }

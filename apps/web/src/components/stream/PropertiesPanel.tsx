@@ -2,7 +2,7 @@
  * Properties Panel
  * Right sidebar showing selected layer properties
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Eye, EyeOff, Lock, Unlock, Trash2, Maximize, Move, RefreshCw } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardBody } from '@/components/ui/Card';
@@ -25,7 +25,7 @@ interface PropertiesPanelProps {
 export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPanelProps) {
   const { t } = useTranslation();
   const { updateLayer, removeLayer, selectLayer } = useSceneStore();
-  const { reloadProfile } = useProfileStore();
+  const { updateCurrentLayer, removeCurrentLayer } = useProfileStore();
   const { devices, discoverDevices, updateSource } = useSourceStore();
   const { updateCurrentSource } = useProfileStore();
 
@@ -35,6 +35,7 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
   const [width, setWidth] = useState(0);
   const [height, setHeight] = useState(0);
   const [sourceName, setSourceName] = useState('');
+  const [isChangingDevice, setIsChangingDevice] = useState(false);
 
   // Sync local state with layer
   useEffect(() => {
@@ -62,6 +63,45 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
     }
   }, [source?.type, devices.lastDiscovery, discoverDevices]);
 
+  // Memoize device options based on source type to prevent recalculation on every render
+  // IMPORTANT: These hooks must be BEFORE any early returns to satisfy Rules of Hooks
+  const deviceOptions = useMemo(() => {
+    if (!source) return [];
+
+    switch (source.type) {
+      case 'camera':
+        return devices.cameras.map((c) => ({ value: c.deviceId, label: c.name }));
+      case 'captureCard':
+        return devices.captureCards.map((c) => ({ value: c.deviceId, label: c.name }));
+      case 'audioDevice':
+        return devices.audioDevices.map((d) => ({
+          value: d.deviceId,
+          label: `${d.name}${d.isDefault ? ' (Default)' : ''}`
+        }));
+      case 'screenCapture':
+        return devices.displays.map((d) => ({ value: d.displayId, label: d.name }));
+      default:
+        return [];
+    }
+  }, [source, devices.cameras, devices.captureCards, devices.audioDevices, devices.displays]);
+
+  // Memoize current device ID based on source type
+  const currentDeviceId = useMemo(() => {
+    if (!source) return '';
+    switch (source.type) {
+      case 'camera':
+      case 'captureCard':
+      case 'audioDevice':
+        return source.deviceId;
+      case 'screenCapture':
+        return source.displayId;
+      default:
+        return '';
+    }
+  }, [source]);
+
+  const hasDeviceSelector = deviceOptions.length > 0;
+
   if (!scene) {
     return (
       <Card className="h-full">
@@ -87,16 +127,16 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
 
   const handleUpdateTransform = async () => {
     try {
-      await updateLayer(profile.name, scene.id, layer.id, {
-        transform: {
-          ...layer.transform,
-          x,
-          y,
-          width,
-          height,
-        },
-      });
-      await reloadProfile();
+      const newTransform = {
+        ...layer.transform,
+        x,
+        y,
+        width,
+        height,
+      };
+      await updateLayer(profile.name, scene.id, layer.id, { transform: newTransform });
+      // Update local state instead of reloading entire profile
+      updateCurrentLayer(scene.id, layer.id, { transform: newTransform });
     } catch (err) {
       toast.error(t('stream.updateFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to update: ${err instanceof Error ? err.message : String(err)}` }));
     }
@@ -104,10 +144,9 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
 
   const handleToggleVisibility = async () => {
     try {
-      await updateLayer(profile.name, scene.id, layer.id, {
-        visible: !layer.visible,
-      });
-      await reloadProfile();
+      await updateLayer(profile.name, scene.id, layer.id, { visible: !layer.visible });
+      // Update local state instead of reloading entire profile
+      updateCurrentLayer(scene.id, layer.id, { visible: !layer.visible });
     } catch (err) {
       toast.error(t('stream.updateFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to update: ${err instanceof Error ? err.message : String(err)}` }));
     }
@@ -115,10 +154,9 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
 
   const handleToggleLock = async () => {
     try {
-      await updateLayer(profile.name, scene.id, layer.id, {
-        locked: !layer.locked,
-      });
-      await reloadProfile();
+      await updateLayer(profile.name, scene.id, layer.id, { locked: !layer.locked });
+      // Update local state instead of reloading entire profile
+      updateCurrentLayer(scene.id, layer.id, { locked: !layer.locked });
     } catch (err) {
       toast.error(t('stream.updateFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to update: ${err instanceof Error ? err.message : String(err)}` }));
     }
@@ -129,7 +167,8 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
       try {
         await removeLayer(profile.name, scene.id, layer.id);
         selectLayer(null);
-        await reloadProfile();
+        // Update local state instead of reloading entire profile
+        removeCurrentLayer(scene.id, layer.id);
       } catch (err) {
         toast.error(t('stream.removeFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to remove: ${err instanceof Error ? err.message : String(err)}` }));
       }
@@ -146,10 +185,10 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
     setWidth(newWidth);
     setHeight(newHeight);
     try {
-      await updateLayer(profile.name, scene.id, layer.id, {
-        transform: { ...layer.transform, x: newX, y: newY, width: newWidth, height: newHeight },
-      });
-      await reloadProfile();
+      const newTransform = { ...layer.transform, x: newX, y: newY, width: newWidth, height: newHeight };
+      await updateLayer(profile.name, scene.id, layer.id, { transform: newTransform });
+      // Update local state instead of reloading entire profile
+      updateCurrentLayer(scene.id, layer.id, { transform: newTransform });
     } catch (err) {
       toast.error(t('stream.updateFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to update: ${err instanceof Error ? err.message : String(err)}` }));
     }
@@ -161,18 +200,19 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
     setX(newX);
     setY(newY);
     try {
-      await updateLayer(profile.name, scene.id, layer.id, {
-        transform: { ...layer.transform, x: newX, y: newY },
-      });
-      await reloadProfile();
+      const newTransform = { ...layer.transform, x: newX, y: newY };
+      await updateLayer(profile.name, scene.id, layer.id, { transform: newTransform });
+      // Update local state instead of reloading entire profile
+      updateCurrentLayer(scene.id, layer.id, { transform: newTransform });
     } catch (err) {
       toast.error(t('stream.updateFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to update: ${err instanceof Error ? err.message : String(err)}` }));
     }
   };
 
   const handleChangeDevice = async (newDeviceId: string) => {
-    if (!source) return;
+    if (!source || isChangingDevice) return;
 
+    setIsChangingDevice(true);
     try {
       // Stop the current preview so go2rtc releases the old device
       try {
@@ -192,6 +232,8 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
       // The preview will restart automatically with the new device when the component re-renders
     } catch (err) {
       toast.error(t('stream.updateFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to update: ${err instanceof Error ? err.message : String(err)}` }));
+    } finally {
+      setIsChangingDevice(false);
     }
   };
 
@@ -207,46 +249,6 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
       setSourceName(source.name);
     }
   };
-
-  // Get device options based on source type
-  const getDeviceOptions = () => {
-    if (!source) return [];
-
-    switch (source.type) {
-      case 'camera':
-        return devices.cameras.map((c) => ({ value: c.deviceId, label: c.name }));
-      case 'captureCard':
-        return devices.captureCards.map((c) => ({ value: c.deviceId, label: c.name }));
-      case 'audioDevice':
-        return devices.audioDevices.map((d) => ({
-          value: d.deviceId,
-          label: `${d.name}${d.isDefault ? ' (Default)' : ''}`
-        }));
-      case 'screenCapture':
-        return devices.displays.map((d) => ({ value: d.displayId, label: d.name }));
-      default:
-        return [];
-    }
-  };
-
-  // Get current device ID based on source type
-  const getCurrentDeviceId = () => {
-    if (!source) return '';
-    switch (source.type) {
-      case 'camera':
-      case 'captureCard':
-      case 'audioDevice':
-        return source.deviceId;
-      case 'screenCapture':
-        return source.displayId;
-      default:
-        return '';
-    }
-  };
-
-  const deviceOptions = getDeviceOptions();
-  const currentDeviceId = getCurrentDeviceId();
-  const hasDeviceSelector = deviceOptions.length > 0;
 
   return (
     <Card className="h-full flex flex-col">
@@ -332,7 +334,7 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
                 value={currentDeviceId}
                 onChange={(e) => handleChangeDevice(e.target.value)}
                 options={deviceOptions}
-                disabled={devices.isDiscovering}
+                disabled={devices.isDiscovering || isChangingDevice}
               />
             </div>
           )}

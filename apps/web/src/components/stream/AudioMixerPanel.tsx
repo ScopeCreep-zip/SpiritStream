@@ -1,8 +1,11 @@
 /**
  * Audio Mixer Panel
  * Bottom panel with audio track controls
+ *
+ * Optimized to use local state updates instead of reloading the entire profile
+ * after each audio change, preventing WebRTC reconnections and improving UX.
  */
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Volume2, VolumeX, Plus } from 'lucide-react';
 import { Card, CardBody } from '@/components/ui/Card';
@@ -20,8 +23,58 @@ interface AudioMixerPanelProps {
 export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
   const { t } = useTranslation();
   const { setTrackVolume, setTrackMuted, setTrackSolo, setMasterVolume } = useSceneStore();
-  const { reloadProfile } = useProfileStore();
+  const { updateCurrentAudioTrack, updateCurrentMasterVolume } = useProfileStore();
   const [showAddModal, setShowAddModal] = useState(false);
+
+  // Memoize source name lookup function
+  const getSourceName = useCallback((sourceId: string) => {
+    return profile.sources.find((s) => s.id === sourceId)?.name ?? t('stream.unknownSource', { defaultValue: 'Unknown' });
+  }, [profile.sources, t]);
+
+  // Memoized handlers that use local state updates instead of reloading profile
+  const handleVolumeChange = useCallback(async (sourceId: string, volume: number) => {
+    if (!scene) return;
+    try {
+      await setTrackVolume(profile.name, scene.id, sourceId, volume);
+      // Update local state instead of reloading entire profile
+      updateCurrentAudioTrack(scene.id, sourceId, { volume });
+    } catch (err) {
+      toast.error(t('stream.volumeFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to set volume: ${err instanceof Error ? err.message : String(err)}` }));
+    }
+  }, [profile.name, scene, setTrackVolume, updateCurrentAudioTrack, t]);
+
+  const handleMuteToggle = useCallback(async (sourceId: string, muted: boolean) => {
+    if (!scene) return;
+    try {
+      await setTrackMuted(profile.name, scene.id, sourceId, muted);
+      // Update local state instead of reloading entire profile
+      updateCurrentAudioTrack(scene.id, sourceId, { muted });
+    } catch (err) {
+      toast.error(t('stream.muteFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to toggle mute: ${err instanceof Error ? err.message : String(err)}` }));
+    }
+  }, [profile.name, scene, setTrackMuted, updateCurrentAudioTrack, t]);
+
+  const handleSoloToggle = useCallback(async (sourceId: string, solo: boolean) => {
+    if (!scene) return;
+    try {
+      await setTrackSolo(profile.name, scene.id, sourceId, solo);
+      // Update local state instead of reloading entire profile
+      updateCurrentAudioTrack(scene.id, sourceId, { solo });
+    } catch (err) {
+      toast.error(t('stream.soloFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to toggle solo: ${err instanceof Error ? err.message : String(err)}` }));
+    }
+  }, [profile.name, scene, setTrackSolo, updateCurrentAudioTrack, t]);
+
+  const handleMasterVolumeChange = useCallback(async (volume: number) => {
+    if (!scene) return;
+    try {
+      await setMasterVolume(profile.name, scene.id, volume);
+      // Update local state instead of reloading entire profile
+      updateCurrentMasterVolume(scene.id, volume);
+    } catch (err) {
+      toast.error(t('stream.masterVolumeFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to set master volume: ${err instanceof Error ? err.message : String(err)}` }));
+    }
+  }, [profile.name, scene, setMasterVolume, updateCurrentMasterVolume, t]);
 
   if (!scene) {
     return (
@@ -32,46 +85,6 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
       </Card>
     );
   }
-
-  const getSourceName = (sourceId: string) => {
-    return profile.sources.find((s) => s.id === sourceId)?.name ?? t('stream.unknownSource', { defaultValue: 'Unknown' });
-  };
-
-  const handleVolumeChange = async (sourceId: string, volume: number) => {
-    try {
-      await setTrackVolume(profile.name, scene.id, sourceId, volume);
-      await reloadProfile();
-    } catch (err) {
-      toast.error(t('stream.volumeFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to set volume: ${err instanceof Error ? err.message : String(err)}` }));
-    }
-  };
-
-  const handleMuteToggle = async (sourceId: string, muted: boolean) => {
-    try {
-      await setTrackMuted(profile.name, scene.id, sourceId, muted);
-      await reloadProfile();
-    } catch (err) {
-      toast.error(t('stream.muteFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to toggle mute: ${err instanceof Error ? err.message : String(err)}` }));
-    }
-  };
-
-  const handleSoloToggle = async (sourceId: string, solo: boolean) => {
-    try {
-      await setTrackSolo(profile.name, scene.id, sourceId, solo);
-      await reloadProfile();
-    } catch (err) {
-      toast.error(t('stream.soloFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to toggle solo: ${err instanceof Error ? err.message : String(err)}` }));
-    }
-  };
-
-  const handleMasterVolumeChange = async (volume: number) => {
-    try {
-      await setMasterVolume(profile.name, scene.id, volume);
-      await reloadProfile();
-    } catch (err) {
-      toast.error(t('stream.masterVolumeFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to set master volume: ${err instanceof Error ? err.message : String(err)}` }));
-    }
-  };
 
   return (
     <Card>
@@ -164,7 +177,11 @@ interface AudioTrackControlProps {
   onSoloToggle: (solo: boolean) => void;
 }
 
-function AudioTrackControl({
+/**
+ * AudioTrackControl - Individual audio track fader with mute/solo
+ * Memoized to prevent unnecessary re-renders during volume drag operations
+ */
+const AudioTrackControl = React.memo(function AudioTrackControl({
   label,
   volume,
   muted,
@@ -305,4 +322,4 @@ function AudioTrackControl({
       </span>
     </div>
   );
-}
+});

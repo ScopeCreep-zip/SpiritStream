@@ -167,6 +167,7 @@ export function useWebRTCPreview(sourceId: string, refreshKey?: string | number)
   const [status, setStatus] = useState<WebRTCStatus>('loading');
   const [error, setError] = useState<string>();
   const [retryCount, setRetryCount] = useState(0);
+  const [isPageVisible, setIsPageVisible] = useState(!document.hidden);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -177,39 +178,57 @@ export function useWebRTCPreview(sourceId: string, refreshKey?: string | number)
     setRetryCount((c) => c + 1);
   }, []);
 
+  // Track page visibility to pause/resume WebRTC connections
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      setIsPageVisible(!document.hidden);
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
+
+  // Cleanup function for resources (defined outside effect for reuse)
+  const cleanupResources = useCallback(() => {
+    if (pcRef.current) {
+      pcRef.current.close();
+      pcRef.current = null;
+    }
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+      if (videoRef.current.src) {
+        URL.revokeObjectURL(videoRef.current.src);
+        videoRef.current.src = '';
+      }
+    }
+  }, []);
+
   // Main connection effect
   useEffect(() => {
     mountedRef.current = true;
 
-    // Cleanup function for resources
-    const cleanupResources = () => {
-      if (pcRef.current) {
-        pcRef.current.close();
-        pcRef.current = null;
-      }
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
-        if (videoRef.current.src) {
-          URL.revokeObjectURL(videoRef.current.src);
-          videoRef.current.src = '';
-        }
-      }
-    };
+    // Skip connection if no sourceId (allows components to disable WebRTC)
+    if (!sourceId) {
+      cleanupResources();
+      setStatus('unavailable');
+      setError(undefined);
+      return;
+    }
+
+    // Skip connection if page is hidden to save resources
+    if (!isPageVisible) {
+      cleanupResources();
+      return;
+    }
 
     const connect = async () => {
       // Abort any previous connection
       abortControllerRef.current?.abort();
       cleanupResources();
-
-      if (!sourceId) {
-        setStatus('error');
-        setError('No source ID provided');
-        return;
-      }
 
       const abortController = new AbortController();
       abortControllerRef.current = abortController;
@@ -310,7 +329,7 @@ export function useWebRTCPreview(sourceId: string, refreshKey?: string | number)
         });
       }
     };
-  }, [sourceId, retryCount, refreshKey]); // Reconnect when sourceId, refreshKey, or retry changes
+  }, [sourceId, retryCount, refreshKey, isPageVisible, cleanupResources]); // Reconnect when sourceId, refreshKey, retry, or page visibility changes
 
   return {
     status,

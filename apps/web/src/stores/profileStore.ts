@@ -54,6 +54,24 @@ interface ProfileState {
   updateCurrentSource: (source: Source) => void;
   removeCurrentSource: (sourceId: string) => void;
 
+  // Layer management (local state updates without auto-save)
+  // Use these after layer API calls to sync local state without reloading entire profile
+  updateCurrentLayer: (sceneId: string, layerId: string, updates: Partial<import('@/types/scene').SourceLayer>) => void;
+  removeCurrentLayer: (sceneId: string, layerId: string) => void;
+  reorderCurrentLayers: (sceneId: string, layerIds: string[]) => void;
+  addCurrentLayer: (sceneId: string, layer: import('@/types/scene').SourceLayer) => void;
+
+  // Audio mixer management (local state updates without auto-save)
+  // Use these after audio API calls to sync local state without reloading entire profile
+  updateCurrentAudioTrack: (sceneId: string, sourceId: string, updates: Partial<import('@/types/scene').AudioTrack>) => void;
+  updateCurrentMasterVolume: (sceneId: string, masterVolume: number) => void;
+
+  // Scene management (local state updates without auto-save)
+  // Use these after scene API calls to sync local state without reloading entire profile
+  addCurrentScene: (scene: import('@/types/scene').Scene) => void;
+  removeCurrentScene: (sceneId: string) => void;
+  setCurrentActiveScene: (sceneId: string) => void;
+
   // Profile mutations (local state updates + auto-save)
   updateProfile: (updates: Partial<Profile>) => Promise<void>;
 
@@ -349,6 +367,183 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
               tracks: scene.audioMixer.tracks.filter((t) => t.sourceId !== sourceId),
             },
           })),
+        },
+      });
+    }
+  },
+
+  // Update a layer locally without triggering save (used after updateLayer API)
+  updateCurrentLayer: (sceneId, layerId, updates) => {
+    const current = get().current;
+    if (current) {
+      set({
+        current: {
+          ...current,
+          scenes: current.scenes.map((scene) =>
+            scene.id === sceneId
+              ? {
+                  ...scene,
+                  layers: scene.layers.map((layer) =>
+                    layer.id === layerId ? { ...layer, ...updates } : layer
+                  ),
+                }
+              : scene
+          ),
+        },
+      });
+    }
+  },
+
+  // Remove a layer locally without triggering save (used after removeLayer API)
+  removeCurrentLayer: (sceneId, layerId) => {
+    const current = get().current;
+    if (current) {
+      set({
+        current: {
+          ...current,
+          scenes: current.scenes.map((scene) =>
+            scene.id === sceneId
+              ? {
+                  ...scene,
+                  layers: scene.layers.filter((layer) => layer.id !== layerId),
+                }
+              : scene
+          ),
+        },
+      });
+    }
+  },
+
+  // Reorder layers locally without triggering save (used after reorderLayers API)
+  reorderCurrentLayers: (sceneId, layerIds) => {
+    const current = get().current;
+    if (current) {
+      set({
+        current: {
+          ...current,
+          scenes: current.scenes.map((scene) => {
+            if (scene.id !== sceneId) return scene;
+            // Reorder layers based on layerIds, assigning new zIndex values
+            const layerMap = new Map(scene.layers.map((l) => [l.id, l]));
+            const reorderedLayers = layerIds
+              .map((id, index) => {
+                const layer = layerMap.get(id);
+                return layer ? { ...layer, zIndex: index } : null;
+              })
+              .filter((l): l is NonNullable<typeof l> => l !== null);
+            return { ...scene, layers: reorderedLayers };
+          }),
+        },
+      });
+    }
+  },
+
+  // Add a layer locally without triggering save (used after addLayer API)
+  addCurrentLayer: (sceneId, layer) => {
+    const current = get().current;
+    if (current) {
+      set({
+        current: {
+          ...current,
+          scenes: current.scenes.map((scene) =>
+            scene.id === sceneId
+              ? { ...scene, layers: [...scene.layers, layer] }
+              : scene
+          ),
+        },
+      });
+    }
+  },
+
+  // Update an audio track locally without triggering save (used after setTrackVolume/setTrackMuted/setTrackSolo API)
+  updateCurrentAudioTrack: (sceneId, sourceId, updates) => {
+    const current = get().current;
+    if (current) {
+      set({
+        current: {
+          ...current,
+          scenes: current.scenes.map((scene) =>
+            scene.id === sceneId
+              ? {
+                  ...scene,
+                  audioMixer: {
+                    ...scene.audioMixer,
+                    tracks: scene.audioMixer.tracks.map((track) =>
+                      track.sourceId === sourceId ? { ...track, ...updates } : track
+                    ),
+                  },
+                }
+              : scene
+          ),
+        },
+      });
+    }
+  },
+
+  // Update master volume locally without triggering save (used after setMasterVolume API)
+  updateCurrentMasterVolume: (sceneId, masterVolume) => {
+    const current = get().current;
+    if (current) {
+      set({
+        current: {
+          ...current,
+          scenes: current.scenes.map((scene) =>
+            scene.id === sceneId
+              ? {
+                  ...scene,
+                  audioMixer: {
+                    ...scene.audioMixer,
+                    masterVolume,
+                  },
+                }
+              : scene
+          ),
+        },
+      });
+    }
+  },
+
+  // Add a scene locally without triggering save (used after createScene API)
+  addCurrentScene: (scene) => {
+    const current = get().current;
+    if (current) {
+      set({
+        current: {
+          ...current,
+          scenes: [...current.scenes, scene],
+        },
+      });
+    }
+  },
+
+  // Remove a scene locally without triggering save (used after deleteScene API)
+  removeCurrentScene: (sceneId) => {
+    const current = get().current;
+    if (current) {
+      const newScenes = current.scenes.filter((s) => s.id !== sceneId);
+      // If we deleted the active scene, switch to the first available scene
+      const newActiveSceneId =
+        current.activeSceneId === sceneId
+          ? newScenes[0]?.id ?? ''
+          : current.activeSceneId;
+      set({
+        current: {
+          ...current,
+          scenes: newScenes,
+          activeSceneId: newActiveSceneId,
+        },
+      });
+    }
+  },
+
+  // Set active scene locally without triggering save (used after setActiveScene API)
+  setCurrentActiveScene: (sceneId) => {
+    const current = get().current;
+    if (current) {
+      set({
+        current: {
+          ...current,
+          activeSceneId: sceneId,
         },
       });
     }

@@ -224,3 +224,21 @@ pre {
   border-radius: 9999px;
   display: inline-block;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SKELETON LOADING ANIMATIONS
+   Used for consistent loading states across video previews
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@keyframes skeleton-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.skeleton-shimmer {
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}

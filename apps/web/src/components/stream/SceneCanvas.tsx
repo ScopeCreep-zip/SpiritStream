@@ -12,14 +12,14 @@
  * - GPU-accelerated movement via CSS transforms
  * - Adaptive framerate preview polling (no rate limiting)
  */
-import { useRef, useState, useLayoutEffect, useMemo, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useLayoutEffect, useMemo, useEffect, useCallback } from 'react';
 import { Card } from '@/components/ui/Card';
 import type { Scene, SourceLayer, Transform } from '@/types/scene';
 import type { Source } from '@/types/source';
 import { api } from '@/lib/backend';
 import { useSceneStore } from '@/stores/sceneStore';
 import { useProfileStore } from '@/stores/profileStore';
-import { WebRTCPlayer } from './WebRTCPlayer';
+import { SharedWebRTCPlayer } from './SharedWebRTCPlayer';
 
 type ViewMode = 'edit' | 'preview';
 type ResizeDirection = 'nw' | 'ne' | 'sw' | 'se' | null;
@@ -66,7 +66,7 @@ export function SceneCanvas({
   const containerRef = useRef<HTMLDivElement>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
   const { updateLayer } = useSceneStore();
-  const { reloadProfile } = useProfileStore();
+  const { updateCurrentLayer } = useProfileStore();
 
   // Calculate initial dimensions synchronously based on viewport
   const initialDimensions = useMemo(() => {
@@ -124,16 +124,17 @@ export function SceneCanvas({
       const layer = scene.layers.find((l) => l.id === layerId);
       if (!layer) return;
 
+      const updatedTransform = { ...layer.transform, ...newTransform };
+
       try {
-        await updateLayer(profileName, scene.id, layerId, {
-          transform: { ...layer.transform, ...newTransform },
-        });
-        await reloadProfile();
+        await updateLayer(profileName, scene.id, layerId, { transform: updatedTransform });
+        // Update local state instead of reloading entire profile
+        updateCurrentLayer(scene.id, layerId, { transform: updatedTransform });
       } catch (err) {
         console.error('Failed to update layer transform:', err);
       }
     },
-    [profileName, scene, updateLayer, reloadProfile]
+    [profileName, scene, updateLayer, updateCurrentLayer]
   );
 
   if (!scene) {
@@ -252,8 +253,9 @@ interface LayerPreviewProps {
  * LayerPreview - Live preview for a layer with drag/resize support
  * Uses fixed preview dimensions for stable polling (no rate limiting)
  * Uses CSS transforms for GPU-accelerated drag/resize
+ * Memoized to prevent unnecessary re-renders
  */
-function LayerPreview({
+const LayerPreview = React.memo(function LayerPreview({
   layer,
   scale,
   canvasWidth,
@@ -468,12 +470,13 @@ function LayerPreview({
       }}
       onMouseDown={handleDragStart}
     >
-      {/* Live preview via WebRTC */}
+      {/* Live preview via shared WebRTC (deduplicates connections for same source) */}
       <div className="w-full h-full bg-[var(--bg-sunken)] overflow-hidden pointer-events-none">
         {hasVideo && source ? (
-          <WebRTCPlayer
+          <SharedWebRTCPlayer
             sourceId={source.id}
             sourceName={sourceName}
+            sourceType={source.type}
             width={displayWidth}
             height={displayHeight}
             refreshKey={'deviceId' in source ? source.deviceId : 'displayId' in source ? source.displayId : undefined}
@@ -518,7 +521,7 @@ function LayerPreview({
       )}
     </div>
   );
-}
+});
 
 interface ComposedPreviewProps {
   profileName: string;
