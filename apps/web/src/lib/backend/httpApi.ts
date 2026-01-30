@@ -170,4 +170,19 @@ export const api = {
     /** Check if connected to OBS */
     isConnected: () => invokeHttp<boolean>('obs_is_connected'),
   },
+  discord: {
+    /** Test a Discord webhook URL by sending a test message */
+    testWebhook: (url: string) =>
+      invokeHttp<{ success: boolean; message: string; skippedCooldown: boolean }>(
+        'discord_test_webhook',
+        { url }
+      ),
+    /** Send a go-live notification (uses settings for URL/message/cooldown) */
+    sendNotification: () =>
+      invokeHttp<{ success: boolean; message: string; skippedCooldown: boolean }>(
+        'discord_send_notification'
+      ),
+    /** Reset the cooldown timer */
+    resetCooldown: () => invokeHttp<void>('discord_reset_cooldown'),
+  },
 };

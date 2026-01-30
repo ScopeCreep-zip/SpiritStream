@@ -1,7 +1,15 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { Profile, ProfileSummary, OutputGroup, RtmpInput } from '@/types/profile';
 import type { Encoders } from '@/types/stream';
-import type { AppSettings, FFmpegVersionInfo, RotationReport, RtmpTestResult } from '@/types/api';
+import type {
+  AppSettings,
+  FFmpegVersionInfo,
+  ObsConfig,
+  ObsIntegrationDirection,
+  ObsState,
+  RotationReport,
+  RtmpTestResult,
+} from '@/types/api';
 import type { ThemeSummary } from '@/types/theme';
 
 /**
@@ -71,5 +79,34 @@ export const api = {
     getTokens: (themeId: string) => invoke<Record<string, string>>('get_theme_tokens', { themeId }),
     install: (themePath: string) => invoke<ThemeSummary>('install_theme', { themePath }),
     refresh: () => invoke<ThemeSummary[]>('refresh_themes'),
+  },
+  obs: {
+    getState: () => invoke<ObsState>('obs_get_state'),
+    getConfig: () => invoke<ObsConfig>('obs_get_config'),
+    setConfig: (config: {
+      host: string;
+      port: number;
+      password?: string;
+      useAuth: boolean;
+      direction: ObsIntegrationDirection;
+      autoConnect: boolean;
+    }) => invoke<void>('obs_set_config', config),
+    connect: () => invoke<void>('obs_connect'),
+    disconnect: () => invoke<void>('obs_disconnect'),
+    startStream: () => invoke<void>('obs_start_stream'),
+    stopStream: () => invoke<void>('obs_stop_stream'),
+    isConnected: () => invoke<boolean>('obs_is_connected'),
+  },
+  discord: {
+    testWebhook: (url: string) =>
+      invoke<{ success: boolean; message: string; skippedCooldown: boolean }>(
+        'discord_test_webhook',
+        { url }
+      ),
+    sendNotification: () =>
+      invoke<{ success: boolean; message: string; skippedCooldown: boolean }>(
+        'discord_send_notification'
+      ),
+    resetCooldown: () => invoke<void>('discord_reset_cooldown'),
   },
 };

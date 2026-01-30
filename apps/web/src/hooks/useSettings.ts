@@ -123,6 +123,12 @@ export function useUpdateSetting() {
         obsDirection: current.obsDirection ?? 'disabled',
         obsAutoConnect: current.obsAutoConnect ?? false,
         lastProfile: current.lastProfile,
+        discordWebhookEnabled: current.discordWebhookEnabled ?? false,
+        discordWebhookUrl: current.discordWebhookUrl ?? '',
+        discordGoLiveMessage: current.discordGoLiveMessage ?? '**Stream is now live!** 🎮\n\nCome join the stream!',
+        discordCooldownEnabled: current.discordCooldownEnabled ?? true,
+        discordCooldownSeconds: current.discordCooldownSeconds ?? 60,
+        discordImagePath: current.discordImagePath ?? '',
         [key]: value,
       };
 
@@ -211,6 +217,12 @@ export function useSaveSettings() {
         obsDirection: current.obsDirection ?? 'disabled',
         obsAutoConnect: current.obsAutoConnect ?? false,
         lastProfile: current.lastProfile,
+        discordWebhookEnabled: current.discordWebhookEnabled ?? false,
+        discordWebhookUrl: current.discordWebhookUrl ?? '',
+        discordGoLiveMessage: current.discordGoLiveMessage ?? '**Stream is now live!** 🎮\n\nCome join the stream!',
+        discordCooldownEnabled: current.discordCooldownEnabled ?? true,
+        discordCooldownSeconds: current.discordCooldownSeconds ?? 60,
+        discordImagePath: current.discordImagePath ?? '',
         ...updates,
       };
 
