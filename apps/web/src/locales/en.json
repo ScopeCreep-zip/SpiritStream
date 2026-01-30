@@ -709,6 +709,7 @@
     "streaming": "Streaming"
   },
   "streams": {
+    "autoRetrying": "Stream disconnected, reconnecting...",
     "bitrate": "Bitrate",
     "configure": "Configure",
     "connecting": "Connecting...",
@@ -721,6 +722,9 @@
     "noTargetsInGroup": "No stream targets in this group",
     "readyToStream": "Ready to Stream",
     "readyToStreamDescription": "Configure your output groups below and click \"Start All Streams\" when ready.",
+    "reconnectingAttempt": "Reconnecting... (attempt {{attempt}}/{{max}})",
+    "retryFailed": "Reconnection failed: {{error}}",
+    "retrySuccess": "Stream reconnected successfully",
     "selectProfileFirst": "Please select a profile first to start streaming.",
     "speed": "Speed",
     "startAllStreams": "Start All Streams",
