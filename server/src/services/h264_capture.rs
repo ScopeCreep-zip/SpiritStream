@@ -524,6 +524,14 @@ fn run_capture_encoding_loop(
         format!("{}k", encoding.bitrate_kbps),
         "-pix_fmt".to_string(),
         "yuv420p".to_string(),
+        // Color space metadata for correct YUV-to-RGB conversion in browsers
+        // Without this, browsers may use BT.601 instead of BT.709, causing green/pink tint
+        "-colorspace".to_string(),
+        "bt709".to_string(),
+        "-color_primaries".to_string(),
+        "bt709".to_string(),
+        "-color_trc".to_string(),
+        "bt709".to_string(),
     ]);
 
     // Add audio encoder or disable audio
