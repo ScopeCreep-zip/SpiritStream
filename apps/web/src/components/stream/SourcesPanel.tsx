@@ -3,7 +3,7 @@
  * OBS-style layer management panel showing layers in the active scene
  * Supports drag-and-drop reordering where top of list = highest zIndex (rendered on top)
  */
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Plus,
@@ -37,12 +37,13 @@ import { Button } from '@/components/ui/Button';
 import { AddSourceModal } from '@/components/modals/AddSourceModal';
 import type { Profile, Scene, Source } from '@/types/profile';
 import type { SourceLayer } from '@/types/scene';
+import { createDefaultTransform } from '@/types/scene';
 import { useSceneStore } from '@/stores/sceneStore';
 import { useSourceStore } from '@/stores/sourceStore';
 import { useProfileStore } from '@/stores/profileStore';
 import { toast } from '@/hooks/useToast';
 import { api } from '@/lib/backend';
-import { useWebRTCPreview } from '@/hooks/useWebRTCPreview';
+import { useSharedWebRTCPreview } from '@/hooks/useSharedWebRTCPreview';
 import type { Source as SourceDef } from '@/types/source';
 
 interface SourcesPanelProps {
@@ -70,12 +71,107 @@ const SourceIcon = ({ type }: { type: Source['type'] }) => {
   }
 };
 
+interface SourceThumbnailProps {
+  sourceId: string;
+  sourceType: Source['type'];
+  visible: boolean;
+  refreshKey?: string;
+}
+
 /**
  * Live thumbnail preview for a source using WebRTC
- * Uses the same WebRTC system as the scene canvas for consistency
+ * Uses shared WebRTC connections to deduplicate when same source appears multiple times
+ * Only connects WebRTC when the layer is visible to save resources
+ * Memoized to prevent WebRTC reconnections when sibling components update
  */
-function SourceThumbnail({ sourceId, sourceType, refreshKey }: { sourceId: string; sourceType: Source['type']; refreshKey?: string }) {
-  const { status, videoRef, retry } = useWebRTCPreview(sourceId, refreshKey);
+const SourceThumbnail = memo(function SourceThumbnail({
+  sourceId,
+  sourceType,
+  visible,
+  refreshKey,
+}: SourceThumbnailProps) {
+  // Only connect WebRTC when layer is visible - pass empty sourceId to disable connection
+  const { status, stream, retry } = useSharedWebRTCPreview(visible ? sourceId : '', refreshKey);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [videoReady, setVideoReady] = useState(false);
+  const mountedRef = useRef(true);
+
+  // Track mounted state for cleanup - prevents state updates after unmount
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  // Attach stream to video element when it changes
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.srcObject = stream;
+    setVideoReady(false); // Reset when stream changes - wait for decoder to initialize
+  }, [stream]);
+
+  // Listen for video ready events - using multiple signals for reliability
+  // The green tint appears when H.264 decoder hasn't received a keyframe yet
+  // We wait for BOTH dimensions AND readyState >= HAVE_CURRENT_DATA
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    let frameCheckId: number | null = null;
+    let isChecking = false; // Prevent overlapping RAF loops from concurrent events
+
+    // Check if video has actually decoded content
+    // readyState >= 2 (HAVE_CURRENT_DATA) means decoder has rendered at least one frame
+    // This is more reliable than just checking dimensions, which can be set from H.264 SPS
+    // metadata before actual pixels are decoded
+    const checkVideoReady = () => {
+      if (!mountedRef.current) return true; // Stop if unmounted
+      if (video.videoWidth > 0 &&
+          video.videoHeight > 0 &&
+          video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+        setVideoReady(true);
+        return true;
+      }
+      return false;
+    };
+
+    // Handle loadeddata/canplay events - but also verify decoder readiness
+    const handleVideoEvent = () => {
+      if (isChecking) return; // Prevent concurrent polling loops
+      if (checkVideoReady()) return;
+
+      isChecking = true;
+      let attempts = 0;
+      // Poll for up to ~1000ms to cover screen capture's 500ms keyframe interval
+      // (15-frame keyframe interval @ 30fps = ~500ms for first keyframe)
+      const MAX_POLL_ATTEMPTS = 60;
+
+      const pollDimensions = () => {
+        if (!mountedRef.current || checkVideoReady() || attempts++ >= MAX_POLL_ATTEMPTS) {
+          frameCheckId = null;
+          isChecking = false;
+          return;
+        }
+        frameCheckId = requestAnimationFrame(pollDimensions);
+      };
+      frameCheckId = requestAnimationFrame(pollDimensions);
+    };
+
+    // Listen to multiple events for better coverage across stream types
+    video.addEventListener('loadeddata', handleVideoEvent);
+    video.addEventListener('canplay', handleVideoEvent);
+
+    // Check immediately in case video is already ready
+    handleVideoEvent();
+
+    return () => {
+      video.removeEventListener('loadeddata', handleVideoEvent);
+      video.removeEventListener('canplay', handleVideoEvent);
+      if (frameCheckId !== null) {
+        cancelAnimationFrame(frameCheckId);
+      }
+    };
+  }, [stream]);
 
   // Only show preview for video sources
   const hasVideo = sourceType !== 'audioDevice';
@@ -91,20 +187,29 @@ function SourceThumbnail({ sourceId, sourceType, refreshKey }: { sourceId: strin
 
   return (
     <div className="relative w-16 h-9 bg-[var(--bg-sunken)] rounded overflow-hidden flex-shrink-0">
-      {/* Video element for WebRTC */}
+      {/* Video element for WebRTC - with smooth fade-in transition */}
+      {/* Only show when BOTH status is playing AND video has decoded first frame (videoReady) */}
+      {/* This prevents the green tint that appears before the H.264 decoder receives a keyframe */}
       <video
         ref={videoRef}
         autoPlay
         muted
         playsInline
-        className="w-full h-full object-cover"
-        style={{ display: status === 'playing' ? 'block' : 'none' }}
+        className={`w-full h-full object-cover transition-opacity duration-300 ${
+          status === 'playing' && videoReady ? 'opacity-100' : 'opacity-0'
+        }`}
       />
 
-      {/* Loading state */}
-      {(status === 'loading' || status === 'connecting') && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+      {/* Skeleton loading state - shows until video is actually ready to display */}
+      {/* This covers: loading, connecting, AND playing-but-not-yet-decoded states */}
+      {(status === 'loading' || status === 'connecting' || (status === 'playing' && !videoReady)) && (
+        <div className="absolute inset-0 bg-[var(--bg-sunken)] overflow-hidden">
+          {/* Animated shimmer effect */}
+          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[var(--bg-elevated)]/50 to-transparent skeleton-shimmer" />
+          {/* Source type icon */}
+          <div className="absolute inset-0 flex items-center justify-center">
+            <SourceIcon type={sourceType} />
+          </div>
         </div>
       )}
 
@@ -123,7 +228,7 @@ function SourceThumbnail({ sourceId, sourceType, refreshKey }: { sourceId: strin
       )}
     </div>
   );
-}
+});
 
 interface SortableLayerItemProps {
   layer: SourceLayer;
@@ -132,7 +237,7 @@ interface SortableLayerItemProps {
   onRemoveSource: (source: Source) => void;
 }
 
-function SortableLayerItem({
+const SortableLayerItem = memo(function SortableLayerItem({
   layer,
   source,
   onToggleVisibility,
@@ -187,6 +292,7 @@ function SortableLayerItem({
       <SourceThumbnail
         sourceId={source.id}
         sourceType={source.type}
+        visible={layer.visible}
         refreshKey={'deviceId' in source ? source.deviceId : 'displayId' in source ? source.displayId : undefined}
       />
 
@@ -230,13 +336,13 @@ function SortableLayerItem({
       </div>
     </div>
   );
-}
+});
 
 export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
   const { t } = useTranslation();
   const { addLayer, updateLayer, reorderLayers } = useSceneStore();
   const { removeSource } = useSourceStore();
-  const { reloadProfile, removeCurrentSource } = useProfileStore();
+  const { removeCurrentSource, updateCurrentLayer, reorderCurrentLayers, addCurrentLayer } = useProfileStore();
   const [showAddModal, setShowAddModal] = useState(false);
 
   // Sensors for drag and drop
@@ -250,23 +356,25 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
     return [...activeScene.layers].sort((a, b) => b.zIndex - a.zIndex);
   }, [activeScene?.layers]);
 
-  // Get source info by ID
-  const getSourceById = (sourceId: string): Source | undefined => {
-    return profile.sources.find((s) => s.id === sourceId);
-  };
+  // Create source lookup map for O(1) access instead of O(n) find()
+  const sourceMap = useMemo(
+    () => new Map(profile.sources.map((s) => [s.id, s])),
+    [profile.sources]
+  );
 
-  const handleToggleVisibility = async (layerId: string, currentVisible: boolean) => {
+  const handleToggleVisibility = useCallback(async (layerId: string, currentVisible: boolean) => {
     if (!activeScene) return;
 
     try {
       await updateLayer(profile.name, activeScene.id, layerId, { visible: !currentVisible });
-      await reloadProfile();
+      // Update local state instead of reloading entire profile
+      updateCurrentLayer(activeScene.id, layerId, { visible: !currentVisible });
     } catch (err) {
       toast.error(t('stream.visibilityToggleFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to toggle visibility: ${err instanceof Error ? err.message : String(err)}` }));
     }
-  };
+  }, [activeScene, profile.name, updateLayer, updateCurrentLayer, t]);
 
-  const handleRemoveSource = async (source: Source) => {
+  const handleRemoveSource = useCallback(async (source: Source) => {
     if (confirm(t('stream.confirmRemoveSource', { name: source.name, defaultValue: `Remove "${source.name}" from profile? This will also remove it from all scenes.` }))) {
       try {
         // Stop any running preview for this source first
@@ -284,21 +392,39 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
         toast.error(t('stream.sourceRemoveFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to remove source: ${err instanceof Error ? err.message : String(err)}` }));
       }
     }
-  };
+  }, [profile.name, removeSource, removeCurrentSource, t]);
 
   // When a source is added via the modal, also add it as a layer to the active scene
-  const handleSourceAdded = async (source: SourceDef) => {
+  const handleSourceAdded = useCallback(async (source: SourceDef) => {
     if (!activeScene) return;
 
     try {
-      await addLayer(profile.name, activeScene.id, source.id);
-      await reloadProfile();
+      // Add layer to backend - returns the layerId
+      const layerId = await addLayer(profile.name, activeScene.id, source.id);
+
+      // Create the layer object for local state update
+      // Calculate zIndex as max + 1 to place on top
+      const maxZIndex = activeScene.layers.length > 0
+        ? Math.max(...activeScene.layers.map(l => l.zIndex))
+        : -1;
+
+      const newLayer: SourceLayer = {
+        id: layerId,
+        sourceId: source.id,
+        visible: true,
+        locked: false,
+        transform: createDefaultTransform(activeScene.canvasWidth, activeScene.canvasHeight),
+        zIndex: maxZIndex + 1,
+      };
+
+      // Update local state instead of reloading entire profile
+      addCurrentLayer(activeScene.id, newLayer);
       toast.success(t('stream.sourceAdded', { name: source.name, defaultValue: `Added ${source.name} to scene` }));
     } catch (err) {
       // Source was added to profile but layer creation failed
       toast.error(t('stream.layerAddFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Source added but failed to add to scene: ${err instanceof Error ? err.message : String(err)}` }));
     }
-  };
+  }, [activeScene, profile.name, addLayer, addCurrentLayer, t]);
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
@@ -321,7 +447,8 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
 
     try {
       await reorderLayers(profile.name, activeScene.id, serverOrder);
-      await reloadProfile();
+      // Update local state instead of reloading entire profile
+      reorderCurrentLayers(activeScene.id, serverOrder);
     } catch (err) {
       toast.error(t('stream.reorderFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to reorder layers: ${err instanceof Error ? err.message : String(err)}` }));
     }
@@ -399,7 +526,7 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
                   <SortableLayerItem
                     key={layer.id}
                     layer={layer}
-                    source={getSourceById(layer.sourceId)}
+                    source={sourceMap.get(layer.sourceId)}
                     onToggleVisibility={handleToggleVisibility}
                     onRemoveSource={handleRemoveSource}
                   />
