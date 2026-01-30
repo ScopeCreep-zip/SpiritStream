@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "deepwiki": {
-      "type": "sse",
-      "url": "https://mcp.deepwiki.com/sse"
+      "type": "mcp",
+      "url": "https://mcp.deepwiki.com/mcp"
     }
   }
 }
