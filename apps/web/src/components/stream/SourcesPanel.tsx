@@ -43,7 +43,7 @@ import { useSourceStore } from '@/stores/sourceStore';
 import { useProfileStore } from '@/stores/profileStore';
 import { toast } from '@/hooks/useToast';
 import { api } from '@/lib/backend';
-import { useSharedWebRTCPreview } from '@/hooks/useSharedWebRTCPreview';
+import { useWebRTCStream } from '@/hooks/useWebRTCStream';
 import type { Source as SourceDef } from '@/types/source';
 
 interface SourcesPanelProps {
@@ -89,34 +89,28 @@ function isImageFile(filePath: string): boolean {
 interface SourceThumbnailProps {
   sourceId: string;
   sourceType: Source['type'];
-  visible: boolean;
-  refreshKey?: string;
   /** For mediaFile sources, the file path to check if it's a static image/HTML */
   filePath?: string;
 }
 
 /**
  * Live thumbnail preview for a source using WebRTC
- * Uses shared WebRTC connections to deduplicate when same source appears multiple times
- * Only connects WebRTC when the layer is visible to save resources
- * Memoized to prevent WebRTC reconnections when sibling components update
+ * Uses persistent WebRTC connections managed by WebRTCConnectionManager
+ * Connections stay alive regardless of visibility to prevent reconnection delays
+ * Memoized to prevent unnecessary re-renders when sibling components update
  */
 const SourceThumbnail = memo(function SourceThumbnail({
   sourceId,
   sourceType,
-  visible,
-  refreshKey,
   filePath,
 }: SourceThumbnailProps) {
   // Check if this is a static media file (image/HTML) that doesn't need WebRTC
   const isStatic = filePath && isStaticMediaFile(filePath);
   const isImage = filePath && isImageFile(filePath);
 
-  // Only connect WebRTC when layer is visible AND not a static file
-  const { status, stream, retry } = useSharedWebRTCPreview(
-    visible && !isStatic ? sourceId : '',
-    refreshKey
-  );
+  // Get WebRTC stream from persistent connection store
+  // Connection is managed by WebRTCConnectionManager, not this component
+  const { status, stream, retry } = useWebRTCStream(isStatic ? '' : sourceId);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoReady, setVideoReady] = useState(false);
   const mountedRef = useRef(true);
@@ -251,8 +245,8 @@ const SourceThumbnail = memo(function SourceThumbnail({
       />
 
       {/* Skeleton loading state - shows until video is actually ready to display */}
-      {/* This covers: loading, connecting, AND playing-but-not-yet-decoded states */}
-      {(status === 'loading' || status === 'connecting' || (status === 'playing' && !videoReady)) && (
+      {/* This covers: idle, loading, connecting, AND playing-but-not-yet-decoded states */}
+      {(status === 'idle' || status === 'loading' || status === 'connecting' || (status === 'playing' && !videoReady)) && (
         <div className="absolute inset-0 bg-[var(--bg-sunken)] overflow-hidden">
           {/* Animated shimmer effect */}
           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[var(--bg-elevated)]/50 to-transparent skeleton-shimmer" />
@@ -338,12 +332,10 @@ const SortableLayerItem = memo(function SortableLayerItem({
       {...attributes}
       {...listeners}
     >
-      {/* Live thumbnail preview - refreshKey forces reconnect when device changes */}
+      {/* Live thumbnail preview - uses persistent WebRTC connections */}
       <SourceThumbnail
         sourceId={source.id}
         sourceType={source.type}
-        visible={layer.visible}
-        refreshKey={'deviceId' in source ? source.deviceId : 'displayId' in source ? source.displayId : undefined}
         filePath={source.type === 'mediaFile' && 'filePath' in source ? source.filePath : undefined}
       />
 

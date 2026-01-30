@@ -1,19 +1,20 @@
 /**
  * SharedWebRTCPlayer Component
- * Video player that uses shared WebRTC connections via go2rtc
+ * Video player that uses persistent WebRTC connections via go2rtc
  *
- * Unlike WebRTCPlayer, this component shares connections with other components
- * using the same sourceId. This reduces resource usage when the same source
- * appears in multiple places (e.g., thumbnail and canvas).
+ * Uses the persistent WebRTC connection store that keeps connections alive
+ * regardless of page visibility or navigation. Connections are managed at
+ * the app level by WebRTCConnectionManager.
  *
  * Features:
  * - Skeleton loading with shimmer animation for polished loading UX
  * - Smooth fade-in transition when video becomes ready
- * - Shared connections reduce resource usage
+ * - Persistent connections survive page visibility changes
+ * - Connections stay alive during navigation between views
  */
 
 import { useRef, useEffect, useState } from 'react';
-import { useSharedWebRTCPreview } from '@/hooks/useSharedWebRTCPreview';
+import { useWebRTCStream } from '@/hooks/useWebRTCStream';
 import { Radio, Film, Monitor, Camera, Usb, Mic } from 'lucide-react';
 import type { Source } from '@/types/profile';
 
@@ -24,8 +25,6 @@ interface SharedWebRTCPlayerProps {
   width: number;
   height: number;
   className?: string;
-  /** Pass deviceId/displayId to force reconnect when device changes */
-  refreshKey?: string;
 }
 
 /** Icon component for different source types */
@@ -55,9 +54,8 @@ export function SharedWebRTCPlayer({
   width,
   height,
   className = '',
-  refreshKey,
 }: SharedWebRTCPlayerProps) {
-  const { status, stream, error, retry } = useSharedWebRTCPreview(sourceId, refreshKey);
+  const { status, stream, error, retry } = useWebRTCStream(sourceId);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoReady, setVideoReady] = useState(false);
   const mountedRef = useRef(true);
@@ -164,8 +162,8 @@ export function SharedWebRTCPlayer({
       />
 
       {/* Skeleton loading state - shows until video is actually ready to display */}
-      {/* This covers: loading, connecting, AND playing-but-not-yet-decoded states */}
-      {(status === 'loading' || status === 'connecting' || (status === 'playing' && !videoReady)) && (
+      {/* This covers: idle, loading, connecting, AND playing-but-not-yet-decoded states */}
+      {(status === 'idle' || status === 'loading' || status === 'connecting' || (status === 'playing' && !videoReady)) && (
         <div className="absolute inset-0 bg-[var(--bg-sunken)] overflow-hidden">
           {/* Animated shimmer effect */}
           <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[var(--bg-elevated)]/50 to-transparent skeleton-shimmer" />

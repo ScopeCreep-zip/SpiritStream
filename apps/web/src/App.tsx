@@ -27,6 +27,7 @@ import { ConnectionStatus } from '@/components/ui/ConnectionStatus';
 import { ConnectionError } from '@/components/ui/ConnectionError';
 import { ProfileModal, TargetModal, OutputGroupModal, LoginModal } from '@/components/modals';
 import { PasswordModal } from '@/components/modals/PasswordModal';
+import { WebRTCConnectionManager } from '@/components/WebRTCConnectionManager';
 import { useProfileStore } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
 import { useInitialize } from '@/hooks/useInitialize';
@@ -432,6 +433,9 @@ function AppContent() {
 
   return (
     <AppShell>
+      {/* Persistent WebRTC connection manager - syncs connections with profile sources */}
+      <WebRTCConnectionManager />
+
       <Sidebar>
         <SidebarHeader>
           <Logo />

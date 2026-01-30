@@ -513,7 +513,6 @@ const LayerPreview = React.memo(function LayerPreview({
               sourceType={source.type}
               width={displayWidth}
               height={displayHeight}
-              refreshKey={'deviceId' in source ? source.deviceId : 'displayId' in source ? source.displayId : undefined}
             />
           )
         ) : (
