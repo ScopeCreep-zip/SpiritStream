@@ -28,6 +28,13 @@ export interface AppSettings {
   obsDirection: ObsIntegrationDirection;
   obsAutoConnect: boolean;
   lastProfile: string | null;
+  // Discord webhook settings
+  discordWebhookEnabled: boolean;
+  discordWebhookUrl: string;
+  discordGoLiveMessage: string;
+  discordCooldownEnabled: boolean;
+  discordCooldownSeconds: number;
+  discordImagePath: string;
 }
 
 /**
