@@ -7,9 +7,9 @@ export type { Platform };
 
 // Import and re-export source and scene types
 import type { Source, SourceType } from './source';
-import type { Scene, SourceLayer, Transform, Crop, AudioMixer, AudioTrack } from './scene';
+import type { Scene, SourceLayer, Transform, Crop, AudioMixer, AudioTrack, SceneTransition, TransitionType } from './scene';
 export type { Source, SourceType };
-export type { Scene, SourceLayer, Transform, Crop, AudioMixer, AudioTrack };
+export type { Scene, SourceLayer, Transform, Crop, AudioMixer, AudioTrack, SceneTransition, TransitionType };
 
 // Import factory functions for creating default sources/scenes
 import { createDefaultRtmpSource } from './source';
@@ -96,6 +96,8 @@ export interface Profile {
   scenes: Scene[];
   /** NEW: Currently active scene ID */
   activeSceneId?: string;
+  /** NEW: Default transition for scene switching */
+  defaultTransition?: SceneTransition;
   outputGroups: OutputGroup[];
 }
 

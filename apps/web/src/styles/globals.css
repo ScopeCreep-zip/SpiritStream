@@ -242,3 +242,198 @@ pre {
 .skeleton-shimmer {
   animation: skeleton-shimmer 1.5s ease-in-out infinite;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SCENE TRANSITION ANIMATIONS
+   CSS animations for scene transitions
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Fade transitions */
+@keyframes scene-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes scene-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.scene-transition-fade-out {
+  animation: scene-fade-out var(--transition-duration, 300ms) ease-out forwards;
+}
+
+.scene-transition-fade-in {
+  animation: scene-fade-in var(--transition-duration, 300ms) ease-out forwards;
+}
+
+/* Crossfade (dissolve) - both scenes visible during transition */
+@keyframes scene-crossfade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes scene-crossfade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.scene-transition-crossfade-out {
+  animation: scene-crossfade-out var(--transition-duration, 300ms) ease-in-out forwards;
+}
+
+.scene-transition-crossfade-in {
+  animation: scene-crossfade-in var(--transition-duration, 300ms) ease-in-out forwards;
+}
+
+/* Slide Left */
+@keyframes scene-slide-left-out {
+  from { transform: translateX(0); }
+  to { transform: translateX(-100%); }
+}
+
+@keyframes scene-slide-left-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.scene-transition-slideLeft-out {
+  animation: scene-slide-left-out var(--transition-duration, 300ms) ease-in-out forwards;
+}
+
+.scene-transition-slideLeft-in {
+  animation: scene-slide-left-in var(--transition-duration, 300ms) ease-in-out forwards;
+}
+
+/* Slide Right */
+@keyframes scene-slide-right-out {
+  from { transform: translateX(0); }
+  to { transform: translateX(100%); }
+}
+
+@keyframes scene-slide-right-in {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+.scene-transition-slideRight-out {
+  animation: scene-slide-right-out var(--transition-duration, 300ms) ease-in-out forwards;
+}
+
+.scene-transition-slideRight-in {
+  animation: scene-slide-right-in var(--transition-duration, 300ms) ease-in-out forwards;
+}
+
+/* Slide Up */
+@keyframes scene-slide-up-out {
+  from { transform: translateY(0); }
+  to { transform: translateY(-100%); }
+}
+
+@keyframes scene-slide-up-in {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.scene-transition-slideUp-out {
+  animation: scene-slide-up-out var(--transition-duration, 300ms) ease-in-out forwards;
+}
+
+.scene-transition-slideUp-in {
+  animation: scene-slide-up-in var(--transition-duration, 300ms) ease-in-out forwards;
+}
+
+/* Slide Down */
+@keyframes scene-slide-down-out {
+  from { transform: translateY(0); }
+  to { transform: translateY(100%); }
+}
+
+@keyframes scene-slide-down-in {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(0); }
+}
+
+.scene-transition-slideDown-out {
+  animation: scene-slide-down-out var(--transition-duration, 300ms) ease-in-out forwards;
+}
+
+.scene-transition-slideDown-in {
+  animation: scene-slide-down-in var(--transition-duration, 300ms) ease-in-out forwards;
+}
+
+/* Wipe Left (using clip-path) */
+@keyframes scene-wipe-left-out {
+  from { clip-path: inset(0 0 0 0); }
+  to { clip-path: inset(0 100% 0 0); }
+}
+
+@keyframes scene-wipe-left-in {
+  from { clip-path: inset(0 100% 0 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+
+.scene-transition-wipeLeft-out {
+  animation: scene-wipe-left-out var(--transition-duration, 300ms) ease-in-out forwards;
+}
+
+.scene-transition-wipeLeft-in {
+  animation: scene-wipe-left-in var(--transition-duration, 300ms) ease-in-out forwards;
+}
+
+/* Wipe Right (using clip-path) */
+@keyframes scene-wipe-right-out {
+  from { clip-path: inset(0 0 0 0); }
+  to { clip-path: inset(0 0 0 100%); }
+}
+
+@keyframes scene-wipe-right-in {
+  from { clip-path: inset(0 0 0 100%); }
+  to { clip-path: inset(0 0 0 0); }
+}
+
+.scene-transition-wipeRight-out {
+  animation: scene-wipe-right-out var(--transition-duration, 300ms) ease-in-out forwards;
+}
+
+.scene-transition-wipeRight-in {
+  animation: scene-wipe-right-in var(--transition-duration, 300ms) ease-in-out forwards;
+}
+
+/* Wipe Up (using clip-path) */
+@keyframes scene-wipe-up-out {
+  from { clip-path: inset(0 0 0 0); }
+  to { clip-path: inset(0 0 100% 0); }
+}
+
+@keyframes scene-wipe-up-in {
+  from { clip-path: inset(0 0 100% 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+
+.scene-transition-wipeUp-out {
+  animation: scene-wipe-up-out var(--transition-duration, 300ms) ease-in-out forwards;
+}
+
+.scene-transition-wipeUp-in {
+  animation: scene-wipe-up-in var(--transition-duration, 300ms) ease-in-out forwards;
+}
+
+/* Wipe Down (using clip-path) */
+@keyframes scene-wipe-down-out {
+  from { clip-path: inset(0 0 0 0); }
+  to { clip-path: inset(100% 0 0 0); }
+}
+
+@keyframes scene-wipe-down-in {
+  from { clip-path: inset(100% 0 0 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+
+.scene-transition-wipeDown-out {
+  animation: scene-wipe-down-out var(--transition-duration, 300ms) ease-in-out forwards;
+}
+
+.scene-transition-wipeDown-in {
+  animation: scene-wipe-down-in var(--transition-duration, 300ms) ease-in-out forwards;
+}

@@ -71,6 +71,11 @@ interface ProfileState {
   addCurrentScene: (scene: import('@/types/scene').Scene) => void;
   removeCurrentScene: (sceneId: string) => void;
   setCurrentActiveScene: (sceneId: string) => void;
+  updateCurrentScene: (sceneId: string, updates: Partial<import('@/types/scene').Scene>) => void;
+
+  // Profile mutations (local state updates only - no auto-save)
+  // Use these after profile API calls to sync local state without reloading entire profile
+  updateCurrentProfile: (updates: Partial<Profile>) => void;
 
   // Profile mutations (local state updates + auto-save)
   updateProfile: (updates: Partial<Profile>) => Promise<void>;
@@ -549,6 +554,21 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     }
   },
 
+  // Update scene properties locally without triggering save (used after updateScene API)
+  updateCurrentScene: (sceneId, updates) => {
+    const current = get().current;
+    if (current) {
+      set({
+        current: {
+          ...current,
+          scenes: current.scenes.map((scene) =>
+            scene.id === sceneId ? { ...scene, ...updates } : scene
+          ),
+        },
+      });
+    }
+  },
+
   // Select and load a profile by name
   selectProfile: async (name) => {
     await get().loadProfile(name);
@@ -576,6 +596,14 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       set({ profiles });
     } catch (error) {
       set({ error: String(error) });
+    }
+  },
+
+  // Update profile properties locally without triggering save (used after profile API calls)
+  updateCurrentProfile: (updates) => {
+    const current = get().current;
+    if (current) {
+      set({ current: { ...current, ...updates } });
     }
   },
 

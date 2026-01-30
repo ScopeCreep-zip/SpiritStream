@@ -3,6 +3,49 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Scene transition types
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TransitionType {
+    Cut,
+    Fade,
+    Crossfade,
+    SlideLeft,
+    SlideRight,
+    SlideUp,
+    SlideDown,
+    WipeLeft,
+    WipeRight,
+    WipeUp,
+    WipeDown,
+}
+
+impl Default for TransitionType {
+    fn default() -> Self {
+        Self::Fade
+    }
+}
+
+/// Scene transition configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneTransition {
+    /// Transition type
+    #[serde(rename = "type")]
+    pub transition_type: TransitionType,
+    /// Duration in milliseconds (100-2000)
+    pub duration_ms: u32,
+}
+
+impl Default for SceneTransition {
+    fn default() -> Self {
+        Self {
+            transition_type: TransitionType::Fade,
+            duration_ms: 300,
+        }
+    }
+}
+
 /// Scene - composition of sources with layout and audio mixing
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -21,6 +64,9 @@ pub struct Scene {
     /// Audio mixer configuration
     #[serde(default)]
     pub audio_mixer: AudioMixer,
+    /// Override transition for when switching TO this scene
+    #[serde(default)]
+    pub transition_in: Option<SceneTransition>,
 }
 
 impl Scene {
@@ -33,6 +79,7 @@ impl Scene {
             canvas_height: 1080,
             layers: Vec::new(),
             audio_mixer: AudioMixer::default(),
+            transition_in: None,
         }
     }
 

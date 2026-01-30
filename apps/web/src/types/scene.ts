@@ -4,6 +4,30 @@
  */
 
 /**
+ * Transition types for scene switching
+ */
+export type TransitionType =
+  | 'cut' // Instant (no animation)
+  | 'fade' // Fade through black
+  | 'crossfade' // Dissolve between scenes
+  | 'slideLeft'
+  | 'slideRight'
+  | 'slideUp'
+  | 'slideDown'
+  | 'wipeLeft'
+  | 'wipeRight'
+  | 'wipeUp'
+  | 'wipeDown';
+
+/**
+ * Transition configuration
+ */
+export interface SceneTransition {
+  type: TransitionType;
+  durationMs: number; // 100-2000, default 300
+}
+
+/**
  * Scene - composition of sources with layout and audio mixing
  */
 export interface Scene {
@@ -13,6 +37,8 @@ export interface Scene {
   canvasHeight: number;
   layers: SourceLayer[];
   audioMixer: AudioMixer;
+  /** Override transition for this scene (optional) */
+  transitionIn?: SceneTransition;
 }
 
 /**
@@ -280,3 +306,70 @@ export const CANVAS_PRESETS = [
   { label: 'Vertical 1080 (1080x1920)', width: 1080, height: 1920 },
   { label: 'Square (1080x1080)', width: 1080, height: 1080 },
 ] as const;
+
+/**
+ * Default transition configuration
+ */
+export const DEFAULT_TRANSITION: SceneTransition = {
+  type: 'fade',
+  durationMs: 300,
+};
+
+/**
+ * Factory function for creating a transition
+ */
+export function createDefaultTransitionConfig(
+  type: TransitionType = 'fade',
+  durationMs: number = 300
+): SceneTransition {
+  return { type, durationMs };
+}
+
+/**
+ * Get human-readable label for transition type
+ */
+export function getTransitionTypeLabel(type: TransitionType): string {
+  switch (type) {
+    case 'cut':
+      return 'Cut';
+    case 'fade':
+      return 'Fade';
+    case 'crossfade':
+      return 'Crossfade';
+    case 'slideLeft':
+      return 'Slide Left';
+    case 'slideRight':
+      return 'Slide Right';
+    case 'slideUp':
+      return 'Slide Up';
+    case 'slideDown':
+      return 'Slide Down';
+    case 'wipeLeft':
+      return 'Wipe Left';
+    case 'wipeRight':
+      return 'Wipe Right';
+    case 'wipeUp':
+      return 'Wipe Up';
+    case 'wipeDown':
+      return 'Wipe Down';
+    default:
+      return type;
+  }
+}
+
+/**
+ * All available transition types
+ */
+export const TRANSITION_TYPES: TransitionType[] = [
+  'cut',
+  'fade',
+  'crossfade',
+  'slideLeft',
+  'slideRight',
+  'slideUp',
+  'slideDown',
+  'wipeLeft',
+  'wipeRight',
+  'wipeUp',
+  'wipeDown',
+];

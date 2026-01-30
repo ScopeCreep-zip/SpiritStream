@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, HashMap};
-use crate::models::{OutputGroup, Platform, Source, RtmpSource, Scene, SourceLayer, AudioMixer, AudioTrack, Transform};
+use crate::models::{OutputGroup, Platform, Source, RtmpSource, Scene, SourceLayer, AudioMixer, AudioTrack, Transform, SceneTransition};
 
 /// RTMP Input configuration - where the stream enters the system
 /// LEGACY: Kept for backward compatibility, use Sources instead
@@ -66,6 +66,10 @@ pub struct Profile {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active_scene_id: Option<String>,
 
+    /// Default transition for scene switching
+    #[serde(default)]
+    pub default_transition: Option<SceneTransition>,
+
     /// Encoding configurations with their targets
     pub output_groups: Vec<OutputGroup>,
 }
@@ -121,6 +125,7 @@ impl Profile {
                         solo: false,
                     }],
                 },
+                transition_in: None,
             };
 
             let scene_id = scene.id.clone();
