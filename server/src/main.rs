@@ -40,8 +40,8 @@ use spiritstream_server::commands::{get_encoders, test_ffmpeg, test_rtmp_target,
 use spiritstream_server::models::{OutputGroup, Profile, RtmpInput, Settings, ObsIntegrationDirection};
 use spiritstream_server::services::{
     prune_logs, read_recent_logs, validate_extension, validate_path_within_any,
-    Encryption, EventSink, FFmpegDownloader, FFmpegHandler, ObsWebSocketHandler, ProfileManager,
-    SettingsManager, ThemeManager, ObsConfig,
+    DiscordWebhookService, Encryption, EventSink, FFmpegDownloader, FFmpegHandler,
+    ObsWebSocketHandler, ProfileManager, SettingsManager, ThemeManager, ObsConfig,
 };
 
 // ============================================================================
@@ -99,6 +99,7 @@ struct AppState {
     ffmpeg_downloader: Arc<AsyncMutex<FFmpegDownloader>>,
     theme_manager: Arc<ThemeManager>,
     obs_handler: Arc<ObsWebSocketHandler>,
+    discord_service: Arc<DiscordWebhookService>,
     event_bus: EventBus,
     log_dir: PathBuf,
     app_data_dir: PathBuf,
@@ -210,6 +211,8 @@ fn bearer_token(headers: &HeaderMap) -> Option<&str> {
 
 /// Sanitize error messages to prevent information disclosure
 fn sanitize_error(error: &str) -> String {
+    log::warn!("[sanitize_error] Original error: {}", error);
+    eprintln!("[sanitize_error] Original error: {}", error);
     let lower = error.to_lowercase();
 
     if lower.contains("failed to read") || lower.contains("no such file") || lower.contains("not found") {
@@ -226,6 +229,22 @@ fn sanitize_error(error: &str) -> String {
     }
     if lower.contains("encrypt") || lower.contains("decrypt") {
         return "Encryption error".to_string();
+    }
+    // Discord webhook errors - pass through user-friendly messages
+    if lower.contains("webhook") || lower.contains("discord") || lower.contains("rate limit") {
+        return error.to_string();
+    }
+    // Network errors - safe to show
+    if lower.contains("request failed") || lower.contains("connection") || lower.contains("timeout") {
+        return error.to_string();
+    }
+    // Missing argument errors - safe to show
+    if lower.contains("missing argument") {
+        return error.to_string();
+    }
+    // Unknown command errors - safe to show for debugging
+    if lower.contains("unknown command") {
+        return error.to_string();
     }
 
     // Return generic message for unknown errors in production
@@ -810,7 +829,10 @@ async fn invoke_command(
     command: &str,
     payload: Value,
 ) -> Result<Value, String> {
-    match command {
+    log::info!("[invoke_command] Command: {}, Payload: {:?}", command, payload);
+    eprintln!("[invoke_command] Command: {}, Payload: {:?}", command, payload);
+
+    let result = match command {
         "get_all_profiles" => {
             let names = state.profile_manager.get_all_names().await?;
             Ok(json!(names))
@@ -1204,8 +1226,53 @@ async fn invoke_command(
             Ok(json!(state.obs_handler.is_connected().await))
         }
 
+        // ============================================================================
+        // Discord Webhook Commands
+        // ============================================================================
+        "discord_test_webhook" => {
+            log::info!("[discord_test_webhook] Received payload: {:?}", payload);
+            let url: String = get_arg(&payload, "url")?;
+            log::info!("[discord_test_webhook] Testing URL: {}", if url.len() > 50 { &url[..50] } else { &url });
+            let result = state.discord_service.test_webhook(&url).await;
+            log::info!("[discord_test_webhook] Result: {:?}", result);
+            Ok(json!(result))
+        }
+        "discord_send_notification" => {
+            let settings = state.settings_manager.load()?;
+            if !settings.discord_webhook_enabled {
+                return Ok(json!({
+                    "success": false,
+                    "message": "Discord webhook is not enabled",
+                    "skippedCooldown": false
+                }));
+            }
+            let image_path = if settings.discord_image_path.is_empty() {
+                None
+            } else {
+                Some(settings.discord_image_path.as_str())
+            };
+            let result = state.discord_service.send_go_live_notification(
+                &settings.discord_webhook_url,
+                &settings.discord_go_live_message,
+                image_path,
+                settings.discord_cooldown_enabled,
+                settings.discord_cooldown_seconds,
+            ).await;
+            Ok(json!(result))
+        }
+        "discord_reset_cooldown" => {
+            state.discord_service.reset_cooldown().await;
+            Ok(Value::Null)
+        }
+
         _ => Err(format!("Unknown command: {command}")),
+    };
+
+    if let Err(ref e) = result {
+        log::error!("[invoke_command] Error for {}: {}", command, e);
+        eprintln!("[invoke_command] Error for {}: {}", command, e);
     }
+    result
 }
 
 // ============================================================================
@@ -1508,6 +1575,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         obs_handler.set_config(obs_config).await;
     }
 
+    // Initialize Discord webhook service
+    let discord_service = Arc::new(DiscordWebhookService::new());
+
     let state = AppState {
         profile_manager,
         settings_manager,
@@ -1515,6 +1585,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ffmpeg_downloader: Arc::new(AsyncMutex::new(FFmpegDownloader::new())),
         theme_manager,
         obs_handler,
+        discord_service,
         event_bus,
         log_dir: log_dir_path,
         app_data_dir,

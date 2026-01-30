@@ -23,6 +23,18 @@ fn default_obs_port() -> u16 {
     4455
 }
 
+fn default_discord_cooldown_enabled() -> bool {
+    true
+}
+
+fn default_discord_cooldown_seconds() -> u32 {
+    60
+}
+
+fn default_discord_go_live_message() -> String {
+    "**Stream is now live!** 🎮\n\nCome join the stream!".to_string()
+}
+
 /// OBS WebSocket integration direction
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -90,6 +102,20 @@ pub struct Settings {
 
     // Last used profile
     pub last_profile: Option<String>,
+
+    // Discord webhook integration
+    #[serde(default)]
+    pub discord_webhook_enabled: bool,
+    #[serde(default)]
+    pub discord_webhook_url: String,
+    #[serde(default = "default_discord_go_live_message")]
+    pub discord_go_live_message: String,
+    #[serde(default = "default_discord_cooldown_enabled")]
+    pub discord_cooldown_enabled: bool,
+    #[serde(default = "default_discord_cooldown_seconds")]
+    pub discord_cooldown_seconds: u32,
+    #[serde(default)]
+    pub discord_image_path: String,
 }
 
 impl Default for Settings {
@@ -115,6 +141,12 @@ impl Default for Settings {
             obs_direction: ObsIntegrationDirection::default(),
             obs_auto_connect: false,
             last_profile: None,
+            discord_webhook_enabled: false,
+            discord_webhook_url: String::new(),
+            discord_go_live_message: default_discord_go_live_message(),
+            discord_cooldown_enabled: true,
+            discord_cooldown_seconds: default_discord_cooldown_seconds(),
+            discord_image_path: String::new(),
         }
     }
 }

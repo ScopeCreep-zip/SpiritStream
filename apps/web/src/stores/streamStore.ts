@@ -484,6 +484,21 @@ export const useStreamStore = create<StreamState>((set, get) => ({
         );
       }
     }
+
+    // Send Discord webhook notification on stream start
+    if (prevStatus !== 'live' && status === 'live') {
+      // Fire and forget - don't block stream start on webhook
+      api.discord.sendNotification().then((result) => {
+        if (result.success && !result.skippedCooldown) {
+          console.log('[StreamStore] Discord go-live notification sent');
+        } else if (result.skippedCooldown) {
+          console.log('[StreamStore] Discord notification skipped (cooldown active)');
+        }
+      }).catch((error) => {
+        // Don't fail stream start if webhook fails
+        console.warn('[StreamStore] Discord notification failed:', error);
+      });
+    }
   },
 
   setError: (error) => set({ error }),

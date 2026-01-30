@@ -35,7 +35,8 @@
       "Bash(cmd /c \"dir /s /b \"\"%LOCALAPPDATA%\\\\SpiritStream\\\\*.log\"\" 2>nul\")",
       "WebFetch(domain:ffmpeg.org)",
       "Bash(tree:*)",
-      "Bash(pnpm run generate:platforms:*)"
+      "Bash(pnpm run generate:platforms:*)",
+      "WebFetch(domain:birdie0.github.io)"
     ]
   }
 }
