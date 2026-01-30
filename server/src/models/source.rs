@@ -20,6 +20,12 @@ pub enum Source {
     CaptureCard(CaptureCardSource),
     /// Audio-only input device (microphone, line-in)
     AudioDevice(AudioDeviceSource),
+    /// Solid color fill
+    Color(ColorSource),
+    /// Text overlay with styling
+    Text(TextSource),
+    /// Web page iframe (browser source)
+    Browser(BrowserSource),
 }
 
 impl Source {
@@ -32,6 +38,9 @@ impl Source {
             Source::Camera(s) => &s.id,
             Source::CaptureCard(s) => &s.id,
             Source::AudioDevice(s) => &s.id,
+            Source::Color(s) => &s.id,
+            Source::Text(s) => &s.id,
+            Source::Browser(s) => &s.id,
         }
     }
 
@@ -44,6 +53,9 @@ impl Source {
             Source::Camera(s) => &s.name,
             Source::CaptureCard(s) => &s.name,
             Source::AudioDevice(s) => &s.name,
+            Source::Color(s) => &s.name,
+            Source::Text(s) => &s.name,
+            Source::Browser(s) => &s.name,
         }
     }
 
@@ -56,6 +68,9 @@ impl Source {
             Source::Camera(_) => true,
             Source::CaptureCard(_) => true,
             Source::AudioDevice(_) => false,
+            Source::Color(_) => true,
+            Source::Text(_) => true,
+            Source::Browser(_) => true,
         }
     }
 
@@ -68,6 +83,9 @@ impl Source {
             Source::Camera(_) => false, // Cameras typically don't have audio
             Source::CaptureCard(_) => true,
             Source::AudioDevice(_) => true,
+            Source::Color(_) => false,
+            Source::Text(_) => false,
+            Source::Browser(_) => false,
         }
     }
 }
@@ -251,4 +269,115 @@ pub struct CaptureCardDevice {
     pub device_id: String,
     pub name: String,
     pub inputs: Vec<String>,
+}
+
+// Client-side rendered sources (no go2rtc/WebRTC needed)
+
+/// Color source - solid color fill
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ColorSource {
+    /// Unique identifier
+    pub id: String,
+    /// User-friendly name
+    pub name: String,
+    /// Hex color string (e.g., "#7C3AED")
+    pub color: String,
+    /// Opacity (0.0 - 1.0)
+    pub opacity: f32,
+}
+
+/// Text outline configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextOutline {
+    pub enabled: bool,
+    pub color: String,
+    pub width: u32,
+}
+
+/// Text source - text overlay with styling
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextSource {
+    /// Unique identifier
+    pub id: String,
+    /// User-friendly name
+    pub name: String,
+    /// Text content (supports multiline)
+    pub content: String,
+    /// Font family name
+    pub font_family: String,
+    /// Font size in pixels
+    pub font_size: u32,
+    /// Font weight
+    pub font_weight: String, // "normal" | "bold"
+    /// Font style
+    pub font_style: String, // "normal" | "italic"
+    /// Text color (hex)
+    pub text_color: String,
+    /// Optional background color (hex)
+    #[serde(default)]
+    pub background_color: Option<String>,
+    /// Background opacity (0.0 - 1.0)
+    #[serde(default = "default_background_opacity")]
+    pub background_opacity: f32,
+    /// Text alignment
+    pub text_align: String, // "left" | "center" | "right"
+    /// Line height multiplier
+    #[serde(default = "default_line_height")]
+    pub line_height: f32,
+    /// Padding in pixels
+    #[serde(default = "default_padding")]
+    pub padding: u32,
+    /// Optional text outline
+    #[serde(default)]
+    pub outline: Option<TextOutline>,
+}
+
+fn default_background_opacity() -> f32 {
+    0.8
+}
+
+fn default_line_height() -> f32 {
+    1.2
+}
+
+fn default_padding() -> u32 {
+    16
+}
+
+/// Browser source - web page iframe
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserSource {
+    /// Unique identifier
+    pub id: String,
+    /// User-friendly name
+    pub name: String,
+    /// URL to load
+    pub url: String,
+    /// Viewport width (default: 1920)
+    #[serde(default = "default_browser_width")]
+    pub width: u32,
+    /// Viewport height (default: 1080)
+    #[serde(default = "default_browser_height")]
+    pub height: u32,
+    /// Optional custom CSS to inject
+    #[serde(default)]
+    pub custom_css: Option<String>,
+    /// Auto-refresh interval in seconds (0 = manual only)
+    #[serde(default)]
+    pub refresh_interval: Option<u32>,
+    /// Token that changes to trigger manual refresh
+    #[serde(default)]
+    pub refresh_token: Option<String>,
+}
+
+fn default_browser_width() -> u32 {
+    1920
+}
+
+fn default_browser_height() -> u32 {
+    1080
 }

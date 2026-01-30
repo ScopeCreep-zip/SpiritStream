@@ -12,7 +12,10 @@ export type SourceType =
   | 'screenCapture'
   | 'camera'
   | 'captureCard'
-  | 'audioDevice';
+  | 'audioDevice'
+  | 'color'
+  | 'text'
+  | 'browser';
 
 /**
  * Base source interface
@@ -86,6 +89,51 @@ export interface AudioDeviceSource extends BaseSource {
 }
 
 /**
+ * Color source - solid color fill
+ */
+export interface ColorSource extends BaseSource {
+  type: 'color';
+  color: string; // Hex color: '#FF5733'
+  opacity: number; // 0.0 - 1.0
+}
+
+/**
+ * Text source - text overlay with styling
+ */
+export interface TextSource extends BaseSource {
+  type: 'text';
+  content: string;
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: 'normal' | 'bold';
+  fontStyle: 'normal' | 'italic';
+  textColor: string;
+  backgroundColor?: string;
+  backgroundOpacity: number;
+  textAlign: 'left' | 'center' | 'right';
+  lineHeight: number;
+  padding: number;
+  outline?: {
+    enabled: boolean;
+    color: string;
+    width: number;
+  };
+}
+
+/**
+ * Browser source - web page iframe
+ */
+export interface BrowserSource extends BaseSource {
+  type: 'browser';
+  url: string;
+  width: number; // Viewport width (default: 1920)
+  height: number; // Viewport height (default: 1080)
+  customCss?: string; // Optional CSS injection
+  refreshInterval?: number; // Seconds, 0 = manual only
+  refreshToken?: string; // Changed to trigger manual refresh
+}
+
+/**
  * Union type for all source types
  */
 export type Source =
@@ -94,7 +142,10 @@ export type Source =
   | ScreenCaptureSource
   | CameraSource
   | CaptureCardSource
-  | AudioDeviceSource;
+  | AudioDeviceSource
+  | ColorSource
+  | TextSource
+  | BrowserSource;
 
 // Device discovery result types
 
@@ -158,6 +209,9 @@ export function sourceHasVideo(source: Source): boolean {
     case 'screenCapture':
     case 'camera':
     case 'captureCard':
+    case 'color':
+    case 'text':
+    case 'browser':
       return true;
     case 'mediaFile':
       return !source.audioOnly;
@@ -179,6 +233,9 @@ export function sourceHasAudio(source: Source): boolean {
     case 'screenCapture':
       return source.captureAudio;
     case 'camera':
+    case 'color':
+    case 'text':
+    case 'browser':
       return false;
   }
 }
@@ -264,6 +321,62 @@ export function createDefaultAudioDeviceSource(
   };
 }
 
+export function createDefaultColorSource(
+  name = 'Color Fill',
+  color = '#7C3AED'
+): ColorSource {
+  return {
+    type: 'color',
+    id: crypto.randomUUID(),
+    name,
+    color,
+    opacity: 1.0,
+  };
+}
+
+export function createDefaultTextSource(
+  name = 'Text',
+  content = ''
+): TextSource {
+  return {
+    type: 'text',
+    id: crypto.randomUUID(),
+    name,
+    content,
+    fontFamily: 'Arial',
+    fontSize: 48,
+    fontWeight: 'normal',
+    fontStyle: 'normal',
+    textColor: '#FFFFFF',
+    backgroundColor: undefined,
+    backgroundOpacity: 0.8,
+    textAlign: 'center',
+    lineHeight: 1.2,
+    padding: 16,
+    outline: {
+      enabled: false,
+      color: '#000000',
+      width: 2,
+    },
+  };
+}
+
+export function createDefaultBrowserSource(
+  name = 'Browser',
+  url = ''
+): BrowserSource {
+  return {
+    type: 'browser',
+    id: crypto.randomUUID(),
+    name,
+    url,
+    width: 1920,
+    height: 1080,
+    customCss: undefined,
+    refreshInterval: 0,
+  };
+}
+
 /**
  * Get a human-readable label for source type
  */
@@ -281,6 +394,12 @@ export function getSourceTypeLabel(type: SourceType): string {
       return 'Capture Card';
     case 'audioDevice':
       return 'Audio Device';
+    case 'color':
+      return 'Color';
+    case 'text':
+      return 'Text';
+    case 'browser':
+      return 'Browser';
   }
 }
 
@@ -301,5 +420,18 @@ export function getSourceTypeIcon(type: SourceType): string {
       return 'Usb';
     case 'audioDevice':
       return 'Mic';
+    case 'color':
+      return 'Palette';
+    case 'text':
+      return 'Type';
+    case 'browser':
+      return 'Globe';
   }
+}
+
+/**
+ * Check if source renders via pure CSS (no WebRTC needed)
+ */
+export function isClientSideSource(source: Source): boolean {
+  return source.type === 'color' || source.type === 'text' || source.type === 'browser';
 }
