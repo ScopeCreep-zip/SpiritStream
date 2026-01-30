@@ -325,7 +325,6 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
                   <Toggle
                     checked={enabledGroups.has(group.id)}
                     onChange={(checked) => handleGroupToggle(group.id, checked)}
-                    onClick={(e) => e.stopPropagation()}
                   />
                 }
               >

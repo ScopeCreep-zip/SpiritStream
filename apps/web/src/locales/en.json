@@ -164,7 +164,8 @@
       "50": "50 FPS",
       "60": "60 FPS"
     },
-    "generatePts": "Generate PTS timestamps",
+    "generatePts": "Timestamp & Audio Sync",
+    "generatePtsDescription": "Generates timestamps and syncs audio timing. Improves stream stability and fixes encoding issues at minor CPU cost.",
     "hardware": "Hardware",
     "keyframeInterval": "Keyframe Interval",
     "keyframeIntervalHelper": "Recommended: 2 seconds for most platforms",
@@ -727,6 +728,8 @@
     "dataExported": "Data exported successfully",
     "groupDuplicated": "Output group \"{{name}}\" duplicated",
     "groupRemoved": "Output group removed",
+    "groupStarted": "Output group started",
+    "groupStopped": "Output group stopped",
     "importFailed": "Failed to import profile",
     "keyRotationFailed": "Key rotation failed: {{error}}",
     "keyRotationSuccess": "Machine key rotated. {{profiles}} profiles updated, {{keys}} keys re-encrypted.",

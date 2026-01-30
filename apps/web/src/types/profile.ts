@@ -64,6 +64,7 @@ export interface OutputGroup {
   id: string;
   name: string;
   isDefault?: boolean; // True for the immutable passthrough group
+  generatePts?: boolean; // Generate PTS timestamps and sync audio (default: true)
   video: VideoSettings;
   audio: AudioSettings;
   container: ContainerSettings;
@@ -137,6 +138,7 @@ export const createDefaultOutputGroup = (): OutputGroup => ({
   id: crypto.randomUUID(),
   name: 'New Output Group',
   isDefault: false,
+  generatePts: true,
   video: createDefaultVideoSettings(),
   audio: createDefaultAudioSettings(),
   container: createDefaultContainerSettings(),
@@ -147,6 +149,7 @@ export const createPassthroughOutputGroup = (): OutputGroup => ({
   id: 'default',
   name: 'Passthrough (Default)',
   isDefault: true,
+  generatePts: true,
   video: createDefaultVideoSettings(), // codec: 'copy'
   audio: createDefaultAudioSettings(), // codec: 'copy'
   container: createDefaultContainerSettings(),

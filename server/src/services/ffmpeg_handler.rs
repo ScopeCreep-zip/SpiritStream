@@ -1556,10 +1556,34 @@ impl FFmpegHandler {
         let use_stream_copy = group.video.codec.eq_ignore_ascii_case("copy")
             && group.audio.codec.eq_ignore_ascii_case("copy");
 
-        let mut args = vec![
-            "-i".to_string(),
-            self.relay_input_url_for_group(&group.id),
-        ];
+        let mut args = Vec::new();
+
+        // Build fflags: always discard corrupt frames, optionally generate PTS
+        // +discardcorrupt: silently drop corrupt frames (always good for live streaming)
+        // +genpts: generate fresh presentation timestamps (helps with timing issues)
+        let fflags = if group.generate_pts {
+            "+discardcorrupt+genpts"
+        } else {
+            "+discardcorrupt"
+        };
+        args.push("-fflags".to_string());
+        args.push(fflags.to_string());
+
+        // Copy timestamps from input when PTS generation is enabled
+        if group.generate_pts {
+            args.push("-copyts".to_string());
+        }
+
+        // Input source
+        args.push("-i".to_string());
+        args.push(self.relay_input_url_for_group(&group.id));
+
+        // Audio sync when PTS generation is enabled
+        // -async 1: resample audio to match timestamps, fixing drift
+        if group.generate_pts {
+            args.push("-async".to_string());
+            args.push("1".to_string());
+        }
 
         if use_stream_copy {
             args.push("-c:v".to_string()); args.push("copy".to_string());
