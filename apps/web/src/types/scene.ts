@@ -19,7 +19,9 @@ export type TransitionType =
   | 'wipeLeft'
   | 'wipeRight'
   | 'wipeUp'
-  | 'wipeDown';
+  | 'wipeDown'
+  | 'stinger' // Video stinger transition
+  | 'lumaWipe'; // Luma/gradient wipe transition
 
 /**
  * Transition configuration
@@ -29,6 +31,16 @@ export interface SceneTransition {
   durationMs: number; // 100-2000, default 300
   /** Color for fadeToColor transition (hex string, e.g. '#000000') */
   color?: string;
+  /** Path to stinger video file for stinger transition */
+  stingerFilePath?: string;
+  /** Whether to mute stinger audio */
+  stingerAudioMuted?: boolean;
+  /** Transition point in stinger video (0-1, where 0.5 = halfway) */
+  stingerTransitionPoint?: number;
+  /** Path to grayscale luma image for lumaWipe transition */
+  lumaWipeImage?: string;
+  /** Whether to invert the luma mask */
+  lumaWipeInvert?: boolean;
 }
 
 /**
@@ -380,6 +392,10 @@ export function getTransitionTypeLabel(type: TransitionType): string {
       return 'Wipe Up';
     case 'wipeDown':
       return 'Wipe Down';
+    case 'stinger':
+      return 'Stinger';
+    case 'lumaWipe':
+      return 'Luma Wipe';
     default:
       return type;
   }
@@ -401,6 +417,8 @@ export const TRANSITION_TYPES: TransitionType[] = [
   'wipeRight',
   'wipeUp',
   'wipeDown',
+  'stinger',
+  'lumaWipe',
 ];
 
 /**

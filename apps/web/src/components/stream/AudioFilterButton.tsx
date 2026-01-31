@@ -8,6 +8,7 @@ import { SlidersHorizontal, Plus, Trash2, GripVertical, Settings } from 'lucide-
 import {
   type AudioFilter,
   type AudioFilterType,
+  type Source,
   AUDIO_FILTER_TYPES,
   getAudioFilterLabel,
   createCompressorFilter,
@@ -15,6 +16,7 @@ import {
   createNoiseSuppressionFilter,
   createGainFilter,
   createExpanderFilter,
+  sourceHasAudio,
 } from '@/types/source';
 
 interface AudioFilterButtonProps {
@@ -22,16 +24,24 @@ interface AudioFilterButtonProps {
   trackName: string;
   filters: AudioFilter[];
   onFiltersChange: (filters: AudioFilter[]) => void;
+  /** Available sources for sidechain selection */
+  availableSources?: Source[];
 }
 
 export function AudioFilterButton({
-  trackId: _trackId,
+  trackId,
   trackName,
   filters,
   onFiltersChange,
+  availableSources = [],
 }: AudioFilterButtonProps) {
-  // _trackId is available for future use (e.g., persisting filter configs per track)
   const { t } = useTranslation();
+
+  // Filter available sources to only those with audio (for sidechain options)
+  // Exclude the current track's source from sidechain options
+  const sidechainOptions = availableSources.filter(
+    (s) => sourceHasAudio(s) && s.id !== trackId
+  );
   const [isOpen, setIsOpen] = useState(false);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [editingFilterId, setEditingFilterId] = useState<string | null>(null);
@@ -190,6 +200,7 @@ export function AudioFilterButton({
             <AudioFilterSettings
               filter={filters.find((f) => f.id === editingFilterId)!}
               onUpdate={(updates) => handleFilterUpdate(editingFilterId, updates)}
+              sidechainOptions={sidechainOptions}
             />
           )}
 
@@ -230,9 +241,11 @@ export function AudioFilterButton({
 interface AudioFilterSettingsProps {
   filter: AudioFilter;
   onUpdate: (updates: Partial<AudioFilter>) => void;
+  /** Available sources for sidechain selection (compressor only) */
+  sidechainOptions?: Source[];
 }
 
-function AudioFilterSettings({ filter, onUpdate }: AudioFilterSettingsProps) {
+function AudioFilterSettings({ filter, onUpdate, sidechainOptions = [] }: AudioFilterSettingsProps) {
   const { t } = useTranslation();
 
   const renderSlider = (
@@ -328,6 +341,34 @@ function AudioFilterSettings({ filter, onUpdate }: AudioFilterSettingsProps) {
             ' dB',
             (v) => onUpdate({ outputGain: v })
           )}
+
+          {/* Sidechain Source Selector for Audio Ducking */}
+          <div className="space-y-1 pt-2 border-t border-[var(--border-muted)]">
+            <div className="flex justify-between text-[10px]">
+              <span className="text-[var(--text-muted)]">
+                {t('audio.sidechainSource', { defaultValue: 'Sidechain Source' })}
+              </span>
+            </div>
+            <select
+              value={filter.sidechainSourceId || ''}
+              onChange={(e) => onUpdate({ sidechainSourceId: e.target.value || undefined })}
+              className="w-full h-6 px-1.5 text-[10px] bg-[var(--bg-base)] border border-[var(--border-default)] rounded text-[var(--text-secondary)] focus:outline-none focus:ring-1 focus:ring-primary/50"
+            >
+              <option value="">
+                {t('audio.noSidechain', { defaultValue: 'None (no ducking)' })}
+              </option>
+              {sidechainOptions.map((source) => (
+                <option key={source.id} value={source.id}>
+                  {source.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-[9px] text-[var(--text-muted)] leading-tight">
+              {t('audio.sidechainHelp', {
+                defaultValue: 'When sidechain source is active, this track will be ducked (audio ducking).',
+              })}
+            </p>
+          </div>
         </>
       )}
 

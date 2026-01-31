@@ -470,3 +470,50 @@ pre {
   animation: fade-to-color-overlay var(--transition-duration, 300ms) ease-in-out forwards;
   background: var(--transition-color, #000000);
 }
+
+/* Stinger transition - video overlay plays on top */
+/* The scene switch happens at the stinger transition point (default 50%) */
+.scene-transition-stinger-out {
+  animation: scene-fade-out calc(var(--transition-duration, 500ms) * 0.5) ease-out forwards;
+  animation-delay: calc(var(--transition-duration, 500ms) * var(--stinger-point, 0.5));
+}
+
+.scene-transition-stinger-in {
+  animation: scene-fade-in calc(var(--transition-duration, 500ms) * 0.5) ease-in forwards;
+  animation-delay: calc(var(--transition-duration, 500ms) * var(--stinger-point, 0.5));
+  opacity: 0;
+}
+
+/* Luma Wipe - uses mask-image with animated position */
+@keyframes luma-wipe {
+  from { mask-position: -100% 0; }
+  to { mask-position: 100% 0; }
+}
+
+@keyframes luma-wipe-reverse {
+  from { mask-position: 100% 0; }
+  to { mask-position: -100% 0; }
+}
+
+.scene-transition-lumaWipe-out {
+  mask-image: var(--luma-image);
+  mask-size: 200% 100%;
+  mask-repeat: no-repeat;
+  animation: luma-wipe var(--transition-duration, 500ms) ease-in-out forwards;
+}
+
+.scene-transition-lumaWipe-in {
+  mask-image: var(--luma-image);
+  mask-size: 200% 100%;
+  mask-repeat: no-repeat;
+  animation: luma-wipe-reverse var(--transition-duration, 500ms) ease-in-out forwards;
+}
+
+/* Luma wipe overlay effect */
+.luma-wipe-overlay {
+  background: black;
+  mask-image: var(--luma-image);
+  mask-size: 200% 100%;
+  mask-repeat: no-repeat;
+  animation: luma-wipe var(--transition-duration, 500ms) ease-in-out forwards;
+}

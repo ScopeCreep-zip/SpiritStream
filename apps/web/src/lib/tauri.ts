@@ -7,6 +7,7 @@ import type {
   Source,
   CameraDevice,
   DisplayInfo,
+  WindowInfo,
   AudioInputDevice,
   CaptureCardDevice,
 } from '@/types/source';
@@ -145,6 +146,7 @@ export const api = {
       invoke<{
         cameras: CameraDevice[];
         displays: DisplayInfo[];
+        windows: WindowInfo[];
         audioDevices: AudioInputDevice[];
         captureCards: CaptureCardDevice[];
       }>('refresh_devices'),
@@ -152,6 +154,8 @@ export const api = {
     listCameras: () => invoke<CameraDevice[]>('list_cameras'),
     /** List available displays for screen capture */
     listDisplays: () => invoke<DisplayInfo[]>('list_displays'),
+    /** List available windows for window capture */
+    listWindows: () => invoke<WindowInfo[]>('list_windows'),
     /** List available audio input devices */
     listAudioDevices: () => invoke<AudioInputDevice[]>('list_audio_devices'),
     /** List available capture cards */

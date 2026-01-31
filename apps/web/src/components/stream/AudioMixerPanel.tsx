@@ -128,6 +128,7 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
                     muted={track.muted}
                     solo={track.solo}
                     filters={track.audioFilters || []}
+                    availableSources={profile.sources}
                     onVolumeChange={(v) => handleVolumeChange(track.sourceId, v)}
                     onMuteToggle={(m) => handleMuteToggle(track.sourceId, m)}
                     onSoloToggle={(s) => handleSoloToggle(track.sourceId, s)}
@@ -189,6 +190,7 @@ interface AudioTrackControlProps {
   solo: boolean;
   filters?: AudioFilter[];
   isMaster?: boolean;
+  availableSources?: import('@/types/source').Source[];
   onVolumeChange: (volume: number) => void;
   onMuteToggle: (muted: boolean) => void;
   onSoloToggle: (solo: boolean) => void;
@@ -207,6 +209,7 @@ const AudioTrackControl = React.memo(function AudioTrackControl({
   solo,
   filters = [],
   isMaster,
+  availableSources = [],
   onVolumeChange,
   onMuteToggle,
   onSoloToggle,
@@ -310,6 +313,7 @@ const AudioTrackControl = React.memo(function AudioTrackControl({
               trackName={label}
               filters={filters}
               onFiltersChange={onFiltersChange}
+              availableSources={availableSources}
             />
           )}
         </div>

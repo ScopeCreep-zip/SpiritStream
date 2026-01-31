@@ -51,6 +51,7 @@ export function StudioModeLayout({
         <SceneCanvas
           scene={previewScene}
           sources={sources}
+          scenes={profile.scenes}
           selectedLayerId={selectedLayerId}
           onSelectLayer={onSelectLayer}
           profileName={profile.name}
@@ -74,6 +75,7 @@ export function StudioModeLayout({
         <SceneCanvas
           scene={programScene}
           sources={sources}
+          scenes={profile.scenes}
           selectedLayerId={null}
           onSelectLayer={() => {}}
           profileName={profile.name}

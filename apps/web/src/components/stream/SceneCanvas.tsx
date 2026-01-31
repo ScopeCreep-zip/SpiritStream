@@ -16,14 +16,15 @@ import React, { useRef, useState, useLayoutEffect, useEffect, useCallback } from
 import { Card } from '@/components/ui/Card';
 import type { Scene, SourceLayer, Transform } from '@/types/scene';
 import type { Source } from '@/types/source';
-import { api } from '@/lib/backend';
 import { useSceneStore } from '@/stores/sceneStore';
 import { useProfileStore } from '@/stores/profileStore';
 import { SharedWebRTCPlayer } from './SharedWebRTCPlayer';
 import { StaticMediaPlayer } from './StaticMediaPlayer';
 import { TextSourceRenderer } from './TextSourceRenderer';
 import { BrowserSourceRenderer } from './BrowserSourceRenderer';
-import type { ColorSource, TextSource, BrowserSource } from '@/types/source';
+import { NestedSceneRenderer } from './NestedSceneRenderer';
+import { MediaPlaylistRenderer } from './MediaPlaylistRenderer';
+import type { ColorSource, TextSource, BrowserSource, NestedSceneSource, MediaPlaylistSource } from '@/types/source';
 
 type ViewMode = 'edit' | 'preview';
 
@@ -81,6 +82,8 @@ interface SceneCanvasProps {
   profileName?: string;
   /** Studio mode: 'preview' (green, editable), 'program' (red, read-only), or undefined for normal */
   studioMode?: 'preview' | 'program';
+  /** All scenes in the profile (for nested scene rendering) */
+  scenes?: Scene[];
 }
 
 export function SceneCanvas({
@@ -90,11 +93,17 @@ export function SceneCanvas({
   onSelectLayer,
   profileName,
   studioMode,
+  scenes = [],
 }: SceneCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>('edit');
+  // In Studio Mode: Program pane always shows composed preview, Preview pane defaults to preview but can toggle
+  // In Normal Mode: defaults to edit view
+  const [viewMode, setViewMode] = useState<ViewMode>(studioMode ? 'preview' : 'edit');
   const { updateLayer } = useSceneStore();
   const { updateCurrentLayer } = useProfileStore();
+
+  // Force preview mode in Program pane (can't edit live output)
+  const effectiveViewMode = studioMode === 'program' ? 'preview' : viewMode;
 
   // Start with small default dimensions - the ResizeObserver will correct them
   // This prevents the initial render from causing layout expansion
@@ -218,13 +227,13 @@ export function SceneCanvas({
           <span className="text-sm font-medium text-[var(--text-secondary)]">Canvas</span>
         )}
 
-        {/* Right side: Edit/Preview toggle (hidden in Program mode) */}
-        {studioMode !== 'program' && (
+        {/* Right side: Edit/Preview toggle (hidden in Studio Mode - both panes render layers) */}
+        {!studioMode && (
           <div className="flex items-center gap-1 bg-[var(--bg-sunken)] p-1 rounded-lg">
             <button
               type="button"
               className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                viewMode === 'edit'
+                effectiveViewMode === 'edit'
                   ? 'bg-[var(--bg-base)] text-[var(--text-primary)] shadow-sm'
                   : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
               }`}
@@ -235,7 +244,7 @@ export function SceneCanvas({
             <button
               type="button"
               className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                viewMode === 'preview'
+                effectiveViewMode === 'preview'
                   ? 'bg-[var(--bg-base)] text-[var(--text-primary)] shadow-sm'
                   : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
               }`}
@@ -259,17 +268,10 @@ export function SceneCanvas({
           className="relative bg-[var(--bg-base)] shadow-2xl"
           style={{ width: dimensions.width, height: dimensions.height }}
         >
-          {viewMode === 'preview' && profileName ? (
-            <ComposedPreview
-              profileName={profileName}
-              sceneId={scene.id}
-              width={dimensions.width}
-              height={dimensions.height}
-              canvasWidth={scene.canvasWidth}
-              canvasHeight={scene.canvasHeight}
-            />
-          ) : (
-            sortedLayers.map((layer) => (
+          {/* Render layers - read-only in Preview mode (outside Studio) or Program mode (Studio) */}
+          {sortedLayers.map((layer) => {
+            const isReadOnly = studioMode === 'program' || (effectiveViewMode === 'preview' && !studioMode);
+            return (
               <LayerPreview
                 key={layer.id}
                 layer={layer}
@@ -278,18 +280,21 @@ export function SceneCanvas({
                 canvasHeight={scene.canvasHeight}
                 sourceName={getSourceName(layer.sourceId)}
                 source={getSource(layer.sourceId)}
-                isSelected={layer.id === selectedLayerId}
-                onClick={() => onSelectLayer(layer.id)}
-                onTransformChange={(transform) => handleLayerTransformChange(layer.id, transform)}
+                isSelected={isReadOnly ? false : layer.id === selectedLayerId}
+                onClick={isReadOnly ? () => {} : () => onSelectLayer(layer.id)}
+                onTransformChange={isReadOnly ? () => {} : (transform) => handleLayerTransformChange(layer.id, transform)}
+                scenes={scenes}
+                sources={sources}
+                readOnly={isReadOnly}
               />
-            ))
-          )}
+            );
+          })}
 
           {/* Canvas size indicator */}
           <div className="absolute bottom-2 right-2 text-sm text-[var(--text-muted)] bg-[var(--bg-elevated)] px-2 py-1 rounded shadow pointer-events-none">
             {scene.canvasWidth}x{scene.canvasHeight}
-            {viewMode === 'preview' && (
-              <span className="ml-2 text-[var(--status-live)]">Live</span>
+            {effectiveViewMode === 'preview' && !studioMode && (
+              <span className="ml-2 text-primary">Preview</span>
             )}
           </div>
         </div>
@@ -308,6 +313,12 @@ interface LayerPreviewProps {
   isSelected: boolean;
   onClick: () => void;
   onTransformChange: (transform: Partial<Transform>) => void;
+  /** All scenes in the profile (for nested scene rendering) */
+  scenes: Scene[];
+  /** All sources in the profile (for nested scene rendering) */
+  sources: Source[];
+  /** Read-only mode (no selection ring, no drag handles) - used in Program pane */
+  readOnly?: boolean;
 }
 
 /**
@@ -326,6 +337,9 @@ const LayerPreview = React.memo(function LayerPreview({
   isSelected,
   onClick,
   onTransformChange,
+  scenes,
+  sources,
+  readOnly = false,
 }: LayerPreviewProps) {
   const { transform, visible } = layer;
 
@@ -513,10 +527,10 @@ const LayerPreview = React.memo(function LayerPreview({
   return (
     <div
       className={`absolute transition-shadow ${
-        layer.locked ? 'cursor-not-allowed' : 'cursor-move'
+        readOnly ? 'cursor-default' : layer.locked ? 'cursor-not-allowed' : 'cursor-move'
       } ${
-        isSelected ? 'ring-2 ring-primary shadow-lg' : 'hover:ring-1 hover:ring-primary/30'
-      } ${isDragging || isResizing ? 'cursor-grabbing' : ''}`}
+        !readOnly && isSelected ? 'ring-2 ring-primary shadow-lg' : !readOnly ? 'hover:ring-1 hover:ring-primary/30' : ''
+      } ${!readOnly && (isDragging || isResizing) ? 'cursor-grabbing' : ''}`}
       style={{
         left: 0,
         top: 0,
@@ -526,10 +540,11 @@ const LayerPreview = React.memo(function LayerPreview({
         willChange: isDragging || isResizing ? 'transform, width, height' : 'auto',
       }}
       onClick={(e) => {
+        if (readOnly) return;
         e.stopPropagation();
         onClick();
       }}
-      onMouseDown={handleDragStart}
+      onMouseDown={readOnly ? undefined : handleDragStart}
     >
       {/* Live preview via shared WebRTC, CSS rendering, or static rendering for images/HTML */}
       <div className="w-full h-full bg-[var(--bg-sunken)] overflow-hidden pointer-events-none">
@@ -557,6 +572,21 @@ const LayerPreview = React.memo(function LayerPreview({
               source={source as BrowserSource}
               width={displayWidth}
               height={displayHeight}
+            />
+          ) : // Nested scene - recursive scene rendering
+          source.type === 'nestedScene' ? (
+            <NestedSceneRenderer
+              source={source as NestedSceneSource}
+              scenes={scenes}
+              sources={sources}
+              width={displayWidth}
+              height={displayHeight}
+            />
+          ) : // Media playlist - client-side playlist playback
+          source.type === 'mediaPlaylist' ? (
+            <MediaPlaylistRenderer
+              source={source as MediaPlaylistSource}
+              isLayerPreview
             />
           ) : // Static media file (image/HTML) - no WebRTC needed
           source.type === 'mediaFile' && 'filePath' in source && isStaticMediaFile(source.filePath) ? (
@@ -588,8 +618,8 @@ const LayerPreview = React.memo(function LayerPreview({
         )}
       </div>
 
-      {/* Resize handles - only show when selected and not locked */}
-      {isSelected && !layer.locked && (
+      {/* Resize handles - only show when selected, not locked, and not read-only */}
+      {isSelected && !layer.locked && !readOnly && (
         <>
           <div
             className="absolute -top-2 -left-2 w-6 h-6 flex items-center justify-center cursor-nw-resize z-10"
@@ -621,175 +651,3 @@ const LayerPreview = React.memo(function LayerPreview({
   );
 });
 
-interface ComposedPreviewProps {
-  profileName: string;
-  sceneId: string;
-  width: number;
-  height: number;
-  canvasWidth: number;
-  canvasHeight: number;
-}
-
-/**
- * ComposedPreview - Shows the composed scene output from the backend
- * Uses fixed preview dimensions for stable polling
- */
-function ComposedPreview({
-  profileName,
-  sceneId,
-  width,
-  height,
-  canvasWidth,
-  canvasHeight,
-}: ComposedPreviewProps) {
-  const [previewError, setPreviewError] = useState(false);
-  const [previewLoading, setPreviewLoading] = useState(true);
-  const [snapshotUrl, setSnapshotUrl] = useState<string | null>(null);
-
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const errorCountRef = useRef(0);
-  const isPendingRef = useRef(false);
-  const backoffDelayRef = useRef(150);
-  const mountedRef = useRef(true);
-
-  // Use fixed preview dimensions
-  const previewWidth = Math.min(Math.max(width * 2, 640), 1920);
-  const previewHeight = Math.min(Math.max(height * 2, 360), 1080);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    setPreviewError(false);
-    setPreviewLoading(true);
-    errorCountRef.current = 0;
-    backoffDelayRef.current = 150;
-    isPendingRef.current = false;
-
-    const fetchSnapshot = () => {
-      if (isPendingRef.current || !mountedRef.current) {
-        timeoutRef.current = setTimeout(fetchSnapshot, backoffDelayRef.current);
-        return;
-      }
-
-      const url = api.preview.getSceneSnapshotUrl(profileName, sceneId, previewWidth, previewHeight, 3);
-      isPendingRef.current = true;
-      setSnapshotUrl(url);
-    };
-
-    fetchSnapshot();
-
-    return () => {
-      mountedRef.current = false;
-      isPendingRef.current = false;
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
-    };
-  }, [profileName, sceneId]); // Only depend on profile/scene, not dimensions
-
-  const handleLoad = useCallback(() => {
-    if (!mountedRef.current) return;
-
-    isPendingRef.current = false;
-    setPreviewLoading(false);
-    setPreviewError(false);
-    errorCountRef.current = 0;
-    backoffDelayRef.current = 150;
-
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => {
-      if (mountedRef.current) {
-        const url = api.preview.getSceneSnapshotUrl(profileName, sceneId, previewWidth, previewHeight, 3);
-        isPendingRef.current = true;
-        setSnapshotUrl(url);
-      }
-    }, backoffDelayRef.current);
-  }, [profileName, sceneId, previewWidth, previewHeight]);
-
-  const handleError = useCallback(() => {
-    if (!mountedRef.current) return;
-
-    isPendingRef.current = false;
-    errorCountRef.current += 1;
-    backoffDelayRef.current = Math.min(backoffDelayRef.current * 1.5, 5000);
-
-    if (errorCountRef.current >= 5) {
-      setPreviewLoading(false);
-      setPreviewError(true);
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
-      return;
-    }
-
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => {
-      if (mountedRef.current) {
-        const url = api.preview.getSceneSnapshotUrl(profileName, sceneId, previewWidth, previewHeight, 3);
-        isPendingRef.current = true;
-        setSnapshotUrl(url);
-      }
-    }, backoffDelayRef.current);
-  }, [profileName, sceneId, previewWidth, previewHeight]);
-
-  if (previewError) {
-    return (
-      <div className="w-full h-full bg-gradient-to-br from-[var(--bg-elevated)] to-[var(--bg-sunken)] flex flex-col items-center justify-center gap-2">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          className="w-8 h-8 text-[var(--text-muted)]"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-        >
-          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-          <line x1="12" y1="9" x2="12" y2="13" />
-          <line x1="12" y1="17" x2="12.01" y2="17" />
-        </svg>
-        <span className="text-[var(--text-muted)] text-sm">Preview unavailable</span>
-        <span className="text-[var(--text-muted)] text-xs opacity-75">
-          {canvasWidth}x{canvasHeight}
-        </span>
-        <button
-          type="button"
-          className="mt-2 px-3 py-1 text-xs bg-[var(--bg-elevated)] rounded-md hover:bg-[var(--bg-base)] transition-colors"
-          onClick={() => {
-            setPreviewError(false);
-            setPreviewLoading(true);
-            errorCountRef.current = 0;
-            backoffDelayRef.current = 150;
-            const url = api.preview.getSceneSnapshotUrl(profileName, sceneId, previewWidth, previewHeight, 3);
-            isPendingRef.current = true;
-            setSnapshotUrl(url);
-          }}
-        >
-          Retry
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <>
-      {previewLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[var(--bg-elevated)] to-[var(--bg-sunken)]">
-          <div className="flex flex-col items-center gap-2">
-            <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-            <span className="text-[var(--text-muted)] text-xs">Loading composed preview...</span>
-          </div>
-        </div>
-      )}
-      {snapshotUrl && (
-        <img
-          src={snapshotUrl}
-          alt="Composed scene preview"
-          className="w-full h-full object-contain"
-          onLoad={handleLoad}
-          onError={handleError}
-        />
-      )}
-    </>
-  );
-}
