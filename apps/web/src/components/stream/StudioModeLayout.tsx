@@ -45,9 +45,9 @@ export function StudioModeLayout({
   const canTake = previewSceneId !== programSceneId && !isTransitioning;
 
   return (
-    <div className="flex flex-1 gap-2 min-h-0">
+    <div className="flex flex-1 gap-2 min-h-0 min-w-0 overflow-hidden">
       {/* Preview Pane - Editable */}
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 min-h-0 h-full overflow-hidden">
         <SceneCanvas
           scene={previewScene}
           sources={sources}
@@ -59,7 +59,7 @@ export function StudioModeLayout({
       </div>
 
       {/* Controls Column */}
-      <div className="w-20 flex flex-col items-center justify-center gap-3 py-4">
+      <div className="w-20 flex flex-col items-center justify-center gap-3 py-4 flex-shrink-0">
         <TakeButton onClick={executeTake} disabled={!canTake} />
         <StudioModeSettings />
         <TBar disabled={!canTake} />
@@ -70,7 +70,7 @@ export function StudioModeLayout({
       </div>
 
       {/* Program Pane - Read-only (Live) */}
-      <div className="flex-1 min-w-0 pointer-events-none">
+      <div className="flex-1 min-w-0 min-h-0 h-full overflow-hidden pointer-events-none">
         <SceneCanvas
           scene={programScene}
           sources={sources}

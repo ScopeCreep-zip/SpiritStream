@@ -70,6 +70,13 @@ export const api = {
       invoke<string[]>('get_recent_logs', { maxLines }),
     exportLogs: (path: string, content: string) =>
       invoke<void>('export_logs', { path, content }),
+    /** Get platform-specific default directories */
+    getDefaultPaths: async (): Promise<DefaultPaths> => {
+      const response = await fetch('http://127.0.0.1:8008/api/system/default-paths');
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.error || 'Failed to get default paths');
+      return data.data as DefaultPaths;
+    },
   },
   settings: {
     get: () => invoke<AppSettings>('get_settings'),
@@ -215,4 +222,13 @@ export interface WebRtcInfo {
   whepUrl?: string;
   wsUrl?: string;
   streamName?: string;
+}
+
+/** Platform-specific default directories */
+export interface DefaultPaths {
+  platform: 'macos' | 'windows' | 'linux';
+  home: string;
+  videos: string;
+  recordings: string;
+  replays: string;
 }

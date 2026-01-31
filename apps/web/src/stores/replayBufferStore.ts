@@ -23,6 +23,13 @@ interface ReplayBufferStoreState {
   lastSavedPath: string | null;
   /** Error message if any */
   error: string | null;
+  /** Whether default paths have been initialized */
+  initialized: boolean;
+
+  /**
+   * Initialize default output path from backend
+   */
+  initializeDefaultPath: () => Promise<void>;
 
   /**
    * Start the replay buffer
@@ -96,15 +103,36 @@ function stopStatePolling() {
   }
 }
 
+// Fallback path used until platform-specific path is fetched
+const FALLBACK_OUTPUT_PATH = '~/Videos/Replays';
+
 export const useReplayBufferStore = create<ReplayBufferStoreState>((set, get) => ({
   isActive: false,
   duration: 30, // Default 30 seconds
   bufferedSeconds: 0,
-  outputPath: '~/Videos/Replays',
+  outputPath: FALLBACK_OUTPUT_PATH,
   isSaving: false,
   isLoading: false,
   lastSavedPath: null,
   error: null,
+  initialized: false,
+
+  initializeDefaultPath: async () => {
+    // Only initialize once
+    if (get().initialized) return;
+
+    try {
+      const paths = await api.system.getDefaultPaths();
+      set({
+        outputPath: paths.replays,
+        initialized: true
+      });
+    } catch (err) {
+      // Fallback to default on error - don't fail initialization
+      console.warn('Failed to get default paths, using fallback:', err);
+      set({ initialized: true });
+    }
+  },
 
   startBuffer: async () => {
     const { duration, outputPath } = get();

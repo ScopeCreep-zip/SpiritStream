@@ -12,7 +12,7 @@
  * - GPU-accelerated movement via CSS transforms
  * - Adaptive framerate preview polling (no rate limiting)
  */
-import React, { useRef, useState, useLayoutEffect, useMemo, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useLayoutEffect, useEffect, useCallback } from 'react';
 import { Card } from '@/components/ui/Card';
 import type { Scene, SourceLayer, Transform } from '@/types/scene';
 import type { Source } from '@/types/source';
@@ -96,27 +96,15 @@ export function SceneCanvas({
   const { updateLayer } = useSceneStore();
   const { updateCurrentLayer } = useProfileStore();
 
-  // Calculate initial dimensions synchronously based on viewport
-  const initialDimensions = useMemo(() => {
-    if (!scene) return { width: 640, height: 360 };
-    const estimatedWidth = Math.max(400, window.innerWidth - 260 - 448 - 64);
-    const estimatedHeight = Math.max(300, window.innerHeight - 300);
-    return calculateCanvasDimensions(
-      scene.canvasWidth,
-      scene.canvasHeight,
-      estimatedWidth,
-      estimatedHeight
-    );
-  }, [scene?.canvasWidth, scene?.canvasHeight]);
-
-  const [dimensions, setDimensions] = useState(initialDimensions);
-
-  useLayoutEffect(() => {
-    setDimensions(initialDimensions);
-  }, [initialDimensions]);
+  // Start with small default dimensions - the ResizeObserver will correct them
+  // This prevents the initial render from causing layout expansion
+  const [dimensions, setDimensions] = useState({ width: 320, height: 180 });
 
   useLayoutEffect(() => {
     if (!containerRef.current || !scene) return;
+
+    let retryTimeout: ReturnType<typeof setTimeout> | null = null;
+    let rafId: number | null = null;
 
     const updateDimensions = () => {
       const container = containerRef.current;
@@ -125,7 +113,12 @@ export function SceneCanvas({
       const availableWidth = container.clientWidth;
       const availableHeight = container.clientHeight;
 
-      if (availableWidth <= 0 || availableHeight <= 0) return;
+      // If container hasn't been laid out yet, schedule a retry
+      if (availableWidth <= 0 || availableHeight <= 0) {
+        if (retryTimeout) clearTimeout(retryTimeout);
+        retryTimeout = setTimeout(updateDimensions, 16); // Retry next frame
+        return;
+      }
 
       const newDims = calculateCanvasDimensions(
         scene.canvasWidth,
@@ -134,14 +127,31 @@ export function SceneCanvas({
         availableHeight
       );
 
-      setDimensions(newDims);
+      // Only update if dimensions actually changed (prevents unnecessary re-renders)
+      setDimensions(prev => {
+        if (prev.width === newDims.width && prev.height === newDims.height) {
+          return prev;
+        }
+        return newDims;
+      });
     };
 
+    // Calculate dimensions synchronously on mount - useLayoutEffect runs before paint
+    // so this ensures the correct size on the first visible render
     updateDimensions();
-    const observer = new ResizeObserver(updateDimensions);
+
+    // Use ResizeObserver for subsequent changes, with requestAnimationFrame for batching
+    const observer = new ResizeObserver(() => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(updateDimensions);
+    });
     observer.observe(containerRef.current);
 
-    return () => observer.disconnect();
+    return () => {
+      if (retryTimeout) clearTimeout(retryTimeout);
+      if (rafId) cancelAnimationFrame(rafId);
+      observer.disconnect();
+    };
   }, [scene?.canvasWidth, scene?.canvasHeight]);
 
   // Handle layer transform updates (debounced save to backend)

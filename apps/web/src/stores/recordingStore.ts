@@ -3,6 +3,7 @@
  * Manages local recording state
  */
 import { create } from 'zustand';
+import { api } from '@/lib/backend';
 
 export type RecordingFormat = 'mp4' | 'mkv' | 'mov' | 'webm';
 
@@ -17,8 +18,11 @@ interface RecordingState {
   format: RecordingFormat;
   /** Recording error if any */
   error: string | null;
+  /** Whether default paths have been initialized */
+  initialized: boolean;
 
   // Actions
+  initializeDefaultPath: () => Promise<void>;
   startRecording: (outputPath?: string, format?: RecordingFormat) => Promise<void>;
   stopRecording: () => Promise<void>;
   setOutputPath: (path: string) => void;
@@ -27,14 +31,33 @@ interface RecordingState {
   reset: () => void;
 }
 
-const DEFAULT_OUTPUT_PATH = '~/Videos';
+// Fallback path used until platform-specific path is fetched
+const FALLBACK_OUTPUT_PATH = '~/Videos';
 
 export const useRecordingStore = create<RecordingState>((set, get) => ({
   isRecording: false,
   duration: 0,
-  outputPath: DEFAULT_OUTPUT_PATH,
+  outputPath: FALLBACK_OUTPUT_PATH,
   format: 'mp4',
   error: null,
+  initialized: false,
+
+  initializeDefaultPath: async () => {
+    // Only initialize once
+    if (get().initialized) return;
+
+    try {
+      const paths = await api.system.getDefaultPaths();
+      set({
+        outputPath: paths.recordings,
+        initialized: true
+      });
+    } catch (err) {
+      // Fallback to default on error - don't fail initialization
+      console.warn('Failed to get default paths, using fallback:', err);
+      set({ initialized: true });
+    }
+  },
 
   startRecording: async (outputPath, format) => {
     const state = get();

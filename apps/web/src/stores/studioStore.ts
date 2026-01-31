@@ -6,6 +6,44 @@ import { create } from 'zustand';
 import { useProfileStore } from './profileStore';
 import { useTransitionStore, getEffectiveTransition } from './transitionStore';
 import type { SceneTransition } from '@/types/scene';
+import { isTauri } from '@/lib/backend/env';
+
+// Minimum dimensions for Studio Mode layout
+// Width: Sources panel (224) + Preview (300) + Controls (80) + Program (300) + Properties (224) + gaps (~72) = ~1200px
+// Height: Top bar (70) + Canvases (400) + Scene bar (70) + Audio mixer (200) + gaps (80) = ~820px
+const STUDIO_MODE_MIN_WIDTH = 1200;
+const STUDIO_MODE_MIN_HEIGHT = 850;
+
+/**
+ * Ensure window is large enough for Studio Mode
+ * Only runs in Tauri environment
+ */
+async function ensureWindowSizeForStudioMode(): Promise<void> {
+  if (!isTauri()) return;
+
+  try {
+    // Dynamically import Tauri window API to avoid issues in non-Tauri environments
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    const window = getCurrentWindow();
+
+    // Get current window size
+    const currentSize = await window.innerSize();
+    const currentWidth = currentSize.width;
+    const currentHeight = currentSize.height;
+
+    // Calculate new dimensions - only increase if needed
+    const newWidth = Math.max(currentWidth, STUDIO_MODE_MIN_WIDTH);
+    const newHeight = Math.max(currentHeight, STUDIO_MODE_MIN_HEIGHT);
+
+    // Only resize if needed
+    if (newWidth > currentWidth || newHeight > currentHeight) {
+      const { LogicalSize } = await import('@tauri-apps/api/dpi');
+      await window.setSize(new LogicalSize(newWidth, newHeight));
+    }
+  } catch (err) {
+    console.warn('[StudioStore] Failed to resize window:', err);
+  }
+}
 
 interface StudioState {
   /** Whether Studio Mode is enabled */
@@ -94,6 +132,9 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     // Get current profile's active scene
     const profile = useProfileStore.getState().current;
     const activeSceneId = profile?.activeSceneId || profile?.scenes[0]?.id || null;
+
+    // Ensure window is large enough for Studio Mode
+    ensureWindowSizeForStudioMode();
 
     set({
       enabled: true,

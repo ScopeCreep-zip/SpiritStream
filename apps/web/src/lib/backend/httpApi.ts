@@ -133,6 +133,16 @@ export const api = {
       invokeHttp<void>('export_logs', { path, content }),
     downloadFfmpeg: () => invokeHttp<string>('download_ffmpeg'),
     cancelFfmpegDownload: () => invokeHttp<void>('cancel_ffmpeg_download'),
+    /** Get platform-specific default directories */
+    getDefaultPaths: async (): Promise<DefaultPaths> => {
+      const baseUrl = getBackendBaseUrl();
+      const response = await safeFetch(`${baseUrl}/api/system/default-paths`, {
+        credentials: 'include',
+      });
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.error || 'Failed to get default paths');
+      return data.data as DefaultPaths;
+    },
   },
   settings: {
     get: () => invokeHttp<AppSettings>('get_settings'),
@@ -369,4 +379,13 @@ export interface SavedReplayInfo {
   durationSecs: number;
   sizeBytes: number;
   createdAt: string;
+}
+
+/** Platform-specific default directories */
+export interface DefaultPaths {
+  platform: 'macos' | 'windows' | 'linux';
+  home: string;
+  videos: string;
+  recordings: string;
+  replays: string;
 }

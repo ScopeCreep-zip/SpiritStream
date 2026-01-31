@@ -35,28 +35,6 @@ export interface FileBrowserModalProps {
   initialPath?: string;
 }
 
-// Map server error messages to user-friendly messages
-type TFunction = (key: string, defaultValue: string) => string;
-
-function getFriendlyError(serverError: string, t: TFunction): string {
-  if (serverError.includes('Access to this directory is not allowed')) {
-    return t(
-      'fileBrowser.accessDenied',
-      'This location is outside the allowed browsing area. You can browse your home directory and common system folders.'
-    );
-  }
-  if (serverError.includes('Directory not found')) {
-    return t('fileBrowser.directoryNotFound', 'Directory not found.');
-  }
-  if (serverError.includes('Path is not a directory')) {
-    return t('fileBrowser.notADirectory', 'The selected path is not a directory.');
-  }
-  if (serverError.includes('Failed to read directory')) {
-    return t('fileBrowser.readError', 'Unable to read directory contents. Check permissions.');
-  }
-  // Return original error if no mapping found
-  return serverError;
-}
 
 /**
  * File browser modal for HTTP mode.
@@ -120,48 +98,112 @@ export function FileBrowserModal({
     return true;
   });
 
-  // Fetch directory contents
+  // Helper to fetch a directory - returns data on success, null on failure
+  const fetchDirectory = async (path: string): Promise<BrowseResponse | null> => {
+    try {
+      const baseUrl = getBackendBaseUrl();
+      const params = new URLSearchParams();
+      if (path) params.set('path', path);
+
+      const response = await safeFetch(
+        `${baseUrl}/api/files/browse?${params.toString()}`,
+        {
+          method: 'GET',
+          headers: getAuthHeaders(),
+          credentials: 'include',
+        }
+      );
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const json = await response.json();
+      if (!json.ok) {
+        return null;
+      }
+      return json.data as BrowseResponse;
+    } catch {
+      return null;
+    }
+  };
+
+  // Helper to get home directory
+  const fetchHomeDirectory = async (): Promise<string | null> => {
+    try {
+      const baseUrl = getBackendBaseUrl();
+      const response = await safeFetch(`${baseUrl}/api/files/home`, {
+        method: 'GET',
+        headers: getAuthHeaders(),
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        const json = await response.json();
+        if (json.ok && json.data?.path) {
+          return json.data.path;
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  // Browse to a directory - simple version, no fallback logic
   const browse = useCallback(
     async (path: string) => {
       setLoading(true);
       setError(null);
       setSelectedEntry(null);
 
-      try {
-        const baseUrl = getBackendBaseUrl();
-        const params = new URLSearchParams();
-        if (path) params.set('path', path);
+      const data = await fetchDirectory(path);
 
-        const response = await safeFetch(
-          `${baseUrl}/api/files/browse?${params.toString()}`,
-          {
-            method: 'GET',
-            headers: getAuthHeaders(),
-            credentials: 'include',
-          }
-        );
-
-        if (!response.ok) {
-          const text = await response.text();
-          throw new Error(text || `HTTP ${response.status}`);
-        }
-
-        const json = await response.json();
-        if (!json.ok) {
-          throw new Error(json.error || 'Unknown error');
-        }
-        const data: BrowseResponse = json.data;
+      if (data) {
         setCurrentPath(data.path);
         setEntries(data.entries);
-      } catch (err) {
-        console.error('[FileBrowser] Browse failed:', err);
-        // Map server errors to user-friendly messages
-        const errorMessage = err instanceof Error ? err.message : 'Failed to browse directory';
-        const friendlyError = getFriendlyError(errorMessage, t);
-        setError(friendlyError);
-      } finally {
+        setLoading(false);
+      } else {
+        // Get a user-friendly error message
+        setError(t('fileBrowser.directoryNotFound', 'Directory not found.'));
         setLoading(false);
       }
+    },
+    [t]
+  );
+
+  // Resolve initial path with fallback to parent directories, then home
+  const resolveInitialPath = useCallback(
+    async (targetPath: string): Promise<string> => {
+      // Try the target path first
+      let data = await fetchDirectory(targetPath);
+      if (data) {
+        return targetPath;
+      }
+
+      // Walk up parent directories until we find one that exists
+      let currentTry = targetPath;
+      while (currentTry && currentTry !== '/') {
+        const lastSlash = currentTry.lastIndexOf('/');
+        if (lastSlash <= 0) break;
+
+        currentTry = currentTry.substring(0, lastSlash);
+        data = await fetchDirectory(currentTry);
+        if (data) {
+          console.log(`[FileBrowser] Falling back to parent: ${currentTry}`);
+          return currentTry;
+        }
+      }
+
+      // Fall back to home directory
+      const homePath = await fetchHomeDirectory();
+      if (homePath) {
+        console.log(`[FileBrowser] Falling back to home: ${homePath}`);
+        return homePath;
+      }
+
+      // Last resort - root
+      return '/';
     },
     []
   );
@@ -169,47 +211,41 @@ export function FileBrowserModal({
   // Get initial directory on mount
   useEffect(() => {
     if (open && !currentPath) {
-      // If initialPath is provided, navigate to it
-      if (initialPath) {
-        if (mode === 'directory') {
-          // For directory mode, browse directly to the specified directory
-          browse(initialPath);
-        } else {
-          // For file/save mode, browse to the parent directory
-          const lastSlash = initialPath.lastIndexOf('/');
-          const dirPath = lastSlash > 0 ? initialPath.substring(0, lastSlash) : '/';
-          browse(dirPath);
-        }
-        return;
-      }
+      const initBrowse = async () => {
+        setLoading(true);
+        setError(null);
 
-      // Otherwise fetch home directory
-      const fetchHome = async () => {
-        try {
-          const baseUrl = getBackendBaseUrl();
-          const response = await safeFetch(`${baseUrl}/api/files/home`, {
-            method: 'GET',
-            headers: getAuthHeaders(),
-            credentials: 'include',
-          });
+        let targetPath: string;
 
-          if (response.ok) {
-            const json = await response.json();
-            if (json.ok && json.data?.path) {
-              browse(json.data.path);
-            } else {
-              browse('');
-            }
+        if (initialPath) {
+          if (mode === 'directory') {
+            // For directory mode, try to navigate to the specified directory
+            targetPath = await resolveInitialPath(initialPath);
           } else {
-            browse('');
+            // For file/save mode, go to the parent directory
+            const lastSlash = initialPath.lastIndexOf('/');
+            const dirPath = lastSlash > 0 ? initialPath.substring(0, lastSlash) : '/';
+            targetPath = await resolveInitialPath(dirPath);
           }
-        } catch {
-          browse('');
+        } else {
+          // No initial path - use home
+          targetPath = (await fetchHomeDirectory()) || '/';
         }
+
+        // Now browse to the resolved path
+        const data = await fetchDirectory(targetPath);
+        if (data) {
+          setCurrentPath(data.path);
+          setEntries(data.entries);
+        } else {
+          setError(t('fileBrowser.directoryNotFound', 'Could not access directory.'));
+        }
+        setLoading(false);
       };
-      fetchHome();
+
+      initBrowse();
     }
-  }, [open, currentPath, browse, initialPath]);
+  }, [open, currentPath, initialPath, mode, resolveInitialPath, t]);
 
   // Reset state when modal closes
   useEffect(() => {
@@ -241,22 +277,9 @@ export function FileBrowserModal({
 
   // Navigate to home directory
   const goHome = async () => {
-    try {
-      const baseUrl = getBackendBaseUrl();
-      const response = await safeFetch(`${baseUrl}/api/files/home`, {
-        method: 'GET',
-        headers: getAuthHeaders(),
-        credentials: 'include',
-      });
-
-      if (response.ok) {
-        const json = await response.json();
-        if (json.ok && json.data?.path) {
-          browse(json.data.path);
-        }
-      }
-    } catch {
-      // Ignore
+    const homePath = await fetchHomeDirectory();
+    if (homePath) {
+      browse(homePath);
     }
   };
 

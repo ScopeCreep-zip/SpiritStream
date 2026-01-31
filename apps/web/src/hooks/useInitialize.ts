@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react';
 import { useProfileStore } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
 import { useThemeStore, initThemeEventListener } from '@/stores/themeStore';
+import { useRecordingStore } from '@/stores/recordingStore';
+import { useReplayBufferStore } from '@/stores/replayBufferStore';
 import { api } from '@/lib/backend';
 
 /**
@@ -16,17 +18,26 @@ export function useInitialize() {
   const syncWithBackend = useStreamStore((state) => state.syncWithBackend);
   const setTheme = useThemeStore((state) => state.setTheme);
   const refreshThemes = useThemeStore((state) => state.refreshThemes);
+  const initRecordingPath = useRecordingStore((state) => state.initializeDefaultPath);
+  const initReplayBufferPath = useReplayBufferStore((state) => state.initializeDefaultPath);
 
   useEffect(() => {
     if (!initialized.current) {
       initialized.current = true;
 
       // Load profiles, themes, and sync stream state in parallel
+      // Also initialize platform-specific default paths for recording/replay
       // NOTE: refreshThemes is called here (not in themeStore hydration) to ensure
       // the server is ready - App component's health check runs before this hook
       // Also initialize theme event listener for live theme updates
       initThemeEventListener();
-      Promise.all([loadProfiles(), syncWithBackend(), refreshThemes()])
+      Promise.all([
+        loadProfiles(),
+        syncWithBackend(),
+        refreshThemes(),
+        initRecordingPath(),
+        initReplayBufferPath(),
+      ])
         .then(async () => {
           // After profiles are loaded, try to restore last used profile
           try {
@@ -54,5 +65,5 @@ export function useInitialize() {
           // Initialization errors handled elsewhere
         });
     }
-  }, [loadProfiles, loadProfile, syncWithBackend]);
+  }, [loadProfiles, loadProfile, syncWithBackend, initRecordingPath, initReplayBufferPath]);
 }

@@ -505,7 +505,22 @@ async fn files_browse(
 ) -> impl IntoResponse {
     // Determine the directory to browse
     let browse_path = match params.path {
-        Some(p) if !p.is_empty() => PathBuf::from(&p),
+        Some(p) if !p.is_empty() => {
+            // Expand ~ to home directory
+            if p.starts_with("~/") {
+                match &state.home_dir {
+                    Some(home) => home.join(&p[2..]),
+                    None => PathBuf::from(&p),
+                }
+            } else if p == "~" {
+                match &state.home_dir {
+                    Some(home) => home.clone(),
+                    None => PathBuf::from(&p),
+                }
+            } else {
+                PathBuf::from(&p)
+            }
+        }
         _ => match &state.home_dir {
             Some(home) => home.clone(),
             None => {
@@ -652,6 +667,52 @@ async fn files_home(State(state): State<AppState>) -> impl IntoResponse {
     }
 }
 
+/// GET /api/system/default-paths - Get platform-specific default directories
+/// Creates the directories if they don't exist
+async fn system_default_paths(State(state): State<AppState>) -> impl IntoResponse {
+    let home = match &state.home_dir {
+        Some(h) => h.clone(),
+        None => {
+            return Json(json!({
+                "ok": false,
+                "error": "Cannot determine home directory"
+            })).into_response();
+        }
+    };
+
+    // Determine platform and appropriate video directory
+    let (platform, videos_dir) = if cfg!(target_os = "macos") {
+        ("macos", home.join("Movies"))
+    } else if cfg!(target_os = "windows") {
+        ("windows", home.join("Videos"))
+    } else {
+        ("linux", home.join("Videos"))
+    };
+
+    // Create subdirectories for recordings and replays
+    let recordings_dir = videos_dir.join("SpiritStream");
+    let replays_dir = videos_dir.join("SpiritStream").join("Replays");
+
+    // Ensure directories exist (create if needed)
+    if let Err(e) = std::fs::create_dir_all(&recordings_dir) {
+        log::warn!("Failed to create recordings directory {:?}: {}", recordings_dir, e);
+    }
+    if let Err(e) = std::fs::create_dir_all(&replays_dir) {
+        log::warn!("Failed to create replays directory {:?}: {}", replays_dir, e);
+    }
+
+    Json(json!({
+        "ok": true,
+        "data": {
+            "platform": platform,
+            "home": home.to_string_lossy().to_string(),
+            "videos": videos_dir.to_string_lossy().to_string(),
+            "recordings": recordings_dir.to_string_lossy().to_string(),
+            "replays": replays_dir.to_string_lossy().to_string()
+        }
+    })).into_response()
+}
+
 #[derive(Debug, Deserialize)]
 struct OpenPathRequest {
     path: String,
@@ -662,7 +723,20 @@ async fn files_open(
     State(state): State<AppState>,
     Json(payload): Json<OpenPathRequest>,
 ) -> impl IntoResponse {
-    let path = PathBuf::from(&payload.path);
+    // Expand ~ to home directory
+    let path = if payload.path.starts_with("~/") {
+        match &state.home_dir {
+            Some(home) => home.join(&payload.path[2..]),
+            None => PathBuf::from(&payload.path),
+        }
+    } else if payload.path == "~" {
+        match &state.home_dir {
+            Some(home) => home.clone(),
+            None => PathBuf::from(&payload.path),
+        }
+    } else {
+        PathBuf::from(&payload.path)
+    };
 
     // Security: Validate path is within allowed directories
     // Include common binary directories for consistency with file browser
@@ -3456,6 +3530,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/files/browse", get(files_browse))
         .route("/api/files/home", get(files_home))
         .route("/api/files/open", post(files_open))
+        .route("/api/system/default-paths", get(system_default_paths))
         // Static file serving (images, HTML)
         .route("/api/static", get(static_file_handler))
         // Preview endpoints (MJPEG/snapshot)
