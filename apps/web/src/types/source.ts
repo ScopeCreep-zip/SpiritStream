@@ -10,12 +10,17 @@ export type SourceType =
   | 'rtmp'
   | 'mediaFile'
   | 'screenCapture'
+  | 'windowCapture'
+  | 'gameCapture'
   | 'camera'
   | 'captureCard'
   | 'audioDevice'
   | 'color'
   | 'text'
-  | 'browser';
+  | 'browser'
+  | 'mediaPlaylist'
+  | 'nestedScene'
+  | 'ndi';
 
 /**
  * Base source interface
@@ -55,6 +60,41 @@ export interface ScreenCaptureSource extends BaseSource {
   deviceName?: string;
   captureCursor: boolean;
   captureAudio: boolean;
+  fps: number;
+}
+
+/**
+ * Window capture source - captures a specific application window
+ */
+export interface WindowCaptureSource extends BaseSource {
+  type: 'windowCapture';
+  windowId: string;
+  windowTitle: string;
+  /** Process name or app name */
+  processName?: string;
+  captureCursor: boolean;
+  fps: number;
+}
+
+/**
+ * Game capture source - captures games with hardware acceleration
+ * Platform-specific: DXGI (Windows), ScreenCaptureKit (macOS), PipeWire (Linux)
+ */
+export interface GameCaptureSource extends BaseSource {
+  type: 'gameCapture';
+  /** 'any' captures any fullscreen game, 'specific' targets a window/process */
+  targetType: 'any' | 'specific';
+  /** Window title to capture (when targetType is 'specific') */
+  windowTitle?: string;
+  /** Process name to capture (when targetType is 'specific') */
+  processName?: string;
+  /** Capture method - 'auto' selects best for platform */
+  captureMode: 'auto' | 'bitblt' | 'dxgi' | 'opengl';
+  /** Whether to include cursor in capture */
+  captureCursor: boolean;
+  /** Enable anti-cheat compatible hooking (may reduce performance) */
+  antiCheatHook: boolean;
+  /** Capture framerate */
   fps: number;
 }
 
@@ -134,18 +174,70 @@ export interface BrowserSource extends BaseSource {
 }
 
 /**
+ * Media playlist source - plays multiple media files in sequence
+ */
+export interface MediaPlaylistSource extends BaseSource {
+  type: 'mediaPlaylist';
+  items: PlaylistItem[];
+  currentItemIndex: number;
+  autoAdvance: boolean;
+  shuffleMode: 'none' | 'all' | 'repeat-one';
+  fadeBetweenItems: boolean;
+  fadeDurationMs?: number;
+}
+
+/**
+ * Playlist item for media playlist source
+ */
+export interface PlaylistItem {
+  id: string;
+  filePath: string;
+  duration?: number; // Duration in seconds (auto-detected)
+  name?: string; // Display name (defaults to filename)
+}
+
+/**
+ * Nested scene source - embeds another scene
+ */
+export interface NestedSceneSource extends BaseSource {
+  type: 'nestedScene';
+  referencedSceneId: string;
+}
+
+/**
+ * NDI source - receives video over network via NDI protocol
+ * Requires NDI SDK/runtime to be installed
+ */
+export interface NDISource extends BaseSource {
+  type: 'ndi';
+  /** Name of the NDI source to receive */
+  sourceName: string;
+  /** Optional specific IP address (auto-discovers if not set) */
+  ipAddress?: string;
+  /** Use low bandwidth mode (lower quality, less network usage) */
+  lowBandwidth: boolean;
+  /** Name to identify this receiver on the network */
+  receiverName: string;
+}
+
+/**
  * Union type for all source types
  */
 export type Source =
   | RtmpSource
   | MediaFileSource
   | ScreenCaptureSource
+  | WindowCaptureSource
+  | GameCaptureSource
   | CameraSource
   | CaptureCardSource
   | AudioDeviceSource
   | ColorSource
   | TextSource
-  | BrowserSource;
+  | BrowserSource
+  | MediaPlaylistSource
+  | NestedSceneSource
+  | NDISource;
 
 // Device discovery result types
 
@@ -201,20 +293,38 @@ export interface CaptureCardDevice {
 }
 
 /**
+ * Discovered window for window capture
+ */
+export interface WindowInfo {
+  windowId: string;
+  title: string;
+  processName?: string;
+  appName?: string;
+  width?: number;
+  height?: number;
+}
+
+/**
  * Helper to check if source has video
  */
 export function sourceHasVideo(source: Source): boolean {
   switch (source.type) {
     case 'rtmp':
     case 'screenCapture':
+    case 'windowCapture':
+    case 'gameCapture':
     case 'camera':
     case 'captureCard':
     case 'color':
     case 'text':
     case 'browser':
+    case 'nestedScene':
+    case 'ndi':
       return true;
     case 'mediaFile':
       return !source.audioOnly;
+    case 'mediaPlaylist':
+      return true; // Playlists typically contain video
     case 'audioDevice':
       return false;
   }
@@ -229,6 +339,8 @@ export function sourceHasAudio(source: Source): boolean {
     case 'mediaFile':
     case 'captureCard':
     case 'audioDevice':
+    case 'mediaPlaylist':
+    case 'ndi':
       return true;
     case 'screenCapture':
       return source.captureAudio;
@@ -236,6 +348,9 @@ export function sourceHasAudio(source: Source): boolean {
     case 'color':
     case 'text':
     case 'browser':
+    case 'windowCapture':
+    case 'gameCapture':
+    case 'nestedScene':
       return false;
   }
 }
@@ -377,6 +492,79 @@ export function createDefaultBrowserSource(
   };
 }
 
+export function createDefaultWindowCaptureSource(
+  name = 'Window Capture',
+  windowId = '',
+  windowTitle = ''
+): WindowCaptureSource {
+  return {
+    type: 'windowCapture',
+    id: crypto.randomUUID(),
+    name,
+    windowId,
+    windowTitle,
+    captureCursor: true,
+    fps: 30,
+  };
+}
+
+export function createDefaultMediaPlaylistSource(
+  name = 'Media Playlist'
+): MediaPlaylistSource {
+  return {
+    type: 'mediaPlaylist',
+    id: crypto.randomUUID(),
+    name,
+    items: [],
+    currentItemIndex: 0,
+    autoAdvance: true,
+    shuffleMode: 'none',
+    fadeBetweenItems: false,
+    fadeDurationMs: 500,
+  };
+}
+
+export function createDefaultNestedSceneSource(
+  name = 'Nested Scene',
+  referencedSceneId = ''
+): NestedSceneSource {
+  return {
+    type: 'nestedScene',
+    id: crypto.randomUUID(),
+    name,
+    referencedSceneId,
+  };
+}
+
+export function createDefaultGameCaptureSource(
+  name = 'Game Capture'
+): GameCaptureSource {
+  return {
+    type: 'gameCapture',
+    id: crypto.randomUUID(),
+    name,
+    targetType: 'any',
+    captureMode: 'auto',
+    captureCursor: false,
+    antiCheatHook: false,
+    fps: 60,
+  };
+}
+
+export function createDefaultNDISource(
+  name = 'NDI Source',
+  sourceName = ''
+): NDISource {
+  return {
+    type: 'ndi',
+    id: crypto.randomUUID(),
+    name,
+    sourceName,
+    lowBandwidth: false,
+    receiverName: 'SpiritStream',
+  };
+}
+
 /**
  * Get a human-readable label for source type
  */
@@ -388,6 +576,10 @@ export function getSourceTypeLabel(type: SourceType): string {
       return 'Media File';
     case 'screenCapture':
       return 'Screen Capture';
+    case 'windowCapture':
+      return 'Window Capture';
+    case 'gameCapture':
+      return 'Game Capture';
     case 'camera':
       return 'Camera';
     case 'captureCard':
@@ -400,6 +592,12 @@ export function getSourceTypeLabel(type: SourceType): string {
       return 'Text';
     case 'browser':
       return 'Browser';
+    case 'mediaPlaylist':
+      return 'Media Playlist';
+    case 'nestedScene':
+      return 'Nested Scene';
+    case 'ndi':
+      return 'NDI Source';
   }
 }
 
@@ -414,6 +612,10 @@ export function getSourceTypeIcon(type: SourceType): string {
       return 'Film';
     case 'screenCapture':
       return 'Monitor';
+    case 'windowCapture':
+      return 'AppWindow';
+    case 'gameCapture':
+      return 'Gamepad2';
     case 'camera':
       return 'Camera';
     case 'captureCard':
@@ -426,6 +628,12 @@ export function getSourceTypeIcon(type: SourceType): string {
       return 'Type';
     case 'browser':
       return 'Globe';
+    case 'mediaPlaylist':
+      return 'ListVideo';
+    case 'nestedScene':
+      return 'Layers';
+    case 'ndi':
+      return 'Network';
   }
 }
 
@@ -433,7 +641,8 @@ export function getSourceTypeIcon(type: SourceType): string {
  * Check if source renders via pure CSS (no WebRTC needed)
  */
 export function isClientSideSource(source: Source): boolean {
-  return source.type === 'color' || source.type === 'text' || source.type === 'browser';
+  // Game capture and NDI require backend rendering, not client-side
+  return source.type === 'color' || source.type === 'text' || source.type === 'browser' || source.type === 'nestedScene';
 }
 
 // ============================================================================

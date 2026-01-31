@@ -8,6 +8,8 @@ import {
   Radio,
   Film,
   Monitor,
+  AppWindow,
+  Gamepad2,
   Camera,
   Usb,
   Mic,
@@ -17,6 +19,9 @@ import {
   Palette,
   Type,
   Globe,
+  ListVideo,
+  Layers,
+  Network,
 } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
@@ -35,23 +40,33 @@ import type {
   RtmpSource,
   MediaFileSource,
   ScreenCaptureSource,
+  WindowCaptureSource,
+  GameCaptureSource,
   CameraSource,
   CaptureCardSource,
   AudioDeviceSource,
   ColorSource,
   TextSource,
   BrowserSource,
+  MediaPlaylistSource,
+  NestedSceneSource,
+  NDISource,
 } from '@/types/source';
 import {
   createDefaultRtmpSource,
   createDefaultMediaFileSource,
   createDefaultScreenCaptureSource,
+  createDefaultWindowCaptureSource,
+  createDefaultGameCaptureSource,
   createDefaultCameraSource,
   createDefaultCaptureCardSource,
   createDefaultAudioDeviceSource,
   createDefaultColorSource,
   createDefaultTextSource,
   createDefaultBrowserSource,
+  createDefaultMediaPlaylistSource,
+  createDefaultNestedSceneSource,
+  createDefaultNDISource,
   getSourceTypeLabel,
 } from '@/types/source';
 
@@ -73,18 +88,23 @@ const SOURCE_TYPES: { type: SourceType; icon: React.ReactNode }[] = [
   { type: 'rtmp', icon: <Radio className="w-5 h-5" /> },
   { type: 'mediaFile', icon: <Film className="w-5 h-5" /> },
   { type: 'screenCapture', icon: <Monitor className="w-5 h-5" /> },
+  { type: 'windowCapture', icon: <AppWindow className="w-5 h-5" /> },
+  { type: 'gameCapture', icon: <Gamepad2 className="w-5 h-5" /> },
   { type: 'camera', icon: <Camera className="w-5 h-5" /> },
   { type: 'captureCard', icon: <Usb className="w-5 h-5" /> },
   { type: 'audioDevice', icon: <Mic className="w-5 h-5" /> },
   { type: 'color', icon: <Palette className="w-5 h-5" /> },
   { type: 'text', icon: <Type className="w-5 h-5" /> },
   { type: 'browser', icon: <Globe className="w-5 h-5" /> },
+  { type: 'mediaPlaylist', icon: <ListVideo className="w-5 h-5" /> },
+  { type: 'nestedScene', icon: <Layers className="w-5 h-5" /> },
+  { type: 'ndi', icon: <Network className="w-5 h-5" /> },
 ];
 
 export function AddSourceModal({ open, onClose, profileName, filterType, excludeTypes = [], onSourceAdded }: AddSourceModalProps) {
   const { t } = useTranslation();
   const { setCurrentSources } = useProfileStore();
-  const { addSource, devices, discoverDevices } = useSourceStore();
+  const { addSource, devices, discoverDevices, listWindows } = useSourceStore();
   const { ensurePermission } = usePermissionCheck();
   const { FileBrowser, openFilePath: browserOpenFile } = useFileBrowser();
 
@@ -134,6 +154,9 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
     } else if (formData.type === 'screenCapture' && !formData.displayId && devices.displays.length > 0) {
       const first = devices.displays[0];
       setFormData({ ...formData, displayId: first.displayId, deviceName: first.deviceName });
+    } else if (formData.type === 'windowCapture' && !formData.windowId && devices.windows.length > 0) {
+      const first = devices.windows[0];
+      setFormData({ ...formData, windowId: first.windowId, windowTitle: first.title, name: formData.name || first.title });
     } else if (formData.type === 'captureCard' && !formData.deviceId && devices.captureCards.length > 0) {
       const first = devices.captureCards[0];
       setFormData({ ...formData, deviceId: first.deviceId, name: formData.name || first.name });
@@ -149,7 +172,7 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
 
     // Check permissions for device-based sources BEFORE device discovery
     // This ensures macOS permission dialogs appear before camera LED lights up
-    if (type === 'camera' || type === 'screenCapture' || type === 'audioDevice') {
+    if (type === 'camera' || type === 'screenCapture' || type === 'windowCapture' || type === 'audioDevice') {
       const result = await ensurePermission(type);
       if (!result.granted && result.permission) {
         const permissionLabels: Record<SourcePermissionType, string> = {
@@ -174,8 +197,13 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
     // Permission granted or not required - now discover devices
     // This triggers device enumeration AFTER permission dialog, so camera LED
     // won't light up until permission is granted
-    if (type === 'camera' || type === 'screenCapture' || type === 'captureCard' || type === 'audioDevice') {
+    if (type === 'camera' || type === 'screenCapture' || type === 'windowCapture' || type === 'captureCard' || type === 'audioDevice') {
       await discoverDevices();
+    }
+
+    // For window capture, also fetch windows list
+    if (type === 'windowCapture') {
+      await listWindows();
     }
 
     setSelectedType(type);
@@ -193,6 +221,15 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
           '', // Leave name blank so user must enter one
           firstDisplay?.displayId || '',
           firstDisplay?.deviceName
+        ));
+        break;
+      }
+      case 'windowCapture': {
+        const firstWindow = devices.windows[0];
+        setFormData(createDefaultWindowCaptureSource(
+          firstWindow?.title || 'Window Capture',
+          firstWindow?.windowId || '',
+          firstWindow?.title || ''
         ));
         break;
       }
@@ -228,6 +265,18 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
         break;
       case 'browser':
         setFormData(createDefaultBrowserSource());
+        break;
+      case 'mediaPlaylist':
+        setFormData(createDefaultMediaPlaylistSource());
+        break;
+      case 'nestedScene':
+        setFormData(createDefaultNestedSceneSource());
+        break;
+      case 'gameCapture':
+        setFormData(createDefaultGameCaptureSource());
+        break;
+      case 'ndi':
+        setFormData(createDefaultNDISource());
         break;
     }
     setStep('configure');
@@ -352,6 +401,16 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
         return renderTextForm(formData);
       case 'browser':
         return renderBrowserForm(formData);
+      case 'windowCapture':
+        return renderWindowCaptureForm(formData);
+      case 'mediaPlaylist':
+        return renderMediaPlaylistForm(formData);
+      case 'nestedScene':
+        return renderNestedSceneForm(formData);
+      case 'gameCapture':
+        return renderGameCaptureForm(formData);
+      case 'ndi':
+        return renderNDIForm(formData);
       default:
         return null;
     }
@@ -947,6 +1006,281 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
     );
   };
 
+  const renderWindowCaptureForm = (data: WindowCaptureSource) => {
+    const windowOptions: SelectOption[] = devices.windows.map((w) => ({
+      value: w.windowId,
+      label: w.title || w.processName || 'Unknown Window',
+    }));
+
+    return (
+      <div className="flex flex-col gap-4">
+        <Input
+          label={t('stream.sourceName', { defaultValue: 'Source Name' })}
+          value={data.name}
+          onChange={(e) => setFormData({ ...data, name: e.target.value })}
+          placeholder="Window Capture"
+        />
+        <div className="flex items-center gap-2">
+          <div className="flex-1">
+            <Select
+              label={t('stream.window', { defaultValue: 'Window' })}
+              value={data.windowId}
+              onChange={(e) => {
+                const windowId = e.target.value;
+                const window = devices.windows.find((w) => w.windowId === windowId);
+                setFormData({
+                  ...data,
+                  windowId,
+                  windowTitle: window?.title || '',
+                  processName: window?.processName,
+                  name: data.name || window?.title || 'Window Capture',
+                });
+              }}
+              options={windowOptions}
+              disabled={devices.isDiscovering}
+            />
+          </div>
+          <div className="flex items-end">
+            <Button
+              variant="ghost"
+              className={`h-10 ${devices.isDiscovering ? 'opacity-60' : ''}`}
+              onClick={() => listWindows()}
+              disabled={devices.isDiscovering}
+              title={t('common.refresh', { defaultValue: 'Refresh' })}
+            >
+              <RefreshCw className={`w-4 h-4 ${devices.isDiscovering ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
+        </div>
+        <Input
+          label={t('stream.fps', { defaultValue: 'Frame Rate' })}
+          type="number"
+          value={String(data.fps)}
+          onChange={(e) => setFormData({ ...data, fps: parseInt(e.target.value) || 30 })}
+        />
+        <div className="flex items-center justify-between">
+          <span className="text-sm">{t('stream.captureCursor', { defaultValue: 'Capture Cursor' })}</span>
+          <Toggle
+            checked={data.captureCursor}
+            onChange={(checked) => setFormData({ ...data, captureCursor: checked })}
+          />
+        </div>
+      </div>
+    );
+  };
+
+  const renderMediaPlaylistForm = (data: MediaPlaylistSource) => {
+    return (
+      <div className="flex flex-col gap-4">
+        <Input
+          label={t('stream.sourceName', { defaultValue: 'Source Name' })}
+          value={data.name}
+          onChange={(e) => setFormData({ ...data, name: e.target.value })}
+          placeholder="Media Playlist"
+        />
+        <p className="text-sm text-muted">
+          {t('stream.playlistHelper', { defaultValue: 'Add media files to the playlist after creating the source.' })}
+        </p>
+        <div className="flex items-center justify-between">
+          <span className="text-sm">{t('stream.autoAdvance', { defaultValue: 'Auto Advance' })}</span>
+          <Toggle
+            checked={data.autoAdvance}
+            onChange={(checked) => setFormData({ ...data, autoAdvance: checked })}
+          />
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm">{t('stream.fadeBetweenItems', { defaultValue: 'Fade Between Items' })}</span>
+          <Toggle
+            checked={data.fadeBetweenItems}
+            onChange={(checked) => setFormData({ ...data, fadeBetweenItems: checked })}
+          />
+        </div>
+        {data.fadeBetweenItems && (
+          <Input
+            label={t('stream.fadeDuration', { defaultValue: 'Fade Duration (ms)' })}
+            type="number"
+            value={String(data.fadeDurationMs || 500)}
+            onChange={(e) => setFormData({ ...data, fadeDurationMs: parseInt(e.target.value) || 500 })}
+          />
+        )}
+        <Select
+          label={t('stream.shuffleMode', { defaultValue: 'Shuffle Mode' })}
+          value={data.shuffleMode}
+          onChange={(e) => setFormData({ ...data, shuffleMode: e.target.value as 'none' | 'all' | 'repeat-one' })}
+          options={[
+            { value: 'none', label: t('stream.shuffleNone', { defaultValue: 'None' }) },
+            { value: 'all', label: t('stream.shuffleAll', { defaultValue: 'Shuffle All' }) },
+            { value: 'repeat-one', label: t('stream.repeatOne', { defaultValue: 'Repeat One' }) },
+          ]}
+        />
+      </div>
+    );
+  };
+
+  const renderNestedSceneForm = (data: NestedSceneSource) => {
+    const profile = useProfileStore.getState().current;
+    const sceneOptions: SelectOption[] = (profile?.scenes || []).map((s) => ({
+      value: s.id,
+      label: s.name,
+    }));
+
+    return (
+      <div className="flex flex-col gap-4">
+        <Input
+          label={t('stream.sourceName', { defaultValue: 'Source Name' })}
+          value={data.name}
+          onChange={(e) => setFormData({ ...data, name: e.target.value })}
+          placeholder="Nested Scene"
+        />
+        <Select
+          label={t('stream.referencedScene', { defaultValue: 'Scene to Embed' })}
+          value={data.referencedSceneId}
+          onChange={(e) => {
+            const sceneId = e.target.value;
+            const scene = profile?.scenes.find((s) => s.id === sceneId);
+            setFormData({
+              ...data,
+              referencedSceneId: sceneId,
+              name: data.name || scene?.name || 'Nested Scene',
+            });
+          }}
+          options={sceneOptions}
+        />
+        <p className="text-xs text-muted">
+          {t('stream.nestedSceneHelper', { defaultValue: 'Embeds another scene as a source. Circular references are prevented.' })}
+        </p>
+      </div>
+    );
+  };
+
+  const renderGameCaptureForm = (data: GameCaptureSource) => {
+    const targetTypeOptions: SelectOption[] = [
+      { value: 'any', label: t('stream.captureAnyGame', { defaultValue: 'Capture any fullscreen game' }) },
+      { value: 'specific', label: t('stream.captureSpecificGame', { defaultValue: 'Capture specific game/window' }) },
+    ];
+
+    const captureModeOptions: SelectOption[] = [
+      { value: 'auto', label: t('stream.captureModeAuto', { defaultValue: 'Auto (Recommended)' }) },
+      { value: 'dxgi', label: 'DXGI (Windows)' },
+      { value: 'opengl', label: 'OpenGL' },
+      { value: 'bitblt', label: 'BitBlt (Legacy)' },
+    ];
+
+    return (
+      <div className="flex flex-col gap-4">
+        <Input
+          label={t('stream.sourceName', { defaultValue: 'Source Name' })}
+          value={data.name}
+          onChange={(e) => setFormData({ ...data, name: e.target.value })}
+          placeholder="Game Capture"
+        />
+        <Select
+          label={t('stream.targetType', { defaultValue: 'Target' })}
+          value={data.targetType}
+          onChange={(e) => setFormData({ ...data, targetType: e.target.value as 'any' | 'specific' })}
+          options={targetTypeOptions}
+        />
+        {data.targetType === 'specific' && (
+          <>
+            <Input
+              label={t('stream.windowTitle', { defaultValue: 'Window Title (partial match)' })}
+              value={data.windowTitle || ''}
+              onChange={(e) => setFormData({ ...data, windowTitle: e.target.value })}
+              placeholder="Minecraft"
+            />
+            <Input
+              label={t('stream.processName', { defaultValue: 'Process Name (optional)' })}
+              value={data.processName || ''}
+              onChange={(e) => setFormData({ ...data, processName: e.target.value })}
+              placeholder="javaw.exe"
+            />
+          </>
+        )}
+        <Select
+          label={t('stream.captureMode', { defaultValue: 'Capture Mode' })}
+          value={data.captureMode}
+          onChange={(e) => setFormData({ ...data, captureMode: e.target.value as 'auto' | 'bitblt' | 'dxgi' | 'opengl' })}
+          options={captureModeOptions}
+        />
+        <Input
+          label={t('stream.fps', { defaultValue: 'Frame Rate' })}
+          type="number"
+          value={String(data.fps)}
+          onChange={(e) => setFormData({ ...data, fps: parseInt(e.target.value) || 60 })}
+        />
+        <div className="flex items-center justify-between">
+          <span className="text-sm">{t('stream.captureCursor', { defaultValue: 'Capture Cursor' })}</span>
+          <Toggle
+            checked={data.captureCursor}
+            onChange={(checked) => setFormData({ ...data, captureCursor: checked })}
+          />
+        </div>
+        <div className="flex items-center justify-between">
+          <div>
+            <span className="text-sm">{t('stream.antiCheatHook', { defaultValue: 'Anti-Cheat Compatible' })}</span>
+            <p className="text-xs text-muted">
+              {t('stream.antiCheatHelper', { defaultValue: 'May reduce performance but works with anti-cheat software' })}
+            </p>
+          </div>
+          <Toggle
+            checked={data.antiCheatHook}
+            onChange={(checked) => setFormData({ ...data, antiCheatHook: checked })}
+          />
+        </div>
+      </div>
+    );
+  };
+
+  const renderNDIForm = (data: NDISource) => {
+    return (
+      <div className="flex flex-col gap-4">
+        <Input
+          label={t('stream.sourceName', { defaultValue: 'Source Name' })}
+          value={data.name}
+          onChange={(e) => setFormData({ ...data, name: e.target.value })}
+          placeholder="NDI Source"
+        />
+        <Input
+          label={t('stream.ndiSourceName', { defaultValue: 'NDI Source Name' })}
+          value={data.sourceName}
+          onChange={(e) => setFormData({ ...data, sourceName: e.target.value })}
+          placeholder="CAMERA-PC (OBS)"
+          helper={t('stream.ndiSourceNameHelper', { defaultValue: 'Name of the NDI source on the network' })}
+        />
+        <Input
+          label={t('stream.ipAddress', { defaultValue: 'IP Address (optional)' })}
+          value={data.ipAddress || ''}
+          onChange={(e) => setFormData({ ...data, ipAddress: e.target.value || undefined })}
+          placeholder="192.168.1.100"
+          helper={t('stream.ndiIpHelper', { defaultValue: 'Leave blank to auto-discover on local network' })}
+        />
+        <Input
+          label={t('stream.receiverName', { defaultValue: 'Receiver Name' })}
+          value={data.receiverName}
+          onChange={(e) => setFormData({ ...data, receiverName: e.target.value })}
+          placeholder="SpiritStream"
+          helper={t('stream.receiverNameHelper', { defaultValue: 'How this receiver appears to NDI sources' })}
+        />
+        <div className="flex items-center justify-between">
+          <div>
+            <span className="text-sm">{t('stream.lowBandwidth', { defaultValue: 'Low Bandwidth Mode' })}</span>
+            <p className="text-xs text-muted">
+              {t('stream.lowBandwidthHelper', { defaultValue: 'Reduces quality but uses less network bandwidth' })}
+            </p>
+          </div>
+          <Toggle
+            checked={data.lowBandwidth}
+            onChange={(checked) => setFormData({ ...data, lowBandwidth: checked })}
+          />
+        </div>
+        <div className="p-3 bg-[var(--bg-sunken)] rounded-lg text-sm text-muted">
+          <p className="font-medium mb-1">{t('stream.ndiRequirement', { defaultValue: 'NDI Runtime Required' })}</p>
+          <p>{t('stream.ndiRequirementHelper', { defaultValue: 'NDI® runtime must be installed on this system. Download from ndi.video' })}</p>
+        </div>
+      </div>
+    );
+  };
+
   const title = step === 'select-type'
     ? t('stream.addSource', { defaultValue: 'Add Source' })
     : t('stream.configureSource', { defaultValue: `Configure ${getSourceTypeLabel(selectedType!)}` });
@@ -1002,7 +1336,11 @@ function getSourceTypeDescription(type: SourceType): string {
     case 'mediaFile':
       return 'Play local video or audio file';
     case 'screenCapture':
-      return 'Capture display or window';
+      return 'Capture entire display';
+    case 'windowCapture':
+      return 'Capture specific application window';
+    case 'gameCapture':
+      return 'Hardware-accelerated game capture';
     case 'camera':
       return 'Webcam or video device';
     case 'captureCard':
@@ -1015,5 +1353,11 @@ function getSourceTypeDescription(type: SourceType): string {
       return 'Text overlay with styling';
     case 'browser':
       return 'Web page or widget';
+    case 'mediaPlaylist':
+      return 'Multiple media files in sequence';
+    case 'nestedScene':
+      return 'Embed another scene as a source';
+    case 'ndi':
+      return 'Receive NDI video over network';
   }
 }

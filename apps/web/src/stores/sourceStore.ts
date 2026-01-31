@@ -10,11 +10,13 @@ import type {
   DisplayInfo,
   AudioInputDevice,
   CaptureCardDevice,
+  WindowInfo,
 } from '@/types/source';
 
 interface DeviceDiscoveryState {
   cameras: CameraDevice[];
   displays: DisplayInfo[];
+  windows: WindowInfo[];
   audioDevices: AudioInputDevice[];
   captureCards: CaptureCardDevice[];
   isDiscovering: boolean;
@@ -32,6 +34,7 @@ interface SourceState {
   discoverDevices: (force?: boolean) => Promise<void>;
   listCameras: () => Promise<CameraDevice[]>;
   listDisplays: () => Promise<DisplayInfo[]>;
+  listWindows: () => Promise<WindowInfo[]>;
   listAudioDevices: () => Promise<AudioInputDevice[]>;
   listCaptureCards: () => Promise<CaptureCardDevice[]>;
 
@@ -53,6 +56,7 @@ export const useSourceStore = create<SourceState>((set, get) => ({
   devices: {
     cameras: [],
     displays: [],
+    windows: [],
     audioDevices: [],
     captureCards: [],
     isDiscovering: false,
@@ -82,6 +86,7 @@ export const useSourceStore = create<SourceState>((set, get) => ({
         devices: {
           cameras: result.cameras,
           displays: result.displays,
+          windows: result.windows || [],
           audioDevices: result.audioDevices,
           captureCards: result.captureCards,
           isDiscovering: false,
@@ -116,6 +121,19 @@ export const useSourceStore = create<SourceState>((set, get) => ({
         devices: { ...state.devices, displays },
       }));
       return displays;
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : String(err) });
+      return [];
+    }
+  },
+
+  listWindows: async () => {
+    try {
+      const windows = await api.device.listWindows();
+      set((state) => ({
+        devices: { ...state.devices, windows },
+      }));
+      return windows;
     } catch (err) {
       set({ error: err instanceof Error ? err.message : String(err) });
       return [];

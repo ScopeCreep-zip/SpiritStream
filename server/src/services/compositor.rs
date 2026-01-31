@@ -189,6 +189,68 @@ impl Compositor {
                     "-i".to_string(), "color=c=gray:s=1920x1080:r=30:d=3600".to_string(),
                 ]
             }
+            Source::WindowCapture(win) => {
+                // Window capture - similar to screen capture but for specific window
+                #[cfg(target_os = "macos")]
+                {
+                    vec![
+                        "-f".to_string(), "avfoundation".to_string(),
+                        "-capture_cursor".to_string(), if win.capture_cursor { "1" } else { "0" }.to_string(),
+                        "-framerate".to_string(), win.fps.to_string(),
+                        "-i".to_string(), format!("{}:none", win.window_id),
+                    ]
+                }
+                #[cfg(target_os = "windows")]
+                {
+                    vec![
+                        "-f".to_string(), "gdigrab".to_string(),
+                        "-framerate".to_string(), win.fps.to_string(),
+                        "-draw_mouse".to_string(), if win.capture_cursor { "1" } else { "0" }.to_string(),
+                        "-i".to_string(), format!("title={}", win.window_title),
+                    ]
+                }
+                #[cfg(target_os = "linux")]
+                {
+                    vec![
+                        "-f".to_string(), "x11grab".to_string(),
+                        "-framerate".to_string(), win.fps.to_string(),
+                        "-draw_mouse".to_string(), if win.capture_cursor { "1" } else { "0" }.to_string(),
+                        "-i".to_string(), format!(":0.0+{}", win.window_id),
+                    ]
+                }
+                #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+                {
+                    vec![]
+                }
+            }
+            Source::MediaPlaylist(_) => {
+                // Media playlists are rendered client-side
+                vec![
+                    "-f".to_string(), "lavfi".to_string(),
+                    "-i".to_string(), "color=c=0x00008B:s=1920x1080:r=30:d=3600".to_string(),
+                ]
+            }
+            Source::NestedScene(_) => {
+                // Nested scenes are composited client-side
+                vec![
+                    "-f".to_string(), "lavfi".to_string(),
+                    "-i".to_string(), "color=c=0x800080:s=1920x1080:r=30:d=3600".to_string(),
+                ]
+            }
+            Source::GameCapture(_) => {
+                // Game capture - placeholder, actual capture is platform-specific
+                vec![
+                    "-f".to_string(), "lavfi".to_string(),
+                    "-i".to_string(), "color=c=0x006400:s=1920x1080:r=30:d=3600".to_string(),
+                ]
+            }
+            Source::Ndi(_) => {
+                // NDI sources require NDI SDK - placeholder for now
+                vec![
+                    "-f".to_string(), "lavfi".to_string(),
+                    "-i".to_string(), "color=c=0xFF8C00:s=1920x1080:r=30:d=3600".to_string(),
+                ]
+            }
         }
     }
 

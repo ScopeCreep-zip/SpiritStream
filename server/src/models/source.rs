@@ -14,6 +14,8 @@ pub enum Source {
     MediaFile(MediaFileSource),
     /// Screen/display capture
     ScreenCapture(ScreenCaptureSource),
+    /// Window capture (specific application window)
+    WindowCapture(WindowCaptureSource),
     /// Camera/webcam device
     Camera(CameraSource),
     /// Capture card (HDMI capture devices like Elgato)
@@ -26,6 +28,14 @@ pub enum Source {
     Text(TextSource),
     /// Web page iframe (browser source)
     Browser(BrowserSource),
+    /// Media playlist (multiple files in sequence)
+    MediaPlaylist(MediaPlaylistSource),
+    /// Nested scene (embeds another scene)
+    NestedScene(NestedSceneSource),
+    /// Game capture (hardware-accelerated game capture)
+    GameCapture(GameCaptureSource),
+    /// NDI source (network video over NDI protocol)
+    Ndi(NdiSource),
 }
 
 impl Source {
@@ -35,12 +45,17 @@ impl Source {
             Source::Rtmp(s) => &s.id,
             Source::MediaFile(s) => &s.id,
             Source::ScreenCapture(s) => &s.id,
+            Source::WindowCapture(s) => &s.id,
             Source::Camera(s) => &s.id,
             Source::CaptureCard(s) => &s.id,
             Source::AudioDevice(s) => &s.id,
             Source::Color(s) => &s.id,
             Source::Text(s) => &s.id,
             Source::Browser(s) => &s.id,
+            Source::MediaPlaylist(s) => &s.id,
+            Source::NestedScene(s) => &s.id,
+            Source::GameCapture(s) => &s.id,
+            Source::Ndi(s) => &s.id,
         }
     }
 
@@ -50,12 +65,17 @@ impl Source {
             Source::Rtmp(s) => &s.name,
             Source::MediaFile(s) => &s.name,
             Source::ScreenCapture(s) => &s.name,
+            Source::WindowCapture(s) => &s.name,
             Source::Camera(s) => &s.name,
             Source::CaptureCard(s) => &s.name,
             Source::AudioDevice(s) => &s.name,
             Source::Color(s) => &s.name,
             Source::Text(s) => &s.name,
             Source::Browser(s) => &s.name,
+            Source::MediaPlaylist(s) => &s.name,
+            Source::NestedScene(s) => &s.name,
+            Source::GameCapture(s) => &s.name,
+            Source::Ndi(s) => &s.name,
         }
     }
 
@@ -65,12 +85,17 @@ impl Source {
             Source::Rtmp(_) => true,
             Source::MediaFile(s) => !s.audio_only,
             Source::ScreenCapture(_) => true,
+            Source::WindowCapture(_) => true,
             Source::Camera(_) => true,
             Source::CaptureCard(_) => true,
             Source::AudioDevice(_) => false,
             Source::Color(_) => true,
             Source::Text(_) => true,
             Source::Browser(_) => true,
+            Source::MediaPlaylist(_) => true,
+            Source::NestedScene(_) => true,
+            Source::GameCapture(_) => true,
+            Source::Ndi(_) => true,
         }
     }
 
@@ -80,12 +105,17 @@ impl Source {
             Source::Rtmp(_) => true,
             Source::MediaFile(_) => true,
             Source::ScreenCapture(s) => s.capture_audio,
+            Source::WindowCapture(_) => false,
             Source::Camera(_) => false, // Cameras typically don't have audio
             Source::CaptureCard(_) => true,
             Source::AudioDevice(_) => true,
             Source::Color(_) => false,
             Source::Text(_) => false,
             Source::Browser(_) => false,
+            Source::MediaPlaylist(_) => true,
+            Source::NestedScene(_) => false,
+            Source::GameCapture(_) => false, // Game capture typically doesn't capture audio
+            Source::Ndi(_) => true, // NDI includes audio
         }
     }
 }
@@ -155,6 +185,29 @@ pub struct ScreenCaptureSource {
     /// Whether to capture desktop audio (macOS/Windows)
     #[serde(default)]
     pub capture_audio: bool,
+    /// Target frame rate for capture
+    #[serde(default = "default_fps")]
+    pub fps: u32,
+}
+
+/// Window capture source - captures a specific application window
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowCaptureSource {
+    /// Unique identifier
+    pub id: String,
+    /// User-friendly name
+    pub name: String,
+    /// Platform-specific window identifier
+    pub window_id: String,
+    /// Window title at time of selection
+    pub window_title: String,
+    /// Process name or app name
+    #[serde(default)]
+    pub process_name: Option<String>,
+    /// Whether to capture the cursor
+    #[serde(default = "default_true")]
+    pub capture_cursor: bool,
     /// Target frame rate for capture
     #[serde(default = "default_fps")]
     pub fps: u32,
@@ -380,4 +433,163 @@ fn default_browser_width() -> u32 {
 
 fn default_browser_height() -> u32 {
     1080
+}
+
+/// Media playlist source - plays multiple media files in sequence
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaPlaylistSource {
+    /// Unique identifier
+    pub id: String,
+    /// User-friendly name
+    pub name: String,
+    /// Playlist items
+    pub items: Vec<PlaylistItem>,
+    /// Currently playing item index
+    #[serde(default)]
+    pub current_item_index: usize,
+    /// Whether to auto-advance to next item
+    #[serde(default = "default_true")]
+    pub auto_advance: bool,
+    /// Shuffle mode
+    #[serde(default)]
+    pub shuffle_mode: ShuffleMode,
+    /// Whether to fade between items
+    #[serde(default)]
+    pub fade_between_items: bool,
+    /// Fade duration in milliseconds
+    #[serde(default = "default_fade_duration")]
+    pub fade_duration_ms: u32,
+}
+
+fn default_fade_duration() -> u32 {
+    500
+}
+
+/// Playlist item
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaylistItem {
+    /// Unique identifier
+    pub id: String,
+    /// File path
+    pub file_path: String,
+    /// Duration in seconds (auto-detected)
+    #[serde(default)]
+    pub duration: Option<f64>,
+    /// Display name (defaults to filename)
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+/// Shuffle mode for playlists
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ShuffleMode {
+    #[default]
+    None,
+    All,
+    RepeatOne,
+}
+
+/// Nested scene source - embeds another scene
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NestedSceneSource {
+    /// Unique identifier
+    pub id: String,
+    /// User-friendly name
+    pub name: String,
+    /// ID of the scene to embed
+    pub referenced_scene_id: String,
+}
+
+/// Window info for window discovery
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowInfo {
+    /// Platform-specific window identifier
+    pub window_id: String,
+    /// Window title
+    pub title: String,
+    /// Process name
+    #[serde(default)]
+    pub process_name: Option<String>,
+    /// Application name
+    #[serde(default)]
+    pub app_name: Option<String>,
+    /// Window width
+    #[serde(default)]
+    pub width: Option<u32>,
+    /// Window height
+    #[serde(default)]
+    pub height: Option<u32>,
+}
+
+/// Game capture source - hardware-accelerated game capture
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameCaptureSource {
+    /// Unique identifier
+    pub id: String,
+    /// User-friendly name
+    pub name: String,
+    /// Target type: "any" captures any fullscreen game, "specific" targets a window/process
+    #[serde(default = "default_target_type")]
+    pub target_type: String,
+    /// Window title to capture (when target_type is "specific")
+    #[serde(default)]
+    pub window_title: Option<String>,
+    /// Process name to capture (when target_type is "specific")
+    #[serde(default)]
+    pub process_name: Option<String>,
+    /// Capture method: "auto", "bitblt", "dxgi", "opengl"
+    #[serde(default = "default_capture_mode")]
+    pub capture_mode: String,
+    /// Whether to include cursor in capture
+    #[serde(default)]
+    pub capture_cursor: bool,
+    /// Enable anti-cheat compatible hooking
+    #[serde(default)]
+    pub anti_cheat_hook: bool,
+    /// Target frame rate
+    #[serde(default = "default_game_fps")]
+    pub fps: u32,
+}
+
+fn default_target_type() -> String {
+    "any".to_string()
+}
+
+fn default_capture_mode() -> String {
+    "auto".to_string()
+}
+
+fn default_game_fps() -> u32 {
+    60
+}
+
+/// NDI source - receives video over network via NDI protocol
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NdiSource {
+    /// Unique identifier
+    pub id: String,
+    /// User-friendly name
+    pub name: String,
+    /// Name of the NDI source to receive
+    pub source_name: String,
+    /// Optional specific IP address (auto-discovers if not set)
+    #[serde(default)]
+    pub ip_address: Option<String>,
+    /// Use low bandwidth mode (lower quality, less network usage)
+    #[serde(default)]
+    pub low_bandwidth: bool,
+    /// Name to identify this receiver on the network
+    #[serde(default = "default_receiver_name")]
+    pub receiver_name: String,
+}
+
+fn default_receiver_name() -> String {
+    "SpiritStream".to_string()
 }
