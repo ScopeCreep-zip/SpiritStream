@@ -116,7 +116,9 @@ export const dialogs = {
     if (typeof window === 'undefined') return;
     const name = options.defaultPath || 'spiritstream-export.txt';
 
-    // Use File System Access API if available (shows save dialog every time)
+    // Use File System Access API if available (shows save dialog every time).
+    // Browser support: Chromium-based browsers 86+ only. Not supported in Firefox or Safari,
+    // which will always use the legacy download fallback below.
     if (window.showSaveFilePicker) {
       try {
         const types = buildPickerTypes(options.filters);
