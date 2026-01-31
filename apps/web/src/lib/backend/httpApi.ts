@@ -6,6 +6,7 @@ import type {
   Source,
   CameraDevice,
   DisplayInfo,
+  WindowInfo,
   AudioInputDevice,
   CaptureCardDevice,
 } from '@/types/source';
@@ -214,6 +215,7 @@ export const api = {
       invokeHttp<{
         cameras: CameraDevice[];
         displays: DisplayInfo[];
+        windows: WindowInfo[];
         audioDevices: AudioInputDevice[];
         captureCards: CaptureCardDevice[];
       }>('refresh_devices'),
@@ -221,6 +223,8 @@ export const api = {
     listCameras: () => invokeHttp<CameraDevice[]>('list_cameras'),
     /** List available displays for screen capture */
     listDisplays: () => invokeHttp<DisplayInfo[]>('list_displays'),
+    /** List available windows for window capture */
+    listWindows: () => invokeHttp<WindowInfo[]>('list_windows'),
     /** List available audio input devices */
     listAudioDevices: () => invokeHttp<AudioInputDevice[]>('list_audio_devices'),
     /** List available capture cards */
@@ -347,6 +351,14 @@ export const api = {
         credentials: 'include',
       });
     },
+  },
+  audio: {
+    /** Set the source IDs to monitor for audio levels */
+    setMonitorSources: (sourceIds: string[]) =>
+      invokeHttp<void>('set_audio_monitor_sources', { sourceIds }),
+    /** Get audio monitor status */
+    getMonitorStatus: () =>
+      invokeHttp<{ running: boolean }>('get_audio_monitor_status'),
   },
 };
 

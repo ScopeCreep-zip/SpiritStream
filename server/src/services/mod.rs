@@ -26,6 +26,7 @@ mod permissions;
 mod go2rtc_client;
 mod go2rtc_manager;
 mod h264_capture;
+mod audio_levels;
 
 pub use profile_manager::*;
 pub use ffmpeg_handler::*;
@@ -52,3 +53,4 @@ pub use permissions::*;
 pub use go2rtc_client::*;
 pub use go2rtc_manager::*;
 pub use h264_capture::*;
+pub use audio_levels::*;

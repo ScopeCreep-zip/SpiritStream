@@ -59,6 +59,8 @@ use spiritstream_server::services::{
     Go2RtcManager, unavailable_webrtc_info,
     // H264 capture service for native screen capture to WebRTC
     H264CaptureService,
+    // Audio level monitoring
+    AudioLevelService,
 };
 
 // ============================================================================
@@ -135,6 +137,8 @@ struct AppState {
     go2rtc_manager: Arc<Go2RtcManager>,
     // H264 capture service for native screen capture → WebRTC
     h264_capture: Arc<H264CaptureService>,
+    // Audio level monitoring service
+    audio_level_service: Arc<AudioLevelService>,
     // Server port for constructing HTTP URLs
     server_port: u16,
 }
@@ -1536,10 +1540,29 @@ async fn webrtc_start_handler(
             // RTMP sources can be used directly
             format!("rtmp://{}:{}/{}", rtmp.bind_address, rtmp.port, rtmp.application)
         }
-        // Client-rendered sources (Color, Text, Browser) are not supported for WebRTC
+        // Client-rendered sources (Color, Text, Browser, MediaPlaylist, NestedScene) are not supported for WebRTC
         // These are rendered purely in the browser and don't need go2rtc
-        Source::Color(_) | Source::Text(_) | Source::Browser(_) => {
-            return Json(json!({ "ok": false, "error": "Client-rendered sources (Color, Text, Browser) don't require WebRTC registration" }));
+        Source::Color(_) | Source::Text(_) | Source::Browser(_) | Source::MediaPlaylist(_) | Source::NestedScene(_) => {
+            return Json(json!({ "ok": false, "error": "Client-rendered sources don't require WebRTC registration" }));
+        }
+        Source::WindowCapture(win) => {
+            // Window capture - similar to screen capture
+            #[cfg(target_os = "macos")]
+            {
+                format!("ffmpeg:device?video={}&framerate={}#video=h264", win.window_id, win.fps)
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                return Json(json!({ "ok": false, "error": "Window capture not yet implemented for this platform via WebRTC" }));
+            }
+        }
+        Source::GameCapture(_) => {
+            // Game capture requires platform-specific implementation
+            return Json(json!({ "ok": false, "error": "Game capture not yet implemented for WebRTC streaming" }));
+        }
+        Source::Ndi(_ndi) => {
+            // NDI requires NDI SDK
+            return Json(json!({ "ok": false, "error": "NDI source requires NDI SDK to be installed" }));
         }
     };
 
@@ -2679,6 +2702,18 @@ async fn invoke_command(
             Ok(json!(guidance))
         }
 
+        // Audio level monitoring commands
+        "set_audio_monitor_sources" => {
+            let source_ids: Vec<String> = get_arg(&payload, "sourceIds")?;
+            state.audio_level_service.set_tracked_sources(source_ids).await;
+            Ok(Value::Null)
+        }
+        "get_audio_monitor_status" => {
+            Ok(json!({
+                "running": state.audio_level_service.is_running()
+            }))
+        }
+
         _ => Err(format!("Unknown command: {command}")),
     }
 }
@@ -3479,6 +3514,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         preview_ffmpeg_path.clone(),
     ));
 
+    // Initialize audio level monitoring service
+    let audio_level_service = Arc::new(AudioLevelService::new());
+    // Clone event_bus for audio level service before it's moved into state
+    let event_bus_for_audio = event_bus.clone();
+
     let state = AppState {
         profile_manager,
         settings_manager,
@@ -3502,8 +3542,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         capture_indicator,
         go2rtc_manager,
         h264_capture,
+        audio_level_service: audio_level_service.clone(),
         server_port: port,
     };
+
+    // Start audio level monitoring service
+    audio_level_service.start(Arc::new(event_bus_for_audio));
 
     // Build CORS layer
     let cors = build_cors_layer();

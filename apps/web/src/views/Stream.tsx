@@ -2,9 +2,9 @@
  * Stream Page
  * Multi-input streaming with scene composition
  */
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Play, Square, AlertTriangle, Plus, LayoutGrid } from 'lucide-react';
+import { Play, Square, AlertTriangle, Plus, LayoutGrid, Grid3X3 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Alert } from '@/components/ui/Alert';
 import { SourcesPanel } from '@/components/stream/SourcesPanel';
@@ -16,6 +16,8 @@ import { StudioModeLayout } from '@/components/stream/StudioModeLayout';
 import { TransitionOverlay } from '@/components/stream/TransitionOverlay';
 import { RecordingButton } from '@/components/stream/RecordingButton';
 import { ReplayBufferButton } from '@/components/stream/ReplayBufferButton';
+import { MultiviewPanel } from '@/components/stream/MultiviewPanel';
+import { AudioMonitorPanel } from '@/components/stream/AudioMonitorPanel';
 import { useProfileStore } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
 import { useSceneStore } from '@/stores/sceneStore';
@@ -26,6 +28,7 @@ import { toast } from '@/hooks/useToast';
 import { useHotkeys } from '@/hooks/useHotkeys';
 import { getIncomingUrl, migrateProfileIfNeeded } from '@/types/profile';
 import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValidation';
+import { api } from '@/lib/backend/httpApi';
 
 export function Stream() {
   const { t } = useTranslation();
@@ -54,6 +57,25 @@ export function Stream() {
   useHotkeys();
 
   const [isValidating, setIsValidating] = useState(false);
+  const [showMultiview, setShowMultiview] = useState(false);
+
+  // Toggle multiview with keyboard shortcut (Ctrl+M)
+  const handleToggleMultiview = useCallback(() => {
+    setShowMultiview((prev) => !prev);
+  }, []);
+
+  // Register Ctrl+M keyboard shortcut for Multiview
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'm') {
+        e.preventDefault();
+        handleToggleMultiview();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleToggleMultiview]);
 
   // Discover devices on mount
   useEffect(() => {
@@ -74,6 +96,19 @@ export function Stream() {
   // Get active scene
   const activeScene = current?.scenes.find((s) => s.id === current.activeSceneId);
   const selectedLayer = activeScene?.layers.find((l) => l.id === selectedLayerId);
+
+  // Sync audio monitor sources with backend when scene changes
+  useEffect(() => {
+    if (!activeScene) {
+      // No scene selected, clear audio monitoring
+      api.audio.setMonitorSources([]).catch(console.error);
+      return;
+    }
+
+    // Get audio track source IDs from the active scene
+    const sourceIds = activeScene.audioMixer.tracks.map((t) => t.sourceId);
+    api.audio.setMonitorSources(sourceIds).catch(console.error);
+  }, [activeScene?.id, activeScene?.audioMixer.tracks]);
 
   // Memoize whether streaming is possible (has at least one target configured)
   const canStream = useMemo(
@@ -188,6 +223,20 @@ export function Stream() {
           {/* Replay Buffer button */}
           <ReplayBufferButton />
 
+          {/* Multiview toggle */}
+          <button
+            onClick={handleToggleMultiview}
+            className={cn(
+              'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+              showMultiview
+                ? 'bg-[var(--primary)] text-white'
+                : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+            )}
+            title={t('stream.multiview', { defaultValue: 'Multiview (Ctrl+M)' })}
+          >
+            <Grid3X3 className="w-4 h-4" />
+          </button>
+
           {isStreaming ? (
             <Button variant="destructive" onClick={handleStopStreaming}>
               <Square className="w-4 h-4 mr-2" />
@@ -251,6 +300,7 @@ export function Stream() {
             <SceneCanvas
               scene={activeScene}
               sources={current.sources}
+              scenes={current.scenes}
               selectedLayerId={selectedLayerId}
               onSelectLayer={selectLayer}
               profileName={current.name}
@@ -275,11 +325,31 @@ export function Stream() {
         activeSceneId={current.activeSceneId}
       />
 
-      {/* Audio mixer (bottom) */}
-      <AudioMixerPanel
-        profile={current}
-        scene={activeScene}
-      />
+      {/* Audio section (bottom) */}
+      <div className="flex gap-4">
+        {/* Audio mixer */}
+        <div className="flex-1">
+          <AudioMixerPanel
+            profile={current}
+            scene={activeScene}
+          />
+        </div>
+        {/* Audio monitor */}
+        <div className="w-80 flex-shrink-0">
+          <AudioMonitorPanel
+            profile={current}
+            scene={activeScene}
+          />
+        </div>
+      </div>
+
+      {/* Multiview panel (overlay) */}
+      {showMultiview && (
+        <MultiviewPanel
+          profile={current}
+          onClose={() => setShowMultiview(false)}
+        />
+      )}
     </div>
   );
 }
