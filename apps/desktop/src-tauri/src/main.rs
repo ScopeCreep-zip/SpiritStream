@@ -3,7 +3,7 @@
 // Spawns the backend server and displays the UI
 
 use serde::{Deserialize, Serialize};
-use std::{env, sync::Mutex, time::Duration};
+use std::{env, fs, path::PathBuf, sync::Mutex, time::Duration};
 use tauri::{image::Image, AppHandle, Emitter, Manager, RunEvent, Runtime};
 use tauri_plugin_log::{Target, TargetKind};
 use tauri_plugin_shell::{
@@ -30,6 +30,145 @@ struct Settings {
     backend_port: u16,
     #[serde(default)]
     backend_token: String,
+}
+
+/// Migrate user data from legacy locations to the new Tauri data directory.
+/// This is a safety net in case the installer migration doesn't run (portable installs, dev builds).
+/// Legacy locations checked (in order):
+///   1. %APPDATA%\SpiritStream\
+///   2. %APPDATA%\spirit-stream\
+///   3. %LOCALAPPDATA%\SpiritStream\
+fn migrate_legacy_data(new_data_dir: &PathBuf) {
+    // Skip if new location already has profiles
+    let new_profiles_dir = new_data_dir.join("profiles");
+    if new_profiles_dir.exists()
+        && fs::read_dir(&new_profiles_dir)
+            .map(|mut entries| entries.next().is_some())
+            .unwrap_or(false)
+    {
+        log::debug!("New data directory already has profiles, skipping migration");
+        return;
+    }
+
+    // Skip if already migrated (marker file exists)
+    let migration_marker = new_data_dir.join(".migrated_from_legacy");
+    if migration_marker.exists() {
+        log::debug!("Migration marker exists, skipping migration");
+        return;
+    }
+
+    // Get base directories
+    let roaming_appdata = dirs_next::data_dir(); // %APPDATA%
+    let local_appdata = dirs_next::data_local_dir(); // %LOCALAPPDATA%
+
+    // Check legacy locations in order of preference
+    let legacy_locations: Vec<PathBuf> = [
+        roaming_appdata.as_ref().map(|p| p.join("SpiritStream")),
+        roaming_appdata.as_ref().map(|p| p.join("spirit-stream")),
+        local_appdata.as_ref().map(|p| p.join("SpiritStream")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+
+    let mut legacy_source: Option<PathBuf> = None;
+    for location in &legacy_locations {
+        let profiles_dir = location.join("profiles");
+        if profiles_dir.exists()
+            && fs::read_dir(&profiles_dir)
+                .map(|mut entries| entries.next().is_some())
+                .unwrap_or(false)
+        {
+            legacy_source = Some(location.clone());
+            break;
+        }
+    }
+
+    let Some(source) = legacy_source else {
+        log::debug!("No legacy data found to migrate");
+        return;
+    };
+
+    log::info!("Found legacy data at {:?}, migrating to {:?}", source, new_data_dir);
+
+    // Create target directories
+    fs::create_dir_all(&new_profiles_dir).ok();
+    fs::create_dir_all(new_data_dir.join("themes")).ok();
+    fs::create_dir_all(new_data_dir.join("logs")).ok();
+    fs::create_dir_all(new_data_dir.join("indexes")).ok();
+
+    // Copy profiles (critical user data)
+    if let Ok(entries) = fs::read_dir(source.join("profiles")) {
+        for entry in entries.flatten() {
+            let target = new_profiles_dir.join(entry.file_name());
+            if let Err(e) = fs::copy(entry.path(), &target) {
+                log::warn!("Failed to migrate profile {:?}: {}", entry.file_name(), e);
+            }
+        }
+        log::info!("Migrated profiles directory");
+    }
+
+    // Copy settings.json
+    let settings_src = source.join("settings.json");
+    if settings_src.exists() {
+        let target = new_data_dir.join("settings.json");
+        if let Err(e) = fs::copy(&settings_src, &target) {
+            log::warn!("Failed to migrate settings.json: {}", e);
+        } else {
+            log::info!("Migrated settings.json");
+        }
+    }
+
+    // Copy machine encryption key (critical for encrypted profiles)
+    let key_src = source.join(".stream_key");
+    if key_src.exists() {
+        let target = new_data_dir.join(".stream_key");
+        if let Err(e) = fs::copy(&key_src, &target) {
+            log::warn!("Failed to migrate .stream_key: {}", e);
+        } else {
+            log::info!("Migrated encryption key");
+        }
+    }
+
+    // Copy custom themes
+    let themes_src = source.join("themes");
+    if themes_src.exists() {
+        if let Ok(entries) = fs::read_dir(&themes_src) {
+            for entry in entries.flatten() {
+                let target = new_data_dir.join("themes").join(entry.file_name());
+                if let Err(e) = fs::copy(entry.path(), &target) {
+                    log::warn!("Failed to migrate theme {:?}: {}", entry.file_name(), e);
+                }
+            }
+            log::info!("Migrated themes directory");
+        }
+    }
+
+    // Copy profile order indexes
+    let indexes_src = source.join("indexes");
+    if indexes_src.exists() {
+        if let Ok(entries) = fs::read_dir(&indexes_src) {
+            for entry in entries.flatten() {
+                let target = new_data_dir.join("indexes").join(entry.file_name());
+                if let Err(e) = fs::copy(entry.path(), &target) {
+                    log::warn!("Failed to migrate index {:?}: {}", entry.file_name(), e);
+                }
+            }
+            log::info!("Migrated indexes directory");
+        }
+    }
+
+    // Create migration marker
+    let marker_content = format!(
+        "Migrated from: {:?}\nMigration date: {}\n",
+        source,
+        chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
+    );
+    if let Err(e) = fs::write(&migration_marker, marker_content) {
+        log::warn!("Failed to write migration marker: {}", e);
+    }
+
+    log::info!("Legacy data migration completed successfully");
 }
 
 fn main() {
@@ -182,6 +321,9 @@ fn spawn_server<R: Runtime>(
         .path()
         .app_local_data_dir()
         .map_err(|e| format!("Failed to resolve app local data dir: {e}"))?;
+
+    // Migrate legacy data from old locations (safety net for portable/dev installs)
+    migrate_legacy_data(&app_data_dir);
 
     // Put logs in a subdirectory of the local data dir
     let log_dir = app_data_dir.join("logs");
