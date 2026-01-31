@@ -1327,8 +1327,29 @@ impl FFmpegHandler {
             return offset;
         }
 
-        // Assign next available offset
-        let offset = self.next_port_offset.fetch_add(1, Ordering::SeqCst);
+        // Assign next available offset, preventing AtomicU16 wraparound
+        let offset = loop {
+            let current = self.next_port_offset.load(Ordering::SeqCst);
+            if current == u16::MAX {
+                log::error!(
+                    "Port offset counter reached maximum value ({}); \
+                    refusing to allocate new port offset to group {group_id}",
+                    u16::MAX
+                );
+                break current;
+            }
+
+            let next = current + 1;
+            match self.next_port_offset.compare_exchange(
+                current,
+                next,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => break current,
+                Err(_) => continue,
+            }
+        };
         assignments.insert(group_id.to_string(), offset);
 
         log::debug!("Assigned port offset {offset} to group {group_id} (relay: {}, meter: {})",
