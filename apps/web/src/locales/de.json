@@ -229,7 +229,8 @@
     "videoBitrateHelper": "Empfohlen: 4500-6000 für 1080p, 3000-4500 für 720p",
     "videoBitrateKbps": "Video-Bitrate (kbps)",
     "videoEncoder": "Video-Encoder",
-    "videoEncoderSettings": "Video-Encoder-Einstellungen"
+    "videoEncoderSettings": "Video-Encoder-Einstellungen",
+    "generatePtsDescription": "Erstellt Zeitstempel und synchronisiert das Audio-Timing. Verbessert die Stream-Stabilität und behebt Encoding-Probleme bei geringem CPU-Aufwand."
   },
   "errors": {
     "connectionFailed": "Verbindung fehlgeschlagen",
@@ -699,7 +700,14 @@
     "streamError": "Stream-Fehler",
     "totalBandwidth": "Gesamtbandbreite",
     "uptime": "Laufzeit",
-    "validating": "Validiere..."
+    "validating": "Validiere...",
+    "autoRetrying": "Stream getrennt, stelle Verbindung wieder her...",
+    "reconnectedTitle": "Stream wieder verbunden",
+    "reconnectFailedTitle": "Wiederverbindung fehlgeschlagen",
+    "reconnectingAttempt": "Stelle Verbindung wieder her... (Versuch {{attempt}}/{{max}})",
+    "reconnectingTitle": "Stream wird wieder verbunden",
+    "retryFailed": "Wiederverbindung fehlgeschlagen: {{error}}",
+    "retrySuccess": "Stream erfolgreich wieder verbunden"
   },
   "targets": {
     "addNewTarget": "Neues Ziel hinzufügen",
@@ -744,7 +752,9 @@
     "targetUpdated": "Stream-Ziel aktualisiert",
     "testFailed": "Stream-Test fehlgeschlagen",
     "testPassed": "Alle Prüfungen bestanden! Ihre Streaming-Konfiguration ist gültig.",
-    "testingConfig": "Streaming-Konfiguration wird getestet..."
+    "testingConfig": "Streaming-Konfiguration wird getestet...",
+    "groupStarted": "Ausgabegruppe gestartet",
+    "groupStopped": "Ausgabegruppe gestoppt"
   },
   "validation": {
     "applicationRequired": "Anwendungsname ist erforderlich",
@@ -766,5 +776,37 @@
     "urlInvalid": "URL muss mit rtmp:// oder rtmps:// beginnen",
     "urlMustStartWithRtmp": "URL muss mit rtmp:// oder rtmps:// beginnen",
     "urlRequired": "URL ist erforderlich"
+  },
+  "discord": {
+    "attachImage": "Bild anhängen",
+    "cooldownDescription": "Doppelte Benachrichtigungen beim Neustart von Streams verhindern",
+    "cooldownInfo": "Wenn aktiviert, wird bei Stoppen und erneutem Start innerhalb der Abkühlzeit keine neue Benachrichtigung gesendet. Das verhindert Spam bei technischen Problemen.",
+    "cooldownSeconds": "Abkühlzeit",
+    "cooldownSettings": "Abkühlinstellungen",
+    "description": "Go-Live-Benachrichtigungen an Discord senden",
+    "enableCooldown": "Abkühlzeit aktivieren",
+    "enableCooldownDescription": "Doppelte Benachrichtigungen innerhalb der Abkühlzeit verhindern",
+    "enableWebhook": "Discord-Webhook aktivieren",
+    "enableWebhookDescription": "Benachrichtigungen senden, wenn Streams starten",
+    "enterWebhookFirst": "Bitte zuerst eine Webhook-URL eingeben",
+    "goLiveMessage": "Go-Live-Nachricht",
+    "goLiveMessageDescription": "Nachricht, die beim Start deines Streams gesendet wird. Unterstützt Discord-Markdown.",
+    "imageDesktopOnly": "Bildanhang erfordert die Desktop-App. Im Browsermodus kannst du stattdessen eine Bild-URL in der Nachricht verwenden.",
+    "imageHint": "PNG, JPG, GIF oder WebP (max. 8 MB). Das Bild wird der Benachrichtigung angehängt.",
+    "insertEmoji": "Emoji einfügen",
+    "invalidWebhookUrl": "Ungültige Webhook-URL. Muss mit https://discord.com/api/webhooks/ beginnen",
+    "markdownSupport": "Discord-Markdown wird unterstützt:",
+    "messagePlaceholder": "**Stream ist jetzt live!**\n\nKomm zum Stream!",
+    "removeImage": "Bild entfernen",
+    "seconds": "Sekunden",
+    "selectImage": "Bild auswählen",
+    "testFailed": "Test fehlgeschlagen",
+    "testPassed": "Test bestanden",
+    "testSuccess": "Testbenachrichtigung erfolgreich gesendet!",
+    "testWebhook": "Webhook testen",
+    "title": "Discord-Webhook",
+    "webhookSettings": "Webhook-Einstellungen",
+    "webhookSettingsDescription": "Discord-Webhook für Go-Live-Benachrichtigungen konfigurieren",
+    "webhookUrl": "Webhook-URL"
   }
 }

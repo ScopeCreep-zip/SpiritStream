@@ -229,7 +229,8 @@
     "videoBitrateHelper": "Recomendado: 4500-6000 para 1080p, 3000-4500 para 720p",
     "videoBitrateKbps": "Tasa de Bits de Video (kbps)",
     "videoEncoder": "Codificador de Video",
-    "videoEncoderSettings": "Ajustes del Codificador de Video"
+    "videoEncoderSettings": "Ajustes del Codificador de Video",
+    "generatePtsDescription": "Genera marcas de tiempo y sincroniza el audio. Mejora la estabilidad del stream y corrige problemas de codificación con un leve costo de CPU."
   },
   "errors": {
     "connectionFailed": "Error de conexión",
@@ -699,7 +700,14 @@
     "streamError": "Error de Transmisión",
     "totalBandwidth": "Ancho de banda total",
     "uptime": "Tiempo Activo",
-    "validating": "Validando..."
+    "validating": "Validando...",
+    "autoRetrying": "Transmisión desconectada, reconectando...",
+    "reconnectedTitle": "Transmisión reconectada",
+    "reconnectFailedTitle": "Fallo de reconexión",
+    "reconnectingAttempt": "Reconectando... (intento {{attempt}}/{{max}})",
+    "reconnectingTitle": "Reconectando transmisión",
+    "retryFailed": "Falló la reconexión: {{error}}",
+    "retrySuccess": "Transmisión reconectada correctamente"
   },
   "targets": {
     "addNewTarget": "Añadir Nuevo Destino",
@@ -744,7 +752,9 @@
     "targetUpdated": "Destino de transmisión actualizado",
     "testFailed": "Error en la prueba de transmisión",
     "testPassed": "¡Todas las comprobaciones pasaron! Tu configuración de transmisión es válida.",
-    "testingConfig": "Probando configuración de transmisión..."
+    "testingConfig": "Probando configuración de transmisión...",
+    "groupStarted": "Grupo de salida iniciado",
+    "groupStopped": "Grupo de salida detenido"
   },
   "validation": {
     "applicationRequired": "El nombre de la aplicación es obligatorio",
@@ -766,5 +776,37 @@
     "urlInvalid": "La URL debe comenzar con rtmp:// o rtmps://",
     "urlMustStartWithRtmp": "La URL debe comenzar con rtmp:// o rtmps://",
     "urlRequired": "La URL es obligatoria"
+  },
+  "discord": {
+    "attachImage": "Adjuntar imagen",
+    "cooldownDescription": "Evita notificaciones duplicadas al reiniciar transmisiones",
+    "cooldownInfo": "Cuando está habilitado, si detienes y reinicias tu transmisión dentro del período de enfriamiento, no se enviará una nueva notificación. Esto evita spam al resolver problemas técnicos.",
+    "cooldownSeconds": "Enfriamiento",
+    "cooldownSettings": "Ajustes de enfriamiento",
+    "description": "Enviar notificaciones de inicio en Discord",
+    "enableCooldown": "Habilitar enfriamiento",
+    "enableCooldownDescription": "Evita notificaciones duplicadas dentro del período de enfriamiento",
+    "enableWebhook": "Habilitar webhook de Discord",
+    "enableWebhookDescription": "Enviar notificaciones cuando inicien las transmisiones",
+    "enterWebhookFirst": "Ingresa primero una URL de webhook",
+    "goLiveMessage": "Mensaje de inicio",
+    "goLiveMessageDescription": "El mensaje que se envía cuando inicia tu transmisión. Admite markdown de Discord.",
+    "imageDesktopOnly": "El adjunto de imagen requiere la app de escritorio. En modo navegador, puedes usar una URL de imagen en tu mensaje.",
+    "imageHint": "PNG, JPG, GIF o WebP (máx. 8 MB). La imagen se adjuntará a tu notificación.",
+    "insertEmoji": "Insertar emoji",
+    "invalidWebhookUrl": "URL de webhook no válida. Debe comenzar con https://discord.com/api/webhooks/",
+    "markdownSupport": "Se admite markdown de Discord:",
+    "messagePlaceholder": "**¡La transmisión está en vivo!**\n\n¡Únete a la transmisión!",
+    "removeImage": "Eliminar imagen",
+    "seconds": "segundos",
+    "selectImage": "Seleccionar imagen",
+    "testFailed": "Prueba fallida",
+    "testPassed": "Prueba exitosa",
+    "testSuccess": "¡Notificación de prueba enviada correctamente!",
+    "testWebhook": "Probar webhook",
+    "title": "Webhook de Discord",
+    "webhookSettings": "Ajustes de webhook",
+    "webhookSettingsDescription": "Configura tu webhook de Discord para notificaciones de inicio",
+    "webhookUrl": "URL del webhook"
   }
 }
