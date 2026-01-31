@@ -1,7 +1,9 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { events, api } from '@/lib/backend';
 import { useStreamStore } from '@/stores/streamStore';
+import { useSettingsStore } from '@/stores/settingsStore';
 import { toast } from '@/hooks/useToast';
+import { showSystemNotification } from '@/lib/notification';
 import { useTranslation } from 'react-i18next';
 
 /**
@@ -61,18 +63,44 @@ export function useStreamStats() {
 
     try {
       // Show toast that we're retrying
-      toast.info(t('stream.autoRetrying', 'Stream disconnected, reconnecting...'));
+      toast.info(t('streams.autoRetrying', 'Stream disconnected, reconnecting...'));
+
+      // Show OS notification if enabled
+      const showNotifications = useSettingsStore.getState().showNotifications;
+      if (showNotifications) {
+        showSystemNotification(
+          t('streams.reconnectingTitle', 'Stream Reconnecting'),
+          t('streams.autoRetrying', 'Stream disconnected, reconnecting...')
+        );
+      }
 
       const result = await api.stream.retry(groupId);
 
       if (result.pid > 0) {
         // Retry succeeded
-        toast.success(t('stream.retrySuccess', 'Stream reconnected successfully'));
+        toast.success(t('streams.retrySuccess', 'Stream reconnected successfully'));
+
+        // OS notification for success
+        if (showNotifications) {
+          showSystemNotification(
+            t('streams.reconnectedTitle', 'Stream Reconnected'),
+            t('streams.retrySuccess', 'Stream reconnected successfully')
+          );
+        }
       }
     } catch (error) {
       // Retry failed - show error but don't spam
       const message = error instanceof Error ? error.message : String(error);
-      toast.error(t('stream.retryFailed', 'Reconnection failed: {{error}}', { error: message }));
+      toast.error(t('streams.retryFailed', 'Reconnection failed: {{error}}', { error: message }));
+
+      // OS notification for failure
+      const showNotifications = useSettingsStore.getState().showNotifications;
+      if (showNotifications) {
+        showSystemNotification(
+          t('streams.reconnectFailedTitle', 'Reconnection Failed'),
+          t('streams.retryFailed', 'Reconnection failed: {{error}}', { error: message })
+        );
+      }
     } finally {
       retryingGroups.current.delete(groupId);
     }
@@ -109,7 +137,7 @@ export function useStreamStats() {
       // Listen for reconnecting events (backend-initiated retry in progress)
       unlistenReconnecting = await events.on<StreamReconnecting>('stream_reconnecting', (payload) => {
         toast.info(
-          t('stream.reconnectingAttempt', 'Reconnecting... (attempt {{attempt}}/{{max}})', {
+          t('streams.reconnectingAttempt', 'Reconnecting... (attempt {{attempt}}/{{max}})', {
             attempt: payload.attempt,
             max: payload.maxAttempts,
           })
