@@ -14,11 +14,22 @@ interface StudioState {
   previewSceneId: string | null;
   /** Scene ID shown in Program pane (live) */
   programSceneId: string | null;
+  /** Whether to swap preview/program after TAKE transition */
+  swapAfterTransition: boolean;
+  /** T-bar progress (0 = fully on Program, 1 = fully on Preview) */
+  tBarProgress: number;
+  /** Whether the T-bar is currently being dragged */
+  tBarDragging: boolean;
 
   /**
    * Toggle Studio Mode on/off
    */
   toggleStudioMode: () => void;
+
+  /**
+   * Set swap after transition setting
+   */
+  setSwapAfterTransition: (enabled: boolean) => void;
 
   /**
    * Enable Studio Mode
@@ -44,12 +55,31 @@ interface StudioState {
    * Sync studio state with profile's active scene
    */
   syncWithProfile: (activeSceneId: string | null) => void;
+
+  /**
+   * Set T-bar progress (0-1)
+   * Used for manual transition control
+   */
+  setTBarProgress: (progress: number) => void;
+
+  /**
+   * Start T-bar dragging
+   */
+  startTBarDrag: () => void;
+
+  /**
+   * End T-bar dragging - if progress >= 0.5, complete transition
+   */
+  endTBarDrag: () => void;
 }
 
 export const useStudioStore = create<StudioState>((set, get) => ({
   enabled: false,
   previewSceneId: null,
   programSceneId: null,
+  swapAfterTransition: false,
+  tBarProgress: 0,
+  tBarDragging: false,
 
   toggleStudioMode: () => {
     const { enabled } = get();
@@ -80,12 +110,16 @@ export const useStudioStore = create<StudioState>((set, get) => ({
     });
   },
 
+  setSwapAfterTransition: (enabled) => {
+    set({ swapAfterTransition: enabled });
+  },
+
   setPreviewScene: (sceneId) => {
     set({ previewSceneId: sceneId });
   },
 
   executeTake: async (overrideTransition) => {
-    const { previewSceneId, programSceneId, enabled } = get();
+    const { previewSceneId, programSceneId, enabled, swapAfterTransition } = get();
 
     // Can't take if not in studio mode or preview equals program
     if (!enabled || !previewSceneId || previewSceneId === programSceneId) {
@@ -98,6 +132,9 @@ export const useStudioStore = create<StudioState>((set, get) => ({
 
     const previewScene = profile.scenes.find((s) => s.id === previewSceneId);
     if (!previewScene) return;
+
+    // Store old program scene for potential swap
+    const oldProgramSceneId = programSceneId;
 
     // Get effective transition
     const transition =
@@ -114,8 +151,15 @@ export const useStudioStore = create<StudioState>((set, get) => ({
 
     await new Promise((resolve) => setTimeout(resolve, duration));
 
-    // Update program to match preview
-    set({ programSceneId: previewSceneId });
+    // Update program to match preview, and optionally swap preview to old program
+    if (swapAfterTransition && oldProgramSceneId) {
+      set({
+        programSceneId: previewSceneId,
+        previewSceneId: oldProgramSceneId,
+      });
+    } else {
+      set({ programSceneId: previewSceneId });
+    }
 
     // Also update the profile's active scene
     useProfileStore.getState().setCurrentActiveScene(previewSceneId);
@@ -131,6 +175,53 @@ export const useStudioStore = create<StudioState>((set, get) => ({
       set({
         programSceneId: activeSceneId,
         previewSceneId: previewSceneId || activeSceneId,
+      });
+    }
+  },
+
+  setTBarProgress: (progress) => {
+    // Clamp to 0-1
+    const clampedProgress = Math.max(0, Math.min(1, progress));
+    set({ tBarProgress: clampedProgress });
+  },
+
+  startTBarDrag: () => {
+    set({ tBarDragging: true });
+  },
+
+  endTBarDrag: () => {
+    const { tBarProgress, previewSceneId, programSceneId, swapAfterTransition } = get();
+
+    // If progress is >= 0.5 (or reached 1), complete the transition
+    if (tBarProgress >= 0.5) {
+      // Store old program for swap
+      const oldProgramSceneId = programSceneId;
+
+      // Complete the transition instantly (since T-bar controlled the visual blend)
+      if (swapAfterTransition && oldProgramSceneId) {
+        set({
+          programSceneId: previewSceneId,
+          previewSceneId: oldProgramSceneId,
+          tBarProgress: 0,
+          tBarDragging: false,
+        });
+      } else {
+        set({
+          programSceneId: previewSceneId,
+          tBarProgress: 0,
+          tBarDragging: false,
+        });
+      }
+
+      // Update the profile's active scene
+      if (previewSceneId) {
+        useProfileStore.getState().setCurrentActiveScene(previewSceneId);
+      }
+    } else {
+      // Snap back to 0 (cancel the transition)
+      set({
+        tBarProgress: 0,
+        tBarDragging: false,
       });
     }
   },

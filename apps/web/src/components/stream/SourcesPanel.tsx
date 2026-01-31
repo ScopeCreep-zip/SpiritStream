@@ -19,6 +19,12 @@ import {
   Palette,
   Type,
   Globe,
+  FolderOpen,
+  FolderClosed,
+  Lock,
+  Unlock,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import {
   DndContext,
@@ -38,8 +44,11 @@ import { CSS } from '@dnd-kit/utilities';
 import { Card, CardHeader, CardTitle, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { AddSourceModal } from '@/components/modals/AddSourceModal';
+import { HotkeyCaptureModal } from './HotkeyCaptureModal';
+import { useHotkeyStore } from '@/stores/hotkeyStore';
+import { formatHotkeyBinding } from '@/types/hotkeys';
 import type { Profile, Scene, Source } from '@/types/profile';
-import type { SourceLayer } from '@/types/scene';
+import type { SourceLayer, LayerGroup } from '@/types/scene';
 import { createDefaultTransform } from '@/types/scene';
 import { useSceneStore } from '@/stores/sceneStore';
 import { useSourceStore } from '@/stores/sourceStore';
@@ -307,17 +316,34 @@ const SourceThumbnail = memo(function SourceThumbnail({
 interface SortableLayerItemProps {
   layer: SourceLayer;
   source: Source | undefined;
+  sceneId: string;
+  isSelected?: boolean;
+  isGrouped?: boolean;
   onToggleVisibility: (layerId: string, currentVisible: boolean) => void;
   onRemoveSource: (source: Source) => void;
+  onSetHotkey: (layerId: string, layerName: string) => void;
+  onClick?: (layerId: string, e: React.MouseEvent) => void;
+  onRemoveFromGroup?: (layerId: string) => void;
 }
 
 const SortableLayerItem = memo(function SortableLayerItem({
   layer,
   source,
+  sceneId,
+  isSelected = false,
+  isGrouped = false,
   onToggleVisibility,
   onRemoveSource,
+  onSetHotkey,
+  onClick,
+  onRemoveFromGroup,
 }: SortableLayerItemProps) {
   const { t } = useTranslation();
+  const { getLayerBinding } = useHotkeyStore();
+  const [showContextMenu, setShowContextMenu] = useState(false);
+  const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+
   const {
     attributes,
     listeners,
@@ -326,6 +352,31 @@ const SortableLayerItem = memo(function SortableLayerItem({
     transition,
     isDragging,
   } = useSortable({ id: layer.id });
+
+  // Get hotkey binding for this layer
+  const hotkeyBinding = getLayerBinding(layer.id, sceneId);
+
+  // Handle right-click context menu
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenuPos({ x: e.clientX, y: e.clientY });
+    setShowContextMenu(true);
+  }, []);
+
+  // Close context menu when clicking outside
+  useEffect(() => {
+    if (!showContextMenu) return;
+
+    const handleClickOutside = (e: globalThis.MouseEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setShowContextMenu(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showContextMenu]);
 
   const style: React.CSSProperties = {
     transform: transform
@@ -353,70 +404,310 @@ const SortableLayerItem = memo(function SortableLayerItem({
   }
 
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`flex items-center gap-2 p-2 rounded group transition-colors cursor-grab active:cursor-grabbing ${
-        isDragging ? 'bg-muted/50' : 'hover:bg-muted/30'
-      }`}
-      {...attributes}
-      {...listeners}
-    >
-      {/* Live thumbnail preview - uses persistent WebRTC connections */}
-      <SourceThumbnail
-        sourceId={source.id}
-        sourceType={source.type}
-        filePath={source.type === 'mediaFile' && 'filePath' in source ? source.filePath : undefined}
-      />
+    <>
+      <div
+        ref={setNodeRef}
+        style={style}
+        className={`flex items-center gap-2 p-2 rounded group transition-colors cursor-grab active:cursor-grabbing ${
+          isDragging ? 'bg-muted/50' : 'hover:bg-muted/30'
+        } ${isSelected ? 'ring-2 ring-primary bg-primary/10' : ''} ${isGrouped ? 'ml-4' : ''}`}
+        onClick={(e) => onClick?.(layer.id, e)}
+        onContextMenu={handleContextMenu}
+        {...attributes}
+        {...listeners}
+      >
+        {/* Live thumbnail preview - uses persistent WebRTC connections */}
+        <SourceThumbnail
+          sourceId={source.id}
+          sourceType={source.type}
+          filePath={source.type === 'mediaFile' && 'filePath' in source ? source.filePath : undefined}
+        />
 
-      {/* Source name and icon */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-start gap-1">
-          <SourceIcon type={source.type} />
-          <span className="text-sm break-words">{source.name}</span>
+        {/* Source name and icon */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start gap-1">
+            <SourceIcon type={source.type} />
+            <span className="text-sm break-words">{source.name}</span>
+          </div>
+          {/* Show hotkey indicator if set */}
+          {hotkeyBinding && (
+            <span className="text-[10px] text-[var(--text-muted)]">
+              {formatHotkeyBinding(hotkeyBinding)}
+            </span>
+          )}
+        </div>
+
+        {/* Action buttons - grouped together */}
+        <div className="flex items-center gap-0.5 ml-2">
+          {/* Visibility toggle */}
+          <button
+            className="p-1.5 rounded hover:bg-muted/50 transition-colors min-w-[28px] min-h-[28px] flex items-center justify-center"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleVisibility(layer.id, layer.visible);
+            }}
+            title={layer.visible ? t('stream.hideInScene', { defaultValue: 'Hide in scene' }) : t('stream.showInScene', { defaultValue: 'Show in scene' })}
+          >
+            {layer.visible ? (
+              <Eye className="w-4 h-4 text-primary" />
+            ) : (
+              <EyeOff className="w-4 h-4 text-muted" />
+            )}
+          </button>
+
+          {/* Delete button - removes source from profile entirely */}
+          <button
+            className="opacity-40 group-hover:opacity-100 p-1.5 hover:bg-destructive/20 rounded transition-opacity min-w-[28px] min-h-[28px] flex items-center justify-center"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemoveSource(source);
+            }}
+            title={t('stream.removeSource', { defaultValue: 'Remove source' })}
+          >
+            <Trash2 className="w-4 h-4 text-destructive" />
+          </button>
         </div>
       </div>
 
-      {/* Action buttons - grouped together */}
-      <div className="flex items-center gap-0.5 ml-2">
-        {/* Visibility toggle */}
-        <button
-          className="p-1.5 rounded hover:bg-muted/50 transition-colors min-w-[28px] min-h-[28px] flex items-center justify-center"
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleVisibility(layer.id, layer.visible);
-          }}
-          title={layer.visible ? t('stream.hideInScene', { defaultValue: 'Hide in scene' }) : t('stream.showInScene', { defaultValue: 'Show in scene' })}
+      {/* Context menu */}
+      {showContextMenu && (
+        <div
+          ref={contextMenuRef}
+          className="fixed z-50 bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-lg shadow-lg py-1 min-w-[160px]"
+          style={{ left: contextMenuPos.x, top: contextMenuPos.y }}
         >
-          {layer.visible ? (
-            <Eye className="w-4 h-4 text-primary" />
-          ) : (
-            <EyeOff className="w-4 h-4 text-muted" />
+          <button
+            type="button"
+            className="w-full px-3 py-1.5 text-left text-sm hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]"
+            onClick={() => {
+              onToggleVisibility(layer.id, layer.visible);
+              setShowContextMenu(false);
+            }}
+          >
+            {layer.visible
+              ? t('stream.hideLayer', { defaultValue: 'Hide Layer' })
+              : t('stream.showLayer', { defaultValue: 'Show Layer' })}
+          </button>
+          <div className="h-px bg-[var(--border-default)] my-1" />
+          <button
+            type="button"
+            className="w-full px-3 py-1.5 text-left text-sm hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]"
+            onClick={() => {
+              onSetHotkey(layer.id, source.name);
+              setShowContextMenu(false);
+            }}
+          >
+            {t('hotkeys.setVisibilityHotkey', { defaultValue: 'Set Visibility Hotkey...' })}
+          </button>
+          {isGrouped && onRemoveFromGroup && (
+            <>
+              <div className="h-px bg-[var(--border-default)] my-1" />
+              <button
+                type="button"
+                className="w-full px-3 py-1.5 text-left text-sm hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]"
+                onClick={() => {
+                  onRemoveFromGroup(layer.id);
+                  setShowContextMenu(false);
+                }}
+              >
+                {t('stream.removeFromGroup', { defaultValue: 'Remove from Group' })}
+              </button>
+            </>
           )}
-        </button>
+          <div className="h-px bg-[var(--border-default)] my-1" />
+          <button
+            type="button"
+            className="w-full px-3 py-1.5 text-left text-sm hover:bg-destructive/10 text-destructive"
+            onClick={() => {
+              onRemoveSource(source);
+              setShowContextMenu(false);
+            }}
+          >
+            {t('stream.removeSource', { defaultValue: 'Remove Source' })}
+          </button>
+        </div>
+      )}
+    </>
+  );
+});
 
-        {/* Delete button - removes source from profile entirely */}
-        <button
-          className="opacity-40 group-hover:opacity-100 p-1.5 hover:bg-destructive/20 rounded transition-opacity min-w-[28px] min-h-[28px] flex items-center justify-center"
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemoveSource(source);
-          }}
-          title={t('stream.removeSource', { defaultValue: 'Remove source' })}
-        >
-          <Trash2 className="w-4 h-4 text-destructive" />
-        </button>
+interface GroupHeaderProps {
+  group: LayerGroup;
+  onToggleCollapsed: () => void;
+  onToggleVisibility: () => void;
+  onToggleLock: () => void;
+  onUngroup: () => void;
+}
+
+const GroupHeader = memo(function GroupHeader({
+  group,
+  onToggleCollapsed,
+  onToggleVisibility,
+  onToggleLock,
+  onUngroup,
+}: GroupHeaderProps) {
+  const { t } = useTranslation();
+  const [showContextMenu, setShowContextMenu] = useState(false);
+  const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenuPos({ x: e.clientX, y: e.clientY });
+    setShowContextMenu(true);
+  }, []);
+
+  useEffect(() => {
+    if (!showContextMenu) return;
+
+    const handleClickOutside = (e: globalThis.MouseEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setShowContextMenu(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showContextMenu]);
+
+  return (
+    <>
+      <div
+        className={`flex items-center gap-2 p-2 rounded bg-[var(--bg-elevated)] cursor-pointer hover:bg-[var(--bg-hover)] ${
+          !group.visible ? 'opacity-50' : ''
+        }`}
+        onClick={onToggleCollapsed}
+        onContextMenu={handleContextMenu}
+      >
+        {/* Collapse indicator */}
+        {group.collapsed ? (
+          <ChevronRight className="w-4 h-4 text-[var(--text-muted)]" />
+        ) : (
+          <ChevronDown className="w-4 h-4 text-[var(--text-muted)]" />
+        )}
+
+        {/* Folder icon */}
+        {group.collapsed ? (
+          <FolderClosed className="w-4 h-4 text-[var(--primary)]" />
+        ) : (
+          <FolderOpen className="w-4 h-4 text-[var(--primary)]" />
+        )}
+
+        {/* Group name and count */}
+        <span className="flex-1 text-sm font-medium">
+          {group.name}
+          <span className="ml-1 text-xs text-[var(--text-muted)]">
+            ({group.layerIds.length})
+          </span>
+        </span>
+
+        {/* Action buttons */}
+        <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+          {/* Lock toggle */}
+          <button
+            className="p-1.5 rounded hover:bg-muted/50 transition-colors"
+            onClick={onToggleLock}
+            title={group.locked
+              ? t('stream.unlockGroup', { defaultValue: 'Unlock group' })
+              : t('stream.lockGroup', { defaultValue: 'Lock group' })
+            }
+          >
+            {group.locked ? (
+              <Lock className="w-4 h-4 text-[var(--warning)]" />
+            ) : (
+              <Unlock className="w-4 h-4 text-[var(--text-muted)]" />
+            )}
+          </button>
+
+          {/* Visibility toggle */}
+          <button
+            className="p-1.5 rounded hover:bg-muted/50 transition-colors"
+            onClick={onToggleVisibility}
+            title={group.visible
+              ? t('stream.hideGroup', { defaultValue: 'Hide group' })
+              : t('stream.showGroup', { defaultValue: 'Show group' })
+            }
+          >
+            {group.visible ? (
+              <Eye className="w-4 h-4 text-primary" />
+            ) : (
+              <EyeOff className="w-4 h-4 text-muted" />
+            )}
+          </button>
+        </div>
       </div>
-    </div>
+
+      {/* Context menu */}
+      {showContextMenu && (
+        <div
+          ref={contextMenuRef}
+          className="fixed z-50 bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-lg shadow-lg py-1 min-w-[160px]"
+          style={{ left: contextMenuPos.x, top: contextMenuPos.y }}
+        >
+          <button
+            type="button"
+            className="w-full px-3 py-1.5 text-left text-sm hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]"
+            onClick={() => {
+              onToggleVisibility();
+              setShowContextMenu(false);
+            }}
+          >
+            {group.visible
+              ? t('stream.hideGroup', { defaultValue: 'Hide Group' })
+              : t('stream.showGroup', { defaultValue: 'Show Group' })}
+          </button>
+          <button
+            type="button"
+            className="w-full px-3 py-1.5 text-left text-sm hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]"
+            onClick={() => {
+              onToggleLock();
+              setShowContextMenu(false);
+            }}
+          >
+            {group.locked
+              ? t('stream.unlockGroup', { defaultValue: 'Unlock Group' })
+              : t('stream.lockGroup', { defaultValue: 'Lock Group' })}
+          </button>
+          <div className="h-px bg-[var(--border-default)] my-1" />
+          <button
+            type="button"
+            className="w-full px-3 py-1.5 text-left text-sm hover:bg-destructive/10 text-destructive"
+            onClick={() => {
+              onUngroup();
+              setShowContextMenu(false);
+            }}
+          >
+            {t('stream.ungroup', { defaultValue: 'Ungroup' })}
+          </button>
+        </div>
+      )}
+    </>
   );
 });
 
 export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
   const { t } = useTranslation();
-  const { addLayer, updateLayer, reorderLayers } = useSceneStore();
+  const {
+    addLayer,
+    updateLayer,
+    reorderLayers,
+    selectedLayerIds,
+    toggleLayerSelection,
+    clearLayerSelection,
+    createGroup,
+    deleteGroup,
+    toggleGroupVisibility,
+    toggleGroupLock,
+    toggleGroupCollapsed,
+    removeLayerFromGroup,
+  } = useSceneStore();
   const { removeSource } = useSourceStore();
-  const { removeCurrentSource, updateCurrentLayer, reorderCurrentLayers, addCurrentLayer } = useProfileStore();
+  const { removeCurrentSource, updateCurrentLayer, reorderCurrentLayers, addCurrentLayer, updateCurrentScene } = useProfileStore();
   const [showAddModal, setShowAddModal] = useState(false);
+  const [hotkeyModalOpen, setHotkeyModalOpen] = useState(false);
+  const [hotkeyTargetLayer, setHotkeyTargetLayer] = useState<{ id: string; name: string } | null>(null);
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
 
   // Sensors for drag and drop
   const sensors = useSensors(
@@ -428,6 +719,26 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
     if (!activeScene) return [];
     return [...activeScene.layers].sort((a, b) => b.zIndex - a.zIndex);
   }, [activeScene?.layers]);
+
+  // Organize layers: ungrouped layers and groups with their children
+  const organizedLayers = useMemo(() => {
+    if (!activeScene) return { ungrouped: [], groups: [] };
+
+    const groupedLayerIds = new Set(
+      activeScene.groups?.flatMap((g) => g.layerIds) ?? []
+    );
+
+    // Ungrouped layers sorted by zIndex (descending)
+    const ungrouped = sortedLayers.filter((l) => !groupedLayerIds.has(l.id));
+
+    // Groups with their layers
+    const groups = (activeScene.groups ?? []).map((group) => ({
+      group,
+      layers: sortedLayers.filter((l) => group.layerIds.includes(l.id)),
+    }));
+
+    return { ungrouped, groups };
+  }, [activeScene, sortedLayers]);
 
   // Create source lookup map for O(1) access instead of O(n) find()
   const sourceMap = useMemo(
@@ -466,6 +777,152 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
       }
     }
   }, [profile.name, removeSource, removeCurrentSource, t]);
+
+  const handleSetHotkey = useCallback((layerId: string, layerName: string) => {
+    setHotkeyTargetLayer({ id: layerId, name: layerName });
+    setHotkeyModalOpen(true);
+  }, []);
+
+  // Group operations
+  const handleCreateGroup = useCallback(async () => {
+    if (!activeScene || selectedLayerIds.length < 2) return;
+
+    try {
+      const newGroup = await createGroup(
+        profile.name,
+        activeScene,
+        selectedLayerIds,
+        t('stream.newGroup', { defaultValue: 'New Group' })
+      );
+      // Update local scene state
+      updateCurrentScene(activeScene.id, {
+        groups: [...(activeScene.groups || []), newGroup],
+      });
+      toast.success(t('stream.groupCreated', { defaultValue: 'Group created' }));
+    } catch (err) {
+      toast.error(t('stream.groupCreateFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to create group: ${err instanceof Error ? err.message : String(err)}` }));
+    }
+  }, [activeScene, selectedLayerIds, createGroup, profile.name, t, updateCurrentScene]);
+
+  const handleToggleGroupVisibility = useCallback(async (groupId: string) => {
+    if (!activeScene) return;
+
+    try {
+      await toggleGroupVisibility(profile.name, activeScene, groupId);
+      const group = activeScene.groups?.find((g) => g.id === groupId);
+      if (group) {
+        // Update local state
+        updateCurrentScene(activeScene.id, {
+          groups: activeScene.groups?.map((g) =>
+            g.id === groupId ? { ...g, visible: !g.visible } : g
+          ),
+          layers: activeScene.layers.map((l) =>
+            group.layerIds.includes(l.id) ? { ...l, visible: !group.visible } : l
+          ),
+        });
+      }
+    } catch (err) {
+      toast.error(t('stream.groupVisibilityFailed', { defaultValue: 'Failed to toggle group visibility' }));
+    }
+  }, [activeScene, profile.name, toggleGroupVisibility, t, updateCurrentScene]);
+
+  const handleToggleGroupLock = useCallback(async (groupId: string) => {
+    if (!activeScene) return;
+
+    try {
+      await toggleGroupLock(profile.name, activeScene, groupId);
+      const group = activeScene.groups?.find((g) => g.id === groupId);
+      if (group) {
+        updateCurrentScene(activeScene.id, {
+          groups: activeScene.groups?.map((g) =>
+            g.id === groupId ? { ...g, locked: !g.locked } : g
+          ),
+          layers: activeScene.layers.map((l) =>
+            group.layerIds.includes(l.id) ? { ...l, locked: !group.locked } : l
+          ),
+        });
+      }
+    } catch (err) {
+      toast.error(t('stream.groupLockFailed', { defaultValue: 'Failed to toggle group lock' }));
+    }
+  }, [activeScene, profile.name, toggleGroupLock, t, updateCurrentScene]);
+
+  const handleToggleGroupCollapsed = useCallback(async (groupId: string) => {
+    if (!activeScene) return;
+
+    try {
+      await toggleGroupCollapsed(profile.name, activeScene, groupId);
+      updateCurrentScene(activeScene.id, {
+        groups: activeScene.groups?.map((g) =>
+          g.id === groupId ? { ...g, collapsed: !g.collapsed } : g
+        ),
+      });
+    } catch (err) {
+      // Silently fail - this is just a UI preference
+    }
+  }, [activeScene, profile.name, toggleGroupCollapsed, updateCurrentScene]);
+
+  const handleUngroup = useCallback(async (groupId: string) => {
+    if (!activeScene) return;
+
+    try {
+      await deleteGroup(profile.name, activeScene, groupId);
+      updateCurrentScene(activeScene.id, {
+        groups: activeScene.groups?.filter((g) => g.id !== groupId),
+      });
+      toast.success(t('stream.ungrouped', { defaultValue: 'Layers ungrouped' }));
+    } catch (err) {
+      toast.error(t('stream.ungroupFailed', { defaultValue: 'Failed to ungroup' }));
+    }
+  }, [activeScene, profile.name, deleteGroup, t, updateCurrentScene]);
+
+  // Toggle multi-select mode with Ctrl/Cmd key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Control' || e.key === 'Meta') {
+        setIsMultiSelectMode(true);
+      }
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Control' || e.key === 'Meta') {
+        setIsMultiSelectMode(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
+  // Layer click handler for multi-select
+  const handleLayerClick = useCallback((layerId: string, e: React.MouseEvent) => {
+    if (isMultiSelectMode || e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleLayerSelection(layerId);
+    }
+  }, [isMultiSelectMode, toggleLayerSelection]);
+
+  // Remove layer from its group
+  const handleRemoveLayerFromGroup = useCallback(async (layerId: string) => {
+    if (!activeScene) return;
+
+    try {
+      await removeLayerFromGroup(profile.name, activeScene, layerId);
+      // Update local state
+      updateCurrentScene(activeScene.id, {
+        groups: activeScene.groups?.map((g) => ({
+          ...g,
+          layerIds: g.layerIds.filter((id) => id !== layerId),
+        })),
+      });
+    } catch (err) {
+      toast.error(t('stream.removeFromGroupFailed', { defaultValue: 'Failed to remove from group' }));
+    }
+  }, [activeScene, profile.name, removeLayerFromGroup, t, updateCurrentScene]);
 
   // When a source is added via the modal, also add it as a layer to the active scene
   const handleSourceAdded = useCallback(async (source: SourceDef) => {
@@ -559,16 +1016,46 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
       <CardHeader className="flex-shrink-0" style={{ padding: '12px 16px' }}>
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm">{t('stream.sources', { defaultValue: 'Sources' })}</CardTitle>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="min-w-[36px] min-h-[36px]"
-            onClick={() => setShowAddModal(true)}
-            title={t('stream.addSource', { defaultValue: 'Add Source' })}
-          >
-            <Plus className="w-4 h-4" />
-          </Button>
+          <div className="flex items-center gap-1">
+            {selectedLayerIds.length >= 2 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs px-2 py-1 h-auto"
+                onClick={handleCreateGroup}
+                title={t('stream.groupSelected', { defaultValue: 'Group selected layers' })}
+              >
+                <FolderOpen className="w-3.5 h-3.5 mr-1" />
+                {t('stream.group', { defaultValue: 'Group' })} ({selectedLayerIds.length})
+              </Button>
+            )}
+            {selectedLayerIds.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs px-2 py-1 h-auto"
+                onClick={clearLayerSelection}
+                title={t('common.clearSelection', { defaultValue: 'Clear selection' })}
+              >
+                ×
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="min-w-[36px] min-h-[36px]"
+              onClick={() => setShowAddModal(true)}
+              title={t('stream.addSource', { defaultValue: 'Add Source' })}
+            >
+              <Plus className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
+        {isMultiSelectMode && (
+          <p className="text-xs text-[var(--text-muted)] mt-1">
+            {t('stream.multiSelectMode', { defaultValue: 'Click layers to select multiple' })}
+          </p>
+        )}
       </CardHeader>
       <CardBody className="flex-1 overflow-y-auto" style={{ padding: '12px' }}>
         {sortedLayers.length === 0 ? (
@@ -595,14 +1082,48 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
               strategy={verticalListSortingStrategy}
             >
               <div className="space-y-1">
-                {sortedLayers.map((layer) => (
+                {/* Ungrouped layers */}
+                {organizedLayers.ungrouped.map((layer) => (
                   <SortableLayerItem
                     key={layer.id}
                     layer={layer}
                     source={sourceMap.get(layer.sourceId)}
+                    sceneId={activeScene.id}
+                    isSelected={selectedLayerIds.includes(layer.id)}
+                    isGrouped={false}
                     onToggleVisibility={handleToggleVisibility}
                     onRemoveSource={handleRemoveSource}
+                    onSetHotkey={handleSetHotkey}
+                    onClick={handleLayerClick}
                   />
+                ))}
+
+                {/* Groups with their layers */}
+                {organizedLayers.groups.map(({ group, layers }) => (
+                  <div key={group.id} className="space-y-1">
+                    <GroupHeader
+                      group={group}
+                      onToggleCollapsed={() => handleToggleGroupCollapsed(group.id)}
+                      onToggleVisibility={() => handleToggleGroupVisibility(group.id)}
+                      onToggleLock={() => handleToggleGroupLock(group.id)}
+                      onUngroup={() => handleUngroup(group.id)}
+                    />
+                    {!group.collapsed && layers.map((layer) => (
+                      <SortableLayerItem
+                        key={layer.id}
+                        layer={layer}
+                        source={sourceMap.get(layer.sourceId)}
+                        sceneId={activeScene.id}
+                        isSelected={selectedLayerIds.includes(layer.id)}
+                        isGrouped={true}
+                        onToggleVisibility={handleToggleVisibility}
+                        onRemoveSource={handleRemoveSource}
+                        onSetHotkey={handleSetHotkey}
+                        onClick={handleLayerClick}
+                        onRemoveFromGroup={handleRemoveLayerFromGroup}
+                      />
+                    ))}
+                  </div>
                 ))}
               </div>
             </SortableContext>
@@ -618,6 +1139,20 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
         excludeTypes={['audioDevice']}
         onSourceAdded={handleSourceAdded}
       />
+
+      {/* Hotkey Capture Modal */}
+      {hotkeyTargetLayer && (
+        <HotkeyCaptureModal
+          open={hotkeyModalOpen}
+          onClose={() => {
+            setHotkeyModalOpen(false);
+            setHotkeyTargetLayer(null);
+          }}
+          layerId={hotkeyTargetLayer.id}
+          sceneId={activeScene.id}
+          layerName={hotkeyTargetLayer.name}
+        />
+      )}
     </Card>
   );
 }

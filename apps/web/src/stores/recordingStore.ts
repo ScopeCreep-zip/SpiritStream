@@ -1,0 +1,109 @@
+/**
+ * Recording Store
+ * Manages local recording state
+ */
+import { create } from 'zustand';
+
+export type RecordingFormat = 'mp4' | 'mkv' | 'mov' | 'webm';
+
+interface RecordingState {
+  /** Whether recording is currently active */
+  isRecording: boolean;
+  /** Recording duration in seconds */
+  duration: number;
+  /** Output file path */
+  outputPath: string;
+  /** Recording format */
+  format: RecordingFormat;
+  /** Recording error if any */
+  error: string | null;
+
+  // Actions
+  startRecording: (outputPath?: string, format?: RecordingFormat) => Promise<void>;
+  stopRecording: () => Promise<void>;
+  setOutputPath: (path: string) => void;
+  setFormat: (format: RecordingFormat) => void;
+  incrementDuration: () => void;
+  reset: () => void;
+}
+
+const DEFAULT_OUTPUT_PATH = '~/Videos';
+
+export const useRecordingStore = create<RecordingState>((set, get) => ({
+  isRecording: false,
+  duration: 0,
+  outputPath: DEFAULT_OUTPUT_PATH,
+  format: 'mp4',
+  error: null,
+
+  startRecording: async (outputPath, format) => {
+    const state = get();
+    const finalPath = outputPath || state.outputPath;
+    const finalFormat = format || state.format;
+
+    try {
+      // TODO: Call backend API when implemented
+      // await api.recording.start(finalPath, finalFormat);
+      set({
+        isRecording: true,
+        duration: 0,
+        outputPath: finalPath,
+        format: finalFormat,
+        error: null,
+      });
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : String(err) });
+      throw err;
+    }
+  },
+
+  stopRecording: async () => {
+    try {
+      // TODO: Call backend API when implemented
+      // await api.recording.stop();
+      set({
+        isRecording: false,
+      });
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : String(err) });
+      throw err;
+    }
+  },
+
+  setOutputPath: (path) => set({ outputPath: path }),
+
+  setFormat: (format) => set({ format }),
+
+  incrementDuration: () => set((state) => ({ duration: state.duration + 1 })),
+
+  reset: () =>
+    set({
+      isRecording: false,
+      duration: 0,
+      error: null,
+    }),
+}));
+
+/**
+ * Format recording duration as HH:MM:SS
+ */
+export function formatRecordingDuration(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+
+  if (hours > 0) {
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+  return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Recording format options
+ */
+export const RECORDING_FORMATS: { value: RecordingFormat; label: string }[] = [
+  { value: 'mp4', label: 'MP4 (H.264)' },
+  { value: 'mkv', label: 'MKV (Matroska)' },
+  { value: 'mov', label: 'MOV (QuickTime)' },
+  { value: 'webm', label: 'WebM (VP9)' },
+];

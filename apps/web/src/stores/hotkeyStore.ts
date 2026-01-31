@@ -34,6 +34,37 @@ interface HotkeyState {
   setBindingEnabled: (id: string, enabled: boolean) => void;
 
   /**
+   * Add a new binding (for layer hotkeys)
+   */
+  addBinding: (binding: HotkeyBinding) => void;
+
+  /**
+   * Remove a binding by ID
+   */
+  removeBinding: (id: string) => void;
+
+  /**
+   * Get binding for a specific layer
+   */
+  getLayerBinding: (layerId: string, sceneId: string) => HotkeyBinding | undefined;
+
+  /**
+   * Set or update layer visibility hotkey
+   */
+  setLayerHotkey: (
+    layerId: string,
+    sceneId: string,
+    key: string,
+    displayKey: string,
+    modifiers: HotkeyBinding['modifiers']
+  ) => void;
+
+  /**
+   * Remove layer visibility hotkey
+   */
+  removeLayerHotkey: (layerId: string, sceneId: string) => void;
+
+  /**
    * Reset all bindings to defaults
    */
   resetToDefaults: () => void;
@@ -41,7 +72,7 @@ interface HotkeyState {
 
 export const useHotkeyStore = create<HotkeyState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       enabled: true,
       bindings: DEFAULT_BINDINGS,
 
@@ -60,6 +91,64 @@ export const useHotkeyStore = create<HotkeyState>()(
         set((state) => ({
           bindings: state.bindings.map((b) =>
             b.id === id ? { ...b, enabled } : b
+          ),
+        })),
+
+      addBinding: (binding) =>
+        set((state) => ({
+          bindings: [...state.bindings, binding],
+        })),
+
+      removeBinding: (id) =>
+        set((state) => ({
+          bindings: state.bindings.filter((b) => b.id !== id),
+        })),
+
+      getLayerBinding: (layerId, sceneId) => {
+        return get().bindings.find(
+          (b) =>
+            b.action === 'toggleLayerVisibility' &&
+            b.layerId === layerId &&
+            b.sceneId === sceneId
+        );
+      },
+
+      setLayerHotkey: (layerId, sceneId, key, displayKey, modifiers) =>
+        set((state) => {
+          // Remove existing binding for this layer if any
+          const filtered = state.bindings.filter(
+            (b) =>
+              !(
+                b.action === 'toggleLayerVisibility' &&
+                b.layerId === layerId &&
+                b.sceneId === sceneId
+              )
+          );
+
+          // Add new binding
+          const newBinding: HotkeyBinding = {
+            id: `layer-${layerId}`,
+            action: 'toggleLayerVisibility',
+            key,
+            displayKey,
+            modifiers,
+            enabled: true,
+            layerId,
+            sceneId,
+          };
+
+          return { bindings: [...filtered, newBinding] };
+        }),
+
+      removeLayerHotkey: (layerId, sceneId) =>
+        set((state) => ({
+          bindings: state.bindings.filter(
+            (b) =>
+              !(
+                b.action === 'toggleLayerVisibility' &&
+                b.layerId === layerId &&
+                b.sceneId === sceneId
+              )
           ),
         })),
 

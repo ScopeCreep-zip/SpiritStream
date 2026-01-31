@@ -10,7 +10,9 @@ import { useTranslation } from 'react-i18next';
 import { Volume2, VolumeX, Plus } from 'lucide-react';
 import { Card, CardBody } from '@/components/ui/Card';
 import { AddSourceModal } from '@/components/modals/AddSourceModal';
+import { AudioFilterButton } from './AudioFilterButton';
 import type { Profile, Scene } from '@/types/profile';
+import type { AudioFilter } from '@/types/source';
 import { useSceneStore } from '@/stores/sceneStore';
 import { useProfileStore } from '@/stores/profileStore';
 import { toast } from '@/hooks/useToast';
@@ -65,6 +67,16 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
     }
   }, [profile.name, scene, setTrackSolo, updateCurrentAudioTrack, t]);
 
+  const handleFiltersChange = useCallback(async (sourceId: string, filters: AudioFilter[]) => {
+    if (!scene) return;
+    try {
+      // Update local state (backend would need to handle this via API later)
+      updateCurrentAudioTrack(scene.id, sourceId, { audioFilters: filters });
+    } catch (err) {
+      toast.error(t('stream.filtersFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to update filters: ${err instanceof Error ? err.message : String(err)}` }));
+    }
+  }, [scene, updateCurrentAudioTrack, t]);
+
   const handleMasterVolumeChange = useCallback(async (volume: number) => {
     if (!scene) return;
     try {
@@ -110,13 +122,16 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
                 scene.audioMixer.tracks.map((track) => (
                   <AudioTrackControl
                     key={track.sourceId}
+                    trackId={track.sourceId}
                     label={getSourceName(track.sourceId)}
                     volume={track.volume}
                     muted={track.muted}
                     solo={track.solo}
+                    filters={track.audioFilters || []}
                     onVolumeChange={(v) => handleVolumeChange(track.sourceId, v)}
                     onMuteToggle={(m) => handleMuteToggle(track.sourceId, m)}
                     onSoloToggle={(s) => handleSoloToggle(track.sourceId, s)}
+                    onFiltersChange={(f) => handleFiltersChange(track.sourceId, f)}
                   />
                 ))
               ) : (
@@ -167,14 +182,17 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
 }
 
 interface AudioTrackControlProps {
+  trackId?: string;
   label: string;
   volume: number;
   muted: boolean;
   solo: boolean;
+  filters?: AudioFilter[];
   isMaster?: boolean;
   onVolumeChange: (volume: number) => void;
   onMuteToggle: (muted: boolean) => void;
   onSoloToggle: (solo: boolean) => void;
+  onFiltersChange?: (filters: AudioFilter[]) => void;
 }
 
 /**
@@ -182,14 +200,17 @@ interface AudioTrackControlProps {
  * Memoized to prevent unnecessary re-renders during volume drag operations
  */
 const AudioTrackControl = React.memo(function AudioTrackControl({
+  trackId,
   label,
   volume,
   muted,
   solo,
+  filters = [],
   isMaster,
   onVolumeChange,
   onMuteToggle,
   onSoloToggle,
+  onFiltersChange,
 }: AudioTrackControlProps) {
   // Local volume state for responsive UI during drag
   const [localVolume, setLocalVolume] = useState(volume);
@@ -246,40 +267,51 @@ const AudioTrackControl = React.memo(function AudioTrackControl({
 
   return (
     <div className="flex flex-col items-center gap-2 min-w-[80px]">
-      {/* Mute/Mono buttons above slider (non-master tracks) */}
+      {/* Mute/Mono/Filters buttons above slider (non-master tracks) */}
       {!isMaster ? (
-        <div className="flex gap-1 mb-2">
-          <button
-            type="button"
-            className={`w-7 h-7 rounded-md flex items-center justify-center transition-all border ${
-              muted
-                ? 'bg-destructive/20 border-destructive text-destructive'
-                : 'bg-[var(--bg-sunken)] border-transparent text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-secondary)]'
-            }`}
-            onClick={() => onMuteToggle(!muted)}
-            title={muted ? 'Unmute' : 'Mute'}
-          >
-            {muted ? (
-              <VolumeX className="w-4 h-4" />
-            ) : (
-              <Volume2 className="w-4 h-4" />
-            )}
-          </button>
-          <button
-            type="button"
-            className={`w-7 h-7 rounded-md flex items-center justify-center transition-all border ${
-              solo
-                ? 'bg-primary/20 border-primary text-primary'
-                : 'bg-[var(--bg-sunken)] border-transparent text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-secondary)]'
-            }`}
-            onClick={() => onSoloToggle(!solo)}
-            title={solo ? 'Disable Mono' : 'Enable Mono'}
-          >
-            {/* Mono icon: single filled circle representing one channel */}
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-              <circle cx="12" cy="12" r="6" />
-            </svg>
-          </button>
+        <div className="flex flex-col gap-1 mb-2">
+          <div className="flex gap-1">
+            <button
+              type="button"
+              className={`w-7 h-7 rounded-md flex items-center justify-center transition-all border ${
+                muted
+                  ? 'bg-destructive/20 border-destructive text-destructive'
+                  : 'bg-[var(--bg-sunken)] border-transparent text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-secondary)]'
+              }`}
+              onClick={() => onMuteToggle(!muted)}
+              title={muted ? 'Unmute' : 'Mute'}
+            >
+              {muted ? (
+                <VolumeX className="w-4 h-4" />
+              ) : (
+                <Volume2 className="w-4 h-4" />
+              )}
+            </button>
+            <button
+              type="button"
+              className={`w-7 h-7 rounded-md flex items-center justify-center transition-all border ${
+                solo
+                  ? 'bg-primary/20 border-primary text-primary'
+                  : 'bg-[var(--bg-sunken)] border-transparent text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-secondary)]'
+              }`}
+              onClick={() => onSoloToggle(!solo)}
+              title={solo ? 'Disable Mono' : 'Enable Mono'}
+            >
+              {/* Mono icon: single filled circle representing one channel */}
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="12" cy="12" r="6" />
+              </svg>
+            </button>
+          </div>
+          {/* Audio Filter Button */}
+          {trackId && onFiltersChange && (
+            <AudioFilterButton
+              trackId={trackId}
+              trackName={label}
+              filters={filters}
+              onFiltersChange={onFiltersChange}
+            />
+          )}
         </div>
       ) : (
         /* Volume icon for master */

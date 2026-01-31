@@ -19,7 +19,8 @@ export type HotkeyAction =
   | 'toggleStudioMode'
   | 'escape'
   | 'toggleMute'
-  | 'toggleStream';
+  | 'toggleStream'
+  | 'toggleLayerVisibility';
 
 /**
  * Hotkey binding configuration
@@ -38,6 +39,10 @@ export interface HotkeyBinding {
     meta?: boolean;
   };
   enabled: boolean;
+  /** For layer-specific hotkeys: the layer ID */
+  layerId?: string;
+  /** For layer-specific hotkeys: the scene ID containing the layer */
+  sceneId?: string;
 }
 
 /**
@@ -155,6 +160,26 @@ export const DEFAULT_BINDINGS: HotkeyBinding[] = [
     modifiers: { ctrl: true },
     enabled: true,
   },
+
+  // Toggle Mute (master audio)
+  {
+    id: 'mute',
+    action: 'toggleMute',
+    key: 'KeyM',
+    displayKey: 'M',
+    modifiers: {},
+    enabled: true,
+  },
+
+  // Toggle Stream (start/stop)
+  {
+    id: 'stream',
+    action: 'toggleStream',
+    key: 'F8',
+    displayKey: 'F8',
+    modifiers: {},
+    enabled: true,
+  },
 ];
 
 /**
@@ -190,6 +215,8 @@ export function getActionLabel(action: HotkeyAction): string {
       return 'Toggle Mute';
     case 'toggleStream':
       return 'Toggle Stream';
+    case 'toggleLayerVisibility':
+      return 'Toggle Layer Visibility';
     default:
       return action;
   }

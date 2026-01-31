@@ -79,6 +79,8 @@ interface SceneCanvasProps {
   selectedLayerId: string | null;
   onSelectLayer: (layerId: string | null) => void;
   profileName?: string;
+  /** Studio mode: 'preview' (green, editable), 'program' (red, read-only), or undefined for normal */
+  studioMode?: 'preview' | 'program';
 }
 
 export function SceneCanvas({
@@ -87,6 +89,7 @@ export function SceneCanvas({
   selectedLayerId,
   onSelectLayer,
   profileName,
+  studioMode,
 }: SceneCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
@@ -182,35 +185,58 @@ export function SceneCanvas({
 
   return (
     <Card className="h-full flex flex-col overflow-hidden">
-      {/* View mode toggle */}
+      {/* Header with view mode toggle */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
-        <span className="text-sm font-medium text-[var(--text-secondary)]">Canvas</span>
-        <div className="flex items-center gap-1 bg-[var(--bg-sunken)] p-1 rounded-lg">
-          <button
-            type="button"
-            className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-              viewMode === 'edit'
-                ? 'bg-[var(--bg-base)] text-[var(--text-primary)] shadow-sm'
-                : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-            }`}
-            onClick={() => setViewMode('edit')}
-          >
-            Edit
-          </button>
-          <button
-            type="button"
-            className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-              viewMode === 'preview'
-                ? 'bg-[var(--bg-base)] text-[var(--text-primary)] shadow-sm'
-                : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-            }`}
-            onClick={() => setViewMode('preview')}
-            disabled={!profileName}
-            title={!profileName ? 'Save profile first to enable preview' : undefined}
-          >
-            Preview
-          </button>
-        </div>
+        {/* Left side: Title/indicator */}
+        {studioMode === 'preview' ? (
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-green-500 flex items-center gap-1.5">
+              <span className="w-2 h-2 bg-green-500 rounded-full" />
+              Preview
+            </span>
+            <span className="text-xs text-[var(--text-muted)]">{scene?.name}</span>
+          </div>
+        ) : studioMode === 'program' ? (
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-red-500 flex items-center gap-1.5">
+              <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+              Program
+            </span>
+            <span className="text-xs text-[var(--text-muted)]">{scene?.name}</span>
+          </div>
+        ) : (
+          <span className="text-sm font-medium text-[var(--text-secondary)]">Canvas</span>
+        )}
+
+        {/* Right side: Edit/Preview toggle (hidden in Program mode) */}
+        {studioMode !== 'program' && (
+          <div className="flex items-center gap-1 bg-[var(--bg-sunken)] p-1 rounded-lg">
+            <button
+              type="button"
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                viewMode === 'edit'
+                  ? 'bg-[var(--bg-base)] text-[var(--text-primary)] shadow-sm'
+                  : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+              }`}
+              onClick={() => setViewMode('edit')}
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                viewMode === 'preview'
+                  ? 'bg-[var(--bg-base)] text-[var(--text-primary)] shadow-sm'
+                  : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+              }`}
+              onClick={() => setViewMode('preview')}
+              disabled={!profileName}
+              title={!profileName ? 'Save profile first to enable preview' : undefined}
+            >
+              Preview
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Canvas container */}

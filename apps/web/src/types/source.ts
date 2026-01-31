@@ -435,3 +435,471 @@ export function getSourceTypeIcon(type: SourceType): string {
 export function isClientSideSource(source: Source): boolean {
   return source.type === 'color' || source.type === 'text' || source.type === 'browser';
 }
+
+// ============================================================================
+// AUDIO FILTERS
+// ============================================================================
+
+/**
+ * Audio filter type discriminator
+ */
+export type AudioFilterType =
+  | 'compressor'
+  | 'noiseGate'
+  | 'noiseSuppression'
+  | 'gain'
+  | 'expander';
+
+/**
+ * Base audio filter interface
+ */
+interface BaseAudioFilter {
+  id: string;
+  type: AudioFilterType;
+  enabled: boolean;
+  order: number; // Position in filter chain
+}
+
+/**
+ * Compressor filter - reduces dynamic range
+ */
+export interface CompressorFilter extends BaseAudioFilter {
+  type: 'compressor';
+  threshold: number; // dB (-60 to 0)
+  ratio: number; // 1:1 to 32:1
+  attack: number; // ms (0-500)
+  release: number; // ms (0-1000)
+  outputGain: number; // dB (-30 to +30)
+  /** Optional sidechain source for audio ducking */
+  sidechainSourceId?: string;
+}
+
+/**
+ * Noise Gate filter - cuts audio below threshold
+ */
+export interface NoiseGateFilter extends BaseAudioFilter {
+  type: 'noiseGate';
+  threshold: number; // dB (-60 to 0)
+  attack: number; // ms (0-100)
+  hold: number; // ms (0-500)
+  release: number; // ms (0-1000)
+}
+
+/**
+ * Noise Suppression filter - removes background noise
+ */
+export interface NoiseSuppressionFilter extends BaseAudioFilter {
+  type: 'noiseSuppression';
+  level: number; // Suppression strength (0-100)
+}
+
+/**
+ * Gain filter - adjusts volume level
+ */
+export interface GainFilter extends BaseAudioFilter {
+  type: 'gain';
+  gain: number; // dB (-30 to +30)
+}
+
+/**
+ * Expander filter - increases dynamic range below threshold
+ */
+export interface ExpanderFilter extends BaseAudioFilter {
+  type: 'expander';
+  threshold: number; // dB (-60 to 0)
+  ratio: number; // 1:1 to 10:1
+  attack: number; // ms (0-100)
+  release: number; // ms (0-500)
+}
+
+/**
+ * Union type for all audio filters
+ */
+export type AudioFilter =
+  | CompressorFilter
+  | NoiseGateFilter
+  | NoiseSuppressionFilter
+  | GainFilter
+  | ExpanderFilter;
+
+/**
+ * Factory functions for audio filters
+ */
+export function createCompressorFilter(): CompressorFilter {
+  return {
+    id: crypto.randomUUID(),
+    type: 'compressor',
+    enabled: true,
+    order: 0,
+    threshold: -20,
+    ratio: 4,
+    attack: 5,
+    release: 50,
+    outputGain: 0,
+  };
+}
+
+export function createNoiseGateFilter(): NoiseGateFilter {
+  return {
+    id: crypto.randomUUID(),
+    type: 'noiseGate',
+    enabled: true,
+    order: 0,
+    threshold: -40,
+    attack: 5,
+    hold: 100,
+    release: 100,
+  };
+}
+
+export function createNoiseSuppressionFilter(): NoiseSuppressionFilter {
+  return {
+    id: crypto.randomUUID(),
+    type: 'noiseSuppression',
+    enabled: true,
+    order: 0,
+    level: 50,
+  };
+}
+
+export function createGainFilter(): GainFilter {
+  return {
+    id: crypto.randomUUID(),
+    type: 'gain',
+    enabled: true,
+    order: 0,
+    gain: 0,
+  };
+}
+
+export function createExpanderFilter(): ExpanderFilter {
+  return {
+    id: crypto.randomUUID(),
+    type: 'expander',
+    enabled: true,
+    order: 0,
+    threshold: -40,
+    ratio: 2,
+    attack: 5,
+    release: 100,
+  };
+}
+
+/**
+ * Get human-readable label for audio filter type
+ */
+export function getAudioFilterLabel(type: AudioFilterType): string {
+  switch (type) {
+    case 'compressor':
+      return 'Compressor';
+    case 'noiseGate':
+      return 'Noise Gate';
+    case 'noiseSuppression':
+      return 'Noise Suppression';
+    case 'gain':
+      return 'Gain';
+    case 'expander':
+      return 'Expander';
+  }
+}
+
+/**
+ * All available audio filter types
+ */
+export const AUDIO_FILTER_TYPES: AudioFilterType[] = [
+  'gain',
+  'compressor',
+  'noiseGate',
+  'noiseSuppression',
+  'expander',
+];
+
+// ============================================================================
+// VIDEO FILTERS
+// ============================================================================
+
+/**
+ * Video filter type discriminator
+ */
+export type VideoFilterType =
+  | 'chromaKey'
+  | 'colorKey'
+  | 'colorCorrection'
+  | 'lut'
+  | 'blur'
+  | 'sharpen'
+  | 'scroll'
+  | 'mask'
+  | 'transform3d';
+
+/**
+ * Base video filter interface
+ */
+interface BaseVideoFilter {
+  id: string;
+  type: VideoFilterType;
+  enabled: boolean;
+  order: number; // Position in filter chain
+}
+
+/**
+ * Chroma Key filter - green screen removal
+ */
+export interface ChromaKeyFilter extends BaseVideoFilter {
+  type: 'chromaKey';
+  keyColor: string; // Hex color to remove
+  similarity: number; // 0-1000 (how close to key color)
+  smoothness: number; // 0-1000 (edge smoothing)
+  keySpill: number; // 0-1000 (color spill reduction)
+}
+
+/**
+ * Color Key filter - remove specific color
+ */
+export interface ColorKeyFilter extends BaseVideoFilter {
+  type: 'colorKey';
+  keyColor: string; // Hex color to remove
+  similarity: number; // 0-1000
+  smoothness: number; // 0-1000
+}
+
+/**
+ * Color Correction filter - adjust colors
+ */
+export interface ColorCorrectionFilter extends BaseVideoFilter {
+  type: 'colorCorrection';
+  brightness: number; // -1 to 1
+  contrast: number; // -1 to 1
+  saturation: number; // 0 to 3
+  gamma: number; // 0.1 to 4
+  hue: number; // -180 to 180
+}
+
+/**
+ * LUT filter - color grading via lookup table
+ */
+export interface LUTFilter extends BaseVideoFilter {
+  type: 'lut';
+  lutFile: string; // Path to .cube or .3dl file
+  intensity: number; // 0-1 blend with original
+}
+
+/**
+ * Blur filter - gaussian or box blur
+ */
+export interface BlurFilter extends BaseVideoFilter {
+  type: 'blur';
+  blurType: 'box' | 'gaussian';
+  size: number; // Blur radius (1-100)
+}
+
+/**
+ * Sharpen filter - increase edge contrast
+ */
+export interface SharpenFilter extends BaseVideoFilter {
+  type: 'sharpen';
+  amount: number; // 0-10
+}
+
+/**
+ * Scroll filter - scrolling content
+ */
+export interface ScrollFilter extends BaseVideoFilter {
+  type: 'scroll';
+  horizontalSpeed: number; // Pixels per second (-1000 to 1000)
+  verticalSpeed: number; // Pixels per second (-1000 to 1000)
+  loop: boolean;
+}
+
+/**
+ * Mask filter - apply image mask
+ */
+export interface MaskFilter extends BaseVideoFilter {
+  type: 'mask';
+  maskImage: string; // Path to mask image
+  maskType: 'alpha' | 'luminance';
+  invert: boolean;
+}
+
+/**
+ * 3D Transform filter - perspective transform
+ */
+export interface Transform3DFilter extends BaseVideoFilter {
+  type: 'transform3d';
+  rotationX: number; // Degrees (-180 to 180)
+  rotationY: number; // Degrees (-180 to 180)
+  rotationZ: number; // Degrees (-180 to 180)
+  perspective: number; // Distance (100-5000)
+  positionX: number; // Offset
+  positionY: number; // Offset
+  positionZ: number; // Offset (depth)
+}
+
+/**
+ * Union type for all video filters
+ */
+export type VideoFilter =
+  | ChromaKeyFilter
+  | ColorKeyFilter
+  | ColorCorrectionFilter
+  | LUTFilter
+  | BlurFilter
+  | SharpenFilter
+  | ScrollFilter
+  | MaskFilter
+  | Transform3DFilter;
+
+/**
+ * Factory functions for video filters
+ */
+export function createChromaKeyFilter(): ChromaKeyFilter {
+  return {
+    id: crypto.randomUUID(),
+    type: 'chromaKey',
+    enabled: true,
+    order: 0,
+    keyColor: '#00FF00', // Green screen default
+    similarity: 400,
+    smoothness: 80,
+    keySpill: 100,
+  };
+}
+
+export function createColorKeyFilter(): ColorKeyFilter {
+  return {
+    id: crypto.randomUUID(),
+    type: 'colorKey',
+    enabled: true,
+    order: 0,
+    keyColor: '#00FF00',
+    similarity: 400,
+    smoothness: 80,
+  };
+}
+
+export function createColorCorrectionFilter(): ColorCorrectionFilter {
+  return {
+    id: crypto.randomUUID(),
+    type: 'colorCorrection',
+    enabled: true,
+    order: 0,
+    brightness: 0,
+    contrast: 0,
+    saturation: 1,
+    gamma: 1,
+    hue: 0,
+  };
+}
+
+export function createLUTFilter(): LUTFilter {
+  return {
+    id: crypto.randomUUID(),
+    type: 'lut',
+    enabled: true,
+    order: 0,
+    lutFile: '',
+    intensity: 1,
+  };
+}
+
+export function createBlurFilter(): BlurFilter {
+  return {
+    id: crypto.randomUUID(),
+    type: 'blur',
+    enabled: true,
+    order: 0,
+    blurType: 'gaussian',
+    size: 10,
+  };
+}
+
+export function createSharpenFilter(): SharpenFilter {
+  return {
+    id: crypto.randomUUID(),
+    type: 'sharpen',
+    enabled: true,
+    order: 0,
+    amount: 1,
+  };
+}
+
+export function createScrollFilter(): ScrollFilter {
+  return {
+    id: crypto.randomUUID(),
+    type: 'scroll',
+    enabled: true,
+    order: 0,
+    horizontalSpeed: 0,
+    verticalSpeed: 50,
+    loop: true,
+  };
+}
+
+export function createMaskFilter(): MaskFilter {
+  return {
+    id: crypto.randomUUID(),
+    type: 'mask',
+    enabled: true,
+    order: 0,
+    maskImage: '',
+    maskType: 'alpha',
+    invert: false,
+  };
+}
+
+export function createTransform3DFilter(): Transform3DFilter {
+  return {
+    id: crypto.randomUUID(),
+    type: 'transform3d',
+    enabled: true,
+    order: 0,
+    rotationX: 0,
+    rotationY: 0,
+    rotationZ: 0,
+    perspective: 1000,
+    positionX: 0,
+    positionY: 0,
+    positionZ: 0,
+  };
+}
+
+/**
+ * Get human-readable label for video filter type
+ */
+export function getVideoFilterLabel(type: VideoFilterType): string {
+  switch (type) {
+    case 'chromaKey':
+      return 'Chroma Key';
+    case 'colorKey':
+      return 'Color Key';
+    case 'colorCorrection':
+      return 'Color Correction';
+    case 'lut':
+      return 'LUT';
+    case 'blur':
+      return 'Blur';
+    case 'sharpen':
+      return 'Sharpen';
+    case 'scroll':
+      return 'Scroll';
+    case 'mask':
+      return 'Image Mask';
+    case 'transform3d':
+      return '3D Transform';
+  }
+}
+
+/**
+ * All available video filter types
+ */
+export const VIDEO_FILTER_TYPES: VideoFilterType[] = [
+  'chromaKey',
+  'colorKey',
+  'colorCorrection',
+  'lut',
+  'blur',
+  'sharpen',
+  'scroll',
+  'mask',
+  'transform3d',
+];

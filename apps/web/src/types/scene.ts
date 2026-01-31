@@ -2,6 +2,7 @@
  * Scene types for multi-input streaming
  * Mirrors server/src/models/scene.rs
  */
+import type { VideoFilter, AudioFilter } from './source';
 
 /**
  * Transition types for scene switching
@@ -9,6 +10,7 @@
 export type TransitionType =
   | 'cut' // Instant (no animation)
   | 'fade' // Fade through black
+  | 'fadeToColor' // Fade through a specific color
   | 'crossfade' // Dissolve between scenes
   | 'slideLeft'
   | 'slideRight'
@@ -25,6 +27,8 @@ export type TransitionType =
 export interface SceneTransition {
   type: TransitionType;
   durationMs: number; // 100-2000, default 300
+  /** Color for fadeToColor transition (hex string, e.g. '#000000') */
+  color?: string;
 }
 
 /**
@@ -36,6 +40,8 @@ export interface Scene {
   canvasWidth: number;
   canvasHeight: number;
   layers: SourceLayer[];
+  /** Layer groups for organizing layers */
+  groups?: LayerGroup[];
   audioMixer: AudioMixer;
   /** Override transition for this scene (optional) */
   transitionIn?: SceneTransition;
@@ -51,6 +57,8 @@ export interface SourceLayer {
   locked: boolean;
   transform: Transform;
   zIndex: number;
+  /** Video filters applied to this layer */
+  videoFilters?: VideoFilter[];
 }
 
 /**
@@ -76,6 +84,22 @@ export interface Crop {
 }
 
 /**
+ * LayerGroup - a group of layers that can be moved/transformed together
+ */
+export interface LayerGroup {
+  id: string;
+  name: string;
+  /** IDs of layers in this group (order matters for display) */
+  layerIds: string[];
+  /** Whether the group is visible (toggles all children) */
+  visible: boolean;
+  /** Whether the group is locked (locks all children) */
+  locked: boolean;
+  /** Whether the group is collapsed in the UI */
+  collapsed: boolean;
+}
+
+/**
  * AudioMixer - audio mixing configuration for a scene
  */
 export interface AudioMixer {
@@ -91,6 +115,8 @@ export interface AudioTrack {
   volume: number;
   muted: boolean;
   solo: boolean;
+  /** Audio filters applied to this track */
+  audioFilters?: AudioFilter[];
 }
 
 /**
@@ -334,6 +360,8 @@ export function getTransitionTypeLabel(type: TransitionType): string {
       return 'Cut';
     case 'fade':
       return 'Fade';
+    case 'fadeToColor':
+      return 'Fade to Color';
     case 'crossfade':
       return 'Crossfade';
     case 'slideLeft':
@@ -363,6 +391,7 @@ export function getTransitionTypeLabel(type: TransitionType): string {
 export const TRANSITION_TYPES: TransitionType[] = [
   'cut',
   'fade',
+  'fadeToColor',
   'crossfade',
   'slideLeft',
   'slideRight',
@@ -373,3 +402,196 @@ export const TRANSITION_TYPES: TransitionType[] = [
   'wipeUp',
   'wipeDown',
 ];
+
+/**
+ * Default color for fadeToColor transition (black)
+ */
+export const DEFAULT_FADE_COLOR = '#000000';
+
+/**
+ * Factory function for creating a layer group
+ */
+export function createLayerGroup(name: string, layerIds: string[] = []): LayerGroup {
+  return {
+    id: crypto.randomUUID(),
+    name,
+    layerIds,
+    visible: true,
+    locked: false,
+    collapsed: false,
+  };
+}
+
+/**
+ * Get the group that contains a layer, if any
+ */
+export function getLayerGroup(scene: Scene, layerId: string): LayerGroup | undefined {
+  return scene.groups?.find((g) => g.layerIds.includes(layerId));
+}
+
+/**
+ * Check if a layer is in any group
+ */
+export function isLayerInGroup(scene: Scene, layerId: string): boolean {
+  return scene.groups?.some((g) => g.layerIds.includes(layerId)) ?? false;
+}
+
+/**
+ * Get all ungrouped layers in a scene
+ */
+export function getUngroupedLayers(scene: Scene): SourceLayer[] {
+  const groupedLayerIds = new Set(scene.groups?.flatMap((g) => g.layerIds) ?? []);
+  return scene.layers.filter((l) => !groupedLayerIds.has(l.id));
+}
+
+/**
+ * Add a layer to a group
+ */
+export function addLayerToGroup(
+  scene: Scene,
+  groupId: string,
+  layerId: string
+): Scene {
+  if (!scene.groups) return scene;
+
+  // Remove from any existing group first
+  const updatedGroups = scene.groups.map((g) => ({
+    ...g,
+    layerIds: g.layerIds.filter((id) => id !== layerId),
+  }));
+
+  // Add to target group
+  return {
+    ...scene,
+    groups: updatedGroups.map((g) =>
+      g.id === groupId ? { ...g, layerIds: [...g.layerIds, layerId] } : g
+    ),
+  };
+}
+
+/**
+ * Remove a layer from its group
+ */
+export function removeLayerFromGroup(scene: Scene, layerId: string): Scene {
+  if (!scene.groups) return scene;
+
+  return {
+    ...scene,
+    groups: scene.groups.map((g) => ({
+      ...g,
+      layerIds: g.layerIds.filter((id) => id !== layerId),
+    })),
+  };
+}
+
+/**
+ * Create a group from selected layers
+ */
+export function createGroupFromLayers(
+  scene: Scene,
+  layerIds: string[],
+  groupName: string
+): Scene {
+  // Remove layers from any existing groups
+  let updatedGroups = scene.groups?.map((g) => ({
+    ...g,
+    layerIds: g.layerIds.filter((id) => !layerIds.includes(id)),
+  })) ?? [];
+
+  // Create new group
+  const newGroup = createLayerGroup(groupName, layerIds);
+
+  return {
+    ...scene,
+    groups: [...updatedGroups, newGroup],
+  };
+}
+
+/**
+ * Delete a group (layers remain, just ungrouped)
+ */
+export function deleteGroup(scene: Scene, groupId: string): Scene {
+  if (!scene.groups) return scene;
+
+  return {
+    ...scene,
+    groups: scene.groups.filter((g) => g.id !== groupId),
+  };
+}
+
+/**
+ * Ungroup all layers in a group (alias for deleteGroup)
+ */
+export function ungroupLayers(scene: Scene, groupId: string): Scene {
+  return deleteGroup(scene, groupId);
+}
+
+/**
+ * Toggle group visibility (affects all layers in group)
+ */
+export function toggleGroupVisibility(scene: Scene, groupId: string): Scene {
+  const group = scene.groups?.find((g) => g.id === groupId);
+  if (!group || !scene.groups) return scene;
+
+  const newVisibility = !group.visible;
+
+  return {
+    ...scene,
+    groups: scene.groups.map((g) =>
+      g.id === groupId ? { ...g, visible: newVisibility } : g
+    ),
+    // Also update layers' visibility
+    layers: scene.layers.map((l) =>
+      group.layerIds.includes(l.id) ? { ...l, visible: newVisibility } : l
+    ),
+  };
+}
+
+/**
+ * Toggle group lock state (affects all layers in group)
+ */
+export function toggleGroupLock(scene: Scene, groupId: string): Scene {
+  const group = scene.groups?.find((g) => g.id === groupId);
+  if (!group || !scene.groups) return scene;
+
+  const newLocked = !group.locked;
+
+  return {
+    ...scene,
+    groups: scene.groups.map((g) =>
+      g.id === groupId ? { ...g, locked: newLocked } : g
+    ),
+    // Also update layers' lock state
+    layers: scene.layers.map((l) =>
+      group.layerIds.includes(l.id) ? { ...l, locked: newLocked } : l
+    ),
+  };
+}
+
+/**
+ * Toggle group collapsed state in UI
+ */
+export function toggleGroupCollapsed(scene: Scene, groupId: string): Scene {
+  if (!scene.groups) return scene;
+
+  return {
+    ...scene,
+    groups: scene.groups.map((g) =>
+      g.id === groupId ? { ...g, collapsed: !g.collapsed } : g
+    ),
+  };
+}
+
+/**
+ * Rename a group
+ */
+export function renameGroup(scene: Scene, groupId: string, newName: string): Scene {
+  if (!scene.groups) return scene;
+
+  return {
+    ...scene,
+    groups: scene.groups.map((g) =>
+      g.id === groupId ? { ...g, name: newName } : g
+    ),
+  };
+}

@@ -10,13 +10,14 @@ import { Card, CardHeader, CardTitle, CardBody } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import type { Profile, Scene, SourceLayer, Source, SceneTransition, TransitionType } from '@/types/profile';
-import type { ColorSource, TextSource, BrowserSource } from '@/types/source';
+import type { ColorSource, TextSource, BrowserSource, VideoFilter } from '@/types/source';
 import { TRANSITION_TYPES, getTransitionTypeLabel, DEFAULT_TRANSITION } from '@/types/scene';
 import { useSceneStore } from '@/stores/sceneStore';
 import { useProfileStore } from '@/stores/profileStore';
 import { useSourceStore } from '@/stores/sourceStore';
 import { api } from '@/lib/backend';
 import { toast } from '@/hooks/useToast';
+import { VideoFilterSection } from './VideoFilterSection';
 
 interface PropertiesPanelProps {
   profile: Profile;
@@ -258,6 +259,15 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
     }
   };
 
+  const handleUpdateVideoFilters = async (filters: VideoFilter[]) => {
+    try {
+      await updateLayer(profile.name, scene.id, layer.id, { videoFilters: filters });
+      updateCurrentLayer(scene.id, layer.id, { videoFilters: filters });
+    } catch (err) {
+      toast.error(t('stream.updateFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to update: ${err instanceof Error ? err.message : String(err)}` }));
+    }
+  };
+
   return (
     <Card className="h-full flex flex-col">
       <CardHeader className="flex-shrink-0" style={{ padding: '12px 16px' }}>
@@ -466,6 +476,13 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
             </button>
           </div>
         </div>
+
+        {/* Video Filters Section */}
+        <VideoFilterSection
+          layerId={layer.id}
+          filters={layer.videoFilters || []}
+          onFiltersChange={handleUpdateVideoFilters}
+        />
       </CardBody>
     </Card>
   );

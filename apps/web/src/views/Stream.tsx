@@ -13,6 +13,9 @@ import { PropertiesPanel } from '@/components/stream/PropertiesPanel';
 import { SceneBar } from '@/components/stream/SceneBar';
 import { AudioMixerPanel } from '@/components/stream/AudioMixerPanel';
 import { StudioModeLayout } from '@/components/stream/StudioModeLayout';
+import { TransitionOverlay } from '@/components/stream/TransitionOverlay';
+import { RecordingButton } from '@/components/stream/RecordingButton';
+import { ReplayBufferButton } from '@/components/stream/ReplayBufferButton';
 import { useProfileStore } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
 import { useSceneStore } from '@/stores/sceneStore';
@@ -147,6 +150,9 @@ export function Stream() {
 
   return (
     <div className="flex flex-col h-full gap-4">
+      {/* Transition overlay for fadeToColor transitions */}
+      <TransitionOverlay />
+
       {/* Top bar with Go Live button */}
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0 flex-1">
@@ -175,6 +181,12 @@ export function Stream() {
             <LayoutGrid className="w-4 h-4" />
             <span className="hidden sm:inline">{t('stream.studio', { defaultValue: 'Studio' })}</span>
           </button>
+
+          {/* Recording button */}
+          <RecordingButton />
+
+          {/* Replay Buffer button */}
+          <ReplayBufferButton />
 
           {isStreaming ? (
             <Button variant="destructive" onClick={handleStopStreaming}>

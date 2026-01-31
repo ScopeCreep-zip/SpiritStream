@@ -4,10 +4,24 @@
  */
 import { create } from 'zustand';
 import { api } from '@/lib/backend';
-import type { Scene, SourceLayer, Transform } from '@/types/scene';
+import type { Scene, SourceLayer, Transform, LayerGroup } from '@/types/scene';
+import {
+  createGroupFromLayers,
+  deleteGroup as deleteGroupHelper,
+  addLayerToGroup as addLayerToGroupHelper,
+  removeLayerFromGroup as removeLayerFromGroupHelper,
+  toggleGroupVisibility as toggleGroupVisibilityHelper,
+  toggleGroupLock as toggleGroupLockHelper,
+  toggleGroupCollapsed as toggleGroupCollapsedHelper,
+  renameGroup as renameGroupHelper,
+} from '@/types/scene';
 
 interface SceneState {
   selectedLayerId: string | null;
+  /** Multi-selected layer IDs for grouping */
+  selectedLayerIds: string[];
+  /** Currently selected group ID */
+  selectedGroupId: string | null;
   error: string | null;
 
   // Actions - Scene CRUD
@@ -90,13 +104,71 @@ interface SceneState {
     password?: string
   ) => Promise<void>;
 
+  // Actions - Layer groups
+  createGroup: (
+    profileName: string,
+    scene: Scene,
+    layerIds: string[],
+    groupName: string,
+    password?: string
+  ) => Promise<LayerGroup>;
+  deleteGroup: (
+    profileName: string,
+    scene: Scene,
+    groupId: string,
+    password?: string
+  ) => Promise<void>;
+  renameGroup: (
+    profileName: string,
+    scene: Scene,
+    groupId: string,
+    newName: string,
+    password?: string
+  ) => Promise<void>;
+  addLayerToGroup: (
+    profileName: string,
+    scene: Scene,
+    groupId: string,
+    layerId: string,
+    password?: string
+  ) => Promise<void>;
+  removeLayerFromGroup: (
+    profileName: string,
+    scene: Scene,
+    layerId: string,
+    password?: string
+  ) => Promise<void>;
+  toggleGroupVisibility: (
+    profileName: string,
+    scene: Scene,
+    groupId: string,
+    password?: string
+  ) => Promise<void>;
+  toggleGroupLock: (
+    profileName: string,
+    scene: Scene,
+    groupId: string,
+    password?: string
+  ) => Promise<void>;
+  toggleGroupCollapsed: (
+    profileName: string,
+    scene: Scene,
+    groupId: string,
+    password?: string
+  ) => Promise<void>;
+
   // UI state
   selectLayer: (layerId: string | null) => void;
+  selectGroup: (groupId: string | null) => void;
+  toggleLayerSelection: (layerId: string) => void;
+  clearLayerSelection: () => void;
   clearError: () => void;
 }
 
 export const useSceneStore = create<SceneState>((set) => ({
   selectedLayerId: null,
+  selectedLayerIds: [],
+  selectedGroupId: null,
   error: null,
 
   // Scene CRUD
@@ -297,7 +369,162 @@ export const useSceneStore = create<SceneState>((set) => ({
     }
   },
 
+  // Layer groups
+  createGroup: async (profileName, scene, layerIds, groupName, password) => {
+    try {
+      const updatedScene = createGroupFromLayers(scene, layerIds, groupName);
+      const newGroup = updatedScene.groups![updatedScene.groups!.length - 1];
+
+      await api.invoke('update_scene', {
+        profileName,
+        sceneId: scene.id,
+        updates: { groups: updatedScene.groups },
+        password,
+      });
+
+      // Clear multi-selection after grouping
+      set({ selectedLayerIds: [], selectedGroupId: newGroup.id });
+
+      return newGroup;
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : String(err) });
+      throw err;
+    }
+  },
+
+  deleteGroup: async (profileName, scene, groupId, password) => {
+    try {
+      const updatedScene = deleteGroupHelper(scene, groupId);
+
+      await api.invoke('update_scene', {
+        profileName,
+        sceneId: scene.id,
+        updates: { groups: updatedScene.groups },
+        password,
+      });
+
+      // Clear group selection if it was selected
+      set((state) =>
+        state.selectedGroupId === groupId ? { selectedGroupId: null } : state
+      );
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : String(err) });
+      throw err;
+    }
+  },
+
+  renameGroup: async (profileName, scene, groupId, newName, password) => {
+    try {
+      const updatedScene = renameGroupHelper(scene, groupId, newName);
+
+      await api.invoke('update_scene', {
+        profileName,
+        sceneId: scene.id,
+        updates: { groups: updatedScene.groups },
+        password,
+      });
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : String(err) });
+      throw err;
+    }
+  },
+
+  addLayerToGroup: async (profileName, scene, groupId, layerId, password) => {
+    try {
+      const updatedScene = addLayerToGroupHelper(scene, groupId, layerId);
+
+      await api.invoke('update_scene', {
+        profileName,
+        sceneId: scene.id,
+        updates: { groups: updatedScene.groups },
+        password,
+      });
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : String(err) });
+      throw err;
+    }
+  },
+
+  removeLayerFromGroup: async (profileName, scene, layerId, password) => {
+    try {
+      const updatedScene = removeLayerFromGroupHelper(scene, layerId);
+
+      await api.invoke('update_scene', {
+        profileName,
+        sceneId: scene.id,
+        updates: { groups: updatedScene.groups },
+        password,
+      });
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : String(err) });
+      throw err;
+    }
+  },
+
+  toggleGroupVisibility: async (profileName, scene, groupId, password) => {
+    try {
+      const updatedScene = toggleGroupVisibilityHelper(scene, groupId);
+
+      await api.invoke('update_scene', {
+        profileName,
+        sceneId: scene.id,
+        updates: { groups: updatedScene.groups, layers: updatedScene.layers },
+        password,
+      });
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : String(err) });
+      throw err;
+    }
+  },
+
+  toggleGroupLock: async (profileName, scene, groupId, password) => {
+    try {
+      const updatedScene = toggleGroupLockHelper(scene, groupId);
+
+      await api.invoke('update_scene', {
+        profileName,
+        sceneId: scene.id,
+        updates: { groups: updatedScene.groups, layers: updatedScene.layers },
+        password,
+      });
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : String(err) });
+      throw err;
+    }
+  },
+
+  toggleGroupCollapsed: async (profileName, scene, groupId, password) => {
+    try {
+      const updatedScene = toggleGroupCollapsedHelper(scene, groupId);
+
+      await api.invoke('update_scene', {
+        profileName,
+        sceneId: scene.id,
+        updates: { groups: updatedScene.groups },
+        password,
+      });
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : String(err) });
+      throw err;
+    }
+  },
+
   // UI state
-  selectLayer: (layerId) => set({ selectedLayerId: layerId }),
+  selectLayer: (layerId) => set({ selectedLayerId: layerId, selectedGroupId: null }),
+
+  selectGroup: (groupId) => set({ selectedGroupId: groupId, selectedLayerId: null }),
+
+  toggleLayerSelection: (layerId) =>
+    set((state) => {
+      const isSelected = state.selectedLayerIds.includes(layerId);
+      return {
+        selectedLayerIds: isSelected
+          ? state.selectedLayerIds.filter((id) => id !== layerId)
+          : [...state.selectedLayerIds, layerId],
+      };
+    }),
+
+  clearLayerSelection: () => set({ selectedLayerIds: [] }),
+
   clearError: () => set({ error: null }),
 }));

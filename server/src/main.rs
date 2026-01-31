@@ -52,6 +52,7 @@ use spiritstream_server::services::{
     CameraCaptureService, CameraCaptureConfig,
     NativePreviewService,
     RecordingService, RecordingConfig, RecordingFormat,
+    ReplayBufferService, ReplayBufferConfig,
     CaptureIndicatorService, CaptureType,
     PermissionsService,
     // WebRTC services
@@ -128,6 +129,7 @@ struct AppState {
     camera_capture: Arc<CameraCaptureService>,
     native_preview: Arc<NativePreviewService>,
     recording_service: Arc<RecordingService>,
+    replay_buffer: Arc<ReplayBufferService>,
     capture_indicator: Arc<CaptureIndicatorService>,
     // WebRTC preview service
     go2rtc_manager: Arc<Go2RtcManager>,
@@ -2984,6 +2986,103 @@ async fn delete_recording_handler(
     }
 }
 
+// --- Replay Buffer ---
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StartReplayBufferRequest {
+    duration_secs: Option<u32>,
+    output_path: Option<String>,
+}
+
+/// POST /api/replay-buffer/start - Start the replay buffer
+async fn start_replay_buffer_handler(
+    State(state): State<AppState>,
+    Json(req): Json<StartReplayBufferRequest>,
+) -> impl IntoResponse {
+    // Get active output group IDs to record from
+    let active_ids = state.ffmpeg_handler.get_active_group_ids();
+    if active_ids.is_empty() {
+        return Json(json!({ "ok": false, "error": "No active streams - start streaming first" }));
+    }
+
+    let relay_url = format!("rtmp://localhost:1935/relay/{}", active_ids[0]);
+
+    let config = ReplayBufferConfig {
+        duration_secs: req.duration_secs.unwrap_or(30),
+        output_path: req.output_path.unwrap_or_default(),
+        segment_duration: 2,
+    };
+
+    match state.replay_buffer.start(&relay_url, config) {
+        Ok(()) => Json(json!({ "ok": true, "data": null })),
+        Err(e) => Json(json!({ "ok": false, "error": e })),
+    }
+}
+
+/// POST /api/replay-buffer/stop - Stop the replay buffer
+async fn stop_replay_buffer_handler(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    match state.replay_buffer.stop() {
+        Ok(()) => Json(json!({ "ok": true, "data": null })),
+        Err(e) => Json(json!({ "ok": false, "error": e })),
+    }
+}
+
+/// POST /api/replay-buffer/save - Save the current replay buffer
+async fn save_replay_handler(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    match state.replay_buffer.save_replay() {
+        Ok(info) => Json(json!({ "ok": true, "data": info })),
+        Err(e) => Json(json!({ "ok": false, "error": e })),
+    }
+}
+
+/// GET /api/replay-buffer/state - Get replay buffer state
+async fn get_replay_buffer_state_handler(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    match state.replay_buffer.get_state() {
+        Ok(buffer_state) => Json(json!({ "ok": true, "data": buffer_state })),
+        Err(e) => Json(json!({ "ok": false, "error": e })),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetReplayDurationRequest {
+    duration_secs: u32,
+}
+
+/// POST /api/replay-buffer/duration - Set replay buffer duration
+async fn set_replay_duration_handler(
+    State(state): State<AppState>,
+    Json(req): Json<SetReplayDurationRequest>,
+) -> impl IntoResponse {
+    match state.replay_buffer.set_duration(req.duration_secs) {
+        Ok(()) => Json(json!({ "ok": true, "data": null })),
+        Err(e) => Json(json!({ "ok": false, "error": e })),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct SetReplayOutputPathRequest {
+    path: String,
+}
+
+/// POST /api/replay-buffer/output-path - Set replay buffer output path
+async fn set_replay_output_path_handler(
+    State(state): State<AppState>,
+    Json(req): Json<SetReplayOutputPathRequest>,
+) -> impl IntoResponse {
+    match state.replay_buffer.set_output_path(req.path) {
+        Ok(()) => Json(json!({ "ok": true, "data": null })),
+        Err(e) => Json(json!({ "ok": false, "error": e })),
+    }
+}
+
 // --- Permissions ---
 
 /// GET /api/permissions/status - Get permission status
@@ -3281,6 +3380,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         RecordingService::new(preview_ffmpeg_path.clone(), app_data_dir.clone())
             .expect("Failed to initialize recording service")
     );
+    let replay_buffer = Arc::new(
+        ReplayBufferService::new(preview_ffmpeg_path.clone(), app_data_dir.clone())
+            .expect("Failed to initialize replay buffer service")
+    );
     let capture_indicator = Arc::new(CaptureIndicatorService::new());
 
     // Initialize go2rtc manager for WebRTC preview streaming
@@ -3321,6 +3424,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         camera_capture,
         native_preview,
         recording_service,
+        replay_buffer,
         capture_indicator,
         go2rtc_manager,
         h264_capture,
@@ -3384,6 +3488,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/recordings", get(list_recordings_handler))
         .route("/api/recording/export", post(export_recording_handler))
         .route("/api/recording/:id", axum::routing::delete(delete_recording_handler))
+        // Replay Buffer endpoints
+        .route("/api/replay-buffer/start", post(start_replay_buffer_handler))
+        .route("/api/replay-buffer/stop", post(stop_replay_buffer_handler))
+        .route("/api/replay-buffer/save", post(save_replay_handler))
+        .route("/api/replay-buffer/state", get(get_replay_buffer_state_handler))
+        .route("/api/replay-buffer/duration", post(set_replay_duration_handler))
+        .route("/api/replay-buffer/output-path", post(set_replay_output_path_handler))
         // Permissions endpoints
         .route("/api/permissions/status", get(permissions_status_handler))
         .route("/api/permissions/request", post(request_permissions_handler))

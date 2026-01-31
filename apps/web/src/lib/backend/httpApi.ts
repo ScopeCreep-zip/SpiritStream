@@ -230,6 +230,75 @@ export const api = {
     reorder: (profileName: string, sourceIds: string[], password?: string) =>
       invokeHttp<Source[]>('reorder_sources', { profileName, sourceIds, password }),
   },
+  replayBuffer: {
+    /** Start the replay buffer */
+    start: async (config: ReplayBufferConfig) => {
+      const baseUrl = getBackendBaseUrl();
+      const response = await safeFetch(`${baseUrl}/api/replay-buffer/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(config),
+      });
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.error || 'Failed to start replay buffer');
+    },
+    /** Stop the replay buffer */
+    stop: async () => {
+      const baseUrl = getBackendBaseUrl();
+      const response = await safeFetch(`${baseUrl}/api/replay-buffer/stop`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.error || 'Failed to stop replay buffer');
+    },
+    /** Save the current buffer to a file */
+    save: async (): Promise<SavedReplayInfo> => {
+      const baseUrl = getBackendBaseUrl();
+      const response = await safeFetch(`${baseUrl}/api/replay-buffer/save`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.error || 'Failed to save replay');
+      return data.data as SavedReplayInfo;
+    },
+    /** Get current replay buffer state */
+    getState: async (): Promise<ReplayBufferState> => {
+      const baseUrl = getBackendBaseUrl();
+      const response = await safeFetch(`${baseUrl}/api/replay-buffer/state`, {
+        credentials: 'include',
+      });
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.error || 'Failed to get replay buffer state');
+      return data.data as ReplayBufferState;
+    },
+    /** Set the buffer duration in seconds */
+    setDuration: async (durationSecs: number) => {
+      const baseUrl = getBackendBaseUrl();
+      const response = await safeFetch(`${baseUrl}/api/replay-buffer/duration`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ durationSecs }),
+      });
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.error || 'Failed to set duration');
+    },
+    /** Set the output path for saved replays */
+    setOutputPath: async (path: string) => {
+      const baseUrl = getBackendBaseUrl();
+      const response = await safeFetch(`${baseUrl}/api/replay-buffer/output-path`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ path }),
+      });
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.error || 'Failed to set output path');
+    },
+  },
   webrtc: {
     /** Check if go2rtc WebRTC server is available */
     isAvailable: async () => {
@@ -277,4 +346,27 @@ export interface WebRtcInfo {
   whepUrl?: string;
   wsUrl?: string;
   streamName?: string;
+}
+
+/** Replay buffer configuration for starting the buffer */
+export interface ReplayBufferConfig {
+  durationSecs: number;
+  outputPath: string;
+  segmentDuration?: number;
+}
+
+/** Current state of the replay buffer */
+export interface ReplayBufferState {
+  isActive: boolean;
+  durationSecs: number;
+  bufferedSecs: number;
+  outputPath: string;
+}
+
+/** Information about a saved replay file */
+export interface SavedReplayInfo {
+  filePath: string;
+  durationSecs: number;
+  sizeBytes: number;
+  createdAt: string;
 }
