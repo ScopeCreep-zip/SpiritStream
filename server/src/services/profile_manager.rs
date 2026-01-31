@@ -278,40 +278,16 @@ impl ProfileManager {
         mgs_path.exists()
     }
 
-    /// Check if the RTMP input port conflicts with any existing profile
-    /// Returns Ok(()) if no conflict, or Err with conflicting profile name
+    /// Validate RTMP input configuration
+    /// Since only one profile runs at a time, port conflicts are allowed
+    /// This function is kept for potential future validation but currently always succeeds
     pub async fn validate_input_conflict(
         &self,
-        profile_id: &str,
-        input: &RtmpInput,
+        _profile_id: &str,
+        _input: &RtmpInput,
     ) -> Result<(), String> {
-        let profile_names = self.get_all_names().await?;
-
-        for name in profile_names {
-            // Load each profile (try without password for unencrypted ones)
-            if let Ok(existing) = self.load(&name, None).await {
-                // Skip the profile being edited (same ID)
-                if existing.id == profile_id {
-                    continue;
-                }
-
-                // Check for port conflict on same bind address
-                // Both "0.0.0.0" and specific IPs should be checked
-                let bind_conflict = existing.input.bind_address == input.bind_address
-                    || existing.input.bind_address == "0.0.0.0"
-                    || input.bind_address == "0.0.0.0";
-
-                if bind_conflict && existing.input.port == input.port {
-                    return Err(format!(
-                        "Port {} is already configured for profile '{}'. Only one profile can listen on a port at a time.",
-                        input.port,
-                        existing.name
-                    ));
-                }
-            }
-            // Skip encrypted profiles we can't read (they might conflict but we can't check)
-        }
-
+        // Since only one profile can be active at a time,
+        // multiple profiles can use the same port without conflict
         Ok(())
     }
 

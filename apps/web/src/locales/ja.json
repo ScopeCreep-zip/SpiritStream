@@ -229,7 +229,8 @@
     "videoBitrateHelper": "推奨：1080pは4500-6000、720pは3000-4500",
     "videoBitrateKbps": "映像ビットレート (kbps)",
     "videoEncoder": "映像エンコーダー",
-    "videoEncoderSettings": "映像エンコーダー設定"
+    "videoEncoderSettings": "映像エンコーダー設定",
+    "generatePtsDescription": "タイムスタンプを生成し音声タイミングを同期します。軽微なCPU負荷で配信の安定性を高め、エンコード問題を修正します。"
   },
   "errors": {
     "connectionFailed": "接続に失敗しました",
@@ -699,7 +700,14 @@
     "streamError": "配信エラー",
     "totalBandwidth": "合計アップロード",
     "uptime": "稼働時間",
-    "validating": "検証中..."
+    "validating": "検証中...",
+    "autoRetrying": "配信が切断されました。再接続しています...",
+    "reconnectedTitle": "配信が再接続されました",
+    "reconnectFailedTitle": "再接続に失敗しました",
+    "reconnectingAttempt": "再接続中...（{{attempt}}/{{max}} 回目）",
+    "reconnectingTitle": "配信を再接続中",
+    "retryFailed": "再接続に失敗しました：{{error}}",
+    "retrySuccess": "配信の再接続に成功しました"
   },
   "targets": {
     "addNewTarget": "新しい配信先を追加",
@@ -744,7 +752,9 @@
     "targetUpdated": "配信先を更新しました",
     "testFailed": "配信テストに失敗しました",
     "testPassed": "すべてのチェックに合格しました！配信設定は有効です。",
-    "testingConfig": "配信設定をテスト中..."
+    "testingConfig": "配信設定をテスト中...",
+    "groupStarted": "出力グループを開始しました",
+    "groupStopped": "出力グループを停止しました"
   },
   "validation": {
     "applicationRequired": "アプリケーションは必須です",
@@ -766,5 +776,37 @@
     "urlInvalid": "URLはrtmp://またはrtmps://で始まる必要があります",
     "urlMustStartWithRtmp": "URL?rtmp://???rtmps://???????????",
     "urlRequired": "URLは必須です"
+  },
+  "discord": {
+    "attachImage": "画像を添付",
+    "cooldownDescription": "配信を再起動した際の重複通知を防ぐ",
+    "cooldownInfo": "有効にすると、クールダウン期間内に配信を停止して再開した場合、新しい通知は送信されません。技術的な問題の修正時のスパムを防ぎます。",
+    "cooldownSeconds": "クールダウン",
+    "cooldownSettings": "クールダウン設定",
+    "description": "Discordに配信開始通知を送る",
+    "enableCooldown": "クールダウンを有効化",
+    "enableCooldownDescription": "クールダウン期間内の重複通知を防ぐ",
+    "enableWebhook": "DiscordのWebhookを有効化",
+    "enableWebhookDescription": "配信開始時に通知を送る",
+    "enterWebhookFirst": "先にWebhook URLを入力してください",
+    "goLiveMessage": "配信開始メッセージ",
+    "goLiveMessageDescription": "配信開始時に送信するメッセージ。DiscordのMarkdownに対応。",
+    "imageDesktopOnly": "画像の添付にはデスクトップアプリが必要です。ブラウザモードではメッセージ内に画像URLを使用できます。",
+    "imageHint": "PNG/JPG/GIF/WebP（最大8MB）。画像が通知に添付されます。",
+    "insertEmoji": "絵文字を挿入",
+    "invalidWebhookUrl": "Webhook URLが無効です。https://discord.com/api/webhooks/ で始まる必要があります",
+    "markdownSupport": "DiscordのMarkdownに対応：",
+    "messagePlaceholder": "**配信を開始しました！**\n\n配信に参加してね！",
+    "removeImage": "画像を削除",
+    "seconds": "秒",
+    "selectImage": "画像を選択",
+    "testFailed": "テスト失敗",
+    "testPassed": "テスト成功",
+    "testSuccess": "テスト通知を送信しました！",
+    "testWebhook": "Webhookをテスト",
+    "title": "Discord Webhook",
+    "webhookSettings": "Webhook設定",
+    "webhookSettingsDescription": "配信開始通知のためのDiscord Webhookを設定",
+    "webhookUrl": "Webhook URL"
   }
 }

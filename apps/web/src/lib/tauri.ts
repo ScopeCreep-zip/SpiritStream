@@ -46,6 +46,9 @@ export const api = {
     toggleTarget: (targetId: string, enabled: boolean, group: OutputGroup, incomingUrl: string) =>
       invoke<number>('toggle_stream_target', { targetId, enabled, group, incomingUrl }),
     isTargetDisabled: (targetId: string) => invoke<boolean>('is_target_disabled', { targetId }),
+    /** Retry a failed stream. Returns PID and next delay if another retry is needed */
+    retry: (groupId: string) =>
+      invoke<{ pid: number; nextDelaySecs: number | null }>('retry_stream', { groupId }),
   },
   system: {
     getEncoders: () => invoke<Encoders>('get_encoders'),

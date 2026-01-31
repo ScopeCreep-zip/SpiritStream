@@ -229,7 +229,8 @@
     "videoBitrateHelper": "Aanbeveel: 4500-6000 vir 1080p, 3000-4500 vir 720p",
     "videoBitrateKbps": "Video bitsnelheid (kbps)",
     "videoEncoder": "Video-enkodeerder",
-    "videoEncoderSettings": "Video-enkodeerder-instellings"
+    "videoEncoderSettings": "Video-enkodeerder-instellings",
+    "generatePtsDescription": "Genereer tydstempels en sinchroniseer oudiotydsberekening. Verbeter stroomstabiliteit en los enkoderingprobleme op teen 'n geringe SVE-koste."
   },
   "errors": {
     "connectionFailed": "Konneksie het misluk",
@@ -699,7 +700,14 @@
     "streamError": "Stroomfout",
     "totalBandwidth": "Totale oplaai",
     "uptime": "Optyd",
-    "validating": "Valideer tans …"
+    "validating": "Valideer tans …",
+    "autoRetrying": "Stroom ontkoppel, besig om weer te koppel...",
+    "reconnectedTitle": "Stroom weer gekoppel",
+    "reconnectFailedTitle": "Herkoppeling het misluk",
+    "reconnectingAttempt": "Besig om weer te koppel... (poging {{attempt}}/{{max}})",
+    "reconnectingTitle": "Stroom koppel weer",
+    "retryFailed": "Herkoppeling het misluk: {{error}}",
+    "retrySuccess": "Stroom suksesvol weer gekoppel"
   },
   "targets": {
     "addNewTarget": "Voeg nuwe teiken by",
@@ -744,7 +752,9 @@
     "targetUpdated": "Stroomteiken is opgedateer",
     "testFailed": "Stroomtoets het misluk",
     "testPassed": "Alle tjeks geslaag! Jou stroomopstelling is geldig.",
-    "testingConfig": "Toets tans stroomopstelling …"
+    "testingConfig": "Toets tans stroomopstelling …",
+    "groupStarted": "Uitsetgroep begin",
+    "groupStopped": "Uitsetgroep gestop"
   },
   "validation": {
     "applicationRequired": "Aansoeknaam word vereis",
@@ -766,5 +776,37 @@
     "urlInvalid": "URL moet begin met rtmp:// of rtmps://",
     "urlMustStartWithRtmp": "URL moet begin met rtmp:// of rtmps://",
     "urlRequired": "URL word vereis"
+  },
+  "discord": {
+    "attachImage": "Heg prent aan",
+    "cooldownDescription": "Voorkom duplikaatkennisgewings wanneer strome herbegin",
+    "cooldownInfo": "Wanneer dit geaktiveer is, as jy jou stroom binne die afkoeltyd stop en herbegin, sal geen nuwe kennisgewing gestuur word nie. Dit voorkom spam wanneer tegniese probleme reggestel word.",
+    "cooldownSeconds": "Afkoeltyd",
+    "cooldownSettings": "Afkoelinstellings",
+    "description": "Stuur regstreekse kennisgewings na Discord",
+    "enableCooldown": "Skakel afkoeltyd aan",
+    "enableCooldownDescription": "Voorkom duplikaatkennisgewings binne die afkoeltyd",
+    "enableWebhook": "Skakel Discord-webhook aan",
+    "enableWebhookDescription": "Stuur kennisgewings wanneer strome begin",
+    "enterWebhookFirst": "Voer eers 'n webhook-URL in",
+    "goLiveMessage": "Regstreeks-boodskap",
+    "goLiveMessageDescription": "Die boodskap om te stuur wanneer jou stroom begin. Ondersteun Discord-markdown.",
+    "imageDesktopOnly": "Beeldaanhegting vereis die rekenaarprogram. In blaaiermodus kan jy eerder 'n beeld-URL in jou boodskap gebruik.",
+    "imageHint": "PNG, JPG, GIF, of WebP (maks 8MB). Die beeld sal by jou kennisgewing aangeheg word.",
+    "insertEmoji": "Voeg emoji in",
+    "invalidWebhookUrl": "Ongeldige webhook-URL. Moet begin met https://discord.com/api/webhooks/",
+    "markdownSupport": "Discord-markdown word ondersteun:",
+    "messagePlaceholder": "**Stroom is nou regstreeks!**\n\nKom kyk saam na die stroom!",
+    "removeImage": "Verwyder beeld",
+    "seconds": "sekondes",
+    "selectImage": "Kies beeld",
+    "testFailed": "Toets het misluk",
+    "testPassed": "Toets geslaag",
+    "testSuccess": "Toetskennisgewing suksesvol gestuur!",
+    "testWebhook": "Toets webhook",
+    "title": "Discord-webhook",
+    "webhookSettings": "Webhook-instellings",
+    "webhookSettingsDescription": "Stel jou Discord-webhook op vir regstreekse kennisgewings",
+    "webhookUrl": "Webhook-URL"
   }
 }

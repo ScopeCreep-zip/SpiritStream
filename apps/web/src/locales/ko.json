@@ -229,7 +229,8 @@
     "videoBitrateHelper": "권장: 1080p의 경우 4500-6000, 720p의 경우 3000-4500",
     "videoBitrateKbps": "비디오 비트 전송률(kbps)",
     "videoEncoder": "비디오 인코더",
-    "videoEncoderSettings": "비디오 인코더 설정"
+    "videoEncoderSettings": "비디오 인코더 설정",
+    "generatePtsDescription": "타임스탬프를 생성하고 오디오 타이밍을 동기화합니다. 약간의 CPU 비용으로 스트림 안정성을 개선하고 인코딩 문제를 해결합니다."
   },
   "errors": {
     "connectionFailed": "연결 실패",
@@ -699,7 +700,14 @@
     "streamError": "스트림 오류",
     "totalBandwidth": "총 업로드",
     "uptime": "가동 시간",
-    "validating": "검증 중..."
+    "validating": "검증 중...",
+    "autoRetrying": "스트림 연결이 끊어졌습니다. 다시 연결 중...",
+    "reconnectedTitle": "스트림이 다시 연결됨",
+    "reconnectFailedTitle": "재연결 실패",
+    "reconnectingAttempt": "재연결 중... (시도 {{attempt}}/{{max}})",
+    "reconnectingTitle": "스트림 재연결 중",
+    "retryFailed": "재연결 실패: {{error}}",
+    "retrySuccess": "스트림이 성공적으로 재연결됨"
   },
   "targets": {
     "addNewTarget": "새 대상 추가",
@@ -744,7 +752,9 @@
     "targetUpdated": "스트림 대상이 업데이트되었습니다.",
     "testFailed": "스트림 테스트 실패",
     "testPassed": "모든 점검이 통과되었습니다! 스트리밍 구성이 유효합니다.",
-    "testingConfig": "스트림 구성 테스트 중..."
+    "testingConfig": "스트림 구성 테스트 중...",
+    "groupStarted": "출력 그룹 시작됨",
+    "groupStopped": "출력 그룹 중지됨"
   },
   "validation": {
     "applicationRequired": "애플리케이션 이름은 필수 항목입니다.",
@@ -766,5 +776,37 @@
     "urlInvalid": "URL은 rtmp:// 또는 rtmps://로 시작해야 합니다.",
     "urlMustStartWithRtmp": "URL은 rtmp:// 또는 rtmps://로 시작해야 합니다.",
     "urlRequired": "URL이 필요합니다"
+  },
+  "discord": {
+    "attachImage": "이미지 첨부",
+    "cooldownDescription": "스트림을 재시작할 때 중복 알림을 방지합니다",
+    "cooldownInfo": "활성화하면 쿨다운 기간 내에 스트림을 중지했다가 다시 시작해도 새 알림이 전송되지 않습니다. 기술 문제를 해결할 때 스팸을 방지합니다.",
+    "cooldownSeconds": "쿨다운",
+    "cooldownSettings": "쿨다운 설정",
+    "description": "Discord에 라이브 시작 알림 보내기",
+    "enableCooldown": "쿨다운 사용",
+    "enableCooldownDescription": "쿨다운 기간 내 중복 알림을 방지합니다",
+    "enableWebhook": "Discord 웹훅 사용",
+    "enableWebhookDescription": "스트림 시작 시 알림 보내기",
+    "enterWebhookFirst": "먼저 웹훅 URL을 입력하세요",
+    "goLiveMessage": "라이브 시작 메시지",
+    "goLiveMessageDescription": "스트림 시작 시 보낼 메시지입니다. Discord 마크다운을 지원합니다.",
+    "imageDesktopOnly": "이미지 첨부는 데스크톱 앱이 필요합니다. 브라우저 모드에서는 메시지에 이미지 URL을 사용할 수 있습니다.",
+    "imageHint": "PNG, JPG, GIF 또는 WebP(최대 8MB). 이미지가 알림에 첨부됩니다.",
+    "insertEmoji": "이모지 삽입",
+    "invalidWebhookUrl": "웹훅 URL이 올바르지 않습니다. https://discord.com/api/webhooks/ 로 시작해야 합니다",
+    "markdownSupport": "Discord 마크다운 지원:",
+    "messagePlaceholder": "**스트림이 지금 라이브입니다!**\n\n방송에 참여하세요!",
+    "removeImage": "이미지 제거",
+    "seconds": "초",
+    "selectImage": "이미지 선택",
+    "testFailed": "테스트 실패",
+    "testPassed": "테스트 성공",
+    "testSuccess": "테스트 알림을 성공적으로 보냈습니다!",
+    "testWebhook": "웹훅 테스트",
+    "title": "Discord 웹훅",
+    "webhookSettings": "웹훅 설정",
+    "webhookSettingsDescription": "라이브 시작 알림을 위한 Discord 웹훅을 설정하세요",
+    "webhookUrl": "웹훅 URL"
   }
 }

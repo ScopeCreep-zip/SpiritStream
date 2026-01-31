@@ -109,11 +109,36 @@ export const dialogs = {
 
   /**
    * Save text content to a file using browser download.
-   * Triggers a download prompt in the browser.
+   * Uses File System Access API when available to show save dialog every time.
+   * Falls back to automatic download for older browsers.
    */
   saveTextFile: async (options: SaveFileOptions & { content: string }): Promise<void> => {
     if (typeof window === 'undefined') return;
     const name = options.defaultPath || 'spiritstream-export.txt';
+
+    // Use File System Access API if available (shows save dialog every time)
+    if (window.showSaveFilePicker) {
+      try {
+        const types = buildPickerTypes(options.filters);
+        const handle = await window.showSaveFilePicker({
+          suggestedName: name,
+          types,
+        });
+        const writable = await handle.createWritable();
+        await writable.write(options.content);
+        await writable.close();
+        return;
+      } catch (error) {
+        // User cancelled or browser doesn't support the API
+        if ((error as Error).name === 'AbortError') {
+          throw error; // Re-throw to indicate user cancellation
+        }
+        console.warn('[dialogs] File System Access API failed, falling back to download:', error);
+        // Fall through to legacy download method
+      }
+    }
+
+    // Fallback: Use legacy download method (auto-downloads to default folder)
     const blob = new Blob([options.content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
@@ -121,8 +146,12 @@ export const dialogs = {
     anchor.download = name;
     document.body.appendChild(anchor);
     anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
+
+    // Clean up after a short delay to ensure download starts
+    setTimeout(() => {
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    }, 100);
   },
   openExternal: async (target: string): Promise<void> => {
     if (typeof window === 'undefined') return;

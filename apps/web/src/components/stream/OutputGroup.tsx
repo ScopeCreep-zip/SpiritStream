@@ -10,6 +10,7 @@ export interface OutputGroupProps {
   info: string;
   status: StreamStatusType;
   defaultExpanded?: boolean;
+  headerAction?: React.ReactNode; // Optional action (e.g. toggle switch) in header
   children: React.ReactNode;
   className?: string;
 }
@@ -19,6 +20,7 @@ export function OutputGroup({
   info,
   status,
   defaultExpanded = false,
+  headerAction,
   children,
   className,
 }: OutputGroupProps) {
@@ -53,6 +55,7 @@ export function OutputGroup({
           </div>
         </div>
         <div className="flex items-center gap-3">
+          {headerAction && <div onClick={(e) => e.stopPropagation()}>{headerAction}</div>}
           <StreamStatus
             status={status}
             label={status === 'offline' ? t('status.ready') : undefined}

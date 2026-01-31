@@ -175,15 +175,16 @@ fn spawn_server<R: Runtime>(
             .map_err(|e| e.to_string())?
     };
 
+    // Use Local AppData instead of Roaming AppData for all user data
+    // This keeps everything in one machine-specific location that doesn't sync
+    // For a streaming app, settings/profiles don't need to roam across domain machines
     let app_data_dir = app
         .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to resolve app data dir: {e}"))?;
+        .app_local_data_dir()
+        .map_err(|e| format!("Failed to resolve app local data dir: {e}"))?;
 
-    let log_dir = app
-        .path()
-        .app_log_dir()
-        .map_err(|e| format!("Failed to resolve log dir: {e}"))?;
+    // Put logs in a subdirectory of the local data dir
+    let log_dir = app_data_dir.join("logs");
 
     // Ensure directories exist before spawning server
     std::fs::create_dir_all(&app_data_dir).ok();

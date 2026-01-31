@@ -229,7 +229,8 @@
     "videoBitrateHelper": "Рекомендовано: 4500-6000 для 1080p, 3000-4500 для 720p",
     "videoBitrateKbps": "Бітрейт відео (кбіт/с)",
     "videoEncoder": "Відео кодер",
-    "videoEncoderSettings": "Налаштування відеокодера"
+    "videoEncoderSettings": "Налаштування відеокодера",
+    "generatePtsDescription": "Створює часові мітки та синхронізує таймінг аудіо. Покращує стабільність стріму та виправляє проблеми кодування за невеликої вартості CPU."
   },
   "errors": {
     "connectionFailed": "Помилка підключення",
@@ -699,7 +700,14 @@
     "streamError": "Помилка потоку",
     "totalBandwidth": "Загальне завантаження",
     "uptime": "Час роботи",
-    "validating": "Перевірка..."
+    "validating": "Перевірка...",
+    "autoRetrying": "Стрім від'єднано, повторне підключення...",
+    "reconnectedTitle": "Стрім перепідключено",
+    "reconnectFailedTitle": "Не вдалося перепідключитися",
+    "reconnectingAttempt": "Перепідключення... (спроба {{attempt}}/{{max}})",
+    "reconnectingTitle": "Перепідключення стріму",
+    "retryFailed": "Не вдалося перепідключитися: {{error}}",
+    "retrySuccess": "Стрім успішно перепідключено"
   },
   "targets": {
     "addNewTarget": "Додати нову ціль",
@@ -744,7 +752,9 @@
     "targetUpdated": "Мета потоку оновлена",
     "testFailed": "Помилка тестування потоку",
     "testPassed": "Всі перевірки пройшли! Ваша конфігурація потокового передавання дійсна.",
-    "testingConfig": "Тестування конфігурації потоку..."
+    "testingConfig": "Тестування конфігурації потоку...",
+    "groupStarted": "Групу виходів запущено",
+    "groupStopped": "Групу виходів зупинено"
   },
   "validation": {
     "applicationRequired": "Потрібно вказати назву програми",
@@ -766,5 +776,37 @@
     "urlInvalid": "URL має починатися з rtmp:// або rtmps://",
     "urlMustStartWithRtmp": "URL має починатися з rtmp:// або rtmps://",
     "urlRequired": "Необхідна URL-адреса"
+  },
+  "discord": {
+    "attachImage": "Додати зображення",
+    "cooldownDescription": "Запобігати дубльованим сповіщенням під час перезапуску стрімів",
+    "cooldownInfo": "Якщо ввімкнено, і ви зупините та знову запустите стрім протягом періоду очікування, нове сповіщення не буде надіслано. Це запобігає спаму під час виправлення технічних проблем.",
+    "cooldownSeconds": "Період очікування",
+    "cooldownSettings": "Налаштування періоду очікування",
+    "description": "Надсилати сповіщення про початок стріму в Discord",
+    "enableCooldown": "Увімкнути період очікування",
+    "enableCooldownDescription": "Запобігати дубльованим сповіщенням у періоді очікування",
+    "enableWebhook": "Увімкнути вебхук Discord",
+    "enableWebhookDescription": "Надсилати сповіщення під час старту стрімів",
+    "enterWebhookFirst": "Спочатку введіть URL вебхука",
+    "goLiveMessage": "Повідомлення про старт",
+    "goLiveMessageDescription": "Повідомлення, яке надсилається під час старту стріму. Підтримує markdown Discord.",
+    "imageDesktopOnly": "Прикріплення зображення потребує настільного застосунку. У режимі браузера можна використати URL зображення в повідомленні.",
+    "imageHint": "PNG, JPG, GIF або WebP (макс. 8 МБ). Зображення буде прикріплено до сповіщення.",
+    "insertEmoji": "Вставити емодзі",
+    "invalidWebhookUrl": "Невірний URL вебхука. Має починатися з https://discord.com/api/webhooks/",
+    "markdownSupport": "Підтримується markdown Discord:",
+    "messagePlaceholder": "**Стрім уже в ефірі!**\n\nПриєднуйтесь до стріму!",
+    "removeImage": "Видалити зображення",
+    "seconds": "секунд",
+    "selectImage": "Вибрати зображення",
+    "testFailed": "Тест не пройшов",
+    "testPassed": "Тест пройшов",
+    "testSuccess": "Тестове сповіщення успішно надіслано!",
+    "testWebhook": "Перевірити вебхук",
+    "title": "Вебхук Discord",
+    "webhookSettings": "Налаштування вебхука",
+    "webhookSettingsDescription": "Налаштуйте вебхук Discord для сповіщень про старт стріму",
+    "webhookUrl": "URL вебхука"
   }
 }

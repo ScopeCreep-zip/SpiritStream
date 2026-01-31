@@ -109,6 +109,9 @@ export const api = {
       invokeHttp<number>('toggle_stream_target', { targetId, enabled, group, incomingUrl }),
     isTargetDisabled: (targetId: string) =>
       invokeHttp<boolean>('is_target_disabled', { targetId }),
+    /** Retry a failed stream. Returns PID and next delay if another retry is needed */
+    retry: (groupId: string) =>
+      invokeHttp<{ pid: number; nextDelaySecs: number | null }>('retry_stream', { groupId }),
   },
   system: {
     /** Get available video and audio encoders detected on the system */

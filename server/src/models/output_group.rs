@@ -120,6 +120,12 @@ pub struct OutputGroup {
     #[serde(default)]
     pub is_default: bool,
 
+    /// Generate presentation timestamps (PTS) for the stream
+    /// Helps with timing issues and encoding problems at minor CPU cost
+    /// Default: true
+    #[serde(default = "default_generate_pts")]
+    pub generate_pts: bool,
+
     /// Video encoding settings
     pub video: VideoSettings,
 
@@ -140,6 +146,7 @@ impl OutputGroup {
             id: uuid::Uuid::new_v4().to_string(),
             name: "New Output Group".to_string(),
             is_default: false,
+            generate_pts: true,
             video: VideoSettings::default(),
             audio: AudioSettings::default(),
             container: ContainerSettings::default(),
@@ -153,4 +160,9 @@ impl Default for OutputGroup {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Default value for generate_pts field (true)
+fn default_generate_pts() -> bool {
+    true
 }
