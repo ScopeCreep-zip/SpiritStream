@@ -4,11 +4,17 @@
  *
  * Optimized to use local state updates instead of reloading the entire profile
  * after each scene operation, preventing WebRTC reconnections and improving UX.
+ *
+ * Features:
+ * - Scene tabs with right-click projector context menu
+ * - Quick projector button for current scene
+ * - Studio mode tally indicators
  */
 import { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Copy, Trash2, MonitorPlay } from 'lucide-react';
+import { Plus, Copy, Trash2, MonitorPlay, LayoutGrid } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { ProjectorContextMenu, ContextMenuSeparator, ContextMenuItem, useContextMenu } from '@/components/ui/ProjectorContextMenu';
 import type { Profile } from '@/types/profile';
 import type { Scene } from '@/types/scene';
 import { useSceneStore } from '@/stores/sceneStore';
@@ -30,9 +36,13 @@ export function SceneBar({ profile, activeSceneId }: SceneBarProps) {
   const { addCurrentScene, removeCurrentScene, setCurrentActiveScene, reloadProfile } = useProfileStore();
   const { enabled: studioEnabled, previewSceneId, programSceneId, setPreviewScene } = useStudioStore();
   const { isTransitioning } = useTransitionStore();
-  const { isProjecting, openProjectorWindow } = useProjectorStore();
+  const { openProjector, hasActiveProjectors } = useProjectorStore();
   const [showNewSceneInput, setShowNewSceneInput] = useState(false);
   const [newSceneName, setNewSceneName] = useState('');
+
+  // Context menu state for scene tabs
+  const [contextMenuScene, setContextMenuScene] = useState<Scene | null>(null);
+  const sceneContextMenu = useContextMenu();
 
   const handleCreateScene = useCallback(async () => {
     if (!newSceneName.trim()) {
@@ -123,11 +133,35 @@ export function SceneBar({ profile, activeSceneId }: SceneBarProps) {
     // In Studio Mode, project the Program scene; in Normal Mode, project the active scene
     const sceneToProject = studioEnabled ? programSceneId : activeSceneId;
     if (sceneToProject) {
-      openProjectorWindow(profile.name, sceneToProject);
+      openProjector({
+        type: 'scene',
+        displayMode: 'windowed',
+        targetId: sceneToProject,
+        profileName: profile.name,
+        alwaysOnTop: false,
+        hideCursor: false,
+      });
     } else {
       toast.error(t('stream.noSceneToProject', { defaultValue: 'No scene to project' }));
     }
-  }, [studioEnabled, programSceneId, activeSceneId, profile.name, openProjectorWindow, t]);
+  }, [studioEnabled, programSceneId, activeSceneId, profile.name, openProjector, t]);
+
+  const handleOpenMultiview = useCallback(() => {
+    openProjector({
+      type: 'multiview',
+      displayMode: 'windowed',
+      profileName: profile.name,
+      alwaysOnTop: false,
+      hideCursor: false,
+    });
+  }, [profile.name, openProjector]);
+
+  const handleSceneContextMenu = useCallback((e: React.MouseEvent, scene: Scene) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenuScene(scene);
+    sceneContextMenu.open(e);
+  }, [sceneContextMenu]);
 
   return (
     <div className="flex items-center gap-2 px-4 py-3 bg-card rounded border border-border overflow-x-auto">
@@ -156,6 +190,7 @@ export function SceneBar({ profile, activeSceneId }: SceneBarProps) {
               isTransitioning && 'opacity-50 cursor-not-allowed'
             )}
             onClick={() => handleSelectScene(scene.id)}
+            onContextMenu={(e) => handleSceneContextMenu(e, scene)}
           >
             {/* Transition override indicator */}
             {hasTransitionOverride && (
@@ -248,9 +283,20 @@ export function SceneBar({ profile, activeSceneId }: SceneBarProps) {
       {/* Divider */}
       <div className="h-6 w-px bg-border mx-2" />
 
+      {/* Multiview button */}
+      <Button
+        variant="ghost"
+        size="sm"
+        className="min-w-[36px] min-h-[36px]"
+        onClick={handleOpenMultiview}
+        title={t('stream.multiviewProjector', { defaultValue: 'Open Multiview Projector' })}
+      >
+        <LayoutGrid className="w-4 h-4" />
+      </Button>
+
       {/* Projector button */}
       <Button
-        variant={isProjecting ? 'primary' : 'ghost'}
+        variant={hasActiveProjectors() ? 'primary' : 'ghost'}
         size="sm"
         className="min-w-[36px] min-h-[36px]"
         onClick={handleOpenProjector}
@@ -258,6 +304,47 @@ export function SceneBar({ profile, activeSceneId }: SceneBarProps) {
       >
         <MonitorPlay className="w-4 h-4" />
       </Button>
+
+      {/* Scene context menu */}
+      {sceneContextMenu.isOpen && contextMenuScene && (
+        <ProjectorContextMenu
+          type="scene"
+          targetId={contextMenuScene.id}
+          profileName={profile.name}
+          position={sceneContextMenu.position}
+          onClose={() => {
+            sceneContextMenu.close();
+            setContextMenuScene(null);
+          }}
+          typeLabel={contextMenuScene.name}
+          additionalItemsAfter={
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuItem
+                icon={<Copy className="w-4 h-4" />}
+                label={t('common.duplicate', { defaultValue: 'Duplicate Scene' })}
+                onClick={() => {
+                  handleDuplicateScene(contextMenuScene.id);
+                  sceneContextMenu.close();
+                  setContextMenuScene(null);
+                }}
+              />
+              {profile.scenes.length > 1 && (
+                <ContextMenuItem
+                  icon={<Trash2 className="w-4 h-4" />}
+                  label={t('common.delete', { defaultValue: 'Delete Scene' })}
+                  onClick={() => {
+                    handleDeleteScene(contextMenuScene.id, contextMenuScene.name);
+                    sceneContextMenu.close();
+                    setContextMenuScene(null);
+                  }}
+                  destructive
+                />
+              )}
+            </>
+          }
+        />
+      )}
     </div>
   );
 }

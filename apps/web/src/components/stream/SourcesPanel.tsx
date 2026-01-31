@@ -25,6 +25,8 @@ import {
   Unlock,
   ChevronDown,
   ChevronRight,
+  Maximize2,
+  AppWindow,
 } from 'lucide-react';
 import {
   DndContext,
@@ -53,6 +55,7 @@ import { createDefaultTransform } from '@/types/scene';
 import { useSceneStore } from '@/stores/sceneStore';
 import { useSourceStore } from '@/stores/sourceStore';
 import { useProfileStore } from '@/stores/profileStore';
+import { useProjectorStore } from '@/stores/projectorStore';
 import { toast } from '@/hooks/useToast';
 import { api } from '@/lib/backend';
 import { useWebRTCStream } from '@/hooks/useWebRTCStream';
@@ -317,6 +320,7 @@ interface SortableLayerItemProps {
   layer: SourceLayer;
   source: Source | undefined;
   sceneId: string;
+  profileName: string;
   isSelected?: boolean;
   isGrouped?: boolean;
   onToggleVisibility: (layerId: string, currentVisible: boolean) => void;
@@ -330,6 +334,7 @@ const SortableLayerItem = memo(function SortableLayerItem({
   layer,
   source,
   sceneId,
+  profileName,
   isSelected = false,
   isGrouped = false,
   onToggleVisibility,
@@ -340,6 +345,7 @@ const SortableLayerItem = memo(function SortableLayerItem({
 }: SortableLayerItemProps) {
   const { t } = useTranslation();
   const { getLayerBinding } = useHotkeyStore();
+  const { openProjector } = useProjectorStore();
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
   const contextMenuRef = useRef<HTMLDivElement>(null);
@@ -473,9 +479,47 @@ const SortableLayerItem = memo(function SortableLayerItem({
       {showContextMenu && (
         <div
           ref={contextMenuRef}
-          className="fixed z-50 bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-lg shadow-lg py-1 min-w-[160px]"
+          className="fixed z-50 bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-lg shadow-lg py-1 min-w-[200px]"
           style={{ left: contextMenuPos.x, top: contextMenuPos.y }}
         >
+          {/* Projector options */}
+          <button
+            type="button"
+            className="w-full px-3 py-1.5 text-left text-sm hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] flex items-center gap-2"
+            onClick={() => {
+              openProjector({
+                type: 'source',
+                displayMode: 'fullscreen',
+                targetId: source.id,
+                profileName,
+                alwaysOnTop: true,
+                hideCursor: true,
+              });
+              setShowContextMenu(false);
+            }}
+          >
+            <Maximize2 className="w-4 h-4 text-[var(--text-muted)]" />
+            {t('projector.fullscreenSource', { defaultValue: 'Fullscreen Projector (Source)' })}
+          </button>
+          <button
+            type="button"
+            className="w-full px-3 py-1.5 text-left text-sm hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] flex items-center gap-2"
+            onClick={() => {
+              openProjector({
+                type: 'source',
+                displayMode: 'windowed',
+                targetId: source.id,
+                profileName,
+                alwaysOnTop: false,
+                hideCursor: false,
+              });
+              setShowContextMenu(false);
+            }}
+          >
+            <AppWindow className="w-4 h-4 text-[var(--text-muted)]" />
+            {t('projector.windowedSource', { defaultValue: 'Windowed Projector (Source)' })}
+          </button>
+          <div className="h-px bg-[var(--border-default)] my-1" />
           <button
             type="button"
             className="w-full px-3 py-1.5 text-left text-sm hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]"
@@ -1089,6 +1133,7 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
                     layer={layer}
                     source={sourceMap.get(layer.sourceId)}
                     sceneId={activeScene.id}
+                    profileName={profile.name}
                     isSelected={selectedLayerIds.includes(layer.id)}
                     isGrouped={false}
                     onToggleVisibility={handleToggleVisibility}
@@ -1114,6 +1159,7 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
                         layer={layer}
                         source={sourceMap.get(layer.sourceId)}
                         sceneId={activeScene.id}
+                        profileName={profile.name}
                         isSelected={selectedLayerIds.includes(layer.id)}
                         isGrouped={true}
                         onToggleVisibility={handleToggleVisibility}

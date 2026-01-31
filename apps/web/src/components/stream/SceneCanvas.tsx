@@ -84,6 +84,8 @@ interface SceneCanvasProps {
   studioMode?: 'preview' | 'program';
   /** All scenes in the profile (for nested scene rendering) */
   scenes?: Scene[];
+  /** Hide header bar (for projector/fullscreen use) */
+  hideHeader?: boolean;
 }
 
 export function SceneCanvas({
@@ -94,6 +96,7 @@ export function SceneCanvas({
   profileName,
   studioMode,
   scenes = [],
+  hideHeader = false,
 }: SceneCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // In Studio Mode: Program pane always shows composed preview, Preview pane defaults to preview but can toggle
@@ -203,60 +206,62 @@ export function SceneCanvas({
   const scale = dimensions.width / scene.canvasWidth;
 
   return (
-    <Card className="h-full flex flex-col overflow-hidden">
-      {/* Header with view mode toggle */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
-        {/* Left side: Title/indicator */}
-        {studioMode === 'preview' ? (
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-green-500 flex items-center gap-1.5">
-              <span className="w-2 h-2 bg-green-500 rounded-full" />
-              Preview
-            </span>
-            <span className="text-xs text-[var(--text-muted)]">{scene?.name}</span>
-          </div>
-        ) : studioMode === 'program' ? (
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-red-500 flex items-center gap-1.5">
-              <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-              Program
-            </span>
-            <span className="text-xs text-[var(--text-muted)]">{scene?.name}</span>
-          </div>
-        ) : (
-          <span className="text-sm font-medium text-[var(--text-secondary)]">Canvas</span>
-        )}
+    <Card className={`h-full flex flex-col overflow-hidden ${hideHeader ? 'border-0 rounded-none bg-transparent' : ''}`}>
+      {/* Header with view mode toggle - hidden for projector/fullscreen */}
+      {!hideHeader && (
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
+          {/* Left side: Title/indicator */}
+          {studioMode === 'preview' ? (
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-green-500 flex items-center gap-1.5">
+                <span className="w-2 h-2 bg-green-500 rounded-full" />
+                Preview
+              </span>
+              <span className="text-xs text-[var(--text-muted)]">{scene?.name}</span>
+            </div>
+          ) : studioMode === 'program' ? (
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-red-500 flex items-center gap-1.5">
+                <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                Program
+              </span>
+              <span className="text-xs text-[var(--text-muted)]">{scene?.name}</span>
+            </div>
+          ) : (
+            <span className="text-sm font-medium text-[var(--text-secondary)]">Canvas</span>
+          )}
 
-        {/* Right side: Edit/Preview toggle (hidden in Studio Mode - both panes render layers) */}
-        {!studioMode && (
-          <div className="flex items-center gap-1 bg-[var(--bg-sunken)] p-1 rounded-lg">
-            <button
-              type="button"
-              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                effectiveViewMode === 'edit'
-                  ? 'bg-[var(--bg-base)] text-[var(--text-primary)] shadow-sm'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-              }`}
-              onClick={() => setViewMode('edit')}
-            >
-              Edit
-            </button>
-            <button
-              type="button"
-              className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                effectiveViewMode === 'preview'
-                  ? 'bg-[var(--bg-base)] text-[var(--text-primary)] shadow-sm'
-                  : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-              }`}
-              onClick={() => setViewMode('preview')}
-              disabled={!profileName}
-              title={!profileName ? 'Save profile first to enable preview' : undefined}
-            >
-              Preview
-            </button>
-          </div>
-        )}
-      </div>
+          {/* Right side: Edit/Preview toggle (hidden in Studio Mode - both panes render layers) */}
+          {!studioMode && (
+            <div className="flex items-center gap-1 bg-[var(--bg-sunken)] p-1 rounded-lg">
+              <button
+                type="button"
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                  effectiveViewMode === 'edit'
+                    ? 'bg-[var(--bg-base)] text-[var(--text-primary)] shadow-sm'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                }`}
+                onClick={() => setViewMode('edit')}
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                  effectiveViewMode === 'preview'
+                    ? 'bg-[var(--bg-base)] text-[var(--text-primary)] shadow-sm'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                }`}
+                onClick={() => setViewMode('preview')}
+                disabled={!profileName}
+                title={!profileName ? 'Save profile first to enable preview' : undefined}
+              >
+                Preview
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Canvas container */}
       <div
