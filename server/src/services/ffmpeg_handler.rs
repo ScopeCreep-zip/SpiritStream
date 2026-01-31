@@ -1735,7 +1735,11 @@ impl FFmpegHandler {
             let full_url = self.platform_registry.build_url_with_key(&target.service, &normalized_url, &resolved_key);
 
             // Add RTMP protocol options for connection resilience (matches OBS configuration)
-            let full_url_with_options = Self::add_rtmp_options(&full_url);
+            let full_url_with_options = if full_url.starts_with("rtmp://") || full_url.starts_with("rtmps://") {
+                Self::add_rtmp_options(&full_url)
+            } else {
+                full_url.clone()
+            };
             target_outputs.push(full_url_with_options);
         }
 
