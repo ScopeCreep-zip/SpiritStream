@@ -61,12 +61,14 @@ export function useStreamStats() {
 
     retryingGroups.current.add(groupId);
 
+    // Read notification setting once for the entire retry operation
+    const showNotifications = useSettingsStore.getState().showNotifications;
+
     try {
       // Show toast that we're retrying
       toast.info(t('streams.autoRetrying', 'Stream disconnected, reconnecting...'));
 
       // Show OS notification if enabled
-      const showNotifications = useSettingsStore.getState().showNotifications;
       if (showNotifications) {
         showSystemNotification(
           t('streams.reconnectingTitle', 'Stream Reconnecting'),
@@ -94,7 +96,6 @@ export function useStreamStats() {
       toast.error(t('streams.retryFailed', 'Reconnection failed: {{error}}', { error: message }));
 
       // OS notification for failure
-      const showNotifications = useSettingsStore.getState().showNotifications;
       if (showNotifications) {
         showSystemNotification(
           t('streams.reconnectFailedTitle', 'Reconnection Failed'),

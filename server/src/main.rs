@@ -930,7 +930,13 @@ async fn invoke_command(
         "retry_stream" => {
             let group_id: String = get_arg(&payload, "groupId")?;
             let event_sink: Arc<dyn EventSink> = Arc::new(state.event_bus.clone());
-            let (pid, next_delay) = state.ffmpeg_handler.retry_group(&group_id, event_sink)?;
+            let ffmpeg_handler = state.ffmpeg_handler.clone();
+            // Use spawn_blocking to avoid blocking the async runtime during backoff sleep
+            let (pid, next_delay) = tokio::task::spawn_blocking(move || {
+                ffmpeg_handler.retry_group(&group_id, event_sink)
+            })
+            .await
+            .map_err(|e| format!("Task join error: {e}"))??;
             Ok(json!({
                 "pid": pid,
                 "nextDelaySecs": next_delay.map(|d| d.as_secs())
