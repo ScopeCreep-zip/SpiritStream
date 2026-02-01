@@ -655,3 +655,4 @@ See [Types Reference](./03-types-reference.md) for complete type definitions.
 ---
 
 **Related:** [Events API](./02-events-api.md) | [Types Reference](./03-types-reference.md) | [Error Handling](./04-error-handling.md)
+

@@ -503,3 +503,4 @@ export interface LogEntry {
 ---
 
 **Related:** [Commands API](./01-commands-api.md) | [Types Reference](./03-types-reference.md) | [Tauri Integration](../03-frontend/04-tauri-integration.md)
+

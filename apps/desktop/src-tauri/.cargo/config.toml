@@ -1,0 +1,7 @@
+# Static link the Visual C++ runtime on Windows
+# This eliminates the dependency on vcruntime140.dll (VC++ Redistributable)
+# Without this, users without VC++ Redistributable installed will see the app
+# fail to start or fail silently
+
+[target.'cfg(all(windows, target_env = "msvc"))']
+rustflags = ["-C", "target-feature=+crt-static"]

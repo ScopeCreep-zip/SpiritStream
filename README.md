@@ -28,8 +28,8 @@ Comprehensive technical documentation is available in the [`docs/`](./docs/) dir
 
 ### Reading Paths
 
-- **Beginners**: Start with [Getting Started](./docs/06-tutorials/01-getting-started.md) → [First Stream](./docs/06-tutorials/02-first-stream.md)
-- **Developers**: [System Overview](./docs/01-architecture/01-system-overview.md) → [Services Layer](./docs/02-backend/02-services-layer.md) → [State Management](./docs/03-frontend/02-state-management.md)
+- **Beginners**: Start with [Getting Started](./docs/06-tutorials/01-getting-started.md) -> [First Stream](./docs/06-tutorials/02-first-stream.md)
+- **Developers**: [System Overview](./docs/01-architecture/01-system-overview.md) -> [Services Layer](./docs/02-backend/02-services-layer.md) -> [State Management](./docs/03-frontend/02-state-management.md)
 - **Complete Documentation**: [docs/README.md](./docs/README.md)
 
 ## Quick Start
@@ -41,23 +41,23 @@ Run the setup script to install all prerequisites automatically:
 **macOS / Linux:**
 ```bash
 git clone https://github.com/ScopeCreep-zip/SpiritStream.git
-cd spiritstream
+cd SpiritStream
 ./setup.sh
 ```
 
 **Windows (PowerShell):**
 ```powershell
 git clone https://github.com/ScopeCreep-zip/SpiritStream.git
-cd spiritstream
+cd SpiritStream
 .\setup.ps1
 ```
 
-The setup script installs: Rust, FFmpeg, platform build tools, and npm dependencies.
+The setup script installs: Rust, FFmpeg, platform build tools, and pnpm dependencies.
 
 After setup completes, restart your terminal and run:
 ```bash
-npm run dev    # Development mode
-npm run build  # Production build
+pnpm dev       # Development mode (all workspaces)
+pnpm build     # Production build
 ```
 
 ---
@@ -68,14 +68,14 @@ Download the latest release from [Releases](https://github.com/ScopeCreep-zip/Sp
 
 | Platform | File |
 |----------|------|
-| macOS | `SpiritStream_x.x.x_aarch64.dmg` |
-| Windows | `SpiritStream_x.x.x_x64-setup.exe` |
-| Linux | `SpiritStream_x.x.x_amd64.AppImage` or `.deb` |
+| macOS | `spiritstream_x.x.x_aarch64.dmg` |
+| Windows | `spiritstream_x.x.x_x64-setup.exe` |
+| Linux | `spiritstream_x.x.x_amd64.AppImage`, `spiritstream_x.x.x_amd64.deb`, or `spiritstream-x.x.x-1.x86_64.rpm` |
 
 **Note:** FFmpeg must be installed separately:
+- Windows: Download from https://github.com/BtbN/FFmpeg-Builds/releases and add to PATH (or set the path in Settings).
+- Linux: Use your package manager (apt/dnf/pacman) or download a static build from the same BtbN link.
 - macOS: `brew install ffmpeg`
-- Windows: `winget install ffmpeg`
-- Linux: `sudo apt install ffmpeg`
 
 ---
 
@@ -85,7 +85,8 @@ Download the latest release from [Releases](https://github.com/ScopeCreep-zip/Sp
 
 | Requirement | Installation |
 |-------------|--------------|
-| Node.js 18+ | [nodejs.org](https://nodejs.org/) |
+| Node.js 20.19+ or 22.12+ | [nodejs.org](https://nodejs.org/) |
+| pnpm 8+ | `npm install -g pnpm` |
 | Rust 1.70+ | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
 | FFmpeg | See above |
 | Platform tools | [Tauri Prerequisites](https://tauri.app/start/prerequisites/) |
@@ -94,12 +95,12 @@ Download the latest release from [Releases](https://github.com/ScopeCreep-zip/Sp
 
 ```bash
 git clone https://github.com/ScopeCreep-zip/SpiritStream.git
-cd spiritstream
-npm install
-npm run build
+cd SpiritStream
+pnpm install
+pnpm build
 ```
 
-Build output: `src-tauri/target/release/bundle/`
+Build output: `apps/desktop/src-tauri/target/release/bundle/`
 
 ## Usage
 
@@ -110,14 +111,89 @@ Build output: `src-tauri/target/release/bundle/`
 
 ## Development
 
+This is a pnpm monorepo with multiple workspaces:
+- `apps/web` - React frontend (@spiritstream/web)
+- `apps/desktop` - Tauri desktop wrapper (@spiritstream/desktop)
+- `server` - Standalone Rust HTTP server
+
+### Development Modes
+
+| Mode | Command | Description |
+|------|---------|-------------|
+| **Desktop** | `pnpm dev` | Tauri app with embedded webview + server sidecar. The full desktop experience. |
+| **Web + Server** | `pnpm backend:dev` then `VITE_BACKEND_MODE=http pnpm dev:web` | Browser-based UI connecting to standalone HTTP server. For remote access or Docker development. |
+| **Frontend Only** | `pnpm dev:web` | Just the React frontend (no backend). For UI-only work. |
+
+### Quick Commands
+
 ```bash
-npm run dev          # Start development server with hot reload
-npm run build        # Production build
-npm run build:debug  # Debug build with symbols
-npm run typecheck    # Check TypeScript types
-npm run check        # Check Rust code
+pnpm dev             # Desktop app (recommended for most development)
+pnpm dev:web         # Frontend only (localhost:5173)
+pnpm dev:desktop     # Same as pnpm dev
+pnpm backend:dev     # Standalone HTTP server (localhost:8008)
+pnpm build           # Production build (all workspaces)
+pnpm typecheck       # Check TypeScript types
+cargo check --manifest-path server/Cargo.toml  # Check Rust server
 ```
+
+### Backend Server (HTTP/WebSocket)
+
+Run the standalone backend server for browser-based or Docker usage:
+
+```bash
+pnpm backend:dev
+```
+
+Environment variables:
+
+- `SPIRITSTREAM_HOST` (default: `127.0.0.1`)
+- `SPIRITSTREAM_PORT` (default: `8008`)
+- `SPIRITSTREAM_DATA_DIR` (default: `./data`)
+- `SPIRITSTREAM_LOG_DIR` (default: `./data/logs`)
+- `SPIRITSTREAM_THEMES_DIR` (default: `./themes`)
+- `SPIRITSTREAM_UI_DIR` (default: `./dist`)
+- `SPIRITSTREAM_API_TOKEN` (optional; single shared token for HTTP auth)
+- `SPIRITSTREAM_UI_ENABLED` (optional; `1` to serve the web UI from the host)
+- `SPIRITSTREAM_UI_URL` (launcher-only; default: `http://localhost:1420` in dev, `http://HOST:PORT` in release)
+- `SPIRITSTREAM_SERVER_PATH` (launcher-only; absolute path to the host binary)
+- `SPIRITSTREAM_LAUNCHER_HIDE_WINDOW` (launcher-only; `1` to hide launcher window)
+- `SPIRITSTREAM_LAUNCHER_OPEN_EXTERNAL` (launcher-only; `1` to open the UI in your browser)
+
+Sample values live in `.env.example`.
+
+Frontend configuration for the web UI:
+
+```bash
+VITE_BACKEND_MODE=http
+VITE_BACKEND_URL=http://127.0.0.1:8008
+VITE_BACKEND_WS_URL=ws://127.0.0.1:8008/ws
+VITE_BACKEND_TOKEN=
+```
+
+Then start the frontend with:
+
+```bash
+VITE_BACKEND_MODE=http pnpm dev:web
+```
+
+### Launcher (Desktop Host)
+
+The Tauri desktop binary now starts the host server and can open the UI URL in your default browser.
+Use `SPIRITSTREAM_UI_URL` to point it at a local Vite dev server or a cloud UI, and `SPIRITSTREAM_SERVER_PATH`
+to override the host binary location.
 
 ## License
 
-ISC License - See [LICENSE](LICENSE) for details.
+GPL-3.0 License - See [LICENSE](LICENSE) for details.
+
+## Acknowledgements & Support
+
+SpiritStream was inspired by streamer SpiritArtLife. We are grateful for the idea and for her testing.
+
+- Twitch: https://www.twitch.tv/spiritartlife
+- YouTube: https://www.youtube.com/@SpiritArtLife
+
+We're a team of queer devs who love making cool things for awesome people. We appreciate your support!
+
+- Donate: https://www.paypal.com/paypalme/radicalkjax
+- Website: https://scopecreep.zip/

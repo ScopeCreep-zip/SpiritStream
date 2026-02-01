@@ -66,7 +66,7 @@ flowchart TB
 ### Token Definition
 
 ```css
-/* src-frontend/styles/tokens.css */
+/* apps/web/src/styles/tokens.css */
 :root {
   /* Primary Colors */
   --primary: #7C3AED;
@@ -173,7 +173,7 @@ flowchart TB
 ## Theme Store
 
 ```typescript
-// src-frontend/stores/themeStore.ts
+// apps/web/src/stores/themeStore.ts
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -223,7 +223,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
 ## Theme Toggle Component
 
 ```typescript
-// src-frontend/components/settings/ThemeToggle.tsx
+// apps/web/src/components/settings/ThemeToggle.tsx
 import { useThemeStore } from '@/stores/themeStore';
 import { Sun, Moon, Monitor } from 'lucide-react';
 
@@ -308,7 +308,7 @@ function ThemeButton({ icon, active, onClick, label }) {
 SpiritStream uses a custom i18n system with JSON translation files.
 
 ```
-src-frontend/
+apps/web/src/
 ├── locales/
 │   ├── en.json      # English (default)
 │   ├── es.json      # Spanish
@@ -418,7 +418,7 @@ src-frontend/
 ## Language Store
 
 ```typescript
-// src-frontend/stores/languageStore.ts
+// apps/web/src/stores/languageStore.ts
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -482,7 +482,7 @@ export const useLanguageStore = create<LanguageState>((set, get) => ({
 ## Translation Hook
 
 ```typescript
-// src-frontend/hooks/useTranslation.ts
+// apps/web/src/hooks/useTranslation.ts
 import { useLanguageStore } from '@/stores/languageStore';
 
 export function useTranslation() {
@@ -510,7 +510,7 @@ function Dashboard() {
 1. **Create translation file:**
 
 ```json
-// src-frontend/locales/fr.json
+// apps/web/src/locales/fr.json
 {
   "app": {
     "name": "SpiritStream",
@@ -586,4 +586,47 @@ t('stream.bitrate', { value: '6000' })
 
 ---
 
+## Production Build: CSP Configuration
+
+### The Problem
+
+The theme system dynamically injects CSS via JavaScript to apply theme tokens. This works in development but can fail in production builds due to Tauri's automatic Content Security Policy (CSP) modifications.
+
+### Why It Happens
+
+Tauri automatically injects nonces and hashes into the CSP at compile time for `<script>` and `<style>` tags. Even if you add `'unsafe-inline'` to `style-src`, Tauri's nonce injection can override it, blocking dynamically created `<style>` elements.
+
+### The Fix
+
+Add `dangerousDisableAssetCspModification` to prevent Tauri from modifying the `style-src` directive:
+
+```json
+// apps/desktop/src-tauri/tauri.conf.json
+{
+  "app": {
+    "security": {
+      "csp": "... style-src 'self' 'unsafe-inline' ...",
+      "devCsp": "...",
+      "dangerousDisableAssetCspModification": ["style-src"]
+    }
+  }
+}
+```
+
+### Why This Is Safe
+
+This configuration is safe for SpiritStream because:
+- Theme CSS is injected from our own backend (embedded or file-based themes)
+- We don't allow arbitrary user CSS injection
+- Only the `style-src` directive is affected; script security remains intact
+
+### Symptoms of Missing This Fix
+
+- Themes work in `pnpm dev` but not in production builds
+- Theme selection changes but colors don't update
+- No visible errors (CSP violations may only appear in browser DevTools)
+
+---
+
 **Related:** [React Architecture](./01-react-architecture.md) | [Component Library](./03-component-library.md) | [State Management](./02-state-management.md)
+

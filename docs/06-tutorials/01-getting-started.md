@@ -10,7 +10,14 @@ This tutorial walks you through installing, configuring, and running SpiritStrea
 
 ## What is SpiritStream?
 
-SpiritStream is a desktop application for streaming to multiple destinations simultaneously. Unlike traditional streaming software that connects directly to a single platform, SpiritStream acts as an RTMP relay server—accepting your stream from encoding software like OBS Studio and redistributing it to YouTube, Twitch, Kick, Facebook, and custom RTMP servers.
+SpiritStream is an application for streaming to multiple destinations simultaneously. Unlike traditional streaming software that connects directly to a single platform, SpiritStream acts as an RTMP relay server—accepting your stream from encoding software like OBS Studio and redistributing it to YouTube, Twitch, Kick, Facebook, and custom RTMP servers.
+
+SpiritStream can be deployed in multiple ways:
+- **Desktop App** — Download and install for local streaming with GPU acceleration (this tutorial)
+- **Docker** — Self-host on your own server for remote access
+- **Cloud** — Managed service (coming soon)
+
+For Docker deployment, see the [Distribution Strategy](../07-deployment/03-distribution-strategy.md) documentation.
 
 ## Who Should Read This
 
@@ -236,9 +243,7 @@ sequenceDiagram
 If automatic download fails:
 
 *Windows:*
-```powershell
-winget install FFmpeg.FFmpeg
-```
+Download from https://github.com/BtbN/FFmpeg-Builds/releases, extract, and add to PATH (or set the path in Settings).
 
 *macOS:*
 ```bash
@@ -256,6 +261,7 @@ sudo dnf install ffmpeg
 # Arch
 sudo pacman -S ffmpeg
 ```
+Or download a static build from https://github.com/BtbN/FFmpeg-Builds/releases.
 
 ### Application Interface
 
@@ -446,3 +452,4 @@ After completing this tutorial, continue with:
 ---
 
 **Related:** [First Stream](./02-first-stream.md) | [System Overview](../01-architecture/01-system-overview.md) | [Glossary](../GLOSSARY.md)
+

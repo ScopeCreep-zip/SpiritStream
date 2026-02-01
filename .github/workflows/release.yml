@@ -6,7 +6,62 @@ on:
       - 'v*'
 
 jobs:
+  validate-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate version consistency
+        run: |
+          # Extract version from git tag (strip 'v' prefix)
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          echo "Git tag version: $TAG_VERSION"
+
+          # Extract version from package.json
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          echo "package.json version: $PKG_VERSION"
+
+          # Extract version from tauri.conf.json
+          TAURI_VERSION=$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")
+          echo "tauri.conf.json version: $TAURI_VERSION"
+
+          # Extract version from desktop Cargo.toml
+          CARGO_VERSION=$(grep -m1 '^version' apps/desktop/src-tauri/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "desktop Cargo.toml version: $CARGO_VERSION"
+
+          # Extract version from server Cargo.toml
+          SERVER_VERSION=$(grep -m1 '^version' server/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "server Cargo.toml version: $SERVER_VERSION"
+
+          # Check all versions match
+          MISMATCH=0
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "❌ ERROR: Git tag ($TAG_VERSION) doesn't match package.json ($PKG_VERSION)"
+            MISMATCH=1
+          fi
+          if [ "$TAG_VERSION" != "$TAURI_VERSION" ]; then
+            echo "❌ ERROR: Git tag ($TAG_VERSION) doesn't match tauri.conf.json ($TAURI_VERSION)"
+            MISMATCH=1
+          fi
+          if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
+            echo "❌ ERROR: Git tag ($TAG_VERSION) doesn't match desktop Cargo.toml ($CARGO_VERSION)"
+            MISMATCH=1
+          fi
+          if [ "$TAG_VERSION" != "$SERVER_VERSION" ]; then
+            echo "❌ ERROR: Git tag ($TAG_VERSION) doesn't match server Cargo.toml ($SERVER_VERSION)"
+            MISMATCH=1
+          fi
+
+          if [ $MISMATCH -eq 1 ]; then
+            echo ""
+            echo "💡 Fix: Update all version files to match your git tag, or create a new tag matching your versions."
+            exit 1
+          fi
+
+          echo "✅ All versions match: $TAG_VERSION"
+
   publish-tauri:
+    needs: validate-version
     permissions:
       contents: write
     strategy:
@@ -15,22 +70,31 @@ jobs:
         include:
           - platform: 'macos-latest'
             args: '--target aarch64-apple-darwin'
+            rust_target: 'aarch64-apple-darwin'
           - platform: 'macos-latest'
             args: '--target x86_64-apple-darwin'
+            rust_target: 'x86_64-apple-darwin'
           - platform: 'ubuntu-22.04'
             args: ''
+            rust_target: ''
           - platform: 'windows-latest'
             args: ''
+            rust_target: ''
 
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 'lts/*'
-          cache: 'npm'
+          cache: 'pnpm'
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -40,7 +104,9 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: './src-tauri -> target'
+          workspaces: |
+            server -> target
+            apps/desktop/src-tauri -> target
 
       - name: Install dependencies (Ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
@@ -49,17 +115,25 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.0-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Install frontend dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend
+        run: pnpm run build:web
+
+      - name: Build server sidecar
+        run: pnpm run build:server --release ${{ matrix.rust_target && format('-- --target {0}', matrix.rust_target) || '' }}
 
       - name: Build and release
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v0.5.4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__
-          releaseName: 'SpiritStream v__VERSION__'
+          projectPath: apps/desktop
+          tauriScript: pnpm tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: 'SpiritStream ${{ github.ref_name }}'
           releaseBody: |
-            ## SpiritStream v__VERSION__
+            ## SpiritStream ${{ github.ref_name }}
 
             ### Downloads
             Choose the appropriate download for your platform:

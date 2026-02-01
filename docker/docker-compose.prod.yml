@@ -1,0 +1,38 @@
+# =============================================================================
+# SpiritStream Docker Compose - Production Overrides
+# =============================================================================
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# =============================================================================
+
+services:
+  spiritstream:
+    # Use specific version tag in production
+    image: spiritstream/server:${SPIRITSTREAM_VERSION:-latest}
+
+    # Always restart in production
+    restart: always
+
+    # Don't build in production, use pre-built image
+    build: !reset null
+
+    # Production environment overrides
+    environment:
+      # Ensure API token is required in production
+      - SPIRITSTREAM_API_TOKEN=${SPIRITSTREAM_API_TOKEN:?SPIRITSTREAM_API_TOKEN is required in production}
+
+    # Stricter resource limits for production
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 512M
+
+    # Production logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"

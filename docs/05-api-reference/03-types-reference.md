@@ -611,7 +611,7 @@ const defaultSettings: Settings = {
 ## File Organization
 
 ```
-src-frontend/types/
+apps/web/src/types/
 ├── index.ts           # Re-exports
 ├── profile.ts         # Profile, OutputGroup, StreamTarget
 ├── settings.ts        # Settings, Theme
@@ -624,3 +624,4 @@ src-frontend/types/
 ---
 
 **Related:** [Commands API](./01-commands-api.md) | [Events API](./02-events-api.md) | [Models Reference](../02-backend/03-models-reference.md)
+

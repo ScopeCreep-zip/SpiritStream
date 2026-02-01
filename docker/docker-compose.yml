@@ -1,0 +1,104 @@
+# =============================================================================
+# SpiritStream Docker Compose Configuration
+# =============================================================================
+# Usage:
+#   Development:  docker compose up
+#   Production:   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#   With UI:      SPIRITSTREAM_UI_ENABLED=1 docker compose up
+# =============================================================================
+
+services:
+  spiritstream:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: spiritstream/server:latest
+    container_name: spiritstream-server
+    restart: unless-stopped
+
+    # Port mappings
+    ports:
+      # API and WebSocket port
+      - "${SPIRITSTREAM_PORT:-8008}:8008"
+
+    # Environment variables
+    environment:
+      # Server binding (always 0.0.0.0 in container)
+      - SPIRITSTREAM_HOST=0.0.0.0
+      - SPIRITSTREAM_PORT=8008
+
+      # Data directories (inside container)
+      - SPIRITSTREAM_DATA_DIR=/data
+      - SPIRITSTREAM_LOG_DIR=/data/logs
+      - SPIRITSTREAM_THEMES_DIR=/themes
+      - SPIRITSTREAM_UI_DIR=/dist
+
+      # Feature flags
+      - SPIRITSTREAM_UI_ENABLED=${SPIRITSTREAM_UI_ENABLED:-0}
+
+      # Authentication (set this for production!)
+      - SPIRITSTREAM_API_TOKEN=${SPIRITSTREAM_API_TOKEN:-}
+
+    # Volume mounts for persistent data
+    volumes:
+      # Profile and settings storage (required)
+      - spiritstream-data:/data
+
+      # Logs directory
+      - spiritstream-logs:/data/logs
+
+      # Custom themes directory (optional)
+      - ${SPIRITSTREAM_THEMES_PATH:-./themes}:/themes:ro
+
+      # UI static files (optional, for serving web UI)
+      - ${SPIRITSTREAM_UI_PATH:-./dist}:/dist:ro
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8008/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+    # Resource limits (adjust as needed)
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Security hardening
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M,mode=1777
+
+    # Drop all capabilities - none needed for this app
+    cap_drop:
+      - ALL
+
+    # Prevent privilege escalation
+    security_opt:
+      - no-new-privileges:true
+
+# Named volumes for data persistence
+volumes:
+  spiritstream-data:
+    name: spiritstream-data
+  spiritstream-logs:
+    name: spiritstream-logs
+
+# Optional: Network for connecting with other services
+networks:
+  default:
+    name: spiritstream-network

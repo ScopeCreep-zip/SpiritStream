@@ -20,11 +20,12 @@ This section covers building, packaging, and distributing SpiritStream across al
 
 | Command | Purpose |
 |---------|---------|
-| `npm run dev` | Development with hot reload |
-| `npm run build` | Production build |
-| `npm run build:debug` | Debug build with sourcemaps |
-| `npm run typecheck` | TypeScript type checking |
-| `npm run check` | Rust type checking |
+| `pnpm dev` | Full desktop development with hot reload |
+| `pnpm dev:web` | Frontend only development |
+| `pnpm backend:dev` | Backend server only |
+| `pnpm build` | Production build (all workspaces) |
+| `pnpm build:desktop` | Desktop app with server sidecar |
+| `pnpm typecheck` | TypeScript type checking |
 
 ## Platform Bundles
 
@@ -40,8 +41,10 @@ This section covers building, packaging, and distributing SpiritStream across al
 |-----------|---------|
 | Rust | 1.77.2 |
 | Node.js | 18.0 |
+| pnpm | 8.0 |
 | Tauri CLI | 2.0 |
 
 ---
 
 *Section: 07-deployment*
+

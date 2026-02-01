@@ -30,7 +30,7 @@ This section documents SpiritStream's React frontend, including component archit
 ## Source Structure
 
 ```
-src-frontend/
+apps/web/src/
 ├── App.tsx                 # Root component
 ├── main.tsx                # Vite entry point
 ├── components/             # React components
@@ -52,3 +52,4 @@ src-frontend/
 ---
 
 *Section: 03-frontend*
+

@@ -212,3 +212,4 @@ Some platforms require specific path segments. If streams fail:
 ---
 
 **Related:** [Multi-Destination Streaming](./03-multi-destination.md) | [Platform Registry Backend](../02-backend/06-platform-registry.md) | [Models Reference](../02-backend/03-models-reference.md)
+

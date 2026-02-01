@@ -25,6 +25,15 @@ interface PlatformsJSON {
   services: Service[];
 }
 
+// Normalize URL: trim whitespace and remove trailing slashes
+function normalizeUrl(url: string): string {
+  let normalized = url.trim();
+  while (normalized.endsWith('/')) {
+    normalized = normalized.slice(0, -1);
+  }
+  return normalized;
+}
+
 // Calculate appropriate text color for a given background color
 function getTextColor(hexColor: string): '#FFFFFF' | '#000000' {
   // Remove # if present
@@ -62,7 +71,7 @@ function generatePlatformTypes() {
   // Generate TypeScript code
   let output = `// Auto-generated from data/streaming-platforms.json
 // DO NOT EDIT MANUALLY
-// Run 'npm run generate:platforms' to regenerate this file
+// Run 'pnpm run generate:platforms' to regenerate this file
 
 /**
  * Supported streaming platforms
@@ -100,7 +109,7 @@ export const PLATFORMS: Record<Platform, {
     abbreviation: '${service.abbreviation}',
     color: '${service.color}',
     textColor: '${textColor}',
-    defaultServer: '${service.defaultUrl}',
+    defaultServer: '${normalizeUrl(service.defaultUrl)}',
     streamKeyPlacement: '${service.streamKeyPlacement}',
   }${isLast ? '\n' : ',\n'}`;
   });
@@ -108,7 +117,7 @@ export const PLATFORMS: Record<Platform, {
   output += '};\n';
 
   // Write output file
-  const outputPath = path.join(__dirname, '..', 'src-frontend', 'types', 'generated-platforms.ts');
+  const outputPath = path.join(__dirname, '..', 'apps', 'web', 'src', 'types', 'generated-platforms.ts');
   fs.writeFileSync(outputPath, output, 'utf-8');
 
   console.log(`✅ Generated ${services.length} platform types to ${outputPath}`);

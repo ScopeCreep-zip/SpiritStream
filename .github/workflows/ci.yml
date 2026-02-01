@@ -14,31 +14,41 @@ jobs:
         include:
           - platform: 'macos-latest'
             args: '--target aarch64-apple-darwin'
+            rust_target: 'aarch64-apple-darwin'
           - platform: 'ubuntu-22.04'
             args: ''
+            rust_target: ''
           - platform: 'windows-latest'
             args: ''
+            rust_target: ''
 
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 'lts/*'
-          cache: 'npm'
+          cache: 'pnpm'
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
+          targets: ${{ matrix.rust_target }}
           components: clippy
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: './src-tauri -> target'
+          workspaces: |
+            server -> target
+            apps/desktop/src-tauri -> target
 
       - name: Install dependencies (Ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
@@ -47,23 +57,35 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.0-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Install frontend dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: TypeScript check
-        run: npm run typecheck
+        run: pnpm run typecheck
 
-      - name: Rust check
-        run: cargo check --manifest-path src-tauri/Cargo.toml
+      - name: Rust check (server)
+        run: cargo check --manifest-path server/Cargo.toml
 
-      - name: Rust clippy
-        run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+      - name: Rust clippy (server)
+        run: cargo clippy --manifest-path server/Cargo.toml -- -D warnings
 
       - name: Build frontend
-        run: npm run vite:build
+        run: pnpm run build:web
+
+      - name: Build server sidecar
+        run: pnpm run build:server ${{ matrix.rust_target && format('-- --target {0}', matrix.rust_target) || '' }}
+
+      # Desktop checks must come after sidecar build (Tauri build.rs requires sidecar binary)
+      - name: Rust check (desktop)
+        run: cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml ${{ matrix.rust_target && format('--target {0}', matrix.rust_target) || '' }}
+
+      - name: Rust clippy (desktop)
+        run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml ${{ matrix.rust_target && format('--target {0}', matrix.rust_target) || '' }} -- -D warnings
 
       - name: Build Tauri app
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v0.5.4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          projectPath: apps/desktop
+          tauriScript: pnpm tauri
           args: ${{ matrix.args }}

@@ -87,7 +87,7 @@ flowchart TB
 ## Directory Structure
 
 ```
-src-frontend/
+apps/web/src/
 ├── components/
 │   ├── ui/                 # Base UI components
 │   │   ├── Button.tsx
@@ -646,3 +646,4 @@ describe('ProfileCard', () => {
 ---
 
 **Related:** [State Management](./02-state-management.md) | [Component Library](./03-component-library.md) | [Tauri Integration](./04-tauri-integration.md)
+
