@@ -825,13 +825,26 @@ async fn invoke(
 // Command Handler
 // ============================================================================
 
+/// Commands that are called frequently for polling and don't need logging
+const QUIET_COMMANDS: &[&str] = &[
+    "get_chat_status",
+    "get_platform_chat_status",
+    "is_chat_connected",
+    "obs_get_state",
+    "obs_is_connected",
+    "get_active_stream_count",
+    "get_active_group_ids",
+];
+
 async fn invoke_command(
     state: &AppState,
     command: &str,
     payload: Value,
 ) -> Result<Value, String> {
-    log::info!("[invoke_command] Command: {}, Payload: {:?}", command, payload);
-    eprintln!("[invoke_command] Command: {}, Payload: {:?}", command, payload);
+    // Only log non-polling commands to reduce noise
+    if !QUIET_COMMANDS.contains(&command) {
+        log::info!("[invoke_command] Command: {}, Payload: {:?}", command, payload);
+    }
 
     let result = match command {
         "get_all_profiles" => {
@@ -1306,9 +1319,11 @@ async fn invoke_command(
         _ => Err(format!("Unknown command: {command}")),
     };
 
+    // Only log errors for non-quiet commands, or for unexpected errors
     if let Err(ref e) = result {
-        log::error!("[invoke_command] Error for {}: {}", command, e);
-        eprintln!("[invoke_command] Error for {}: {}", command, e);
+        if !QUIET_COMMANDS.contains(&command) || e.contains("Unknown command") {
+            log::error!("[invoke_command] Error for {}: {}", command, e);
+        }
     }
     result
 }

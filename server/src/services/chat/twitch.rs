@@ -1,6 +1,7 @@
 use async_trait::async_trait;
-use log::{info, warn};
+use log::{info, warn, error};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::{mpsc, Mutex};
 use twitch_irc::login::StaticLoginCredentials;
 use twitch_irc::message::ServerMessage;
@@ -9,6 +10,29 @@ use twitch_irc::{ClientConfig, SecureTCPTransport, TwitchIRCClient};
 use crate::models::{ChatConnectionStatus, ChatCredentials, ChatMessage, ChatPlatform as ChatPlatformEnum};
 
 use super::platform::{ChatPlatform, PlatformError, PlatformResult};
+
+/// Validate a Twitch channel exists by checking the Twitch API
+async fn validate_channel_exists(channel: &str) -> Result<bool, String> {
+    // Use Twitch's public endpoint that doesn't require authentication
+    // This endpoint returns 200 for valid channels and 404 for invalid ones
+    let url = format!("https://www.twitch.tv/{}", channel);
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    let response = client
+        .head(&url)
+        .header("User-Agent", "SpiritStream/1.0")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to check channel: {}", e))?;
+
+    // If the channel exists, we get a 200. If not, we get a redirect to 404 page
+    // We can also check if content contains channel info, but HEAD is faster
+    Ok(response.status().is_success())
+}
 
 type TwitchClient = TwitchIRCClient<SecureTCPTransport, StaticLoginCredentials>;
 
@@ -69,6 +93,27 @@ impl ChatPlatform for TwitchConnector {
         info!("Connecting to Twitch channel: {}", channel);
         self.status = ChatConnectionStatus::Connecting;
 
+        // Validate channel exists before connecting
+        let channel_lower = channel.to_lowercase();
+        match validate_channel_exists(&channel_lower).await {
+            Ok(true) => {
+                info!("Twitch channel '{}' validated successfully", channel_lower);
+            }
+            Ok(false) => {
+                error!("Twitch channel '{}' does not exist", channel_lower);
+                self.status = ChatConnectionStatus::Error;
+                return Err(PlatformError::InvalidConfig(format!(
+                    "Channel '{}' does not exist on Twitch",
+                    channel_lower
+                )));
+            }
+            Err(e) => {
+                // If validation fails (network issue), log warning but continue
+                // Better to try connecting than to fail completely
+                warn!("Could not validate Twitch channel '{}': {}. Attempting connection anyway.", channel_lower, e);
+            }
+        }
+
         // Create login credentials (anonymous if no OAuth token provided)
         let login_credentials = if let Some(_token) = oauth_token {
             // For authenticated connection, you'd parse username from token
@@ -83,7 +128,6 @@ impl ChatPlatform for TwitchConnector {
         let (mut incoming_messages, client) = TwitchIRCClient::<SecureTCPTransport, StaticLoginCredentials>::new(config);
 
         // Join the channel
-        let channel_lower = channel.to_lowercase();
         client.join(channel_lower.clone()).map_err(|e| {
             PlatformError::Connection(format!("Failed to join channel: {}", e))
         })?;
