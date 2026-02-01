@@ -109,9 +109,10 @@ pub enum ChatCredentials {
     },
     #[serde(rename_all = "camelCase")]
     YouTube {
-        /// YouTube video/stream ID
-        video_id: String,
-        /// API key for YouTube Data API
+        /// YouTube channel ID or handle (e.g., "UCxxxxxx" or "@channelname")
+        /// The backend will automatically find the current live stream
+        channel_id: String,
+        /// API key for YouTube Data API (required for reading public chat)
         api_key: String,
     },
     #[serde(rename_all = "camelCase")]

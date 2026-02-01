@@ -117,12 +117,13 @@
       "apiKey": "API Key",
       "apiKeyHint": "Get an API key from the Google Cloud Console with YouTube Data API enabled",
       "apiKeyPlaceholder": "AIzaSy...",
-      "description": "Connect to a YouTube Live stream chat",
+      "channelId": "Channel",
+      "channelIdHint": "Enter a channel handle (@username) or ID. We'll automatically find the current live stream.",
+      "channelIdPlaceholder": "e.g., @mkbhd or UCBcRF18a7Qf58cCRy5xuWwQ",
+      "description": "Connect to a YouTube channel's live chat",
       "enterApiKey": "Please enter an API key",
-      "enterVideoId": "Please enter a video ID",
-      "title": "YouTube Live Chat",
-      "videoId": "Video ID",
-      "videoIdPlaceholder": "e.g., dQw4w9WgXcQ"
+      "enterChannelId": "Please enter a channel ID or handle",
+      "title": "YouTube Live Chat"
     }
   },
   "connection": {

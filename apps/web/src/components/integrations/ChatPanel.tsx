@@ -190,7 +190,7 @@ function YouTubeCard({
   onDisconnect,
 }: Omit<PlatformCardProps, 'platform' | 'platformName' | 'icon' | 'iconColor'>) {
   const { t } = useTranslation();
-  const [videoId, setVideoId] = useState('');
+  const [channelId, setChannelId] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
 
@@ -198,8 +198,8 @@ function YouTubeCard({
   const hasError = status?.status === 'error';
 
   const handleConnect = useCallback(async () => {
-    if (!videoId.trim()) {
-      toast.error(t('chat.youtube.enterVideoId'));
+    if (!channelId.trim()) {
+      toast.error(t('chat.youtube.enterChannelId'));
       return;
     }
     if (!apiKey.trim()) {
@@ -209,7 +209,7 @@ function YouTubeCard({
 
     const credentials: ChatCredentials = {
       type: 'youtube',
-      channelId: videoId.trim(), // Using videoId as channelId for now
+      channelId: channelId.trim(),
       apiKey: apiKey.trim(),
     };
 
@@ -220,7 +220,7 @@ function YouTubeCard({
     };
 
     await onConnect(config);
-  }, [videoId, apiKey, onConnect, t]);
+  }, [channelId, apiKey, onConnect, t]);
 
   return (
     <Card>
@@ -268,14 +268,19 @@ function YouTubeCard({
         </div>
       </CardHeader>
       <CardBody className="space-y-4">
-        {/* Video ID input */}
-        <Input
-          label={t('chat.youtube.videoId')}
-          value={videoId}
-          onChange={(e) => setVideoId(e.target.value)}
-          placeholder={t('chat.youtube.videoIdPlaceholder')}
-          disabled={isConnected || isConnecting}
-        />
+        {/* Channel ID input */}
+        <div>
+          <Input
+            label={t('chat.youtube.channelId')}
+            value={channelId}
+            onChange={(e) => setChannelId(e.target.value)}
+            placeholder={t('chat.youtube.channelIdPlaceholder')}
+            disabled={isConnected || isConnecting}
+          />
+          <p className="text-xs text-[var(--text-tertiary)] mt-1">
+            {t('chat.youtube.channelIdHint')}
+          </p>
+        </div>
 
         {/* API Key */}
         <div className="relative">
@@ -330,7 +335,7 @@ function YouTubeCard({
             <Button
               variant="primary"
               onClick={handleConnect}
-              disabled={isConnecting || !videoId.trim() || !apiKey.trim()}
+              disabled={isConnecting || !channelId.trim() || !apiKey.trim()}
             >
               {isConnecting ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
