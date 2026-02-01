@@ -1,17 +1,17 @@
 use log::{error, info};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter};
 use tokio::sync::{mpsc, Mutex};
 
 use crate::models::{
     ChatConfig, ChatMessage, ChatPlatform, ChatPlatformStatus,
 };
 use crate::services::chat::{ChatPlatform as ChatPlatformTrait, TikTokConnector, TwitchConnector};
+use crate::services::EventSink;
 
 /// Central manager for all chat platform connections
 pub struct ChatManager {
-    app_handle: AppHandle,
+    event_sink: Arc<dyn EventSink>,
     platforms: Arc<Mutex<HashMap<ChatPlatform, Box<dyn ChatPlatformTrait>>>>,
     message_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<ChatMessage>>>>,
     message_tx: mpsc::UnboundedSender<ChatMessage>,
@@ -19,11 +19,11 @@ pub struct ChatManager {
 
 impl ChatManager {
     /// Create a new ChatManager
-    pub fn new(app_handle: AppHandle) -> Self {
+    pub fn new(event_sink: Arc<dyn EventSink>) -> Self {
         let (message_tx, message_rx) = mpsc::unbounded_channel();
 
         let manager = Self {
-            app_handle,
+            event_sink,
             platforms: Arc::new(Mutex::new(HashMap::new())),
             message_rx: Arc::new(Mutex::new(Some(message_rx))),
             message_tx,
@@ -167,11 +167,10 @@ impl ChatManager {
 
     /// Start the message handler that forwards messages to the frontend
     fn start_message_handler(&self) {
-        let app_handle = self.app_handle.clone();
+        let event_sink = self.event_sink.clone();
         let message_rx = self.message_rx.clone();
 
-        // Use Tauri's async runtime instead of tokio::spawn
-        tauri::async_runtime::spawn(async move {
+        tokio::spawn(async move {
             let rx = {
                 let mut guard = message_rx.lock().await;
                 guard.take()
@@ -181,9 +180,11 @@ impl ChatManager {
                 info!("Chat message handler started");
 
                 while let Some(message) = receiver.recv().await {
-                    // Emit message to frontend via Tauri events
-                    if let Err(e) = app_handle.emit("chat_message", &message) {
-                        error!("Failed to emit chat message to frontend: {}", e);
+                    // Emit message to frontend via EventSink
+                    if let Ok(payload) = serde_json::to_value(&message) {
+                        event_sink.emit("chat_message", payload);
+                    } else {
+                        error!("Failed to serialize chat message");
                     }
                 }
 
