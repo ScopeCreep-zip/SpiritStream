@@ -10,6 +10,7 @@ import type {
   ObsIntegrationDirection,
 } from '@/types/api';
 import type { ThemeSummary } from '@/types/theme';
+import type { ChatConfig, ChatPlatform, ChatPlatformStatus } from '@/types/chat';
 import { getBackendBaseUrl, safeFetch } from './env';
 
 interface InvokeOk<T> {
@@ -187,5 +188,20 @@ export const api = {
       ),
     /** Reset the cooldown timer */
     resetCooldown: () => invokeHttp<void>('discord_reset_cooldown'),
+  },
+  chat: {
+    /** Connect to a chat platform */
+    connect: (config: ChatConfig) => invokeHttp<void>('connect_chat', { config }),
+    /** Disconnect from a chat platform */
+    disconnect: (platform: ChatPlatform) => invokeHttp<void>('disconnect_chat', { platform }),
+    /** Disconnect from all chat platforms */
+    disconnectAll: () => invokeHttp<void>('disconnect_all_chat'),
+    /** Get status of all connected chat platforms */
+    getStatus: () => invokeHttp<ChatPlatformStatus[]>('get_chat_status'),
+    /** Get status of a specific chat platform */
+    getPlatformStatus: (platform: ChatPlatform) =>
+      invokeHttp<ChatPlatformStatus | null>('get_platform_chat_status', { platform }),
+    /** Check if any chat platform is connected */
+    isConnected: () => invokeHttp<boolean>('is_chat_connected'),
   },
 };

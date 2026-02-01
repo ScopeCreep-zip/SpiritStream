@@ -37,10 +37,10 @@ use tower_http::{
 };
 
 use spiritstream_server::commands::{get_encoders, test_ffmpeg, test_rtmp_target, validate_ffmpeg_path};
-use spiritstream_server::models::{OutputGroup, Profile, RtmpInput, Settings, ObsIntegrationDirection};
+use spiritstream_server::models::{OutputGroup, Profile, RtmpInput, Settings, ObsIntegrationDirection, ChatConfig, ChatPlatform};
 use spiritstream_server::services::{
     prune_logs, read_recent_logs, validate_extension, validate_path_within_any,
-    DiscordWebhookService, Encryption, EventSink, FFmpegDownloader, FFmpegHandler,
+    ChatManager, DiscordWebhookService, Encryption, EventSink, FFmpegDownloader, FFmpegHandler,
     ObsWebSocketHandler, ProfileManager, SettingsManager, ThemeManager, ObsConfig,
 };
 
@@ -100,6 +100,7 @@ struct AppState {
     theme_manager: Arc<ThemeManager>,
     obs_handler: Arc<ObsWebSocketHandler>,
     discord_service: Arc<DiscordWebhookService>,
+    chat_manager: Arc<ChatManager>,
     event_bus: EventBus,
     log_dir: PathBuf,
     app_data_dir: PathBuf,
@@ -1271,6 +1272,37 @@ async fn invoke_command(
             Ok(Value::Null)
         }
 
+        // ============================================================================
+        // Chat Commands
+        // ============================================================================
+        "connect_chat" => {
+            let config: ChatConfig = get_arg(&payload, "config")?;
+            state.chat_manager.connect(config).await?;
+            Ok(Value::Null)
+        }
+        "disconnect_chat" => {
+            let platform: ChatPlatform = get_arg(&payload, "platform")?;
+            state.chat_manager.disconnect(platform).await?;
+            Ok(Value::Null)
+        }
+        "disconnect_all_chat" => {
+            state.chat_manager.disconnect_all().await?;
+            Ok(Value::Null)
+        }
+        "get_chat_status" => {
+            let status = state.chat_manager.get_status().await;
+            Ok(json!(status))
+        }
+        "get_platform_chat_status" => {
+            let platform: ChatPlatform = get_arg(&payload, "platform")?;
+            let status = state.chat_manager.get_platform_status(platform).await;
+            Ok(json!(status))
+        }
+        "is_chat_connected" => {
+            let connected = state.chat_manager.is_any_connected().await;
+            Ok(json!(connected))
+        }
+
         _ => Err(format!("Unknown command: {command}")),
     };
 
@@ -1584,6 +1616,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize Discord webhook service
     let discord_service = Arc::new(DiscordWebhookService::new());
 
+    // Initialize Chat manager
+    let chat_event_sink: Arc<dyn EventSink> = Arc::new(event_bus.clone());
+    let chat_manager = Arc::new(ChatManager::new(chat_event_sink));
+
     let state = AppState {
         profile_manager,
         settings_manager,
@@ -1592,6 +1628,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         theme_manager,
         obs_handler,
         discord_service,
+        chat_manager,
         event_bus,
         log_dir: log_dir_path,
         app_data_dir,

@@ -77,15 +77,23 @@
     "connect": "Connect",
     "connected": "Connected",
     "connecting": "Connecting...",
+    "connectFailed": "Failed to connect to chat",
+    "connectSuccess": "Connected to {{platform}} chat",
+    "description": "Connect to chat platforms to aggregate messages",
     "disconnect": "Disconnect",
     "disconnected": "Disconnected",
+    "disconnectFailed": "Failed to disconnect from chat",
+    "disconnectSuccess": "Disconnected from {{platform}} chat",
     "enabled": "Enabled",
     "error": "Error",
+    "messageCount": "{{count}} messages received",
     "noChatConfigs": "No chat platforms configured",
     "noMessages": "No messages yet",
     "openOverlay": "Open Overlay",
     "platform": "Platform",
     "platforms": {
+      "facebook": "Facebook",
+      "kick": "Kick",
       "tiktok": "TikTok",
       "twitch": "Twitch",
       "youtube": "YouTube"
@@ -93,8 +101,29 @@
     "readOnlyNotice": "Chat is read-only. Messages cannot be sent from SpiritStream.",
     "removePlatform": "Remove Platform",
     "status": "Status",
-    "title": "Unified Chat",
-    "viewMessages": "View messages from all connected platforms"
+    "title": "Chat Platforms",
+    "twitch": {
+      "channel": "Channel Name",
+      "channelPlaceholder": "e.g., shroud",
+      "description": "Connect to a Twitch channel chat",
+      "enterChannel": "Please enter a channel name",
+      "oauthToken": "OAuth Token (Optional)",
+      "oauthTokenHint": "Required only if you want to send messages. Get one at twitchapps.com/tmi",
+      "oauthTokenPlaceholder": "oauth:xxxxxxxxxxxxxx",
+      "title": "Twitch Chat"
+    },
+    "viewMessages": "View messages from all connected platforms",
+    "youtube": {
+      "apiKey": "API Key",
+      "apiKeyHint": "Get an API key from the Google Cloud Console with YouTube Data API enabled",
+      "apiKeyPlaceholder": "AIzaSy...",
+      "description": "Connect to a YouTube Live stream chat",
+      "enterApiKey": "Please enter an API key",
+      "enterVideoId": "Please enter a video ID",
+      "title": "YouTube Live Chat",
+      "videoId": "Video ID",
+      "videoIdPlaceholder": "e.g., dQw4w9WgXcQ"
+    }
   },
   "connection": {
     "connected": "Connected",
