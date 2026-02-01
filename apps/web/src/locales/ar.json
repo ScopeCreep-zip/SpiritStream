@@ -229,7 +229,8 @@
     "videoBitrateHelper": "الموصى بها: 4500-6000 لـ 1080p، 3000-4500 لـ 720p",
     "videoBitrateKbps": "معدل البت للفيديو (كيلوبت في الثانية)",
     "videoEncoder": "تشفير الفيديو",
-    "videoEncoderSettings": "إعدادات برنامج تشفير الفيديو"
+    "videoEncoderSettings": "إعدادات برنامج تشفير الفيديو",
+    "generatePtsDescription": "ينشئ طوابع زمنية ويزامن توقيت الصوت. يحسن استقرار البث ويصلح مشاكل الترميز بتكلفة بسيطة على المعالج."
   },
   "errors": {
     "connectionFailed": "فشل الاتصال",
@@ -699,7 +700,14 @@
     "streamError": "خطأ في الدفق",
     "totalBandwidth": "إجمالي التحميل",
     "uptime": "الجهوزية",
-    "validating": "جارٍ التحقق..."
+    "validating": "جارٍ التحقق...",
+    "autoRetrying": "انقطع البث، جارٍ إعادة الاتصال...",
+    "reconnectedTitle": "تمت إعادة اتصال البث",
+    "reconnectFailedTitle": "فشلت إعادة الاتصال",
+    "reconnectingAttempt": "جارٍ إعادة الاتصال... (المحاولة {{attempt}}/{{max}})",
+    "reconnectingTitle": "جارٍ إعادة اتصال البث",
+    "retryFailed": "فشلت إعادة الاتصال: {{error}}",
+    "retrySuccess": "تمت إعادة اتصال البث بنجاح"
   },
   "targets": {
     "addNewTarget": "إضافة هدف جديد",
@@ -744,7 +752,9 @@
     "targetUpdated": "تم تحديث هدف البث",
     "testFailed": "فشل اختبار الدفق",
     "testPassed": "مرت جميع الشيكات! تكوين البث الخاص بك صالح.",
-    "testingConfig": "جارٍ اختبار تكوين البث..."
+    "testingConfig": "جارٍ اختبار تكوين البث...",
+    "groupStarted": "تم بدء مجموعة المخرجات",
+    "groupStopped": "تم إيقاف مجموعة المخرجات"
   },
   "validation": {
     "applicationRequired": "اسم التطبيق مطلوب",
@@ -766,5 +776,37 @@
     "urlInvalid": "يجب أن يبدأ عنوان URL بـ rtmp:// أو rtmps://",
     "urlMustStartWithRtmp": "يجب أن يبدأ عنوان URL بـ rtmp:// أو rtmps://",
     "urlRequired": "عنوان URL مطلوب"
+  },
+  "discord": {
+    "attachImage": "إرفاق صورة",
+    "cooldownDescription": "منع الإشعارات المكررة عند إعادة تشغيل البث",
+    "cooldownInfo": "عند التفعيل، إذا أوقفت البث وأعدته خلال فترة التهدئة، فلن يتم إرسال إشعار جديد. هذا يمنع الرسائل المزعجة عند إصلاح المشاكل التقنية.",
+    "cooldownSeconds": "فترة التهدئة",
+    "cooldownSettings": "إعدادات التهدئة",
+    "description": "إرسال إشعارات بدء البث إلى ديسكورد",
+    "enableCooldown": "تفعيل التهدئة",
+    "enableCooldownDescription": "منع الإشعارات المكررة خلال فترة التهدئة",
+    "enableWebhook": "تفعيل خطاف ويب ديسكورد",
+    "enableWebhookDescription": "إرسال إشعارات عند بدء البث",
+    "enterWebhookFirst": "يرجى إدخال رابط خطاف الويب أولاً",
+    "goLiveMessage": "رسالة بدء البث",
+    "goLiveMessageDescription": "الرسالة التي تُرسل عند بدء البث. تدعم تنسيق ديسكورد.",
+    "imageDesktopOnly": "إرفاق صورة يتطلب تطبيق سطح المكتب. في وضع المتصفح يمكنك استخدام رابط صورة في الرسالة بدلاً من ذلك.",
+    "imageHint": "PNG أو JPG أو GIF أو WebP (بحد أقصى 8MB). ستُرفق الصورة بإشعارك.",
+    "insertEmoji": "إدراج رمز تعبيري",
+    "invalidWebhookUrl": "رابط خطاف ويب غير صالح. يجب أن يبدأ بـ https://discord.com/api/webhooks/",
+    "markdownSupport": "تنسيق ديسكورد مدعوم:",
+    "messagePlaceholder": "**البث الآن مباشر!**\n\nانضم إلى البث!",
+    "removeImage": "إزالة الصورة",
+    "seconds": "ثوانٍ",
+    "selectImage": "اختيار صورة",
+    "testFailed": "فشل الاختبار",
+    "testPassed": "نجح الاختبار",
+    "testSuccess": "تم إرسال إشعار الاختبار بنجاح!",
+    "testWebhook": "اختبار خطاف الويب",
+    "title": "خطاف ويب ديسكورد",
+    "webhookSettings": "إعدادات خطاف الويب",
+    "webhookSettingsDescription": "تهيئة خطاف ويب ديسكورد لإشعارات بدء البث",
+    "webhookUrl": "رابط خطاف الويب"
   }
 }

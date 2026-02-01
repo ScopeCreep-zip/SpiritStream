@@ -229,7 +229,8 @@
     "videoBitrateHelper": "Recommandé : 4500-6000 pour 1080p, 3000-4500 pour 720p",
     "videoBitrateKbps": "Débit Vidéo (kbps)",
     "videoEncoder": "Encodeur Vidéo",
-    "videoEncoderSettings": "Paramètres de l'Encodeur Vidéo"
+    "videoEncoderSettings": "Paramètres de l'Encodeur Vidéo",
+    "generatePtsDescription": "Génère des horodatages et synchronise le timing audio. Améliore la stabilité du stream et corrige des problèmes d'encodage avec un léger coût CPU."
   },
   "errors": {
     "connectionFailed": "Échec de la connexion",
@@ -699,7 +700,14 @@
     "streamError": "Erreur de Diffusion",
     "totalBandwidth": "Bande passante totale",
     "uptime": "Temps d'Activité",
-    "validating": "Validation..."
+    "validating": "Validation...",
+    "autoRetrying": "Stream déconnecté, reconnexion...",
+    "reconnectedTitle": "Stream reconnecté",
+    "reconnectFailedTitle": "Échec de reconnexion",
+    "reconnectingAttempt": "Reconnexion... (tentative {{attempt}}/{{max}})",
+    "reconnectingTitle": "Reconnexion du stream",
+    "retryFailed": "Échec de reconnexion : {{error}}",
+    "retrySuccess": "Stream reconnecté avec succès"
   },
   "targets": {
     "addNewTarget": "Ajouter une Nouvelle Destination",
@@ -744,7 +752,9 @@
     "targetUpdated": "Destination de diffusion mise à jour",
     "testFailed": "Échec du test de diffusion",
     "testPassed": "Toutes les vérifications sont passées ! Votre configuration de diffusion est valide.",
-    "testingConfig": "Test de la configuration de diffusion..."
+    "testingConfig": "Test de la configuration de diffusion...",
+    "groupStarted": "Groupe de sortie démarré",
+    "groupStopped": "Groupe de sortie arrêté"
   },
   "validation": {
     "applicationRequired": "Le nom de l'application est requis",
@@ -766,5 +776,37 @@
     "urlInvalid": "L'URL doit commencer par rtmp:// ou rtmps://",
     "urlMustStartWithRtmp": "L'URL doit commencer par rtmp:// ou rtmps://",
     "urlRequired": "L'URL est obligatoire"
+  },
+  "discord": {
+    "attachImage": "Joindre une image",
+    "cooldownDescription": "Empêche les notifications en double lors du redémarrage des streams",
+    "cooldownInfo": "Lorsqu'activé, si vous arrêtez et redémarrez votre stream pendant la période de temporisation, aucune nouvelle notification n'est envoyée. Cela évite le spam lors de problèmes techniques.",
+    "cooldownSeconds": "Temporisation",
+    "cooldownSettings": "Paramètres de temporisation",
+    "description": "Envoyer des notifications de mise en direct sur Discord",
+    "enableCooldown": "Activer la temporisation",
+    "enableCooldownDescription": "Empêche les notifications en double pendant la période de temporisation",
+    "enableWebhook": "Activer le webhook Discord",
+    "enableWebhookDescription": "Envoyer des notifications lorsque les streams démarrent",
+    "enterWebhookFirst": "Veuillez d'abord saisir une URL de webhook",
+    "goLiveMessage": "Message de mise en direct",
+    "goLiveMessageDescription": "Le message envoyé au démarrage de votre stream. Prend en charge le markdown Discord.",
+    "imageDesktopOnly": "La pièce jointe d'image nécessite l'application de bureau. En mode navigateur, vous pouvez utiliser une URL d'image dans votre message.",
+    "imageHint": "PNG, JPG, GIF ou WebP (8 Mo max). L'image sera jointe à votre notification.",
+    "insertEmoji": "Insérer un emoji",
+    "invalidWebhookUrl": "URL de webhook invalide. Doit commencer par https://discord.com/api/webhooks/",
+    "markdownSupport": "Le markdown Discord est pris en charge :",
+    "messagePlaceholder": "**Le stream est en direct !**\n\nRejoins le stream !",
+    "removeImage": "Supprimer l'image",
+    "seconds": "secondes",
+    "selectImage": "Sélectionner une image",
+    "testFailed": "Test échoué",
+    "testPassed": "Test réussi",
+    "testSuccess": "Notification de test envoyée avec succès !",
+    "testWebhook": "Tester le webhook",
+    "title": "Webhook Discord",
+    "webhookSettings": "Paramètres du webhook",
+    "webhookSettingsDescription": "Configurer votre webhook Discord pour les notifications de mise en direct",
+    "webhookUrl": "URL du webhook"
   }
 }

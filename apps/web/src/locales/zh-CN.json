@@ -145,7 +145,14 @@
     "uptime": "正常运行时间",
     "bitrate": "比特率",
     "fps": "FPS",
-    "totalBandwidth": "上传总量"
+    "totalBandwidth": "上传总量",
+    "autoRetrying": "直播已断开，正在重连...",
+    "reconnectedTitle": "直播已重新连接",
+    "reconnectFailedTitle": "重连失败",
+    "reconnectingAttempt": "正在重连...（第 {{attempt}}/{{max}} 次）",
+    "reconnectingTitle": "直播正在重连",
+    "retryFailed": "重连失败：{{error}}",
+    "retrySuccess": "直播重连成功"
   },
   "encoder": {
     "title": "编码器配置",
@@ -251,7 +258,8 @@
       "30": "30 FPS",
       "25": "25FPS",
       "24": "24 FPS"
-    }
+    },
+    "generatePtsDescription": "生成时间戳并同步音频时间。以轻微的 CPU 代价提高直播稳定性并修复编码问题。"
   },
   "audio": {
     "codecs": {
@@ -683,7 +691,9 @@
     "groupDuplicated": "输出组“{{name}}”重复",
     "groupRemoved": "输出组已移除",
     "keyRotationSuccess": "机器钥匙旋转。更新了 {{profiles}} 配置文件，重新加密了 {{keys}} 密钥。",
-    "keyRotationFailed": "密钥轮换失败：{{error}}"
+    "keyRotationFailed": "密钥轮换失败：{{error}}",
+    "groupStarted": "输出组已启动",
+    "groupStopped": "输出组已停止"
   },
   "fileBrowser": {
     "selectDirectory": "Select Directory",
@@ -766,5 +776,37 @@
     "obsConnectedBody": "Successfully connected to OBS WebSocket.",
     "obsDisconnectedTitle": "OBS Disconnected",
     "obsDisconnectedBody": "Disconnected from OBS WebSocket."
+  },
+  "discord": {
+    "attachImage": "附加图片",
+    "cooldownDescription": "防止在重启直播时发送重复通知",
+    "cooldownInfo": "启用后，如果你在冷却期内停止并重新开始直播，将不会发送新的通知。这可以避免在修复技术问题时产生刷屏。",
+    "cooldownSeconds": "冷却时间",
+    "cooldownSettings": "冷却设置",
+    "description": "向 Discord 发送开播通知",
+    "enableCooldown": "启用冷却",
+    "enableCooldownDescription": "在冷却期内防止重复通知",
+    "enableWebhook": "启用 Discord Webhook",
+    "enableWebhookDescription": "在直播开始时发送通知",
+    "enterWebhookFirst": "请先输入 webhook URL",
+    "goLiveMessage": "开播消息",
+    "goLiveMessageDescription": "直播开始时发送的消息。支持 Discord Markdown。",
+    "imageDesktopOnly": "图片附件需要桌面应用。在浏览器模式下，你可以在消息中使用图片 URL 代替。",
+    "imageHint": "PNG、JPG、GIF 或 WebP（最大 8MB）。图片将附加到通知中。",
+    "insertEmoji": "插入表情",
+    "invalidWebhookUrl": "Webhook URL 无效。必须以 https://discord.com/api/webhooks/ 开头",
+    "markdownSupport": "支持 Discord Markdown：",
+    "messagePlaceholder": "**直播已开始！**\n\n快来加入直播！",
+    "removeImage": "移除图片",
+    "seconds": "秒",
+    "selectImage": "选择图片",
+    "testFailed": "测试失败",
+    "testPassed": "测试通过",
+    "testSuccess": "测试通知发送成功！",
+    "testWebhook": "测试 Webhook",
+    "title": "Discord Webhook",
+    "webhookSettings": "Webhook 设置",
+    "webhookSettingsDescription": "配置 Discord Webhook 以发送开播通知",
+    "webhookUrl": "Webhook URL"
   }
 }

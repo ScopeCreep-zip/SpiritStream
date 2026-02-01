@@ -104,6 +104,7 @@ interface StreamState {
   // State
   isStreaming: boolean;
   activeGroups: Set<string>;
+  enabledGroups: Set<string>; // Which output groups are enabled (before/during stream)
   enabledTargets: Set<string>;
   stats: StreamStats;
   groupStats: Record<string, GroupStats>;
@@ -126,6 +127,7 @@ interface StreamState {
   // Sync actions
   setIsStreaming: (isStreaming: boolean) => void;
   setActiveGroup: (groupId: string, active: boolean) => void;
+  setGroupEnabled: (groupId: string, enabled: boolean) => void;
   toggleTarget: (targetId: string) => void;
   setTargetEnabled: (targetId: string, enabled: boolean) => void;
   updateStats: (groupId: string, ffmpegStats: FFmpegStats) => void;
@@ -149,6 +151,7 @@ const initialStats: StreamStats = {
 export const useStreamStore = create<StreamState>((set, get) => ({
   isStreaming: false,
   activeGroups: new Set(),
+  enabledGroups: new Set(),
   enabledTargets: new Set(),
   stats: initialStats,
   groupStats: {},
@@ -238,9 +241,14 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     set({ globalStatus: 'connecting', error: null });
 
     try {
-      const eligibleGroups = groups.filter((group) => group.streamTargets.length > 0);
+      // Filter groups by: has targets AND is enabled
+      const enabledGroups = get().enabledGroups;
+      const eligibleGroups = groups.filter((group) =>
+        group.streamTargets.length > 0 && enabledGroups.has(group.id)
+      );
+
       if (eligibleGroups.length === 0) {
-        throw new Error('At least one stream target is required');
+        throw new Error('At least one enabled output group with stream targets is required');
       }
 
       await api.stream.startAll(eligibleGroups, incomingUrl);
@@ -328,6 +336,16 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       enabledTargets.add(targetId);
     }
     set({ enabledTargets });
+  },
+
+  setGroupEnabled: (groupId, enabled) => {
+    const enabledGroups = new Set(get().enabledGroups);
+    if (enabled) {
+      enabledGroups.add(groupId);
+    } else {
+      enabledGroups.delete(groupId);
+    }
+    set({ enabledGroups });
   },
 
   setTargetEnabled: (targetId, enabled) => {
