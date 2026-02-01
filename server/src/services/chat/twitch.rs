@@ -11,27 +11,50 @@ use crate::models::{ChatConnectionStatus, ChatCredentials, ChatMessage, ChatPlat
 
 use super::platform::{ChatPlatform, PlatformError, PlatformResult};
 
-/// Validate a Twitch channel exists by checking the Twitch API
+/// Validate a Twitch channel exists using Twitch's public GraphQL API
 async fn validate_channel_exists(channel: &str) -> Result<bool, String> {
-    // Use Twitch's public endpoint that doesn't require authentication
-    // This endpoint returns 200 for valid channels and 404 for invalid ones
-    let url = format!("https://www.twitch.tv/{}", channel);
+    // Use Twitch's public GQL endpoint - no auth required for basic channel lookup
+    let url = "https://gql.twitch.tv/gql";
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
+    // GraphQL query to check if channel exists
+    let query = serde_json::json!({
+        "query": format!(
+            r#"query {{ user(login: "{}") {{ id login displayName }} }}"#,
+            channel.to_lowercase()
+        )
+    });
+
     let response = client
-        .head(&url)
-        .header("User-Agent", "SpiritStream/1.0")
+        .post(url)
+        .header("Client-Id", "kimne78kx3ncx6brgo4mv6wki5h1ko") // Public web client ID
+        .header("Content-Type", "application/json")
+        .json(&query)
         .send()
         .await
         .map_err(|e| format!("Failed to check channel: {}", e))?;
 
-    // If the channel exists, we get a 200. If not, we get a redirect to 404 page
-    // We can also check if content contains channel info, but HEAD is faster
-    Ok(response.status().is_success())
+    if !response.status().is_success() {
+        return Err(format!("Twitch API returned status: {}", response.status()));
+    }
+
+    let body: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+    // Check if user exists in the response
+    let user_exists = body
+        .get("data")
+        .and_then(|d| d.get("user"))
+        .map(|u| !u.is_null())
+        .unwrap_or(false);
+
+    Ok(user_exists)
 }
 
 type TwitchClient = TwitchIRCClient<SecureTCPTransport, StaticLoginCredentials>;
