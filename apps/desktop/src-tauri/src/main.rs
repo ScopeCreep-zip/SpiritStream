@@ -34,10 +34,12 @@ struct Settings {
 
 /// Migrate user data from legacy locations to the new Tauri data directory.
 /// This is a safety net in case the installer migration doesn't run (portable installs, dev builds).
+///
 /// Legacy locations checked (in order):
-///   1. %APPDATA%\SpiritStream\
-///   2. %APPDATA%\spirit-stream\
-///   3. %LOCALAPPDATA%\SpiritStream\
+/// - `%APPDATA%\SpiritStream\`
+/// - `%APPDATA%\spirit-stream\`
+/// - `%LOCALAPPDATA%\SpiritStream\`
+///
 /// After successful migration, the legacy directory is removed.
 fn migrate_legacy_data(new_data_dir: &PathBuf) {
     // Skip if new location already has profiles
