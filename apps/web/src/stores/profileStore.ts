@@ -65,6 +65,7 @@ interface ProfileState {
   // Use these after audio API calls to sync local state without reloading entire profile
   updateCurrentAudioTrack: (sceneId: string, sourceId: string, updates: Partial<import('@/types/scene').AudioTrack>) => void;
   updateCurrentMasterVolume: (sceneId: string, masterVolume: number) => void;
+  updateCurrentMasterMuted: (sceneId: string, masterMuted: boolean) => void;
 
   // Scene management (local state updates without auto-save)
   // Use these after scene API calls to sync local state without reloading entire profile
@@ -499,6 +500,29 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
                   audioMixer: {
                     ...scene.audioMixer,
                     masterVolume,
+                  },
+                }
+              : scene
+          ),
+        },
+      });
+    }
+  },
+
+  // Update master muted locally without triggering save (used after setMasterMuted API)
+  updateCurrentMasterMuted: (sceneId, masterMuted) => {
+    const current = get().current;
+    if (current) {
+      set({
+        current: {
+          ...current,
+          scenes: current.scenes.map((scene) =>
+            scene.id === sceneId
+              ? {
+                  ...scene,
+                  audioMixer: {
+                    ...scene.audioMixer,
+                    masterMuted,
                   },
                 }
               : scene

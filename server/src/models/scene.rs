@@ -222,6 +222,9 @@ pub struct AudioMixer {
     /// Master volume (0.0 - 2.0, 1.0 = unity gain)
     #[serde(default = "default_volume")]
     pub master_volume: f32,
+    /// Master muted state
+    #[serde(default)]
+    pub master_muted: bool,
     /// Individual audio tracks
     #[serde(default)]
     pub tracks: Vec<AudioTrack>,
@@ -235,6 +238,7 @@ impl Default for AudioMixer {
     fn default() -> Self {
         Self {
             master_volume: 1.0,
+            master_muted: false,
             tracks: Vec::new(),
         }
     }
@@ -245,6 +249,7 @@ impl AudioMixer {
     pub fn with_source(source_id: &str) -> Self {
         Self {
             master_volume: 1.0,
+            master_muted: false,
             tracks: vec![AudioTrack::new(source_id)],
         }
     }

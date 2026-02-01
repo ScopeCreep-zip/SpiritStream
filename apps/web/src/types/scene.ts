@@ -116,6 +116,7 @@ export interface LayerGroup {
  */
 export interface AudioMixer {
   masterVolume: number;
+  masterMuted: boolean;
   tracks: AudioTrack[];
 }
 
@@ -247,6 +248,7 @@ export function createDefaultLayer(
 export function createDefaultAudioMixer(): AudioMixer {
   return {
     masterVolume: 1.0,
+    masterMuted: false,
     tracks: [],
   };
 }

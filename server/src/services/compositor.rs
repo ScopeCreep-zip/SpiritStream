@@ -389,7 +389,13 @@ impl Compositor {
     }
 
     /// Build audio filter_complex string for mixing multiple sources
+    /// Includes astats filter for real-time audio level monitoring
     pub fn build_audio_filter(scene: &Scene, sources: &[Source]) -> String {
+        Self::build_audio_filter_with_metering(scene, sources, true)
+    }
+
+    /// Build audio filter with optional metering
+    pub fn build_audio_filter_with_metering(scene: &Scene, sources: &[Source], enable_metering: bool) -> String {
         let mixer = &scene.audio_mixer;
         let active_tracks: Vec<_> = mixer.tracks
             .iter()
@@ -409,23 +415,33 @@ impl Compositor {
             active_tracks
         };
 
+        // astats filter for audio level metering
+        // metadata=1 outputs per-frame metadata, reset=1 resets stats each second
+        // length=0.4 uses 400ms window for RMS calculation (smooth but responsive)
+        let astats_filter = if enable_metering {
+            ",astats=metadata=1:reset=1:length=0.4"
+        } else {
+            ""
+        };
+
         if tracks_to_mix.is_empty() {
             // No audio - generate silence
-            return "anullsrc=r=48000:cl=stereo[aout]".to_string();
+            return format!("anullsrc=r=48000:cl=stereo{}[aout]", astats_filter);
         }
+
+        // Effective master volume (0 if muted)
+        let effective_master = if mixer.master_muted { 0.0 } else { mixer.master_volume };
 
         if tracks_to_mix.len() == 1 {
             // Single audio source
             let track = tracks_to_mix[0];
             let input_idx = Self::get_input_index(scene, sources, &track.source_id);
-            let volume_filter = if track.volume != 1.0 {
-                format!(",volume={}", track.volume * mixer.master_volume)
-            } else if mixer.master_volume != 1.0 {
-                format!(",volume={}", mixer.master_volume)
+            let volume_filter = if track.volume != 1.0 || effective_master != 1.0 {
+                format!("volume={}", track.volume * effective_master)
             } else {
-                String::new()
+                "anull".to_string() // passthrough
             };
-            return format!("[{}:a]{}[aout]", input_idx, volume_filter.trim_start_matches(','));
+            return format!("[{}:a]{}{}[aout]", input_idx, volume_filter, astats_filter);
         }
 
         // Multiple audio sources - mix them
@@ -436,8 +452,8 @@ impl Compositor {
             let input_idx = Self::get_input_index(scene, sources, &track.source_id);
             let label = format!("a{}", i);
 
-            // Apply per-track volume
-            let volume = track.volume * mixer.master_volume;
+            // Apply per-track volume with effective master (0 if muted)
+            let volume = track.volume * effective_master;
             filter_parts.push(format!(
                 "[{}:a]volume={}[{}]",
                 input_idx, volume, label
@@ -445,11 +461,12 @@ impl Compositor {
             audio_labels.push(format!("[{}]", label));
         }
 
-        // Mix all audio sources
+        // Mix all audio sources and add astats metering
         filter_parts.push(format!(
-            "{}amix=inputs={}:duration=longest[aout]",
+            "{}amix=inputs={}:duration=longest{}[aout]",
             audio_labels.join(""),
-            tracks_to_mix.len()
+            tracks_to_mix.len(),
+            astats_filter
         ));
 
         filter_parts.join(";")
@@ -552,6 +569,7 @@ mod tests {
             ],
             audio_mixer: AudioMixer {
                 master_volume: 1.0,
+                master_muted: false,
                 tracks: vec![AudioTrack {
                     source_id: "rtmp1".to_string(),
                     volume: 1.0,

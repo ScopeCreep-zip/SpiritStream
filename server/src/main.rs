@@ -2650,6 +2650,31 @@ async fn invoke_command(
             state.event_bus.emit("master_volume_changed", json!({ "profileName": profile_name, "sceneId": scene_id, "volume": volume }));
             Ok(Value::Null)
         }
+        "set_master_muted" => {
+            let profile_name: String = get_arg(&payload, "profileName")?;
+            let scene_id: String = get_arg(&payload, "sceneId")?;
+            let muted: bool = get_arg(&payload, "muted")?;
+            let password: Option<String> = get_opt_arg(&payload, "password")?;
+
+            let mut profile = state
+                .profile_manager
+                .load_with_key_decryption(&profile_name, password.as_deref())
+                .await?;
+
+            let scene = profile.scenes.iter_mut().find(|s| s.id == scene_id)
+                .ok_or_else(|| format!("Scene {} not found", scene_id))?;
+
+            scene.audio_mixer.master_muted = muted;
+
+            let settings = state.settings_manager.load()?;
+            state
+                .profile_manager
+                .save_with_key_encryption(&profile, password.as_deref(), settings.encrypt_stream_keys)
+                .await?;
+
+            state.event_bus.emit("master_muted_changed", json!({ "profileName": profile_name, "sceneId": scene_id, "muted": muted }));
+            Ok(Value::Null)
+        }
 
         // ====================================================================
         // Preview Commands

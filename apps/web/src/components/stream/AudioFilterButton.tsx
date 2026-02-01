@@ -26,6 +26,8 @@ interface AudioFilterButtonProps {
   onFiltersChange: (filters: AudioFilter[]) => void;
   /** Available sources for sidechain selection */
   availableSources?: Source[];
+  /** Use compact size to match M/S buttons in channel strip */
+  compact?: boolean;
 }
 
 export function AudioFilterButton({
@@ -34,6 +36,7 @@ export function AudioFilterButton({
   filters,
   onFiltersChange,
   availableSources = [],
+  compact = false,
 }: AudioFilterButtonProps) {
   const { t } = useTranslation();
 
@@ -120,14 +123,14 @@ export function AudioFilterButton({
       <button
         ref={buttonRef}
         onClick={() => setIsOpen(!isOpen)}
-        className={`w-7 h-7 rounded-md flex items-center justify-center transition-all border ${
+        className={`${compact ? 'w-5 h-5 rounded' : 'w-7 h-7 rounded-md'} flex items-center justify-center transition-all border ${
           hasActiveFilters
             ? 'bg-primary/20 border-primary text-primary'
             : 'bg-[var(--bg-sunken)] border-transparent text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-secondary)]'
         }`}
         title={t('audio.filters', { defaultValue: 'Audio Filters' })}
       >
-        <SlidersHorizontal className="w-4 h-4" />
+        <SlidersHorizontal className={compact ? 'w-2.5 h-2.5' : 'w-4 h-4'} />
       </button>
 
       {isOpen && (

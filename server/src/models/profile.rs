@@ -118,6 +118,7 @@ impl Profile {
                 }],
                 audio_mixer: AudioMixer {
                     master_volume: 1.0,
+                    master_muted: false,
                     tracks: vec![AudioTrack {
                         source_id: source_id.clone(),
                         volume: 1.0,

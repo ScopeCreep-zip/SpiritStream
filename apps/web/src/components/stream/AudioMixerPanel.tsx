@@ -1,16 +1,14 @@
 /**
  * Audio Mixer Panel
- * Bottom panel with audio track controls
- *
- * Optimized to use local state updates instead of reloading the entire profile
- * after each audio change, preventing WebRTC reconnections and improving UX.
+ * Unified audio mixer with combined VU meters and volume controls
  */
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Volume2, VolumeX, Plus } from 'lucide-react';
+import { Plus, Volume2 } from 'lucide-react';
 import { Card, CardBody } from '@/components/ui/Card';
 import { AddSourceModal } from '@/components/modals/AddSourceModal';
-import { AudioFilterButton } from './AudioFilterButton';
+import { UnifiedChannelStrip } from './UnifiedChannelStrip';
+import { useAudioLevels, linearToDb } from '@/hooks/useAudioLevels';
 import type { Profile, Scene } from '@/types/profile';
 import type { AudioFilter } from '@/types/source';
 import { useSceneStore } from '@/stores/sceneStore';
@@ -22,11 +20,26 @@ interface AudioMixerPanelProps {
   scene?: Scene;
 }
 
+// Default audio level when no data available
+const DEFAULT_LEVEL = {
+  rms: 0,
+  peak: 0,
+  peakDb: -Infinity,
+  clipping: false,
+  leftRms: 0,
+  leftPeak: 0,
+  rightRms: 0,
+  rightPeak: 0,
+};
+
 export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
   const { t } = useTranslation();
-  const { setTrackVolume, setTrackMuted, setTrackSolo, setMasterVolume } = useSceneStore();
-  const { updateCurrentAudioTrack, updateCurrentMasterVolume } = useProfileStore();
+  const { setTrackVolume, setTrackMuted, setTrackSolo, setMasterVolume, setMasterMuted } = useSceneStore();
+  const { updateCurrentAudioTrack, updateCurrentMasterVolume, updateCurrentMasterMuted } = useProfileStore();
   const [showAddModal, setShowAddModal] = useState(false);
+
+  // Get real-time audio levels
+  const { levels, isConnected } = useAudioLevels();
 
   // Memoize source name lookup function
   const getSourceName = useCallback((sourceId: string) => {
@@ -38,7 +51,6 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
     if (!scene) return;
     try {
       await setTrackVolume(profile.name, scene.id, sourceId, volume);
-      // Update local state instead of reloading entire profile
       updateCurrentAudioTrack(scene.id, sourceId, { volume });
     } catch (err) {
       toast.error(t('stream.volumeFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to set volume: ${err instanceof Error ? err.message : String(err)}` }));
@@ -49,7 +61,6 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
     if (!scene) return;
     try {
       await setTrackMuted(profile.name, scene.id, sourceId, muted);
-      // Update local state instead of reloading entire profile
       updateCurrentAudioTrack(scene.id, sourceId, { muted });
     } catch (err) {
       toast.error(t('stream.muteFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to toggle mute: ${err instanceof Error ? err.message : String(err)}` }));
@@ -60,7 +71,6 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
     if (!scene) return;
     try {
       await setTrackSolo(profile.name, scene.id, sourceId, solo);
-      // Update local state instead of reloading entire profile
       updateCurrentAudioTrack(scene.id, sourceId, { solo });
     } catch (err) {
       toast.error(t('stream.soloFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to toggle solo: ${err instanceof Error ? err.message : String(err)}` }));
@@ -70,7 +80,6 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
   const handleFiltersChange = useCallback(async (sourceId: string, filters: AudioFilter[]) => {
     if (!scene) return;
     try {
-      // Update local state (backend would need to handle this via API later)
       updateCurrentAudioTrack(scene.id, sourceId, { audioFilters: filters });
     } catch (err) {
       toast.error(t('stream.filtersFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to update filters: ${err instanceof Error ? err.message : String(err)}` }));
@@ -81,12 +90,42 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
     if (!scene) return;
     try {
       await setMasterVolume(profile.name, scene.id, volume);
-      // Update local state instead of reloading entire profile
       updateCurrentMasterVolume(scene.id, volume);
     } catch (err) {
       toast.error(t('stream.masterVolumeFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to set master volume: ${err instanceof Error ? err.message : String(err)}` }));
     }
   }, [profile.name, scene, setMasterVolume, updateCurrentMasterVolume, t]);
+
+  const handleMasterMuteToggle = useCallback(async (muted: boolean) => {
+    if (!scene) return;
+    try {
+      await setMasterMuted(profile.name, scene.id, muted);
+      updateCurrentMasterMuted(scene.id, muted);
+    } catch (err) {
+      toast.error(t('stream.masterMuteFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to toggle master mute: ${err instanceof Error ? err.message : String(err)}` }));
+    }
+  }, [profile.name, scene, setMasterMuted, updateCurrentMasterMuted, t]);
+
+  // Get audio level for a track, with fallback
+  const getTrackLevel = useCallback((sourceId: string) => {
+    const trackLevel = levels?.tracks[sourceId];
+    if (!trackLevel) return DEFAULT_LEVEL;
+    // Compute peakDb if not provided by backend
+    return {
+      ...trackLevel,
+      peakDb: trackLevel.peakDb ?? linearToDb(trackLevel.peak),
+    };
+  }, [levels]);
+
+  // Get master level with fallback
+  const getMasterLevel = useCallback(() => {
+    const masterLevel = levels?.master;
+    if (!masterLevel) return DEFAULT_LEVEL;
+    return {
+      ...masterLevel,
+      peakDb: masterLevel.peakDb ?? linearToDb(masterLevel.peak),
+    };
+  }, [levels]);
 
   if (!scene) {
     return (
@@ -101,43 +140,67 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
   return (
     <Card>
       <CardBody style={{ padding: '12px 16px' }}>
-        <div className="flex items-stretch overflow-x-auto pb-2">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Volume2 className="w-4 h-4 text-[var(--text-muted)]" />
+            <h4 className="text-sm font-medium text-[var(--text-secondary)]">
+              {t('stream.audioMixer', { defaultValue: 'Audio Mixer' })}
+            </h4>
+            {!isConnected && (
+              <span className="text-[10px] text-yellow-500 px-1.5 py-0.5 rounded bg-yellow-500/10">
+                {t('stream.audioMonitorDisconnected', { defaultValue: 'disconnected' })}
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            className="w-6 h-6 flex items-center justify-center rounded bg-[var(--bg-sunken)] hover:bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+            onClick={() => setShowAddModal(true)}
+            title={t('stream.addAudioSource', { defaultValue: 'Add Audio Source' })}
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="flex items-end overflow-x-auto pb-2 gap-6">
           {/* INPUT SECTION */}
-          <div className="flex flex-col min-w-0 flex-1">
-            <div className="flex items-center gap-2 mb-3">
-              <h4 className="text-sm font-medium text-[var(--text-secondary)]">
-                {t('stream.input', { defaultValue: 'Input' })}
-              </h4>
-              <button
-                type="button"
-                className="w-6 h-6 flex items-center justify-center rounded bg-[var(--bg-sunken)] hover:bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
-                onClick={() => setShowAddModal(true)}
-                title={t('stream.addAudioSource', { defaultValue: 'Add Audio Source' })}
-              >
-                <Plus className="w-4 h-4" />
-              </button>
+          <div className="flex flex-col min-w-0">
+            <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide mb-2 pl-1">
+              {t('stream.input', { defaultValue: 'Input' })}
             </div>
-            <div className="flex items-start gap-4 flex-1">
+            <div className="flex items-end gap-6">
               {scene.audioMixer.tracks.length > 0 ? (
-                scene.audioMixer.tracks.map((track) => (
-                  <AudioTrackControl
-                    key={track.sourceId}
-                    trackId={track.sourceId}
-                    label={getSourceName(track.sourceId)}
-                    volume={track.volume}
-                    muted={track.muted}
-                    solo={track.solo}
-                    filters={track.audioFilters || []}
-                    availableSources={profile.sources}
-                    onVolumeChange={(v) => handleVolumeChange(track.sourceId, v)}
-                    onMuteToggle={(m) => handleMuteToggle(track.sourceId, m)}
-                    onSoloToggle={(s) => handleSoloToggle(track.sourceId, s)}
-                    onFiltersChange={(f) => handleFiltersChange(track.sourceId, f)}
-                  />
-                ))
+                scene.audioMixer.tracks.map((track) => {
+                  const level = getTrackLevel(track.sourceId);
+                  return (
+                    <UnifiedChannelStrip
+                      key={track.sourceId}
+                      trackId={track.sourceId}
+                      label={getSourceName(track.sourceId)}
+                      rmsLevel={level.rms}
+                      peakLevel={level.peak}
+                      peakDb={level.peakDb}
+                      isClipping={level.clipping}
+                      leftRms={level.leftRms}
+                      leftPeak={level.leftPeak}
+                      rightRms={level.rightRms}
+                      rightPeak={level.rightPeak}
+                      volume={track.volume}
+                      muted={track.muted}
+                      solo={track.solo}
+                      filters={track.audioFilters || []}
+                      availableSources={profile.sources}
+                      onVolumeChange={(v) => handleVolumeChange(track.sourceId, v)}
+                      onMuteToggle={(m) => handleMuteToggle(track.sourceId, m)}
+                      onSoloToggle={(s) => handleSoloToggle(track.sourceId, s)}
+                      onFiltersChange={(f) => handleFiltersChange(track.sourceId, f)}
+                    />
+                  );
+                })
               ) : (
-                <div className="flex items-center justify-center h-full min-h-[140px] px-4">
-                  <p className="text-[var(--text-muted)] text-sm">
+                <div className="flex items-center justify-center h-[200px] px-6">
+                  <p className="text-[var(--text-muted)] text-xs text-center">
                     {t('stream.noAudioTracks', { defaultValue: 'No audio tracks' })}
                   </p>
                 </div>
@@ -146,26 +209,41 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
           </div>
 
           {/* Divider */}
-          <div className="flex flex-col mx-4 py-1">
-            <div className="w-px flex-1 bg-[var(--border-default)]" />
-          </div>
+          {scene.audioMixer.tracks.length > 0 && (
+            <div className="flex flex-col mx-2 self-stretch">
+              <div className="flex-1 w-px bg-[var(--border-default)]" style={{ marginTop: 20 }} />
+            </div>
+          )}
 
-          {/* OUTPUT SECTION */}
-          <div className="flex flex-col">
-            <h4 className="text-sm font-medium text-[var(--text-secondary)] mb-3">
+          {/* OUTPUT SECTION - Master (pushed to far right) */}
+          <div className="flex flex-col ml-auto">
+            <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide mb-2 pl-1">
               {t('stream.output', { defaultValue: 'Output' })}
-            </h4>
-            <div className="flex items-start gap-4 flex-1">
-              <AudioTrackControl
-                label={t('stream.master', { defaultValue: 'Master' })}
-                volume={scene.audioMixer.masterVolume}
-                muted={false}
-                solo={false}
-                isMaster
-                onVolumeChange={handleMasterVolumeChange}
-                onMuteToggle={() => {}}
-                onSoloToggle={() => {}}
-              />
+            </div>
+            <div className="flex items-end">
+              {(() => {
+                const masterLevel = getMasterLevel();
+                return (
+                  <UnifiedChannelStrip
+                    label={t('stream.master', { defaultValue: 'Master' })}
+                    rmsLevel={masterLevel.rms}
+                    peakLevel={masterLevel.peak}
+                    peakDb={masterLevel.peakDb}
+                    isClipping={masterLevel.clipping}
+                    leftRms={masterLevel.leftRms}
+                    leftPeak={masterLevel.leftPeak}
+                    rightRms={masterLevel.rightRms}
+                    rightPeak={masterLevel.rightPeak}
+                    volume={scene.audioMixer.masterVolume}
+                    muted={scene.audioMixer.masterMuted ?? false}
+                    solo={false}
+                    isMaster
+                    onVolumeChange={handleMasterVolumeChange}
+                    onMuteToggle={handleMasterMuteToggle}
+                    onSoloToggle={() => {}}
+                  />
+                );
+              })()}
             </div>
           </div>
         </div>
@@ -181,181 +259,3 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
     </Card>
   );
 }
-
-interface AudioTrackControlProps {
-  trackId?: string;
-  label: string;
-  volume: number;
-  muted: boolean;
-  solo: boolean;
-  filters?: AudioFilter[];
-  isMaster?: boolean;
-  availableSources?: import('@/types/source').Source[];
-  onVolumeChange: (volume: number) => void;
-  onMuteToggle: (muted: boolean) => void;
-  onSoloToggle: (solo: boolean) => void;
-  onFiltersChange?: (filters: AudioFilter[]) => void;
-}
-
-/**
- * AudioTrackControl - Individual audio track fader with mute/solo
- * Memoized to prevent unnecessary re-renders during volume drag operations
- */
-const AudioTrackControl = React.memo(function AudioTrackControl({
-  trackId,
-  label,
-  volume,
-  muted,
-  solo,
-  filters = [],
-  isMaster,
-  availableSources = [],
-  onVolumeChange,
-  onMuteToggle,
-  onSoloToggle,
-  onFiltersChange,
-}: AudioTrackControlProps) {
-  // Local volume state for responsive UI during drag
-  const [localVolume, setLocalVolume] = useState(volume);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isDraggingRef = useRef(false);
-
-  // Sync local volume when prop changes (from server)
-  useEffect(() => {
-    if (!isDraggingRef.current) {
-      setLocalVolume(volume);
-    }
-  }, [volume]);
-
-  // Debounced save to server
-  const debouncedSave = useCallback((newVolume: number) => {
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current);
-    }
-    debounceRef.current = setTimeout(() => {
-      onVolumeChange(newVolume);
-      isDraggingRef.current = false;
-    }, 300); // Save 300ms after last change
-  }, [onVolumeChange]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-      }
-    };
-  }, []);
-
-  // Convert 0-1 range to percentage for display (0% to 100%)
-  const volumePercent = Math.round(localVolume * 100);
-
-  // Handle vertical slider interaction via click/drag on the track
-  const handleSliderInteraction = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const y = e.clientY - rect.top;
-    const height = rect.height;
-    // Invert: top = max (1.0), bottom = min (0)
-    const newVolume = Math.max(0, Math.min(1, 1 - y / height));
-    isDraggingRef.current = true;
-    setLocalVolume(newVolume);
-    debouncedSave(newVolume);
-  };
-
-  const handleDrag = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.buttons === 1) {
-      handleSliderInteraction(e);
-    }
-  };
-
-  return (
-    <div className="flex flex-col items-center gap-2 min-w-[80px]">
-      {/* Mute/Mono/Filters buttons above slider (non-master tracks) */}
-      {!isMaster ? (
-        <div className="flex flex-col gap-1 mb-2">
-          <div className="flex gap-1">
-            <button
-              type="button"
-              className={`w-7 h-7 rounded-md flex items-center justify-center transition-all border ${
-                muted
-                  ? 'bg-destructive/20 border-destructive text-destructive'
-                  : 'bg-[var(--bg-sunken)] border-transparent text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-secondary)]'
-              }`}
-              onClick={() => onMuteToggle(!muted)}
-              title={muted ? 'Unmute' : 'Mute'}
-            >
-              {muted ? (
-                <VolumeX className="w-4 h-4" />
-              ) : (
-                <Volume2 className="w-4 h-4" />
-              )}
-            </button>
-            <button
-              type="button"
-              className={`w-7 h-7 rounded-md flex items-center justify-center transition-all border ${
-                solo
-                  ? 'bg-primary/20 border-primary text-primary'
-                  : 'bg-[var(--bg-sunken)] border-transparent text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-secondary)]'
-              }`}
-              onClick={() => onSoloToggle(!solo)}
-              title={solo ? 'Disable Mono' : 'Enable Mono'}
-            >
-              {/* Mono icon: single filled circle representing one channel */}
-              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-                <circle cx="12" cy="12" r="6" />
-              </svg>
-            </button>
-          </div>
-          {/* Audio Filter Button */}
-          {trackId && onFiltersChange && (
-            <AudioFilterButton
-              trackId={trackId}
-              trackName={label}
-              filters={filters}
-              onFiltersChange={onFiltersChange}
-              availableSources={availableSources}
-            />
-          )}
-        </div>
-      ) : (
-        /* Volume icon for master */
-        <div className="h-7 mb-2 flex items-center justify-center">
-          <Volume2 className="w-5 h-5 text-primary" />
-        </div>
-      )}
-
-      {/* Volume slider (vertical) - custom implementation for better UX */}
-      <div
-        className="relative h-24 w-3 bg-[var(--bg-sunken)] rounded-full cursor-pointer select-none"
-        onClick={handleSliderInteraction}
-        onMouseMove={handleDrag}
-        title={`${volumePercent}%`}
-      >
-        {/* Fill bar */}
-        <div
-          className={`absolute bottom-0 left-0 right-0 rounded-full ${
-            muted ? 'bg-muted' : 'bg-primary'
-          }`}
-          style={{ height: `${localVolume * 100}%` }}
-        />
-        {/* Thumb indicator */}
-        <div
-          className={`absolute left-1/2 -translate-x-1/2 w-4 h-4 rounded-full border-2 shadow-md ${
-            muted
-              ? 'bg-muted border-muted'
-              : 'bg-primary border-primary-foreground'
-          }`}
-          style={{ bottom: `calc(${localVolume * 100}% - 8px)` }}
-        />
-      </div>
-
-      {/* Volume indicator */}
-      <span className="text-xs text-muted tabular-nums">{volumePercent}%</span>
-
-      {/* Label */}
-      <span className="text-xs text-center break-words max-w-[80px]">
-        {label}
-      </span>
-    </div>
-  );
-});

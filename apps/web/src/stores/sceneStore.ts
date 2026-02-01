@@ -103,6 +103,12 @@ interface SceneState {
     volume: number,
     password?: string
   ) => Promise<void>;
+  setMasterMuted: (
+    profileName: string,
+    sceneId: string,
+    muted: boolean,
+    password?: string
+  ) => Promise<void>;
 
   // Actions - Layer groups
   createGroup: (
@@ -361,6 +367,20 @@ export const useSceneStore = create<SceneState>((set) => ({
         profileName,
         sceneId,
         volume,
+        password,
+      });
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : String(err) });
+      throw err;
+    }
+  },
+
+  setMasterMuted: async (profileName, sceneId, muted, password) => {
+    try {
+      await api.invoke('set_master_muted', {
+        profileName,
+        sceneId,
+        muted,
         password,
       });
     } catch (err) {

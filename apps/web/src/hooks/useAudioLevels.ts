@@ -9,7 +9,13 @@ import { useConnectionStore } from '@/stores/connectionStore';
 export interface AudioLevel {
   rms: number;      // 0-1 RMS level
   peak: number;     // 0-1 peak level
+  peakDb: number;   // Peak level in dB for display
   clipping: boolean; // Whether clipping was detected
+  // Stereo channel levels (optional)
+  leftRms?: number;   // 0-1 left channel RMS
+  leftPeak?: number;  // 0-1 left channel peak
+  rightRms?: number;  // 0-1 right channel RMS
+  rightPeak?: number; // 0-1 right channel peak
 }
 
 export interface AudioLevelsData {

@@ -33,6 +33,30 @@ pub struct StreamStats {
 
     /// Number of duplicate frames
     pub dup_frames: u64,
+
+    /// Audio levels from astats filter
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audio: Option<AudioStats>,
+}
+
+/// Audio statistics from FFmpeg astats filter
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioStats {
+    /// Overall RMS level in dB
+    pub rms_db: f64,
+    /// Overall peak level in dB
+    pub peak_db: f64,
+    /// Left channel RMS level in dB
+    pub left_rms_db: f64,
+    /// Left channel peak level in dB
+    pub left_peak_db: f64,
+    /// Right channel RMS level in dB
+    pub right_rms_db: f64,
+    /// Right channel peak level in dB
+    pub right_peak_db: f64,
+    /// Whether clipping was detected (peak > -0.5 dB)
+    pub clipping: bool,
 }
 
 impl StreamStats {
@@ -47,8 +71,17 @@ impl StreamStats {
     /// Parse FFmpeg stderr line for statistics
     /// FFmpeg outputs lines like:
     /// frame= 1234 fps= 60 q=28.0 size=   12345kB time=00:01:23.45 bitrate=1234.5kbits/s speed=1.0x
+    ///
+    /// Also parses astats filter output:
+    /// [Parsed_astats_0 @ ...] RMS level dB: -20.5
+    /// [Parsed_astats_0 @ ...] Peak level dB: -5.2
     pub fn parse_line(&mut self, line: &str) -> bool {
         let mut parsed = false;
+
+        // Parse astats audio filter output
+        if line.contains("astats") || line.contains("Parsed_astats") {
+            parsed = self.parse_astats_line(line) || parsed;
+        }
 
         // Parse frame count
         if let Some(frame) = Self::extract_value(line, "frame=") {
@@ -254,5 +287,119 @@ impl StreamStats {
         };
 
         num_str.trim().parse::<f64>().ok().map(|v| (v * scale) as u64)
+    }
+
+    /// Parse astats filter output line for audio levels
+    /// Format examples:
+    /// [Parsed_astats_0 @ 0x...] Channel: 1
+    /// [Parsed_astats_0 @ 0x...] RMS level dB: -20.5
+    /// [Parsed_astats_0 @ 0x...] Peak level dB: -5.2
+    /// [Parsed_astats_0 @ 0x...] Overall
+    /// [Parsed_astats_0 @ 0x...] RMS level dB: -18.3
+    fn parse_astats_line(&mut self, line: &str) -> bool {
+        // Initialize audio stats if not present
+        if self.audio.is_none() {
+            self.audio = Some(AudioStats::default());
+        }
+        let audio = self.audio.as_mut().unwrap();
+
+        // Track which channel we're parsing (1 = left, 2 = right, none = overall)
+        // astats outputs per-channel then overall stats
+
+        // Parse RMS level
+        if line.contains("RMS level dB:") {
+            if let Some(value) = Self::extract_db_value(line, "RMS level dB:") {
+                // Determine if this is channel-specific or overall
+                if line.contains("Overall") || (!line.contains("Channel: 1") && !line.contains("Channel: 2")) {
+                    audio.rms_db = value;
+                }
+                return true;
+            }
+        }
+
+        // Parse Peak level
+        if line.contains("Peak level dB:") {
+            if let Some(value) = Self::extract_db_value(line, "Peak level dB:") {
+                audio.peak_db = value;
+                audio.clipping = value > -0.5;
+                return true;
+            }
+        }
+
+        // Parse per-channel RMS (lavfi.astats metadata format)
+        if line.contains("lavfi.astats.1.RMS_level") {
+            if let Some(value) = Self::extract_metadata_value(line) {
+                audio.left_rms_db = value;
+                return true;
+            }
+        }
+        if line.contains("lavfi.astats.2.RMS_level") {
+            if let Some(value) = Self::extract_metadata_value(line) {
+                audio.right_rms_db = value;
+                return true;
+            }
+        }
+
+        // Parse per-channel Peak (lavfi.astats metadata format)
+        if line.contains("lavfi.astats.1.Peak_level") {
+            if let Some(value) = Self::extract_metadata_value(line) {
+                audio.left_peak_db = value;
+                return true;
+            }
+        }
+        if line.contains("lavfi.astats.2.Peak_level") {
+            if let Some(value) = Self::extract_metadata_value(line) {
+                audio.right_peak_db = value;
+                audio.clipping = audio.clipping || value > -0.5;
+                return true;
+            }
+        }
+
+        // Parse Overall RMS/Peak from metadata
+        if line.contains("lavfi.astats.Overall.RMS_level") {
+            if let Some(value) = Self::extract_metadata_value(line) {
+                audio.rms_db = value;
+                return true;
+            }
+        }
+        if line.contains("lavfi.astats.Overall.Peak_level") {
+            if let Some(value) = Self::extract_metadata_value(line) {
+                audio.peak_db = value;
+                audio.clipping = value > -0.5;
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Extract dB value from astats output line
+    fn extract_db_value(line: &str, key: &str) -> Option<f64> {
+        let start = line.find(key)?;
+        let value_start = start + key.len();
+        let rest = line[value_start..].trim();
+
+        // Handle "inf" or "-inf" values
+        if rest.starts_with("-inf") || rest.starts_with("inf") {
+            return Some(-96.0); // Use -96 dB as floor
+        }
+
+        // Extract numeric value
+        let end = rest.find(|c: char| !c.is_ascii_digit() && c != '.' && c != '-')
+            .unwrap_or(rest.len());
+        rest[..end].trim().parse().ok()
+    }
+
+    /// Extract metadata value (format: key=value)
+    fn extract_metadata_value(line: &str) -> Option<f64> {
+        let parts: Vec<&str> = line.split('=').collect();
+        if parts.len() >= 2 {
+            let value_str = parts.last()?.trim();
+            if value_str == "-inf" || value_str == "inf" {
+                return Some(-96.0);
+            }
+            return value_str.parse().ok();
+        }
+        None
     }
 }

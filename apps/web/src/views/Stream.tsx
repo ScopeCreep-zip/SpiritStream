@@ -17,7 +17,6 @@ import { TransitionOverlay } from '@/components/stream/TransitionOverlay';
 import { RecordingButton } from '@/components/stream/RecordingButton';
 import { ReplayBufferButton } from '@/components/stream/ReplayBufferButton';
 import { MultiviewPanel } from '@/components/stream/MultiviewPanel';
-import { AudioMonitorPanel } from '@/components/stream/AudioMonitorPanel';
 import { useProfileStore } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
 import { useSceneStore } from '@/stores/sceneStore';
@@ -325,23 +324,11 @@ export function Stream() {
         activeSceneId={current.activeSceneId}
       />
 
-      {/* Audio section (bottom) */}
-      <div className="flex gap-4">
-        {/* Audio mixer */}
-        <div className="flex-1">
-          <AudioMixerPanel
-            profile={current}
-            scene={activeScene}
-          />
-        </div>
-        {/* Audio monitor */}
-        <div className="w-80 flex-shrink-0">
-          <AudioMonitorPanel
-            profile={current}
-            scene={activeScene}
-          />
-        </div>
-      </div>
+      {/* Audio section (bottom) - Unified mixer with built-in VU meters */}
+      <AudioMixerPanel
+        profile={current}
+        scene={activeScene}
+      />
 
       {/* Multiview panel (overlay) */}
       {showMultiview && (
