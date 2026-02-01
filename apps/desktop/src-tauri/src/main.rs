@@ -38,6 +38,7 @@ struct Settings {
 ///   1. %APPDATA%\SpiritStream\
 ///   2. %APPDATA%\spirit-stream\
 ///   3. %LOCALAPPDATA%\SpiritStream\
+/// After successful migration, the legacy directory is removed.
 fn migrate_legacy_data(new_data_dir: &PathBuf) {
     // Skip if new location already has profiles
     let new_profiles_dir = new_data_dir.join("profiles");
@@ -97,15 +98,20 @@ fn migrate_legacy_data(new_data_dir: &PathBuf) {
     fs::create_dir_all(new_data_dir.join("logs")).ok();
     fs::create_dir_all(new_data_dir.join("indexes")).ok();
 
+    // Track number of profiles migrated for verification
+    let mut profiles_migrated = 0;
+
     // Copy profiles (critical user data)
     if let Ok(entries) = fs::read_dir(source.join("profiles")) {
         for entry in entries.flatten() {
             let target = new_profiles_dir.join(entry.file_name());
             if let Err(e) = fs::copy(entry.path(), &target) {
                 log::warn!("Failed to migrate profile {:?}: {}", entry.file_name(), e);
+            } else {
+                profiles_migrated += 1;
             }
         }
-        log::info!("Migrated profiles directory");
+        log::info!("Migrated {} profile(s)", profiles_migrated);
     }
 
     // Copy settings.json
@@ -158,17 +164,47 @@ fn migrate_legacy_data(new_data_dir: &PathBuf) {
         }
     }
 
-    // Create migration marker
-    let marker_content = format!(
-        "Migrated from: {:?}\nMigration date: {}\n",
-        source,
-        chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
+    // Verify migration by checking profiles exist in new location
+    let migration_verified = profiles_migrated == 0 || (
+        new_profiles_dir.exists()
+        && fs::read_dir(&new_profiles_dir)
+            .map(|entries| entries.count() >= profiles_migrated)
+            .unwrap_or(false)
     );
-    if let Err(e) = fs::write(&migration_marker, marker_content) {
-        log::warn!("Failed to write migration marker: {}", e);
-    }
 
-    log::info!("Legacy data migration completed successfully");
+    if migration_verified {
+        // Create migration marker with success status
+        let marker_content = format!(
+            "Migrated from: {:?}\nMigration date: {}\nProfiles migrated: {}\nStatus: Success - legacy directory removed\n",
+            source,
+            chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+            profiles_migrated
+        );
+        if let Err(e) = fs::write(&migration_marker, marker_content) {
+            log::warn!("Failed to write migration marker: {}", e);
+        }
+
+        // Delete the legacy directory now that migration is confirmed
+        log::info!("Migration verified, removing legacy directory: {:?}", source);
+        if let Err(e) = fs::remove_dir_all(&source) {
+            log::warn!("Failed to remove legacy directory {:?}: {}", source, e);
+        } else {
+            log::info!("Legacy directory removed successfully");
+        }
+
+        log::info!("Legacy data migration completed successfully");
+    } else {
+        // Migration failed verification - keep legacy data
+        log::warn!("Migration verification failed - keeping legacy data at {:?}", source);
+
+        let marker_content = format!(
+            "Migrated from: {:?}\nMigration date: {}\nProfiles migrated: {}\nStatus: FAILED - legacy directory preserved\n",
+            source,
+            chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+            profiles_migrated
+        );
+        fs::write(&migration_marker, marker_content).ok();
+    }
 }
 
 fn main() {

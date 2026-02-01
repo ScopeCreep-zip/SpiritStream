@@ -80,13 +80,26 @@
   IfFileExists "$1\indexes\*.*" 0 +2
     CopyFiles /SILENT "$1\indexes\*.*" "$0\indexes"
 
-  ; Create migration marker file
-  FileOpen $2 "$0\.migrated_from_legacy" w
-  FileWrite $2 "Migrated from: $1$\r$\n"
-  FileWrite $2 "Migration date: ${__DATE__} ${__TIME__}$\r$\n"
-  FileClose $2
+  ; Verify migration succeeded by checking profiles exist in new location
+  IfFileExists "$0\profiles\*.*" 0 migration_failed
+    DetailPrint "Migration verified - profiles exist in new location"
 
-  DetailPrint "User data migration completed successfully"
+    ; Create migration marker file before cleanup
+    FileOpen $2 "$0\.migrated_from_legacy" w
+    FileWrite $2 "Migrated from: $1$\r$\n"
+    FileWrite $2 "Migration date: ${__DATE__} ${__TIME__}$\r$\n"
+    FileWrite $2 "Status: Success - legacy directory removed$\r$\n"
+    FileClose $2
+
+    ; Delete the legacy directory now that migration is confirmed
+    DetailPrint "Removing legacy directory: $1"
+    RMDir /r "$1"
+    DetailPrint "User data migration completed successfully"
+    Goto skip_migration
+
+  migration_failed:
+  DetailPrint "WARNING: Migration verification failed - keeping legacy data"
+  ; Don't delete legacy dir if migration failed
 
   skip_migration:
 !macroend
