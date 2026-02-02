@@ -1473,19 +1473,35 @@ async fn invoke_command(
         "load_profile" => {
             let name: String = get_arg(&payload, "name")?;
             let password: Option<String> = get_opt_arg(&payload, "password")?;
-            let profile = state
+            let mut profile = state
                 .profile_manager
                 .load_with_key_decryption(&name, password.as_deref())
                 .await?;
+
+            // Migration: If profile has default settings, migrate from legacy global settings
+            if profile.settings.is_default() {
+                let global_settings = state.settings_manager.load()?;
+                if global_settings.has_legacy_profile_settings() {
+                    log::info!("Migrating legacy settings to profile: {}", name);
+                    profile.settings = global_settings.to_legacy_profile_settings();
+                    // Save the migrated profile
+                    state
+                        .profile_manager
+                        .save_with_key_encryption(&profile, password.as_deref())
+                        .await?;
+                    log::info!("Profile migrated successfully: {}", name);
+                }
+            }
+
             Ok(json!(profile))
         }
         "save_profile" => {
             let profile: Profile = get_arg(&payload, "profile")?;
             let password: Option<String> = get_opt_arg(&payload, "password")?;
-            let settings = state.settings_manager.load()?;
+            // encrypt_stream_keys is now per-profile (profile.settings.encrypt_stream_keys)
             state
                 .profile_manager
-                .save_with_key_encryption(&profile, password.as_deref(), settings.encrypt_stream_keys)
+                .save_with_key_encryption(&profile, password.as_deref())
                 .await?;
             state.event_bus.emit("profile_changed", json!({ "action": "saved", "name": profile.name }));
             Ok(Value::Null)

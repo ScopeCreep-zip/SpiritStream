@@ -317,14 +317,67 @@ impl ProfileManager {
         Ok(())
     }
 
+    /// Encrypt sensitive fields in profile settings (OBS password, Discord webhook, backend token)
+    fn encrypt_profile_settings(&self, profile: &mut Profile) -> Result<(), String> {
+        // Encrypt OBS password
+        if !profile.settings.obs.password.is_empty()
+            && !Encryption::is_stream_key_encrypted(&profile.settings.obs.password)
+        {
+            profile.settings.obs.password =
+                Encryption::encrypt_stream_key(&profile.settings.obs.password, &self.app_data_dir)?;
+        }
+
+        // Encrypt Discord webhook URL
+        if !profile.settings.discord.webhook_url.is_empty()
+            && !Encryption::is_stream_key_encrypted(&profile.settings.discord.webhook_url)
+        {
+            profile.settings.discord.webhook_url =
+                Encryption::encrypt_stream_key(&profile.settings.discord.webhook_url, &self.app_data_dir)?;
+        }
+
+        // Encrypt backend token
+        if !profile.settings.backend.token.is_empty()
+            && !Encryption::is_stream_key_encrypted(&profile.settings.backend.token)
+        {
+            profile.settings.backend.token =
+                Encryption::encrypt_stream_key(&profile.settings.backend.token, &self.app_data_dir)?;
+        }
+
+        Ok(())
+    }
+
+    /// Decrypt sensitive fields in profile settings (OBS password, Discord webhook, backend token)
+    fn decrypt_profile_settings(&self, profile: &mut Profile) -> Result<(), String> {
+        // Decrypt OBS password
+        if Encryption::is_stream_key_encrypted(&profile.settings.obs.password) {
+            profile.settings.obs.password =
+                Encryption::decrypt_stream_key(&profile.settings.obs.password, &self.app_data_dir)?;
+        }
+
+        // Decrypt Discord webhook URL
+        if Encryption::is_stream_key_encrypted(&profile.settings.discord.webhook_url) {
+            profile.settings.discord.webhook_url =
+                Encryption::decrypt_stream_key(&profile.settings.discord.webhook_url, &self.app_data_dir)?;
+        }
+
+        // Decrypt backend token
+        if Encryption::is_stream_key_encrypted(&profile.settings.backend.token) {
+            profile.settings.backend.token =
+                Encryption::decrypt_stream_key(&profile.settings.backend.token, &self.app_data_dir)?;
+        }
+
+        Ok(())
+    }
+
     /// Save a profile with optional stream key encryption
-    /// encrypt_keys: Whether to encrypt individual stream keys (based on settings)
+    /// Uses the profile's own `settings.encrypt_stream_keys` to determine encryption
     pub async fn save_with_key_encryption(
         &self,
         profile: &Profile,
         password: Option<&str>,
-        encrypt_keys: bool,
     ) -> Result<(), String> {
+        let encrypt_keys = profile.settings.encrypt_stream_keys;
+
         log::info!("Saving profile: {} (encrypted: {}, stream keys encrypted: {})",
             profile.name,
             password.is_some(),
@@ -337,10 +390,13 @@ impl ProfileManager {
         // Clone the profile so we can modify it
         let mut profile_to_save = profile.clone();
 
-        // Encrypt stream keys if the setting is enabled
+        // Encrypt stream keys if the profile setting is enabled
         if encrypt_keys {
             self.encrypt_stream_keys(&mut profile_to_save)?;
         }
+
+        // Always encrypt sensitive profile settings (OBS password, Discord webhook, backend token)
+        self.encrypt_profile_settings(&mut profile_to_save)?;
 
         // Serialize to JSON
         let content = serde_json::to_string_pretty(&profile_to_save)
@@ -381,13 +437,16 @@ impl ProfileManager {
         Ok(())
     }
 
-    /// Load a profile and always decrypt stream keys (if they were encrypted)
+    /// Load a profile and always decrypt stream keys and sensitive settings (if encrypted)
     pub async fn load_with_key_decryption(&self, name: &str, password: Option<&str>) -> Result<Profile, String> {
         log::info!("Loading profile: {name}");
         let mut profile = self.load(name, password).await?;
 
         // Always try to decrypt stream keys (they'll be returned as-is if not encrypted)
         self.decrypt_stream_keys(&mut profile)?;
+
+        // Always try to decrypt sensitive profile settings
+        self.decrypt_profile_settings(&mut profile)?;
 
         log::info!("Profile loaded successfully: {} ({} output groups, {} total targets)",
             name,

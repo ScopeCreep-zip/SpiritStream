@@ -3,13 +3,80 @@
  * Auto-generated from data/streaming-platforms.json
  */
 import type { Platform } from './generated-platforms';
+import type { ObsIntegrationDirection } from './api';
 export type { Platform };
 
+// ============================================================================
+// Profile Settings Types (per-profile configuration)
+// ============================================================================
+
 /**
- * Chat types
+ * Backend/Remote access settings for a profile
  */
-import type { ChatConfig } from './chat';
-export type { ChatConfig };
+export interface BackendSettings {
+  remoteEnabled: boolean;
+  uiEnabled: boolean;
+  host: string;
+  port: number;
+  token: string;
+}
+
+/**
+ * OBS WebSocket integration settings for a profile
+ */
+export interface ObsSettings {
+  host: string;
+  port: number;
+  password: string;
+  useAuth: boolean;
+  direction: ObsIntegrationDirection;
+  autoConnect: boolean;
+}
+
+/**
+ * Discord webhook integration settings for a profile
+ */
+export interface DiscordSettings {
+  webhookEnabled: boolean;
+  webhookUrl: string;
+  goLiveMessage: string;
+  cooldownEnabled: boolean;
+  cooldownSeconds: number;
+  imagePath: string;
+}
+
+/**
+ * Chat integration settings for a profile
+ */
+export interface ChatSettings {
+  twitchChannel: string;
+  youtubeChannelId: string;
+  youtubeApiKey: string;
+  twitchSendEnabled: boolean;
+  youtubeSendEnabled: boolean;
+  sendAllEnabled: boolean;
+  crosspostEnabled: boolean;
+  youtubeUseApiKey: boolean;
+}
+
+/**
+ * Per-profile settings (theme, language, integrations, security)
+ */
+export interface ProfileSettings {
+  // UI Settings
+  themeId: string;
+  language: string;
+  showNotifications: boolean;
+
+  // Security Settings
+  encryptStreamKeys: boolean;
+
+  // Integration Settings
+  backend: BackendSettings;
+  obs: ObsSettings;
+  discord: DiscordSettings;
+  chat: ChatSettings;
+}
 
 /**
  * RTMP Input configuration - where the stream enters the system
@@ -86,9 +153,8 @@ export interface Profile {
   encrypted: boolean;
   input: RtmpInput;
   outputGroups: OutputGroup[];
-  theme?: string; // Theme ID (optional, falls back to global setting)
-  language?: string; // Language code (optional, falls back to global setting)
-  chatConfigs?: ChatConfig[]; // Chat platform configurations
+  /** Per-profile settings (theme, integrations, security) */
+  settings: ProfileSettings;
 }
 
 /**
@@ -173,15 +239,61 @@ export const createDefaultStreamTarget = (service: Platform): StreamTarget => ({
   streamKey: '',
 });
 
+export const createDefaultBackendSettings = (): BackendSettings => ({
+  remoteEnabled: false,
+  uiEnabled: false,
+  host: '127.0.0.1',
+  port: 8008,
+  token: '',
+});
+
+export const createDefaultObsSettings = (): ObsSettings => ({
+  host: 'localhost',
+  port: 4455,
+  password: '',
+  useAuth: false,
+  direction: 'disabled',
+  autoConnect: false,
+});
+
+export const createDefaultDiscordSettings = (): DiscordSettings => ({
+  webhookEnabled: false,
+  webhookUrl: '',
+  goLiveMessage: '**Stream is now live!** ðŸŽ®\n\nCome join the stream!',
+  cooldownEnabled: true,
+  cooldownSeconds: 60,
+  imagePath: '',
+});
+
+export const createDefaultChatSettings = (): ChatSettings => ({
+  twitchChannel: '',
+  youtubeChannelId: '',
+  youtubeApiKey: '',
+  twitchSendEnabled: false,
+  youtubeSendEnabled: false,
+  sendAllEnabled: true,
+  crosspostEnabled: false,
+  youtubeUseApiKey: false,
+});
+
+export const createDefaultProfileSettings = (): ProfileSettings => ({
+  themeId: 'spirit-dark',
+  language: 'en',
+  showNotifications: true,
+  encryptStreamKeys: true,
+  backend: createDefaultBackendSettings(),
+  obs: createDefaultObsSettings(),
+  discord: createDefaultDiscordSettings(),
+  chat: createDefaultChatSettings(),
+});
+
 export const createDefaultProfile = (name: string = 'New Profile'): Profile => ({
   id: crypto.randomUUID(),
   name,
   encrypted: false,
   input: createDefaultRtmpInput(),
   outputGroups: [createPassthroughOutputGroup()], // Always include default passthrough group
-  theme: undefined, // Will fall back to global setting
-  language: undefined, // Will fall back to global setting
-  chatConfigs: [], // No chat platforms configured by default
+  settings: createDefaultProfileSettings(),
 });
 
 /**
