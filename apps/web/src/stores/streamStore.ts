@@ -10,7 +10,7 @@ import type { StreamStats, StreamStatusType, TargetStats } from '@/types/stream'
 import type { ObsIntegrationDirection } from '@/types/api';
 
 // OBS integration delay (in ms) before triggering OBS after SpiritStream starts
-const OBS_TRIGGER_DELAY_MS = 1500;
+const OBS_TRIGGER_DELAY_MS = 2000;
 
 /**
  * Trigger OBS stream start/stop based on integration direction
