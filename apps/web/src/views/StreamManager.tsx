@@ -48,25 +48,19 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
   // Enable all groups and targets by default when profile changes
   useEffect(() => {
     if (current) {
-      // Enable all output groups
+      // Enable all output groups unconditionally when profile changes
       const allGroupIds = current.outputGroups.map((g) => g.id);
       allGroupIds.forEach((id) => {
-        if (!enabledGroups.has(id)) {
-          setGroupEnabled(id, true);
-        }
+        setGroupEnabled(id, true);
       });
 
-      // Enable all targets
+      // Enable all targets unconditionally when profile changes
       const allTargetIds = current.outputGroups.flatMap((g) => g.streamTargets.map((t) => t.id));
       allTargetIds.forEach((id) => {
-        if (!enabledTargets.has(id)) {
-          setTargetEnabled(id, true);
-        }
+        setTargetEnabled(id, true);
       });
     }
-    // Only re-run when profile ID changes, not on every enable/disable
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current?.id]);
+  }, [current?.id, setGroupEnabled, setTargetEnabled]);
 
   const handleStartAll = async () => {
     if (!current) {
