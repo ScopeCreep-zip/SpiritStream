@@ -10,6 +10,7 @@ import {
   EyeOff,
   AlertCircle,
   CheckCircle2,
+  Copy,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -143,6 +144,17 @@ export function ObsPanel() {
     }
   }, [password, config, autoSave]);
 
+  // Copy password to clipboard
+  const handleCopyPassword = useCallback(async () => {
+    if (!password) return;
+    try {
+      await navigator.clipboard.writeText(password);
+      toast.success(t('common.copied'));
+    } catch {
+      toast.error(t('common.error'));
+    }
+  }, [password, t]);
+
   // Handle useAuth toggle with immediate save (no debounce to avoid race conditions)
   const handleUseAuthChange = useCallback(
     async (checked: boolean) => {
@@ -274,29 +286,36 @@ export function ObsPanel() {
 
             {/* Password Field */}
             {useAuth && (
-              <div className="relative">
-                <Input
-                  label={t('obs.password')}
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  onBlur={handlePasswordBlur}
-                  placeholder={t('obs.passwordPlaceholder')}
-                  disabled={isConnected}
-                />
-                <button
-                  type="button"
+              <div className="flex items-end gap-1">
+                <div className="flex-1">
+                  <Input
+                    label={t('obs.password')}
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onBlur={handlePasswordBlur}
+                    placeholder={t('obs.passwordPlaceholder')}
+                    disabled={isConnected}
+                  />
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
                   onClick={() => setShowPassword(!showPassword)}
-                  className={cn(
-                    'absolute right-3 top-[34px]',
-                    'p-1 rounded-md',
-                    'text-[var(--text-tertiary)] hover:text-[var(--text-primary)]',
-                    'transition-colors'
-                  )}
-                  title={showPassword ? t('obs.hidePassword') : t('obs.showPassword')}
+                  aria-label={showPassword ? t('obs.hidePassword') : t('obs.showPassword')}
+                  disabled={isConnected}
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleCopyPassword}
+                  aria-label={t('common.copy')}
+                  disabled={isConnected || !password}
+                >
+                  <Copy className="w-4 h-4" />
+                </Button>
               </div>
             )}
 

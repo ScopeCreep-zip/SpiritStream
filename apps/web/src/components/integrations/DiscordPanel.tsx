@@ -11,6 +11,9 @@ import {
   Image as ImageIcon,
   X,
   Smile,
+  Eye,
+  EyeOff,
+  Copy,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -248,6 +251,17 @@ export function DiscordPanel() {
     }
   }, [webhookUrl, t]);
 
+  // Copy webhook URL to clipboard
+  const handleCopyWebhookUrl = useCallback(async () => {
+    if (!webhookUrl) return;
+    try {
+      await navigator.clipboard.writeText(webhookUrl);
+      toast.success(t('common.copied'));
+    } catch {
+      toast.error(t('common.error'));
+    }
+  }, [webhookUrl, t]);
+
   // Validate webhook URL format
   const isValidWebhookUrl =
     webhookUrl.startsWith('https://discord.com/api/webhooks/') ||
@@ -287,38 +301,37 @@ export function DiscordPanel() {
 
             {/* Webhook URL */}
             <div className="space-y-2">
-              <div style={{ position: 'relative' }}>
-                <Input
-                  label={t('discord.webhookUrl')}
-                  type={showWebhookUrl ? 'text' : 'password'}
-                  value={webhookUrl}
-                  onChange={(e) => setWebhookUrl(e.target.value)}
-                  onBlur={handleUrlBlur}
-                  placeholder="https://discord.com/api/webhooks/..."
-                  disabled={!webhookEnabled}
-                  autoComplete="off"
-                  style={{ paddingRight: '60px' }}
-                />
-                <button
-                  type="button"
+              <div className="flex items-end gap-1">
+                <div className="flex-1">
+                  <Input
+                    label={t('discord.webhookUrl')}
+                    type={showWebhookUrl ? 'text' : 'password'}
+                    value={webhookUrl}
+                    onChange={(e) => setWebhookUrl(e.target.value)}
+                    onBlur={handleUrlBlur}
+                    placeholder="https://discord.com/api/webhooks/..."
+                    disabled={!webhookEnabled}
+                    autoComplete="off"
+                  />
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
                   onClick={() => setShowWebhookUrl(!showWebhookUrl)}
                   aria-label={showWebhookUrl ? t('common.hide') : t('common.show')}
-                  aria-pressed={showWebhookUrl}
-                  style={{
-                    position: 'absolute',
-                    right: '12px',
-                    top: '32px',
-                    background: 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: 'var(--text-tertiary)',
-                    fontSize: '12px',
-                    padding: '4px 8px',
-                  }}
                   disabled={!webhookEnabled}
                 >
-                  {showWebhookUrl ? t('common.hide') : t('common.show')}
-                </button>
+                  {showWebhookUrl ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleCopyWebhookUrl}
+                  aria-label={t('common.copy')}
+                  disabled={!webhookEnabled || !webhookUrl}
+                >
+                  <Copy className="w-4 h-4" />
+                </Button>
               </div>
               {webhookUrl && !isValidWebhookUrl && (
                 <div className="flex items-center gap-2 text-xs text-[var(--status-error)]">
