@@ -47,8 +47,8 @@
       "description": "配置应用程序首选项"
     },
     "integrations": {
-      "title": "Integrations",
-      "description": "Connect with external applications"
+      "title": "??",
+      "description": "??????"
     }
   },
   "dashboard": {
@@ -93,7 +93,8 @@
     "noOutputGroups": "未配置输出组",
     "encoderSettings": "编码器设置",
     "encoderSettingsDescription": "每个输出的编码器配置",
-    "noEncoderSettings": "无编码器配置"
+    "noEncoderSettings": "无编码器配置",
+    "testingTarget": "???? {{name}}..."
   },
   "profiles": {
     "newProfile": "新档案",
@@ -444,7 +445,30 @@
     "upToDate": "FFmpeg 是最新的",
     "deleteFFmpeg": "删除",
     "deleteFFmpegConfirm": "确定要删除 FFmpeg 吗？您可以随时重新下载。",
-    "deletingFFmpeg": "正在删除 FFmpeg..."
+    "deletingFFmpeg": "正在删除 FFmpeg...",
+    "profileSettings": "??????",
+    "globalSettings": "????",
+    "appearance": "??",
+    "appearanceDescription": "????????????",
+    "notificationsSecurity": "?????",
+    "notificationsSecurityDescription": "????????????????",
+    "remoteAccess": "????",
+    "remoteAccessDescription": "???? HTTP API?????????? SpiritStream?",
+    "remoteAccessToggle": "???? Web ??",
+    "remoteAccessToggleDescription": "????API ???? localhost?????????",
+    "remoteAccessUiToggle": "????? Web ??",
+    "remoteAccessUiToggleDescription": "?????????? UI ???????????",
+    "remoteAccessHost": "????",
+    "remoteAccessHostHelper": "?? 0.0.0.0 ???????",
+    "remoteAccessPort": "??",
+    "remoteAccessToken": "????????",
+    "remoteAccessTokenHelper": "?????????? Bearer ??????????",
+    "appBehavior": "????",
+    "appBehaviorDescription": "??????????",
+    "dataManagement": "????",
+    "dataManagementDescription": "??????????",
+    "loadError": "??????",
+    "loadProfileFirst": "???????????????"
   },
   "modals": {
     "createNewProfile": "创建新的个人资料",
@@ -587,7 +611,13 @@
     "lost": "Connection to backend lost. Attempting to reconnect...",
     "lostWithError": "Connection lost: {{error}}",
     "lostTitle": "Connection Lost",
-    "lostBody": "Lost connection to the backend server."
+    "lostBody": "Lost connection to the backend server.",
+    "attemptingConnection": "???????",
+    "errorTitle": "????????",
+    "errorDescription": "?????????????????????",
+    "helpText": "????????????????????? URL ?????",
+    "retry": "??",
+    "retrying": "????..."
   },
   "common": {
     "save": "节省",
@@ -634,7 +664,9 @@
     "encrypted": "（加密）",
     "copySuffix": "（复制）",
     "switchToDarkMode": "切换到深色模式",
-    "switchToLightMode": "切换到灯光模式"
+    "switchToLightMode": "切换到灯光模式",
+    "loadProfileFirst": "??????????",
+    "select": "??"
   },
   "errors": {
     "loadingFailed": "加载失败",
@@ -704,7 +736,15 @@
     "keyRotationSuccess": "机器钥匙旋转。更新了 {{profiles}} 配置文件，重新加密了 {{keys}} 密钥。",
     "keyRotationFailed": "密钥轮换失败：{{error}}",
     "groupStarted": "输出组已启动",
-    "groupStopped": "输出组已停止"
+    "groupStopped": "输出组已停止",
+    "validatingConfig": "??????...",
+    "configValidNoTargets": "????????????",
+    "testingConnectivity": "????? {{count}} ??????...",
+    "targetTestPassed": "? {{name}}?????{{ms}}???",
+    "targetTestFailed": "? {{name}}?{{message}}",
+    "allTestsPassed": "?? {{count}} ???????????",
+    "someTestsFailed": "{{passed}} ????{{failed}} ???",
+    "allTestsFailed": "?? {{count}} ?????????"
   },
   "fileBrowser": {
     "selectDirectory": "Select Directory",
@@ -729,54 +769,54 @@
     "selectedDirectory": "Selected directory:"
   },
   "obs": {
-    "title": "OBS Integration",
-    "description": "Connect to OBS Studio via WebSocket",
-    "connection": "Connection",
-    "connectionSettings": "Connection Settings",
-    "host": "Host",
+    "title": "OBS ??",
+    "description": "?? WebSocket ??? OBS Studio",
+    "connection": "??",
+    "connectionSettings": "????",
+    "host": "??",
     "hostPlaceholder": "localhost",
-    "port": "Port",
-    "authentication": "Authentication",
-    "password": "Password",
-    "passwordPlaceholder": "Enter password",
-    "passwordSetPlaceholder": "Password set (type to change)",
-    "showPassword": "Show password",
-    "hidePassword": "Hide password",
-    "useAuthentication": "Use Authentication",
-    "autoConnect": "Auto-connect on startup",
-    "status": "Status",
-    "connected": "Connected",
-    "connecting": "Connecting...",
-    "disconnected": "Disconnected",
-    "error": "Error",
-    "connect": "Connect",
-    "disconnect": "Disconnect",
-    "integration": "Integration",
-    "integrationDirection": "Sync Direction",
-    "integrationDirectionDescription": "Control how streams sync between OBS and SpiritStream",
+    "port": "??",
+    "authentication": "????",
+    "password": "??",
+    "passwordPlaceholder": "????",
+    "passwordSetPlaceholder": "????????????",
+    "showPassword": "????",
+    "hidePassword": "????",
+    "useAuthentication": "??????",
+    "autoConnect": "???????",
+    "status": "??",
+    "connected": "???",
+    "connecting": "???...",
+    "disconnected": "???",
+    "error": "??",
+    "connect": "??",
+    "disconnect": "????",
+    "integration": "??",
+    "integrationDirection": "????",
+    "integrationDirectionDescription": "?? OBS ? SpiritStream ????????",
     "directions": {
-      "disabled": "Disabled",
-      "disabledDescription": "No automatic sync between OBS and SpiritStream",
-      "obsToSpiritstream": "OBS to SpiritStream",
-      "obsToSpiritstreamDescription": "When OBS starts streaming, SpiritStream starts",
-      "spiritstreamToObs": "SpiritStream to OBS",
-      "spiritstreamToObsDescription": "When SpiritStream starts streaming, OBS starts",
-      "bidirectional": "Bidirectional",
-      "bidirectionalDescription": "Either can trigger the other to start/stop"
+      "disabled": "???",
+      "disabledDescription": "OBS ? SpiritStream ????????",
+      "obsToSpiritstream": "OBS ? SpiritStream",
+      "obsToSpiritstreamDescription": "? OBS ??????SpiritStream ??",
+      "spiritstreamToObs": "SpiritStream ? OBS",
+      "spiritstreamToObsDescription": "? SpiritStream ??????OBS ??",
+      "bidirectional": "??",
+      "bidirectionalDescription": "????????????/??"
     },
-    "streamControl": "Stream Control",
-    "startStream": "Start Stream",
-    "stopStream": "Stop Stream",
-    "streaming": "Streaming",
-    "notStreaming": "Not Streaming",
+    "streamControl": "????",
+    "startStream": "????",
+    "stopStream": "????",
+    "streaming": "???",
+    "notStreaming": "????",
     "versionInfo": "OBS {{obsVersion}} / WS {{wsVersion}}",
-    "obsVersion": "OBS Version",
-    "websocketVersion": "WebSocket Version",
-    "connectionError": "Connection Error",
-    "connectFailed": "Failed to connect to OBS",
-    "disconnectFailed": "Failed to disconnect from OBS",
-    "configSaved": "OBS configuration saved",
-    "configSaveFailed": "Failed to save OBS configuration"
+    "obsVersion": "OBS ??",
+    "websocketVersion": "WebSocket ??",
+    "connectionError": "????",
+    "connectFailed": "????? OBS",
+    "disconnectFailed": "????? OBS ???",
+    "configSaved": "OBS ?????",
+    "configSaveFailed": "???? OBS ??"
   },
   "notifications": {
     "streamStartedTitle": "Stream Started",
@@ -826,5 +866,17 @@
     },
     "markdownExample": "**bold** *italic* __underline__ ~~strikethrough~~ `code` [link](url)",
     "webhookUrlPlaceholder": "https://discord.com/api/webhooks/..."
+  },
+  "login": {
+    "title": "??????",
+    "description": "? SpiritStream ????????????? API ??????",
+    "tokenLabel": "API ??",
+    "tokenPlaceholder": "?? API ??",
+    "tokenRequired": "?? API ??",
+    "invalidToken": "??? API ??",
+    "connectionError": "?????????",
+    "tokenHint": "API ????????? SPIRITSTREAM_API_TOKEN ????????????",
+    "authenticating": "????...",
+    "submit": "??"
   }
 }
