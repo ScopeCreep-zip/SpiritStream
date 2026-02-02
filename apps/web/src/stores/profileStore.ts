@@ -4,11 +4,16 @@ import i18n from '@/lib/i18n';
 import {
   type Profile,
   type ProfileSummary,
+  type ProfileSettings,
   type OutputGroup,
   type StreamTarget,
   type Platform,
   createDefaultProfile,
 } from '@/types/profile';
+import { useThemeStore } from '@/stores/themeStore';
+import { useLanguageStore, type Language } from '@/stores/languageStore';
+import { useSettingsStore } from '@/stores/settingsStore';
+import { useObsStore } from '@/stores/obsStore';
 
 interface ProfileState {
   // State
@@ -49,6 +54,9 @@ interface ProfileState {
   // Profile mutations (local state updates + auto-save)
   updateProfile: (updates: Partial<Profile>) => Promise<void>;
 
+  // Profile settings mutations
+  updateProfileSettings: (updates: Partial<ProfileSettings>) => Promise<void>;
+
   // Output group mutations (auto-save)
   addOutputGroup: (group: OutputGroup) => Promise<void>;
   updateOutputGroup: (groupId: string, updates: Partial<OutputGroup>) => Promise<void>;
@@ -64,6 +72,28 @@ interface ProfileState {
   removeStreamTarget: (groupId: string, targetId: string) => Promise<void>;
   moveStreamTarget: (fromGroupId: string, toGroupId: string, targetId: string) => Promise<void>;
 }
+
+/**
+ * Apply profile settings to the application
+ * Called when a profile is loaded to sync theme, language, notifications, and OBS config
+ */
+const applyProfileSettings = (settings: ProfileSettings) => {
+  // Apply theme
+  if (settings.themeId) {
+    useThemeStore.getState().setTheme(settings.themeId);
+  }
+
+  // Apply language
+  if (settings.language) {
+    useLanguageStore.getState().setLanguage(settings.language as Language);
+  }
+
+  // Apply notification settings
+  useSettingsStore.getState().setShowNotifications(settings.showNotifications);
+
+  // Sync OBS config from profile
+  useObsStore.getState().syncConfigFromProfile();
+};
 
 // Helper to create a summary from a full profile (using new nested structure)
 const createSummary = (profile: Profile, isEncrypted: boolean = false): ProfileSummary => {
@@ -155,6 +185,11 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         pendingPasswordProfile: null,
         passwordError: null,
       });
+
+      // Apply profile settings (theme, language, notifications)
+      if (profile.settings) {
+        applyProfileSettings(profile.settings);
+      }
 
       // Update summary with actual data if it was encrypted
       if (isEncrypted) {
@@ -321,6 +356,22 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     const current = get().current;
     if (current) {
       set({ current: { ...current, ...updates } });
+      await get().saveProfile();
+    }
+  },
+
+  updateProfileSettings: async (updates) => {
+    const current = get().current;
+    if (current && current.settings) {
+      const newSettings = { ...current.settings, ...updates };
+      set({
+        current: {
+          ...current,
+          settings: newSettings,
+        },
+      });
+      // Apply the updated settings to the UI
+      applyProfileSettings(newSettings);
       await get().saveProfile();
     }
   },

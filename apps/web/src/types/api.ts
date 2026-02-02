@@ -4,37 +4,51 @@
 export type TauriResult<T> = Promise<T>;
 
 /**
- * Settings structure (matches Rust Settings model)
+ * Global application settings (app-wide, not per-profile)
+ *
+ * Profile-specific settings (theme, language, integrations) have been moved
+ * to ProfileSettings in profile.ts
  */
 export interface AppSettings {
-  language: string;
+  // App-level behavior
   startMinimized: boolean;
-  showNotifications: boolean;
+
+  // System-wide FFmpeg configuration
   ffmpegPath: string;
   autoDownloadFfmpeg: boolean;
-  encryptStreamKeys: boolean;
+
+  // App-wide log management
   logRetentionDays: number;
-  themeId: string;
-  backendRemoteEnabled: boolean;
-  backendUiEnabled: boolean;
-  backendHost: string;
-  backendPort: number;
-  backendToken: string;
-  // OBS WebSocket settings
-  obsHost: string;
-  obsPort: number;
-  obsPassword: string;
-  obsUseAuth: boolean;
-  obsDirection: ObsIntegrationDirection;
-  obsAutoConnect: boolean;
+
+  // Tracks which profile to load on startup
   lastProfile: string | null;
-  // Discord webhook settings
-  discordWebhookEnabled: boolean;
-  discordWebhookUrl: string;
-  discordGoLiveMessage: string;
-  discordCooldownEnabled: boolean;
-  discordCooldownSeconds: number;
-  discordImagePath: string;
+
+  // =========================================================================
+  // LEGACY FIELDS (read for migration, not written back)
+  // These have moved to ProfileSettings but are kept here for backward
+  // compatibility when reading old settings from the backend.
+  // =========================================================================
+  language?: string;
+  showNotifications?: boolean;
+  encryptStreamKeys?: boolean;
+  themeId?: string;
+  backendRemoteEnabled?: boolean;
+  backendUiEnabled?: boolean;
+  backendHost?: string;
+  backendPort?: number;
+  backendToken?: string;
+  obsHost?: string;
+  obsPort?: number;
+  obsPassword?: string;
+  obsUseAuth?: boolean;
+  obsDirection?: ObsIntegrationDirection;
+  obsAutoConnect?: boolean;
+  discordWebhookEnabled?: boolean;
+  discordWebhookUrl?: string;
+  discordGoLiveMessage?: string;
+  discordCooldownEnabled?: boolean;
+  discordCooldownSeconds?: number;
+  discordImagePath?: string;
 }
 
 /**
