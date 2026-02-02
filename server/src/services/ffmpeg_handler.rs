@@ -907,14 +907,12 @@ impl FFmpegHandler {
         if let Ok(mut stopping) = self.stopping_groups.lock() {
             stopping.insert(group_id.to_string());
         }
-        let (removed, should_stop_relay, should_update_relay) = {
+        let (removed, should_stop_relay) = {
             let mut processes = self.processes.lock()
                 .map_err(|e| format!("Lock poisoned: {e}"))?;
             let removed = processes.remove(group_id);
             let should_stop_relay = processes.is_empty();
-            // Update relay if other groups are still running
-            let should_update_relay = !should_stop_relay && removed.is_some();
-            (removed, should_stop_relay, should_update_relay)
+            (removed, should_stop_relay)
         };
 
         if let Some(mut info) = removed {
@@ -923,16 +921,11 @@ impl FFmpegHandler {
             self.free_port_offset(group_id);
         }
 
+        // Only stop relay when ALL groups are stopped
+        // Don't restart relay when stopping individual groups - this would interrupt
+        // the input for remaining groups and cause them to fail
         if should_stop_relay {
             self.stop_relay();
-        } else if should_update_relay {
-            // Restart relay with remaining active groups
-            let incoming_url = self.resolve_active_incoming_url()?;
-            let remaining_groups = self.collect_active_group_ids()?;
-            if !remaining_groups.is_empty() {
-                log::info!("[FFmpeg] Updating relay after stopping group {group_id}");
-                self.ensure_relay_running(&incoming_url, &remaining_groups)?;
-            }
         }
 
         Ok(())
