@@ -60,7 +60,6 @@ export function ObsPanel() {
     showPassword,
     setShowPassword,
     loadState,
-    loadConfig,
     updateConfig,
     connect,
     disconnect,
@@ -76,12 +75,12 @@ export function ObsPanel() {
 
   // Debounce timer ref
   const saveTimeoutRef = useRef<number | null>(null);
+  const pendingUpdatesRef = useRef<Parameters<typeof updateConfig>[0] | null>(null);
 
-  // Load initial state and config
+  // Load initial OBS connection state (not config - that comes from profile)
   useEffect(() => {
     loadState();
-    loadConfig();
-  }, [loadState, loadConfig]);
+  }, [loadState]);
 
   // Sync form with config when loaded
   useEffect(() => {
@@ -95,25 +94,36 @@ export function ObsPanel() {
     }
   }, [config]);
 
-  // Cleanup debounce timer on unmount
+  // Flush pending saves on unmount (don't lose unsaved changes)
   useEffect(() => {
     return () => {
       if (saveTimeoutRef.current) {
         window.clearTimeout(saveTimeoutRef.current);
       }
+      // Flush any pending updates
+      if (pendingUpdatesRef.current) {
+        updateConfig(pendingUpdatesRef.current).catch((error) => {
+          console.error('Failed to flush OBS config on unmount:', error);
+        });
+        pendingUpdatesRef.current = null;
+      }
     };
-  }, []);
+  }, [updateConfig]);
 
   // Auto-save with debounce
   const autoSave = useCallback(
     (updates: Parameters<typeof updateConfig>[0]) => {
+      // Track pending updates for flush on unmount
+      pendingUpdatesRef.current = { ...pendingUpdatesRef.current, ...updates };
+
       if (saveTimeoutRef.current) {
         window.clearTimeout(saveTimeoutRef.current);
       }
 
       saveTimeoutRef.current = window.setTimeout(async () => {
         try {
-          await updateConfig(updates);
+          await updateConfig(pendingUpdatesRef.current!);
+          pendingUpdatesRef.current = null; // Clear after successful save
         } catch (error) {
           console.error('Failed to save OBS config:', error);
         }

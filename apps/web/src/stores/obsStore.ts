@@ -108,12 +108,25 @@ export const useObsStore = create<ObsStoreState>((set, get) => ({
   /**
    * Sync OBS config from the current profile's settings
    * Called when a profile is loaded or profile settings change
+   * Also updates the backend's in-memory OBS handler
    */
   syncConfigFromProfile: () => {
     const current = useProfileStore.getState().current;
     if (current?.settings?.obs) {
       const config = obsSettingsToConfig(current.settings.obs);
       set({ config });
+
+      // Also update the backend's in-memory OBS handler so it uses the profile's config
+      api.obs.setConfig({
+        host: config.host,
+        port: config.port,
+        password: current.settings.obs.password,
+        useAuth: config.useAuth,
+        direction: config.direction,
+        autoConnect: config.autoConnect,
+      }).catch((error) => {
+        console.error('Failed to sync OBS config to backend:', error);
+      });
     }
   },
 

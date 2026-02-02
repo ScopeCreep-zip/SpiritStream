@@ -69,6 +69,7 @@ export function DiscordPanel() {
 
   // Refs
   const saveTimeoutRef = useRef<number | null>(null);
+  const pendingUpdatesRef = useRef<Partial<DiscordSettings> | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
 
@@ -86,14 +87,23 @@ export function DiscordPanel() {
     }
   }, [discordSettings]);
 
-  // Cleanup debounce timer on unmount
+  // Flush pending saves on unmount (don't lose unsaved changes)
   useEffect(() => {
     return () => {
       if (saveTimeoutRef.current) {
         window.clearTimeout(saveTimeoutRef.current);
       }
+      // Flush any pending updates
+      if (pendingUpdatesRef.current && discordSettings) {
+        updateProfileSettings({
+          discord: { ...discordSettings, ...pendingUpdatesRef.current },
+        }).catch((error) => {
+          console.error('Failed to flush Discord settings on unmount:', error);
+        });
+        pendingUpdatesRef.current = null;
+      }
     };
-  }, []);
+  }, [discordSettings, updateProfileSettings]);
 
   // Close emoji picker when clicking outside
   useEffect(() => {
@@ -112,6 +122,9 @@ export function DiscordPanel() {
   // Auto-save with debounce - saves to profile settings
   const autoSave = useCallback(
     (updates: Partial<DiscordSettings>) => {
+      // Track pending updates for flush on unmount
+      pendingUpdatesRef.current = { ...pendingUpdatesRef.current, ...updates };
+
       if (saveTimeoutRef.current) {
         window.clearTimeout(saveTimeoutRef.current);
       }
@@ -120,8 +133,9 @@ export function DiscordPanel() {
         if (!discordSettings) return;
         try {
           await updateProfileSettings({
-            discord: { ...discordSettings, ...updates },
+            discord: { ...discordSettings, ...pendingUpdatesRef.current },
           });
+          pendingUpdatesRef.current = null; // Clear after successful save
         } catch (error) {
           console.error('Failed to save Discord setting:', error);
         }
