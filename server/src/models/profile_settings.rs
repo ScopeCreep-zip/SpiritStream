@@ -248,18 +248,18 @@ impl ProfileSettings {
             && self.language == default_language()
             && self.show_notifications == default_show_notifications()
             && self.encrypt_stream_keys == default_encrypt_stream_keys()
-            && self.backend.remote_enabled == false
-            && self.backend.ui_enabled == false
+            && !self.backend.remote_enabled
+            && !self.backend.ui_enabled
             && self.backend.host == default_backend_host()
             && self.backend.port == default_backend_port()
             && self.backend.token.is_empty()
             && self.obs.host == default_obs_host()
             && self.obs.port == default_obs_port()
             && self.obs.password.is_empty()
-            && self.obs.use_auth == false
+            && !self.obs.use_auth
             && self.obs.direction == ObsIntegrationDirection::default()
-            && self.obs.auto_connect == false
-            && self.discord.webhook_enabled == false
+            && !self.obs.auto_connect
+            && !self.discord.webhook_enabled
             && self.discord.webhook_url.is_empty()
             && self.discord.go_live_message == default_discord_go_live_message()
             && self.discord.cooldown_enabled == default_discord_cooldown_enabled()
