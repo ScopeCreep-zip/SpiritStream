@@ -10,6 +10,7 @@ import {
   EyeOff,
   AlertCircle,
   CheckCircle2,
+  Copy,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -59,7 +60,6 @@ export function ObsPanel() {
     showPassword,
     setShowPassword,
     loadState,
-    loadConfig,
     updateConfig,
     connect,
     disconnect,
@@ -75,12 +75,12 @@ export function ObsPanel() {
 
   // Debounce timer ref
   const saveTimeoutRef = useRef<number | null>(null);
+  const pendingUpdatesRef = useRef<Parameters<typeof updateConfig>[0] | null>(null);
 
-  // Load initial state and config
+  // Load initial OBS connection state (not config - that comes from profile)
   useEffect(() => {
     loadState();
-    loadConfig();
-  }, [loadState, loadConfig]);
+  }, [loadState]);
 
   // Sync form with config when loaded
   useEffect(() => {
@@ -94,25 +94,36 @@ export function ObsPanel() {
     }
   }, [config]);
 
-  // Cleanup debounce timer on unmount
+  // Flush pending saves on unmount (don't lose unsaved changes)
   useEffect(() => {
     return () => {
       if (saveTimeoutRef.current) {
         window.clearTimeout(saveTimeoutRef.current);
       }
+      // Flush any pending updates
+      if (pendingUpdatesRef.current) {
+        updateConfig(pendingUpdatesRef.current).catch((error) => {
+          console.error('Failed to flush OBS config on unmount:', error);
+        });
+        pendingUpdatesRef.current = null;
+      }
     };
-  }, []);
+  }, [updateConfig]);
 
   // Auto-save with debounce
   const autoSave = useCallback(
     (updates: Parameters<typeof updateConfig>[0]) => {
+      // Track pending updates for flush on unmount
+      pendingUpdatesRef.current = { ...pendingUpdatesRef.current, ...updates };
+
       if (saveTimeoutRef.current) {
         window.clearTimeout(saveTimeoutRef.current);
       }
 
       saveTimeoutRef.current = window.setTimeout(async () => {
         try {
-          await updateConfig(updates);
+          await updateConfig(pendingUpdatesRef.current!);
+          pendingUpdatesRef.current = null; // Clear after successful save
         } catch (error) {
           console.error('Failed to save OBS config:', error);
         }
@@ -142,6 +153,17 @@ export function ObsPanel() {
       autoSave({ password });
     }
   }, [password, config, autoSave]);
+
+  // Copy password to clipboard
+  const handleCopyPassword = useCallback(async () => {
+    if (!password) return;
+    try {
+      await navigator.clipboard.writeText(password);
+      toast.success(t('common.copied'));
+    } catch {
+      toast.error(t('common.error'));
+    }
+  }, [password, t]);
 
   // Handle useAuth toggle with immediate save (no debounce to avoid race conditions)
   const handleUseAuthChange = useCallback(
@@ -274,29 +296,36 @@ export function ObsPanel() {
 
             {/* Password Field */}
             {useAuth && (
-              <div className="relative">
-                <Input
-                  label={t('obs.password')}
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  onBlur={handlePasswordBlur}
-                  placeholder={t('obs.passwordPlaceholder')}
-                  disabled={isConnected}
-                />
-                <button
-                  type="button"
+              <div className="flex items-end gap-1">
+                <div className="flex-1">
+                  <Input
+                    label={t('obs.password')}
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onBlur={handlePasswordBlur}
+                    placeholder={t('obs.passwordPlaceholder')}
+                    disabled={isConnected}
+                  />
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
                   onClick={() => setShowPassword(!showPassword)}
-                  className={cn(
-                    'absolute right-3 top-[34px]',
-                    'p-1 rounded-md',
-                    'text-[var(--text-tertiary)] hover:text-[var(--text-primary)]',
-                    'transition-colors'
-                  )}
-                  title={showPassword ? t('obs.hidePassword') : t('obs.showPassword')}
+                  aria-label={showPassword ? t('obs.hidePassword') : t('obs.showPassword')}
+                  disabled={isConnected}
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleCopyPassword}
+                  aria-label={t('common.copy')}
+                  disabled={isConnected || !password}
+                >
+                  <Copy className="w-4 h-4" />
+                </Button>
               </div>
             )}
 

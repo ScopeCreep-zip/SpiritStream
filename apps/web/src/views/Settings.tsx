@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FolderOpen, Download, Trash2, Github, BookOpen, RefreshCw } from 'lucide-react';
+import { FolderOpen, Download, Trash2, Github, BookOpen, RefreshCw, Globe, User } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
@@ -24,27 +24,40 @@ import {
   SETTINGS_QUERY_KEY,
 } from '@/hooks/useSettings';
 import { useThemeStore } from '@/stores/themeStore';
+import { useProfileStore } from '@/stores/profileStore';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AppSettings } from '@/types/api';
+import type { ProfileSettings as ProfileSettingsType, BackendSettings } from '@/types/profile';
+import { cn } from '@/lib/cn';
+
+type SettingsTab = 'global' | 'profile';
 
 export function Settings() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
 
-  // TanStack Query hooks for settings management
+  // Current tab (default to profile settings)
+  const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
+
+  // TanStack Query hooks for global settings
   const { data: settings, isLoading, isError } = useSettings();
   const { data: ffmpegData, isLoading: ffmpegLoading } = useFfmpegVersion();
   const updateSettingMutation = useUpdateSetting();
   const saveSettingsMutation = useSaveSettings();
   const refreshFfmpegVersion = useRefreshFfmpegVersion();
 
-  // Sync with remote changes (only invalidates when not mutating)
+  // Profile store for profile settings
+  const currentProfile = useProfileStore((state) => state.current);
+  const updateProfileSettings = useProfileStore((state) => state.updateProfileSettings);
+  const profileSettings = currentProfile?.settings;
+
+  // Sync with remote changes
   useSettingsSync();
 
   // Theme store
   const { currentThemeId, themes, setTheme, refreshThemes } = useThemeStore();
 
-  // Local UI state (not server state)
+  // Local UI state
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [clearInProgress, setClearInProgress] = useState(false);
   const [clearError, setClearError] = useState<string | null>(null);
@@ -60,15 +73,33 @@ export function Settings() {
 
   // Refresh themes on mount
   useEffect(() => {
-    refreshThemes().catch(() => {
-      // Errors are already logged in the store
-    });
+    refreshThemes().catch(() => {});
   }, [refreshThemes]);
 
-  // Helper to update a single setting with optimistic update
-  const updateSetting = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
+  // Helper to update a global setting
+  const updateGlobalSetting = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
     updateSettingMutation.mutate({ key, value });
   };
+
+  // Helper to update a profile setting
+  const updateProfileSetting = useCallback(
+    async <K extends keyof ProfileSettingsType>(key: K, value: ProfileSettingsType[K]) => {
+      if (!profileSettings) return;
+      await updateProfileSettings({ [key]: value });
+    },
+    [profileSettings, updateProfileSettings]
+  );
+
+  // Helper to update nested backend settings
+  const updateBackendSetting = useCallback(
+    async <K extends keyof BackendSettings>(key: K, value: BackendSettings[K]) => {
+      if (!profileSettings) return;
+      await updateProfileSettings({
+        backend: { ...profileSettings.backend, [key]: value },
+      });
+    },
+    [profileSettings, updateProfileSettings]
+  );
 
   const handleBrowseFfmpeg = async () => {
     try {
@@ -82,14 +113,10 @@ export function Settings() {
               multiple: false,
               filters: [{ name: 'FFmpeg', extensions: ['*'] }],
             });
-      if (!selected) {
-        return;
-      }
+      if (!selected) return;
       if (typeof selected === 'string') {
         try {
-          // Validate the path - throws if invalid
           await api.system.validateFfmpegPath(selected);
-          // Path is valid, save it and refresh the version query
           saveSettingsMutation.mutate({ ffmpegPath: selected });
           refreshFfmpegVersion();
         } catch (validationError) {
@@ -128,9 +155,7 @@ export function Settings() {
               multiple: false,
               title: t('settings.selectExportLocation'),
             });
-      if (!selected) {
-        return;
-      }
+      if (!selected) return;
       await api.settings.exportData(selected);
       alert(t('toast.dataExported'));
     } catch (error) {
@@ -185,7 +210,6 @@ export function Settings() {
     try {
       await api.settings.clearData();
       alert(t('toast.dataCleared'));
-      // Invalidate the settings query to reload defaults
       queryClient.invalidateQueries({ queryKey: SETTINGS_QUERY_KEY });
       setClearConfirmOpen(false);
     } catch (error) {
@@ -198,8 +222,10 @@ export function Settings() {
 
   const handleThemeChange = async (themeId: string) => {
     await setTheme(themeId);
-    // Save theme ID change to backend
-    saveSettingsMutation.mutate({});
+    // Also save to profile settings
+    if (profileSettings) {
+      await updateProfileSettings({ themeId });
+    }
   };
 
   const languageOptions = [
@@ -227,25 +253,14 @@ export function Settings() {
   const themeOptions = (themes.length
     ? themes
     : [
-        {
-          id: 'spirit-light',
-          name: 'Spirit Light',
-          mode: 'light' as const,
-          source: 'builtin' as const,
-        },
-        {
-          id: 'spirit-dark',
-          name: 'Spirit Dark',
-          mode: 'dark' as const,
-          source: 'builtin' as const,
-        },
+        { id: 'spirit-light', name: 'Spirit Light', mode: 'light' as const, source: 'builtin' as const },
+        { id: 'spirit-dark', name: 'Spirit Dark', mode: 'dark' as const, source: 'builtin' as const },
       ]
   ).map((themeItem) => ({
     value: themeItem.id,
     label: themeItem.name,
   }));
 
-  // Compute derived values
   const isSaving = updateSettingMutation.isPending || saveSettingsMutation.isPending;
   const ffmpegVersion = ffmpegData?.version || '';
   const ffmpegPath = settings?.ffmpegPath || ffmpegData?.path || '';
@@ -269,368 +284,397 @@ export function Settings() {
   }
 
   return (
-    <Grid cols={2}>
-      {/* General Settings */}
-      <Card>
-        <CardHeader>
-          <div>
-            <CardTitle>{t('settings.generalSettings')}</CardTitle>
-            <CardDescription>{t('settings.generalDescription')}</CardDescription>
-          </div>
-        </CardHeader>
-        <CardBody
-          style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}
-        >
-          <Select
-            label={t('settings.language')}
-            value={settings.language}
-            onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
-              updateSetting('language', e.target.value)
-            }
-            options={languageOptions}
-          />
-          <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
-            <div>
-              <div className="text-sm font-medium text-[var(--text-primary)]">
-                {t('settings.startMinimized')}
-              </div>
-              <div className="text-xs text-[var(--text-tertiary)]">
-                {t('settings.startMinimizedDescription')}
-              </div>
-            </div>
-            <Toggle
-              checked={settings.startMinimized}
-              onChange={(checked: boolean) => updateSetting('startMinimized', checked)}
-            />
-          </div>
-          <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
-            <div>
-              <div className="text-sm font-medium text-[var(--text-primary)]">
-                {t('settings.showNotifications')}
-              </div>
-              <div className="text-xs text-[var(--text-tertiary)]">
-                {t('settings.showNotificationsDescription')}
-              </div>
-            </div>
-            <Toggle
-              checked={settings.showNotifications}
-              onChange={(checked: boolean) => updateSetting('showNotifications', checked)}
-            />
-          </div>
-        </CardBody>
-      </Card>
-
-      {/* FFmpeg Configuration */}
-      <Card>
-        <CardHeader>
-          <div>
-            <CardTitle>{t('settings.ffmpegConfig')}</CardTitle>
-            <CardDescription>{t('settings.ffmpegDescription')}</CardDescription>
-          </div>
-        </CardHeader>
-        <CardBody
-          style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}
-        >
-          <div className="flex flex-col" style={{ gap: '6px' }}>
-            <label className="block text-sm font-medium text-[var(--text-primary)]">
-              {t('settings.ffmpegPath')}
-            </label>
-            <div className="flex" style={{ gap: '8px' }}>
-              <Input
-                value={ffmpegPath}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                  updateSetting('ffmpegPath', e.target.value)
-                }
-                className="flex-1"
-              />
-              <Button variant="outline" onClick={handleBrowseFfmpeg}>
-                <FolderOpen className="w-4 h-4" />
-                {t('settings.browse')}
-              </Button>
-            </div>
-          </div>
-          <Input
-            label={t('settings.ffmpegVersion')}
-            value={
-              ffmpegLoading
-                ? t('settings.detecting')
-                : ffmpegVersion || t('settings.ffmpegNotFound')
-            }
-            disabled
-            helper={t('settings.detectedVersion')}
-          />
-
-          {/* FFmpeg Status Section */}
-          <div className="border-t border-[var(--border-muted)]" style={{ paddingTop: '16px' }}>
-            <FFmpegDownloadProgress
-              installedVersion={ffmpegVersion || undefined}
-              autoDownload={settings.autoDownloadFfmpeg}
-              onComplete={(path: string) => {
-                // Save the new path
-                saveSettingsMutation.mutate({ ffmpegPath: path });
-                // Refresh FFmpeg version query
-                refreshFfmpegVersion();
-              }}
-            />
-          </div>
-        </CardBody>
-      </Card>
-
-      {/* Themes */}
-      <Card>
-        <CardHeader>
-          <div>
-            <CardTitle>{t('settings.themes', { defaultValue: 'Themes' })}</CardTitle>
-            <CardDescription>
-              {t('settings.themesDescription', {
-                defaultValue: 'Choose a UI theme and install custom themes.',
-              })}
-            </CardDescription>
-          </div>
-        </CardHeader>
-        <CardBody
-          style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}
-        >
-          <Select
-            label={t('settings.theme', { defaultValue: 'Theme' })}
-            value={currentThemeId}
-            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleThemeChange(e.target.value)}
-            options={themeOptions}
-            helper={t('settings.themeHelper', {
-              defaultValue: 'Choose your preferred theme appearance.',
-            })}
-          />
-          <div className="flex items-center" style={{ gap: '12px' }}>
-            <Button variant="outline" onClick={handleInstallTheme} disabled={themeInstalling}>
-              {themeInstalling
-                ? t('common.loading')
-                : t('settings.installTheme', { defaultValue: 'Install Theme' })}
-            </Button>
-          </div>
-          {themeInstallError && (
-            <div className="p-3 rounded-lg bg-[var(--error-subtle)] border border-[var(--error-border)]">
-              <p className="text-sm text-[var(--error-text)]">{themeInstallError}</p>
-            </div>
+    <div className="space-y-6">
+      {/* Tab Navigation */}
+      <div className="flex gap-2 border-b border-[var(--border-default)] pb-2">
+        <button
+          onClick={() => setActiveTab('profile')}
+          className={cn(
+            'flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm font-medium transition-colors',
+            activeTab === 'profile'
+              ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] border border-b-0 border-[var(--border-default)]'
+              : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)]'
           )}
-        </CardBody>
-      </Card>
-
-      {/* Data & Privacy */}
-      <Card>
-        <CardHeader>
-          <div>
-            <CardTitle>{t('settings.dataPrivacy')}</CardTitle>
-            <CardDescription>{t('settings.dataPrivacyDescription')}</CardDescription>
-          </div>
-        </CardHeader>
-        <CardBody
-          style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}
         >
-          <div className="flex flex-col" style={{ gap: '6px' }}>
-            <label className="block text-sm font-medium text-[var(--text-primary)]">
-              {t('settings.profileStorage')}
-            </label>
-            <div className="flex" style={{ gap: '8px' }}>
+          <User className="w-4 h-4" />
+          {t('settings.profileSettings', { defaultValue: 'Profile Settings' })}
+          {currentProfile && (
+            <span className="text-xs text-[var(--text-tertiary)]">({currentProfile.name})</span>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('global')}
+          className={cn(
+            'flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm font-medium transition-colors',
+            activeTab === 'global'
+              ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] border border-b-0 border-[var(--border-default)]'
+              : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)]'
+          )}
+        >
+          <Globe className="w-4 h-4" />
+          {t('settings.globalSettings', { defaultValue: 'Global Settings' })}
+        </button>
+      </div>
+
+      {/* Profile Settings Tab */}
+      {activeTab === 'profile' && (
+        <>
+          {!currentProfile ? (
+            <div className="flex items-center justify-center h-64 text-[var(--text-tertiary)]">
+              {t('settings.loadProfileFirst', { defaultValue: 'Please load a profile to edit its settings.' })}
+            </div>
+          ) : (
+            <Grid cols={2}>
+              {/* Appearance */}
+              <Card>
+                <CardHeader>
+                  <div>
+                    <CardTitle>{t('settings.appearance', { defaultValue: 'Appearance' })}</CardTitle>
+                    <CardDescription>{t('settings.appearanceDescription', { defaultValue: 'Theme and language for this profile.' })}</CardDescription>
+                  </div>
+                </CardHeader>
+                <CardBody style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <Select
+                    label={t('settings.theme', { defaultValue: 'Theme' })}
+                    value={currentThemeId}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleThemeChange(e.target.value)}
+                    options={themeOptions}
+                    helper={t('settings.themeHelper', { defaultValue: 'Choose your preferred theme appearance.' })}
+                  />
+                  <div className="flex items-center" style={{ gap: '12px' }}>
+                    <Button variant="outline" onClick={handleInstallTheme} disabled={themeInstalling}>
+                      {themeInstalling ? t('common.loading') : t('settings.installTheme', { defaultValue: 'Install Theme' })}
+                    </Button>
+                  </div>
+                  {themeInstallError && (
+                    <div className="p-3 rounded-lg bg-[var(--error-subtle)] border border-[var(--error-border)]">
+                      <p className="text-sm text-[var(--error-text)]">{themeInstallError}</p>
+                    </div>
+                  )}
+                  <Select
+                    label={t('settings.language')}
+                    value={profileSettings?.language || 'en'}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                      updateProfileSetting('language', e.target.value)
+                    }
+                    options={languageOptions}
+                  />
+                </CardBody>
+              </Card>
+
+              {/* Notifications & Security */}
+              <Card>
+                <CardHeader>
+                  <div>
+                    <CardTitle>{t('settings.notificationsSecurity', { defaultValue: 'Notifications & Security' })}</CardTitle>
+                    <CardDescription>{t('settings.notificationsSecurityDescription', { defaultValue: 'Notification preferences and data security for this profile.' })}</CardDescription>
+                  </div>
+                </CardHeader>
+                <CardBody style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
+                    <div>
+                      <div className="text-sm font-medium text-[var(--text-primary)]">
+                        {t('settings.showNotifications')}
+                      </div>
+                      <div className="text-xs text-[var(--text-tertiary)]">
+                        {t('settings.showNotificationsDescription')}
+                      </div>
+                    </div>
+                    <Toggle
+                      checked={profileSettings?.showNotifications ?? true}
+                      onChange={(checked: boolean) => updateProfileSetting('showNotifications', checked)}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
+                    <div>
+                      <div className="text-sm font-medium text-[var(--text-primary)]">
+                        {t('settings.encryptStreamKeys')}
+                      </div>
+                      <div className="text-xs text-[var(--text-tertiary)]">
+                        {t('settings.encryptStreamKeysDescription')}
+                      </div>
+                    </div>
+                    <Toggle
+                      checked={profileSettings?.encryptStreamKeys ?? true}
+                      onChange={(checked: boolean) => updateProfileSetting('encryptStreamKeys', checked)}
+                    />
+                  </div>
+                  <KeyRotationSection
+                    encryptStreamKeys={profileSettings?.encryptStreamKeys ?? true}
+                    disabled={isSaving}
+                  />
+                </CardBody>
+              </Card>
+
+              {/* Remote Access */}
+              <Card className="col-span-2">
+                <CardHeader>
+                  <div>
+                    <CardTitle>{t('settings.remoteAccess', { defaultValue: 'Remote Access' })}</CardTitle>
+                    <CardDescription>
+                      {t('settings.remoteAccessDescription', {
+                        defaultValue: 'Enable the built-in HTTP API so you can manage SpiritStream from another device.',
+                      })}
+                    </CardDescription>
+                  </div>
+                </CardHeader>
+                <CardBody style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
+                        <div>
+                          <div className="text-sm font-medium text-[var(--text-primary)]">
+                            {t('settings.remoteAccessToggle', { defaultValue: 'Allow remote web access' })}
+                          </div>
+                          <div className="text-xs text-[var(--text-tertiary)]">
+                            {t('settings.remoteAccessToggleDescription', {
+                              defaultValue: 'When off, the API binds to localhost only. Restart required after changes.',
+                            })}
+                          </div>
+                        </div>
+                        <Toggle
+                          checked={profileSettings?.backend?.remoteEnabled ?? false}
+                          onChange={(checked: boolean) => updateBackendSetting('remoteEnabled', checked)}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
+                        <div>
+                          <div className="text-sm font-medium text-[var(--text-primary)]">
+                            {t('settings.remoteAccessUiToggle', { defaultValue: 'Serve web GUI from the host' })}
+                          </div>
+                          <div className="text-xs text-[var(--text-tertiary)]">
+                            {t('settings.remoteAccessUiToggleDescription', {
+                              defaultValue: 'When off, the host will not serve the UI files. Restart required after changes.',
+                            })}
+                          </div>
+                        </div>
+                        <Toggle
+                          checked={profileSettings?.backend?.uiEnabled ?? false}
+                          onChange={(checked: boolean) => updateBackendSetting('uiEnabled', checked)}
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-4">
+                      <Input
+                        label={t('settings.remoteAccessHost', { defaultValue: 'Bind host' })}
+                        value={profileSettings?.backend?.host ?? '127.0.0.1'}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                          updateBackendSetting('host', e.target.value)
+                        }
+                        helper={t('settings.remoteAccessHostHelper', {
+                          defaultValue: 'Use 0.0.0.0 to listen on all interfaces.',
+                        })}
+                      />
+                      <Input
+                        label={t('settings.remoteAccessPort', { defaultValue: 'Port' })}
+                        type="number"
+                        value={profileSettings?.backend?.port ?? 8008}
+                        min={1}
+                        max={65535}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                          const value = Number(e.target.value);
+                          if (!Number.isNaN(value)) {
+                            updateBackendSetting('port', value);
+                          }
+                        }}
+                      />
+                      <Input
+                        label={t('settings.remoteAccessToken', { defaultValue: 'Access token (optional)' })}
+                        type="password"
+                        value={profileSettings?.backend?.token ?? ''}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                          updateBackendSetting('token', e.target.value)
+                        }
+                        helper={t('settings.remoteAccessTokenHelper', {
+                          defaultValue: 'Clients must send this token as a Bearer auth header when enabled.',
+                        })}
+                      />
+                    </div>
+                  </div>
+                </CardBody>
+              </Card>
+            </Grid>
+          )}
+        </>
+      )}
+
+      {/* Global Settings Tab */}
+      {activeTab === 'global' && (
+        <Grid cols={2}>
+          {/* FFmpeg Configuration */}
+          <Card>
+            <CardHeader>
+              <div>
+                <CardTitle>{t('settings.ffmpegConfig')}</CardTitle>
+                <CardDescription>{t('settings.ffmpegDescription')}</CardDescription>
+              </div>
+            </CardHeader>
+            <CardBody style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="flex flex-col" style={{ gap: '6px' }}>
+                <label className="block text-sm font-medium text-[var(--text-primary)]">
+                  {t('settings.ffmpegPath')}
+                </label>
+                <div className="flex" style={{ gap: '8px' }}>
+                  <Input
+                    value={ffmpegPath}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                      updateGlobalSetting('ffmpegPath', e.target.value)
+                    }
+                    className="flex-1"
+                  />
+                  <Button variant="outline" onClick={handleBrowseFfmpeg}>
+                    <FolderOpen className="w-4 h-4" />
+                    {t('settings.browse')}
+                  </Button>
+                </div>
+              </div>
               <Input
-                value={settings.profileStoragePath}
+                label={t('settings.ffmpegVersion')}
+                value={
+                  ffmpegLoading
+                    ? t('settings.detecting')
+                    : ffmpegVersion || t('settings.ffmpegNotFound')
+                }
                 disabled
-                className="flex-1 font-mono text-xs"
+                helper={t('settings.detectedVersion')}
               />
-              <Button variant="outline" onClick={handleOpenProfileStorage}>
-                <FolderOpen className="w-4 h-4" />
-                {t('settings.open')}
-              </Button>
-            </div>
-          </div>
-          <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
-            <div>
-              <div className="text-sm font-medium text-[var(--text-primary)]">
-                {t('settings.encryptStreamKeys')}
+              <div className="border-t border-[var(--border-muted)]" style={{ paddingTop: '16px' }}>
+                <FFmpegDownloadProgress
+                  installedVersion={ffmpegVersion || undefined}
+                  autoDownload={settings.autoDownloadFfmpeg}
+                  onComplete={(path: string) => {
+                    saveSettingsMutation.mutate({ ffmpegPath: path });
+                    refreshFfmpegVersion();
+                  }}
+                />
               </div>
-              <div className="text-xs text-[var(--text-tertiary)]">
-                {t('settings.encryptStreamKeysDescription')}
-              </div>
-            </div>
-            <Toggle
-              checked={settings.encryptStreamKeys}
-              onChange={(checked: boolean) => updateSetting('encryptStreamKeys', checked)}
-            />
-          </div>
-          <KeyRotationSection
-            encryptStreamKeys={settings.encryptStreamKeys}
-            disabled={isSaving}
-          />
-          <Select
-            label={t('settings.logRetention', { defaultValue: 'Log retention' })}
-            value={String(settings.logRetentionDays)}
-            onChange={(e) => updateSetting('logRetentionDays', Number(e.target.value))}
-            options={logRetentionOptions.map((option) => ({
-              value: String(option.value),
-              label: option.label,
-            }))}
-            helper={t('settings.logRetentionDescription', {
-              defaultValue: 'How long to keep application log files.',
-            })}
-          />
-          <div
-            className="border-t border-[var(--border-muted)] flex"
-            style={{ paddingTop: '16px', gap: '12px' }}
-          >
-            <Button variant="outline" onClick={handleExportData}>
-              <Download className="w-4 h-4" />
-              {t('settings.exportData')}
-            </Button>
-            <Button variant="destructive" onClick={handleClearAllData}>
-              <Trash2 className="w-4 h-4" />
-              {t('settings.clearAllData')}
-            </Button>
-          </div>
-        </CardBody>
-      </Card>
+            </CardBody>
+          </Card>
 
-      {/* Remote Access */}
-      <Card>
-        <CardHeader>
-          <div>
-            <CardTitle>{t('settings.remoteAccess', { defaultValue: 'Remote access' })}</CardTitle>
-            <CardDescription>
-              {t('settings.remoteAccessDescription', {
-                defaultValue:
-                  'Enable the built-in HTTP API so you can manage SpiritStream from another device.',
-              })}
-            </CardDescription>
-          </div>
-        </CardHeader>
-        <CardBody
-          style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}
-        >
-          <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
-            <div>
-              <div className="text-sm font-medium text-[var(--text-primary)]">
-                {t('settings.remoteAccessToggle', {
-                  defaultValue: 'Allow remote web access',
-                })}
+          {/* App Behavior */}
+          <Card>
+            <CardHeader>
+              <div>
+                <CardTitle>{t('settings.appBehavior', { defaultValue: 'App Behavior' })}</CardTitle>
+                <CardDescription>{t('settings.appBehaviorDescription', { defaultValue: 'System-wide application settings.' })}</CardDescription>
               </div>
-              <div className="text-xs text-[var(--text-tertiary)]">
-                {t('settings.remoteAccessToggleDescription', {
-                  defaultValue:
-                    'When off, the API binds to localhost only. Restart required after changes.',
-                })}
+            </CardHeader>
+            <CardBody style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
+                <div>
+                  <div className="text-sm font-medium text-[var(--text-primary)]">
+                    {t('settings.startMinimized')}
+                  </div>
+                  <div className="text-xs text-[var(--text-tertiary)]">
+                    {t('settings.startMinimizedDescription')}
+                  </div>
+                </div>
+                <Toggle
+                  checked={settings.startMinimized}
+                  onChange={(checked: boolean) => updateGlobalSetting('startMinimized', checked)}
+                />
               </div>
-            </div>
-            <Toggle
-              checked={settings.backendRemoteEnabled}
-              onChange={(checked: boolean) => updateSetting('backendRemoteEnabled', checked)}
-            />
-          </div>
-          <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
-            <div>
-              <div className="text-sm font-medium text-[var(--text-primary)]">
-                {t('settings.remoteAccessUiToggle', {
-                  defaultValue: 'Serve web GUI from the host',
+              <Select
+                label={t('settings.logRetention', { defaultValue: 'Log retention' })}
+                value={String(settings.logRetentionDays)}
+                onChange={(e) => updateGlobalSetting('logRetentionDays', Number(e.target.value))}
+                options={logRetentionOptions.map((option) => ({
+                  value: String(option.value),
+                  label: option.label,
+                }))}
+                helper={t('settings.logRetentionDescription', {
+                  defaultValue: 'How long to keep application log files.',
                 })}
-              </div>
-              <div className="text-xs text-[var(--text-tertiary)]">
-                {t('settings.remoteAccessUiToggleDescription', {
-                  defaultValue:
-                    'When off, the host will not serve the UI files. Restart required after changes.',
-                })}
-              </div>
-            </div>
-            <Toggle
-              checked={settings.backendUiEnabled}
-              onChange={(checked: boolean) => updateSetting('backendUiEnabled', checked)}
-            />
-          </div>
-          <Input
-            label={t('settings.remoteAccessHost', { defaultValue: 'Bind host' })}
-            value={settings.backendHost}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-              updateSetting('backendHost', e.target.value)
-            }
-            helper={t('settings.remoteAccessHostHelper', {
-              defaultValue: 'Use 0.0.0.0 to listen on all interfaces.',
-            })}
-          />
-          <Input
-            label={t('settings.remoteAccessPort', { defaultValue: 'Port' })}
-            type="number"
-            value={settings.backendPort}
-            min={1}
-            max={65535}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-              const value = Number(e.target.value);
-              if (Number.isNaN(value)) return;
-              updateSetting('backendPort', value);
-            }}
-          />
-          <Input
-            label={t('settings.remoteAccessToken', { defaultValue: 'Access token (optional)' })}
-            type="password"
-            value={settings.backendToken}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-              updateSetting('backendToken', e.target.value)
-            }
-            helper={t('settings.remoteAccessTokenHelper', {
-              defaultValue:
-                'Clients must send this token as a Bearer auth header when enabled.',
-            })}
-          />
-        </CardBody>
-      </Card>
+              />
+            </CardBody>
+          </Card>
 
-      {/* About */}
-      <Card>
-        <CardHeader>
-          <div>
-            <CardTitle>{t('settings.about')}</CardTitle>
-            <CardDescription>{t('settings.aboutDescription')}</CardDescription>
-          </div>
-        </CardHeader>
-        <CardBody>
-          <div className="text-center" style={{ padding: '16px 0' }}>
-            <div className="flex justify-center" style={{ marginBottom: '16px' }}>
-              <Logo size="lg" />
-            </div>
-            <div className="text-sm text-[var(--text-secondary)]" style={{ marginBottom: '4px' }}>
-              {t('settings.version')} 0.1.0
-            </div>
-            <div className="text-xs text-[var(--text-tertiary)]" style={{ marginBottom: '24px' }}>
-              {t('settings.tagline')}
-            </div>
-            <div className="flex justify-center" style={{ gap: '12px' }}>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => dialogs.openExternal('https://github.com/ScopeCreep-zip/SpiritStream')}
-              >
-                <Github className="w-4 h-4" />
-                {t('settings.github')}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() =>
-                  dialogs.openExternal('https://deepwiki.com/ScopeCreep-zip/SpiritStream')
-                }
-              >
-                <BookOpen className="w-4 h-4" />
-                {t('settings.docs')}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() =>
-                  window.open('https://github.com/ScopeCreep-zip/SpiritStream/releases', '_blank')
-                }
-              >
-                <RefreshCw className="w-4 h-4" />
-                {t('settings.updates')}
-              </Button>
-            </div>
-          </div>
-        </CardBody>
-      </Card>
+          {/* Data Management */}
+          <Card>
+            <CardHeader>
+              <div>
+                <CardTitle>{t('settings.dataManagement', { defaultValue: 'Data Management' })}</CardTitle>
+                <CardDescription>{t('settings.dataManagementDescription', { defaultValue: 'Export and manage your application data.' })}</CardDescription>
+              </div>
+            </CardHeader>
+            <CardBody style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="flex flex-col" style={{ gap: '6px' }}>
+                <label className="block text-sm font-medium text-[var(--text-primary)]">
+                  {t('settings.profileStorage')}
+                </label>
+                <div className="flex" style={{ gap: '8px' }}>
+                  <Input value={settings.profileStoragePath} disabled className="flex-1 font-mono text-xs" />
+                  <Button variant="outline" onClick={handleOpenProfileStorage}>
+                    <FolderOpen className="w-4 h-4" />
+                    {t('settings.open')}
+                  </Button>
+                </div>
+              </div>
+              <div className="flex" style={{ gap: '12px' }}>
+                <Button variant="outline" onClick={handleExportData}>
+                  <Download className="w-4 h-4" />
+                  {t('settings.exportData')}
+                </Button>
+                <Button variant="destructive" onClick={handleClearAllData}>
+                  <Trash2 className="w-4 h-4" />
+                  {t('settings.clearAllData')}
+                </Button>
+              </div>
+            </CardBody>
+          </Card>
+
+          {/* About */}
+          <Card>
+            <CardHeader>
+              <div>
+                <CardTitle>{t('settings.about')}</CardTitle>
+                <CardDescription>{t('settings.aboutDescription')}</CardDescription>
+              </div>
+            </CardHeader>
+            <CardBody>
+              <div className="text-center" style={{ padding: '16px 0' }}>
+                <div className="flex justify-center" style={{ marginBottom: '16px' }}>
+                  <Logo size="lg" />
+                </div>
+                <div className="text-sm text-[var(--text-secondary)]" style={{ marginBottom: '4px' }}>
+                  {t('settings.version')} 0.1.0
+                </div>
+                <div className="text-xs text-[var(--text-tertiary)]" style={{ marginBottom: '24px' }}>
+                  {t('settings.tagline')}
+                </div>
+                <div className="flex justify-center" style={{ gap: '12px' }}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => dialogs.openExternal('https://github.com/ScopeCreep-zip/SpiritStream')}
+                  >
+                    <Github className="w-4 h-4" />
+                    {t('settings.github')}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => dialogs.openExternal('https://deepwiki.com/ScopeCreep-zip/SpiritStream')}
+                  >
+                    <BookOpen className="w-4 h-4" />
+                    {t('settings.docs')}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => window.open('https://github.com/ScopeCreep-zip/SpiritStream/releases', '_blank')}
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    {t('settings.updates')}
+                  </Button>
+                </div>
+              </div>
+            </CardBody>
+          </Card>
+        </Grid>
+      )}
+
+      {/* Clear Data Modal */}
       <Modal
         open={clearConfirmOpen}
         onClose={handleClearCancel}
@@ -656,6 +700,6 @@ export function Settings() {
 
       {/* File browser modal for HTTP mode */}
       <FileBrowser />
-    </Grid>
+    </div>
   );
 }

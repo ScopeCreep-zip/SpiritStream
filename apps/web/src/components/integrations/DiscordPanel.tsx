@@ -11,16 +11,20 @@ import {
   Image as ImageIcon,
   X,
   Smile,
+  Eye,
+  EyeOff,
+  Copy,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Toggle } from '@/components/ui/Toggle';
-import { useSettings, useUpdateSetting } from '@/hooks/useSettings';
+import { useProfileStore } from '@/stores/profileStore';
 import { dialogs } from '@/lib/backend';
 import { api } from '@/lib/backend';
 import { toast } from '@/hooks/useToast';
 import { cn } from '@/lib/cn';
+import type { DiscordSettings } from '@/types/profile';
 
 // Debounce delay for auto-save (ms)
 const AUTO_SAVE_DELAY = 500;
@@ -43,8 +47,11 @@ const EMOJI_CATEGORIES = [
 
 export function DiscordPanel() {
   const { t } = useTranslation();
-  const { data: settings } = useSettings();
-  const updateSetting = useUpdateSetting();
+
+  // Get Discord settings from current profile
+  const currentProfile = useProfileStore((state) => state.current);
+  const updateProfileSettings = useProfileStore((state) => state.updateProfileSettings);
+  const discordSettings = currentProfile?.settings?.discord;
 
   // Local form state
   const [webhookEnabled, setWebhookEnabled] = useState(false);
@@ -58,34 +65,45 @@ export function DiscordPanel() {
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showWebhookUrl, setShowWebhookUrl] = useState(false);
 
   // Refs
   const saveTimeoutRef = useRef<number | null>(null);
+  const pendingUpdatesRef = useRef<Partial<DiscordSettings> | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
 
-  // Sync form with settings when loaded
+  // Sync form with profile settings when loaded
   useEffect(() => {
-    if (settings) {
-      setWebhookEnabled(settings.discordWebhookEnabled ?? false);
-      setWebhookUrl(settings.discordWebhookUrl ?? '');
+    if (discordSettings) {
+      setWebhookEnabled(discordSettings.webhookEnabled);
+      setWebhookUrl(discordSettings.webhookUrl);
       setGoLiveMessage(
-        settings.discordGoLiveMessage ?? '**Stream is now live!** \n\nCome join the stream!'
+        discordSettings.goLiveMessage || '**Stream is now live!** \n\nCome join the stream!'
       );
-      setCooldownEnabled(settings.discordCooldownEnabled ?? true);
-      setCooldownSeconds(String(settings.discordCooldownSeconds ?? 60));
-      setImagePath(settings.discordImagePath ?? '');
+      setCooldownEnabled(discordSettings.cooldownEnabled);
+      setCooldownSeconds(String(discordSettings.cooldownSeconds));
+      setImagePath(discordSettings.imagePath);
     }
-  }, [settings]);
+  }, [discordSettings]);
 
-  // Cleanup debounce timer on unmount
+  // Flush pending saves on unmount (don't lose unsaved changes)
   useEffect(() => {
     return () => {
       if (saveTimeoutRef.current) {
         window.clearTimeout(saveTimeoutRef.current);
       }
+      // Flush any pending updates
+      if (pendingUpdatesRef.current && discordSettings) {
+        updateProfileSettings({
+          discord: { ...discordSettings, ...pendingUpdatesRef.current },
+        }).catch((error) => {
+          console.error('Failed to flush Discord settings on unmount:', error);
+        });
+        pendingUpdatesRef.current = null;
+      }
     };
-  }, []);
+  }, [discordSettings, updateProfileSettings]);
 
   // Close emoji picker when clicking outside
   useEffect(() => {
@@ -101,71 +119,84 @@ export function DiscordPanel() {
     }
   }, [showEmojiPicker]);
 
-  // Auto-save with debounce
+  // Auto-save with debounce - saves to profile settings
   const autoSave = useCallback(
-    (key: string, value: unknown) => {
+    (updates: Partial<DiscordSettings>) => {
+      // Track pending updates for flush on unmount
+      pendingUpdatesRef.current = { ...pendingUpdatesRef.current, ...updates };
+
       if (saveTimeoutRef.current) {
         window.clearTimeout(saveTimeoutRef.current);
       }
 
       saveTimeoutRef.current = window.setTimeout(async () => {
+        if (!discordSettings) return;
         try {
-          await updateSetting.mutateAsync({ key: key as keyof typeof settings, value });
+          await updateProfileSettings({
+            discord: { ...discordSettings, ...pendingUpdatesRef.current },
+          });
+          pendingUpdatesRef.current = null; // Clear after successful save
         } catch (error) {
           console.error('Failed to save Discord setting:', error);
         }
       }, AUTO_SAVE_DELAY);
     },
-    [updateSetting]
+    [discordSettings, updateProfileSettings]
   );
 
   // Handle webhook enabled toggle
   const handleEnabledChange = useCallback(
     async (checked: boolean) => {
       setWebhookEnabled(checked);
+      if (!discordSettings) return;
       try {
-        await updateSetting.mutateAsync({ key: 'discordWebhookEnabled', value: checked });
+        await updateProfileSettings({
+          discord: { ...discordSettings, webhookEnabled: checked },
+        });
       } catch (error) {
         console.error('Failed to save webhook enabled state:', error);
       }
     },
-    [updateSetting]
+    [discordSettings, updateProfileSettings]
   );
 
   // Handle webhook URL blur (auto-save)
   const handleUrlBlur = useCallback(() => {
-    if (settings && webhookUrl !== settings.discordWebhookUrl) {
-      autoSave('discordWebhookUrl', webhookUrl);
+    if (discordSettings && webhookUrl !== discordSettings.webhookUrl) {
+      autoSave({ webhookUrl });
     }
-  }, [webhookUrl, settings, autoSave]);
+  }, [webhookUrl, discordSettings, autoSave]);
 
   // Handle message blur (auto-save)
   const handleMessageBlur = useCallback(() => {
-    if (settings && goLiveMessage !== settings.discordGoLiveMessage) {
-      autoSave('discordGoLiveMessage', goLiveMessage);
+    if (discordSettings && goLiveMessage !== discordSettings.goLiveMessage) {
+      autoSave({ goLiveMessage });
     }
-  }, [goLiveMessage, settings, autoSave]);
+  }, [goLiveMessage, discordSettings, autoSave]);
 
   // Handle cooldown enabled toggle
   const handleCooldownEnabledChange = useCallback(
     async (checked: boolean) => {
       setCooldownEnabled(checked);
+      if (!discordSettings) return;
       try {
-        await updateSetting.mutateAsync({ key: 'discordCooldownEnabled', value: checked });
+        await updateProfileSettings({
+          discord: { ...discordSettings, cooldownEnabled: checked },
+        });
       } catch (error) {
         console.error('Failed to save cooldown enabled state:', error);
       }
     },
-    [updateSetting]
+    [discordSettings, updateProfileSettings]
   );
 
   // Handle cooldown seconds blur (auto-save)
   const handleCooldownBlur = useCallback(() => {
     const seconds = parseInt(cooldownSeconds, 10) || 60;
-    if (settings && seconds !== settings.discordCooldownSeconds) {
-      autoSave('discordCooldownSeconds', seconds);
+    if (discordSettings && seconds !== discordSettings.cooldownSeconds) {
+      autoSave({ cooldownSeconds: seconds });
     }
-  }, [cooldownSeconds, settings, autoSave]);
+  }, [cooldownSeconds, discordSettings, autoSave]);
 
   // Handle image selection
   const handleSelectImage = useCallback(async () => {
@@ -175,29 +206,30 @@ export function DiscordPanel() {
         filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }],
       });
 
-      if (result) {
+      if (result && discordSettings) {
         setImagePath(result);
-        await updateSetting.mutateAsync({ key: 'discordImagePath', value: result });
+        await updateProfileSettings({
+          discord: { ...discordSettings, imagePath: result },
+        });
       }
-      // If result is null, user cancelled the dialog - don't show any message
-      // The "desktop only" message is no longer needed since we're always
-      // trying to open the dialog (Tauri or browser), and null just means cancelled
     } catch (error) {
       console.error('Failed to select image:', error);
-      // Show error toast for actual errors
       toast.error(t('common.error'));
     }
-  }, [t, updateSetting]);
+  }, [t, discordSettings, updateProfileSettings]);
 
   // Handle image removal
   const handleRemoveImage = useCallback(async () => {
     setImagePath('');
+    if (!discordSettings) return;
     try {
-      await updateSetting.mutateAsync({ key: 'discordImagePath', value: '' });
+      await updateProfileSettings({
+        discord: { ...discordSettings, imagePath: '' },
+      });
     } catch (error) {
       console.error('Failed to remove image:', error);
     }
-  }, [updateSetting]);
+  }, [discordSettings, updateProfileSettings]);
 
   // Handle emoji selection
   const handleEmojiSelect = useCallback((emoji: string) => {
@@ -247,6 +279,17 @@ export function DiscordPanel() {
     }
   }, [webhookUrl, t]);
 
+  // Copy webhook URL to clipboard
+  const handleCopyWebhookUrl = useCallback(async () => {
+    if (!webhookUrl) return;
+    try {
+      await navigator.clipboard.writeText(webhookUrl);
+      toast.success(t('common.copied'));
+    } catch {
+      toast.error(t('common.error'));
+    }
+  }, [webhookUrl, t]);
+
   // Validate webhook URL format
   const isValidWebhookUrl =
     webhookUrl.startsWith('https://discord.com/api/webhooks/') ||
@@ -254,6 +297,15 @@ export function DiscordPanel() {
 
   // Get filename from path
   const imageFileName = imagePath ? imagePath.split(/[\\/]/).pop() : null;
+
+  // Show message if no profile is loaded
+  if (!currentProfile) {
+    return (
+      <div className="flex items-center justify-center p-8 text-[var(--text-tertiary)]">
+        {t('common.loadProfileFirst', 'Please load a profile first')}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -286,14 +338,38 @@ export function DiscordPanel() {
 
             {/* Webhook URL */}
             <div className="space-y-2">
-              <Input
-                label={t('discord.webhookUrl')}
-                value={webhookUrl}
-                onChange={(e) => setWebhookUrl(e.target.value)}
-                onBlur={handleUrlBlur}
-                placeholder="https://discord.com/api/webhooks/..."
-                disabled={!webhookEnabled}
-              />
+              <div className="flex items-end gap-1">
+                <div className="flex-1">
+                  <Input
+                    label={t('discord.webhookUrl')}
+                    type={showWebhookUrl ? 'text' : 'password'}
+                    value={webhookUrl}
+                    onChange={(e) => setWebhookUrl(e.target.value)}
+                    onBlur={handleUrlBlur}
+                    placeholder="https://discord.com/api/webhooks/..."
+                    disabled={!webhookEnabled}
+                    autoComplete="off"
+                  />
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowWebhookUrl(!showWebhookUrl)}
+                  aria-label={showWebhookUrl ? t('common.hide') : t('common.show')}
+                  disabled={!webhookEnabled}
+                >
+                  {showWebhookUrl ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleCopyWebhookUrl}
+                  aria-label={t('common.copy')}
+                  disabled={!webhookEnabled || !webhookUrl}
+                >
+                  <Copy className="w-4 h-4" />
+                </Button>
+              </div>
               {webhookUrl && !isValidWebhookUrl && (
                 <div className="flex items-center gap-2 text-xs text-[var(--status-error)]">
                   <AlertCircle className="w-3 h-3" />

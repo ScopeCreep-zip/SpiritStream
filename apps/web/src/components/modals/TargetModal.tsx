@@ -18,7 +18,7 @@ export interface TargetModalProps {
 
 // Platform values - dynamically loaded from JSON
 const PLATFORM_VALUES: Platform[] = Object.keys(platformConfig) as Platform[];
-const FIRST_PLATFORM = PLATFORM_VALUES[0];
+const DEFAULT_PLATFORM: Platform = 'YouTube - RTMPS';
 
 interface FormData {
   service: Platform;
@@ -28,9 +28,9 @@ interface FormData {
 }
 
 const defaultFormData: FormData = {
-  service: FIRST_PLATFORM,
+  service: DEFAULT_PLATFORM,
   name: '',
-  url: platformConfig[FIRST_PLATFORM].defaultServer,
+  url: platformConfig[DEFAULT_PLATFORM].defaultServer,
   streamKey: '',
 };
 

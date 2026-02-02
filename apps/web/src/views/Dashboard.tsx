@@ -489,6 +489,7 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
                   onEdit={() => onNavigate('outputs')}
                   onDuplicate={() => handleDuplicateGroup(group)}
                   onRemove={() => handleRemoveGroup(group.id)}
+                  onAddTarget={onOpenTargetModal}
                 />
               ))}
             </Grid>

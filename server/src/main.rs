@@ -829,8 +829,7 @@ async fn invoke_command(
     command: &str,
     payload: Value,
 ) -> Result<Value, String> {
-    log::info!("[invoke_command] Command: {}, Payload: {:?}", command, payload);
-    eprintln!("[invoke_command] Command: {}, Payload: {:?}", command, payload);
+    log::debug!("[invoke_command] Command: {}, Payload: {:?}", command, payload);
 
     let result = match command {
         "get_all_profiles" => {
@@ -844,19 +843,35 @@ async fn invoke_command(
         "load_profile" => {
             let name: String = get_arg(&payload, "name")?;
             let password: Option<String> = get_opt_arg(&payload, "password")?;
-            let profile = state
+            let mut profile = state
                 .profile_manager
                 .load_with_key_decryption(&name, password.as_deref())
                 .await?;
+
+            // Migration: If profile has default settings, migrate from legacy global settings
+            if profile.settings.is_default() {
+                let global_settings = state.settings_manager.load()?;
+                if global_settings.has_legacy_profile_settings() {
+                    log::info!("Migrating legacy settings to profile: {}", name);
+                    profile.settings = global_settings.to_legacy_profile_settings();
+                    // Save the migrated profile
+                    state
+                        .profile_manager
+                        .save_with_key_encryption(&profile, password.as_deref())
+                        .await?;
+                    log::info!("Profile migrated successfully: {}", name);
+                }
+            }
+
             Ok(json!(profile))
         }
         "save_profile" => {
             let profile: Profile = get_arg(&payload, "profile")?;
             let password: Option<String> = get_opt_arg(&payload, "password")?;
-            let settings = state.settings_manager.load()?;
+            // encrypt_stream_keys is now per-profile (profile.settings.encrypt_stream_keys)
             state
                 .profile_manager
-                .save_with_key_encryption(&profile, password.as_deref(), settings.encrypt_stream_keys)
+                .save_with_key_encryption(&profile, password.as_deref())
                 .await?;
             state.event_bus.emit("profile_changed", json!({ "action": "saved", "name": profile.name }));
             Ok(Value::Null)
@@ -1004,9 +1019,26 @@ async fn invoke_command(
         }
         "get_settings" => Ok(json!(state.settings_manager.load()?)),
         "save_settings" => {
-            let settings: Settings = get_arg(&payload, "settings")?;
-            state.settings_manager.save(&settings)?;
-            let _ = prune_logs(&state.log_dir, settings.log_retention_days);
+            let new_settings: Settings = get_arg(&payload, "settings")?;
+
+            // Check if encryption was just enabled
+            let old_settings = state.settings_manager.load().ok();
+            let encryption_just_enabled = new_settings.encrypt_stream_keys
+                && old_settings.as_ref().is_some_and(|s| !s.encrypt_stream_keys);
+
+            // Save the new settings
+            state.settings_manager.save(&new_settings)?;
+
+            // If encryption was just enabled, re-encrypt all profiles
+            if encryption_just_enabled {
+                log::info!("Stream key encryption enabled, encrypting existing profiles");
+                match state.profile_manager.encrypt_all_profiles().await {
+                    Ok(count) => log::info!("Encrypted stream keys in {count} profiles"),
+                    Err(e) => log::error!("Failed to encrypt profiles: {e}"),
+                }
+            }
+
+            let _ = prune_logs(&state.log_dir, new_settings.log_retention_days);
             state.event_bus.emit("settings_changed", json!({}));
             Ok(Value::Null)
         }

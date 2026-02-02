@@ -4,11 +4,16 @@ import i18n from '@/lib/i18n';
 import {
   type Profile,
   type ProfileSummary,
+  type ProfileSettings,
   type OutputGroup,
   type StreamTarget,
   type Platform,
   createDefaultProfile,
 } from '@/types/profile';
+import { useThemeStore } from '@/stores/themeStore';
+import { useLanguageStore, type Language } from '@/stores/languageStore';
+import { useSettingsStore } from '@/stores/settingsStore';
+import { useObsStore } from '@/stores/obsStore';
 
 interface ProfileState {
   // State
@@ -49,6 +54,9 @@ interface ProfileState {
   // Profile mutations (local state updates + auto-save)
   updateProfile: (updates: Partial<Profile>) => Promise<void>;
 
+  // Profile settings mutations
+  updateProfileSettings: (updates: Partial<ProfileSettings>) => Promise<void>;
+
   // Output group mutations (auto-save)
   addOutputGroup: (group: OutputGroup) => Promise<void>;
   updateOutputGroup: (groupId: string, updates: Partial<OutputGroup>) => Promise<void>;
@@ -64,6 +72,67 @@ interface ProfileState {
   removeStreamTarget: (groupId: string, targetId: string) => Promise<void>;
   moveStreamTarget: (fromGroupId: string, toGroupId: string, targetId: string) => Promise<void>;
 }
+
+/**
+ * Apply UI-only profile settings (theme, language, notifications)
+ * Called when settings are updated on the current profile
+ */
+const applyUiSettings = (settings: ProfileSettings) => {
+  // Apply theme
+  if (settings.themeId) {
+    useThemeStore.getState().setTheme(settings.themeId);
+  }
+
+  // Apply language
+  if (settings.language) {
+    useLanguageStore.getState().setLanguage(settings.language as Language);
+  }
+
+  // Apply notification settings
+  useSettingsStore.getState().setShowNotifications(settings.showNotifications);
+};
+
+// Track pending OBS auto-connect timeout so we can cancel it when switching profiles
+let pendingObsAutoConnectTimeout: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Apply profile settings to the application when switching profiles
+ * Disconnects OBS, syncs new config, and optionally auto-connects
+ */
+const applyProfileSettings = async (settings: ProfileSettings) => {
+  // Cancel any pending auto-connect from a previous profile switch
+  if (pendingObsAutoConnectTimeout) {
+    clearTimeout(pendingObsAutoConnectTimeout);
+    pendingObsAutoConnectTimeout = null;
+  }
+
+  // Apply UI settings first
+  applyUiSettings(settings);
+
+  // Disconnect OBS if currently connected (so the new profile's config can be applied)
+  const obsStore = useObsStore.getState();
+  if (obsStore.connectionStatus === 'connected' || obsStore.connectionStatus === 'connecting') {
+    try {
+      await obsStore.disconnect(false); // false = not manual, don't disable auto-reconnect permanently
+    } catch (error) {
+      console.warn('Failed to disconnect OBS when switching profiles:', error);
+    }
+  }
+
+  // Sync OBS config from profile (this also updates the backend)
+  obsStore.syncConfigFromProfile();
+
+  // Auto-connect to OBS if the new profile has auto-connect enabled
+  if (settings.obs.autoConnect) {
+    // Small delay to ensure config is synced to backend first
+    pendingObsAutoConnectTimeout = setTimeout(() => {
+      pendingObsAutoConnectTimeout = null;
+      useObsStore.getState().connect(false).catch((error) => {
+        console.warn('Failed to auto-connect to OBS:', error);
+      });
+    }, 100);
+  }
+};
 
 // Helper to create a summary from a full profile (using new nested structure)
 const createSummary = (profile: Profile, isEncrypted: boolean = false): ProfileSummary => {
@@ -155,6 +224,11 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         pendingPasswordProfile: null,
         passwordError: null,
       });
+
+      // Apply profile settings (theme, language, notifications, OBS disconnect/reconnect)
+      if (profile.settings) {
+        await applyProfileSettings(profile.settings);
+      }
 
       // Update summary with actual data if it was encrypted
       if (isEncrypted) {
@@ -321,6 +395,22 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     const current = get().current;
     if (current) {
       set({ current: { ...current, ...updates } });
+      await get().saveProfile();
+    }
+  },
+
+  updateProfileSettings: async (updates) => {
+    const current = get().current;
+    if (current && current.settings) {
+      const newSettings = { ...current.settings, ...updates };
+      set({
+        current: {
+          ...current,
+          settings: newSettings,
+        },
+      });
+      // Apply the UI-only settings (don't disconnect OBS for settings changes)
+      applyUiSettings(newSettings);
       await get().saveProfile();
     }
   },

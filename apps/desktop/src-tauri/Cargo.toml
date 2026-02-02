@@ -1,6 +1,6 @@
 [package]
 name = "spiritstream-desktop"
-version = "1.1.1"
+version = "1.2.0"
 description = "SpiritStream Desktop - Multi-Destination Streaming Application"
 authors = ["SpiritStream Contributors"]
 license = "ISC"
