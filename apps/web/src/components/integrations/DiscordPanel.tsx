@@ -43,7 +43,7 @@ const EMOJI_CATEGORIES = [
     nameKey: 'discord.emojiCategories.fun',
     emojis: ['😎', '🤩', '😄', '🥳', '👋', '🙌', '👏', '💬', '📢', '🔔'],
   },
-];
+] as const;
 
 export function DiscordPanel() {
   const { t } = useTranslation();
