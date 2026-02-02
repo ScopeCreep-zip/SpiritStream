@@ -93,7 +93,8 @@
     "noOutputGroups": "未配置输出组",
     "encoderSettings": "编码器设置",
     "encoderSettingsDescription": "每个输出的编码器配置",
-    "noEncoderSettings": "无编码器配置"
+    "noEncoderSettings": "无编码器配置",
+    "testingTarget": "Testing {{name}}..."
   },
   "profiles": {
     "newProfile": "新档案",
@@ -281,7 +282,13 @@
       "96k": "96kbps",
       "64": "64 kbps（低）",
       "64k": "64kbps"
-    }
+    },
+    "channels": {
+      "mono": "Mono",
+      "stereo": "Stereo",
+      "multiple": "{{count}} channels"
+    },
+    "sampleRateKHz": "{{value}} kHz"
   },
   "outputs": {
     "defaultOutputName": "默认输出",
@@ -438,7 +445,30 @@
     "upToDate": "FFmpeg 是最新的",
     "deleteFFmpeg": "删除",
     "deleteFFmpegConfirm": "确定要删除 FFmpeg 吗？您可以随时重新下载。",
-    "deletingFFmpeg": "正在删除 FFmpeg..."
+    "deletingFFmpeg": "正在删除 FFmpeg...",
+    "profileSettings": "Profile Settings",
+    "globalSettings": "Global Settings",
+    "appearance": "Appearance",
+    "appearanceDescription": "Theme and language for this profile.",
+    "notificationsSecurity": "Notifications & Security",
+    "notificationsSecurityDescription": "Notification preferences and data security for this profile.",
+    "remoteAccess": "Remote Access",
+    "remoteAccessDescription": "Enable the built-in HTTP API so you can manage SpiritStream from another device.",
+    "remoteAccessToggle": "Allow remote web access",
+    "remoteAccessToggleDescription": "When off, the API binds to localhost only. Restart required after changes.",
+    "remoteAccessUiToggle": "Serve web GUI from the host",
+    "remoteAccessUiToggleDescription": "When off, the host will not serve the UI files. Restart required after changes.",
+    "remoteAccessHost": "Bind host",
+    "remoteAccessHostHelper": "Use 0.0.0.0 to listen on all interfaces.",
+    "remoteAccessPort": "Port",
+    "remoteAccessToken": "Access token (optional)",
+    "remoteAccessTokenHelper": "Clients must send this token as a Bearer auth header when enabled.",
+    "appBehavior": "App Behavior",
+    "appBehaviorDescription": "System-wide application settings.",
+    "dataManagement": "Data Management",
+    "dataManagementDescription": "Export and manage your application data.",
+    "loadError": "Failed to load settings",
+    "loadProfileFirst": "Please load a profile to edit its settings."
   },
   "modals": {
     "createNewProfile": "创建新的个人资料",
@@ -542,7 +572,12 @@
       "confirmPasswordPlaceholder": "确认密码",
       "encrypt": "加密",
       "decrypt": "解密"
-    }
+    },
+    "applicationPlaceholder": "live",
+    "bindAddressPlaceholder": "0.0.0.0",
+    "keyframeIntervalPlaceholder": "2",
+    "portPlaceholder": "1935",
+    "videoBitratePlaceholder": "6000"
   },
   "platforms": {
     "youtube": "YouTube",
@@ -576,7 +611,13 @@
     "lost": "Connection to backend lost. Attempting to reconnect...",
     "lostWithError": "Connection lost: {{error}}",
     "lostTitle": "Connection Lost",
-    "lostBody": "Lost connection to the backend server."
+    "lostBody": "Lost connection to the backend server.",
+    "attemptingConnection": "Attempting to connect to:",
+    "errorTitle": "Cannot connect to server",
+    "errorDescription": "The backend server is not responding. Please ensure it is running and try again.",
+    "helpText": "If the problem persists, check that the server is running and the URL is correct.",
+    "retry": "Retry",
+    "retrying": "Retrying..."
   },
   "common": {
     "save": "节省",
@@ -623,7 +664,9 @@
     "encrypted": "（加密）",
     "copySuffix": "（复制）",
     "switchToDarkMode": "切换到深色模式",
-    "switchToLightMode": "切换到灯光模式"
+    "switchToLightMode": "切换到灯光模式",
+    "loadProfileFirst": "Please load a profile first",
+    "select": "Select"
   },
   "errors": {
     "loadingFailed": "加载失败",
@@ -693,7 +736,15 @@
     "keyRotationSuccess": "机器钥匙旋转。更新了 {{profiles}} 配置文件，重新加密了 {{keys}} 密钥。",
     "keyRotationFailed": "密钥轮换失败：{{error}}",
     "groupStarted": "输出组已启动",
-    "groupStopped": "输出组已停止"
+    "groupStopped": "输出组已停止",
+    "validatingConfig": "Validating configuration...",
+    "configValidNoTargets": "Configuration valid (no targets to test)",
+    "testingConnectivity": "Testing connectivity to {{count}} targets...",
+    "targetTestPassed": "✓ {{name}}: Connected ({{ms}}ms)",
+    "targetTestFailed": "✗ {{name}}: {{message}}",
+    "allTestsPassed": "All {{count}} targets passed connectivity test!",
+    "someTestsFailed": "{{passed}} passed, {{failed}} failed",
+    "allTestsFailed": "All {{count}} targets failed connectivity test"
   },
   "fileBrowser": {
     "selectDirectory": "Select Directory",
@@ -807,6 +858,25 @@
     "title": "Discord Webhook",
     "webhookSettings": "Webhook 设置",
     "webhookSettingsDescription": "配置 Discord Webhook 以发送开播通知",
-    "webhookUrl": "Webhook URL"
+    "webhookUrl": "Webhook URL",
+    "emojiCategories": {
+      "streaming": "Streaming",
+      "reactions": "Reactions",
+      "fun": "Fun"
+    },
+    "markdownExample": "**bold** *italic* __underline__ ~~strikethrough~~ `code` [link](url)",
+    "webhookUrlPlaceholder": "https://discord.com/api/webhooks/..."
+  },
+  "login": {
+    "title": "Authentication Required",
+    "description": "This SpiritStream server requires authentication. Please enter your API token to continue.",
+    "tokenLabel": "API Token",
+    "tokenPlaceholder": "Enter your API token",
+    "tokenRequired": "API token is required",
+    "invalidToken": "Invalid API token",
+    "connectionError": "Connection error. Please try again.",
+    "tokenHint": "The API token is configured on the server via the SPIRITSTREAM_API_TOKEN environment variable or in settings.",
+    "authenticating": "Authenticating...",
+    "submit": "Login"
   }
 }

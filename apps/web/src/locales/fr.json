@@ -19,7 +19,13 @@
       "aac": "AAC",
       "libmp3lame": "MP3",
       "libopus": "Opus"
-    }
+    },
+    "channels": {
+      "mono": "Mono",
+      "stereo": "Stereo",
+      "multiple": "{{count}} channels"
+    },
+    "sampleRateKHz": "{{value}} kHz"
   },
   "common": {
     "add": "Ajouter",
@@ -66,7 +72,9 @@
     "switchToLightMode": "Passer en mode clair",
     "unnamed": "Anonyme",
     "warning": "Avertissement",
-    "yes": "Oui"
+    "yes": "Oui",
+    "loadProfileFirst": "Please load a profile first",
+    "select": "Select"
   },
   "connection": {
     "connected": "Connected",
@@ -79,7 +87,13 @@
     "reconnected": "Reconnected to backend",
     "reconnectedBody": "Reconnected to the backend server.",
     "reconnectedTitle": "Connection Restored",
-    "reconnecting": "Reconnecting..."
+    "reconnecting": "Reconnecting...",
+    "attemptingConnection": "Attempting to connect to:",
+    "errorTitle": "Cannot connect to server",
+    "errorDescription": "The backend server is not responding. Please ensure it is running and try again.",
+    "helpText": "If the problem persists, check that the server is running and the URL is correct.",
+    "retry": "Retry",
+    "retrying": "Retrying..."
   },
   "dashboard": {
     "active": "Actif",
@@ -123,7 +137,8 @@
     "testing": "Test en cours...",
     "totalBitrate": "Débit Total",
     "uptime": "Temps d'Activité",
-    "viewers": "Spectateurs"
+    "viewers": "Spectateurs",
+    "testingTarget": "Testing {{name}}..."
   },
   "encoder": {
     "addEncoder": "Ajouter un Encodeur",
@@ -445,7 +460,12 @@
     "targetNamePlaceholder": "ex., YouTube Gaming",
     "thisProfile": "ce profil",
     "unlock": "Déverrouiller",
-    "videoSettings": "Paramètres Vidéo"
+    "videoSettings": "Paramètres Vidéo",
+    "applicationPlaceholder": "live",
+    "bindAddressPlaceholder": "0.0.0.0",
+    "keyframeIntervalPlaceholder": "2",
+    "portPlaceholder": "1935",
+    "videoBitratePlaceholder": "6000"
   },
   "nav": {
     "configuration": "Configuration",
@@ -660,7 +680,30 @@
     "updateAvailable": "Mise à jour disponible",
     "updateFFmpeg": "Mettre à jour FFmpeg",
     "updates": "Mises à jour",
-    "version": "Version"
+    "version": "Version",
+    "profileSettings": "Profile Settings",
+    "globalSettings": "Global Settings",
+    "appearance": "Appearance",
+    "appearanceDescription": "Theme and language for this profile.",
+    "notificationsSecurity": "Notifications & Security",
+    "notificationsSecurityDescription": "Notification preferences and data security for this profile.",
+    "remoteAccess": "Remote Access",
+    "remoteAccessDescription": "Enable the built-in HTTP API so you can manage SpiritStream from another device.",
+    "remoteAccessToggle": "Allow remote web access",
+    "remoteAccessToggleDescription": "When off, the API binds to localhost only. Restart required after changes.",
+    "remoteAccessUiToggle": "Serve web GUI from the host",
+    "remoteAccessUiToggleDescription": "When off, the host will not serve the UI files. Restart required after changes.",
+    "remoteAccessHost": "Bind host",
+    "remoteAccessHostHelper": "Use 0.0.0.0 to listen on all interfaces.",
+    "remoteAccessPort": "Port",
+    "remoteAccessToken": "Access token (optional)",
+    "remoteAccessTokenHelper": "Clients must send this token as a Bearer auth header when enabled.",
+    "appBehavior": "App Behavior",
+    "appBehaviorDescription": "System-wide application settings.",
+    "dataManagement": "Data Management",
+    "dataManagementDescription": "Export and manage your application data.",
+    "loadError": "Failed to load settings",
+    "loadProfileFirst": "Please load a profile to edit its settings."
   },
   "status": {
     "active": "Actif",
@@ -754,7 +797,15 @@
     "testPassed": "Toutes les vérifications sont passées ! Votre configuration de diffusion est valide.",
     "testingConfig": "Test de la configuration de diffusion...",
     "groupStarted": "Groupe de sortie démarré",
-    "groupStopped": "Groupe de sortie arrêté"
+    "groupStopped": "Groupe de sortie arrêté",
+    "validatingConfig": "Validating configuration...",
+    "configValidNoTargets": "Configuration valid (no targets to test)",
+    "testingConnectivity": "Testing connectivity to {{count}} targets...",
+    "targetTestPassed": "✓ {{name}}: Connected ({{ms}}ms)",
+    "targetTestFailed": "✗ {{name}}: {{message}}",
+    "allTestsPassed": "All {{count}} targets passed connectivity test!",
+    "someTestsFailed": "{{passed}} passed, {{failed}} failed",
+    "allTestsFailed": "All {{count}} targets failed connectivity test"
   },
   "validation": {
     "applicationRequired": "Le nom de l'application est requis",
@@ -807,6 +858,25 @@
     "title": "Webhook Discord",
     "webhookSettings": "Paramètres du webhook",
     "webhookSettingsDescription": "Configurer votre webhook Discord pour les notifications de mise en direct",
-    "webhookUrl": "URL du webhook"
+    "webhookUrl": "URL du webhook",
+    "emojiCategories": {
+      "streaming": "Streaming",
+      "reactions": "Reactions",
+      "fun": "Fun"
+    },
+    "markdownExample": "**bold** *italic* __underline__ ~~strikethrough~~ `code` [link](url)",
+    "webhookUrlPlaceholder": "https://discord.com/api/webhooks/..."
+  },
+  "login": {
+    "title": "Authentication Required",
+    "description": "This SpiritStream server requires authentication. Please enter your API token to continue.",
+    "tokenLabel": "API Token",
+    "tokenPlaceholder": "Enter your API token",
+    "tokenRequired": "API token is required",
+    "invalidToken": "Invalid API token",
+    "connectionError": "Connection error. Please try again.",
+    "tokenHint": "The API token is configured on the server via the SPIRITSTREAM_API_TOKEN environment variable or in settings.",
+    "authenticating": "Authenticating...",
+    "submit": "Login"
   }
 }

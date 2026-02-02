@@ -217,7 +217,7 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
 
         <Input
           label={t('modals.serverUrl')}
-          placeholder="rtmp://a.rtmp.youtube.com/live2"
+          placeholder={t('modals.target.serverUrlPlaceholder')}
           value={formData.url}
           onChange={handleChange('url')}
           error={errors.url}

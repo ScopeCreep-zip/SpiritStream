@@ -32,18 +32,18 @@ const AUTO_SAVE_DELAY = 500;
 // Common emojis for streaming
 const EMOJI_CATEGORIES = [
   {
-    name: 'Streaming',
+    nameKey: 'discord.emojiCategories.streaming',
     emojis: ['🎮', '🔴', '📺', '🎬', '🎥', '📡', '🎙️', '🎧', '🕹️', '💻'],
   },
   {
-    name: 'Reactions',
+    nameKey: 'discord.emojiCategories.reactions',
     emojis: ['🔥', '💯', '⭐', '✨', '💪', '🎉', '🚀', '👀', '❤️', '💜'],
   },
   {
-    name: 'Fun',
+    nameKey: 'discord.emojiCategories.fun',
     emojis: ['😎', '🤩', '😄', '🥳', '👋', '🙌', '👏', '💬', '📢', '🔔'],
   },
-];
+] as const;
 
 export function DiscordPanel() {
   const { t } = useTranslation();
@@ -346,7 +346,7 @@ export function DiscordPanel() {
                     value={webhookUrl}
                     onChange={(e) => setWebhookUrl(e.target.value)}
                     onBlur={handleUrlBlur}
-                    placeholder="https://discord.com/api/webhooks/..."
+                    placeholder={t('discord.webhookUrlPlaceholder')}
                     disabled={!webhookEnabled}
                     autoComplete="off"
                   />
@@ -505,9 +505,9 @@ export function DiscordPanel() {
                 {showEmojiPicker && (
                   <div className="absolute right-0 top-full mt-1 z-50 p-2 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-default)] shadow-lg w-64">
                     {EMOJI_CATEGORIES.map((category) => (
-                      <div key={category.name} className="mb-2 last:mb-0">
+                      <div key={category.nameKey} className="mb-2 last:mb-0">
                         <div className="text-xs text-[var(--text-tertiary)] mb-1 px-1">
-                          {category.name}
+                          {t(category.nameKey)}
                         </div>
                         <div className="flex flex-wrap gap-1">
                           {category.emojis.map((emoji) => (
@@ -535,7 +535,7 @@ export function DiscordPanel() {
             <div className="text-xs text-[var(--text-tertiary)] space-y-1">
               <p>{t('discord.markdownSupport')}</p>
               <p className="font-mono">
-                **bold** *italic* __underline__ ~~strikethrough~~ `code` [link](url)
+                {t('discord.markdownExample')}
               </p>
             </div>
           </div>
