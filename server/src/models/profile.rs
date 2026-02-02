@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, HashMap};
-use crate::models::{OutputGroup, Platform};
+use crate::models::{OutputGroup, Platform, ProfileSettings};
 
 /// RTMP Input configuration - where the stream enters the system
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,6 +53,11 @@ pub struct Profile {
 
     /// Encoding configurations with their targets
     pub output_groups: Vec<OutputGroup>,
+
+    /// Per-profile settings (theme, integrations, security)
+    /// Uses #[serde(default)] for backward compatibility with existing profiles
+    #[serde(default)]
+    pub settings: ProfileSettings,
 }
 
 impl Profile {

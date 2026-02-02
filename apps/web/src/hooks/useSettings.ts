@@ -1,9 +1,6 @@
 import { useQuery, useMutation, useQueryClient, useIsMutating } from '@tanstack/react-query';
 import { useEffect, useCallback } from 'react';
 import { api } from '@/lib/backend';
-import { useSettingsStore } from '@/stores/settingsStore';
-import { useLanguageStore, type Language } from '@/stores/languageStore';
-import { useThemeStore } from '@/stores/themeStore';
 import type { AppSettings } from '@/types/api';
 
 /**
@@ -25,16 +22,13 @@ export const SETTINGS_QUERY_KEY = ['settings'] as const;
 export const FFMPEG_VERSION_QUERY_KEY = ['ffmpeg-version'] as const;
 
 /**
- * Hook to fetch settings data with TanStack Query
+ * Hook to fetch global settings data with TanStack Query
  *
- * This provides:
- * - Automatic caching and background refetching
- * - Loading and error states
- * - Multi-client sync support
+ * NOTE: Profile-specific settings (theme, language, integrations) have been
+ * moved to ProfileSettings and are now managed through the profile store.
+ * This hook only handles global, app-wide settings.
  */
 export function useSettings() {
-  const { initFromSettings } = useLanguageStore();
-
   const query = useQuery({
     queryKey: SETTINGS_QUERY_KEY,
     queryFn: async (): Promise<SettingsData> => {
@@ -43,12 +37,6 @@ export function useSettings() {
         api.settings.get(),
         api.settings.getProfilesPath(),
       ]);
-
-      // Initialize i18n with the saved language
-      initFromSettings(backendSettings.language);
-
-      // Sync showNotifications to global store for toast system
-      useSettingsStore.getState().setShowNotifications(backendSettings.showNotifications);
 
       return {
         ...backendSettings,
@@ -84,16 +72,13 @@ export function useFfmpegVersion() {
 }
 
 /**
- * Hook for updating individual settings with optimistic updates
+ * Hook for updating individual global settings with optimistic updates
  *
- * This provides:
- * - Instant UI feedback (optimistic update)
- * - Automatic rollback on error
- * - Multi-client sync via invalidation
+ * NOTE: Profile-specific settings (theme, language, OBS, Discord) should be
+ * updated through the profile store, not through this hook.
  */
 export function useUpdateSetting() {
   const queryClient = useQueryClient();
-  const { setLanguage } = useLanguageStore();
 
   return useMutation({
     mutationFn: async ({ key, value }: { key: keyof AppSettings; value: unknown }) => {
@@ -102,33 +87,13 @@ export function useUpdateSetting() {
         throw new Error('Settings not loaded');
       }
 
+      // Build global settings object (only non-legacy fields)
       const updated: AppSettings = {
-        language: current.language,
         startMinimized: current.startMinimized,
-        showNotifications: current.showNotifications,
         ffmpegPath: current.ffmpegPath,
         autoDownloadFfmpeg: current.autoDownloadFfmpeg,
-        encryptStreamKeys: current.encryptStreamKeys,
         logRetentionDays: current.logRetentionDays,
-        themeId: useThemeStore.getState().currentThemeId,
-        backendRemoteEnabled: current.backendRemoteEnabled,
-        backendUiEnabled: current.backendUiEnabled,
-        backendHost: current.backendHost,
-        backendPort: current.backendPort,
-        backendToken: current.backendToken,
-        obsHost: current.obsHost ?? 'localhost',
-        obsPort: current.obsPort ?? 4455,
-        obsPassword: current.obsPassword ?? '',
-        obsUseAuth: current.obsUseAuth ?? false,
-        obsDirection: current.obsDirection ?? 'disabled',
-        obsAutoConnect: current.obsAutoConnect ?? false,
         lastProfile: current.lastProfile,
-        discordWebhookEnabled: current.discordWebhookEnabled ?? false,
-        discordWebhookUrl: current.discordWebhookUrl ?? '',
-        discordGoLiveMessage: current.discordGoLiveMessage ?? '**Stream is now live!** 🎮\n\nCome join the stream!',
-        discordCooldownEnabled: current.discordCooldownEnabled ?? true,
-        discordCooldownSeconds: current.discordCooldownSeconds ?? 60,
-        discordImagePath: current.discordImagePath ?? '',
         [key]: value,
       };
 
@@ -149,42 +114,23 @@ export function useUpdateSetting() {
         return { ...old, [key]: value };
       });
 
-      // Handle side effects for specific settings
-      if (key === 'language') {
-        setLanguage(value as Language);
-      }
-      if (key === 'showNotifications') {
-        useSettingsStore.getState().setShowNotifications(value as boolean);
-      }
-
       return { previousSettings };
     },
 
-    onError: (err, variables, context) => {
+    onError: (err, _variables, context) => {
       // Rollback to previous value on error
       if (context?.previousSettings) {
         queryClient.setQueryData(SETTINGS_QUERY_KEY, context.previousSettings);
-
-        // Rollback side effects
-        if (variables.key === 'language') {
-          setLanguage(context.previousSettings.language as Language);
-        }
-        if (variables.key === 'showNotifications') {
-          useSettingsStore.getState().setShowNotifications(
-            context.previousSettings.showNotifications
-          );
-        }
       }
       console.error('Failed to save setting:', err);
     },
-
-    // Note: No onSettled invalidation - optimistic update already has correct data
-    // Multi-client sync is handled by useSettingsSync listening for remote events
   });
 }
 
 /**
- * Hook for saving multiple settings at once (e.g., after theme change)
+ * Hook for saving multiple global settings at once
+ *
+ * NOTE: Profile-specific settings should be updated through the profile store.
  */
 export function useSaveSettings() {
   const queryClient = useQueryClient();
@@ -196,33 +142,13 @@ export function useSaveSettings() {
         throw new Error('Settings not loaded');
       }
 
+      // Build global settings object (only non-legacy fields)
       const updated: AppSettings = {
-        language: current.language,
         startMinimized: current.startMinimized,
-        showNotifications: current.showNotifications,
         ffmpegPath: current.ffmpegPath,
         autoDownloadFfmpeg: current.autoDownloadFfmpeg,
-        encryptStreamKeys: current.encryptStreamKeys,
         logRetentionDays: current.logRetentionDays,
-        themeId: useThemeStore.getState().currentThemeId,
-        backendRemoteEnabled: current.backendRemoteEnabled,
-        backendUiEnabled: current.backendUiEnabled,
-        backendHost: current.backendHost,
-        backendPort: current.backendPort,
-        backendToken: current.backendToken,
-        obsHost: current.obsHost ?? 'localhost',
-        obsPort: current.obsPort ?? 4455,
-        obsPassword: current.obsPassword ?? '',
-        obsUseAuth: current.obsUseAuth ?? false,
-        obsDirection: current.obsDirection ?? 'disabled',
-        obsAutoConnect: current.obsAutoConnect ?? false,
         lastProfile: current.lastProfile,
-        discordWebhookEnabled: current.discordWebhookEnabled ?? false,
-        discordWebhookUrl: current.discordWebhookUrl ?? '',
-        discordGoLiveMessage: current.discordGoLiveMessage ?? '**Stream is now live!** 🎮\n\nCome join the stream!',
-        discordCooldownEnabled: current.discordCooldownEnabled ?? true,
-        discordCooldownSeconds: current.discordCooldownSeconds ?? 60,
-        discordImagePath: current.discordImagePath ?? '',
         ...updates,
       };
 
@@ -248,9 +174,6 @@ export function useSaveSettings() {
       }
       console.error('Failed to save settings:', err);
     },
-
-    // Note: No onSettled invalidation - optimistic update already has correct data
-    // Multi-client sync is handled by useSettingsSync listening for remote events
   });
 }
 
