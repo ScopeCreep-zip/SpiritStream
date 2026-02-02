@@ -74,10 +74,10 @@ interface ProfileState {
 }
 
 /**
- * Apply profile settings to the application
- * Called when a profile is loaded to sync theme, language, notifications, and OBS config
+ * Apply UI-only profile settings (theme, language, notifications)
+ * Called when settings are updated on the current profile
  */
-const applyProfileSettings = (settings: ProfileSettings) => {
+const applyUiSettings = (settings: ProfileSettings) => {
   // Apply theme
   if (settings.themeId) {
     useThemeStore.getState().setTheme(settings.themeId);
@@ -90,9 +90,48 @@ const applyProfileSettings = (settings: ProfileSettings) => {
 
   // Apply notification settings
   useSettingsStore.getState().setShowNotifications(settings.showNotifications);
+};
 
-  // Sync OBS config from profile
-  useObsStore.getState().syncConfigFromProfile();
+// Track pending OBS auto-connect timeout so we can cancel it when switching profiles
+let pendingObsAutoConnectTimeout: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Apply profile settings to the application when switching profiles
+ * Disconnects OBS, syncs new config, and optionally auto-connects
+ */
+const applyProfileSettings = async (settings: ProfileSettings) => {
+  // Cancel any pending auto-connect from a previous profile switch
+  if (pendingObsAutoConnectTimeout) {
+    clearTimeout(pendingObsAutoConnectTimeout);
+    pendingObsAutoConnectTimeout = null;
+  }
+
+  // Apply UI settings first
+  applyUiSettings(settings);
+
+  // Disconnect OBS if currently connected (so the new profile's config can be applied)
+  const obsStore = useObsStore.getState();
+  if (obsStore.connectionStatus === 'connected' || obsStore.connectionStatus === 'connecting') {
+    try {
+      await obsStore.disconnect(false); // false = not manual, don't disable auto-reconnect permanently
+    } catch (error) {
+      console.warn('Failed to disconnect OBS when switching profiles:', error);
+    }
+  }
+
+  // Sync OBS config from profile (this also updates the backend)
+  obsStore.syncConfigFromProfile();
+
+  // Auto-connect to OBS if the new profile has auto-connect enabled
+  if (settings.obs.autoConnect) {
+    // Small delay to ensure config is synced to backend first
+    pendingObsAutoConnectTimeout = setTimeout(() => {
+      pendingObsAutoConnectTimeout = null;
+      useObsStore.getState().connect(false).catch((error) => {
+        console.warn('Failed to auto-connect to OBS:', error);
+      });
+    }, 100);
+  }
 };
 
 // Helper to create a summary from a full profile (using new nested structure)
@@ -192,9 +231,9 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         passwordError: null,
       });
 
-      // Apply profile settings (theme, language, notifications)
+      // Apply profile settings (theme, language, notifications, OBS disconnect/reconnect)
       if (profile.settings) {
-        applyProfileSettings(profile.settings);
+        await applyProfileSettings(profile.settings);
       }
 
       // Update summary with actual data if it was encrypted
@@ -394,8 +433,8 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
           settings: newSettings,
         },
       });
-      // Apply the updated settings to the UI
-      applyProfileSettings(newSettings);
+      // Apply the UI-only settings (don't disconnect OBS for settings changes)
+      applyUiSettings(newSettings);
       await get().saveProfile();
     }
   },
