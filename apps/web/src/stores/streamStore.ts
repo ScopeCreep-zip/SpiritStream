@@ -242,14 +242,21 @@ export const useStreamStore = create<StreamState>((set, get) => ({
 
     try {
       // Filter groups by: has targets AND is enabled
+      // If enabledGroups is empty, treat all groups as enabled (first-time startup case)
       const enabledGroups = get().enabledGroups;
-      const eligibleGroups = groups.filter((group) =>
-        group.streamTargets.length > 0 && enabledGroups.has(group.id)
-      );
+      const eligibleGroups = groups.filter((group) => {
+        const hasTargets = group.streamTargets.length > 0;
+        // If no groups have been explicitly enabled yet, allow all groups with targets
+        const isEnabled = enabledGroups.size === 0 || enabledGroups.has(group.id);
+        return hasTargets && isEnabled;
+      });
 
       if (eligibleGroups.length === 0) {
         throw new Error('At least one enabled output group with stream targets is required');
       }
+
+      // Track if we were already streaming (for OBS trigger)
+      const wasStreaming = get().activeGroups.size > 0;
 
       await api.stream.startAll(eligibleGroups, incomingUrl);
 
@@ -259,6 +266,11 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       }
       set({ activeGroups, isStreaming: true });
       get().setGlobalStatus('live');
+
+      // Trigger OBS if this is the first stream starting
+      if (!wasStreaming) {
+        triggerObsIfEnabled('start');
+      }
     } catch (error) {
       set({ error: String(error), globalStatus: 'error' });
       throw error; // Re-throw so UI can catch it

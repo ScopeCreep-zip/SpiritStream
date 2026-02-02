@@ -297,6 +297,7 @@ export function DiscordPanel() {
                   placeholder="https://discord.com/api/webhooks/..."
                   disabled={!webhookEnabled}
                   autoComplete="off"
+                  style={{ paddingRight: '60px' }}
                 />
                 <button
                   type="button"

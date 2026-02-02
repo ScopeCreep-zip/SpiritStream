@@ -829,8 +829,7 @@ async fn invoke_command(
     command: &str,
     payload: Value,
 ) -> Result<Value, String> {
-    log::info!("[invoke_command] Command: {}, Payload: {:?}", command, payload);
-    eprintln!("[invoke_command] Command: {}, Payload: {:?}", command, payload);
+    log::debug!("[invoke_command] Command: {}, Payload: {:?}", command, payload);
 
     let result = match command {
         "get_all_profiles" => {
