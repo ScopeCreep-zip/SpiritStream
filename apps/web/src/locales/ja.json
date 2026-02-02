@@ -825,7 +825,7 @@
     "streamKeyRequired": "ストリームキーは必須です",
     "targetNameRequired": "ターゲット名は必須です",
     "urlInvalid": "URLはrtmp://またはrtmps://で始まる必要があります",
-    "urlMustStartWithRtmp": "URL?rtmp://???rtmps://???????????",
+    "urlMustStartWithRtmp": "URLは rtmp:// または rtmps:// で始まる必要があります",
     "urlRequired": "URLは必須です"
   },
   "discord": {

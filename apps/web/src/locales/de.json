@@ -23,7 +23,7 @@
     "channels": {
       "mono": "Mono",
       "stereo": "Stereo",
-      "multiple": "{{count}} Kan?le"
+      "multiple": "{{count}} Kanäle"
     },
     "sampleRateKHz": "{{value}} kHz"
   },
@@ -74,7 +74,7 @@
     "warning": "Warnung",
     "yes": "Ja",
     "loadProfileFirst": "Bitte zuerst ein Profil laden",
-    "select": "Ausw?hlen"
+    "select": "Auswählen"
   },
   "connection": {
     "connected": "Connected",
@@ -90,8 +90,8 @@
     "reconnecting": "Reconnecting...",
     "attemptingConnection": "Versuche Verbindung zu:",
     "errorTitle": "Verbindung zum Server fehlgeschlagen",
-    "errorDescription": "Der Backend-Server antwortet nicht. Bitte stelle sicher, dass er l?uft, und versuche es erneut.",
-    "helpText": "Wenn das Problem bestehen bleibt, ?berpr?fe, ob der Server l?uft und die URL korrekt ist.",
+    "errorDescription": "Der Backend-Server antwortet nicht. Bitte stelle sicher, dass er läuft, und versuche es erneut.",
+    "helpText": "Wenn das Problem bestehen bleibt, ?überprüfe, ob der Server läuft und die URL korrekt ist.",
     "retry": "Erneut versuchen",
     "retrying": "Erneut versuchen..."
   },
@@ -506,7 +506,7 @@
     "description": "Mit OBS Studio ?ber WebSocket verbinden",
     "directions": {
       "bidirectional": "Bidirektional",
-      "bidirectionalDescription": "Beide k?nnen den anderen starten/stoppen",
+      "bidirectionalDescription": "Beide können den anderen starten/stoppen",
       "disabled": "Deaktiviert",
       "disabledDescription": "Keine automatische Synchronisierung zwischen OBS und SpiritStream",
       "obsToSpiritstream": "OBS zu SpiritStream",
@@ -684,11 +684,11 @@
     "profileSettings": "Profileinstellungen",
     "globalSettings": "Globale Einstellungen",
     "appearance": "Erscheinungsbild",
-    "appearanceDescription": "Theme und Sprache f?r dieses Profil.",
+    "appearanceDescription": "Theme und Sprache für dieses Profil.",
     "notificationsSecurity": "Benachrichtigungen & Sicherheit",
-    "notificationsSecurityDescription": "Benachrichtigungseinstellungen und Datensicherheit f?r dieses Profil.",
+    "notificationsSecurityDescription": "Benachrichtigungseinstellungen und Datensicherheit für dieses Profil.",
     "remoteAccess": "Fernzugriff",
-    "remoteAccessDescription": "Aktiviere die integrierte HTTP-API, damit du SpiritStream von einem anderen Ger?t verwalten kannst.",
+    "remoteAccessDescription": "Aktiviere die integrierte HTTP-API, damit du SpiritStream von einem anderen Gerät verwalten kannst.",
     "remoteAccessToggle": "Remote-Webzugriff erlauben",
     "remoteAccessToggleDescription": "Wenn deaktiviert, bindet die API nur an localhost. Neustart nach ?nderungen erforderlich.",
     "remoteAccessUiToggle": "Web-GUI vom Host bereitstellen",
@@ -697,7 +697,7 @@
     "remoteAccessHostHelper": "Verwende 0.0.0.0, um auf allen Schnittstellen zu lauschen.",
     "remoteAccessPort": "Port",
     "remoteAccessToken": "Zugriffstoken (optional)",
-    "remoteAccessTokenHelper": "Clients m?ssen dieses Token als Bearer-Auth-Header senden, wenn aktiviert.",
+    "remoteAccessTokenHelper": "Clients müssen dieses Token als Bearer-Auth-Header senden, wenn aktiviert.",
     "appBehavior": "App-Verhalten",
     "appBehaviorDescription": "Systemweite Anwendungseinstellungen.",
     "dataManagement": "Datenverwaltung",
@@ -798,8 +798,8 @@
     "testingConfig": "Streaming-Konfiguration wird getestet...",
     "groupStarted": "Ausgabegruppe gestartet",
     "groupStopped": "Ausgabegruppe gestoppt",
-    "validatingConfig": "Konfiguration wird gepr?ft...",
-    "configValidNoTargets": "Konfiguration g?ltig (keine Ziele zum Testen)",
+    "validatingConfig": "Konfiguration wird geprüft...",
+    "configValidNoTargets": "Konfiguration gültig (keine Ziele zum Testen)",
     "testingConnectivity": "Verbindung zu {{count}} Zielen wird getestet...",
     "targetTestPassed": "? {{name}}: Verbunden ({{ms}}ms)",
     "targetTestFailed": "? {{name}}: {{message}}",
@@ -873,7 +873,7 @@
     "tokenLabel": "API-Token",
     "tokenPlaceholder": "API-Token eingeben",
     "tokenRequired": "API-Token ist erforderlich",
-    "invalidToken": "Ung?ltiger API-Token",
+    "invalidToken": "Ungültiger API-Token",
     "connectionError": "Verbindungsfehler. Bitte versuche es erneut.",
     "tokenHint": "Der API-Token wird auf dem Server ?ber die Umgebungsvariable SPIRITSTREAM_API_TOKEN oder in den Einstellungen konfiguriert.",
     "authenticating": "Authentifizierung...",
