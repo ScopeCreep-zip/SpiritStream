@@ -116,6 +116,18 @@ pub struct Settings {
     pub discord_cooldown_seconds: u32,
     #[serde(default)]
     pub discord_image_path: String,
+
+    // Chat platform integration
+    #[serde(default)]
+    pub chat_twitch_channel: String,
+    #[serde(default)]
+    pub chat_twitch_oauth_token: String,
+    #[serde(default)]
+    pub chat_youtube_channel_id: String,
+    #[serde(default)]
+    pub chat_youtube_api_key: String,
+    #[serde(default)]
+    pub chat_auto_connect: bool,
 }
 
 impl Default for Settings {
@@ -147,6 +159,11 @@ impl Default for Settings {
             discord_cooldown_enabled: true,
             discord_cooldown_seconds: default_discord_cooldown_seconds(),
             discord_image_path: String::new(),
+            chat_twitch_channel: String::new(),
+            chat_twitch_oauth_token: String::new(),
+            chat_youtube_channel_id: String::new(),
+            chat_youtube_api_key: String::new(),
+            chat_auto_connect: false,
         }
     }
 }

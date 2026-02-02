@@ -35,6 +35,12 @@ export interface AppSettings {
   discordCooldownEnabled: boolean;
   discordCooldownSeconds: number;
   discordImagePath: string;
+  // Chat platform settings
+  chatTwitchChannel: string;
+  chatTwitchOauthToken: string;
+  chatYoutubeChannelId: string;
+  chatYoutubeApiKey: string;
+  chatAutoConnect: boolean;
 }
 
 /**

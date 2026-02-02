@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   MessageSquare,
@@ -12,10 +12,12 @@ import {
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { Toggle } from '@/components/ui/Toggle';
 import { api } from '@/lib/backend';
 import { toast } from '@/hooks/useToast';
 import { cn } from '@/lib/cn';
 import type { ChatPlatform, ChatPlatformStatus, ChatConfig, ChatCredentials } from '@/types/chat';
+import type { AppSettings } from '@/types/api';
 
 interface PlatformCardProps {
   platform: ChatPlatform;
@@ -28,16 +30,31 @@ interface PlatformCardProps {
   onDisconnect: () => Promise<void>;
 }
 
+interface TwitchCardProps extends Omit<PlatformCardProps, 'platform' | 'platformName' | 'icon' | 'iconColor'> {
+  initialChannel: string;
+  initialOauthToken: string;
+  onCredentialsChange: (channel: string, oauthToken: string) => void;
+}
+
 function TwitchCard({
   status,
   isConnecting,
   onConnect,
   onDisconnect,
-}: Omit<PlatformCardProps, 'platform' | 'platformName' | 'icon' | 'iconColor'>) {
+  initialChannel,
+  initialOauthToken,
+  onCredentialsChange,
+}: TwitchCardProps) {
   const { t } = useTranslation();
-  const [channel, setChannel] = useState('');
-  const [oauthToken, setOauthToken] = useState('');
+  const [channel, setChannel] = useState(initialChannel);
+  const [oauthToken, setOauthToken] = useState(initialOauthToken);
   const [showToken, setShowToken] = useState(false);
+
+  // Update state when initial values change (settings loaded)
+  useEffect(() => {
+    setChannel(initialChannel);
+    setOauthToken(initialOauthToken);
+  }, [initialChannel, initialOauthToken]);
 
   const isConnected = status?.status === 'connected';
   const hasError = status?.status === 'error';
@@ -47,6 +64,9 @@ function TwitchCard({
       toast.error(t('chat.twitch.enterChannel'));
       return;
     }
+
+    // Notify parent of credentials for saving
+    onCredentialsChange(channel.trim(), oauthToken.trim());
 
     const credentials: ChatCredentials = {
       type: 'twitch',
@@ -61,7 +81,7 @@ function TwitchCard({
     };
 
     await onConnect(config);
-  }, [channel, oauthToken, onConnect, t]);
+  }, [channel, oauthToken, onConnect, onCredentialsChange, t]);
 
   return (
     <Card>
@@ -183,16 +203,31 @@ function TwitchCard({
   );
 }
 
+interface YouTubeCardProps extends Omit<PlatformCardProps, 'platform' | 'platformName' | 'icon' | 'iconColor'> {
+  initialChannelId: string;
+  initialApiKey: string;
+  onCredentialsChange: (channelId: string, apiKey: string) => void;
+}
+
 function YouTubeCard({
   status,
   isConnecting,
   onConnect,
   onDisconnect,
-}: Omit<PlatformCardProps, 'platform' | 'platformName' | 'icon' | 'iconColor'>) {
+  initialChannelId,
+  initialApiKey,
+  onCredentialsChange,
+}: YouTubeCardProps) {
   const { t } = useTranslation();
-  const [channelId, setChannelId] = useState('');
-  const [apiKey, setApiKey] = useState('');
+  const [channelId, setChannelId] = useState(initialChannelId);
+  const [apiKey, setApiKey] = useState(initialApiKey);
   const [showApiKey, setShowApiKey] = useState(false);
+
+  // Update state when initial values change (settings loaded)
+  useEffect(() => {
+    setChannelId(initialChannelId);
+    setApiKey(initialApiKey);
+  }, [initialChannelId, initialApiKey]);
 
   const isConnected = status?.status === 'connected';
   const hasError = status?.status === 'error';
@@ -207,6 +242,9 @@ function YouTubeCard({
       return;
     }
 
+    // Notify parent of credentials for saving
+    onCredentialsChange(channelId.trim(), apiKey.trim());
+
     const credentials: ChatCredentials = {
       type: 'youtube',
       channelId: channelId.trim(),
@@ -220,7 +258,7 @@ function YouTubeCard({
     };
 
     await onConnect(config);
-  }, [channelId, apiKey, onConnect, t]);
+  }, [channelId, apiKey, onConnect, onCredentialsChange, t]);
 
   return (
     <Card>
@@ -351,26 +389,120 @@ function YouTubeCard({
   );
 }
 
+/** Extract a short, user-friendly error message */
+function formatError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+
+  // Channel not found on Twitch
+  const twitchMatch = message.match(/Channel '([^']+)' does not exist on Twitch/i);
+  if (twitchMatch) {
+    return `Channel '${twitchMatch[1]}' not found`;
+  }
+
+  // Generic "does not exist" patterns
+  if (message.toLowerCase().includes('does not exist')) {
+    return 'Channel not found';
+  }
+
+  // Connection errors
+  if (message.toLowerCase().includes('connection')) {
+    return 'Connection failed';
+  }
+
+  // Return as-is if short enough, otherwise truncate
+  return message.length > 50 ? message.slice(0, 47) + '...' : message;
+}
+
 export function ChatPanel() {
   const { t } = useTranslation();
   const [platformStatuses, setPlatformStatuses] = useState<ChatPlatformStatus[]>([]);
   const [connectingPlatform, setConnectingPlatform] = useState<ChatPlatform | null>(null);
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [autoConnect, setAutoConnect] = useState(false);
+  const autoConnectAttempted = useRef(false);
 
-  // Load initial status
+  // Load settings and status on mount
   useEffect(() => {
-    const loadStatus = async () => {
+    const loadInitialData = async () => {
+      try {
+        const [loadedSettings, statuses] = await Promise.all([
+          api.settings.get(),
+          api.chat.getStatus(),
+        ]);
+        setSettings(loadedSettings);
+        setAutoConnect(loadedSettings.chatAutoConnect);
+        setPlatformStatuses(statuses);
+      } catch (error) {
+        console.error('Failed to load chat settings:', error);
+      }
+    };
+
+    loadInitialData();
+  }, []);
+
+  // Auto-connect on startup if enabled
+  useEffect(() => {
+    if (!settings || autoConnectAttempted.current) return;
+    if (!settings.chatAutoConnect) return;
+
+    autoConnectAttempted.current = true;
+
+    const autoConnectPlatforms = async () => {
+      // Auto-connect to Twitch if channel is configured
+      if (settings.chatTwitchChannel) {
+        try {
+          const config: ChatConfig = {
+            platform: 'twitch',
+            enabled: true,
+            credentials: {
+              type: 'twitch',
+              channel: settings.chatTwitchChannel,
+              oauthToken: settings.chatTwitchOauthToken || undefined,
+            },
+          };
+          await api.chat.connect(config);
+        } catch (error) {
+          console.error('Auto-connect to Twitch failed:', error);
+        }
+      }
+
+      // Auto-connect to YouTube if channel and API key are configured
+      if (settings.chatYoutubeChannelId && settings.chatYoutubeApiKey) {
+        try {
+          const config: ChatConfig = {
+            platform: 'youtube',
+            enabled: true,
+            credentials: {
+              type: 'youtube',
+              channelId: settings.chatYoutubeChannelId,
+              apiKey: settings.chatYoutubeApiKey,
+            },
+          };
+          await api.chat.connect(config);
+        } catch (error) {
+          console.error('Auto-connect to YouTube failed:', error);
+        }
+      }
+
+      // Refresh status after auto-connect attempts
+      const statuses = await api.chat.getStatus();
+      setPlatformStatuses(statuses);
+    };
+
+    autoConnectPlatforms();
+  }, [settings]);
+
+  // Poll for status updates
+  useEffect(() => {
+    const interval = setInterval(async () => {
       try {
         const statuses = await api.chat.getStatus();
         setPlatformStatuses(statuses);
       } catch (error) {
         console.error('Failed to load chat status:', error);
       }
-    };
+    }, 5000);
 
-    loadStatus();
-
-    // Poll for status updates every 5 seconds
-    const interval = setInterval(loadStatus, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -378,17 +510,47 @@ export function ChatPanel() {
     return platformStatuses.find((s) => s.platform === platform) || null;
   };
 
+  const saveSettings = useCallback(async (updates: Partial<AppSettings>) => {
+    if (!settings) return;
+
+    const newSettings = { ...settings, ...updates };
+    setSettings(newSettings);
+
+    try {
+      await api.settings.save(newSettings);
+    } catch (error) {
+      console.error('Failed to save settings:', error);
+    }
+  }, [settings]);
+
+  const handleTwitchCredentialsChange = useCallback((channel: string, oauthToken: string) => {
+    saveSettings({
+      chatTwitchChannel: channel,
+      chatTwitchOauthToken: oauthToken,
+    });
+  }, [saveSettings]);
+
+  const handleYouTubeCredentialsChange = useCallback((channelId: string, apiKey: string) => {
+    saveSettings({
+      chatYoutubeChannelId: channelId,
+      chatYoutubeApiKey: apiKey,
+    });
+  }, [saveSettings]);
+
+  const handleAutoConnectChange = useCallback((enabled: boolean) => {
+    setAutoConnect(enabled);
+    saveSettings({ chatAutoConnect: enabled });
+  }, [saveSettings]);
+
   const handleConnect = useCallback(async (config: ChatConfig) => {
     setConnectingPlatform(config.platform);
     try {
       await api.chat.connect(config);
-      // Refresh status
       const statuses = await api.chat.getStatus();
       setPlatformStatuses(statuses);
       toast.success(t('chat.connectSuccess', { platform: config.platform }));
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      toast.error(t('chat.connectFailed') + ': ' + message);
+      toast.error(formatError(error));
     } finally {
       setConnectingPlatform(null);
     }
@@ -398,13 +560,11 @@ export function ChatPanel() {
     setConnectingPlatform(platform);
     try {
       await api.chat.disconnect(platform);
-      // Refresh status
       const statuses = await api.chat.getStatus();
       setPlatformStatuses(statuses);
       toast.success(t('chat.disconnectSuccess', { platform }));
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      toast.error(t('chat.disconnectFailed') + ': ' + message);
+      toast.error(formatError(error));
     } finally {
       setConnectingPlatform(null);
     }
@@ -413,13 +573,20 @@ export function ChatPanel() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="p-2 rounded-lg bg-[var(--bg-elevated)]">
-          <MessageSquare className="w-5 h-5 text-[var(--primary)]" />
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-[var(--bg-elevated)]">
+            <MessageSquare className="w-5 h-5 text-[var(--primary)]" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-[var(--text-primary)]">{t('chat.title')}</h2>
+            <p className="text-sm text-[var(--text-secondary)]">{t('chat.description')}</p>
+          </div>
         </div>
-        <div>
-          <h2 className="text-lg font-semibold text-[var(--text-primary)]">{t('chat.title')}</h2>
-          <p className="text-sm text-[var(--text-secondary)]">{t('chat.description')}</p>
+        {/* Auto-connect toggle */}
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-[var(--text-secondary)]">{t('chat.autoConnect')}</span>
+          <Toggle checked={autoConnect} onChange={handleAutoConnectChange} />
         </div>
       </div>
 
@@ -430,12 +597,18 @@ export function ChatPanel() {
           isConnecting={connectingPlatform === 'twitch'}
           onConnect={handleConnect}
           onDisconnect={() => handleDisconnect('twitch')}
+          initialChannel={settings?.chatTwitchChannel ?? ''}
+          initialOauthToken={settings?.chatTwitchOauthToken ?? ''}
+          onCredentialsChange={handleTwitchCredentialsChange}
         />
         <YouTubeCard
           status={getStatusForPlatform('youtube')}
           isConnecting={connectingPlatform === 'youtube'}
           onConnect={handleConnect}
           onDisconnect={() => handleDisconnect('youtube')}
+          initialChannelId={settings?.chatYoutubeChannelId ?? ''}
+          initialApiKey={settings?.chatYoutubeApiKey ?? ''}
+          onCredentialsChange={handleYouTubeCredentialsChange}
         />
       </div>
     </div>

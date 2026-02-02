@@ -219,6 +219,10 @@ fn sanitize_error(error: &str) -> String {
     if lower.contains("failed to read") || lower.contains("no such file") || lower.contains("not found") {
         return "Resource not found".to_string();
     }
+    // Chat platform errors - pass through user-friendly messages
+    if lower.contains("does not exist on twitch") || lower.contains("channel") && lower.contains("not found") {
+        return error.to_string();
+    }
     if lower.contains("parse") || lower.contains("invalid") {
         return "Invalid request format".to_string();
     }

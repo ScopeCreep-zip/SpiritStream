@@ -70,6 +70,7 @@
   },
   "chat": {
     "addPlatform": "Add Platform",
+    "autoConnect": "Auto-connect",
     "channel": "Channel",
     "channelPlaceholder": "Enter channel name",
     "configureDescription": "Connect to chat platforms to view messages",
