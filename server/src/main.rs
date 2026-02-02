@@ -1024,7 +1024,7 @@ async fn invoke_command(
             // Check if encryption was just enabled
             let old_settings = state.settings_manager.load().ok();
             let encryption_just_enabled = new_settings.encrypt_stream_keys
-                && old_settings.as_ref().map_or(false, |s| !s.encrypt_stream_keys);
+                && old_settings.as_ref().is_some_and(|s| !s.encrypt_stream_keys);
 
             // Save the new settings
             state.settings_manager.save(&new_settings)?;
