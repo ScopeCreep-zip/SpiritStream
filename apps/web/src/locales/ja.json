@@ -19,7 +19,13 @@
       "aac": "AAC",
       "libmp3lame": "MP3",
       "libopus": "オーパス"
-    }
+    },
+    "channels": {
+      "mono": "????",
+      "stereo": "????",
+      "multiple": "{{count}} ?????"
+    },
+    "sampleRateKHz": "{{value}} kHz"
   },
   "common": {
     "add": "追加",
@@ -445,7 +451,12 @@
     "targetNamePlaceholder": "例：YouTube Gaming",
     "thisProfile": "このプロファイル",
     "unlock": "ロック解除",
-    "videoSettings": "映像設定"
+    "videoSettings": "映像設定",
+    "applicationPlaceholder": "live",
+    "bindAddressPlaceholder": "0.0.0.0",
+    "keyframeIntervalPlaceholder": "2",
+    "portPlaceholder": "1935",
+    "videoBitratePlaceholder": "6000"
   },
   "nav": {
     "configuration": "設定",
@@ -807,6 +818,13 @@
     "title": "Discord Webhook",
     "webhookSettings": "Webhook設定",
     "webhookSettingsDescription": "配信開始通知のためのDiscord Webhookを設定",
-    "webhookUrl": "Webhook URL"
+    "webhookUrl": "Webhook URL",
+    "emojiCategories": {
+      "streaming": "??",
+      "reactions": "??????",
+      "fun": "???"
+    },
+    "markdownExample": "**bold** *italic* __underline__ ~~strikethrough~~ `code` [link](url)",
+    "webhookUrlPlaceholder": "https://discord.com/api/webhooks/..."
   }
 }

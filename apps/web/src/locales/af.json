@@ -19,7 +19,13 @@
       "aac": "AAC",
       "libmp3lame": "MP3",
       "libopus": "Opus"
-    }
+    },
+    "channels": {
+      "mono": "Mono",
+      "stereo": "Stereo",
+      "multiple": "{{count}} kanale"
+    },
+    "sampleRateKHz": "{{value}} kHz"
   },
   "common": {
     "add": "Voeg by",
@@ -445,7 +451,12 @@
     "targetNamePlaceholder": "bv. YouTube Gaming",
     "thisProfile": "hierdie profiel",
     "unlock": "Ontsluit",
-    "videoSettings": "Video-instellings"
+    "videoSettings": "Video-instellings",
+    "applicationPlaceholder": "live",
+    "bindAddressPlaceholder": "0.0.0.0",
+    "keyframeIntervalPlaceholder": "2",
+    "portPlaceholder": "1935",
+    "videoBitratePlaceholder": "6000"
   },
   "nav": {
     "configuration": "Konfigurasie",
@@ -807,6 +818,13 @@
     "title": "Discord-webhook",
     "webhookSettings": "Webhook-instellings",
     "webhookSettingsDescription": "Stel jou Discord-webhook op vir regstreekse kennisgewings",
-    "webhookUrl": "Webhook-URL"
+    "webhookUrl": "Webhook-URL",
+    "emojiCategories": {
+      "streaming": "Streaming",
+      "reactions": "Reaksies",
+      "fun": "Pret"
+    },
+    "markdownExample": "**bold** *italic* __underline__ ~~strikethrough~~ `code` [link](url)",
+    "webhookUrlPlaceholder": "https://discord.com/api/webhooks/..."
   }
 }

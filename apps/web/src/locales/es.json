@@ -19,7 +19,13 @@
       "aac": "AAC",
       "libmp3lame": "MP3",
       "libopus": "obra"
-    }
+    },
+    "channels": {
+      "mono": "Mono",
+      "stereo": "Est?reo",
+      "multiple": "{{count}} canales"
+    },
+    "sampleRateKHz": "{{value}} kHz"
   },
   "common": {
     "add": "Añadir",
@@ -66,7 +72,9 @@
     "switchToLightMode": "Cambiar a modo claro",
     "unnamed": "Sin nombre",
     "warning": "Advertencia",
-    "yes": "Sí"
+    "yes": "Sí",
+    "loadProfileFirst": "Por favor carga un perfil primero",
+    "select": "Seleccionar"
   },
   "connection": {
     "connected": "Connected",
@@ -79,7 +87,13 @@
     "reconnected": "Reconectado al backend",
     "reconnectedBody": "Reconectado al servidor backend.",
     "reconnectedTitle": "Conexión Restaurada",
-    "reconnecting": "Reconnecting..."
+    "reconnecting": "Reconnecting...",
+    "attemptingConnection": "Intentando conectar a:",
+    "errorTitle": "No se puede conectar al servidor",
+    "errorDescription": "El servidor backend no responde. Aseg?rate de que est? en ejecuci?n e int?ntalo de nuevo.",
+    "helpText": "Si el problema persiste, verifica que el servidor est? en ejecuci?n y que la URL sea correcta.",
+    "retry": "Reintentar",
+    "retrying": "Reintentando..."
   },
   "dashboard": {
     "active": "Activo",
@@ -123,7 +137,8 @@
     "testing": "Probando...",
     "totalBitrate": "Tasa de Bits Total",
     "uptime": "Tiempo Activo",
-    "viewers": "Espectadores"
+    "viewers": "Espectadores",
+    "testingTarget": "Probando {{name}}..."
   },
   "encoder": {
     "addEncoder": "Añadir Codificador",
@@ -286,8 +301,8 @@
       "title": "Ajustes del Codificador"
     },
     "integrations": {
-      "description": "Connect with external applications",
-      "title": "Integrations"
+      "description": "Conecta con aplicaciones externas",
+      "title": "Integraciones"
     },
     "logs": {
       "description": "Ver eventos de la aplicación en tiempo real e información de depuración",
@@ -445,7 +460,12 @@
     "targetNamePlaceholder": "ej., YouTube Gaming",
     "thisProfile": "este perfil",
     "unlock": "Desbloquear",
-    "videoSettings": "Configuración de Video"
+    "videoSettings": "Configuración de Video",
+    "applicationPlaceholder": "live",
+    "bindAddressPlaceholder": "0.0.0.0",
+    "keyframeIntervalPlaceholder": "2",
+    "portPlaceholder": "1935",
+    "videoBitratePlaceholder": "6000"
   },
   "nav": {
     "configuration": "Configuración",
@@ -472,54 +492,54 @@
     "streamStoppedTitle": "Transmisión Detenida"
   },
   "obs": {
-    "authentication": "Authentication",
-    "autoConnect": "Auto-connect on startup",
-    "configSaveFailed": "Failed to save OBS configuration",
-    "configSaved": "OBS configuration saved",
-    "connect": "Connect",
-    "connectFailed": "Failed to connect to OBS",
-    "connected": "Connected",
-    "connecting": "Connecting...",
-    "connection": "Connection",
-    "connectionError": "Connection Error",
-    "connectionSettings": "Connection Settings",
-    "description": "Connect to OBS Studio via WebSocket",
+    "authentication": "Autenticaci?n",
+    "autoConnect": "Conectar autom?ticamente al iniciar",
+    "configSaveFailed": "No se pudo guardar la configuraci?n de OBS",
+    "configSaved": "Configuraci?n de OBS guardada",
+    "connect": "Conectar",
+    "connectFailed": "No se pudo conectar a OBS",
+    "connected": "Conectado",
+    "connecting": "Conectando...",
+    "connection": "Conexi?n",
+    "connectionError": "Error de conexi?n",
+    "connectionSettings": "Ajustes de conexi?n",
+    "description": "Conecta con OBS Studio v?a WebSocket",
     "directions": {
-      "bidirectional": "Bidirectional",
-      "bidirectionalDescription": "Either can trigger the other to start/stop",
-      "disabled": "Disabled",
-      "disabledDescription": "No automatic sync between OBS and SpiritStream",
-      "obsToSpiritstream": "OBS to SpiritStream",
-      "obsToSpiritstreamDescription": "When OBS starts streaming, SpiritStream starts",
-      "spiritstreamToObs": "SpiritStream to OBS",
-      "spiritstreamToObsDescription": "When SpiritStream starts streaming, OBS starts"
+      "bidirectional": "Bidireccional",
+      "bidirectionalDescription": "Cualquiera puede activar al otro para iniciar/detener",
+      "disabled": "Desactivado",
+      "disabledDescription": "Sin sincronizaci?n autom?tica entre OBS y SpiritStream",
+      "obsToSpiritstream": "OBS a SpiritStream",
+      "obsToSpiritstreamDescription": "Cuando OBS inicia la transmisi?n, SpiritStream inicia",
+      "spiritstreamToObs": "SpiritStream a OBS",
+      "spiritstreamToObsDescription": "Cuando SpiritStream inicia la transmisi?n, OBS inicia"
     },
-    "disconnect": "Disconnect",
-    "disconnectFailed": "Failed to disconnect from OBS",
-    "disconnected": "Disconnected",
+    "disconnect": "Desconectar",
+    "disconnectFailed": "No se pudo desconectar de OBS",
+    "disconnected": "Desconectado",
     "error": "Error",
-    "hidePassword": "Hide password",
+    "hidePassword": "Ocultar contrase?a",
     "host": "Host",
     "hostPlaceholder": "localhost",
-    "integration": "Integration",
-    "integrationDirection": "Sync Direction",
-    "integrationDirectionDescription": "Control how streams sync between OBS and SpiritStream",
-    "notStreaming": "Not Streaming",
-    "obsVersion": "OBS Version",
-    "password": "Password",
-    "passwordPlaceholder": "Enter password",
-    "passwordSetPlaceholder": "Password set (type to change)",
-    "port": "Port",
-    "showPassword": "Show password",
-    "startStream": "Start Stream",
-    "status": "Status",
-    "stopStream": "Stop Stream",
-    "streamControl": "Stream Control",
-    "streaming": "Streaming",
-    "title": "OBS Integration",
-    "useAuthentication": "Use Authentication",
+    "integration": "Integraci?n",
+    "integrationDirection": "Direcci?n de sincronizaci?n",
+    "integrationDirectionDescription": "Controla c?mo se sincronizan las transmisiones entre OBS y SpiritStream",
+    "notStreaming": "No transmitiendo",
+    "obsVersion": "Versi?n de OBS",
+    "password": "Contrase?a",
+    "passwordPlaceholder": "Introducir contrase?a",
+    "passwordSetPlaceholder": "Contrase?a establecida (escribe para cambiar)",
+    "port": "Puerto",
+    "showPassword": "Mostrar contrase?a",
+    "startStream": "Iniciar transmisi?n",
+    "status": "Estado",
+    "stopStream": "Detener transmisi?n",
+    "streamControl": "Control de transmisi?n",
+    "streaming": "Transmitiendo",
+    "title": "Integraci?n OBS",
+    "useAuthentication": "Usar autenticaci?n",
     "versionInfo": "OBS {{obsVersion}} / WS {{wsVersion}}",
-    "websocketVersion": "WebSocket Version"
+    "websocketVersion": "Versi?n de WebSocket"
   },
   "outputs": {
     "addOutputGroup": "Añadir Grupo de Salida",
@@ -660,7 +680,30 @@
     "updateAvailable": "Actualización disponible",
     "updateFFmpeg": "Actualizar FFmpeg",
     "updates": "Actualizaciones",
-    "version": "Versión"
+    "version": "Versión",
+    "profileSettings": "Configuraci?n del perfil",
+    "globalSettings": "Configuraci?n global",
+    "appearance": "Apariencia",
+    "appearanceDescription": "Tema e idioma para este perfil.",
+    "notificationsSecurity": "Notificaciones y seguridad",
+    "notificationsSecurityDescription": "Preferencias de notificaciones y seguridad de datos para este perfil.",
+    "remoteAccess": "Acceso remoto",
+    "remoteAccessDescription": "Habilita la API HTTP integrada para poder administrar SpiritStream desde otro dispositivo.",
+    "remoteAccessToggle": "Permitir acceso web remoto",
+    "remoteAccessToggleDescription": "Cuando est? desactivado, la API se vincula solo a localhost. Se requiere reinicio tras los cambios.",
+    "remoteAccessUiToggle": "Servir la interfaz web desde el host",
+    "remoteAccessUiToggleDescription": "Cuando est? desactivado, el host no servir? los archivos de la UI. Se requiere reinicio tras los cambios.",
+    "remoteAccessHost": "Host de enlace",
+    "remoteAccessHostHelper": "Usa 0.0.0.0 para escuchar en todas las interfaces.",
+    "remoteAccessPort": "Puerto",
+    "remoteAccessToken": "Token de acceso (opcional)",
+    "remoteAccessTokenHelper": "Los clientes deben enviar este token como encabezado Bearer cuando est? habilitado.",
+    "appBehavior": "Comportamiento de la aplicaci?n",
+    "appBehaviorDescription": "Ajustes de la aplicaci?n a nivel del sistema.",
+    "dataManagement": "Gesti?n de datos",
+    "dataManagementDescription": "Exporta y gestiona los datos de la aplicaci?n.",
+    "loadError": "No se pudieron cargar los ajustes",
+    "loadProfileFirst": "Carga un perfil para editar sus ajustes."
   },
   "status": {
     "active": "Activo",
@@ -754,7 +797,15 @@
     "testPassed": "¡Todas las comprobaciones pasaron! Tu configuración de transmisión es válida.",
     "testingConfig": "Probando configuración de transmisión...",
     "groupStarted": "Grupo de salida iniciado",
-    "groupStopped": "Grupo de salida detenido"
+    "groupStopped": "Grupo de salida detenido",
+    "validatingConfig": "Validando configuraci?n...",
+    "configValidNoTargets": "Configuraci?n v?lida (sin destinos para probar)",
+    "testingConnectivity": "Probando conectividad con {{count}} destinos...",
+    "targetTestPassed": "? {{name}}: Conectado ({{ms}}ms)",
+    "targetTestFailed": "? {{name}}: {{message}}",
+    "allTestsPassed": "Todos los {{count}} destinos pasaron la prueba de conectividad",
+    "someTestsFailed": "{{passed}} pasaron, {{failed}} fallaron",
+    "allTestsFailed": "Todos los {{count}} destinos fallaron la prueba de conectividad"
   },
   "validation": {
     "applicationRequired": "El nombre de la aplicación es obligatorio",
@@ -807,6 +858,25 @@
     "title": "Webhook de Discord",
     "webhookSettings": "Ajustes de webhook",
     "webhookSettingsDescription": "Configura tu webhook de Discord para notificaciones de inicio",
-    "webhookUrl": "URL del webhook"
+    "webhookUrl": "URL del webhook",
+    "emojiCategories": {
+      "streaming": "Streaming",
+      "reactions": "Reacciones",
+      "fun": "Diversi?n"
+    },
+    "markdownExample": "**bold** *italic* __underline__ ~~strikethrough~~ `code` [link](url)",
+    "webhookUrlPlaceholder": "https://discord.com/api/webhooks/..."
+  },
+  "login": {
+    "title": "Autenticaci?n requerida",
+    "description": "Este servidor de SpiritStream requiere autenticaci?n. Introduce tu token de API para continuar.",
+    "tokenLabel": "Token de API",
+    "tokenPlaceholder": "Introduce tu token de API",
+    "tokenRequired": "Se requiere un token de API",
+    "invalidToken": "Token de API inv?lido",
+    "connectionError": "Error de conexi?n. Int?ntalo de nuevo.",
+    "tokenHint": "El token de API se configura en el servidor mediante la variable de entorno SPIRITSTREAM_API_TOKEN o en ajustes.",
+    "authenticating": "Autenticando...",
+    "submit": "Iniciar sesi?n"
   }
 }

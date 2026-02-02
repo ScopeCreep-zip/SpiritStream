@@ -281,7 +281,13 @@
       "96k": "96kbps",
       "64": "64 kbps（低）",
       "64k": "64kbps"
-    }
+    },
+    "channels": {
+      "mono": "???",
+      "stereo": "???",
+      "multiple": "{{count}} ??"
+    },
+    "sampleRateKHz": "{{value}} ??"
   },
   "outputs": {
     "defaultOutputName": "默认输出",
@@ -542,7 +548,12 @@
       "confirmPasswordPlaceholder": "确认密码",
       "encrypt": "加密",
       "decrypt": "解密"
-    }
+    },
+    "applicationPlaceholder": "live",
+    "bindAddressPlaceholder": "0.0.0.0",
+    "keyframeIntervalPlaceholder": "2",
+    "portPlaceholder": "1935",
+    "videoBitratePlaceholder": "6000"
   },
   "platforms": {
     "youtube": "YouTube",
@@ -807,6 +818,13 @@
     "title": "Discord Webhook",
     "webhookSettings": "Webhook 设置",
     "webhookSettingsDescription": "配置 Discord Webhook 以发送开播通知",
-    "webhookUrl": "Webhook URL"
+    "webhookUrl": "Webhook URL",
+    "emojiCategories": {
+      "streaming": "??",
+      "reactions": "??",
+      "fun": "??"
+    },
+    "markdownExample": "**bold** *italic* __underline__ ~~strikethrough~~ `code` [link](url)",
+    "webhookUrlPlaceholder": "https://discord.com/api/webhooks/..."
   }
 }

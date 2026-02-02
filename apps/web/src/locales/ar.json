@@ -19,7 +19,13 @@
       "aac": "AAC",
       "libmp3lame": "MP3",
       "libopus": "التأليف"
-    }
+    },
+    "channels": {
+      "mono": "????",
+      "stereo": "??????",
+      "multiple": "{{count}} ????"
+    },
+    "sampleRateKHz": "{{value}} ????????"
   },
   "common": {
     "add": "يضيف",
@@ -445,7 +451,12 @@
     "targetNamePlaceholder": "على سبيل المثال، YouTube الألعاب",
     "thisProfile": "هذا الملف الشخصي",
     "unlock": "فتح",
-    "videoSettings": "إعدادات الفيديو"
+    "videoSettings": "إعدادات الفيديو",
+    "applicationPlaceholder": "live",
+    "bindAddressPlaceholder": "0.0.0.0",
+    "keyframeIntervalPlaceholder": "2",
+    "portPlaceholder": "1935",
+    "videoBitratePlaceholder": "6000"
   },
   "nav": {
     "configuration": "إعدادات",
@@ -807,6 +818,13 @@
     "title": "خطاف ويب ديسكورد",
     "webhookSettings": "إعدادات خطاف الويب",
     "webhookSettingsDescription": "تهيئة خطاف ويب ديسكورد لإشعارات بدء البث",
-    "webhookUrl": "رابط خطاف الويب"
+    "webhookUrl": "رابط خطاف الويب",
+    "emojiCategories": {
+      "streaming": "????",
+      "reactions": "???????",
+      "fun": "???"
+    },
+    "markdownExample": "**bold** *italic* __underline__ ~~strikethrough~~ `code` [link](url)",
+    "webhookUrlPlaceholder": "https://discord.com/api/webhooks/..."
   }
 }

@@ -19,7 +19,13 @@
       "aac": "AAC",
       "libmp3lame": "MP3",
       "libopus": "Опус"
-    }
+    },
+    "channels": {
+      "mono": "????",
+      "stereo": "??????",
+      "multiple": "{{count}} ???????"
+    },
+    "sampleRateKHz": "{{value}} ???"
   },
   "common": {
     "add": "додати",
@@ -445,7 +451,12 @@
     "targetNamePlaceholder": "наприклад, YouTube Ігри",
     "thisProfile": "цей профіль",
     "unlock": "Розблокувати",
-    "videoSettings": "Налаштування відео"
+    "videoSettings": "Налаштування відео",
+    "applicationPlaceholder": "live",
+    "bindAddressPlaceholder": "0.0.0.0",
+    "keyframeIntervalPlaceholder": "2",
+    "portPlaceholder": "1935",
+    "videoBitratePlaceholder": "6000"
   },
   "nav": {
     "configuration": "Конфігурація",
@@ -807,6 +818,13 @@
     "title": "Вебхук Discord",
     "webhookSettings": "Налаштування вебхука",
     "webhookSettingsDescription": "Налаштуйте вебхук Discord для сповіщень про старт стріму",
-    "webhookUrl": "URL вебхука"
+    "webhookUrl": "URL вебхука",
+    "emojiCategories": {
+      "streaming": "????????",
+      "reactions": "???????",
+      "fun": "???????"
+    },
+    "markdownExample": "**bold** *italic* __underline__ ~~strikethrough~~ `code` [link](url)",
+    "webhookUrlPlaceholder": "https://discord.com/api/webhooks/..."
   }
 }

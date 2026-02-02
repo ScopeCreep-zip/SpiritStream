@@ -19,7 +19,13 @@
       "aac": "AAC",
       "libmp3lame": "MP3",
       "libopus": "Opus"
-    }
+    },
+    "channels": {
+      "mono": "Mono",
+      "stereo": "St?r?o",
+      "multiple": "{{count}} canaux"
+    },
+    "sampleRateKHz": "{{value}} kHz"
   },
   "common": {
     "add": "Ajouter",
@@ -445,7 +451,12 @@
     "targetNamePlaceholder": "ex., YouTube Gaming",
     "thisProfile": "ce profil",
     "unlock": "Déverrouiller",
-    "videoSettings": "Paramètres Vidéo"
+    "videoSettings": "Paramètres Vidéo",
+    "applicationPlaceholder": "live",
+    "bindAddressPlaceholder": "0.0.0.0",
+    "keyframeIntervalPlaceholder": "2",
+    "portPlaceholder": "1935",
+    "videoBitratePlaceholder": "6000"
   },
   "nav": {
     "configuration": "Configuration",
@@ -807,6 +818,13 @@
     "title": "Webhook Discord",
     "webhookSettings": "Paramètres du webhook",
     "webhookSettingsDescription": "Configurer votre webhook Discord pour les notifications de mise en direct",
-    "webhookUrl": "URL du webhook"
+    "webhookUrl": "URL du webhook",
+    "emojiCategories": {
+      "streaming": "Streaming",
+      "reactions": "R?actions",
+      "fun": "Amusement"
+    },
+    "markdownExample": "**bold** *italic* __underline__ ~~strikethrough~~ `code` [link](url)",
+    "webhookUrlPlaceholder": "https://discord.com/api/webhooks/..."
   }
 }

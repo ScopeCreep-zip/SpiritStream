@@ -19,7 +19,13 @@
       "aac": "AAC",
       "libmp3lame": "MP3",
       "libopus": "작"
-    }
+    },
+    "channels": {
+      "mono": "??",
+      "stereo": "????",
+      "multiple": "{{count}} ??"
+    },
+    "sampleRateKHz": "{{value}} kHz"
   },
   "common": {
     "add": "추가하다",
@@ -445,7 +451,12 @@
     "targetNamePlaceholder": "예: YouTube 게임",
     "thisProfile": "이 프로필",
     "unlock": "터놓다",
-    "videoSettings": "비디오 설정"
+    "videoSettings": "비디오 설정",
+    "applicationPlaceholder": "live",
+    "bindAddressPlaceholder": "0.0.0.0",
+    "keyframeIntervalPlaceholder": "2",
+    "portPlaceholder": "1935",
+    "videoBitratePlaceholder": "6000"
   },
   "nav": {
     "configuration": "구성",
@@ -807,6 +818,13 @@
     "title": "Discord 웹훅",
     "webhookSettings": "웹훅 설정",
     "webhookSettingsDescription": "라이브 시작 알림을 위한 Discord 웹훅을 설정하세요",
-    "webhookUrl": "웹훅 URL"
+    "webhookUrl": "웹훅 URL",
+    "emojiCategories": {
+      "streaming": "????",
+      "reactions": "??",
+      "fun": "??"
+    },
+    "markdownExample": "**bold** *italic* __underline__ ~~strikethrough~~ `code` [link](url)",
+    "webhookUrlPlaceholder": "https://discord.com/api/webhooks/..."
   }
 }
