@@ -569,49 +569,12 @@ fn run_capture_encoding_loop(
         "pipe:0".to_string(),
     ];
 
-    // Add audio input if capture_audio is enabled
-    // On macOS: Use avfoundation to capture default audio input
-    // On Windows: Use dshow audio capture
-    // On Linux: Use ALSA/PulseAudio
-    // Note: True desktop/system audio capture on macOS requires BlackHole or similar virtual device
+    // Screen capture audio: Currently NOT capturing from default mic (:0)
+    // Screen audio should come from ScreenCaptureKit (macOS 12.3+), not the microphone
+    // TODO: Integrate ScreenCaptureKit audio capture when scap supports it
     if capture_audio {
-        #[cfg(target_os = "macos")]
-        {
-            // macOS: capture from default audio input device (typically microphone)
-            // :0 is typically the first/default audio input device
-            // For system audio, user needs to configure BlackHole/Soundflower
-            ffmpeg_args.extend([
-                "-f".to_string(),
-                "avfoundation".to_string(),
-                "-i".to_string(),
-                ":0".to_string(), // First audio input device (typically default mic)
-            ]);
-            log::info!("Audio capture enabled (macOS avfoundation audio device :0)");
-        }
-
-        #[cfg(target_os = "windows")]
-        {
-            // Windows: capture from default audio input
-            ffmpeg_args.extend([
-                "-f".to_string(),
-                "dshow".to_string(),
-                "-i".to_string(),
-                "audio=default".to_string(),
-            ]);
-            log::info!("Audio capture enabled (Windows dshow default input)");
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            // Linux: capture from default PulseAudio source
-            ffmpeg_args.extend([
-                "-f".to_string(),
-                "pulse".to_string(),
-                "-i".to_string(),
-                "default".to_string(),
-            ]);
-            log::info!("Audio capture enabled (Linux PulseAudio default)");
-        }
+        log::info!("Screen capture audio requested but not yet implemented - requires ScreenCaptureKit audio integration");
+        // Do NOT add audio input here - capturing from :0/default would use the mic, not screen audio
     }
 
     // Add scale filter if resolution needs capping
@@ -679,19 +642,9 @@ fn run_capture_encoding_loop(
         "tv".to_string(),
     ]);
 
-    // Add audio encoder or disable audio
-    if capture_audio {
-        ffmpeg_args.extend([
-            "-c:a".to_string(),
-            "aac".to_string(),
-            "-b:a".to_string(),
-            "128k".to_string(),
-            "-ar".to_string(),
-            "48000".to_string(),
-        ]);
-    } else {
-        ffmpeg_args.push("-an".to_string()); // No audio
-    }
+    // Disable audio - screen capture audio requires ScreenCaptureKit integration (not yet implemented)
+    // When ScreenCaptureKit audio is available, this can be updated to encode captured audio
+    ffmpeg_args.push("-an".to_string());
 
     // Output: RTSP push to go2rtc (low latency passthrough)
     ffmpeg_args.extend([
@@ -826,14 +779,10 @@ fn run_capture_encoding_loop_http(
         "-i".to_string(), "pipe:0".to_string(),
     ];
 
-    // Audio input
+    // Screen capture audio: Do NOT capture from default mic
+    // Screen audio should come from ScreenCaptureKit, not microphone input
     if capture_audio {
-        #[cfg(target_os = "macos")]
-        ffmpeg_args.extend(["-f".to_string(), "avfoundation".to_string(), "-i".to_string(), ":0".to_string()]);
-        #[cfg(target_os = "windows")]
-        ffmpeg_args.extend(["-f".to_string(), "dshow".to_string(), "-i".to_string(), "audio=default".to_string()]);
-        #[cfg(target_os = "linux")]
-        ffmpeg_args.extend(["-f".to_string(), "pulse".to_string(), "-i".to_string(), "default".to_string()]);
+        log::info!("Screen capture audio requested but not yet implemented");
     }
 
     // Scale filter if needed
@@ -875,12 +824,8 @@ fn run_capture_encoding_loop_http(
         "-color_range".to_string(), "tv".to_string(),
     ]);
 
-    // Audio or no audio
-    if capture_audio {
-        ffmpeg_args.extend(["-c:a".to_string(), "aac".to_string(), "-b:a".to_string(), "128k".to_string(), "-ar".to_string(), "48000".to_string()]);
-    } else {
-        ffmpeg_args.push("-an".to_string());
-    }
+    // Disable audio - screen capture audio requires ScreenCaptureKit integration
+    ffmpeg_args.push("-an".to_string());
 
     // MPEG-TS output to stdout
     ffmpeg_args.extend([

@@ -22,6 +22,7 @@ use serde_json::{json, Value};
 use log::{Level, LevelFilter, Log, Metadata, Record};
 use chrono::Local;
 use std::{
+    collections::HashMap,
     env,
     fs::OpenOptions,
     io::Write,
@@ -32,6 +33,7 @@ use std::{
 };
 use subtle::ConstantTimeEq;
 use tokio::sync::{broadcast, Mutex as AsyncMutex};
+use tokio::signal;
 use tower_cookies::{Cookie, CookieManagerLayer, Cookies};
 use tower_http::{
     cors::{AllowOrigin, CorsLayer},
@@ -42,6 +44,7 @@ use tower_http::{
 use spiritstream_server::commands::{get_encoders, test_ffmpeg, test_rtmp_target, validate_ffmpeg_path};
 use spiritstream_server::models::{
     OutputGroup, Profile, RtmpInput, Settings, Source, Scene, SourceLayer, Transform, AudioTrack,
+    AudioDeviceSource, AudioInputDevice,
 };
 use spiritstream_server::services::{
     prune_logs, read_recent_logs, validate_extension, validate_path_within_any,
@@ -61,6 +64,8 @@ use spiritstream_server::services::{
     H264CaptureService,
     // Audio level monitoring
     AudioLevelService,
+    // Audio level extraction from FFmpeg-based sources
+    AudioLevelExtractor,
 };
 
 // ============================================================================
@@ -139,6 +144,8 @@ struct AppState {
     h264_capture: Arc<H264CaptureService>,
     // Audio level monitoring service
     audio_level_service: Arc<AudioLevelService>,
+    // Audio level extractor for FFmpeg-based sources (MediaFile, RTMP, ScreenCapture, etc.)
+    audio_level_extractor: Arc<AudioLevelExtractor>,
     // Server port for constructing HTTP URLs
     server_port: u16,
 }
@@ -2019,41 +2026,84 @@ async fn invoke_command(
         }
 
         // ====================================================================
-        // Device Discovery Commands
+        // Device Discovery Commands (async with caching)
         // ====================================================================
 
         "list_cameras" => {
             let discovery = DeviceDiscovery::new(state.ffmpeg_handler.get_ffmpeg_path());
-            let cameras = discovery.list_cameras()?;
+            let cameras = discovery.list_cameras_async().await?;
             Ok(json!(cameras))
         }
         "list_displays" => {
             let discovery = DeviceDiscovery::new(state.ffmpeg_handler.get_ffmpeg_path());
-            let displays = discovery.list_displays()?;
+            let displays = discovery.list_displays_async().await?;
             Ok(json!(displays))
         }
         "list_audio_devices" => {
-            let discovery = DeviceDiscovery::new(state.ffmpeg_handler.get_ffmpeg_path());
-            let devices = discovery.list_audio_inputs()?;
+            // Use cpal for audio device enumeration (not FFmpeg) to ensure device IDs
+            // match what cpal uses when starting capture
+            let cpal_devices = state.audio_capture.list_input_devices();
+            let devices: Vec<AudioInputDevice> = cpal_devices.into_iter().map(|d| {
+                AudioInputDevice {
+                    // Use hardware UID as the stable identifier
+                    // Format: "HostId:DeviceUID" e.g. "CoreAudio:BuiltInMicrophoneDevice"
+                    device_id: d.id.clone(),
+                    name: d.name,
+                    channels: d.channels.first().copied().unwrap_or(2) as u8,
+                    sample_rate: d.sample_rates.first().copied().unwrap_or(48000),
+                    is_default: d.is_default,
+                }
+            }).collect();
+            log::info!("[list_audio_devices] Found {} devices via cpal:",
+                devices.len()
+            );
+            for dev in &devices {
+                log::info!("  - '{}' (id: {})", dev.name, dev.device_id);
+            }
             Ok(json!(devices))
         }
         "list_capture_cards" => {
             let discovery = DeviceDiscovery::new(state.ffmpeg_handler.get_ffmpeg_path());
-            let cards = discovery.list_capture_cards()?;
+            let cards = discovery.list_capture_cards_async().await?;
             Ok(json!(cards))
         }
+        "list_windows" => {
+            // Use ScreenCaptureService for window enumeration (ScreenCaptureKit on macOS)
+            let windows = ScreenCaptureService::list_windows_async().await;
+            Ok(json!(windows))
+        }
         "refresh_devices" => {
-            // Return all device types at once
+            // Return all device types at once using async parallel enumeration
             let discovery = DeviceDiscovery::new(state.ffmpeg_handler.get_ffmpeg_path());
-            let cameras = discovery.list_cameras().unwrap_or_default();
-            let displays = discovery.list_displays().unwrap_or_default();
-            let audio = discovery.list_audio_inputs().unwrap_or_default();
-            let capture_cards = discovery.list_capture_cards().unwrap_or_default();
+
+            // Run device discovery and window enumeration in parallel
+            let (all_devices, windows) = tokio::join!(
+                discovery.refresh_devices_async(),
+                ScreenCaptureService::list_windows_async()
+            );
+
+            let all_devices = all_devices?;
+
+            // Use cpal for audio device enumeration (not FFmpeg) to ensure device IDs
+            // match what cpal uses when starting capture
+            let cpal_devices = state.audio_capture.list_input_devices();
+            let audio_devices: Vec<AudioInputDevice> = cpal_devices.into_iter().map(|d| {
+                AudioInputDevice {
+                    // Use hardware UID as the stable identifier
+                    device_id: d.id.clone(),
+                    name: d.name,
+                    channels: d.channels.first().copied().unwrap_or(2) as u8,
+                    sample_rate: d.sample_rates.first().copied().unwrap_or(48000),
+                    is_default: d.is_default,
+                }
+            }).collect();
+
             Ok(json!({
-                "cameras": cameras,
-                "displays": displays,
-                "audioDevices": audio,
-                "captureCards": capture_cards
+                "cameras": all_devices.cameras,
+                "displays": all_devices.displays,
+                "windows": windows,
+                "audioDevices": audio_devices,
+                "captureCards": all_devices.capture_cards
             }))
         }
 
@@ -2102,6 +2152,9 @@ async fn invoke_command(
             let source_idx = profile.sources.iter().position(|s| s.id() == source_id)
                 .ok_or_else(|| format!("Source {} not found", source_id))?;
 
+            // Check if source had audio before update
+            let had_audio_before = profile.sources[source_idx].has_audio();
+
             // Merge updates into existing source
             let mut source_json = serde_json::to_value(&profile.sources[source_idx])
                 .map_err(|e| e.to_string())?;
@@ -2112,6 +2165,40 @@ async fn invoke_command(
             }
             profile.sources[source_idx] = serde_json::from_value(source_json)
                 .map_err(|e| format!("Failed to update source: {}", e))?;
+
+            // Check if source has audio after update
+            let has_audio_after = profile.sources[source_idx].has_audio();
+
+            // Sync audio tracks in scenes if audio capability changed
+            if had_audio_before != has_audio_after {
+                for scene in &mut profile.scenes {
+                    // Check if this source is used in the scene
+                    let source_in_scene = scene.layers.iter().any(|l| l.source_id == source_id);
+                    if !source_in_scene {
+                        continue;
+                    }
+
+                    if has_audio_after {
+                        // Add audio track if not already present
+                        if !scene.audio_mixer.tracks.iter().any(|t| t.source_id == source_id) {
+                            log::info!("Adding audio track for source {} to scene {} (audio enabled)", source_id, scene.name);
+                            scene.audio_mixer.tracks.push(AudioTrack {
+                                source_id: source_id.clone(),
+                                volume: 1.0,
+                                muted: false,
+                                solo: false,
+                            });
+                        }
+                    } else {
+                        // Remove audio track
+                        let track_count = scene.audio_mixer.tracks.len();
+                        scene.audio_mixer.tracks.retain(|t| t.source_id != source_id);
+                        if scene.audio_mixer.tracks.len() < track_count {
+                            log::info!("Removed audio track for source {} from scene {} (audio disabled)", source_id, scene.name);
+                        }
+                    }
+                }
+            }
 
             let settings = state.settings_manager.load()?;
             state
@@ -2126,26 +2213,89 @@ async fn invoke_command(
             let profile_name: String = get_arg(&payload, "profileName")?;
             let source_id: String = get_arg(&payload, "sourceId")?;
             let password: Option<String> = get_opt_arg(&payload, "password")?;
+            // If true, also remove linked audio sources. If false and linked sources exist,
+            // return a confirmation request instead of deleting.
+            let remove_linked: Option<bool> = get_opt_arg(&payload, "removeLinked")?;
 
             let mut profile = state
                 .profile_manager
                 .load_with_key_decryption(&profile_name, password.as_deref())
                 .await?;
 
-            let initial_len = profile.sources.len();
-            profile.sources.retain(|s| s.id() != source_id);
-
-            if profile.sources.len() == initial_len {
+            // Find the source first (before any deletion)
+            if !profile.sources.iter().any(|s| s.id() == source_id) {
                 return Err(format!("Source {} not found", source_id));
             }
+
+            // Find any linked audio sources
+            // (AudioDeviceSources that have linked_to_source_id pointing to this source)
+            let linked_audio_ids: Vec<String> = profile.sources.iter()
+                .filter_map(|s| {
+                    if let Source::AudioDevice(ad) = s {
+                        if ad.linked_to_source_id.as_ref() == Some(&source_id) {
+                            return Some(ad.id.clone());
+                        }
+                    }
+                    None
+                })
+                .collect();
+
+            // If linked sources exist and removeLinked is explicitly false, return confirmation request
+            if !linked_audio_ids.is_empty() && remove_linked == Some(false) {
+                // Get linked source names for the confirmation dialog
+                let linked_names: Vec<String> = profile.sources.iter()
+                    .filter(|s| linked_audio_ids.contains(&s.id().to_string()))
+                    .map(|s| s.name().to_string())
+                    .collect();
+
+                return Ok(json!({
+                    "requiresConfirmation": true,
+                    "linkedSourceIds": linked_audio_ids,
+                    "linkedSourceNames": linked_names,
+                    "message": "This source has linked audio sources. Remove both?"
+                }));
+            }
+
+            // Proceed with deletion
+            profile.sources.retain(|s| s.id() != source_id);
 
             // Stop any running preview for this source
             state.preview_handler.stop_source_preview(&source_id);
 
+            // Stop audio capture if running for this source
+            let _ = state.audio_capture.stop_capture_for_source(&source_id);
+
+            // Stop FFmpeg audio level extraction if running for this source
+            let _ = state.audio_level_extractor.stop_extraction(&source_id);
+
+            // Determine if we should delete linked sources
+            // Default to true (backward compatible) unless explicitly set to false
+            let should_remove_linked = remove_linked.unwrap_or(true);
+
+            // Delete linked audio sources if requested
+            let removed_linked_ids: Vec<String> = if should_remove_linked && !linked_audio_ids.is_empty() {
+                profile.sources.retain(|s| !linked_audio_ids.contains(&s.id().to_string()));
+
+                // Stop previews and audio captures for linked audio sources
+                for linked_id in &linked_audio_ids {
+                    state.preview_handler.stop_source_preview(linked_id);
+                    // Also stop audio capture and extraction for linked sources
+                    let _ = state.audio_capture.stop_capture_for_source(linked_id);
+                    let _ = state.audio_level_extractor.stop_extraction(linked_id);
+                }
+                linked_audio_ids.clone()
+            } else {
+                Vec::new()
+            };
+
             // Also remove from all scenes
+            let ids_to_remove: Vec<&String> = std::iter::once(&source_id)
+                .chain(removed_linked_ids.iter())
+                .collect();
+
             for scene in &mut profile.scenes {
-                scene.layers.retain(|l| l.source_id != source_id);
-                scene.audio_mixer.tracks.retain(|t| t.source_id != source_id);
+                scene.layers.retain(|l| !ids_to_remove.contains(&&l.source_id));
+                scene.audio_mixer.tracks.retain(|t| !ids_to_remove.contains(&&t.source_id));
             }
 
             let settings = state.settings_manager.load()?;
@@ -2154,8 +2304,16 @@ async fn invoke_command(
                 .save_with_key_encryption(&profile, password.as_deref(), settings.encrypt_stream_keys)
                 .await?;
 
-            state.event_bus.emit("source_removed", json!({ "profileName": profile_name, "sourceId": source_id }));
-            Ok(Value::Null)
+            state.event_bus.emit("source_removed", json!({
+                "profileName": profile_name,
+                "sourceId": source_id,
+                "linkedAudioSourceIds": removed_linked_ids
+            }));
+
+            Ok(json!({
+                "removed": true,
+                "linkedRemoved": removed_linked_ids
+            }))
         }
         "reorder_sources" => {
             let profile_name: String = get_arg(&payload, "profileName")?;
@@ -2391,10 +2549,17 @@ async fn invoke_command(
                 return Err(format!("Source {} not found", source_id));
             }
 
-            let scene = profile.scenes.iter_mut().find(|s| s.id == scene_id)
+            // Get scene index for later use
+            let scene_idx = profile.scenes.iter().position(|s| s.id == scene_id)
                 .ok_or_else(|| format!("Scene {} not found", scene_id))?;
 
-            let max_z = scene.layers.iter().map(|l| l.z_index).max().unwrap_or(0);
+            // Get canvas dimensions and max z-index
+            let (canvas_width, canvas_height, max_z) = {
+                let scene = &profile.scenes[scene_idx];
+                let max_z = scene.layers.iter().map(|l| l.z_index).max().unwrap_or(0);
+                (scene.canvas_width, scene.canvas_height, max_z)
+            };
+
             let layer = SourceLayer {
                 id: uuid::Uuid::new_v4().to_string(),
                 source_id: source_id.clone(),
@@ -2403,8 +2568,8 @@ async fn invoke_command(
                 transform: transform.unwrap_or_else(|| Transform {
                     x: 0,
                     y: 0,
-                    width: scene.canvas_width,
-                    height: scene.canvas_height,
+                    width: canvas_width,
+                    height: canvas_height,
                     rotation: 0.0,
                     crop: None,
                 }),
@@ -2412,12 +2577,57 @@ async fn invoke_command(
             };
 
             let layer_id = layer.id.clone();
-            scene.layers.push(layer);
+            profile.scenes[scene_idx].layers.push(layer);
 
-            // Add audio track if source has audio and not already in mixer
-            if !scene.audio_mixer.tracks.iter().any(|t| t.source_id == source_id) {
-                scene.audio_mixer.tracks.push(AudioTrack {
-                    source_id,
+            // Check if source is a Camera with captureAudio enabled and linked audio device
+            // If so, auto-create a linked AudioDeviceSource
+            let mut linked_audio_source_id: Option<String> = None;
+            if let Some(Source::Camera(camera)) = profile.sources.iter().find(|s| s.id() == &source_id) {
+                if camera.capture_audio {
+                    if let Some(ref audio_device_id) = camera.linked_audio_device_id {
+                        // Check if linked audio source already exists for this camera
+                        let linked_audio_exists = profile.sources.iter().any(|s| {
+                            if let Source::AudioDevice(ad) = s {
+                                ad.linked_to_source_id.as_ref() == Some(&source_id)
+                            } else {
+                                false
+                            }
+                        });
+
+                        if !linked_audio_exists {
+                            // Get the audio device name (use camera name + Audio as fallback)
+                            let audio_device_name = format!("{} (Audio)", camera.name);
+
+                            // Create linked AudioDeviceSource
+                            let linked_audio_id = uuid::Uuid::new_v4().to_string();
+                            let linked_audio = Source::AudioDevice(AudioDeviceSource {
+                                id: linked_audio_id.clone(),
+                                name: audio_device_name,
+                                device_id: audio_device_id.clone(),
+                                channels: None,
+                                sample_rate: None,
+                                linked_to_source_id: Some(source_id.clone()),
+                            });
+
+                            // Add to profile sources
+                            profile.sources.push(linked_audio);
+
+                            // Add audio track for the linked audio source
+                            profile.scenes[scene_idx].audio_mixer.tracks.push(AudioTrack::new(&linked_audio_id));
+
+                            linked_audio_source_id = Some(linked_audio_id);
+                        }
+                    }
+                }
+            }
+
+            // Add audio track for original source only if it has audio output and not already in mixer
+            let source = profile.sources.iter().find(|s| s.id() == &source_id);
+            let source_has_audio = source.map(|s| s.has_audio()).unwrap_or(false);
+
+            if source_has_audio && !profile.scenes[scene_idx].audio_mixer.tracks.iter().any(|t| t.source_id == source_id) {
+                profile.scenes[scene_idx].audio_mixer.tracks.push(AudioTrack {
+                    source_id: source_id.clone(),
                     volume: 1.0,
                     muted: false,
                     solo: false,
@@ -2430,8 +2640,13 @@ async fn invoke_command(
                 .save_with_key_encryption(&profile, password.as_deref(), settings.encrypt_stream_keys)
                 .await?;
 
-            state.event_bus.emit("layer_added", json!({ "profileName": profile_name, "sceneId": scene_id, "layerId": layer_id }));
-            Ok(json!({ "layerId": layer_id }))
+            state.event_bus.emit("layer_added", json!({
+                "profileName": profile_name,
+                "sceneId": scene_id,
+                "layerId": layer_id,
+                "linkedAudioSourceId": linked_audio_source_id
+            }));
+            Ok(json!({ "layerId": layer_id, "linkedAudioSourceId": linked_audio_source_id }))
         }
         "update_layer" => {
             let profile_name: String = get_arg(&payload, "profileName")?;
@@ -2730,12 +2945,631 @@ async fn invoke_command(
         // Audio level monitoring commands
         "set_audio_monitor_sources" => {
             let source_ids: Vec<String> = get_arg(&payload, "sourceIds")?;
-            state.audio_level_service.set_tracked_sources(source_ids).await;
-            Ok(Value::Null)
+            let profile_name: Option<String> = get_opt_arg(&payload, "profileName")?;
+
+            log::info!("=== set_audio_monitor_sources START ===");
+            log::info!("Sources requested: {:?}, Profile: {:?}", source_ids, profile_name);
+
+            // Stop extractions/captures for sources no longer in the list
+            // Use active_source_ids() which returns source UUIDs (not device names)
+            // This fixes the bug where device names were compared against source UUIDs
+            let active_cpal_sources: Vec<String> = state.audio_capture.active_source_ids();
+            for source_id in &active_cpal_sources {
+                if !source_ids.contains(source_id) {
+                    log::info!("Stopping cpal audio capture for removed source: {}", source_id);
+                    let _ = state.audio_capture.stop_capture_for_source(source_id);
+                }
+            }
+
+            // Stop FFmpeg-based extractions for sources no longer in the list
+            let active_extractions: Vec<String> = state.audio_level_extractor.active_extraction_ids();
+            for extraction_id in &active_extractions {
+                if !source_ids.contains(extraction_id) {
+                    log::info!("Stopping FFmpeg audio extraction for removed source: {}", extraction_id);
+                    let _ = state.audio_level_extractor.stop_extraction(extraction_id);
+                }
+            }
+
+            // Set tracked sources in the level service
+            state.audio_level_service.set_tracked_sources(source_ids.clone()).await;
+
+            // Track capture results for each source to return to frontend
+            let mut capture_results: HashMap<String, serde_json::Value> = HashMap::new();
+
+            // If profile name provided, start real audio capture for audio device sources
+            if let Some(profile_name) = profile_name {
+                log::info!("Loading profile '{}' to start audio capture for {} sources", profile_name, source_ids.len());
+                match state.profile_manager.load(&profile_name, None).await {
+                    Ok(profile) => {
+                        for source_id in &source_ids {
+                            // Find the source in the profile
+                            if let Some(source) = profile.sources.iter().find(|s| s.id() == source_id) {
+                                let source_type = match source {
+                                    Source::AudioDevice(_) => "AudioDevice",
+                                    Source::Rtmp(_) => "Rtmp",
+                                    Source::Camera(_) => "Camera",
+                                    Source::ScreenCapture(_) => "ScreenCapture",
+                                    Source::MediaFile(_) => "MediaFile",
+                                    _ => "Other",
+                                };
+                                log::info!("Found source '{}' (name: '{}') of type: {}", source_id, source.name(), source_type);
+
+                                // Determine device to capture based on source type
+                                // Only AudioDevice sources have direct device capture
+                                // Other sources (ScreenCapture, MediaFile, RTMP) have embedded audio
+                                // that would need FFmpeg-based level extraction
+                                let capture_device: Option<(String, String)> = match source {
+                                    Source::AudioDevice(audio_source) => {
+                                        log::info!("Source '{}' is AudioDevice with device_id: '{}', name: '{}'",
+                                            source_id, audio_source.device_id, audio_source.name);
+                                        Some((audio_source.device_id.clone(), audio_source.name.clone()))
+                                    }
+                                    Source::ScreenCapture(screen_source) if screen_source.capture_audio => {
+                                        // Screen audio capture has platform-specific limitations
+                                        #[cfg(target_os = "macos")]
+                                        {
+                                            // macOS: Screen audio requires ScreenCaptureKit (not yet integrated)
+                                            // This is a known limitation, not a failure
+                                            capture_results.insert(source_id.clone(), json!({
+                                                "success": true,  // Mark as success to avoid warning spam
+                                                "sourceType": "ScreenCapture",
+                                                "reason": "platformLimitation",
+                                                "message": "Screen audio metering requires macOS ScreenCaptureKit integration (coming soon). Audio will work in output stream."
+                                            }));
+                                            log::info!("ScreenCapture source '{}': Audio metering not available (ScreenCaptureKit integration pending)", source_id);
+                                        }
+
+                                        #[cfg(not(target_os = "macos"))]
+                                        {
+                                            // Windows/Linux: Try system audio capture
+                                            let display_index = screen_source.display_id.parse::<u32>().unwrap_or(0);
+                                            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+                                            let source_id_extract = source_id.clone();
+                                            let audio_level_service_extract = state.audio_level_service.clone();
+
+                                            match state.audio_level_extractor.start_screen_capture_extraction(
+                                                &source_id,
+                                                display_index,
+                                                tx,
+                                            ) {
+                                                Ok(()) => {
+                                                    tokio::spawn(async move {
+                                                        while let Some(level) = rx.recv().await {
+                                                            audio_level_service_extract.update_source_level(
+                                                                &source_id_extract,
+                                                                level.left_rms.unwrap_or(level.rms),
+                                                                level.right_rms.unwrap_or(level.rms),
+                                                                level.left_peak.unwrap_or(level.peak),
+                                                                level.right_peak.unwrap_or(level.peak),
+                                                            ).await;
+                                                        }
+                                                    });
+                                                    capture_results.insert(source_id.clone(), json!({
+                                                        "success": true,
+                                                        "sourceType": "ScreenCapture",
+                                                        "displayIndex": display_index
+                                                    }));
+                                                    log::info!("✓ Audio extraction STARTED for ScreenCapture source '{}'", source_id);
+                                                }
+                                                Err(e) => {
+                                                    capture_results.insert(source_id.clone(), json!({
+                                                        "success": true,  // Don't spam warnings for known limitations
+                                                        "sourceType": "ScreenCapture",
+                                                        "reason": "extractionUnavailable",
+                                                        "message": format!("Screen audio metering unavailable: {}. Audio will work in output stream.", e)
+                                                    }));
+                                                    log::info!("ScreenCapture source '{}': Audio metering unavailable ({})", source_id, e);
+                                                }
+                                            }
+                                        }
+                                        None
+                                    }
+                                    Source::MediaFile(media_source) => {
+                                        // Start FFmpeg-based audio level extraction for media file
+                                        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+                                        let source_id_extract = source_id.clone();
+                                        let audio_level_service_extract = state.audio_level_service.clone();
+                                        let file_path = media_source.file_path.clone();
+
+                                        match state.audio_level_extractor.start_media_file_extraction(
+                                            &source_id,
+                                            &file_path,
+                                            tx,
+                                        ) {
+                                            Ok(()) => {
+                                                // Spawn task to route extracted levels to AudioLevelService
+                                                tokio::spawn(async move {
+                                                    while let Some(level) = rx.recv().await {
+                                                        audio_level_service_extract.update_source_level(
+                                                            &source_id_extract,
+                                                            level.left_rms.unwrap_or(level.rms),
+                                                            level.right_rms.unwrap_or(level.rms),
+                                                            level.left_peak.unwrap_or(level.peak),
+                                                            level.right_peak.unwrap_or(level.peak),
+                                                        ).await;
+                                                    }
+                                                });
+                                                capture_results.insert(source_id.clone(), json!({
+                                                    "success": true,
+                                                    "sourceType": "MediaFile",
+                                                    "filePath": file_path
+                                                }));
+                                                log::info!("✓ Audio extraction STARTED for MediaFile source '{}'", source_id);
+                                            }
+                                            Err(e) => {
+                                                // Check if error is about unsupported format
+                                                let reason = if e.contains("not a supported media format") {
+                                                    "unsupportedFormat"
+                                                } else {
+                                                    "extractionFailed"
+                                                };
+                                                capture_results.insert(source_id.clone(), json!({
+                                                    "success": false,
+                                                    "sourceType": "MediaFile",
+                                                    "reason": reason,
+                                                    "message": format!("Failed to start audio extraction: {}", e)
+                                                }));
+                                                log::warn!("✗ Audio extraction FAILED for MediaFile source '{}': {}", source_id, e);
+                                            }
+                                        }
+                                        None
+                                    }
+                                    Source::Rtmp(rtmp_source) => {
+                                        // Start FFmpeg-based audio level extraction for RTMP stream
+                                        let rtmp_url = format!(
+                                            "rtmp://{}:{}/{}",
+                                            rtmp_source.bind_address,
+                                            rtmp_source.port,
+                                            rtmp_source.application
+                                        );
+                                        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+                                        let source_id_extract = source_id.clone();
+                                        let audio_level_service_extract = state.audio_level_service.clone();
+
+                                        match state.audio_level_extractor.start_rtmp_extraction(
+                                            &source_id,
+                                            &rtmp_url,
+                                            tx,
+                                        ) {
+                                            Ok(()) => {
+                                                // Spawn task to route extracted levels to AudioLevelService
+                                                tokio::spawn(async move {
+                                                    while let Some(level) = rx.recv().await {
+                                                        audio_level_service_extract.update_source_level(
+                                                            &source_id_extract,
+                                                            level.left_rms.unwrap_or(level.rms),
+                                                            level.right_rms.unwrap_or(level.rms),
+                                                            level.left_peak.unwrap_or(level.peak),
+                                                            level.right_peak.unwrap_or(level.peak),
+                                                        ).await;
+                                                    }
+                                                });
+                                                capture_results.insert(source_id.clone(), json!({
+                                                    "success": true,
+                                                    "sourceType": "Rtmp",
+                                                    "rtmpUrl": rtmp_url
+                                                }));
+                                                log::info!("✓ Audio extraction STARTED for RTMP source '{}'", source_id);
+                                            }
+                                            Err(e) => {
+                                                capture_results.insert(source_id.clone(), json!({
+                                                    "success": false,
+                                                    "sourceType": "Rtmp",
+                                                    "reason": "extractionFailed",
+                                                    "message": format!("Failed to start audio extraction: {}", e)
+                                                }));
+                                                log::warn!("✗ Audio extraction FAILED for RTMP source '{}': {}", source_id, e);
+                                            }
+                                        }
+                                        None
+                                    }
+                                    Source::CaptureCard(card_source) if card_source.capture_audio => {
+                                        // Start FFmpeg-based audio level extraction for capture card
+                                        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+                                        let source_id_extract = source_id.clone();
+                                        let audio_level_service_extract = state.audio_level_service.clone();
+                                        let device_id = card_source.device_id.clone();
+
+                                        match state.audio_level_extractor.start_capture_card_extraction(
+                                            &source_id,
+                                            &device_id,
+                                            tx,
+                                        ) {
+                                            Ok(()) => {
+                                                // Spawn task to route extracted levels to AudioLevelService
+                                                tokio::spawn(async move {
+                                                    while let Some(level) = rx.recv().await {
+                                                        audio_level_service_extract.update_source_level(
+                                                            &source_id_extract,
+                                                            level.left_rms.unwrap_or(level.rms),
+                                                            level.right_rms.unwrap_or(level.rms),
+                                                            level.left_peak.unwrap_or(level.peak),
+                                                            level.right_peak.unwrap_or(level.peak),
+                                                        ).await;
+                                                    }
+                                                });
+                                                capture_results.insert(source_id.clone(), json!({
+                                                    "success": true,
+                                                    "sourceType": "CaptureCard",
+                                                    "deviceId": device_id
+                                                }));
+                                                log::info!("✓ Audio extraction STARTED for CaptureCard source '{}'", source_id);
+                                            }
+                                            Err(e) => {
+                                                capture_results.insert(source_id.clone(), json!({
+                                                    "success": false,
+                                                    "sourceType": "CaptureCard",
+                                                    "reason": "extractionFailed",
+                                                    "message": format!("Failed to start audio extraction: {}", e)
+                                                }));
+                                                log::warn!("✗ Audio extraction FAILED for CaptureCard source '{}': {}", source_id, e);
+                                            }
+                                        }
+                                        None
+                                    }
+                                    Source::WindowCapture(win_source) if win_source.capture_audio => {
+                                        // Start FFmpeg-based audio level extraction for window capture
+                                        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+                                        let source_id_extract = source_id.clone();
+                                        let audio_level_service_extract = state.audio_level_service.clone();
+                                        let window_id = win_source.window_id.clone();
+
+                                        match state.audio_level_extractor.start_window_capture_extraction(
+                                            &source_id,
+                                            &window_id,
+                                            tx,
+                                        ) {
+                                            Ok(()) => {
+                                                tokio::spawn(async move {
+                                                    while let Some(level) = rx.recv().await {
+                                                        audio_level_service_extract.update_source_level(
+                                                            &source_id_extract,
+                                                            level.left_rms.unwrap_or(level.rms),
+                                                            level.right_rms.unwrap_or(level.rms),
+                                                            level.left_peak.unwrap_or(level.peak),
+                                                            level.right_peak.unwrap_or(level.peak),
+                                                        ).await;
+                                                    }
+                                                });
+                                                capture_results.insert(source_id.clone(), json!({
+                                                    "success": true,
+                                                    "sourceType": "WindowCapture",
+                                                    "windowId": window_id
+                                                }));
+                                                log::info!("✓ Audio extraction STARTED for WindowCapture source '{}'", source_id);
+                                            }
+                                            Err(e) => {
+                                                capture_results.insert(source_id.clone(), json!({
+                                                    "success": false,
+                                                    "sourceType": "WindowCapture",
+                                                    "reason": "extractionFailed",
+                                                    "message": format!("Failed to start audio extraction: {}", e)
+                                                }));
+                                                log::warn!("✗ Audio extraction FAILED for WindowCapture source '{}': {}", source_id, e);
+                                            }
+                                        }
+                                        None
+                                    }
+                                    Source::GameCapture(game_source) if game_source.capture_audio => {
+                                        // Start FFmpeg-based audio level extraction for game capture
+                                        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+                                        let source_id_extract = source_id.clone();
+                                        let audio_level_service_extract = state.audio_level_service.clone();
+
+                                        match state.audio_level_extractor.start_game_capture_extraction(
+                                            &source_id,
+                                            tx,
+                                        ) {
+                                            Ok(()) => {
+                                                tokio::spawn(async move {
+                                                    while let Some(level) = rx.recv().await {
+                                                        audio_level_service_extract.update_source_level(
+                                                            &source_id_extract,
+                                                            level.left_rms.unwrap_or(level.rms),
+                                                            level.right_rms.unwrap_or(level.rms),
+                                                            level.left_peak.unwrap_or(level.peak),
+                                                            level.right_peak.unwrap_or(level.peak),
+                                                        ).await;
+                                                    }
+                                                });
+                                                capture_results.insert(source_id.clone(), json!({
+                                                    "success": true,
+                                                    "sourceType": "GameCapture"
+                                                }));
+                                                log::info!("✓ Audio extraction STARTED for GameCapture source '{}'", source_id);
+                                            }
+                                            Err(e) => {
+                                                capture_results.insert(source_id.clone(), json!({
+                                                    "success": false,
+                                                    "sourceType": "GameCapture",
+                                                    "reason": "extractionFailed",
+                                                    "message": format!("Failed to start audio extraction: {}", e)
+                                                }));
+                                                log::warn!("✗ Audio extraction FAILED for GameCapture source '{}': {}", source_id, e);
+                                            }
+                                        }
+                                        None
+                                    }
+                                    Source::MediaPlaylist(playlist_source) => {
+                                        // Start audio extraction from current playlist item
+                                        if let Some(current_item) = playlist_source.items.get(playlist_source.current_item_index) {
+                                            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+                                            let source_id_extract = source_id.clone();
+                                            let audio_level_service_extract = state.audio_level_service.clone();
+                                            let file_path = current_item.file_path.clone();
+
+                                            match state.audio_level_extractor.start_media_playlist_extraction(
+                                                &source_id,
+                                                &file_path,
+                                                tx,
+                                            ) {
+                                                Ok(()) => {
+                                                    tokio::spawn(async move {
+                                                        while let Some(level) = rx.recv().await {
+                                                            audio_level_service_extract.update_source_level(
+                                                                &source_id_extract,
+                                                                level.left_rms.unwrap_or(level.rms),
+                                                                level.right_rms.unwrap_or(level.rms),
+                                                                level.left_peak.unwrap_or(level.peak),
+                                                                level.right_peak.unwrap_or(level.peak),
+                                                            ).await;
+                                                        }
+                                                    });
+                                                    capture_results.insert(source_id.clone(), json!({
+                                                        "success": true,
+                                                        "sourceType": "MediaPlaylist",
+                                                        "currentFile": file_path
+                                                    }));
+                                                    log::info!("✓ Audio extraction STARTED for MediaPlaylist source '{}'", source_id);
+                                                }
+                                                Err(e) => {
+                                                    capture_results.insert(source_id.clone(), json!({
+                                                        "success": false,
+                                                        "sourceType": "MediaPlaylist",
+                                                        "reason": "extractionFailed",
+                                                        "message": format!("Failed to start audio extraction: {}", e)
+                                                    }));
+                                                    log::warn!("✗ Audio extraction FAILED for MediaPlaylist source '{}': {}", source_id, e);
+                                                }
+                                            }
+                                        } else {
+                                            capture_results.insert(source_id.clone(), json!({
+                                                "success": false,
+                                                "sourceType": "MediaPlaylist",
+                                                "reason": "noCurrentItem",
+                                                "message": "Playlist has no current item"
+                                            }));
+                                        }
+                                        None
+                                    }
+                                    Source::Ndi(ndi_source) if ndi_source.capture_audio => {
+                                        // Start FFmpeg-based audio level extraction for NDI
+                                        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+                                        let source_id_extract = source_id.clone();
+                                        let audio_level_service_extract = state.audio_level_service.clone();
+                                        let ndi_name = ndi_source.source_name.clone();
+                                        let ip_addr = ndi_source.ip_address.clone();
+
+                                        match state.audio_level_extractor.start_ndi_extraction(
+                                            &source_id,
+                                            &ndi_name,
+                                            ip_addr.as_deref(),
+                                            tx,
+                                        ) {
+                                            Ok(()) => {
+                                                tokio::spawn(async move {
+                                                    while let Some(level) = rx.recv().await {
+                                                        audio_level_service_extract.update_source_level(
+                                                            &source_id_extract,
+                                                            level.left_rms.unwrap_or(level.rms),
+                                                            level.right_rms.unwrap_or(level.rms),
+                                                            level.left_peak.unwrap_or(level.peak),
+                                                            level.right_peak.unwrap_or(level.peak),
+                                                        ).await;
+                                                    }
+                                                });
+                                                capture_results.insert(source_id.clone(), json!({
+                                                    "success": true,
+                                                    "sourceType": "Ndi",
+                                                    "ndiSource": ndi_name
+                                                }));
+                                                log::info!("✓ Audio extraction STARTED for NDI source '{}'", source_id);
+                                            }
+                                            Err(e) => {
+                                                capture_results.insert(source_id.clone(), json!({
+                                                    "success": false,
+                                                    "sourceType": "Ndi",
+                                                    "reason": "extractionFailed",
+                                                    "message": format!("Failed to start audio extraction: {}", e)
+                                                }));
+                                                log::warn!("✗ Audio extraction FAILED for NDI source '{}': {}", source_id, e);
+                                            }
+                                        }
+                                        None
+                                    }
+                                    _ => {
+                                        capture_results.insert(source_id.clone(), json!({
+                                            "success": false,
+                                            "sourceType": source_type,
+                                            "reason": "noAudio",
+                                            "message": "Source type does not support audio capture"
+                                        }));
+                                        None
+                                    }
+                                };
+
+                                // Start audio capture if we have a device
+                                if let Some((device_id, device_name)) = capture_device {
+                                    let source_id_clone = source_id.clone();
+                                    let audio_level_service = state.audio_level_service.clone();
+
+                                    // Skip if already capturing for this source
+                                    if state.audio_capture.is_capturing_source(source_id) {
+                                        log::info!("Already capturing audio for source '{}', skipping", source_id);
+                                        capture_results.insert(source_id.clone(), json!({
+                                            "success": true,
+                                            "sourceType": "AudioDevice",
+                                            "deviceName": device_name,
+                                            "alreadyCapturing": true
+                                        }));
+                                        continue;
+                                    }
+
+                                    // Try device NAME first (more reliable - name matching is unambiguous)
+                                    // Fall back to device_id (numeric index) only if name matching fails
+                                    // This avoids the FFmpeg/cpal device index mismatch problem
+                                    // Use start_input_capture_for_source to track source_id -> device mapping
+                                    log::info!("Attempting audio capture for source '{}': trying device name '{}' first", source_id, device_name);
+                                    let capture_result = state.audio_capture.start_input_capture_for_source(
+                                        source_id,
+                                        &device_name,
+                                        AudioCaptureConfig::default(),
+                                    ).or_else(|e| {
+                                        // If device name failed, try the device_id (numeric index as fallback)
+                                        log::info!("Device name '{}' failed ({}), trying device_id '{}'", device_name, e, device_id);
+                                        state.audio_capture.start_input_capture_for_source(
+                                            source_id,
+                                            &device_id,
+                                            AudioCaptureConfig::default(),
+                                        )
+                                    });
+
+                                    match capture_result {
+                                        Ok(mut receiver) => {
+                                            log::info!("✓ Audio capture STARTED for source '{}' (device: '{}')", source_id, device_name);
+                                            capture_results.insert(source_id.clone(), json!({
+                                                "success": true,
+                                                "sourceType": "AudioDevice",
+                                                "deviceName": device_name
+                                            }));
+
+                                            // Spawn task to process audio and update levels
+                                            let device_name_log = device_name.clone();
+                                            tokio::spawn(async move {
+                                                log::info!("Audio capture task running for source {} (device {})", source_id_clone, device_name_log);
+                                                let mut buffer_count = 0u64;
+                                                // Use loop with match to handle Lagged errors gracefully
+                                                // The old "while let Ok" would exit on ANY error including Lagged
+                                                loop {
+                                                    match receiver.recv().await {
+                                                        Ok(buffer) => {
+                                                            // Calculate separate L/R RMS and Peak for stereo sources
+                                                            // Following OBS's audio metering model:
+                                                            // - RMS = root mean square (average power)
+                                                            // - Peak = instantaneous maximum absolute sample value
+                                                            // Interleaved samples for N channels: [ch0_s0, ch1_s0, ch2_s0, ..., ch0_s1, ch1_s1, ...]
+                                                            let channels = buffer.channels as usize;
+                                                            let (rms_l, rms_r, peak_l, peak_r) = if buffer.samples.is_empty() || channels == 0 {
+                                                                (0.0, 0.0, 0.0, 0.0)
+                                                            } else if channels >= 2 {
+                                                                // Stereo or multi-channel: extract channels 0 (L) and 1 (R)
+                                                                // Use proper deinterleaving based on actual channel count
+                                                                let mut sum_squares_l = 0.0f32;
+                                                                let mut sum_squares_r = 0.0f32;
+                                                                let mut max_abs_l = 0.0f32;
+                                                                let mut max_abs_r = 0.0f32;
+                                                                let mut count = 0usize;
+                                                                for frame in buffer.samples.chunks_exact(channels) {
+                                                                    let sample_l = frame[0]; // Channel 0 = Left
+                                                                    let sample_r = frame[1]; // Channel 1 = Right
+                                                                    sum_squares_l += sample_l * sample_l;
+                                                                    sum_squares_r += sample_r * sample_r;
+                                                                    max_abs_l = max_abs_l.max(sample_l.abs());
+                                                                    max_abs_r = max_abs_r.max(sample_r.abs());
+                                                                    count += 1;
+                                                                }
+                                                                let rms_l = if count > 0 { (sum_squares_l / count as f32).sqrt() } else { 0.0 };
+                                                                let rms_r = if count > 0 { (sum_squares_r / count as f32).sqrt() } else { 0.0 };
+                                                                (rms_l, rms_r, max_abs_l, max_abs_r)
+                                                            } else {
+                                                                // Mono: use same value for both channels
+                                                                let mut sum_squares = 0.0f32;
+                                                                let mut max_abs = 0.0f32;
+                                                                for &sample in buffer.samples.iter() {
+                                                                    sum_squares += sample * sample;
+                                                                    max_abs = max_abs.max(sample.abs());
+                                                                }
+                                                                let rms = (sum_squares / buffer.samples.len() as f32).sqrt();
+                                                                (rms, rms, max_abs, max_abs)
+                                                            };
+                                                            // Update the audio level service with stereo RMS and Peak values
+                                                            audio_level_service.update_source_level(&source_id_clone, rms_l, rms_r, peak_l, peak_r).await;
+
+                                                            // Log periodically to confirm data is flowing
+                                                            buffer_count += 1;
+                                                            // Log first 5 buffers, then every 100th (about every 3 seconds)
+                                                            if buffer_count <= 5 || buffer_count % 100 == 0 {
+                                                                log::info!("[AudioCapture] Buffer #{} for '{}': RMS L={:.4} R={:.4}, Peak L={:.4} R={:.4}, ch={}, samples={}",
+                                                                    buffer_count, source_id_clone, rms_l, rms_r, peak_l, peak_r, buffer.channels, buffer.samples.len());
+                                                            }
+                                                        }
+                                                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                                                            // Missed some buffers due to slow processing - this is OK, just continue
+                                                            log::debug!("Audio capture lagged {} buffers for {} (processing continues)", n, source_id_clone);
+                                                            continue;
+                                                        }
+                                                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                                                            // Channel closed, stop processing
+                                                            log::info!("Audio capture channel closed for {}", source_id_clone);
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                                log::info!("Audio capture ended for source {} (processed {} buffers)", source_id_clone, buffer_count);
+                                            });
+                                        }
+                                        Err(e) => {
+                                            log::error!("✗ Audio capture FAILED for source '{}' (device_name: '{}', device_id: '{}'): {}",
+                                                source_id, device_name, device_id, e);
+                                            capture_results.insert(source_id.clone(), json!({
+                                                "success": false,
+                                                "sourceType": "AudioDevice",
+                                                "deviceName": device_name,
+                                                "reason": "captureFailed",
+                                                "message": format!("Failed to capture from device: {}", e)
+                                            }));
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Source not found in profile
+                                capture_results.insert(source_id.clone(), json!({
+                                    "success": false,
+                                    "reason": "notFound",
+                                    "message": "Source not found in profile"
+                                }));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Failed to load profile '{}': {}", profile_name, e);
+                        // Mark all sources as failed due to profile load error
+                        for source_id in &source_ids {
+                            capture_results.insert(source_id.clone(), json!({
+                                "success": false,
+                                "reason": "profileLoadFailed",
+                                "message": format!("Failed to load profile: {}", e)
+                            }));
+                        }
+                    }
+                }
+            }
+
+            Ok(json!({
+                "captureResults": capture_results,
+                "trackedSources": source_ids.len()
+            }))
         }
         "get_audio_monitor_status" => {
             Ok(json!({
                 "running": state.audio_level_service.is_running()
+            }))
+        }
+
+        "get_audio_monitor_health" => {
+            let health = state.audio_level_service.get_health_status().await;
+            Ok(json!({
+                "sources": health
             }))
         }
 
@@ -2810,6 +3644,24 @@ async fn list_audio_output_handler(
 ) -> impl IntoResponse {
     let devices = state.audio_capture.list_output_devices();
     Json(json!({ "ok": true, "data": devices }))
+}
+
+/// GET /api/devices/capture-cards - List available capture cards (Elgato, etc.)
+async fn list_capture_cards_handler(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let discovery = DeviceDiscovery::new(state.ffmpeg_handler.get_ffmpeg_path());
+    match discovery.list_capture_cards_async().await {
+        Ok(cards) => Json(json!({ "ok": true, "data": cards })),
+        Err(e) => Json(json!({ "ok": false, "error": format!("Failed to list capture cards: {}", e) })),
+    }
+}
+
+/// GET /api/devices/windows - List capturable windows
+/// Uses ScreenCaptureKit on macOS for window enumeration
+async fn list_windows_handler() -> impl IntoResponse {
+    let windows = ScreenCaptureService::list_windows_async().await;
+    Json(json!({ "ok": true, "data": windows }))
 }
 
 // --- Capture Control ---
@@ -3009,6 +3861,115 @@ async fn capture_stream_handler(
         ],
         body,
     ).into_response()
+}
+
+// --- Audio Levels ---
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetAudioLevelSourcesRequest {
+    source_ids: Vec<String>,
+    profile_name: Option<String>,
+}
+
+/// POST /api/audio-levels/start - Start audio level monitoring with source list
+async fn audio_levels_start_handler(
+    State(state): State<AppState>,
+    Json(req): Json<SetAudioLevelSourcesRequest>,
+) -> impl IntoResponse {
+    log::info!(
+        "[AudioLevels] Starting monitoring for {} sources",
+        req.source_ids.len()
+    );
+
+    // Set tracked sources
+    state
+        .audio_level_service
+        .set_tracked_sources(req.source_ids.clone())
+        .await;
+
+    // If profile name provided, start audio capture for device sources
+    let mut capture_results = std::collections::HashMap::new();
+    if let Some(profile_name) = &req.profile_name {
+        // Load the profile asynchronously
+        if let Ok(profile) = state.profile_manager.load(profile_name, None).await {
+            for source_id in &req.source_ids {
+                if let Some(source) = profile.sources.iter().find(|s| s.id() == source_id) {
+                    if let Source::AudioDevice(audio_source) = source {
+                        // Start audio capture for this device
+                        let config = AudioCaptureConfig {
+                            sample_rate: Some(audio_source.sample_rate.unwrap_or(48000)),
+                            channels: Some(audio_source.channels.unwrap_or(2) as u16),
+                        };
+
+                        // Use start_input_capture_for_source which tracks the source mapping
+                        match state.audio_capture.start_input_capture_for_source(
+                            source_id,
+                            &audio_source.device_id,
+                            config,
+                        ) {
+                            Ok(_) => {
+                                capture_results.insert(
+                                    source_id.clone(),
+                                    json!({ "success": true }),
+                                );
+                            }
+                            Err(e) => {
+                                capture_results.insert(
+                                    source_id.clone(),
+                                    json!({ "success": false, "error": e }),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Start the monitoring loop if not already running
+    if !state.audio_level_service.is_running() {
+        state
+            .audio_level_service
+            .start(Arc::new(state.event_bus.clone()));
+    }
+
+    Json(json!({
+        "ok": true,
+        "data": {
+            "running": true,
+            "trackedSources": req.source_ids.len(),
+            "captureResults": capture_results
+        }
+    }))
+}
+
+/// POST /api/audio-levels/stop - Stop audio level monitoring
+async fn audio_levels_stop_handler(State(state): State<AppState>) -> impl IntoResponse {
+    log::info!("[AudioLevels] Stopping monitoring");
+    state.audio_level_service.stop();
+
+    // Clear tracked sources
+    state.audio_level_service.set_tracked_sources(vec![]).await;
+
+    Json(json!({
+        "ok": true,
+        "data": { "running": false }
+    }))
+}
+
+/// GET /api/audio-levels/health - Get audio level monitoring health status
+async fn audio_levels_health_handler(State(state): State<AppState>) -> impl IntoResponse {
+    let running = state.audio_level_service.is_running();
+    let health = state.audio_level_service.get_health_status().await;
+
+    Json(json!({
+        "ok": true,
+        "data": {
+            "running": running,
+            "sources": health
+        }
+    }))
 }
 
 // --- Recording ---
@@ -3305,6 +4266,66 @@ fn init_logger(log_dir: &std::path::Path, event_bus: EventBus) -> Result<(), Box
     Ok(())
 }
 
+/// Graceful shutdown signal handler
+/// Waits for Ctrl+C or SIGTERM, then stops all services in order
+async fn shutdown_signal(state: AppState) {
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("Failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("Failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    log::info!("Shutdown signal received, stopping services...");
+
+    // Stop services in dependency order (most critical first)
+
+    // 1. Stop active streams (FFmpeg processes)
+    if let Err(e) = state.ffmpeg_handler.stop_all() {
+        log::warn!("Error stopping FFmpeg streams: {}", e);
+    }
+
+    // 2. Stop recording and replay buffer
+    let _ = state.recording_service.stop_all();
+    if let Err(e) = state.replay_buffer.stop() {
+        log::warn!("Error stopping replay buffer: {}", e);
+    }
+
+    // 3. Stop WebRTC/go2rtc
+    state.go2rtc_manager.stop().await;
+
+    // 4. Stop all preview handlers
+    state.preview_handler.stop_all_previews();
+    state.native_preview.stop_all();
+
+    // 5. Stop capture services
+    state.screen_capture.stop_all();
+    state.camera_capture.stop_all();
+    state.audio_capture.stop_all();
+    state.h264_capture.stop_all();
+
+    // 6. Stop audio level monitoring
+    state.audio_level_service.stop();
+    state.audio_level_extractor.stop_all();
+
+    log::info!("All services stopped, server shutting down");
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load configuration from environment
@@ -3508,6 +4529,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize native capture services
     let screen_capture = Arc::new(ScreenCaptureService::new());
     let audio_capture = Arc::new(AudioCaptureService::new());
+    // Pre-warm audio device cache in background for faster first capture
+    {
+        let audio_capture_warmup = audio_capture.clone();
+        tokio::task::spawn_blocking(move || {
+            audio_capture_warmup.warm_cache();
+        });
+    }
     let camera_capture = Arc::new(CameraCaptureService::new(preview_ffmpeg_path.clone()));
     let native_preview = Arc::new(NativePreviewService::new());
     let recording_service = Arc::new(
@@ -3541,6 +4569,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize audio level monitoring service
     let audio_level_service = Arc::new(AudioLevelService::new());
+    // Initialize audio level extractor for FFmpeg-based sources
+    let audio_level_extractor = Arc::new(AudioLevelExtractor::new(preview_ffmpeg_path.clone()));
     // Clone event_bus for audio level service before it's moved into state
     let event_bus_for_audio = event_bus.clone();
 
@@ -3568,6 +4598,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         go2rtc_manager,
         h264_capture,
         audio_level_service: audio_level_service.clone(),
+        audio_level_extractor,
         server_port: port,
     };
 
@@ -3616,6 +4647,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/devices/displays", get(list_displays_handler))
         .route("/api/devices/audio/input", get(list_audio_input_handler))
         .route("/api/devices/audio/output", get(list_audio_output_handler))
+        .route("/api/devices/capture-cards", get(list_capture_cards_handler))
+        .route("/api/devices/windows", get(list_windows_handler))
         // Capture control endpoints
         .route("/api/capture/camera/start", post(start_camera_capture_handler))
         .route("/api/capture/camera/stop", post(stop_camera_capture_handler))
@@ -3626,6 +4659,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/capture/status", get(capture_status_handler))
         // H264 MPEG-TS streaming endpoint (for go2rtc #video=copy passthrough)
         .route("/api/capture/:source_id/stream", get(capture_stream_handler))
+        // Audio level monitoring endpoints
+        .route("/api/audio-levels/start", post(audio_levels_start_handler))
+        .route("/api/audio-levels/stop", post(audio_levels_stop_handler))
+        .route("/api/audio-levels/health", get(audio_levels_health_handler))
         // Recording endpoints
         .route("/api/recording/start", post(start_recording_handler))
         .route("/api/recording/stop", post(stop_recording_handler))
@@ -3687,7 +4724,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let listener = tokio::net::TcpListener::bind(address).await?;
-    axum::serve(listener, app).await?;
+
+    // Run server with graceful shutdown
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal(state))
+        .await?;
 
     Ok(())
 }

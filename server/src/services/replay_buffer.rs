@@ -412,12 +412,27 @@ impl ReplayBufferService {
                 last_segment_count = current_count;
             }
 
-            // Remove old segments beyond buffer duration
+            // Remove old segments using both age-based and count-based checks
+            let max_age = Duration::from_secs(buffer_duration as u64);
+
+            // Primary: Remove segments older than max buffer duration
+            while let Some(oldest) = guard.segments.front() {
+                if oldest.start_time.elapsed() > max_age {
+                    if let Some(old_segment) = guard.segments.pop_front() {
+                        let _ = std::fs::remove_file(&old_segment.path);
+                        log::debug!("Old segment removed (age: {:?}): {:?}",
+                            old_segment.start_time.elapsed(), old_segment.path);
+                    }
+                } else {
+                    break; // Segments are in order, so if this one is young enough, rest are too
+                }
+            }
+
+            // Fallback: Also enforce max segment count as safety limit
             while guard.segments.len() > max_segments {
                 if let Some(old_segment) = guard.segments.pop_front() {
-                    // Delete the old segment file
                     let _ = std::fs::remove_file(&old_segment.path);
-                    log::debug!("Old segment removed: {:?}", old_segment.path);
+                    log::debug!("Old segment removed (count limit): {:?}", old_segment.path);
                 }
             }
         }

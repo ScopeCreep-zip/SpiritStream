@@ -8,6 +8,8 @@ import { X, Grid2X2, Grid3X3, LayoutGrid } from 'lucide-react';
 import { SceneCard } from './SceneCard';
 import { useStudioStore } from '@/stores/studioStore';
 import { useProfileStore } from '@/stores/profileStore';
+import { useSceneStore } from '@/stores/sceneStore';
+import { toast } from '@/hooks/useToast';
 import type { Profile } from '@/types/profile';
 
 interface MultiviewPanelProps {
@@ -26,16 +28,23 @@ export function MultiviewPanel({ profile, onClose }: MultiviewPanelProps) {
   const programSceneId = useStudioStore((s) => s.programSceneId);
   const setPreviewScene = useStudioStore((s) => s.setPreviewScene);
   const setCurrentActiveScene = useProfileStore((s) => s.setCurrentActiveScene);
+  const { setActiveScene } = useSceneStore();
 
-  const handleSceneClick = useCallback((sceneId: string) => {
+  const handleSceneClick = useCallback(async (sceneId: string) => {
     if (studioEnabled) {
       // In Studio Mode, clicking sends to Preview
       setPreviewScene(sceneId);
     } else {
-      // In Normal Mode, clicking switches directly to the scene
-      setCurrentActiveScene(sceneId);
+      // In Normal Mode, persist to backend then update local state
+      try {
+        await setActiveScene(profile.name, sceneId);
+        setCurrentActiveScene(sceneId);
+      } catch (err) {
+        console.error('[MultiviewPanel] Failed to switch scene:', err);
+        toast.error(`Failed to switch scene: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
-  }, [studioEnabled, setPreviewScene, setCurrentActiveScene]);
+  }, [studioEnabled, setPreviewScene, setActiveScene, setCurrentActiveScene, profile.name]);
 
   const gridClasses = {
     2: 'grid-cols-2 gap-4',

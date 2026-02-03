@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "deepwiki": {
-      "type": "mcp",
+      "type": "http",
       "url": "https://mcp.deepwiki.com/mcp"
     }
   }

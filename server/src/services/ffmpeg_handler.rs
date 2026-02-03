@@ -1861,3 +1861,10 @@ impl Default for FFmpegHandler {
         Self::new()
     }
 }
+
+impl Drop for FFmpegHandler {
+    fn drop(&mut self) {
+        // Stop all active streams and relay on drop
+        let _ = self.stop_all();
+    }
+}

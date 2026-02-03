@@ -5,6 +5,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Play, Square, AlertTriangle, Plus, LayoutGrid, Grid3X3 } from 'lucide-react';
+import { useShallow } from 'zustand/shallow';
 import { Button } from '@/components/ui/Button';
 import { Alert } from '@/components/ui/Alert';
 import { SourcesPanel } from '@/components/stream/SourcesPanel';
@@ -28,32 +29,53 @@ import { useHotkeys } from '@/hooks/useHotkeys';
 import { getIncomingUrl, migrateProfileIfNeeded } from '@/types/profile';
 import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValidation';
 import { api } from '@/lib/backend/httpApi';
+import { useAudioLevels } from '@/hooks/useAudioLevels';
 
 export function Stream() {
   const { t } = useTranslation();
 
-  // Use individual selectors to prevent unnecessary re-renders
-  const current = useProfileStore((s) => s.current);
-  const loading = useProfileStore((s) => s.loading);
-  const error = useProfileStore((s) => s.error);
-  const updateProfile = useProfileStore((s) => s.updateProfile);
-  const saveProfile = useProfileStore((s) => s.saveProfile);
+  // Use useShallow to reduce re-renders by doing shallow comparison of the selected state
+  // This is a 2026 Zustand best practice - previously 10+ separate selectors caused excessive re-renders
+  const { current, loading, error, updateProfile, saveProfile } = useProfileStore(
+    useShallow((s) => ({
+      current: s.current,
+      loading: s.loading,
+      error: s.error,
+      updateProfile: s.updateProfile,
+      saveProfile: s.saveProfile,
+    }))
+  );
 
-  const isStreaming = useStreamStore((s) => s.isStreaming);
-  const activeGroups = useStreamStore((s) => s.activeGroups);
-  const startAllGroups = useStreamStore((s) => s.startAllGroups);
-  const stopAllGroups = useStreamStore((s) => s.stopAllGroups);
+  const { isStreaming, activeGroups, startAllGroups, stopAllGroups } = useStreamStore(
+    useShallow((s) => ({
+      isStreaming: s.isStreaming,
+      activeGroups: s.activeGroups,
+      startAllGroups: s.startAllGroups,
+      stopAllGroups: s.stopAllGroups,
+    }))
+  );
 
-  const selectedLayerId = useSceneStore((s) => s.selectedLayerId);
-  const selectLayer = useSceneStore((s) => s.selectLayer);
+  const { selectedLayerId, selectLayer } = useSceneStore(
+    useShallow((s) => ({
+      selectedLayerId: s.selectedLayerId,
+      selectLayer: s.selectLayer,
+    }))
+  );
 
   const discoverDevices = useSourceStore((s) => s.discoverDevices);
 
-  const studioEnabled = useStudioStore((s) => s.enabled);
-  const toggleStudioMode = useStudioStore((s) => s.toggleStudioMode);
+  const { enabled: studioEnabled, toggleStudioMode } = useStudioStore(
+    useShallow((s) => ({
+      enabled: s.enabled,
+      toggleStudioMode: s.toggleStudioMode,
+    }))
+  );
 
   // Activate global hotkeys for the Stream view
   useHotkeys();
+
+  // Get setCaptureStatus from the audio levels hook (single source of truth)
+  const { setCaptureStatus } = useAudioLevels();
 
   const [isValidating, setIsValidating] = useState(false);
   const [showMultiview, setShowMultiview] = useState(false);
@@ -78,36 +100,82 @@ export function Stream() {
 
   // Discover devices on mount
   useEffect(() => {
-    discoverDevices();
+    discoverDevices().catch((err) => {
+      console.error('[Stream] Device discovery failed:', err);
+      // Silent failure - non-critical, user can manually refresh
+    });
   }, [discoverDevices]);
 
   // Migrate profile if needed (on first load)
   useEffect(() => {
-    if (current && current.sources.length === 0 && (current.input || current.scenes.length === 0)) {
-      const migrated = migrateProfileIfNeeded(current);
-      if (migrated !== current) {
-        updateProfile(migrated);
-        saveProfile();
+    const migrateIfNeeded = async () => {
+      if (current && current.sources.length === 0 && (current.input || current.scenes.length === 0)) {
+        const migrated = migrateProfileIfNeeded(current);
+        if (migrated !== current) {
+          try {
+            updateProfile(migrated);
+            await saveProfile();
+          } catch (err) {
+            console.error('[Stream] Profile migration failed:', err);
+            toast.error(t('errors.profileMigrationFailed', {
+              defaultValue: 'Failed to save migrated profile'
+            }));
+          }
+        }
       }
-    }
-  }, [current, updateProfile, saveProfile]);
+    };
+    migrateIfNeeded();
+  }, [current, updateProfile, saveProfile, t]);
 
   // Get active scene
   const activeScene = current?.scenes.find((s) => s.id === current.activeSceneId);
   const selectedLayer = activeScene?.layers.find((l) => l.id === selectedLayerId);
 
+  // Create stable string key from track source IDs to prevent infinite loop
+  // (array reference comparison always fails, causing constant re-renders)
+  const trackSourceIdsKey = useMemo(
+    () => activeScene?.audioMixer.tracks.map((t) => t.sourceId).join(',') ?? '',
+    [activeScene?.audioMixer.tracks]
+  );
+
   // Sync audio monitor sources with backend when scene changes
   useEffect(() => {
-    if (!activeScene) {
+    if (!activeScene || !current) {
       // No scene selected, clear audio monitoring
-      api.audio.setMonitorSources([]).catch(console.error);
+      api.audio.setMonitorSources([]).then(() => {
+        setCaptureStatus({});
+      }).catch(console.error);
       return;
     }
 
     // Get audio track source IDs from the active scene
     const sourceIds = activeScene.audioMixer.tracks.map((t) => t.sourceId);
-    api.audio.setMonitorSources(sourceIds).catch(console.error);
-  }, [activeScene?.id, activeScene?.audioMixer.tracks]);
+    // Pass profile name so backend can start real audio capture for device sources
+    api.audio.setMonitorSources(sourceIds, current.name).then((result) => {
+      // Store capture status in the hook (single source of truth for AudioMixerPanel)
+      if (result.captureResults) {
+        setCaptureStatus(result.captureResults);
+
+        // Log actual failures (exclude expected non-audio sources and known limitations)
+        const expectedReasons = [
+          'noAudio',           // Source type doesn't support audio (Color, Text, etc.)
+          'platformLimitation', // Platform doesn't support this audio capture
+          'extractionUnavailable', // Audio metering unavailable but audio works in output
+          'noCurrentItem',     // Playlist has no current item
+          'unsupportedFormat', // File is not a media file (e.g., HTML used as MediaFile)
+        ];
+        const actualFailures = Object.entries(result.captureResults).filter(
+          ([_, status]) => !status.success && !expectedReasons.includes(status.reason || '')
+        );
+        if (actualFailures.length > 0) {
+          console.warn('[Stream] Audio capture failures:');
+          actualFailures.forEach(([sourceId, status]) => {
+            console.warn(`  - Source ${sourceId}: ${status.reason} - ${status.message} (type: ${status.sourceType})`);
+          });
+        }
+      }
+    }).catch(console.error);
+  }, [activeScene?.id, trackSourceIdsKey, current?.name, setCaptureStatus]);
 
   // Memoize whether streaming is possible (has at least one target configured)
   const canStream = useMemo(
@@ -128,12 +196,14 @@ export function Stream() {
 
       if (!result.valid) {
         displayValidationIssues(result.issues, toast);
+        setIsValidating(false);
         return;
       }
 
       const incomingUrl = getIncomingUrl(current);
       if (!incomingUrl) {
         toast.error(t('errors.noIncomingUrl'));
+        setIsValidating(false);
         return;
       }
 

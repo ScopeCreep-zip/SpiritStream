@@ -68,7 +68,9 @@ import {
   createDefaultNestedSceneSource,
   createDefaultNDISource,
   getSourceTypeLabel,
+  sourceHasAudio,
 } from '@/types/source';
+import { createDefaultAudioTrack } from '@/types/scene';
 
 export interface AddSourceModalProps {
   open: boolean;
@@ -103,7 +105,7 @@ const SOURCE_TYPES: { type: SourceType; icon: React.ReactNode }[] = [
 
 export function AddSourceModal({ open, onClose, profileName, filterType, excludeTypes = [], onSourceAdded }: AddSourceModalProps) {
   const { t } = useTranslation();
-  const { setCurrentSources } = useProfileStore();
+  const { current, setCurrentSources, addCurrentAudioTrack, saveProfile } = useProfileStore();
   const { addSource, devices, discoverDevices, listWindows } = useSourceStore();
   const { ensurePermission } = usePermissionCheck();
   const { FileBrowser, openFilePath: browserOpenFile } = useFileBrowser();
@@ -150,7 +152,12 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
 
     if (formData.type === 'camera' && !formData.deviceId && devices.cameras.length > 0) {
       const first = devices.cameras[0];
-      setFormData({ ...formData, deviceId: first.deviceId, name: formData.name || first.name });
+      setFormData({
+        ...formData,
+        deviceId: first.deviceId,
+        name: formData.name || first.name,
+        linkedAudioDeviceId: first.linkedAudioDeviceId,
+      });
     } else if (formData.type === 'screenCapture' && !formData.displayId && devices.displays.length > 0) {
       const first = devices.displays[0];
       setFormData({ ...formData, displayId: first.displayId, deviceName: first.deviceName });
@@ -235,10 +242,15 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
       }
       case 'camera': {
         const firstCamera = devices.cameras[0];
-        setFormData(createDefaultCameraSource(
+        const cameraSource = createDefaultCameraSource(
           firstCamera?.name || 'Camera',
           firstCamera?.deviceId || ''
-        ));
+        );
+        // Include linked audio device ID if available
+        if (firstCamera?.linkedAudioDeviceId) {
+          cameraSource.linkedAudioDeviceId = firstCamera.linkedAudioDeviceId;
+        }
+        setFormData(cameraSource);
         break;
       }
       case 'captureCard': {
@@ -331,9 +343,52 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
 
     try {
       // addSource saves to backend and returns updated sources list
-      const updatedSources = await addSource(profileName, formData);
+      let updatedSources = await addSource(profileName, formData);
       // Update local state with new sources - don't reload profile to avoid overwriting local edits
       setCurrentSources(updatedSources);
+
+      // CAMERA SPECIAL CASE: Create linked AudioDeviceSource for camera microphone
+      // Camera video itself doesn't have audio - audio comes from a separate microphone device
+      // The linkedAudioDeviceId points to that microphone, which we create as a separate AudioDeviceSource
+      if (
+        formData.type === 'camera' &&
+        formData.captureAudio &&
+        formData.linkedAudioDeviceId
+      ) {
+        // Find the camera device to get the linked audio device name
+        const cameraDevice = devices.cameras.find((c) => c.deviceId === formData.deviceId);
+        const linkedAudioSource: AudioDeviceSource = {
+          type: 'audioDevice',
+          id: crypto.randomUUID(),
+          name: `${formData.name} Audio`,
+          deviceId: formData.linkedAudioDeviceId,
+          linkedToSourceId: formData.id, // Track parent for cascade delete
+          channels: cameraDevice?.linkedAudioDeviceName?.toLowerCase().includes('stereo') ? 2 : 2,
+          sampleRate: 48000,
+        };
+
+        // Add the linked audio source
+        updatedSources = await addSource(profileName, linkedAudioSource);
+        setCurrentSources(updatedSources);
+
+        // Add audio track for the linked audio source (AudioDeviceSource has audio)
+        if (current?.activeSceneId) {
+          const linkedAudioTrack = createDefaultAudioTrack(linkedAudioSource.id);
+          addCurrentAudioTrack(current.activeSceneId, linkedAudioTrack);
+        }
+      }
+
+      // If this source has audio (non-camera sources), add it to the active scene's audio mixer
+      if (sourceHasAudio(formData) && current?.activeSceneId) {
+        const audioTrack = createDefaultAudioTrack(formData.id);
+        addCurrentAudioTrack(current.activeSceneId, audioTrack);
+      }
+
+      // Save profile if any audio tracks were added
+      if ((sourceHasAudio(formData) || (formData.type === 'camera' && formData.captureAudio && formData.linkedAudioDeviceId)) && current?.activeSceneId) {
+        await saveProfile();
+      }
+
       // Notify parent of the newly added source
       onSourceAdded?.(formData);
       onClose();
@@ -443,6 +498,13 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
           onChange={(e) => setFormData({ ...data, application: e.target.value })}
         />
       </div>
+      <div className="flex items-center justify-between">
+        <span className="text-sm">{t('stream.captureAudio', { defaultValue: 'Capture Audio' })}</span>
+        <Toggle
+          checked={data.captureAudio}
+          onChange={(checked) => setFormData({ ...data, captureAudio: checked })}
+        />
+      </div>
     </div>
   );
 
@@ -479,6 +541,13 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
         <Toggle
           checked={data.audioOnly ?? false}
           onChange={(checked) => setFormData({ ...data, audioOnly: checked })}
+        />
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="text-sm">{t('stream.captureAudio', { defaultValue: 'Capture Audio' })}</span>
+        <Toggle
+          checked={data.captureAudio ?? true}
+          onChange={(checked) => setFormData({ ...data, captureAudio: checked })}
         />
       </div>
     </div>
@@ -559,6 +628,10 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
       label: c.name,
     }));
 
+    // Get the selected camera to check for linked audio device
+    const selectedCamera = devices.cameras.find(c => c.deviceId === data.deviceId);
+    const hasLinkedAudio = selectedCamera?.linkedAudioDeviceId;
+
     return (
       <div className="flex flex-col gap-4">
         <Input
@@ -579,6 +652,8 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
                   ...data,
                   deviceId,
                   name: data.name || camera?.name || 'Camera',
+                  // Store the linked audio device ID when camera is selected
+                  linkedAudioDeviceId: camera?.linkedAudioDeviceId,
                 });
               }}
               options={cameraOptions}
@@ -623,6 +698,38 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
         <p className="text-xs text-muted">
           {t('stream.cameraResolutionHelper', { defaultValue: 'Leave blank to use device defaults' })}
         </p>
+
+        {/* Audio capture toggle with linked mic info */}
+        {hasLinkedAudio ? (
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-sm">{t('stream.captureAudio', { defaultValue: 'Capture Audio' })}</span>
+              {data.captureAudio && (
+                <p className="text-xs text-muted mt-0.5">
+                  <Mic className="w-3 h-3 inline mr-1" />
+                  {selectedCamera?.linkedAudioDeviceName}
+                </p>
+              )}
+            </div>
+            <Toggle
+              checked={data.captureAudio}
+              onChange={(checked) => setFormData({
+                ...data,
+                captureAudio: checked,
+                // Store linked audio device ID when enabling audio capture
+                linkedAudioDeviceId: checked ? selectedCamera?.linkedAudioDeviceId : undefined,
+              })}
+            />
+          </div>
+        ) : data.deviceId ? (
+          // Show message when camera is selected but no linked mic found
+          <div className="p-3 bg-[var(--bg-sunken)] rounded-lg text-sm text-muted">
+            <p>{t('stream.noLinkedMic', { defaultValue: 'No microphone detected for this camera.' })}</p>
+            <p className="text-xs mt-1">
+              {t('stream.noLinkedMicHelper', { defaultValue: 'You can add a separate Audio Device source manually.' })}
+            </p>
+          </div>
+        ) : null}
       </div>
     );
   };
@@ -684,6 +791,13 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
           onChange={(e) => setFormData({ ...data, inputFormat: e.target.value || undefined })}
           options={inputFormatOptions}
         />
+        <div className="flex items-center justify-between">
+          <span className="text-sm">{t('stream.captureAudio', { defaultValue: 'Capture Audio' })}</span>
+          <Toggle
+            checked={data.captureAudio}
+            onChange={(checked) => setFormData({ ...data, captureAudio: checked })}
+          />
+        </div>
       </div>
     );
   };
@@ -1065,6 +1179,13 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
             onChange={(checked) => setFormData({ ...data, captureCursor: checked })}
           />
         </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm">{t('stream.captureAudio', { defaultValue: 'Capture Audio' })}</span>
+          <Toggle
+            checked={data.captureAudio}
+            onChange={(checked) => setFormData({ ...data, captureAudio: checked })}
+          />
+        </div>
       </div>
     );
   };
@@ -1113,6 +1234,13 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
             { value: 'repeat-one', label: t('stream.repeatOne', { defaultValue: 'Repeat One' }) },
           ]}
         />
+        <div className="flex items-center justify-between">
+          <span className="text-sm">{t('stream.captureAudio', { defaultValue: 'Capture Audio' })}</span>
+          <Toggle
+            checked={data.captureAudio}
+            onChange={(checked) => setFormData({ ...data, captureAudio: checked })}
+          />
+        </div>
       </div>
     );
   };
@@ -1227,6 +1355,13 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
             onChange={(checked) => setFormData({ ...data, antiCheatHook: checked })}
           />
         </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm">{t('stream.captureAudio', { defaultValue: 'Capture Audio' })}</span>
+          <Toggle
+            checked={data.captureAudio}
+            onChange={(checked) => setFormData({ ...data, captureAudio: checked })}
+          />
+        </div>
       </div>
     );
   };
@@ -1261,6 +1396,13 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
           placeholder="SpiritStream"
           helper={t('stream.receiverNameHelper', { defaultValue: 'How this receiver appears to NDI sources' })}
         />
+        <div className="flex items-center justify-between">
+          <span className="text-sm">{t('stream.captureAudio', { defaultValue: 'Capture Audio' })}</span>
+          <Toggle
+            checked={data.captureAudio}
+            onChange={(checked) => setFormData({ ...data, captureAudio: checked })}
+          />
+        </div>
         <div className="flex items-center justify-between">
           <div>
             <span className="text-sm">{t('stream.lowBandwidth', { defaultValue: 'Low Bandwidth Mode' })}</span>

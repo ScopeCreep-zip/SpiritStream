@@ -38,6 +38,8 @@ export interface RtmpSource extends BaseSource {
   bindAddress: string;
   port: number;
   application: string;
+  /** Whether to capture audio from this source */
+  captureAudio: boolean;
 }
 
 /**
@@ -48,6 +50,8 @@ export interface MediaFileSource extends BaseSource {
   filePath: string;
   loopPlayback: boolean;
   audioOnly?: boolean;
+  /** Whether to capture audio from this media file (default: true) */
+  captureAudio?: boolean;
 }
 
 /**
@@ -74,6 +78,8 @@ export interface WindowCaptureSource extends BaseSource {
   processName?: string;
   captureCursor: boolean;
   fps: number;
+  /** Whether to capture window audio (macOS/Windows) */
+  captureAudio: boolean;
 }
 
 /**
@@ -96,6 +102,8 @@ export interface GameCaptureSource extends BaseSource {
   antiCheatHook: boolean;
   /** Capture framerate */
   fps: number;
+  /** Whether to capture game audio */
+  captureAudio: boolean;
 }
 
 /**
@@ -107,6 +115,11 @@ export interface CameraSource extends BaseSource {
   width?: number;
   height?: number;
   fps?: number;
+  /** Whether to capture audio from built-in microphone */
+  captureAudio: boolean;
+  /** Auto-discovered linked audio device ID (from CameraDevice)
+   * When captureAudio is true, an AudioDeviceSource will be auto-created for this device */
+  linkedAudioDeviceId?: string;
 }
 
 /**
@@ -116,6 +129,8 @@ export interface CaptureCardSource extends BaseSource {
   type: 'captureCard';
   deviceId: string;
   inputFormat?: string;
+  /** Whether to capture audio from this source */
+  captureAudio: boolean;
 }
 
 /**
@@ -126,6 +141,9 @@ export interface AudioDeviceSource extends BaseSource {
   deviceId: string;
   channels?: number;
   sampleRate?: number;
+  /** If this was auto-created as linked audio for another source (e.g., camera)
+   * When the parent source is deleted, this source should also be deleted */
+  linkedToSourceId?: string;
 }
 
 /**
@@ -184,6 +202,8 @@ export interface MediaPlaylistSource extends BaseSource {
   shuffleMode: 'none' | 'all' | 'repeat-one';
   fadeBetweenItems: boolean;
   fadeDurationMs?: number;
+  /** Whether to capture audio from playlist items */
+  captureAudio: boolean;
 }
 
 /**
@@ -218,6 +238,8 @@ export interface NDISource extends BaseSource {
   lowBandwidth: boolean;
   /** Name to identify this receiver on the network */
   receiverName: string;
+  /** Whether to capture audio from this source */
+  captureAudio: boolean;
 }
 
 /**
@@ -257,6 +279,10 @@ export interface CameraDevice {
   deviceId: string;
   name: string;
   resolutions: Resolution[];
+  /** Auto-discovered linked audio device ID (e.g., camera's built-in microphone) */
+  linkedAudioDeviceId?: string;
+  /** Name of the linked audio device */
+  linkedAudioDeviceName?: string;
 }
 
 /**
@@ -332,24 +358,35 @@ export function sourceHasVideo(source: Source): boolean {
 
 /**
  * Helper to check if source has audio
+ * Note: Camera returns false because audio comes from the auto-created linked AudioDeviceSource
  */
 export function sourceHasAudio(source: Source): boolean {
   switch (source.type) {
     case 'rtmp':
+      return source.captureAudio;
     case 'mediaFile':
-    case 'captureCard':
+      // Media files have audio by default unless explicitly disabled
+      return source.captureAudio !== false;
     case 'audioDevice':
-    case 'mediaPlaylist':
-    case 'ndi':
       return true;
+    case 'captureCard':
+      return source.captureAudio;
+    case 'ndi':
+      return source.captureAudio;
     case 'screenCapture':
       return source.captureAudio;
+    // Camera video itself has no audio - audio comes from linked AudioDeviceSource
     case 'camera':
+      return false;
+    case 'windowCapture':
+      return source.captureAudio;
+    case 'gameCapture':
+      return source.captureAudio;
+    case 'mediaPlaylist':
+      return source.captureAudio;
     case 'color':
     case 'text':
     case 'browser':
-    case 'windowCapture':
-    case 'gameCapture':
     case 'nestedScene':
       return false;
   }
@@ -366,6 +403,7 @@ export function createDefaultRtmpSource(name = 'RTMP Input'): RtmpSource {
     bindAddress: '0.0.0.0',
     port: 1935,
     application: 'live',
+    captureAudio: true,
   };
 }
 
@@ -380,6 +418,7 @@ export function createDefaultMediaFileSource(
     filePath,
     loopPlayback: false,
     audioOnly: false,
+    captureAudio: true,
   };
 }
 
@@ -409,6 +448,7 @@ export function createDefaultCameraSource(
     id: crypto.randomUUID(),
     name,
     deviceId,
+    captureAudio: false,
   };
 }
 
@@ -421,6 +461,7 @@ export function createDefaultCaptureCardSource(
     id: crypto.randomUUID(),
     name,
     deviceId,
+    captureAudio: true,
   };
 }
 
@@ -505,6 +546,7 @@ export function createDefaultWindowCaptureSource(
     windowTitle,
     captureCursor: true,
     fps: 30,
+    captureAudio: false,
   };
 }
 
@@ -521,6 +563,7 @@ export function createDefaultMediaPlaylistSource(
     shuffleMode: 'none',
     fadeBetweenItems: false,
     fadeDurationMs: 500,
+    captureAudio: true,
   };
 }
 
@@ -548,6 +591,7 @@ export function createDefaultGameCaptureSource(
     captureCursor: false,
     antiCheatHook: false,
     fps: 60,
+    captureAudio: false,
   };
 }
 
@@ -562,6 +606,7 @@ export function createDefaultNDISource(
     sourceName,
     lowBandwidth: false,
     receiverName: 'SpiritStream',
+    captureAudio: true,
   };
 }
 

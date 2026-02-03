@@ -1,11 +1,12 @@
 // Audio Levels Service
-// Monitors audio sources and emits level data to WebSocket clients
+// Monitors audio sources and emits real level data to WebSocket clients
 
 use crate::services::events::{emit_event, EventSink};
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::Mutex;
 use tokio::time::{interval, Duration};
 
@@ -60,54 +61,64 @@ pub struct AudioLevelsData {
     pub master: AudioLevel,
 }
 
-/// Internal state for calculating audio levels
+/// Internal state for smoothing and peak hold
 struct TrackState {
-    /// Recent peak samples for decay (L channel)
+    /// Peak hold for L channel
     peak_hold_l: f32,
-    /// Recent peak samples for decay (R channel)
+    /// Peak hold for R channel
     peak_hold_r: f32,
     /// Recent RMS samples for smoothing (L channel)
-    rms_history_l: Vec<f32>,
+    /// Using VecDeque for O(1) pop_front instead of Vec::remove(0) which is O(n)
+    rms_history_l: VecDeque<f32>,
     /// Recent RMS samples for smoothing (R channel)
-    rms_history_r: Vec<f32>,
-    /// Simulation phase for L channel
-    sim_phase_l: f32,
-    /// Simulation phase for R channel
-    sim_phase_r: f32,
-    /// Simulation frequency multiplier for L channel
-    sim_freq_l: f32,
-    /// Simulation frequency multiplier for R channel
-    sim_freq_r: f32,
-    /// Base activity level (simulates quiet vs loud moments)
-    activity_level: f32,
-    /// Activity change timer
-    activity_timer: u32,
+    rms_history_r: VecDeque<f32>,
 }
 
 impl Default for TrackState {
     fn default() -> Self {
-        // Use different random frequencies for L and R channels
         Self {
             peak_hold_l: 0.0,
             peak_hold_r: 0.0,
-            rms_history_l: Vec::with_capacity(8),
-            rms_history_r: Vec::with_capacity(8),
-            sim_phase_l: rand::random::<f32>() * std::f32::consts::TAU,
-            sim_phase_r: rand::random::<f32>() * std::f32::consts::TAU,
-            sim_freq_l: 0.8 + (rand::random::<f32>() * 1.2),
-            sim_freq_r: 0.8 + (rand::random::<f32>() * 1.2),
-            activity_level: 0.3 + rand::random::<f32>() * 0.4,
-            activity_timer: 0,
+            rms_history_l: VecDeque::with_capacity(8),
+            rms_history_r: VecDeque::with_capacity(8),
         }
     }
 }
 
-/// Audio level monitoring service
+/// Tracked source data including level and last update time
+/// Follows OBS's audio metering model with separate RMS and Peak per channel
+#[derive(Debug, Clone)]
+struct TrackedSource {
+    /// Left channel RMS level (0.0 - 1.0) - average power
+    rms_l: f32,
+    /// Right channel RMS level (0.0 - 1.0) - average power
+    rms_r: f32,
+    /// Left channel peak level (0.0 - 1.0) - instantaneous max
+    peak_l: f32,
+    /// Right channel peak level (0.0 - 1.0) - instantaneous max
+    peak_r: f32,
+    /// Last time this source received an update
+    last_update: Instant,
+}
+
+impl Default for TrackedSource {
+    fn default() -> Self {
+        Self {
+            rms_l: 0.0,
+            rms_r: 0.0,
+            peak_l: 0.0,
+            peak_r: 0.0,
+            last_update: Instant::now(),
+        }
+    }
+}
+
+/// Audio level monitoring service - real levels only, no simulation
 pub struct AudioLevelService {
     /// Running state
     running: Arc<AtomicBool>,
-    /// Tracked source IDs and their simulated/real levels
-    tracked_sources: Arc<Mutex<HashMap<String, f32>>>,
+    /// Tracked source IDs and their data (level + last update time)
+    tracked_sources: Arc<Mutex<HashMap<String, TrackedSource>>>,
     /// Internal track states for smoothing
     track_states: Arc<Mutex<HashMap<String, TrackState>>>,
 }
@@ -137,17 +148,57 @@ impl AudioLevelService {
 
         // Add new sources with zero level
         for id in source_ids {
-            sources.entry(id.clone()).or_insert(0.0);
+            sources.entry(id.clone()).or_insert_with(TrackedSource::default);
             states.entry(id).or_insert_with(TrackState::default);
         }
     }
 
-    /// Update the level for a specific source (called from audio capture)
-    pub async fn update_source_level(&self, source_id: &str, rms: f32) {
+    /// Update the level for a specific source (called from real audio capture)
+    /// Follows OBS's audio metering model:
+    /// - RMS = root mean square (average power)
+    /// - Peak = instantaneous maximum absolute sample value
+    /// For mono sources, pass the same value for both channels
+    pub async fn update_source_level(
+        &self,
+        source_id: &str,
+        rms_l: f32,
+        rms_r: f32,
+        peak_l: f32,
+        peak_r: f32,
+    ) {
         let mut sources = self.tracked_sources.lock().await;
-        if let Some(level) = sources.get_mut(source_id) {
-            *level = rms.clamp(0.0, 1.0);
+        if let Some(tracked) = sources.get_mut(source_id) {
+            tracked.rms_l = rms_l.clamp(0.0, 1.0);
+            tracked.rms_r = rms_r.clamp(0.0, 1.0);
+            tracked.peak_l = peak_l.clamp(0.0, 1.0);
+            tracked.peak_r = peak_r.clamp(0.0, 1.0);
+            tracked.last_update = Instant::now();
+        } else {
+            // Log once per source to avoid spam
+            static WARNED: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> = std::sync::OnceLock::new();
+            let warned = WARNED.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()));
+            if let Ok(mut set) = warned.lock() {
+                if set.insert(source_id.to_string()) {
+                    log::warn!("Audio level update for untracked source '{}'. Tracked sources: {:?}",
+                        source_id, sources.keys().collect::<Vec<_>>());
+                }
+            }
         }
+    }
+
+    /// Get health status for all tracked sources
+    /// A source is considered "healthy" if it received an update within the last 2 seconds
+    pub async fn get_health_status(&self) -> HashMap<String, bool> {
+        let sources = self.tracked_sources.lock().await;
+        let timeout = Duration::from_secs(2);
+
+        sources
+            .iter()
+            .map(|(id, tracked)| {
+                let healthy = tracked.last_update.elapsed() < timeout;
+                (id.clone(), healthy)
+            })
+            .collect()
     }
 
     /// Start the monitoring loop
@@ -162,10 +213,11 @@ impl AudioLevelService {
         let track_states = self.track_states.clone();
 
         tokio::spawn(async move {
-            log::info!("AudioLevelService started");
+            log::info!("AudioLevelService started (real levels only)");
 
             // ~30Hz update rate for smooth meters
             let mut ticker = interval(Duration::from_millis(33));
+            let mut emit_count: u64 = 0;
 
             while running.load(Ordering::Relaxed) {
                 ticker.tick().await;
@@ -174,7 +226,7 @@ impl AudioLevelService {
                 let mut states = track_states.lock().await;
 
                 if sources.is_empty() {
-                    // No sources to monitor, still emit with just master
+                    // No sources to monitor, emit empty data
                     let data = AudioLevelsData {
                         tracks: HashMap::new(),
                         master: AudioLevel::default(),
@@ -192,88 +244,54 @@ impl AudioLevelService {
                 let mut master_peak_r = 0.0f32;
                 let mut master_clipping = false;
 
-                for (source_id, &raw_level) in sources.iter() {
+                for (source_id, tracked) in sources.iter() {
                     let state = states.entry(source_id.clone()).or_insert_with(TrackState::default);
 
-                    // Update activity level periodically (simulates talking vs silence)
-                    state.activity_timer += 1;
-                    if state.activity_timer > 30 + (rand::random::<u32>() % 60) {
-                        state.activity_timer = 0;
-                        // Randomly shift activity level
-                        let shift = (rand::random::<f32>() - 0.5) * 0.3;
-                        state.activity_level = (state.activity_level + shift).clamp(0.1, 0.8);
-                    }
-
-                    // Generate truly independent L/R channels
-                    let (level_l, level_r) = if raw_level < 0.001 {
-                        // Advance L channel phase
-                        state.sim_phase_l += 0.15 * state.sim_freq_l;
-                        if state.sim_phase_l > std::f32::consts::TAU {
-                            state.sim_phase_l -= std::f32::consts::TAU;
-                        }
-
-                        // Advance R channel phase (independent)
-                        state.sim_phase_r += 0.15 * state.sim_freq_r;
-                        if state.sim_phase_r > std::f32::consts::TAU {
-                            state.sim_phase_r -= std::f32::consts::TAU;
-                        }
-
-                        // L channel: sine wave + noise + occasional bursts
-                        let base_l = (state.sim_phase_l.sin() * 0.5 + 0.5) * state.activity_level;
-                        let noise_l = rand::random::<f32>() * 0.12;
-                        let burst_l = if rand::random::<f32>() > 0.97 { rand::random::<f32>() * 0.25 } else { 0.0 };
-                        let raw_l = (base_l + noise_l + burst_l).min(0.98);
-
-                        // R channel: completely independent calculation
-                        let base_r = (state.sim_phase_r.sin() * 0.5 + 0.5) * state.activity_level;
-                        let noise_r = rand::random::<f32>() * 0.12;
-                        let burst_r = if rand::random::<f32>() > 0.97 { rand::random::<f32>() * 0.25 } else { 0.0 };
-                        let raw_r = (base_r + noise_r + burst_r).min(0.98);
-
-                        (raw_l, raw_r)
-                    } else {
-                        // Real audio - use same level for both until we get real stereo
-                        (raw_level, raw_level)
-                    };
-
-                    // Smooth L channel RMS
-                    state.rms_history_l.push(level_l);
+                    // RMS values (average power) - apply smoothing
+                    // Smooth L channel RMS using O(1) VecDeque operations
+                    state.rms_history_l.push_back(tracked.rms_l);
                     if state.rms_history_l.len() > 6 {
-                        state.rms_history_l.remove(0);
+                        state.rms_history_l.pop_front();
                     }
                     let smoothed_rms_l = state.rms_history_l.iter().sum::<f32>() / state.rms_history_l.len() as f32;
 
-                    // Smooth R channel RMS
-                    state.rms_history_r.push(level_r);
+                    // Smooth R channel RMS using O(1) VecDeque operations
+                    state.rms_history_r.push_back(tracked.rms_r);
                     if state.rms_history_r.len() > 6 {
-                        state.rms_history_r.remove(0);
+                        state.rms_history_r.pop_front();
                     }
                     let smoothed_rms_r = state.rms_history_r.iter().sum::<f32>() / state.rms_history_r.len() as f32;
 
                     // Combined RMS for overall level
                     let smoothed_rms = ((smoothed_rms_l.powi(2) + smoothed_rms_r.powi(2)) / 2.0).sqrt();
 
-                    // Peak hold for L channel
-                    if level_l > state.peak_hold_l {
-                        state.peak_hold_l = level_l;
+                    // Peak values (instantaneous max) - apply peak hold with decay
+                    // OBS-style peak hold: hold at max, then decay after hold time
+                    // Peak hold for L channel (from actual peak, not RMS)
+                    if tracked.peak_l > state.peak_hold_l {
+                        state.peak_hold_l = tracked.peak_l;
                     } else {
-                        state.peak_hold_l = (state.peak_hold_l * 0.98).max(level_l * 0.5);
+                        // Decay coefficient ~0.98 at 30Hz = ~660ms decay to 50%
+                        state.peak_hold_l = (state.peak_hold_l * 0.98).max(tracked.peak_l * 0.5);
                     }
 
-                    // Peak hold for R channel
-                    if level_r > state.peak_hold_r {
-                        state.peak_hold_r = level_r;
+                    // Peak hold for R channel (from actual peak, not RMS)
+                    if tracked.peak_r > state.peak_hold_r {
+                        state.peak_hold_r = tracked.peak_r;
                     } else {
-                        state.peak_hold_r = (state.peak_hold_r * 0.98).max(level_r * 0.5);
+                        state.peak_hold_r = (state.peak_hold_r * 0.98).max(tracked.peak_r * 0.5);
                     }
 
-                    // Overall peak
+                    // Overall peak (max of L and R)
                     let overall_peak = state.peak_hold_l.max(state.peak_hold_r);
                     let clipping = overall_peak > 0.95;
 
                     // Calculate dB for display
-                    let peak_db = if overall_peak > 0.0 {
-                        Some(20.0 * overall_peak.log10())
+                    // Clamp peak to 1.0 to prevent positive dB values (which indicate clipping)
+                    // Values above 1.0 are still represented as 0 dB with clipping flag set
+                    let clamped_peak = overall_peak.min(1.0);
+                    let peak_db = if clamped_peak > 0.0 {
+                        Some(20.0 * clamped_peak.log10())
                     } else {
                         Some(-96.0)
                     };
@@ -289,7 +307,7 @@ impl AudioLevelService {
                         peak_db,
                     });
 
-                    // Accumulate for master (separate L/R channels)
+                    // Accumulate for master
                     master_rms_sum += smoothed_rms * smoothed_rms;
                     master_rms_l_sum += smoothed_rms_l * smoothed_rms_l;
                     master_rms_r_sum += smoothed_rms_r * smoothed_rms_r;
@@ -301,15 +319,17 @@ impl AudioLevelService {
                     }
                 }
 
-                // Calculate master RMS (sum of squares, then sqrt) - overall and per-channel
+                // Calculate master RMS
                 let num_sources = sources.len() as f32;
                 let master_rms = (master_rms_sum / num_sources).sqrt();
                 let master_rms_l = (master_rms_l_sum / num_sources).sqrt();
                 let master_rms_r = (master_rms_r_sum / num_sources).sqrt();
 
                 // Calculate master dB
-                let master_peak_db = if master_peak > 0.0 {
-                    Some(20.0 * master_peak.log10())
+                // Clamp peak to 1.0 to prevent positive dB values
+                let clamped_master_peak = master_peak.min(1.0);
+                let master_peak_db = if clamped_master_peak > 0.0 {
+                    Some(20.0 * clamped_master_peak.log10())
                 } else {
                     Some(-96.0)
                 };
@@ -327,6 +347,17 @@ impl AudioLevelService {
                         peak_db: master_peak_db,
                     },
                 };
+
+                emit_count += 1;
+                // Log first 5 emits, then every 100th (about every 3 seconds)
+                if emit_count <= 5 || emit_count % 100 == 0 {
+                    log::info!("[AudioLevelService] Emit #{}: {} tracks, master_rms={:.4}, track_levels={:?}",
+                        emit_count,
+                        data.tracks.len(),
+                        master_rms,
+                        data.tracks.iter().map(|(id, l)| (id.clone(), l.rms)).collect::<Vec<_>>()
+                    );
+                }
 
                 emit_event(event_sink.as_ref(), "audio_levels", &data);
             }

@@ -65,8 +65,10 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
     const finalFormat = format || state.format;
 
     try {
-      // TODO: Call backend API when implemented
-      // await api.recording.start(finalPath, finalFormat);
+      // Generate recording name based on timestamp
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const recordingName = `recording-${timestamp}`;
+      await api.recording.start(recordingName, finalFormat);
       set({
         isRecording: true,
         duration: 0,
@@ -82,8 +84,7 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
 
   stopRecording: async () => {
     try {
-      // TODO: Call backend API when implemented
-      // await api.recording.stop();
+      await api.recording.stop();
       set({
         isRecording: false,
       });

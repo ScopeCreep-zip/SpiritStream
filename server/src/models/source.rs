@@ -100,22 +100,24 @@ impl Source {
     }
 
     /// Check if this source has audio output
+    /// Note: Camera returns false because audio comes from the auto-created linked AudioDeviceSource
     pub fn has_audio(&self) -> bool {
         match self {
-            Source::Rtmp(_) => true,
-            Source::MediaFile(_) => true,
+            Source::Rtmp(s) => s.capture_audio,
+            Source::MediaFile(s) => s.capture_audio,
             Source::ScreenCapture(s) => s.capture_audio,
-            Source::WindowCapture(_) => false,
-            Source::Camera(_) => false, // Cameras typically don't have audio
-            Source::CaptureCard(_) => true,
+            Source::WindowCapture(s) => s.capture_audio,
+            // Camera video itself has no audio - audio comes from linked AudioDeviceSource
+            Source::Camera(_) => false,
+            Source::CaptureCard(s) => s.capture_audio,
             Source::AudioDevice(_) => true,
             Source::Color(_) => false,
             Source::Text(_) => false,
             Source::Browser(_) => false,
-            Source::MediaPlaylist(_) => true,
+            Source::MediaPlaylist(s) => s.capture_audio,
             Source::NestedScene(_) => false,
-            Source::GameCapture(_) => false, // Game capture typically doesn't capture audio
-            Source::Ndi(_) => true, // NDI includes audio
+            Source::GameCapture(s) => s.capture_audio,
+            Source::Ndi(s) => s.capture_audio,
         }
     }
 }
@@ -134,6 +136,9 @@ pub struct RtmpSource {
     pub port: u16,
     /// RTMP application/path (e.g., "live", "ingest")
     pub application: String,
+    /// Whether to capture audio from this source
+    #[serde(default = "default_true")]
+    pub capture_audio: bool,
 }
 
 impl Default for RtmpSource {
@@ -144,6 +149,7 @@ impl Default for RtmpSource {
             bind_address: "0.0.0.0".to_string(),
             port: 1935,
             application: "live".to_string(),
+            capture_audio: true,
         }
     }
 }
@@ -163,6 +169,9 @@ pub struct MediaFileSource {
     /// Whether this is an audio-only file
     #[serde(default)]
     pub audio_only: bool,
+    /// Whether to capture audio from this media file (default: true)
+    #[serde(default = "default_true")]
+    pub capture_audio: bool,
 }
 
 /// Screen capture source - captures a display
@@ -211,6 +220,9 @@ pub struct WindowCaptureSource {
     /// Target frame rate for capture
     #[serde(default = "default_fps")]
     pub fps: u32,
+    /// Whether to capture window audio (macOS/Windows)
+    #[serde(default)]
+    pub capture_audio: bool,
 }
 
 fn default_true() -> bool {
@@ -237,6 +249,13 @@ pub struct CameraSource {
     pub height: Option<u32>,
     /// Requested frame rate (None = device default)
     pub fps: Option<u32>,
+    /// Whether to capture audio from built-in microphone
+    #[serde(default)]
+    pub capture_audio: bool,
+    /// Auto-discovered linked audio device ID (from CameraDevice)
+    /// When capture_audio is true, an AudioDeviceSource will be auto-created for this device
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub linked_audio_device_id: Option<String>,
 }
 
 /// Capture card source - HDMI/SDI capture devices
@@ -251,6 +270,9 @@ pub struct CaptureCardSource {
     pub device_id: String,
     /// Input format (e.g., "hdmi", "component", "sdi")
     pub input_format: Option<String>,
+    /// Whether to capture audio from this source
+    #[serde(default = "default_true")]
+    pub capture_audio: bool,
 }
 
 /// Audio device source - microphone, line-in, etc.
@@ -267,6 +289,10 @@ pub struct AudioDeviceSource {
     pub channels: Option<u8>,
     /// Sample rate in Hz (None = device default)
     pub sample_rate: Option<u32>,
+    /// If this was auto-created as linked audio for another source (e.g., camera)
+    /// When the parent source is deleted, this source should also be deleted
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub linked_to_source_id: Option<String>,
 }
 
 // Device discovery result types
@@ -278,6 +304,12 @@ pub struct CameraDevice {
     pub device_id: String,
     pub name: String,
     pub resolutions: Vec<Resolution>,
+    /// Auto-discovered linked audio device ID (e.g., camera's built-in microphone)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub linked_audio_device_id: Option<String>,
+    /// Name of the linked audio device
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub linked_audio_device_name: Option<String>,
 }
 
 /// Available resolution for a device
@@ -460,6 +492,9 @@ pub struct MediaPlaylistSource {
     /// Fade duration in milliseconds
     #[serde(default = "default_fade_duration")]
     pub fade_duration_ms: u32,
+    /// Whether to capture audio from playlist items
+    #[serde(default = "default_true")]
+    pub capture_audio: bool,
 }
 
 fn default_fade_duration() -> u32 {
@@ -555,6 +590,9 @@ pub struct GameCaptureSource {
     /// Target frame rate
     #[serde(default = "default_game_fps")]
     pub fps: u32,
+    /// Whether to capture game audio
+    #[serde(default)]
+    pub capture_audio: bool,
 }
 
 fn default_target_type() -> String {
@@ -588,6 +626,9 @@ pub struct NdiSource {
     /// Name to identify this receiver on the network
     #[serde(default = "default_receiver_name")]
     pub receiver_name: String,
+    /// Whether to capture audio from this source
+    #[serde(default = "default_true")]
+    pub capture_audio: bool,
 }
 
 fn default_receiver_name() -> String {

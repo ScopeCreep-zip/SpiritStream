@@ -188,7 +188,22 @@ export const useSourceStore = create<SourceState>((set, get) => ({
 
   removeSource: async (profileName, sourceId, password) => {
     try {
-      await api.source.remove(profileName, sourceId, password);
+      // Pass undefined for removeLinked to use default (true = remove linked sources)
+      const result = await api.source.remove(profileName, sourceId, undefined, password);
+
+      // Sync the removed source(s) to profileStore's local state
+      // This prevents "deleted sources reappear on refresh" by keeping local state in sync
+      const { useProfileStore } = await import('./profileStore');
+      const { removeCurrentSource } = useProfileStore.getState();
+
+      // Remove the primary source
+      if ('removed' in result && result.removed) {
+        removeCurrentSource(sourceId);
+        // Also remove any linked sources that were cascade-deleted
+        if (result.linkedRemoved) {
+          result.linkedRemoved.forEach((id: string) => removeCurrentSource(id));
+        }
+      }
     } catch (err) {
       set({ error: err instanceof Error ? err.message : String(err) });
       throw err;

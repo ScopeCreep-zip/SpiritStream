@@ -2,9 +2,11 @@
  * useAudioLevels Hook
  * Listens for audio_levels WebSocket events from the backend
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { events } from '@/lib/backend/events';
 import { useConnectionStore } from '@/stores/connectionStore';
+import type { AudioCaptureResult } from '@/lib/backend/httpApi';
+import { api } from '@/lib/backend/httpApi';
 
 export interface AudioLevel {
   rms: number;      // 0-1 RMS level
@@ -23,9 +25,23 @@ export interface AudioLevelsData {
   master: AudioLevel;
 }
 
+/** Per-source capture status for display in the UI */
+export type CaptureStatus = Record<string, AudioCaptureResult>;
+
+/** Per-source health status (true = receiving data) */
+export type SourceHealthStatus = Record<string, boolean>;
+
 interface UseAudioLevelsResult {
   levels: AudioLevelsData | null;
   isConnected: boolean;
+  /** True when backend is connected but waiting for first audio data */
+  isInitializing: boolean;
+  /** Capture status per source (set when setMonitorSources is called) */
+  captureStatus: CaptureStatus;
+  /** Update capture status from API response */
+  setCaptureStatus: (status: CaptureStatus) => void;
+  /** Health status per source (true = receiving data) */
+  healthStatus: SourceHealthStatus;
 }
 
 /**
@@ -34,36 +50,105 @@ interface UseAudioLevelsResult {
 export function useAudioLevels(): UseAudioLevelsResult {
   const [levels, setLevels] = useState<AudioLevelsData | null>(null);
   const [hasReceivedData, setHasReceivedData] = useState(false);
+  const [captureStatus, setCaptureStatusInternal] = useState<CaptureStatus>({});
+  const [healthStatus, setHealthStatus] = useState<SourceHealthStatus>({});
   const connectionStatus = useConnectionStore((s) => s.status);
+  const healthPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const isConnected = connectionStatus === 'connected' && hasReceivedData;
+  // True when backend is connected but we haven't received audio data yet
+  const isInitializing = connectionStatus === 'connected' && !hasReceivedData;
+
+  // Expose setCaptureStatus for external callers (e.g., Stream.tsx after calling setMonitorSources)
+  const setCaptureStatus = useCallback((status: CaptureStatus) => {
+    setCaptureStatusInternal(status);
+  }, []);
+
+  // Poll health status periodically (every 5 seconds) when connected
+  useEffect(() => {
+    if (connectionStatus !== 'connected') {
+      // Clear health polling when disconnected
+      if (healthPollRef.current) {
+        clearInterval(healthPollRef.current);
+        healthPollRef.current = null;
+      }
+      setHealthStatus({});
+      return;
+    }
+
+    // Start health polling
+    const pollHealth = async () => {
+      try {
+        const result = await api.audio.getMonitorHealth();
+        setHealthStatus(result.sources);
+      } catch (err) {
+        // Silently fail - health check is not critical
+        console.debug('[useAudioLevels] Health check failed:', err);
+      }
+    };
+
+    // Initial poll
+    pollHealth();
+
+    // Poll every 5 seconds
+    healthPollRef.current = setInterval(pollHealth, 5000);
+
+    return () => {
+      if (healthPollRef.current) {
+        clearInterval(healthPollRef.current);
+        healthPollRef.current = null;
+      }
+    };
+  }, [connectionStatus]);
 
   useEffect(() => {
     let mounted = true;
     let unsubscribe: (() => void) | null = null;
+    let receivedCount = 0;
+
+    console.log('[useAudioLevels] Subscribing to audio_levels events...');
 
     // Handler for audio_levels events
     const handleAudioLevels = (payload: AudioLevelsData) => {
       if (mounted) {
         setLevels(payload);
         setHasReceivedData(true);
+
+        // Log first few events and then periodically to confirm data is flowing
+        receivedCount++;
+        const trackCount = Object.keys(payload.tracks).length;
+        if (receivedCount <= 3 || (receivedCount % 100 === 0 && trackCount > 0)) {
+          console.log(
+            `[useAudioLevels] Event #${receivedCount}: ${trackCount} tracks, master rms=${payload.master.rms.toFixed(4)}`
+          );
+          if (trackCount > 0 && receivedCount <= 3) {
+            console.log('[useAudioLevels] Track IDs:', Object.keys(payload.tracks));
+          }
+        }
       }
     };
 
     // Subscribe to audio_levels events
-    events.on<AudioLevelsData>('audio_levels', handleAudioLevels).then((unsub) => {
-      if (mounted) {
-        unsubscribe = unsub;
-      } else {
-        // Component unmounted before subscription completed
-        unsub();
-      }
-    });
+    events
+      .on<AudioLevelsData>('audio_levels', handleAudioLevels)
+      .then((unsub) => {
+        if (mounted) {
+          unsubscribe = unsub;
+          console.log('[useAudioLevels] ✓ Subscribed successfully');
+        } else {
+          // Component unmounted before subscription completed
+          unsub();
+        }
+      })
+      .catch((err) => {
+        console.error('[useAudioLevels] ✗ Subscription failed:', err);
+      });
 
     return () => {
       mounted = false;
       if (unsubscribe) {
         unsubscribe();
+        console.log(`[useAudioLevels] Unsubscribed (received ${receivedCount} events)`);
       }
     };
   }, []);
@@ -76,7 +161,7 @@ export function useAudioLevels(): UseAudioLevelsResult {
     }
   }, [connectionStatus]);
 
-  return { levels, isConnected };
+  return { levels, isConnected, isInitializing, captureStatus, setCaptureStatus, healthStatus };
 }
 
 /**

@@ -38,8 +38,8 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
   const { updateCurrentAudioTrack, updateCurrentMasterVolume, updateCurrentMasterMuted } = useProfileStore();
   const [showAddModal, setShowAddModal] = useState(false);
 
-  // Get real-time audio levels
-  const { levels, isConnected } = useAudioLevels();
+  // Get real-time audio levels, capture status, and health status from single source of truth
+  const { levels, isConnected, isInitializing, healthStatus, captureStatus } = useAudioLevels();
 
   // Memoize source name lookup function
   const getSourceName = useCallback((sourceId: string) => {
@@ -147,7 +147,12 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
             <h4 className="text-sm font-medium text-[var(--text-secondary)]">
               {t('stream.audioMixer', { defaultValue: 'Audio Mixer' })}
             </h4>
-            {!isConnected && (
+            {isInitializing && (
+              <span className="text-[10px] text-blue-400 px-1.5 py-0.5 rounded bg-blue-500/10 animate-pulse">
+                {t('stream.audioInitializing', { defaultValue: 'initializing...' })}
+              </span>
+            )}
+            {!isConnected && !isInitializing && (
               <span className="text-[10px] text-yellow-500 px-1.5 py-0.5 rounded bg-yellow-500/10">
                 {t('stream.audioMonitorDisconnected', { defaultValue: 'disconnected' })}
               </span>
@@ -173,6 +178,18 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
               {scene.audioMixer.tracks.length > 0 ? (
                 scene.audioMixer.tracks.map((track) => {
                   const level = getTrackLevel(track.sourceId);
+                  const trackCaptureStatus = captureStatus[track.sourceId];
+                  const isSourceHealthy = healthStatus[track.sourceId] ?? true; // assume healthy if not tracked yet
+
+                  // Determine capture error message
+                  // Priority: capture failure > unhealthy (no data)
+                  let captureError: string | undefined;
+                  if (trackCaptureStatus && !trackCaptureStatus.success) {
+                    captureError = trackCaptureStatus.message;
+                  } else if (!isSourceHealthy) {
+                    captureError = t('audio.noSignal', { defaultValue: 'No signal received' });
+                  }
+
                   return (
                     <UnifiedChannelStrip
                       key={track.sourceId}
@@ -191,6 +208,7 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
                       solo={track.solo}
                       filters={track.audioFilters || []}
                       availableSources={profile.sources}
+                      captureError={captureError}
                       onVolumeChange={(v) => handleVolumeChange(track.sourceId, v)}
                       onMuteToggle={(m) => handleMuteToggle(track.sourceId, m)}
                       onSoloToggle={(s) => handleSoloToggle(track.sourceId, s)}

@@ -53,7 +53,7 @@ import type { Profile, Scene, Source } from '@/types/profile';
 import type { SourceLayer, LayerGroup } from '@/types/scene';
 import { createDefaultTransform } from '@/types/scene';
 import { useSceneStore } from '@/stores/sceneStore';
-import { useSourceStore } from '@/stores/sourceStore';
+// Note: We use api.source.remove directly for linked source confirmation flow
 import { useProfileStore } from '@/stores/profileStore';
 import { useProjectorStore } from '@/stores/projectorStore';
 import { toast } from '@/hooks/useToast';
@@ -453,6 +453,8 @@ const SortableLayerItem = memo(function SortableLayerItem({
               onToggleVisibility(layer.id, layer.visible);
             }}
             title={layer.visible ? t('stream.hideInScene', { defaultValue: 'Hide in scene' }) : t('stream.showInScene', { defaultValue: 'Show in scene' })}
+            aria-label={layer.visible ? t('stream.hideInScene', { defaultValue: 'Hide in scene' }) : t('stream.showInScene', { defaultValue: 'Show in scene' })}
+            aria-pressed={layer.visible}
           >
             {layer.visible ? (
               <Eye className="w-4 h-4 text-primary" />
@@ -469,6 +471,7 @@ const SortableLayerItem = memo(function SortableLayerItem({
               onRemoveSource(source);
             }}
             title={t('stream.removeSource', { defaultValue: 'Remove source' })}
+            aria-label={t('stream.removeSource', { defaultValue: 'Remove source' })}
           >
             <Trash2 className="w-4 h-4 text-destructive" />
           </button>
@@ -481,10 +484,13 @@ const SortableLayerItem = memo(function SortableLayerItem({
           ref={contextMenuRef}
           className="fixed z-50 bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-lg shadow-lg py-1 min-w-[200px]"
           style={{ left: contextMenuPos.x, top: contextMenuPos.y }}
+          role="menu"
+          aria-label={t('stream.layerContextMenu', { defaultValue: 'Layer options' })}
         >
           {/* Projector options */}
           <button
             type="button"
+            role="menuitem"
             className="w-full px-3 py-1.5 text-left text-sm hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] flex items-center gap-2"
             onClick={() => {
               openProjector({
@@ -503,6 +509,7 @@ const SortableLayerItem = memo(function SortableLayerItem({
           </button>
           <button
             type="button"
+            role="menuitem"
             className="w-full px-3 py-1.5 text-left text-sm hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] flex items-center gap-2"
             onClick={() => {
               openProjector({
@@ -519,9 +526,10 @@ const SortableLayerItem = memo(function SortableLayerItem({
             <AppWindow className="w-4 h-4 text-[var(--text-muted)]" />
             {t('projector.windowedSource', { defaultValue: 'Windowed Projector (Source)' })}
           </button>
-          <div className="h-px bg-[var(--border-default)] my-1" />
+          <div className="h-px bg-[var(--border-default)] my-1" role="separator" />
           <button
             type="button"
+            role="menuitem"
             className="w-full px-3 py-1.5 text-left text-sm hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]"
             onClick={() => {
               onToggleVisibility(layer.id, layer.visible);
@@ -532,9 +540,10 @@ const SortableLayerItem = memo(function SortableLayerItem({
               ? t('stream.hideLayer', { defaultValue: 'Hide Layer' })
               : t('stream.showLayer', { defaultValue: 'Show Layer' })}
           </button>
-          <div className="h-px bg-[var(--border-default)] my-1" />
+          <div className="h-px bg-[var(--border-default)] my-1" role="separator" />
           <button
             type="button"
+            role="menuitem"
             className="w-full px-3 py-1.5 text-left text-sm hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]"
             onClick={() => {
               onSetHotkey(layer.id, source.name);
@@ -545,9 +554,10 @@ const SortableLayerItem = memo(function SortableLayerItem({
           </button>
           {isGrouped && onRemoveFromGroup && (
             <>
-              <div className="h-px bg-[var(--border-default)] my-1" />
+              <div className="h-px bg-[var(--border-default)] my-1" role="separator" />
               <button
                 type="button"
+                role="menuitem"
                 className="w-full px-3 py-1.5 text-left text-sm hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]"
                 onClick={() => {
                   onRemoveFromGroup(layer.id);
@@ -558,9 +568,10 @@ const SortableLayerItem = memo(function SortableLayerItem({
               </button>
             </>
           )}
-          <div className="h-px bg-[var(--border-default)] my-1" />
+          <div className="h-px bg-[var(--border-default)] my-1" role="separator" />
           <button
             type="button"
+            role="menuitem"
             className="w-full px-3 py-1.5 text-left text-sm hover:bg-destructive/10 text-destructive"
             onClick={() => {
               onRemoveSource(source);
@@ -646,16 +657,24 @@ const GroupHeader = memo(function GroupHeader({
           </span>
         </span>
 
-        {/* Action buttons */}
-        <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+        {/* Action buttons - stopPropagation on each button for robustness */}
+        <div className="flex items-center gap-0.5">
           {/* Lock toggle */}
           <button
             className="p-1.5 rounded hover:bg-muted/50 transition-colors"
-            onClick={onToggleLock}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleLock();
+            }}
             title={group.locked
               ? t('stream.unlockGroup', { defaultValue: 'Unlock group' })
               : t('stream.lockGroup', { defaultValue: 'Lock group' })
             }
+            aria-label={group.locked
+              ? t('stream.unlockGroup', { defaultValue: 'Unlock group' })
+              : t('stream.lockGroup', { defaultValue: 'Lock group' })
+            }
+            aria-pressed={group.locked}
           >
             {group.locked ? (
               <Lock className="w-4 h-4 text-[var(--warning)]" />
@@ -667,11 +686,19 @@ const GroupHeader = memo(function GroupHeader({
           {/* Visibility toggle */}
           <button
             className="p-1.5 rounded hover:bg-muted/50 transition-colors"
-            onClick={onToggleVisibility}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleVisibility();
+            }}
             title={group.visible
               ? t('stream.hideGroup', { defaultValue: 'Hide group' })
               : t('stream.showGroup', { defaultValue: 'Show group' })
             }
+            aria-label={group.visible
+              ? t('stream.hideGroup', { defaultValue: 'Hide group' })
+              : t('stream.showGroup', { defaultValue: 'Show group' })
+            }
+            aria-pressed={group.visible}
           >
             {group.visible ? (
               <Eye className="w-4 h-4 text-primary" />
@@ -688,9 +715,12 @@ const GroupHeader = memo(function GroupHeader({
           ref={contextMenuRef}
           className="fixed z-50 bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-lg shadow-lg py-1 min-w-[160px]"
           style={{ left: contextMenuPos.x, top: contextMenuPos.y }}
+          role="menu"
+          aria-label={t('stream.groupContextMenu', { defaultValue: 'Group options' })}
         >
           <button
             type="button"
+            role="menuitem"
             className="w-full px-3 py-1.5 text-left text-sm hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]"
             onClick={() => {
               onToggleVisibility();
@@ -703,6 +733,7 @@ const GroupHeader = memo(function GroupHeader({
           </button>
           <button
             type="button"
+            role="menuitem"
             className="w-full px-3 py-1.5 text-left text-sm hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]"
             onClick={() => {
               onToggleLock();
@@ -713,9 +744,10 @@ const GroupHeader = memo(function GroupHeader({
               ? t('stream.unlockGroup', { defaultValue: 'Unlock Group' })
               : t('stream.lockGroup', { defaultValue: 'Lock Group' })}
           </button>
-          <div className="h-px bg-[var(--border-default)] my-1" />
+          <div className="h-px bg-[var(--border-default)] my-1" role="separator" />
           <button
             type="button"
+            role="menuitem"
             className="w-full px-3 py-1.5 text-left text-sm hover:bg-destructive/10 text-destructive"
             onClick={() => {
               onUngroup();
@@ -746,7 +778,7 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
     toggleGroupCollapsed,
     removeLayerFromGroup,
   } = useSceneStore();
-  const { removeSource } = useSourceStore();
+  // Note: We use api.source.remove directly in handleRemoveSource for linked source confirmation flow
   const { removeCurrentSource, updateCurrentLayer, reorderCurrentLayers, addCurrentLayer, updateCurrentScene } = useProfileStore();
   const [showAddModal, setShowAddModal] = useState(false);
   const [hotkeyModalOpen, setHotkeyModalOpen] = useState(false);
@@ -803,24 +835,55 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
   }, [activeScene, profile.name, updateLayer, updateCurrentLayer, t]);
 
   const handleRemoveSource = useCallback(async (source: Source) => {
-    if (confirm(t('stream.confirmRemoveSource', { name: source.name, defaultValue: `Remove "${source.name}" from profile? This will also remove it from all scenes.` }))) {
-      try {
-        // Stop any running preview for this source first
-        try {
-          await api.preview.stopSourcePreview(source.id);
-        } catch {
-          // Ignore errors - preview may not be running
-        }
-
-        await removeSource(profile.name, source.id);
-        // Update local state without reloading entire profile to avoid overwriting local edits
-        removeCurrentSource(source.id);
-        toast.success(t('stream.sourceRemoved', { name: source.name, defaultValue: `Removed ${source.name}` }));
-      } catch (err) {
-        toast.error(t('stream.sourceRemoveFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to remove source: ${err instanceof Error ? err.message : String(err)}` }));
-      }
+    if (!confirm(t('stream.confirmRemoveSource', { name: source.name, defaultValue: `Remove "${source.name}" from profile? This will also remove it from all scenes.` }))) {
+      return;
     }
-  }, [profile.name, removeSource, removeCurrentSource, t]);
+
+    try {
+      // Stop any running preview for this source first
+      try {
+        await api.preview.stopSourcePreview(source.id);
+      } catch {
+        // Ignore errors - preview may not be running
+      }
+
+      // First call with removeLinked=false to check for linked sources
+      const result = await api.source.remove(profile.name, source.id, false);
+
+      if ('requiresConfirmation' in result && result.requiresConfirmation) {
+        // Source has linked audio - ask user what to do
+        const linkedNames = result.linkedSourceNames.join(', ');
+        const removeLinked = confirm(
+          t('stream.confirmRemoveLinked', {
+            name: source.name,
+            linkedNames,
+            defaultValue: `"${source.name}" has linked audio source(s): ${linkedNames}\n\nClick OK to remove both, or Cancel to remove only the video source.`
+          })
+        );
+
+        // Call again with user's choice
+        const finalResult = await api.source.remove(profile.name, source.id, removeLinked);
+
+        if ('removed' in finalResult && finalResult.removed) {
+          // Update local state
+          removeCurrentSource(source.id);
+          if (removeLinked && finalResult.linkedRemoved) {
+            finalResult.linkedRemoved.forEach((id) => removeCurrentSource(id));
+          }
+          toast.success(t('stream.sourceRemoved', { name: source.name, defaultValue: `Removed ${source.name}` }));
+        }
+      } else if ('removed' in result && result.removed) {
+        // No linked sources, already removed
+        removeCurrentSource(source.id);
+        if (result.linkedRemoved) {
+          result.linkedRemoved.forEach((id) => removeCurrentSource(id));
+        }
+        toast.success(t('stream.sourceRemoved', { name: source.name, defaultValue: `Removed ${source.name}` }));
+      }
+    } catch (err) {
+      toast.error(t('stream.sourceRemoveFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to remove source: ${err instanceof Error ? err.message : String(err)}` }));
+    }
+  }, [profile.name, removeCurrentSource, t]);
 
   const handleSetHotkey = useCallback((layerId: string, layerName: string) => {
     setHotkeyTargetLayer({ id: layerId, name: layerName });

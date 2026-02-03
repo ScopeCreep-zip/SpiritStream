@@ -60,6 +60,8 @@ export interface UnifiedChannelStripProps {
   isMaster?: boolean;
   // Available sources for sidechain
   availableSources?: Source[];
+  // Capture error message (if capture failed for this track)
+  captureError?: string;
   // Callbacks
   onVolumeChange: (volume: number) => void;
   onMuteToggle: (muted: boolean) => void;
@@ -84,6 +86,7 @@ export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
   filters = [],
   isMaster = false,
   availableSources = [],
+  captureError,
   onVolumeChange,
   onMuteToggle,
   onSoloToggle,
@@ -623,7 +626,9 @@ export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
       {/* Main section: Unified meter/fader bar */}
       <div
         ref={containerRef}
-        className="relative cursor-ns-resize select-none focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:ring-offset-1 rounded"
+        className={`relative cursor-ns-resize select-none focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:ring-offset-1 rounded transition-opacity ${
+          captureError ? 'opacity-60' : ''
+        }`}
         style={{ width: TOTAL_WIDTH, height: TOTAL_HEIGHT, marginLeft: 8 }}
         tabIndex={0}
         role="slider"
@@ -656,6 +661,20 @@ export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
             height: TOTAL_HEIGHT,
           }}
         />
+
+        {/* No signal overlay - shown when capture error exists */}
+        {captureError && (
+          <div
+            className="absolute inset-0 flex items-center justify-center"
+            style={{ left: LABEL_WIDTH, width: BAR_WIDTH, top: PADDING_Y, height: METER_HEIGHT }}
+          >
+            <div className="bg-black/30 rounded px-1 py-0.5">
+              <span className="text-[8px] text-amber-400 font-medium">
+                NO SIGNAL
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Bottom section: centered over the bar */}
@@ -690,6 +709,17 @@ export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
           title={label}
         >
           {label}
+        </span>
+
+        {/* Capture status indicator - always reserve space for consistent height */}
+        <span
+          className={`text-[9px] text-center truncate h-[14px] ${
+            captureError ? 'text-amber-500' : 'text-transparent'
+          }`}
+          style={{ maxWidth: BAR_WIDTH + ARROW_WIDTH }}
+          title={captureError || undefined}
+        >
+          {captureError ? `⚠ ${t('audio.captureError', { defaultValue: 'No signal' })}` : '\u00A0'}
         </span>
       </div>
     </div>

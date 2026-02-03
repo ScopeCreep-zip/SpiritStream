@@ -93,6 +93,7 @@ impl Profile {
                 bind_address: rtmp_input.bind_address,
                 port: rtmp_input.port,
                 application: rtmp_input.application,
+                capture_audio: true,
             });
 
             // Create default scene with fullscreen source

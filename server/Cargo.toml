@@ -65,6 +65,18 @@ tempfile = "3.10"
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["fileapi", "winnt"] }
 
+# macOS-specific (for advanced device discovery and screen capture)
+# TODO: Integrate these for OBS-parity camera-audio pairing via associatedPersistentID
+# and ScreenCaptureKit-based audio capture
+[target.'cfg(target_os = "macos")'.dependencies]
+# screencapturekit-rs provides Rust bindings for ScreenCaptureKit
+# Enables: window enumeration, screen audio capture, GPU-accelerated video
+# screencapturekit = "0.3"
+# objc2 crates for direct AVFoundation/CoreAudio access
+# Enables: associatedPersistentID for camera-audio pairing
+# objc2 = "0.5"
+# block2 = "0.5"
+
 [build-dependencies]
 serde_json = "1.0"
 

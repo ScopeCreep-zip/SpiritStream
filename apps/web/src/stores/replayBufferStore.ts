@@ -74,33 +74,64 @@ interface ReplayBufferStoreState {
 
 // Polling interval for state updates (in ms)
 const STATE_POLL_INTERVAL = 1000;
-let pollInterval: ReturnType<typeof setInterval> | null = null;
+
+// Centralized polling manager with reference counting
+const pollingManager = {
+  intervalId: null as ReturnType<typeof setInterval> | null,
+  activeSubscribers: 0,
+
+  subscribe() {
+    this.activeSubscribers++;
+    if (this.activeSubscribers === 1 && !this.intervalId) {
+      this.startPolling();
+    }
+  },
+
+  unsubscribe() {
+    this.activeSubscribers = Math.max(0, this.activeSubscribers - 1);
+    if (this.activeSubscribers === 0 && this.intervalId) {
+      this.stopPolling();
+    }
+  },
+
+  startPolling() {
+    if (this.intervalId) return;
+
+    this.intervalId = setInterval(async () => {
+      try {
+        const state = await api.replayBuffer.getState();
+        useReplayBufferStore.setState({
+          isActive: state.isActive,
+          bufferedSeconds: state.bufferedSecs,
+          duration: state.durationSecs,
+          outputPath: state.outputPath || useReplayBufferStore.getState().outputPath,
+        });
+      } catch {
+        // Silently ignore polling errors - the buffer might not be active
+      }
+    }, STATE_POLL_INTERVAL);
+  },
+
+  stopPolling() {
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
+    }
+  },
+
+  // Force stop regardless of subscriber count (for cleanup)
+  forceStop() {
+    this.activeSubscribers = 0;
+    this.stopPolling();
+  }
+};
 
 function startStatePolling() {
-  if (pollInterval) {
-    clearInterval(pollInterval);
-  }
-
-  pollInterval = setInterval(async () => {
-    try {
-      const state = await api.replayBuffer.getState();
-      useReplayBufferStore.setState({
-        isActive: state.isActive,
-        bufferedSeconds: state.bufferedSecs,
-        duration: state.durationSecs,
-        outputPath: state.outputPath || useReplayBufferStore.getState().outputPath,
-      });
-    } catch {
-      // Silently ignore polling errors - the buffer might not be active
-    }
-  }, STATE_POLL_INTERVAL);
+  pollingManager.subscribe();
 }
 
 function stopStatePolling() {
-  if (pollInterval) {
-    clearInterval(pollInterval);
-    pollInterval = null;
-  }
+  pollingManager.unsubscribe();
 }
 
 // Fallback path used until platform-specific path is fetched
@@ -264,9 +295,10 @@ export const useReplayBufferStore = create<ReplayBufferStoreState>((set, get) =>
       });
 
       // Start or stop polling based on active state
-      if (state.isActive && !pollInterval) {
+      // Use pollingManager.intervalId instead of the old pollInterval variable
+      if (state.isActive && !pollingManager.intervalId) {
         startStatePolling();
-      } else if (!state.isActive && pollInterval) {
+      } else if (!state.isActive && pollingManager.intervalId) {
         stopStatePolling();
       }
     } catch (error) {

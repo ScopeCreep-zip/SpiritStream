@@ -255,6 +255,7 @@ export const migrateProfileIfNeeded = (profile: Profile): Profile => {
     bindAddress: profile.input.bindAddress,
     port: profile.input.port,
     application: profile.input.application,
+    captureAudio: true,
   };
 
   const defaultScene = addFullscreenLayerToScene(

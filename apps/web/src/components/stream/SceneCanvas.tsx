@@ -12,7 +12,7 @@
  * - GPU-accelerated movement via CSS transforms
  * - Adaptive framerate preview polling (no rate limiting)
  */
-import React, { useRef, useState, useLayoutEffect, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useLayoutEffect, useEffect, useCallback, useMemo } from 'react';
 import { Card } from '@/components/ui/Card';
 import type { Scene, SourceLayer, Transform } from '@/types/scene';
 import type { Source } from '@/types/source';
@@ -198,7 +198,10 @@ export function SceneCanvas({
     );
   }
 
-  const sortedLayers = [...scene.layers].sort((a, b) => a.zIndex - b.zIndex);
+  const sortedLayers = useMemo(
+    () => [...scene.layers].sort((a, b) => a.zIndex - b.zIndex),
+    [scene.layers]
+  );
 
   const getSource = (sourceId: string) => sources.find((s) => s.id === sourceId);
   const getSourceName = (sourceId: string) => getSource(sourceId)?.name ?? 'Unknown Source';

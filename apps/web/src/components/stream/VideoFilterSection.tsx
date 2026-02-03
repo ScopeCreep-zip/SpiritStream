@@ -102,11 +102,18 @@ export function VideoFilterSection({
 
   return (
     <div className="border-t border-[var(--border-default)]">
-      {/* Section Header */}
-      <button
-        type="button"
+      {/* Section Header - using div with role="button" to allow nested button */}
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center justify-between px-3 py-2 hover:bg-[var(--bg-hover)] transition-colors"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setIsExpanded(!isExpanded);
+          }
+        }}
+        className="w-full flex items-center justify-between px-3 py-2 hover:bg-[var(--bg-hover)] transition-colors cursor-pointer"
       >
         <div className="flex items-center gap-2">
           {isExpanded ? (
@@ -133,7 +140,7 @@ export function VideoFilterSection({
         >
           <Plus className="w-3.5 h-3.5" />
         </button>
-      </button>
+      </div>
 
       {/* Add Filter Menu */}
       {showAddMenu && (

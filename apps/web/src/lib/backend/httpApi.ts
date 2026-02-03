@@ -144,6 +144,14 @@ export const api = {
       if (!data.ok) throw new Error(data.error || 'Failed to get default paths');
       return data.data as DefaultPaths;
     },
+    /** Health check endpoint - verifies backend is responding */
+    health: async (): Promise<void> => {
+      const baseUrl = getBackendBaseUrl();
+      const response = await safeFetch(`${baseUrl}/health`, {
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('Health check failed');
+    },
   },
   settings: {
     get: () => invokeHttp<AppSettings>('get_settings'),
@@ -237,12 +245,73 @@ export const api = {
     /** Update a source in a profile. Returns the updated source. */
     update: (profileName: string, sourceId: string, updates: Partial<Source>, password?: string) =>
       invokeHttp<Source>('update_source', { profileName, sourceId, updates, password }),
-    /** Remove a source from a profile. */
-    remove: (profileName: string, sourceId: string, password?: string) =>
-      invokeHttp<void>('remove_source', { profileName, sourceId, password }),
+    /**
+     * Remove a source from a profile.
+     * @param removeLinked - If false and linked sources exist, returns confirmation request.
+     *                       If true or undefined, removes linked sources automatically.
+     */
+    remove: (profileName: string, sourceId: string, removeLinked?: boolean, password?: string) =>
+      invokeHttp<RemoveSourceResult>('remove_source', { profileName, sourceId, removeLinked, password }),
     /** Reorder sources in a profile. Returns updated sources array. */
     reorder: (profileName: string, sourceIds: string[], password?: string) =>
       invokeHttp<Source[]>('reorder_sources', { profileName, sourceIds, password }),
+  },
+  recording: {
+    /** Start recording to file */
+    start: async (name: string, format?: string, encrypt?: boolean, password?: string) => {
+      const baseUrl = getBackendBaseUrl();
+      const response = await safeFetch(`${baseUrl}/api/recording/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ name, format, encrypt, password }),
+      });
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.error || 'Failed to start recording');
+      return data.data as RecordingInfo;
+    },
+    /** Stop recording */
+    stop: async () => {
+      const baseUrl = getBackendBaseUrl();
+      const response = await safeFetch(`${baseUrl}/api/recording/stop`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.error || 'Failed to stop recording');
+    },
+    /** List all recordings */
+    list: async (): Promise<RecordingInfo[]> => {
+      const baseUrl = getBackendBaseUrl();
+      const response = await safeFetch(`${baseUrl}/api/recordings`, {
+        credentials: 'include',
+      });
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.error || 'Failed to list recordings');
+      return data.data as RecordingInfo[];
+    },
+    /** Delete a recording */
+    delete: async (id: string) => {
+      const baseUrl = getBackendBaseUrl();
+      const response = await safeFetch(`${baseUrl}/api/recording/${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.error || 'Failed to delete recording');
+    },
+    /** Export a recording */
+    export: async (id: string, path: string) => {
+      const baseUrl = getBackendBaseUrl();
+      const response = await safeFetch(`${baseUrl}/api/recording/export`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ id, path }),
+      });
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.error || 'Failed to export recording');
+    },
   },
   replayBuffer: {
     /** Start the replay buffer */
@@ -353,14 +422,60 @@ export const api = {
     },
   },
   audio: {
-    /** Set the source IDs to monitor for audio levels */
-    setMonitorSources: (sourceIds: string[]) =>
-      invokeHttp<void>('set_audio_monitor_sources', { sourceIds }),
+    /** Set the source IDs to monitor for audio levels. Returns capture status for each source. */
+    setMonitorSources: (sourceIds: string[], profileName?: string) =>
+      invokeHttp<AudioMonitorResult>('set_audio_monitor_sources', { sourceIds, profileName }),
     /** Get audio monitor status */
     getMonitorStatus: () =>
       invokeHttp<{ running: boolean }>('get_audio_monitor_status'),
+    /** Get health status for all tracked sources. Healthy = received data in last 2 seconds. */
+    getMonitorHealth: () =>
+      invokeHttp<AudioMonitorHealth>('get_audio_monitor_health'),
   },
 };
+
+/** Result of audio capture for a single source */
+export interface AudioCaptureResult {
+  success: boolean;
+  sourceType?: string;
+  deviceName?: string;
+  reason?: 'notImplemented' | 'captureFailed' | 'notFound' | 'profileLoadFailed' | 'noAudio' | 'unsupportedFormat' | 'platformLimitation' | 'extractionUnavailable' | 'noCurrentItem' | 'extractionFailed';
+  message?: string;
+}
+
+/** Result of set_audio_monitor_sources command */
+export interface AudioMonitorResult {
+  captureResults: Record<string, AudioCaptureResult>;
+  trackedSources: number;
+}
+
+/** Health status for tracked audio sources */
+export interface AudioMonitorHealth {
+  /** Map of sourceId -> healthy (true if received data in last 2 seconds) */
+  sources: Record<string, boolean>;
+}
+
+/** Recording info returned by the recording API */
+export interface RecordingInfo {
+  id: string;
+  name: string;
+  filePath: string;
+  format: string;
+  durationSecs?: number;
+  fileSizeBytes?: number;
+  createdAt: string;
+  encrypted: boolean;
+}
+
+/** Result of remove_source command */
+export type RemoveSourceResult =
+  | { removed: true; linkedRemoved: string[] }
+  | {
+      requiresConfirmation: true;
+      linkedSourceIds: string[];
+      linkedSourceNames: string[];
+      message: string;
+    };
 
 /** WebRTC streaming info returned by go2rtc */
 export interface WebRtcInfo {

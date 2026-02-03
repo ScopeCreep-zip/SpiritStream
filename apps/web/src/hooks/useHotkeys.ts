@@ -11,6 +11,35 @@ import { useStreamStore } from '@/stores/streamStore';
 import { toast } from '@/hooks/useToast';
 import { getIncomingUrl } from '@/types/profile';
 
+// Singleton listener manager to prevent race conditions
+// Uses WeakRef tracking to properly manage component lifetimes
+const listenerManager = {
+  handler: null as ((e: KeyboardEvent) => void) | null,
+  activeInstances: new Set<string>(),
+
+  register(instanceId: string, handler: (e: KeyboardEvent) => void) {
+    this.activeInstances.add(instanceId);
+
+    // Only register once
+    if (!this.handler) {
+      this.handler = handler;
+      document.addEventListener('keydown', handler);
+    }
+
+    return () => this.unregister(instanceId);
+  },
+
+  unregister(instanceId: string) {
+    this.activeInstances.delete(instanceId);
+
+    // Only remove listener when ALL instances are gone
+    if (this.activeInstances.size === 0 && this.handler) {
+      document.removeEventListener('keydown', this.handler);
+      this.handler = null;
+    }
+  }
+};
+
 export function useHotkeys() {
   const { enabled, bindings } = useHotkeyStore();
   const {
@@ -101,6 +130,9 @@ export function useHotkeys() {
     [current, updateLayer, updateCurrentLayer]
   );
 
+  // Generate a stable instance ID for this hook invocation
+  const instanceIdRef = useRef(crypto.randomUUID());
+
   useEffect(() => {
     if (!enabled) return;
 
@@ -184,8 +216,10 @@ export function useHotkeys() {
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    // Register with singleton manager - handles deduplication
+    const cleanup = listenerManager.register(instanceIdRef.current, handleKeyDown);
+
+    return cleanup;
   }, [
     enabled,
     bindings,

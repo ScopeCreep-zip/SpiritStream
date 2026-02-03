@@ -275,39 +275,39 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     set({ enabledTargets });
   },
 
-  updateStats: (groupId, ffmpegStats) => {
-    const currentGroupStats = get().groupStats;
-    const bitrate = ffmpegStats.bitrate;
+  updateStats: (groupId, ffmpegStats) =>
+    set((state) => {
+      const bitrate = ffmpegStats.bitrate;
 
-    // Update per-group stats
-    const newGroupStats = {
-      ...currentGroupStats,
-      [groupId]: {
-        fps: ffmpegStats.fps,
-        bitrate,
-        droppedFrames: ffmpegStats.droppedFrames,
-        uptime: ffmpegStats.time,
-        speed: ffmpegStats.speed,
-      },
-    };
+      // Update per-group stats
+      const newGroupStats = {
+        ...state.groupStats,
+        [groupId]: {
+          fps: ffmpegStats.fps,
+          bitrate,
+          droppedFrames: ffmpegStats.droppedFrames,
+          uptime: ffmpegStats.time,
+          speed: ffmpegStats.speed,
+        },
+      };
 
-    // Calculate aggregated stats
-    const allStats = Object.values(newGroupStats);
-    const totalBitrate = allStats.reduce((sum, s) => sum + s.bitrate, 0);
-    const totalDropped = allStats.reduce((sum, s) => sum + s.droppedFrames, 0);
-    const maxUptime = Math.max(...allStats.map((s) => s.uptime), 0);
+      // Calculate aggregated stats
+      const allStats = Object.values(newGroupStats);
+      const totalBitrate = allStats.reduce((sum, s) => sum + s.bitrate, 0);
+      const totalDropped = allStats.reduce((sum, s) => sum + s.droppedFrames, 0);
+      const maxUptime = Math.max(...allStats.map((s) => s.uptime), 0);
 
-    set({
-      groupStats: newGroupStats,
-      uptime: maxUptime,
-      stats: {
-        ...get().stats,
-        totalBitrate,
-        droppedFrames: totalDropped,
+      return {
+        groupStats: newGroupStats,
         uptime: maxUptime,
-      },
-    });
-  },
+        stats: {
+          ...state.stats,
+          totalBitrate,
+          droppedFrames: totalDropped,
+          uptime: maxUptime,
+        },
+      };
+    }),
 
   updateTargetStats: (targetId, targetStats) => {
     const stats = get().stats;
