@@ -17,9 +17,12 @@ export type BackendMode = 'tauri' | 'http';
  * Check if we're running inside a Tauri webview.
  * Note: This doesn't determine the backend mode - even in Tauri, we use HTTP
  * by default because the desktop app spawns a backend server.
+ *
+ * In Tauri 2.x, the internal IPC is available via __TAURI_INTERNALS__.
+ * The __TAURI__ global is only available if withGlobalTauri is enabled.
  */
 export const isTauri = (): boolean => {
-  return typeof window !== 'undefined' && '__TAURI__' in window;
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 };
 
 /**

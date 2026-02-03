@@ -4,6 +4,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { Select, SelectOption } from '@/components/ui/Select';
 import { Button } from '@/components/ui/Button';
+import { Toggle } from '@/components/ui/Toggle';
 import { useProfileStore } from '@/stores/profileStore';
 import { api } from '@/lib/backend';
 import type { OutputGroup, VideoSettings, AudioSettings, ContainerSettings } from '@/types/profile';
@@ -36,6 +37,7 @@ const CONTAINER_FORMAT_VALUES = ['flv', 'mpegts', 'mp4'];
 
 interface FormData {
   name: string;
+  generatePts: boolean;
   // Video settings (nested)
   videoCodec: string;
   resolution: string;
@@ -145,6 +147,7 @@ const getDefaultPreset = (codec: string, presetValues: string[]): string => {
 
 const defaultFormData: FormData = {
   name: '',
+  generatePts: true,
   videoCodec: 'libx264',
   resolution: '1920x1080',
   fps: '60',
@@ -214,6 +217,7 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
 
         setFormData({
           name: group.name || '',
+          generatePts: group.generatePts !== false, // Default to true if undefined
           videoCodec: group.video.codec,
           resolution,
           fps: String(group.video.fps),
@@ -238,7 +242,10 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
 
   // Create encoder options from loaded encoders with translations
   // Use type assertion to bypass strict i18n key checking for dynamic keys
-  const tDynamic = t as (key: string, options?: { defaultValue: string }) => string;
+  const tDynamic = t as (
+    key: string,
+    options?: { defaultValue?: string; [key: string]: string | number | undefined }
+  ) => string;
 
   const videoCodecOptions: SelectOption[] = encoders.video.map((enc) => {
     const defaultLabel = ENCODER_DEFAULT_LABELS[enc] || enc;
@@ -273,15 +280,35 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
     label: tDynamic(`audio.bitrates.${value}`, { defaultValue: value }),
   }));
 
-  const audioChannelsOptions: SelectOption[] = AUDIO_CHANNELS_VALUES.map((value) => ({
-    value,
-    label: value === '1' ? 'Mono' : value === '2' ? 'Stereo' : `${value} channels`,
-  }));
+  const audioChannelsOptions: SelectOption[] = AUDIO_CHANNELS_VALUES.map((value) => {
+    if (value === '1') {
+      return {
+        value,
+        label: tDynamic('audio.channels.mono', { defaultValue: 'Mono' }),
+      };
+    }
+    if (value === '2') {
+      return {
+        value,
+        label: tDynamic('audio.channels.stereo', { defaultValue: 'Stereo' }),
+      };
+    }
+    return {
+      value,
+      label: tDynamic('audio.channels.multiple', {
+        defaultValue: '{{count}} channels',
+        count: value,
+      }),
+    };
+  });
 
-  const audioSampleRateOptions: SelectOption[] = AUDIO_SAMPLE_RATE_VALUES.map((value) => ({
-    value,
-    label: `${parseInt(value) / 1000} kHz`,
-  }));
+  const audioSampleRateOptions: SelectOption[] = AUDIO_SAMPLE_RATE_VALUES.map((value) => {
+    const khz = parseInt(value, 10) / 1000;
+    return {
+      value,
+      label: tDynamic('audio.sampleRateKHz', { defaultValue: '{{value}} kHz', value: khz }),
+    };
+  });
 
   const containerFormatOptions: SelectOption[] = CONTAINER_FORMAT_VALUES.map((value) => ({
     value,
@@ -392,6 +419,7 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
       const groupData: OutputGroup = {
         id: mode === 'edit' && group ? group.id : crypto.randomUUID(),
         name: formData.name,
+        generatePts: formData.generatePts,
         video,
         audio,
         container,
@@ -469,6 +497,16 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
           error={errors.name}
         />
 
+        {/* Timestamp & Sync Settings */}
+        <div style={{ padding: '12px', backgroundColor: 'var(--bg-muted)', borderRadius: '8px' }}>
+          <Toggle
+            checked={formData.generatePts}
+            onChange={(checked) => setFormData((prev) => ({ ...prev, generatePts: checked }))}
+            label={t('encoder.generatePts')}
+            description={t('encoder.generatePtsDescription')}
+          />
+        </div>
+
         {/* Video Settings Section */}
         <div style={{ padding: '12px', backgroundColor: 'var(--bg-muted)', borderRadius: '8px' }}>
           <div
@@ -524,7 +562,7 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
             <Input
               label={t('encoder.videoBitrate')}
               type="number"
-              placeholder="6000"
+              placeholder={t('modals.videoBitratePlaceholder')}
               value={formData.videoBitrate}
               onChange={handleChange('videoBitrate')}
               error={errors.videoBitrate}
@@ -564,7 +602,7 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
             type="number"
             min="1"
             step="1"
-            placeholder="2"
+            placeholder={t('modals.keyframeIntervalPlaceholder')}
             value={formData.keyframeIntervalSeconds}
             onChange={handleChange('keyframeIntervalSeconds')}
             helper={t('encoder.keyframeIntervalHelper')}

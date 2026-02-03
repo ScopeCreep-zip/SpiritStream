@@ -1,6 +1,6 @@
 [package]
 name = "spiritstream-server"
-version = "1.1.1"
+version = "1.2.1"
 description = "SpiritStream Backend Server - Multi-Destination Streaming Application"
 authors = ["SpiritStream Contributors"]
 license = "ISC"
@@ -40,8 +40,11 @@ notify = "6"
 dirs-next = "2.0"
 opener = "0.7"
 
+# OBS WebSocket
+obws = { version = "0.14", features = ["events"] }
+
 # FFmpeg Download
-reqwest = { version = "0.11", features = ["stream", "json"] }
+reqwest = { version = "0.11", features = ["stream", "json", "multipart"] }
 zip = "0.6"
 tar = "0.4"
 xz2 = "0.1"

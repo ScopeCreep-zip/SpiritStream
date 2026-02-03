@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
@@ -130,6 +131,7 @@ interface ModalHeaderProps {
 }
 
 export function ModalHeader({ title, onClose }: ModalHeaderProps) {
+  const { t } = useTranslation();
   return (
     <div
       className="flex-shrink-0 border-b border-[var(--border-muted)] flex items-center justify-between"
@@ -148,7 +150,7 @@ export function ModalHeader({ title, onClose }: ModalHeaderProps) {
           'transition-all duration-150'
         )}
         data-modal-close
-        aria-label="Close modal"
+        aria-label={t('common.close')}
       >
         <X className="w-4 h-4" />
       </button>

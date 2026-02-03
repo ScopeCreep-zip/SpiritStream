@@ -1,7 +1,62 @@
 import { create } from 'zustand';
 import { api } from '@/lib/backend';
+import { showSystemNotification } from '@/lib/notification';
+import { useSettingsStore } from './settingsStore';
+import { api as httpApi } from '@/lib/backend/httpApi';
+import { useObsStore } from '@/stores/obsStore';
+import i18n from '@/lib/i18n';
 import type { OutputGroup } from '@/types/profile';
 import type { StreamStats, StreamStatusType, TargetStats } from '@/types/stream';
+import type { ObsIntegrationDirection } from '@/types/api';
+
+// OBS integration delay (in ms) before triggering OBS after SpiritStream starts
+const OBS_TRIGGER_DELAY_MS = 2000;
+
+/**
+ * Trigger OBS stream start/stop based on integration direction
+ */
+async function triggerObsIfEnabled(action: 'start' | 'stop'): Promise<void> {
+  try {
+    // Get OBS config to check direction
+    const config = await httpApi.obs.getConfig();
+    const direction: ObsIntegrationDirection = config.direction;
+
+    // Check if SpiritStream should trigger OBS
+    const shouldTrigger =
+      direction === 'spiritstream-to-obs' || direction === 'bidirectional';
+
+    if (!shouldTrigger) {
+      return;
+    }
+
+    // Check if connected to OBS
+    const isConnected = await httpApi.obs.isConnected();
+    if (!isConnected) {
+      console.log('[StreamStore] OBS not connected, skipping trigger');
+      return;
+    }
+
+    // Add delay before triggering OBS to allow SpiritStream services to fully start
+    await new Promise((resolve) => setTimeout(resolve, OBS_TRIGGER_DELAY_MS));
+
+    // Mark that we're triggering OBS to prevent loop back
+    useObsStore.getState().setTriggeredByUs(true);
+
+    // Trigger OBS
+    if (action === 'start') {
+      console.log('[StreamStore] Triggering OBS stream start');
+      await httpApi.obs.startStream();
+    } else {
+      console.log('[StreamStore] Triggering OBS stream stop');
+      await httpApi.obs.stopStream();
+    }
+  } catch (error) {
+    // Don't fail the main stream action if OBS trigger fails
+    console.error('[StreamStore] Failed to trigger OBS:', error);
+    // Reset the flag on error
+    useObsStore.getState().setTriggeredByUs(false);
+  }
+}
 
 /**
  * Real-time streaming statistics from the FFmpeg backend.
@@ -49,6 +104,7 @@ interface StreamState {
   // State
   isStreaming: boolean;
   activeGroups: Set<string>;
+  enabledGroups: Set<string>; // Which output groups are enabled (before/during stream)
   enabledTargets: Set<string>;
   stats: StreamStats;
   groupStats: Record<string, GroupStats>;
@@ -71,6 +127,7 @@ interface StreamState {
   // Sync actions
   setIsStreaming: (isStreaming: boolean) => void;
   setActiveGroup: (groupId: string, active: boolean) => void;
+  setGroupEnabled: (groupId: string, enabled: boolean) => void;
   toggleTarget: (targetId: string) => void;
   setTargetEnabled: (targetId: string, enabled: boolean) => void;
   updateStats: (groupId: string, ffmpegStats: FFmpegStats) => void;
@@ -94,6 +151,7 @@ const initialStats: StreamStats = {
 export const useStreamStore = create<StreamState>((set, get) => ({
   isStreaming: false,
   activeGroups: new Set(),
+  enabledGroups: new Set(),
   enabledTargets: new Set(),
   stats: initialStats,
   groupStats: {},
@@ -143,12 +201,18 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     try {
       await api.stream.start(group, incomingUrl, expectedStreamKey);
       const activeGroups = new Set(get().activeGroups);
+      const wasStreaming = activeGroups.size > 0;
       activeGroups.add(group.id);
       set({
         activeGroups,
         isStreaming: true,
-        globalStatus: 'live',
       });
+      get().setGlobalStatus('live');
+
+      // Trigger OBS if this is the first stream starting
+      if (!wasStreaming) {
+        triggerObsIfEnabled('start');
+      }
     } catch (error) {
       set({ error: String(error), globalStatus: 'error' });
     }
@@ -164,8 +228,8 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       set({
         activeGroups,
         isStreaming,
-        globalStatus: isStreaming ? 'live' : 'offline',
       });
+      get().setGlobalStatus(isStreaming ? 'live' : 'offline');
     } catch (error) {
       set({ error: String(error) });
     }
@@ -177,10 +241,22 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     set({ globalStatus: 'connecting', error: null });
 
     try {
-      const eligibleGroups = groups.filter((group) => group.streamTargets.length > 0);
+      // Filter groups by: has targets AND is enabled
+      // If enabledGroups is empty, treat all groups as enabled (first-time startup case)
+      const enabledGroups = get().enabledGroups;
+      const eligibleGroups = groups.filter((group) => {
+        const hasTargets = group.streamTargets.length > 0;
+        // If no groups have been explicitly enabled yet, allow all groups with targets
+        const isEnabled = enabledGroups.size === 0 || enabledGroups.has(group.id);
+        return hasTargets && isEnabled;
+      });
+
       if (eligibleGroups.length === 0) {
-        throw new Error('At least one stream target is required');
+        throw new Error('At least one enabled output group with stream targets is required');
       }
+
+      // Track if we were already streaming (for OBS trigger)
+      const wasStreaming = get().activeGroups.size > 0;
 
       await api.stream.startAll(eligibleGroups, incomingUrl, expectedStreamKey);
 
@@ -188,12 +264,13 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       for (const group of eligibleGroups) {
         activeGroups.add(group.id);
       }
-      set({ activeGroups });
+      set({ activeGroups, isStreaming: true });
+      get().setGlobalStatus('live');
 
-      set({
-        isStreaming: true,
-        globalStatus: 'live',
-      });
+      // Trigger OBS if this is the first stream starting
+      if (!wasStreaming) {
+        triggerObsIfEnabled('start');
+      }
     } catch (error) {
       set({ error: String(error), globalStatus: 'error' });
       throw error; // Re-throw so UI can catch it
@@ -203,15 +280,23 @@ export const useStreamStore = create<StreamState>((set, get) => ({
   // Stop all streams
   stopAllGroups: async () => {
     try {
+      // Capture if we were live before stopping (for OBS trigger)
+      const wasLive = get().globalStatus === 'live';
+
       await api.stream.stopAll();
       set({
         activeGroups: new Set(),
         isStreaming: false,
-        globalStatus: 'offline',
         uptime: 0,
         groupStats: {},
         stats: initialStats,
       });
+      get().setGlobalStatus('offline');
+
+      // Trigger OBS stop if we were live
+      if (wasLive) {
+        triggerObsIfEnabled('stop');
+      }
     } catch (error) {
       set({ error: String(error) });
     }
@@ -263,6 +348,16 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       enabledTargets.add(targetId);
     }
     set({ enabledTargets });
+  },
+
+  setGroupEnabled: (groupId, enabled) => {
+    const enabledGroups = new Set(get().enabledGroups);
+    if (enabled) {
+      enabledGroups.add(groupId);
+    } else {
+      enabledGroups.delete(groupId);
+    }
+    set({ enabledGroups });
   },
 
   setTargetEnabled: (targetId, enabled) => {
@@ -383,7 +478,40 @@ export const useStreamStore = create<StreamState>((set, get) => ({
 
   incrementUptime: () => set({ uptime: get().uptime + 1 }),
 
-  setGlobalStatus: (status: StreamStatusType) => set({ globalStatus: status }),
+  setGlobalStatus: (status: StreamStatusType) => {
+    const prevStatus = get().globalStatus;
+    set({ globalStatus: status });
+    // Only notify on transition between offline <-> live
+    const showNotifications = useSettingsStore.getState().showNotifications;
+    if (showNotifications) {
+      if (prevStatus !== 'live' && status === 'live') {
+        showSystemNotification(
+          i18n.t('notifications.streamStartedTitle', 'Stream Started'),
+          i18n.t('notifications.streamStartedBody', 'Your stream is now live.')
+        );
+      } else if (prevStatus === 'live' && status === 'offline') {
+        showSystemNotification(
+          i18n.t('notifications.streamStoppedTitle', 'Stream Stopped'),
+          i18n.t('notifications.streamStoppedBody', 'Your stream has stopped.')
+        );
+      }
+    }
+
+    // Send Discord webhook notification on stream start
+    if (prevStatus !== 'live' && status === 'live') {
+      // Fire and forget - don't block stream start on webhook
+      api.discord.sendNotification().then((result) => {
+        if (result.success && !result.skippedCooldown) {
+          console.log('[StreamStore] Discord go-live notification sent');
+        } else if (result.skippedCooldown) {
+          console.log('[StreamStore] Discord notification skipped (cooldown active)');
+        }
+      }).catch((error) => {
+        // Don't fail stream start if webhook fails
+        console.warn('[StreamStore] Discord notification failed:', error);
+      });
+    }
+  },
 
   setError: (error) => set({ error }),
 

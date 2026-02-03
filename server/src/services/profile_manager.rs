@@ -278,40 +278,16 @@ impl ProfileManager {
         mgs_path.exists()
     }
 
-    /// Check if the RTMP input port conflicts with any existing profile
-    /// Returns Ok(()) if no conflict, or Err with conflicting profile name
+    /// Validate RTMP input configuration
+    /// Since only one profile runs at a time, port conflicts are allowed
+    /// This function is kept for potential future validation but currently always succeeds
     pub async fn validate_input_conflict(
         &self,
-        profile_id: &str,
-        input: &RtmpInput,
+        _profile_id: &str,
+        _input: &RtmpInput,
     ) -> Result<(), String> {
-        let profile_names = self.get_all_names().await?;
-
-        for name in profile_names {
-            // Load each profile (try without password for unencrypted ones)
-            if let Ok(existing) = self.load(&name, None).await {
-                // Skip the profile being edited (same ID)
-                if existing.id == profile_id {
-                    continue;
-                }
-
-                // Check for port conflict on same bind address
-                // Both "0.0.0.0" and specific IPs should be checked
-                let bind_conflict = existing.input.bind_address == input.bind_address
-                    || existing.input.bind_address == "0.0.0.0"
-                    || input.bind_address == "0.0.0.0";
-
-                if bind_conflict && existing.input.port == input.port {
-                    return Err(format!(
-                        "Port {} is already configured for profile '{}'. Only one profile can listen on a port at a time.",
-                        input.port,
-                        existing.name
-                    ));
-                }
-            }
-            // Skip encrypted profiles we can't read (they might conflict but we can't check)
-        }
-
+        // Since only one profile can be active at a time,
+        // multiple profiles can use the same port without conflict
         Ok(())
     }
 
@@ -341,14 +317,67 @@ impl ProfileManager {
         Ok(())
     }
 
+    /// Encrypt sensitive fields in profile settings (OBS password, Discord webhook, backend token)
+    fn encrypt_profile_settings(&self, profile: &mut Profile) -> Result<(), String> {
+        // Encrypt OBS password
+        if !profile.settings.obs.password.is_empty()
+            && !Encryption::is_stream_key_encrypted(&profile.settings.obs.password)
+        {
+            profile.settings.obs.password =
+                Encryption::encrypt_stream_key(&profile.settings.obs.password, &self.app_data_dir)?;
+        }
+
+        // Encrypt Discord webhook URL
+        if !profile.settings.discord.webhook_url.is_empty()
+            && !Encryption::is_stream_key_encrypted(&profile.settings.discord.webhook_url)
+        {
+            profile.settings.discord.webhook_url =
+                Encryption::encrypt_stream_key(&profile.settings.discord.webhook_url, &self.app_data_dir)?;
+        }
+
+        // Encrypt backend token
+        if !profile.settings.backend.token.is_empty()
+            && !Encryption::is_stream_key_encrypted(&profile.settings.backend.token)
+        {
+            profile.settings.backend.token =
+                Encryption::encrypt_stream_key(&profile.settings.backend.token, &self.app_data_dir)?;
+        }
+
+        Ok(())
+    }
+
+    /// Decrypt sensitive fields in profile settings (OBS password, Discord webhook, backend token)
+    fn decrypt_profile_settings(&self, profile: &mut Profile) -> Result<(), String> {
+        // Decrypt OBS password
+        if Encryption::is_stream_key_encrypted(&profile.settings.obs.password) {
+            profile.settings.obs.password =
+                Encryption::decrypt_stream_key(&profile.settings.obs.password, &self.app_data_dir)?;
+        }
+
+        // Decrypt Discord webhook URL
+        if Encryption::is_stream_key_encrypted(&profile.settings.discord.webhook_url) {
+            profile.settings.discord.webhook_url =
+                Encryption::decrypt_stream_key(&profile.settings.discord.webhook_url, &self.app_data_dir)?;
+        }
+
+        // Decrypt backend token
+        if Encryption::is_stream_key_encrypted(&profile.settings.backend.token) {
+            profile.settings.backend.token =
+                Encryption::decrypt_stream_key(&profile.settings.backend.token, &self.app_data_dir)?;
+        }
+
+        Ok(())
+    }
+
     /// Save a profile with optional stream key encryption
-    /// encrypt_keys: Whether to encrypt individual stream keys (based on settings)
+    /// Uses the profile's own `settings.encrypt_stream_keys` to determine encryption
     pub async fn save_with_key_encryption(
         &self,
         profile: &Profile,
         password: Option<&str>,
-        encrypt_keys: bool,
     ) -> Result<(), String> {
+        let encrypt_keys = profile.settings.encrypt_stream_keys;
+
         log::info!("Saving profile: {} (encrypted: {}, stream keys encrypted: {})",
             profile.name,
             password.is_some(),
@@ -361,10 +390,13 @@ impl ProfileManager {
         // Clone the profile so we can modify it
         let mut profile_to_save = profile.clone();
 
-        // Encrypt stream keys if the setting is enabled
+        // Encrypt stream keys if the profile setting is enabled
         if encrypt_keys {
             self.encrypt_stream_keys(&mut profile_to_save)?;
         }
+
+        // Always encrypt sensitive profile settings (OBS password, Discord webhook, backend token)
+        self.encrypt_profile_settings(&mut profile_to_save)?;
 
         // Serialize to JSON
         let content = serde_json::to_string_pretty(&profile_to_save)
@@ -405,7 +437,7 @@ impl ProfileManager {
         Ok(())
     }
 
-    /// Load a profile and always decrypt stream keys (if they were encrypted)
+    /// Load a profile and always decrypt stream keys and sensitive settings (if encrypted)
     pub async fn load_with_key_decryption(&self, name: &str, password: Option<&str>) -> Result<Profile, String> {
         log::info!("Loading profile: {name}");
         let mut profile = self.load(name, password).await?;
@@ -413,11 +445,73 @@ impl ProfileManager {
         // Always try to decrypt stream keys (they'll be returned as-is if not encrypted)
         self.decrypt_stream_keys(&mut profile)?;
 
+        // Always try to decrypt sensitive profile settings
+        self.decrypt_profile_settings(&mut profile)?;
+
         log::info!("Profile loaded successfully: {} ({} output groups, {} total targets)",
             name,
             profile.output_groups.len(),
             profile.output_groups.iter().map(|g| g.stream_targets.len()).sum::<usize>()
         );
         Ok(profile)
+    }
+
+    /// Re-encrypt all profiles when encryption setting is toggled on
+    /// This loads each unencrypted JSON profile, encrypts stream keys, and saves it
+    pub async fn encrypt_all_profiles(&self) -> Result<usize, String> {
+        log::info!("Encrypting stream keys in all profiles");
+        let mut count = 0;
+
+        let entries = std::fs::read_dir(&self.profiles_dir)
+            .map_err(|e| format!("Failed to read profiles directory: {e}"))?;
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+
+            // Only process unencrypted JSON profiles
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+
+            let name = match path.file_stem().and_then(|n| n.to_str()) {
+                Some(n) => n.to_string(),
+                None => continue,
+            };
+
+            // Load the profile (will decrypt any already-encrypted keys)
+            let mut profile = match self.load(&name, None).await {
+                Ok(p) => p,
+                Err(e) => {
+                    log::warn!("Skipping profile {name}: {e}");
+                    continue;
+                }
+            };
+
+            // Check if any keys need encryption
+            let needs_encryption = profile.output_groups.iter().any(|g| {
+                g.stream_targets.iter().any(|t| {
+                    !t.stream_key.is_empty() && !Encryption::is_stream_key_encrypted(&t.stream_key)
+                })
+            });
+
+            if !needs_encryption {
+                continue;
+            }
+
+            // Encrypt stream keys
+            self.encrypt_stream_keys(&mut profile)?;
+
+            // Save the profile (no password for unencrypted profiles)
+            let content = serde_json::to_string_pretty(&profile)
+                .map_err(|e| format!("Failed to serialize profile: {e}"))?;
+            std::fs::write(&path, content)
+                .map_err(|e| format!("Failed to write profile: {e}"))?;
+
+            log::info!("Encrypted stream keys in profile: {name}");
+            count += 1;
+        }
+
+        log::info!("Encrypted stream keys in {count} profiles");
+        Ok(count)
     }
 }

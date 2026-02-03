@@ -85,6 +85,11 @@ export function Logs() {
       });
       toast.success(t('logs.exportSuccess', { defaultValue: 'Logs exported' }));
     } catch (error) {
+      // Check if user cancelled the save dialog
+      if ((error as Error).name === 'AbortError') {
+        // User cancelled - don't show error
+        return;
+      }
       console.error('Failed to export logs:', error);
       toast.error(t('logs.exportFailed', { defaultValue: 'Failed to export logs' }));
     }

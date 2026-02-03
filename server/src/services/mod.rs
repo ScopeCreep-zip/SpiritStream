@@ -13,6 +13,8 @@ mod platform_registry;
 mod log_manager;
 mod events;
 mod path_validator;
+mod obs_websocket;
+mod discord_webhook;
 #[cfg(feature = "ffmpeg-libs")]
 mod ffmpeg_libs_pipeline;
 
@@ -28,5 +30,7 @@ pub use platform_registry::*;
 pub use log_manager::*;
 pub use events::*;
 pub use path_validator::*;
+pub use obs_websocket::*;
+pub use discord_webhook::*;
 #[cfg(feature = "ffmpeg-libs")]
 pub use ffmpeg_libs_pipeline::*;

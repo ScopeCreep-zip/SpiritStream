@@ -4,23 +4,51 @@
 export type TauriResult<T> = Promise<T>;
 
 /**
- * Settings structure (matches Rust Settings model)
+ * Global application settings (app-wide, not per-profile)
+ *
+ * Profile-specific settings (theme, language, integrations) have been moved
+ * to ProfileSettings in profile.ts
  */
 export interface AppSettings {
-  language: string;
+  // App-level behavior
   startMinimized: boolean;
-  showNotifications: boolean;
+
+  // System-wide FFmpeg configuration
   ffmpegPath: string;
   autoDownloadFfmpeg: boolean;
-  encryptStreamKeys: boolean;
+
+  // App-wide log management
   logRetentionDays: number;
-  themeId: string;
-  backendRemoteEnabled: boolean;
-  backendUiEnabled: boolean;
-  backendHost: string;
-  backendPort: number;
-  backendToken: string;
+
+  // Tracks which profile to load on startup
   lastProfile: string | null;
+
+  // =========================================================================
+  // LEGACY FIELDS (read for migration, not written back)
+  // These have moved to ProfileSettings but are kept here for backward
+  // compatibility when reading old settings from the backend.
+  // =========================================================================
+  language?: string;
+  showNotifications?: boolean;
+  encryptStreamKeys?: boolean;
+  themeId?: string;
+  backendRemoteEnabled?: boolean;
+  backendUiEnabled?: boolean;
+  backendHost?: string;
+  backendPort?: number;
+  backendToken?: string;
+  obsHost?: string;
+  obsPort?: number;
+  obsPassword?: string;
+  obsUseAuth?: boolean;
+  obsDirection?: ObsIntegrationDirection;
+  obsAutoConnect?: boolean;
+  discordWebhookEnabled?: boolean;
+  discordWebhookUrl?: string;
+  discordGoLiveMessage?: string;
+  discordCooldownEnabled?: boolean;
+  discordCooldownSeconds?: number;
+  discordImagePath?: string;
 }
 
 /**
@@ -57,4 +85,52 @@ export interface FFmpegVersionInfo {
   update_available: boolean;
   /** Human-readable status message */
   status: string;
+}
+
+// ============================================================================
+// OBS WebSocket Types
+// ============================================================================
+
+/**
+ * OBS connection status
+ */
+export type ObsConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
+
+/**
+ * OBS streaming status
+ */
+export type ObsStreamStatus = 'inactive' | 'starting' | 'active' | 'stopping' | 'unknown';
+
+/**
+ * OBS integration direction
+ */
+export type ObsIntegrationDirection =
+  | 'obs-to-spiritstream'
+  | 'spiritstream-to-obs'
+  | 'bidirectional'
+  | 'disabled';
+
+/**
+ * OBS WebSocket configuration
+ */
+export interface ObsConfig {
+  host: string;
+  port: number;
+  password: string;
+  useAuth: boolean;
+  direction: ObsIntegrationDirection;
+  autoConnect: boolean;
+  /** Indicates if a password is set (password itself is masked) */
+  hasPassword?: boolean;
+}
+
+/**
+ * Current OBS state
+ */
+export interface ObsState {
+  connectionStatus: ObsConnectionStatus;
+  streamStatus: ObsStreamStatus;
+  errorMessage: string | null;
+  obsVersion: string | null;
+  websocketVersion: string | null;
 }

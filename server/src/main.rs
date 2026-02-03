@@ -40,11 +40,11 @@ use spiritstream_server::commands::{
     get_encoders, test_ffmpeg, test_rtmp_target, validate_ffmpeg_path,
     probe_encoder_capabilities, get_encoder_capabilities, get_all_video_encoders,
 };
-use spiritstream_server::models::{OutputGroup, Profile, RtmpInput, Settings};
+use spiritstream_server::models::{OutputGroup, Profile, RtmpInput, Settings, ObsIntegrationDirection};
 use spiritstream_server::services::{
     prune_logs, read_recent_logs, validate_extension, validate_path_within_any,
-    Encryption, EventSink, FFmpegDownloader, FFmpegHandler, ProfileManager, SettingsManager,
-    ThemeManager,
+    DiscordWebhookService, Encryption, EventSink, FFmpegDownloader, FFmpegHandler,
+    ObsWebSocketHandler, ProfileManager, SettingsManager, ThemeManager, ObsConfig,
 };
 #[cfg(feature = "ffmpeg-libs")]
 use spiritstream_server::services::{InputPipeline, InputPipelineConfig, OutputGroupConfig, OutputGroupMode};
@@ -105,6 +105,8 @@ struct AppState {
     ffmpeg_libs_pipelines: Arc<Mutex<std::collections::HashMap<String, InputPipeline>>>,
     ffmpeg_downloader: Arc<AsyncMutex<FFmpegDownloader>>,
     theme_manager: Arc<ThemeManager>,
+    obs_handler: Arc<ObsWebSocketHandler>,
+    discord_service: Arc<DiscordWebhookService>,
     event_bus: EventBus,
     log_dir: PathBuf,
     app_data_dir: PathBuf,
@@ -165,7 +167,13 @@ impl Log for ServerLogger {
         let line = format!("[{date}][{time}][{target}][{level}] {message}");
 
         if let Ok(mut file) = self.file.try_lock() {
-            let _ = writeln!(file, "{line}");
+            if let Err(e) = writeln!(file, "{line}") {
+                eprintln!("Failed to write log: {e}");
+            }
+            // Flush after every write to ensure logs persist on crash
+            if let Err(e) = file.flush() {
+                eprintln!("Failed to flush log: {e}");
+            }
         }
 
         let level_number = match level {
@@ -182,7 +190,11 @@ impl Log for ServerLogger {
         );
     }
 
-    fn flush(&self) {}
+    fn flush(&self) {
+        if let Ok(mut file) = self.file.try_lock() {
+            let _ = file.flush();
+        }
+    }
 }
 
 // ============================================================================
@@ -206,6 +218,8 @@ fn bearer_token(headers: &HeaderMap) -> Option<&str> {
 
 /// Sanitize error messages to prevent information disclosure
 fn sanitize_error(error: &str) -> String {
+    log::warn!("[sanitize_error] Original error: {}", error);
+    eprintln!("[sanitize_error] Original error: {}", error);
     let lower = error.to_lowercase();
 
     if lower.contains("failed to read") || lower.contains("no such file") || lower.contains("not found") {
@@ -222,6 +236,22 @@ fn sanitize_error(error: &str) -> String {
     }
     if lower.contains("encrypt") || lower.contains("decrypt") {
         return "Encryption error".to_string();
+    }
+    // Discord webhook errors - pass through user-friendly messages
+    if lower.contains("webhook") || lower.contains("discord") || lower.contains("rate limit") {
+        return error.to_string();
+    }
+    // Network errors - safe to show
+    if lower.contains("request failed") || lower.contains("connection") || lower.contains("timeout") {
+        return error.to_string();
+    }
+    // Missing argument errors - safe to show
+    if lower.contains("missing argument") {
+        return error.to_string();
+    }
+    // Unknown command errors - safe to show for debugging
+    if lower.contains("unknown command") {
+        return error.to_string();
     }
 
     // Return generic message for unknown errors in production
@@ -877,7 +907,9 @@ async fn invoke_command(
     command: &str,
     payload: Value,
 ) -> Result<Value, String> {
-    match command {
+    log::debug!("[invoke_command] Command: {}, Payload: {:?}", command, payload);
+
+    let result = match command {
         "get_all_profiles" => {
             let names = state.profile_manager.get_all_names().await?;
             Ok(json!(names))
@@ -889,19 +921,35 @@ async fn invoke_command(
         "load_profile" => {
             let name: String = get_arg(&payload, "name")?;
             let password: Option<String> = get_opt_arg(&payload, "password")?;
-            let profile = state
+            let mut profile = state
                 .profile_manager
                 .load_with_key_decryption(&name, password.as_deref())
                 .await?;
+
+            // Migration: If profile has default settings, migrate from legacy global settings
+            if profile.settings.is_default() {
+                let global_settings = state.settings_manager.load()?;
+                if global_settings.has_legacy_profile_settings() {
+                    log::info!("Migrating legacy settings to profile: {}", name);
+                    profile.settings = global_settings.to_legacy_profile_settings();
+                    // Save the migrated profile
+                    state
+                        .profile_manager
+                        .save_with_key_encryption(&profile, password.as_deref())
+                        .await?;
+                    log::info!("Profile migrated successfully: {}", name);
+                }
+            }
+
             Ok(json!(profile))
         }
         "save_profile" => {
             let profile: Profile = get_arg(&payload, "profile")?;
             let password: Option<String> = get_opt_arg(&payload, "password")?;
-            let settings = state.settings_manager.load()?;
+            // encrypt_stream_keys is now per-profile (profile.settings.encrypt_stream_keys)
             state
                 .profile_manager
-                .save_with_key_encryption(&profile, password.as_deref(), settings.encrypt_stream_keys)
+                .save_with_key_encryption(&profile, password.as_deref())
                 .await?;
             state.event_bus.emit("profile_changed", json!({ "action": "saved", "name": profile.name }));
             Ok(Value::Null)
@@ -961,6 +1009,8 @@ async fn invoke_command(
                 let _ = expected_stream_key; // Unused in CLI mode
                 let event_sink: Arc<dyn EventSink> = Arc::new(state.event_bus.clone());
                 let pid = state.ffmpeg_handler.start(&group, &incoming_url, event_sink)?;
+                // Reset reconnection state on successful manual start
+                state.ffmpeg_handler.reset_reconnection_state(&group.id);
                 Ok(json!(pid))
             }
         }
@@ -1131,6 +1181,21 @@ async fn invoke_command(
         }
         #[cfg(not(feature = "ffmpeg-libs"))]
         "stop_ffmpeg_libs_passthrough" => Err("ffmpeg-libs feature not enabled".to_string()),
+        "retry_stream" => {
+            let group_id: String = get_arg(&payload, "groupId")?;
+            let event_sink: Arc<dyn EventSink> = Arc::new(state.event_bus.clone());
+            let ffmpeg_handler = state.ffmpeg_handler.clone();
+            // Use spawn_blocking to avoid blocking the async runtime during backoff sleep
+            let (pid, next_delay) = tokio::task::spawn_blocking(move || {
+                ffmpeg_handler.retry_group(&group_id, event_sink)
+            })
+            .await
+            .map_err(|e| format!("Task join error: {e}"))??;
+            Ok(json!({
+                "pid": pid,
+                "nextDelaySecs": next_delay.map(|d| d.as_secs())
+            }))
+        }
         "get_active_stream_count" => {
             #[cfg(feature = "ffmpeg-libs")]
             {
@@ -1251,9 +1316,26 @@ async fn invoke_command(
         }
         "get_settings" => Ok(json!(state.settings_manager.load()?)),
         "save_settings" => {
-            let settings: Settings = get_arg(&payload, "settings")?;
-            state.settings_manager.save(&settings)?;
-            let _ = prune_logs(&state.log_dir, settings.log_retention_days);
+            let new_settings: Settings = get_arg(&payload, "settings")?;
+
+            // Check if encryption was just enabled
+            let old_settings = state.settings_manager.load().ok();
+            let encryption_just_enabled = new_settings.encrypt_stream_keys
+                && old_settings.as_ref().is_some_and(|s| !s.encrypt_stream_keys);
+
+            // Save the new settings
+            state.settings_manager.save(&new_settings)?;
+
+            // If encryption was just enabled, re-encrypt all profiles
+            if encryption_just_enabled {
+                log::info!("Stream key encryption enabled, encrypting existing profiles");
+                match state.profile_manager.encrypt_all_profiles().await {
+                    Ok(count) => log::info!("Encrypted stream keys in {count} profiles"),
+                    Err(e) => log::error!("Failed to encrypt profiles: {e}"),
+                }
+            }
+
+            let _ = prune_logs(&state.log_dir, new_settings.log_retention_days);
             state.event_bus.emit("settings_changed", json!({}));
             Ok(Value::Null)
         }
@@ -1370,8 +1452,162 @@ async fn invoke_command(
 
             Ok(json!(state.theme_manager.install_theme(&path)?))
         }
+
+        // ============================================================================
+        // OBS WebSocket Commands
+        // ============================================================================
+        "obs_get_state" => {
+            let obs_state = state.obs_handler.get_state().await;
+            Ok(json!(obs_state))
+        }
+        "obs_get_config" => {
+            let config = state.obs_handler.get_config().await;
+            let mut response = json!(config);
+
+            // Decrypt the password if it's encrypted
+            if let Some(obj) = response.as_object_mut() {
+                if let Some(pass_value) = obj.get("password") {
+                    let pass_str = pass_value.as_str().unwrap_or("");
+                    if !pass_str.is_empty() && Encryption::is_stream_key_encrypted(pass_str) {
+                        match Encryption::decrypt_stream_key(pass_str, &state.app_data_dir) {
+                            Ok(decrypted) => {
+                                obj.insert("password".to_string(), json!(decrypted));
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to decrypt OBS password: {}", e);
+                                obj.insert("password".to_string(), json!(""));
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(response)
+        }
+        "obs_set_config" => {
+            let host: String = get_arg(&payload, "host")?;
+            let port: u16 = get_arg(&payload, "port")?;
+            let password: Option<String> = get_opt_arg(&payload, "password")?;
+            let use_auth: bool = get_arg(&payload, "useAuth")?;
+            let direction: String = get_arg(&payload, "direction")?;
+            let auto_connect: bool = get_arg(&payload, "autoConnect")?;
+
+            // Get current config to preserve existing password if not provided
+            let current_config = state.obs_handler.get_config().await;
+
+            // Encrypt password if provided, otherwise keep existing
+            let encrypted_password = if let Some(ref pass) = password {
+                if pass.is_empty() {
+                    String::new()
+                } else {
+                    state.obs_handler.encrypt_password(pass)?
+                }
+            } else {
+                current_config.password
+            };
+
+            // Parse direction
+            let dir = match direction.as_str() {
+                "obs-to-spiritstream" => spiritstream_server::services::IntegrationDirection::ObsToSpiritstream,
+                "spiritstream-to-obs" => spiritstream_server::services::IntegrationDirection::SpiritstreamToObs,
+                "bidirectional" => spiritstream_server::services::IntegrationDirection::Bidirectional,
+                _ => spiritstream_server::services::IntegrationDirection::Disabled,
+            };
+
+            let config = ObsConfig {
+                host: host.clone(),
+                port,
+                password: encrypted_password.clone(),
+                use_auth,
+                direction: dir,
+                auto_connect,
+            };
+
+            state.obs_handler.set_config(config).await;
+
+            // Also save to settings
+            let mut settings = state.settings_manager.load()?;
+            settings.obs_host = host;
+            settings.obs_port = port;
+            settings.obs_password = encrypted_password;
+            settings.obs_use_auth = use_auth;
+            settings.obs_direction = match dir {
+                spiritstream_server::services::IntegrationDirection::ObsToSpiritstream => ObsIntegrationDirection::ObsToSpiritstream,
+                spiritstream_server::services::IntegrationDirection::SpiritstreamToObs => ObsIntegrationDirection::SpiritstreamToObs,
+                spiritstream_server::services::IntegrationDirection::Bidirectional => ObsIntegrationDirection::Bidirectional,
+                spiritstream_server::services::IntegrationDirection::Disabled => ObsIntegrationDirection::Disabled,
+            };
+            settings.obs_auto_connect = auto_connect;
+            state.settings_manager.save(&settings)?;
+
+            Ok(Value::Null)
+        }
+        "obs_connect" => {
+            state.obs_handler.connect(state.event_bus.clone()).await?;
+            Ok(Value::Null)
+        }
+        "obs_disconnect" => {
+            state.obs_handler.disconnect(state.event_bus.clone()).await?;
+            Ok(Value::Null)
+        }
+        "obs_start_stream" => {
+            state.obs_handler.start_stream().await?;
+            Ok(Value::Null)
+        }
+        "obs_stop_stream" => {
+            state.obs_handler.stop_stream().await?;
+            Ok(Value::Null)
+        }
+        "obs_is_connected" => {
+            Ok(json!(state.obs_handler.is_connected().await))
+        }
+
+        // ============================================================================
+        // Discord Webhook Commands
+        // ============================================================================
+        "discord_test_webhook" => {
+            log::info!("[discord_test_webhook] Received payload: {:?}", payload);
+            let url: String = get_arg(&payload, "url")?;
+            log::info!("[discord_test_webhook] Testing URL: {}", if url.len() > 50 { &url[..50] } else { &url });
+            let result = state.discord_service.test_webhook(&url).await;
+            log::info!("[discord_test_webhook] Result: {:?}", result);
+            Ok(json!(result))
+        }
+        "discord_send_notification" => {
+            let settings = state.settings_manager.load()?;
+            if !settings.discord_webhook_enabled {
+                return Ok(json!({
+                    "success": false,
+                    "message": "Discord webhook is not enabled",
+                    "skippedCooldown": false
+                }));
+            }
+            let image_path = if settings.discord_image_path.is_empty() {
+                None
+            } else {
+                Some(settings.discord_image_path.as_str())
+            };
+            let result = state.discord_service.send_go_live_notification(
+                &settings.discord_webhook_url,
+                &settings.discord_go_live_message,
+                image_path,
+                settings.discord_cooldown_enabled,
+                settings.discord_cooldown_seconds,
+            ).await;
+            Ok(json!(result))
+        }
+        "discord_reset_cooldown" => {
+            state.discord_service.reset_cooldown().await;
+            Ok(Value::Null)
+        }
+
         _ => Err(format!("Unknown command: {command}")),
+    };
+
+    if let Err(ref e) = result {
+        log::error!("[invoke_command] Error for {}: {}", command, e);
+        eprintln!("[invoke_command] Error for {}: {}", command, e);
     }
+    result
 }
 
 // ============================================================================
@@ -1644,6 +1880,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Get home directory for path validation
     let home_dir = dirs_next::home_dir();
 
+    // Initialize OBS WebSocket handler
+    let obs_handler = Arc::new(ObsWebSocketHandler::new(app_data_dir.clone()));
+
+    // Load OBS config from settings if available
+    if let Some(ref settings) = settings {
+        let obs_config = ObsConfig {
+            host: settings.obs_host.clone(),
+            port: settings.obs_port,
+            password: settings.obs_password.clone(),
+            use_auth: settings.obs_use_auth,
+            direction: match settings.obs_direction {
+                ObsIntegrationDirection::ObsToSpiritstream => {
+                    spiritstream_server::services::IntegrationDirection::ObsToSpiritstream
+                }
+                ObsIntegrationDirection::SpiritstreamToObs => {
+                    spiritstream_server::services::IntegrationDirection::SpiritstreamToObs
+                }
+                ObsIntegrationDirection::Bidirectional => {
+                    spiritstream_server::services::IntegrationDirection::Bidirectional
+                }
+                ObsIntegrationDirection::Disabled => {
+                    spiritstream_server::services::IntegrationDirection::Disabled
+                }
+            },
+            auto_connect: settings.obs_auto_connect,
+        };
+        // Block on setting config since we're in async main
+        obs_handler.set_config(obs_config).await;
+    }
+
+    // Initialize Discord webhook service
+    let discord_service = Arc::new(DiscordWebhookService::new());
+
     let state = AppState {
         profile_manager,
         settings_manager,
@@ -1652,6 +1921,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ffmpeg_libs_pipelines: Arc::new(Mutex::new(std::collections::HashMap::new())),
         ffmpeg_downloader: Arc::new(AsyncMutex::new(FFmpegDownloader::new())),
         theme_manager,
+        obs_handler,
+        discord_service,
         event_bus,
         log_dir: log_dir_path,
         app_data_dir,

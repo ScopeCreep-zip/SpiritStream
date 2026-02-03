@@ -18,7 +18,7 @@ export interface TargetModalProps {
 
 // Platform values - dynamically loaded from JSON
 const PLATFORM_VALUES: Platform[] = Object.keys(platformConfig) as Platform[];
-const FIRST_PLATFORM = PLATFORM_VALUES[0];
+const DEFAULT_PLATFORM: Platform = 'YouTube - RTMPS';
 
 interface FormData {
   service: Platform;
@@ -28,9 +28,9 @@ interface FormData {
 }
 
 const defaultFormData: FormData = {
-  service: FIRST_PLATFORM,
+  service: DEFAULT_PLATFORM,
   name: '',
-  url: platformConfig[FIRST_PLATFORM].defaultServer,
+  url: platformConfig[DEFAULT_PLATFORM].defaultServer,
   streamKey: '',
 };
 
@@ -217,7 +217,7 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
 
         <Input
           label={t('modals.serverUrl')}
-          placeholder="rtmp://a.rtmp.youtube.com/live2"
+          placeholder={t('modals.target.serverUrlPlaceholder')}
           value={formData.url}
           onChange={handleChange('url')}
           error={errors.url}

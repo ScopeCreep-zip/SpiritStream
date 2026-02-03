@@ -123,7 +123,42 @@ jobs:
       - name: Build server sidecar
         run: pnpm run build:server --release ${{ matrix.rust_target && format('-- --target {0}', matrix.rust_target) || '' }}
 
+      - name: Build Tauri app (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: pnpm --filter @spiritstream/desktop tauri build
+
+      - name: Upload Linux artifacts
+        if: matrix.platform == 'ubuntu-22.04'
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: 'SpiritStream ${{ github.ref_name }}'
+          body: |
+            ## SpiritStream ${{ github.ref_name }}
+
+            ### Downloads
+            Choose the appropriate download for your platform:
+            - **macOS (Apple Silicon)**: `.dmg` file ending in `aarch64`
+            - **macOS (Intel)**: `.dmg` file ending in `x64`
+            - **Windows**: `.msi` or `.exe` installer
+            - **Linux**: `.AppImage` or `.deb` package
+
+            ### Requirements
+            - **FFmpeg** is required for streaming functionality
+              - macOS: `brew install ffmpeg`
+              - Windows: Download from [ffmpeg.org](https://ffmpeg.org/download.html)
+              - Linux: `sudo apt install ffmpeg`
+          draft: true
+          prerelease: false
+          files: |
+            apps/desktop/src-tauri/target/release/bundle/deb/SpiritStream_*_amd64.deb
+            apps/desktop/src-tauri/target/release/bundle/rpm/SpiritStream-*-1.x86_64.rpm
+            apps/desktop/src-tauri/target/release/bundle/appimage/SpiritStream_*_amd64.AppImage
+
       - name: Build and release
+        if: matrix.platform != 'ubuntu-22.04'
         uses: tauri-apps/tauri-action@v0.5.4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -3,7 +3,65 @@
  * Auto-generated from data/streaming-platforms.json
  */
 import type { Platform } from './generated-platforms';
+import type { ObsIntegrationDirection } from './api';
 export type { Platform };
+
+// ============================================================================
+// Profile Settings Types (per-profile configuration)
+// ============================================================================
+
+/**
+ * Backend/Remote access settings for a profile
+ */
+export interface BackendSettings {
+  remoteEnabled: boolean;
+  uiEnabled: boolean;
+  host: string;
+  port: number;
+  token: string;
+}
+
+/**
+ * OBS WebSocket integration settings for a profile
+ */
+export interface ObsSettings {
+  host: string;
+  port: number;
+  password: string;
+  useAuth: boolean;
+  direction: ObsIntegrationDirection;
+  autoConnect: boolean;
+}
+
+/**
+ * Discord webhook integration settings for a profile
+ */
+export interface DiscordSettings {
+  webhookEnabled: boolean;
+  webhookUrl: string;
+  goLiveMessage: string;
+  cooldownEnabled: boolean;
+  cooldownSeconds: number;
+  imagePath: string;
+}
+
+/**
+ * Per-profile settings (theme, language, integrations, security)
+ */
+export interface ProfileSettings {
+  // UI Settings
+  themeId: string;
+  language: string;
+  showNotifications: boolean;
+
+  // Security Settings
+  encryptStreamKeys: boolean;
+
+  // Integration Settings
+  backend: BackendSettings;
+  obs: ObsSettings;
+  discord: DiscordSettings;
+}
 
 /**
  * RTMP Input configuration - where the stream enters the system
@@ -65,6 +123,7 @@ export interface OutputGroup {
   id: string;
   name: string;
   isDefault?: boolean; // True for the immutable passthrough group
+  generatePts?: boolean; // Generate PTS timestamps and sync audio (default: true)
   video: VideoSettings;
   audio: AudioSettings;
   container: ContainerSettings;
@@ -80,6 +139,8 @@ export interface Profile {
   encrypted: boolean;
   input: RtmpInput;
   outputGroups: OutputGroup[];
+  /** Per-profile settings (theme, integrations, security) */
+  settings: ProfileSettings;
 }
 
 /**
@@ -139,6 +200,7 @@ export const createDefaultOutputGroup = (): OutputGroup => ({
   id: crypto.randomUUID(),
   name: 'New Output Group',
   isDefault: false,
+  generatePts: true,
   video: createDefaultVideoSettings(),
   audio: createDefaultAudioSettings(),
   container: createDefaultContainerSettings(),
@@ -149,6 +211,7 @@ export const createPassthroughOutputGroup = (): OutputGroup => ({
   id: 'default',
   name: 'Passthrough (Default)',
   isDefault: true,
+  generatePts: true,
   video: createDefaultVideoSettings(), // codec: 'copy'
   audio: createDefaultAudioSettings(), // codec: 'copy'
   container: createDefaultContainerSettings(),
@@ -163,12 +226,49 @@ export const createDefaultStreamTarget = (service: Platform): StreamTarget => ({
   streamKey: '',
 });
 
+export const createDefaultBackendSettings = (): BackendSettings => ({
+  remoteEnabled: false,
+  uiEnabled: false,
+  host: '127.0.0.1',
+  port: 8008,
+  token: '',
+});
+
+export const createDefaultObsSettings = (): ObsSettings => ({
+  host: 'localhost',
+  port: 4455,
+  password: '',
+  useAuth: false,
+  direction: 'disabled',
+  autoConnect: false,
+});
+
+export const createDefaultDiscordSettings = (): DiscordSettings => ({
+  webhookEnabled: false,
+  webhookUrl: '',
+  goLiveMessage: '**Stream is now live!** 🎮\n\nCome join the stream!',
+  cooldownEnabled: true,
+  cooldownSeconds: 60,
+  imagePath: '',
+});
+
+export const createDefaultProfileSettings = (): ProfileSettings => ({
+  themeId: 'spirit-dark',
+  language: 'en',
+  showNotifications: true,
+  encryptStreamKeys: true,
+  backend: createDefaultBackendSettings(),
+  obs: createDefaultObsSettings(),
+  discord: createDefaultDiscordSettings(),
+});
+
 export const createDefaultProfile = (name: string = 'New Profile'): Profile => ({
   id: crypto.randomUUID(),
   name,
   encrypted: false,
   input: createDefaultRtmpInput(),
   outputGroups: [createPassthroughOutputGroup()], // Always include default passthrough group
+  settings: createDefaultProfileSettings(),
 });
 
 /**

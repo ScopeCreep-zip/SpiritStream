@@ -7,12 +7,66 @@ use std::net::UdpSocket;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU16, AtomicU64, AtomicUsize, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 use crate::services::{emit_event, EventSink};
 use crate::models::{OutputGroup, Platform, StreamStats};
 use crate::services::PlatformRegistry;
+
+/// Reconnection configuration and state
+#[derive(Debug, Clone)]
+struct ReconnectionConfig {
+    max_retries: u32,
+    initial_delay_secs: u64,
+    max_delay_secs: u64,
+}
+
+impl Default for ReconnectionConfig {
+    fn default() -> Self {
+        Self {
+            max_retries: 5,
+            initial_delay_secs: 5,
+            max_delay_secs: 120,
+        }
+    }
+}
+
+/// Tracks reconnection attempts for a group
+#[derive(Debug, Clone)]
+struct ReconnectionState {
+    attempt: u32,
+    last_attempt: Option<Instant>,
+}
+
+impl ReconnectionState {
+    fn new() -> Self {
+        Self {
+            attempt: 0,
+            last_attempt: None,
+        }
+    }
+
+    fn increment(&mut self) {
+        self.attempt += 1;
+        self.last_attempt = Some(Instant::now());
+    }
+
+    fn reset(&mut self) {
+        self.attempt = 0;
+        self.last_attempt = None;
+    }
+
+    fn should_retry(&self, config: &ReconnectionConfig) -> bool {
+        self.attempt < config.max_retries
+    }
+
+    fn next_delay(&self, config: &ReconnectionConfig) -> Duration {
+        // Exponential backoff: initial * 2^attempt, capped at max_delay
+        let delay_secs = config.initial_delay_secs * (1 << self.attempt.min(6));
+        Duration::from_secs(delay_secs.min(config.max_delay_secs))
+    }
+}
 
 // Windows: Hide console windows for spawned processes
 #[cfg(windows)]
@@ -25,6 +79,7 @@ struct ProcessInfo {
     child: Child,
     start_time: Instant,
     group_id: String,
+    reconnection_state: ReconnectionState,
 }
 
 /// Cached configuration for restarting groups when relay output set changes
@@ -54,13 +109,21 @@ pub struct FFmpegHandler {
     relay_refcount: Arc<AtomicUsize>,
     /// Platform registry for URL normalization and redaction
     platform_registry: PlatformRegistry,
+    /// Reconnection configuration
+    reconnection_config: ReconnectionConfig,
+    /// Port assignments for groups (group_id -> port_offset)
+    /// Simplified sequential port allocation instead of hash-based
+    port_assignments: Arc<Mutex<HashMap<String, u16>>>,
+    /// Next available port offset for new groups
+    next_port_offset: Arc<AtomicU16>,
 }
 
 impl FFmpegHandler {
-    // Unicast relay fan-out using deterministic local TCP ports per group
+    // Simplified sequential port allocation for relay fan-out
+    // Since only one profile is active at a time, we can use simple sequential ports
+    // Each output group gets: relay_port = BASE + (index * 2), meter_port = BASE + (index * 2) + 1
     const RELAY_HOST: &'static str = "localhost";
-    const RELAY_PORT_BASE: u16 = 20000;
-    const RELAY_PORT_RANGE: u16 = 20000;
+    const RELAY_PORT_BASE: u16 = 20000;  // First group: 20000 (relay), 20001 (meter)
     const RELAY_TCP_OUT_QUERY: &'static str = "tcp_nodelay=1";
     const RELAY_TCP_IN_QUERY: &'static str = "listen=1&tcp_nodelay=1";
     const RELAY_RTMP_TIMEOUT_SECS: u32 = 604_800;
@@ -68,9 +131,44 @@ impl FFmpegHandler {
     const RELAY_TEE_FIFO_OPTIONS: &'static str =
         "fifo_format=mpegts:queue_size=512:drop_pkts_on_overflow=1:attempt_recovery=1:recover_any_error=1";
     const METER_HOST: &'static str = "127.0.0.1";
-    const METER_PORT_BASE: u16 = 40000;
-    const METER_PORT_RANGE: u16 = 10000;
     const METER_UDP_QUERY: &'static str = "pkt_size=1316";
+
+    /// Parse Windows error codes and FFmpeg error codes from log lines
+    fn parse_error_details(lines: &VecDeque<String>) -> Option<String> {
+        for line in lines.iter().rev() {
+            // Windows socket error codes
+            if line.contains("10054") {
+                return Some("Connection reset by remote server (10054 - WSAECONNRESET)".to_string());
+            }
+            if line.contains("10053") {
+                return Some("Connection aborted by network (10053 - WSAECONNABORTED)".to_string());
+            }
+            if line.contains("10060") {
+                return Some("Connection timed out (10060 - WSAETIMEDOUT)".to_string());
+            }
+            if line.contains("10061") {
+                return Some("Connection refused by server (10061 - WSAECONNREFUSED)".to_string());
+            }
+            if line.contains("10065") {
+                return Some("No route to host (10065 - WSAEHOSTUNREACH)".to_string());
+            }
+
+            // FFmpeg error codes
+            if line.contains("error code: -5") || line.contains("code -5") {
+                return Some("I/O error (-5 - EIO): Network connection lost".to_string());
+            }
+            if line.contains("Connection refused") {
+                return Some("RTMP server refused connection".to_string());
+            }
+            if line.contains("Connection timed out") {
+                return Some("RTMP server connection timed out".to_string());
+            }
+            if line.contains("error muxing packet") {
+                return Some("Failed to send packet to server (possible network issue)".to_string());
+            }
+        }
+        None
+    }
 
     /// Create FFmpegHandler with optional custom FFmpeg path from settings
     /// Falls back to auto-discovery if custom path is empty or invalid
@@ -96,6 +194,9 @@ impl FFmpegHandler {
             qsv_repeat_pps_supported: OnceLock::new(),
             relay_refcount: Arc::new(AtomicUsize::new(0)),
             platform_registry: PlatformRegistry::new(),
+            reconnection_config: ReconnectionConfig::default(),
+            port_assignments: Arc::new(Mutex::new(HashMap::new())),
+            next_port_offset: Arc::new(AtomicU16::new(0)),
         }
     }
 
@@ -111,6 +212,9 @@ impl FFmpegHandler {
             qsv_repeat_pps_supported: OnceLock::new(),
             relay_refcount: Arc::new(AtomicUsize::new(0)),
             platform_registry: PlatformRegistry::new(),
+            reconnection_config: ReconnectionConfig::default(),
+            port_assignments: Arc::new(Mutex::new(HashMap::new())),
+            next_port_offset: Arc::new(AtomicU16::new(0)),
         }
     }
 
@@ -371,6 +475,7 @@ impl FFmpegHandler {
                 child,
                 start_time: Instant::now(),
                 group_id: group_id.clone(),
+                reconnection_state: ReconnectionState::new(),
             });
         }
 
@@ -378,10 +483,12 @@ impl FFmpegHandler {
 
         let event_sink_clone = Arc::clone(&event_sink);
         let processes_clone = Arc::clone(&self.processes);
-        let meter_bytes = Self::start_bitrate_meter(&group_id, Arc::clone(&processes_clone));
+        let meter_bytes = self.start_bitrate_meter(&group_id, Arc::clone(&processes_clone));
         let relay_clone = Arc::clone(&self.relay);
         let stopping_clone = Arc::clone(&self.stopping_groups);
         let relay_refcount_clone = Arc::clone(&self.relay_refcount);
+        let port_assignments_clone = Arc::clone(&self.port_assignments);
+        let next_port_offset_clone = Arc::clone(&self.next_port_offset);
         let group_id_clone = group_id.clone();
 
         thread::spawn(move || {
@@ -394,6 +501,8 @@ impl FFmpegHandler {
                 stopping_clone,
                 relay_clone,
                 relay_refcount_clone,
+                port_assignments_clone,
+                next_port_offset_clone,
             );
         });
 
@@ -499,10 +608,11 @@ impl FFmpegHandler {
     }
 
     fn start_bitrate_meter(
+        &self,
         group_id: &str,
         processes: Arc<Mutex<HashMap<String, ProcessInfo>>>,
     ) -> Option<Arc<AtomicU64>> {
-        let port = Self::meter_port_for_group(group_id);
+        let port = self.meter_port_for_group(group_id);
         let bind_addr = format!("{}:{}", Self::METER_HOST, port);
         let socket = match UdpSocket::bind(&bind_addr) {
             Ok(socket) => socket,
@@ -560,6 +670,8 @@ impl FFmpegHandler {
         stopping_groups: Arc<Mutex<HashSet<String>>>,
         relay: Arc<Mutex<Option<RelayProcess>>>,
         relay_refcount: Arc<AtomicUsize>,
+        port_assignments: Arc<Mutex<HashMap<String, u16>>>,
+        next_port_offset: Arc<AtomicU16>,
     ) {
         let reader = BufReader::new(stderr);
         let mut stats = StreamStats::new(group_id.clone());
@@ -681,6 +793,18 @@ impl FFmpegHandler {
             let exit_status = {
                 if let Ok(mut procs) = processes.lock() {
                     if let Some(mut info) = procs.remove(&group_id) {
+                        // Free the port assignment for this crashed group
+                        if let Ok(mut assignments) = port_assignments.lock() {
+                            if let Some(offset) = assignments.remove(&group_id) {
+                                log::debug!("Freed port offset {offset} from crashed group {group_id}");
+                                // Reset counter if all assignments are freed
+                                if assignments.is_empty() {
+                                    next_port_offset.store(0, Ordering::SeqCst);
+                                    log::debug!("All ports freed after crash, reset counter to 0");
+                                }
+                            }
+                        }
+
                         // Try to get exit status
                         match info.child.try_wait() {
                             Ok(Some(status)) => Some(status),
@@ -702,6 +826,9 @@ impl FFmpegHandler {
                 }
             }
 
+            // Parse error details from recent log lines
+            let error_details = Self::parse_error_details(&recent_lines);
+
             // Determine if this was a crash or normal exit
             let error_message = match exit_status {
                 Some(status) if status.success() => {
@@ -712,29 +839,44 @@ impl FFmpegHandler {
                 Some(status) => {
                     // FFmpeg exited with error
                     let code = status.code().unwrap_or(-1);
-                    Some(format!("FFmpeg exited with code {code}"))
+                    let base_msg = format!("FFmpeg exited with code {code}");
+
+                    // Append detailed error if available
+                    if let Some(details) = error_details {
+                        Some(format!("{base_msg}: {details}"))
+                    } else {
+                        Some(base_msg)
+                    }
                 }
                 None => {
                     // Couldn't get exit status
-                    Some("FFmpeg process terminated unexpectedly".to_string())
+                    let base_msg = "FFmpeg process terminated unexpectedly".to_string();
+                    if let Some(details) = error_details {
+                        Some(format!("{base_msg}: {details}"))
+                    } else {
+                        Some(base_msg)
+                    }
                 }
             };
 
             if let Some(error) = error_message {
-                log::warn!("[FFmpeg:{group_id}] Stream error: {error}");
+                log::error!("[FFmpeg:{group_id}] Stream crashed: {error}");
                 if !recent_lines.is_empty() {
-                    log::warn!("[FFmpeg:{group_id}] Last stderr lines:");
-                    for entry in recent_lines {
-                        log::warn!("[FFmpeg:{group_id}] {entry}");
+                    log::warn!("[FFmpeg:{group_id}] Last 10 stderr lines:");
+                    for entry in recent_lines.iter().rev().take(10).rev() {
+                        log::warn!("[FFmpeg:{group_id}]   {entry}");
                     }
                 }
-                // Emit stream_error event with group_id and error message
+
+                // Emit stream_error event with group_id, error message, and reconnection hint
                 emit_event(
                     event_sink.as_ref(),
                     "stream_error",
                     &serde_json::json!({
                         "groupId": group_id,
-                        "error": error
+                        "error": error,
+                        "canRetry": true,
+                        "suggestion": "Stream connection lost. Click retry to reconnect automatically."
                     }),
                 );
             } else {
@@ -778,10 +920,17 @@ impl FFmpegHandler {
 
         if let Some(mut info) = removed {
             self.stop_child(&mut info.child);
+            // Free the port assignment for this group
+            self.free_port_offset(group_id);
         }
+
+        // Only stop relay when ALL groups are stopped
+        // Don't restart relay when stopping individual groups - this would interrupt
+        // the input for remaining groups and cause them to fail
         if should_stop_relay {
             self.stop_relay();
         }
+
         Ok(())
     }
 
@@ -799,6 +948,14 @@ impl FFmpegHandler {
             self.stop_child(&mut info.child);
         }
         self.stop_relay();
+
+        // Clear all port assignments since all groups are stopped
+        if let Ok(mut assignments) = self.port_assignments.lock() {
+            assignments.clear();
+            self.next_port_offset.store(0, Ordering::SeqCst);
+            log::debug!("All groups stopped, cleared all port assignments");
+        }
+
         Ok(())
     }
 
@@ -870,7 +1027,9 @@ impl FFmpegHandler {
                 return Err("Incoming URL differs from active relay input".to_string());
             }
 
-            if relay.output_groups.is_superset(requested_groups) {
+            // Only skip restart if relay has EXACTLY the requested groups
+            // (not just a superset, to handle group removal)
+            if relay.output_groups == *requested_groups {
                 return Ok(());
             }
         }
@@ -879,12 +1038,8 @@ impl FFmpegHandler {
             return Err("No output groups provided for relay fan-out".to_string());
         }
 
-        let mut relay_groups = if let Some(relay) = relay_guard.as_ref() {
-            relay.output_groups.clone()
-        } else {
-            HashSet::new()
-        };
-        relay_groups.extend(requested_groups.iter().cloned());
+        // Use the exact requested groups list (don't extend existing)
+        let relay_groups = requested_groups.clone();
 
         if let Some(mut relay) = relay_guard.take() {
             let _ = relay.child.kill();
@@ -987,6 +1142,111 @@ impl FFmpegHandler {
         self.start(group, incoming_url, event_sink)
     }
 
+    /// Retry a failed group with exponential backoff
+    /// Returns the delay that should be waited before the next retry
+    pub fn retry_group(
+        &self,
+        group_id: &str,
+        event_sink: Arc<dyn EventSink>,
+    ) -> Result<(u32, Option<Duration>), String> {
+        // Get the active group configuration
+        let active_groups = self.active_groups.lock()
+            .map_err(|e| format!("Lock poisoned: {e}"))?;
+
+        let config = active_groups.get(group_id)
+            .ok_or_else(|| "Group not found in active groups".to_string())?;
+
+        let group = config.group.clone();
+        drop(active_groups);
+
+        // Check if the group is already running
+        if self.is_streaming(group_id) {
+            return Err("Group is already streaming".to_string());
+        }
+
+        // Get or create reconnection state
+        let mut reconnection_state = {
+            let processes = self.processes.lock()
+                .map_err(|e| format!("Lock poisoned: {e}"))?;
+
+            processes.get(group_id)
+                .map(|info| info.reconnection_state.clone())
+                .unwrap_or_else(ReconnectionState::new)
+        };
+
+        // Check if we should retry
+        if !reconnection_state.should_retry(&self.reconnection_config) {
+            return Err(format!(
+                "Maximum retry attempts ({}) reached",
+                self.reconnection_config.max_retries
+            ));
+        }
+
+        // Calculate backoff delay
+        let delay = reconnection_state.next_delay(&self.reconnection_config);
+
+        // Log retry attempt
+        log::info!(
+            "[FFmpeg:{group_id}] Retrying stream (attempt {}/{}) after {} seconds",
+            reconnection_state.attempt + 1,
+            self.reconnection_config.max_retries,
+            delay.as_secs()
+        );
+
+        // Emit reconnecting event
+        emit_event(
+            event_sink.as_ref(),
+            "stream_reconnecting",
+            &serde_json::json!({
+                "groupId": group_id,
+                "attempt": reconnection_state.attempt + 1,
+                "maxAttempts": self.reconnection_config.max_retries,
+                "delaySecs": delay.as_secs()
+            }),
+        );
+
+        // Sleep for backoff delay
+        thread::sleep(delay);
+
+        // Increment retry counter
+        reconnection_state.increment();
+
+        // Attempt to start the stream
+        match self.start_group_process(&group, event_sink.clone()) {
+            Ok(pid) => {
+                // Success - update reconnection state in process info
+                if let Ok(mut processes) = self.processes.lock() {
+                    if let Some(info) = processes.get_mut(group_id) {
+                        info.reconnection_state = reconnection_state.clone();
+                    }
+                }
+
+                // Calculate next retry delay in case this one fails
+                let next_delay = if reconnection_state.should_retry(&self.reconnection_config) {
+                    Some(reconnection_state.next_delay(&self.reconnection_config))
+                } else {
+                    None
+                };
+
+                log::info!("[FFmpeg:{group_id}] Stream reconnected successfully (PID: {pid})");
+                Ok((pid, next_delay))
+            }
+            Err(e) => {
+                log::error!("[FFmpeg:{group_id}] Reconnection failed: {e}");
+                Err(format!("Failed to reconnect: {e}"))
+            }
+        }
+    }
+
+    /// Reset reconnection state for a group (called on successful manual start)
+    pub fn reset_reconnection_state(&self, group_id: &str) {
+        if let Ok(mut processes) = self.processes.lock() {
+            if let Some(info) = processes.get_mut(group_id) {
+                info.reconnection_state.reset();
+            }
+        }
+    }
+
     /// Resolve stream key - supports ${ENV_VAR} syntax
     fn resolve_stream_key(key: &str) -> String {
         // Check if key matches ${VAR_NAME} pattern
@@ -1021,7 +1281,7 @@ impl FFmpegHandler {
             return Err("Relay fan-out requires at least one group".to_string());
         }
 
-        let outputs = Self::relay_tee_output_list(group_ids);
+        let outputs = self.relay_tee_output_list(group_ids);
         let listen_url = Self::normalize_relay_input_url(incoming_url);
         Ok(vec![
             "-listen".to_string(),
@@ -1050,68 +1310,115 @@ impl FFmpegHandler {
         ])
     }
 
-    fn relay_port_for_group(group_id: &str) -> u16 {
-        const FNV_OFFSET: u32 = 2166136261;
-        const FNV_PRIME: u32 = 16777619;
+    /// Get or assign a port offset for a group (simplified sequential allocation)
+    fn get_port_offset(&self, group_id: &str) -> u16 {
+        let mut assignments = self.port_assignments.lock()
+            .unwrap_or_else(|e| {
+                log::warn!("Port assignments mutex poisoned, recovering: {e}");
+                e.into_inner()
+            });
 
-        let mut hash = FNV_OFFSET;
-        for &b in group_id.as_bytes() {
-            hash ^= b as u32;
-            hash = hash.wrapping_mul(FNV_PRIME);
+        // Return existing assignment if found
+        if let Some(&offset) = assignments.get(group_id) {
+            return offset;
         }
 
-        let range = Self::RELAY_PORT_RANGE as u32;
-        let port = Self::RELAY_PORT_BASE as u32 + (hash % range);
-        port as u16
+        // Assign next available offset, preventing AtomicU16 wraparound
+        let offset = loop {
+            let current = self.next_port_offset.load(Ordering::SeqCst);
+            if current == u16::MAX {
+                log::error!(
+                    "Port offset counter reached maximum value ({}); \
+                    refusing to allocate new port offset to group {group_id}",
+                    u16::MAX
+                );
+                break current;
+            }
+
+            let next = current + 1;
+            match self.next_port_offset.compare_exchange(
+                current,
+                next,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => break current,
+                Err(_) => continue,
+            }
+        };
+        assignments.insert(group_id.to_string(), offset);
+
+        log::debug!("Assigned port offset {offset} to group {group_id} (relay: {}, meter: {})",
+            Self::RELAY_PORT_BASE + (offset * 2),
+            Self::RELAY_PORT_BASE + (offset * 2) + 1
+        );
+
+        offset
     }
 
-    fn relay_output_url_for_group(group_id: &str) -> String {
+    /// Free port assignment when a group stops
+    fn free_port_offset(&self, group_id: &str) {
+        let mut assignments = self.port_assignments.lock()
+            .unwrap_or_else(|e| {
+                log::warn!("Port assignments mutex poisoned, recovering: {e}");
+                e.into_inner()
+            });
+
+        if let Some(offset) = assignments.remove(group_id) {
+            log::debug!("Freed port offset {offset} from group {group_id}");
+
+            // Reset counter if all assignments are freed
+            if assignments.is_empty() {
+                self.next_port_offset.store(0, Ordering::SeqCst);
+                log::debug!("All ports freed, reset counter to 0");
+            }
+        }
+    }
+
+    fn relay_port_for_group(&self, group_id: &str) -> u16 {
+        let offset = self.get_port_offset(group_id);
+        // Each group gets: relay_port = BASE + (offset * 2)
+        Self::RELAY_PORT_BASE + (offset * 2)
+    }
+
+    fn relay_output_url_for_group(&self, group_id: &str) -> String {
         format!(
             "tcp://{}:{}?{}",
             Self::RELAY_HOST,
-            Self::relay_port_for_group(group_id),
+            self.relay_port_for_group(group_id),
             Self::RELAY_TCP_OUT_QUERY
         )
     }
 
-    fn relay_input_url_for_group(group_id: &str) -> String {
+    fn relay_input_url_for_group(&self, group_id: &str) -> String {
         format!(
             "tcp://{}:{}?{}",
             Self::RELAY_HOST,
-            Self::relay_port_for_group(group_id),
+            self.relay_port_for_group(group_id),
             Self::RELAY_TCP_IN_QUERY
         )
     }
 
-    fn meter_port_for_group(group_id: &str) -> u16 {
-        const FNV_OFFSET: u32 = 2166136261;
-        const FNV_PRIME: u32 = 16777619;
-
-        let mut hash = FNV_OFFSET;
-        for &b in group_id.as_bytes() {
-            hash ^= b as u32;
-            hash = hash.wrapping_mul(FNV_PRIME);
-        }
-
-        let range = Self::METER_PORT_RANGE as u32;
-        let port = Self::METER_PORT_BASE as u32 + (hash % range);
-        port as u16
+    fn meter_port_for_group(&self, group_id: &str) -> u16 {
+        let offset = self.get_port_offset(group_id);
+        // Each group gets: meter_port = BASE + (offset * 2) + 1
+        Self::RELAY_PORT_BASE + (offset * 2) + 1
     }
 
-    fn meter_output_url_for_group(group_id: &str) -> String {
+    fn meter_output_url_for_group(&self, group_id: &str) -> String {
         format!(
             "udp://{}:{}?{}",
             Self::METER_HOST,
-            Self::meter_port_for_group(group_id),
+            self.meter_port_for_group(group_id),
             Self::METER_UDP_QUERY
         )
     }
 
-    fn relay_tee_output_list(group_ids: &HashSet<String>) -> String {
+    fn relay_tee_output_list(&self, group_ids: &HashSet<String>) -> String {
         let mut ids: Vec<&String> = group_ids.iter().collect();
         ids.sort();
         ids.into_iter()
-            .map(|id| format!("[f=mpegts]{}", Self::relay_output_url_for_group(id)))
+            .map(|id| format!("[f=mpegts]{}", self.relay_output_url_for_group(id)))
             .collect::<Vec<String>>()
             .join("|")
     }
@@ -1279,6 +1586,40 @@ impl FFmpegHandler {
         target_outputs
     }
 
+    /// Add RTMP protocol options to a URL for connection resilience
+    ///
+    /// Matches OBS Studio's RTMP configuration for maximum stability:
+    /// - timeout: 30 seconds (matching OBS receive timeout)
+    /// - rtmp_buffer: 30 seconds (matching OBS buffer, 10x default)
+    /// - tcp_keepalive: Enabled to detect dead connections via TCP probes
+    /// - rtmp_live: Live stream mode (optimizes for live rather than VOD)
+    fn add_rtmp_options(url: &str) -> String {
+        if !url.starts_with("rtmp://") && !url.starts_with("rtmps://") {
+            return url.to_string();
+        }
+
+        // FFmpeg RTMP protocol options verified in FFmpeg documentation
+        // https://ffmpeg.org/ffmpeg-protocols.html#rtmp
+        let options = [
+            ("timeout", "30000000"),    // 30 seconds in microseconds (receive timeout)
+            ("rtmp_buffer", "30000"),   // 30 seconds in milliseconds (client buffer)
+            ("tcp_keepalive", "1"),     // Enable TCP keepalive probes
+            ("rtmp_live", "live"),      // Live stream mode
+        ];
+
+        // Check if URL already has query parameters
+        let separator = if url.contains('?') { "&" } else { "?" };
+
+        // Build query string
+        let query = options
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join("&");
+
+        format!("{url}{separator}{query}")
+    }
+
     /// Build FFmpeg arguments for an output group
     ///
     /// Groups read from the shared TCP relay so they can restart independently.
@@ -1293,10 +1634,34 @@ impl FFmpegHandler {
         let has_twitch_target = group.stream_targets.iter()
             .any(|target| matches!(target.service, Platform::Twitch));
 
-        let mut args = vec![
-            "-i".to_string(),
-            Self::relay_input_url_for_group(&group.id),
-        ];
+        let mut args = Vec::new();
+
+        // Build fflags: always discard corrupt frames, optionally generate PTS
+        // +discardcorrupt: silently drop corrupt frames (always good for live streaming)
+        // +genpts: generate fresh presentation timestamps (helps with timing issues)
+        let fflags = if group.generate_pts {
+            "+discardcorrupt+genpts"
+        } else {
+            "+discardcorrupt"
+        };
+        args.push("-fflags".to_string());
+        args.push(fflags.to_string());
+
+        // Copy timestamps from input when PTS generation is enabled
+        if group.generate_pts {
+            args.push("-copyts".to_string());
+        }
+
+        // Input source
+        args.push("-i".to_string());
+        args.push(self.relay_input_url_for_group(&group.id));
+
+        // Audio sync when PTS generation is enabled
+        // -async 1: resample audio to match timestamps, fixing drift
+        if group.generate_pts {
+            args.push("-async".to_string());
+            args.push("1".to_string());
+        }
 
         if use_stream_copy {
             args.push("-c:v".to_string()); args.push("copy".to_string());
@@ -1468,14 +1833,23 @@ impl FFmpegHandler {
         args.push("-progress".to_string()); args.push("pipe:2".to_string());
         args.push("-stats".to_string());
 
-        // Add output targets (skip disabled ones)
-        let target_outputs = self.build_target_urls(group);
+        // Add output targets (skip disabled ones) and add RTMP options for resilience
+        let target_outputs: Vec<String> = self.build_target_urls(group)
+            .into_iter()
+            .map(|url| {
+                if url.starts_with("rtmp://") || url.starts_with("rtmps://") {
+                    Self::add_rtmp_options(&url)
+                } else {
+                    url
+                }
+            })
+            .collect();
 
         if target_outputs.is_empty() {
             return args;
         }
 
-        let meter_output = Self::meter_output_url_for_group(&group.id);
+        let meter_output = self.meter_output_url_for_group(&group.id);
 
         // For QSV encoders outputting to FLV, we need to add the dump_extra bitstream filter
         // to ensure SPS/PPS NAL units are written to each output stream (required for RTMP/Twitch)
@@ -1483,6 +1857,8 @@ impl FFmpegHandler {
             && group.video.codec.contains("qsv")
             && group.container.format == "flv";
 
+        // Always use onfail=ignore for RTMP outputs to prevent one failed connection
+        // from killing the stats meter and potentially other outputs
         let mut tee_outputs: Vec<String> = Vec::new();
         if target_outputs.len() == 1 {
             let output = &target_outputs[0];

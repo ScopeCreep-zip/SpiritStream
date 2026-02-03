@@ -9,6 +9,7 @@
     "outputGroups": "输出组",
     "streamTargets": "流目标",
     "system": "系统",
+    "integrations": "Integrations",
     "logs": "日志",
     "settings": "设置"
   },
@@ -44,6 +45,10 @@
     "settings": {
       "title": "设置",
       "description": "配置应用程序首选项"
+    },
+    "integrations": {
+      "title": "Integrations",
+      "description": "Connect with external applications"
     }
   },
   "dashboard": {
@@ -53,11 +58,11 @@
     "uptime": "正常运行时间",
     "streaming": "流媒体",
     "readyToStart": "准备开始",
-    "active": "积极的",
+    "active": "活动",
     "noActiveStreams": "无活动流",
     "noIssues": "没有问题",
     "checkConnection": "检查连接",
-    "live": "居住",
+    "live": "直播",
     "notStreaming": "不流式传输",
     "activeProfile": "活动档案",
     "activeProfileDescription": "当前选择的流配置",
@@ -80,7 +85,7 @@
     "noTargetsConfigured": "未配置流目标",
     "viewers": "观众",
     "bitrate": "比特率",
-    "fps": "__学期_FPS__",
+    "fps": "FPS",
     "targetsCount": "{{count}} 个目标",
     "noStreamTargets": "未配置流目标",
     "outputGroups": "输出组",
@@ -88,7 +93,8 @@
     "noOutputGroups": "未配置输出组",
     "encoderSettings": "编码器设置",
     "encoderSettingsDescription": "每个输出的编码器配置",
-    "noEncoderSettings": "无编码器配置"
+    "noEncoderSettings": "无编码器配置",
+    "testingTarget": "Testing {{name}}..."
   },
   "profiles": {
     "newProfile": "新档案",
@@ -102,7 +108,7 @@
     "resolution": "解决",
     "targets": "目标",
     "targetsCount": "{{count}} 个目标",
-    "active": "积极的",
+    "active": "活动",
     "edit": "编辑",
     "duplicate": "复制",
     "delete": "删除",
@@ -139,8 +145,15 @@
     "defaultGroupName": "输出组",
     "uptime": "正常运行时间",
     "bitrate": "比特率",
-    "fps": "__学期_FPS__",
-    "totalBandwidth": "上传总量"
+    "fps": "FPS",
+    "totalBandwidth": "上传总量",
+    "autoRetrying": "直播已断开，正在重连...",
+    "reconnectedTitle": "直播已重新连接",
+    "reconnectFailedTitle": "重连失败",
+    "reconnectingAttempt": "正在重连...（第 {{attempt}}/{{max}} 次）",
+    "reconnectingTitle": "直播正在重连",
+    "retryFailed": "重连失败：{{error}}",
+    "retrySuccess": "直播重连成功"
   },
   "encoder": {
     "title": "编码器配置",
@@ -175,7 +188,7 @@
     "rateControlHelper": "建议使用 CBR 进行流式传输",
     "resolution": "解决",
     "frameRate": "帧率",
-    "fps": "__学期_FPS__",
+    "fps": "FPS",
     "videoBitrate": "视频比特率",
     "videoBitrateKbps": "视频比特率 (kbps)",
     "videoBitrateHelper": "建议：1080p 4500-6000，720p 3000-4500",
@@ -241,18 +254,19 @@
       "854x480": "480p (854x480)"
     },
     "frameRates": {
-      "60": "60 __学期_FPS__",
-      "50": "50 __学期_FPS__",
-      "30": "30 __学期_FPS__",
-      "25": "25__学期_FPS__",
-      "24": "24 __学期_FPS__"
-    }
+      "60": "60 FPS",
+      "50": "50 FPS",
+      "30": "30 FPS",
+      "25": "25FPS",
+      "24": "24 FPS"
+    },
+    "generatePtsDescription": "生成时间戳并同步音频时间。以轻微的 CPU 代价提高直播稳定性并修复编码问题。"
   },
   "audio": {
     "codecs": {
-      "aac": "__学期_AAC__",
-      "libmp3lame": "__学期_MP3__",
-      "libopus": "__学期_作品__"
+      "aac": "AAC",
+      "libmp3lame": "MP3",
+      "libopus": "Opus"
     },
     "bitrates": {
       "320": "320 kbps（最佳）",
@@ -268,7 +282,13 @@
       "96k": "96kbps",
       "64": "64 kbps（低）",
       "64k": "64kbps"
-    }
+    },
+    "channels": {
+      "mono": "Mono",
+      "stereo": "Stereo",
+      "multiple": "{{count}} channels"
+    },
+    "sampleRateKHz": "{{value}} kHz"
   },
   "outputs": {
     "defaultOutputName": "默认输出",
@@ -425,7 +445,30 @@
     "upToDate": "FFmpeg 是最新的",
     "deleteFFmpeg": "删除",
     "deleteFFmpegConfirm": "确定要删除 FFmpeg 吗？您可以随时重新下载。",
-    "deletingFFmpeg": "正在删除 FFmpeg..."
+    "deletingFFmpeg": "正在删除 FFmpeg...",
+    "profileSettings": "Profile Settings",
+    "globalSettings": "Global Settings",
+    "appearance": "Appearance",
+    "appearanceDescription": "Theme and language for this profile.",
+    "notificationsSecurity": "Notifications & Security",
+    "notificationsSecurityDescription": "Notification preferences and data security for this profile.",
+    "remoteAccess": "Remote Access",
+    "remoteAccessDescription": "Enable the built-in HTTP API so you can manage SpiritStream from another device.",
+    "remoteAccessToggle": "Allow remote web access",
+    "remoteAccessToggleDescription": "When off, the API binds to localhost only. Restart required after changes.",
+    "remoteAccessUiToggle": "Serve web GUI from the host",
+    "remoteAccessUiToggleDescription": "When off, the host will not serve the UI files. Restart required after changes.",
+    "remoteAccessHost": "Bind host",
+    "remoteAccessHostHelper": "Use 0.0.0.0 to listen on all interfaces.",
+    "remoteAccessPort": "Port",
+    "remoteAccessToken": "Access token (optional)",
+    "remoteAccessTokenHelper": "Clients must send this token as a Bearer auth header when enabled.",
+    "appBehavior": "App Behavior",
+    "appBehaviorDescription": "System-wide application settings.",
+    "dataManagement": "Data Management",
+    "dataManagementDescription": "Export and manage your application data.",
+    "loadError": "Failed to load settings",
+    "loadProfileFirst": "Please load a profile to edit its settings."
   },
   "modals": {
     "createNewProfile": "创建新的个人资料",
@@ -533,28 +576,52 @@
       "confirmPasswordPlaceholder": "确认密码",
       "encrypt": "加密",
       "decrypt": "解密"
-    }
+    },
+    "applicationPlaceholder": "live",
+    "bindAddressPlaceholder": "0.0.0.0",
+    "keyframeIntervalPlaceholder": "2",
+    "portPlaceholder": "1935",
+    "videoBitratePlaceholder": "6000"
   },
   "platforms": {
     "youtube": "YouTube",
-    "twitch": "__学期_Twitch__",
-    "kick": "__学期_踢__",
+    "twitch": "Twitch",
+    "kick": "Kick",
     "facebook": "Facebook 直播",
     "custom": "自定义 RTMP"
   },
   "status": {
-    "live": "居住",
+    "live": "直播",
     "offline": "离线",
     "connecting": "正在连接",
     "error": "错误",
     "ready": "准备好",
-    "active": "积极的",
+    "active": "活动",
     "noActiveStreams": "无活动流",
     "streaming": "流媒体",
     "readyToStart": "准备开始",
     "noIssues": "没有问题",
     "checkConnection": "检查连接",
     "notStreaming": "不流式传输"
+  },
+  "connection": {
+    "connected": "Connected",
+    "connecting": "Connecting...",
+    "reconnecting": "Reconnecting...",
+    "disconnected": "Disconnected",
+    "reconnected": "Reconnected to backend",
+    "reconnectedTitle": "Connection Restored",
+    "reconnectedBody": "Reconnected to the backend server.",
+    "lost": "Connection to backend lost. Attempting to reconnect...",
+    "lostWithError": "Connection lost: {{error}}",
+    "lostTitle": "Connection Lost",
+    "lostBody": "Lost connection to the backend server.",
+    "attemptingConnection": "Attempting to connect to:",
+    "errorTitle": "Cannot connect to server",
+    "errorDescription": "The backend server is not responding. Please ensure it is running and try again.",
+    "helpText": "If the problem persists, check that the server is running and the URL is correct.",
+    "retry": "Retry",
+    "retrying": "Retrying..."
   },
   "common": {
     "save": "节省",
@@ -601,7 +668,9 @@
     "encrypted": "（加密）",
     "copySuffix": "（复制）",
     "switchToDarkMode": "切换到深色模式",
-    "switchToLightMode": "切换到灯光模式"
+    "switchToLightMode": "切换到灯光模式",
+    "loadProfileFirst": "Please load a profile first",
+    "select": "Select"
   },
   "errors": {
     "loadingFailed": "加载失败",
@@ -669,6 +738,149 @@
     "groupDuplicated": "输出组“{{name}}”重复",
     "groupRemoved": "输出组已移除",
     "keyRotationSuccess": "机器钥匙旋转。更新了 {{profiles}} 配置文件，重新加密了 {{keys}} 密钥。",
-    "keyRotationFailed": "密钥轮换失败：{{error}}"
+    "keyRotationFailed": "密钥轮换失败：{{error}}",
+    "groupStarted": "输出组已启动",
+    "groupStopped": "输出组已停止",
+    "validatingConfig": "Validating configuration...",
+    "configValidNoTargets": "Configuration valid (no targets to test)",
+    "testingConnectivity": "Testing connectivity to {{count}} targets...",
+    "targetTestPassed": "✓ {{name}}: Connected ({{ms}}ms)",
+    "targetTestFailed": "✗ {{name}}: {{message}}",
+    "allTestsPassed": "All {{count}} targets passed connectivity test!",
+    "someTestsFailed": "{{passed}} passed, {{failed}} failed",
+    "allTestsFailed": "All {{count}} targets failed connectivity test"
+  },
+  "fileBrowser": {
+    "selectDirectory": "Select Directory",
+    "selectFile": "Select File",
+    "saveFile": "Save File",
+    "goUp": "Go up",
+    "goHome": "Go home",
+    "refresh": "Refresh",
+    "typePath": "Type a path and press Enter...",
+    "goToPath": "Go to path (Enter)",
+    "quickPaths": "Quick paths:",
+    "accessDenied": "This location is outside the allowed browsing area. You can browse your home directory and common system folders.",
+    "directoryNotFound": "Directory not found.",
+    "notADirectory": "The selected path is not a directory.",
+    "readError": "Unable to read directory contents. Check permissions.",
+    "noSubdirectories": "No subdirectories",
+    "noFiles": "No matching files",
+    "fileName": "File name",
+    "enterFileName": "Enter file name",
+    "fileNameRequired": "File name is required",
+    "selectFileFirst": "Please select a file",
+    "selectedDirectory": "Selected directory:"
+  },
+  "obs": {
+    "title": "OBS Integration",
+    "description": "Connect to OBS Studio via WebSocket",
+    "connection": "Connection",
+    "connectionSettings": "Connection Settings",
+    "host": "Host",
+    "hostPlaceholder": "localhost",
+    "port": "Port",
+    "authentication": "Authentication",
+    "password": "Password",
+    "passwordPlaceholder": "Enter password",
+    "passwordSetPlaceholder": "Password set (type to change)",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
+    "useAuthentication": "Use Authentication",
+    "autoConnect": "Auto-connect on startup",
+    "status": "Status",
+    "connected": "Connected",
+    "connecting": "Connecting...",
+    "disconnected": "Disconnected",
+    "error": "Error",
+    "connect": "Connect",
+    "disconnect": "Disconnect",
+    "integration": "Integration",
+    "integrationDirection": "Sync Direction",
+    "integrationDirectionDescription": "Control how streams sync between OBS and SpiritStream",
+    "directions": {
+      "disabled": "Disabled",
+      "disabledDescription": "No automatic sync between OBS and SpiritStream",
+      "obsToSpiritstream": "OBS to SpiritStream",
+      "obsToSpiritstreamDescription": "When OBS starts streaming, SpiritStream starts",
+      "spiritstreamToObs": "SpiritStream to OBS",
+      "spiritstreamToObsDescription": "When SpiritStream starts streaming, OBS starts",
+      "bidirectional": "Bidirectional",
+      "bidirectionalDescription": "Either can trigger the other to start/stop"
+    },
+    "streamControl": "Stream Control",
+    "startStream": "Start Stream",
+    "stopStream": "Stop Stream",
+    "streaming": "Streaming",
+    "notStreaming": "Not Streaming",
+    "versionInfo": "OBS {{obsVersion}} / WS {{wsVersion}}",
+    "obsVersion": "OBS Version",
+    "websocketVersion": "WebSocket Version",
+    "connectionError": "Connection Error",
+    "connectFailed": "Failed to connect to OBS",
+    "disconnectFailed": "Failed to disconnect from OBS",
+    "configSaved": "OBS configuration saved",
+    "configSaveFailed": "Failed to save OBS configuration"
+  },
+  "notifications": {
+    "streamStartedTitle": "Stream Started",
+    "streamStartedBody": "Your stream is now live.",
+    "streamStoppedTitle": "Stream Stopped",
+    "streamStoppedBody": "Your stream has stopped.",
+    "obsConnectedTitle": "OBS Connected",
+    "obsConnectedBody": "Successfully connected to OBS WebSocket.",
+    "obsDisconnectedTitle": "OBS Disconnected",
+    "obsDisconnectedBody": "Disconnected from OBS WebSocket."
+  },
+  "discord": {
+    "attachImage": "附加图片",
+    "cooldownDescription": "防止在重启直播时发送重复通知",
+    "cooldownInfo": "启用后，如果你在冷却期内停止并重新开始直播，将不会发送新的通知。这可以避免在修复技术问题时产生刷屏。",
+    "cooldownSeconds": "冷却时间",
+    "cooldownSettings": "冷却设置",
+    "description": "向 Discord 发送开播通知",
+    "enableCooldown": "启用冷却",
+    "enableCooldownDescription": "在冷却期内防止重复通知",
+    "enableWebhook": "启用 Discord Webhook",
+    "enableWebhookDescription": "在直播开始时发送通知",
+    "enterWebhookFirst": "请先输入 webhook URL",
+    "goLiveMessage": "开播消息",
+    "goLiveMessageDescription": "直播开始时发送的消息。支持 Discord Markdown。",
+    "imageDesktopOnly": "图片附件需要桌面应用。在浏览器模式下，你可以在消息中使用图片 URL 代替。",
+    "imageHint": "PNG、JPG、GIF 或 WebP（最大 8MB）。图片将附加到通知中。",
+    "insertEmoji": "插入表情",
+    "invalidWebhookUrl": "Webhook URL 无效。必须以 https://discord.com/api/webhooks/ 开头",
+    "markdownSupport": "支持 Discord Markdown：",
+    "messagePlaceholder": "**直播已开始！**\n\n快来加入直播！",
+    "removeImage": "移除图片",
+    "seconds": "秒",
+    "selectImage": "选择图片",
+    "testFailed": "测试失败",
+    "testPassed": "测试通过",
+    "testSuccess": "测试通知发送成功！",
+    "testWebhook": "测试 Webhook",
+    "title": "Discord Webhook",
+    "webhookSettings": "Webhook 设置",
+    "webhookSettingsDescription": "配置 Discord Webhook 以发送开播通知",
+    "webhookUrl": "Webhook URL",
+    "emojiCategories": {
+      "streaming": "Streaming",
+      "reactions": "Reactions",
+      "fun": "Fun"
+    },
+    "markdownExample": "**bold** *italic* __underline__ ~~strikethrough~~ `code` [link](url)",
+    "webhookUrlPlaceholder": "https://discord.com/api/webhooks/..."
+  },
+  "login": {
+    "title": "Authentication Required",
+    "description": "This SpiritStream server requires authentication. Please enter your API token to continue.",
+    "tokenLabel": "API Token",
+    "tokenPlaceholder": "Enter your API token",
+    "tokenRequired": "API token is required",
+    "invalidToken": "Invalid API token",
+    "connectionError": "Connection error. Please try again.",
+    "tokenHint": "The API token is configured on the server via the SPIRITSTREAM_API_TOKEN environment variable or in settings.",
+    "authenticating": "Authenticating...",
+    "submit": "Login"
   }
 }

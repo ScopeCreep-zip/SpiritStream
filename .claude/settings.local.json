@@ -24,10 +24,16 @@
       "Bash(timeout:*)",
       "Bash(tasklist:*)",
       "Bash(curl:*)",
-      "Bash(powershell -Command \"$env:FFMPEG_DIR=''C:\\\\Users\\\\billb\\\\AppData\\\\Local\\\\SpiritStream\\\\ffmpeg-libs''; cargo check --features ffmpeg-libs\")",
-      "Bash(export FFMPEG_DIR=\"C:/Users/billb/AppData/Local/SpiritStream/ffmpeg-libs\")",
-      "Bash(powershell -NoProfile -Command \"Add-MpExclusion -Path ''D:\\\\SpiritStream'' -ErrorAction SilentlyContinue; Write-Host ''Exclusion added \\(or already exists\\)''\")",
-      "Bash(pnpm run build:server:*)"
+      "Bash(powershell -Command:*)",
+      "Bash(pnpm run build:server:*)",
+      "Read(//d/**)",
+      "Bash(pnpm typecheck:*)",
+      "Bash(xxd:*)",
+      "Bash(cargo clippy:*)",
+      "WebFetch(domain:ffmpeg.org)",
+      "Bash(tree:*)",
+      "Bash(pnpm run generate:platforms:*)",
+      "WebFetch(domain:birdie0.github.io)"
     ],
     "additionalDirectories": [
       "d:\\SpiritStream\\.claude",

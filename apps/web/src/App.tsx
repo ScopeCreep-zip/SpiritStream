@@ -11,6 +11,7 @@ import {
   Cog,
   Play,
   Square,
+  Plug,
 } from 'lucide-react';
 
 import { AppShell } from '@/components/layout/AppShell';
@@ -36,6 +37,7 @@ import { useLogListener } from '@/hooks/useLogListener';
 import { useConnectionStatus } from '@/hooks/useConnectionStatus';
 import { useBackendConnection } from '@/hooks/useBackendConnection';
 import { useDataSync } from '@/hooks/useDataSync';
+import { useObsEvents } from '@/hooks/useObsEvents';
 import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValidation';
 import { toast } from '@/hooks/useToast';
 import { useThemeStore } from '@/stores/themeStore';
@@ -52,6 +54,7 @@ import {
   StreamTargets,
   Logs,
   Settings,
+  Integrations,
 } from '@/views';
 
 export type View =
@@ -62,7 +65,8 @@ export type View =
   | 'outputs'
   | 'targets'
   | 'logs'
-  | 'settings';
+  | 'settings'
+  | 'integrations';
 
 // View meta is now handled via translations using keys like header.dashboard.title
 const streamKeyWarningStorageKey = (profileId: string) =>
@@ -170,6 +174,9 @@ function AppContent() {
 
   // Sync data when other clients make changes (HTTP mode only)
   useDataSync();
+
+  // Listen for OBS WebSocket events and handle OBS -> SpiritStream triggering
+  useObsEvents();
 
   // Initialize theme store on app startup
   useThemeStore((state) => state.currentThemeId);
@@ -351,6 +358,8 @@ function AppContent() {
         return <Logs />;
       case 'settings':
         return <Settings />;
+      case 'integrations':
+        return <Integrations />;
       default:
         return (
           <Dashboard
@@ -467,6 +476,12 @@ function AppContent() {
             />
           </NavSection>
           <NavSection title={t('nav.system')}>
+            <NavItem
+              icon={<Plug className="w-5 h-5" />}
+              label={t('nav.integrations')}
+              active={currentView === 'integrations'}
+              onClick={() => setCurrentView('integrations')}
+            />
             <NavItem
               icon={<FileText className="w-5 h-5" />}
               label={t('nav.logs')}

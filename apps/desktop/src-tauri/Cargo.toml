@@ -1,6 +1,6 @@
 [package]
 name = "spiritstream-desktop"
-version = "1.1.1"
+version = "1.2.1"
 description = "SpiritStream Desktop - Multi-Destination Streaming Application"
 authors = ["SpiritStream Contributors"]
 license = "ISC"
@@ -18,6 +18,7 @@ tauri-plugin-log = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -32,3 +33,5 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 # Utilities
 log = "0.4"
 tauri-plugin-http = "2"
+dirs-next = "2.0"
+chrono = "0.4"
