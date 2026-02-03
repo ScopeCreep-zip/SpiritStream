@@ -15,41 +15,8 @@
 import { useEffect, useRef } from 'react';
 import { useProfileStore } from '@/stores/profileStore';
 import { useWebRTCConnectionStore } from '@/stores/webrtcConnectionStore';
+import { sourceNeedsWebRTC } from '@/lib/mediaTypes';
 import type { Source } from '@/types/profile';
-
-// File extensions for static media (images, HTML) that don't need WebRTC streaming
-const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'];
-const HTML_EXTENSIONS = ['html', 'htm'];
-const STATIC_EXTENSIONS = [...IMAGE_EXTENSIONS, ...HTML_EXTENSIONS];
-
-/**
- * Check if a file path is a static media file (image or HTML)
- */
-function isStaticMediaFile(filePath: string): boolean {
-  const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
-  return STATIC_EXTENSIONS.includes(ext);
-}
-
-/**
- * Check if a source requires WebRTC streaming
- */
-function sourceNeedsWebRTC(source: {
-  type: string;
-  filePath?: string;
-}): boolean {
-  // Audio devices don't have video to stream
-  if (source.type === 'audioDevice') {
-    return false;
-  }
-
-  // Static media files (images, HTML) don't need WebRTC
-  if (source.type === 'mediaFile' && source.filePath && isStaticMediaFile(source.filePath)) {
-    return false;
-  }
-
-  // All other sources need WebRTC for live preview
-  return true;
-}
 
 // Selector that returns a stable string of source IDs (JSON for comparison)
 function selectWebRTCSourceIds(state: { current: { sources: Source[] } | null }): string {

@@ -24,30 +24,10 @@ import { TextSourceRenderer } from './TextSourceRenderer';
 import { BrowserSourceRenderer } from './BrowserSourceRenderer';
 import { NestedSceneRenderer } from './NestedSceneRenderer';
 import { MediaPlaylistRenderer } from './MediaPlaylistRenderer';
+import { isStaticMediaFile, isImageFile } from '@/lib/mediaTypes';
 import type { ColorSource, TextSource, BrowserSource, NestedSceneSource, MediaPlaylistSource } from '@/types/source';
 
 type ViewMode = 'edit' | 'preview';
-
-// File extensions for static media (images, HTML) that don't need WebRTC streaming
-const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'];
-const HTML_EXTENSIONS = ['html', 'htm'];
-const STATIC_EXTENSIONS = [...IMAGE_EXTENSIONS, ...HTML_EXTENSIONS];
-
-/**
- * Check if a file path is a static media file (image or HTML)
- */
-function isStaticMediaFile(filePath: string): boolean {
-  const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
-  return STATIC_EXTENSIONS.includes(ext);
-}
-
-/**
- * Check if a file path is an image file
- */
-function isImageFile(filePath: string): boolean {
-  const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
-  return IMAGE_EXTENSIONS.includes(ext);
-}
 type ResizeDirection = 'nw' | 'ne' | 'sw' | 'se' | null;
 
 // Calculate canvas dimensions that fit within available space

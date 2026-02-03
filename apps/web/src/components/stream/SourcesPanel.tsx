@@ -4,6 +4,7 @@
  * Supports drag-and-drop reordering where top of list = highest zIndex (rendered on top)
  */
 import { useState, useMemo, useCallback, useRef, useEffect, memo } from 'react';
+import { useContextMenu } from '@/hooks/useContextMenu';
 import { useTranslation } from 'react-i18next';
 import {
   Plus,
@@ -56,9 +57,10 @@ import { useSceneStore } from '@/stores/sceneStore';
 // Note: We use api.source.remove directly for linked source confirmation flow
 import { useProfileStore } from '@/stores/profileStore';
 import { useProjectorStore } from '@/stores/projectorStore';
-import { toast } from '@/hooks/useToast';
+import { toast, createErrorHandler } from '@/hooks/useToast';
 import { api } from '@/lib/backend';
 import { useWebRTCStream } from '@/hooks/useWebRTCStream';
+import { isStaticMediaFile, isImageFile, isClientRenderedSource } from '@/lib/mediaTypes';
 import type { Source as SourceDef } from '@/types/source';
 
 interface SourcesPanelProps {
@@ -91,28 +93,6 @@ const SourceIcon = ({ type }: { type: Source['type'] }) => {
       return null;
   }
 };
-
-// File extensions for static media (images, HTML) that don't need WebRTC streaming
-const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'];
-const HTML_EXTENSIONS = ['html', 'htm'];
-const STATIC_EXTENSIONS = [...IMAGE_EXTENSIONS, ...HTML_EXTENSIONS];
-
-// Source types that are client-rendered (CSS/iframe) and don't need WebRTC
-const CLIENT_RENDERED_SOURCE_TYPES = ['color', 'text', 'browser'];
-
-function isStaticMediaFile(filePath: string): boolean {
-  const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
-  return STATIC_EXTENSIONS.includes(ext);
-}
-
-function isImageFile(filePath: string): boolean {
-  const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
-  return IMAGE_EXTENSIONS.includes(ext);
-}
-
-function isClientRenderedSource(sourceType: Source['type']): boolean {
-  return CLIENT_RENDERED_SOURCE_TYPES.includes(sourceType);
-}
 
 interface SourceThumbnailProps {
   sourceId: string;
@@ -346,9 +326,7 @@ const SortableLayerItem = memo(function SortableLayerItem({
   const { t } = useTranslation();
   const { getLayerBinding } = useHotkeyStore();
   const { openProjector } = useProjectorStore();
-  const [showContextMenu, setShowContextMenu] = useState(false);
-  const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
-  const contextMenuRef = useRef<HTMLDivElement>(null);
+  const { isOpen: showContextMenu, position: contextMenuPos, menuRef: contextMenuRef, openMenu: handleContextMenu, closeMenu } = useContextMenu();
 
   const {
     attributes,
@@ -361,28 +339,6 @@ const SortableLayerItem = memo(function SortableLayerItem({
 
   // Get hotkey binding for this layer
   const hotkeyBinding = getLayerBinding(layer.id, sceneId);
-
-  // Handle right-click context menu
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setContextMenuPos({ x: e.clientX, y: e.clientY });
-    setShowContextMenu(true);
-  }, []);
-
-  // Close context menu when clicking outside
-  useEffect(() => {
-    if (!showContextMenu) return;
-
-    const handleClickOutside = (e: globalThis.MouseEvent) => {
-      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
-        setShowContextMenu(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showContextMenu]);
 
   const style: React.CSSProperties = {
     transform: transform
@@ -501,7 +457,7 @@ const SortableLayerItem = memo(function SortableLayerItem({
                 alwaysOnTop: true,
                 hideCursor: true,
               });
-              setShowContextMenu(false);
+              closeMenu();
             }}
           >
             <Maximize2 className="w-4 h-4 text-[var(--text-muted)]" />
@@ -520,7 +476,7 @@ const SortableLayerItem = memo(function SortableLayerItem({
                 alwaysOnTop: false,
                 hideCursor: false,
               });
-              setShowContextMenu(false);
+              closeMenu();
             }}
           >
             <AppWindow className="w-4 h-4 text-[var(--text-muted)]" />
@@ -533,7 +489,7 @@ const SortableLayerItem = memo(function SortableLayerItem({
             className="w-full px-3 py-1.5 text-left text-sm hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]"
             onClick={() => {
               onToggleVisibility(layer.id, layer.visible);
-              setShowContextMenu(false);
+              closeMenu();
             }}
           >
             {layer.visible
@@ -547,7 +503,7 @@ const SortableLayerItem = memo(function SortableLayerItem({
             className="w-full px-3 py-1.5 text-left text-sm hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]"
             onClick={() => {
               onSetHotkey(layer.id, source.name);
-              setShowContextMenu(false);
+              closeMenu();
             }}
           >
             {t('hotkeys.setVisibilityHotkey', { defaultValue: 'Set Visibility Hotkey...' })}
@@ -561,7 +517,7 @@ const SortableLayerItem = memo(function SortableLayerItem({
                 className="w-full px-3 py-1.5 text-left text-sm hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]"
                 onClick={() => {
                   onRemoveFromGroup(layer.id);
-                  setShowContextMenu(false);
+                  closeMenu();
                 }}
               >
                 {t('stream.removeFromGroup', { defaultValue: 'Remove from Group' })}
@@ -575,7 +531,7 @@ const SortableLayerItem = memo(function SortableLayerItem({
             className="w-full px-3 py-1.5 text-left text-sm hover:bg-destructive/10 text-destructive"
             onClick={() => {
               onRemoveSource(source);
-              setShowContextMenu(false);
+              closeMenu();
             }}
           >
             {t('stream.removeSource', { defaultValue: 'Remove Source' })}
@@ -602,29 +558,7 @@ const GroupHeader = memo(function GroupHeader({
   onUngroup,
 }: GroupHeaderProps) {
   const { t } = useTranslation();
-  const [showContextMenu, setShowContextMenu] = useState(false);
-  const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
-  const contextMenuRef = useRef<HTMLDivElement>(null);
-
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setContextMenuPos({ x: e.clientX, y: e.clientY });
-    setShowContextMenu(true);
-  }, []);
-
-  useEffect(() => {
-    if (!showContextMenu) return;
-
-    const handleClickOutside = (e: globalThis.MouseEvent) => {
-      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
-        setShowContextMenu(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showContextMenu]);
+  const { isOpen: showContextMenu, position: contextMenuPos, menuRef: contextMenuRef, openMenu: handleContextMenu, closeMenu } = useContextMenu();
 
   return (
     <>
@@ -724,7 +658,7 @@ const GroupHeader = memo(function GroupHeader({
             className="w-full px-3 py-1.5 text-left text-sm hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]"
             onClick={() => {
               onToggleVisibility();
-              setShowContextMenu(false);
+              closeMenu();
             }}
           >
             {group.visible
@@ -737,7 +671,7 @@ const GroupHeader = memo(function GroupHeader({
             className="w-full px-3 py-1.5 text-left text-sm hover:bg-[var(--bg-hover)] text-[var(--text-secondary)]"
             onClick={() => {
               onToggleLock();
-              setShowContextMenu(false);
+              closeMenu();
             }}
           >
             {group.locked
@@ -751,7 +685,7 @@ const GroupHeader = memo(function GroupHeader({
             className="w-full px-3 py-1.5 text-left text-sm hover:bg-destructive/10 text-destructive"
             onClick={() => {
               onUngroup();
-              setShowContextMenu(false);
+              closeMenu();
             }}
           >
             {t('stream.ungroup', { defaultValue: 'Ungroup' })}
@@ -822,6 +756,13 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
     [profile.sources]
   );
 
+  // Create reusable error handlers
+  const handleVisibilityError = createErrorHandler(t, 'stream.visibilityToggleFailed', 'Failed to toggle visibility');
+  const handleRemoveSourceError = createErrorHandler(t, 'stream.sourceRemoveFailed', 'Failed to remove source');
+  const handleGroupCreateError = createErrorHandler(t, 'stream.groupCreateFailed', 'Failed to create group');
+  const handleReorderError = createErrorHandler(t, 'stream.reorderFailed', 'Failed to reorder layers');
+  const handleLayerAddError = createErrorHandler(t, 'stream.layerAddFailed', 'Source added but failed to add to scene');
+
   const handleToggleVisibility = useCallback(async (layerId: string, currentVisible: boolean) => {
     if (!activeScene) return;
 
@@ -830,9 +771,9 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
       // Update local state instead of reloading entire profile
       updateCurrentLayer(activeScene.id, layerId, { visible: !currentVisible });
     } catch (err) {
-      toast.error(t('stream.visibilityToggleFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to toggle visibility: ${err instanceof Error ? err.message : String(err)}` }));
+      handleVisibilityError(err);
     }
-  }, [activeScene, profile.name, updateLayer, updateCurrentLayer, t]);
+  }, [activeScene, profile.name, updateLayer, updateCurrentLayer, handleVisibilityError]);
 
   const handleRemoveSource = useCallback(async (source: Source) => {
     if (!confirm(t('stream.confirmRemoveSource', { name: source.name, defaultValue: `Remove "${source.name}" from profile? This will also remove it from all scenes.` }))) {
@@ -881,9 +822,9 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
         toast.success(t('stream.sourceRemoved', { name: source.name, defaultValue: `Removed ${source.name}` }));
       }
     } catch (err) {
-      toast.error(t('stream.sourceRemoveFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to remove source: ${err instanceof Error ? err.message : String(err)}` }));
+      handleRemoveSourceError(err);
     }
-  }, [profile.name, removeCurrentSource, t]);
+  }, [profile.name, removeCurrentSource, t, handleRemoveSourceError]);
 
   const handleSetHotkey = useCallback((layerId: string, layerName: string) => {
     setHotkeyTargetLayer({ id: layerId, name: layerName });
@@ -907,9 +848,9 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
       });
       toast.success(t('stream.groupCreated', { defaultValue: 'Group created' }));
     } catch (err) {
-      toast.error(t('stream.groupCreateFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to create group: ${err instanceof Error ? err.message : String(err)}` }));
+      handleGroupCreateError(err);
     }
-  }, [activeScene, selectedLayerIds, createGroup, profile.name, t, updateCurrentScene]);
+  }, [activeScene, selectedLayerIds, createGroup, profile.name, t, updateCurrentScene, handleGroupCreateError]);
 
   const handleToggleGroupVisibility = useCallback(async (groupId: string) => {
     if (!activeScene) return;
@@ -928,7 +869,7 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
           ),
         });
       }
-    } catch (err) {
+    } catch {
       toast.error(t('stream.groupVisibilityFailed', { defaultValue: 'Failed to toggle group visibility' }));
     }
   }, [activeScene, profile.name, toggleGroupVisibility, t, updateCurrentScene]);
@@ -949,7 +890,7 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
           ),
         });
       }
-    } catch (err) {
+    } catch {
       toast.error(t('stream.groupLockFailed', { defaultValue: 'Failed to toggle group lock' }));
     }
   }, [activeScene, profile.name, toggleGroupLock, t, updateCurrentScene]);
@@ -978,7 +919,7 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
         groups: activeScene.groups?.filter((g) => g.id !== groupId),
       });
       toast.success(t('stream.ungrouped', { defaultValue: 'Layers ungrouped' }));
-    } catch (err) {
+    } catch {
       toast.error(t('stream.ungroupFailed', { defaultValue: 'Failed to ungroup' }));
     }
   }, [activeScene, profile.name, deleteGroup, t, updateCurrentScene]);
@@ -1026,7 +967,7 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
           layerIds: g.layerIds.filter((id) => id !== layerId),
         })),
       });
-    } catch (err) {
+    } catch {
       toast.error(t('stream.removeFromGroupFailed', { defaultValue: 'Failed to remove from group' }));
     }
   }, [activeScene, profile.name, removeLayerFromGroup, t, updateCurrentScene]);
@@ -1059,9 +1000,9 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
       toast.success(t('stream.sourceAdded', { name: source.name, defaultValue: `Added ${source.name} to scene` }));
     } catch (err) {
       // Source was added to profile but layer creation failed
-      toast.error(t('stream.layerAddFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Source added but failed to add to scene: ${err instanceof Error ? err.message : String(err)}` }));
+      handleLayerAddError(err);
     }
-  }, [activeScene, profile.name, addLayer, addCurrentLayer, t]);
+  }, [activeScene, profile.name, addLayer, addCurrentLayer, t, handleLayerAddError]);
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
@@ -1087,7 +1028,7 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
       // Update local state instead of reloading entire profile
       reorderCurrentLayers(activeScene.id, serverOrder);
     } catch (err) {
-      toast.error(t('stream.reorderFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to reorder layers: ${err instanceof Error ? err.message : String(err)}` }));
+      handleReorderError(err);
     }
   };
 

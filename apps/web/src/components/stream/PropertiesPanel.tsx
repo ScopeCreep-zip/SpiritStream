@@ -17,7 +17,7 @@ import { useSceneStore } from '@/stores/sceneStore';
 import { useProfileStore } from '@/stores/profileStore';
 import { useSourceStore } from '@/stores/sourceStore';
 import { api } from '@/lib/backend';
-import { toast } from '@/hooks/useToast';
+import { toast, createErrorHandler, formatError } from '@/hooks/useToast';
 import { VideoFilterSection } from './VideoFilterSection';
 
 interface PropertiesPanelProps {
@@ -107,6 +107,10 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
 
   const hasDeviceSelector = deviceOptions.length > 0;
 
+  // Create reusable error handlers
+  const handleUpdateError = createErrorHandler(t, 'stream.updateFailed', 'Failed to update');
+  const handleRemoveError = createErrorHandler(t, 'stream.removeFailed', 'Failed to remove');
+
   if (!scene) {
     return (
       <Card className="h-full">
@@ -148,7 +152,7 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
       // Update local state instead of reloading entire profile
       updateCurrentLayer(scene.id, layer.id, { transform: newTransform });
     } catch (err) {
-      toast.error(t('stream.updateFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to update: ${err instanceof Error ? err.message : String(err)}` }));
+      handleUpdateError(err);
     }
   };
 
@@ -158,7 +162,7 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
       // Update local state instead of reloading entire profile
       updateCurrentLayer(scene.id, layer.id, { visible: !layer.visible });
     } catch (err) {
-      toast.error(t('stream.updateFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to update: ${err instanceof Error ? err.message : String(err)}` }));
+      handleUpdateError(err);
     }
   };
 
@@ -168,7 +172,7 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
       // Update local state instead of reloading entire profile
       updateCurrentLayer(scene.id, layer.id, { locked: !layer.locked });
     } catch (err) {
-      toast.error(t('stream.updateFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to update: ${err instanceof Error ? err.message : String(err)}` }));
+      handleUpdateError(err);
     }
   };
 
@@ -180,7 +184,7 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
         // Update local state instead of reloading entire profile
         removeCurrentLayer(scene.id, layer.id);
       } catch (err) {
-        toast.error(t('stream.removeFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to remove: ${err instanceof Error ? err.message : String(err)}` }));
+        handleRemoveError(err);
       }
     }
   };
@@ -200,7 +204,7 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
       // Update local state instead of reloading entire profile
       updateCurrentLayer(scene.id, layer.id, { transform: newTransform });
     } catch (err) {
-      toast.error(t('stream.updateFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to update: ${err instanceof Error ? err.message : String(err)}` }));
+      handleUpdateError(err);
     }
   };
 
@@ -215,7 +219,7 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
       // Update local state instead of reloading entire profile
       updateCurrentLayer(scene.id, layer.id, { transform: newTransform });
     } catch (err) {
-      toast.error(t('stream.updateFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to update: ${err instanceof Error ? err.message : String(err)}` }));
+      handleUpdateError(err);
     }
   };
 
@@ -241,7 +245,7 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
       updateCurrentSource(updatedSource);
       // The preview will restart automatically with the new device when the component re-renders
     } catch (err) {
-      toast.error(t('stream.updateFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to update: ${err instanceof Error ? err.message : String(err)}` }));
+      handleUpdateError(err);
     } finally {
       setIsChangingDevice(false);
     }
@@ -254,7 +258,7 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
       const updatedSource = await updateSource(profile.name, source.id, { name: sourceName } as Partial<Source>);
       updateCurrentSource(updatedSource);
     } catch (err) {
-      toast.error(t('stream.updateFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to update: ${err instanceof Error ? err.message : String(err)}` }));
+      handleUpdateError(err);
       // Reset to original name on error
       setSourceName(source.name);
     }
@@ -265,7 +269,7 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
       await updateLayer(profile.name, scene.id, layer.id, { videoFilters: filters });
       updateCurrentLayer(scene.id, layer.id, { videoFilters: filters });
     } catch (err) {
-      toast.error(t('stream.updateFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to update: ${err instanceof Error ? err.message : String(err)}` }));
+      handleUpdateError(err);
     }
   };
 
@@ -525,7 +529,7 @@ function ColorSourceEditor({
       const updated = await updateSource(profileName, source.id, updates as Partial<Source>);
       updateCurrentSource(updated);
     } catch (err) {
-      toast.error(`Failed to update: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(`Failed to update: ${formatError(err)}`);
     }
   };
 
@@ -606,7 +610,7 @@ function TextSourceEditor({
       const updated = await updateSource(profileName, source.id, updates as Partial<Source>);
       updateCurrentSource(updated);
     } catch (err) {
-      toast.error(`Failed to update: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(`Failed to update: ${formatError(err)}`);
     }
   };
 
@@ -772,7 +776,7 @@ function BrowserSourceEditor({
       const updated = await updateSource(profileName, source.id, updates as Partial<Source>);
       updateCurrentSource(updated);
     } catch (err) {
-      toast.error(`Failed to update: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(`Failed to update: ${formatError(err)}`);
       // Reset local state on error
       setUrl(source.url);
       setWidth(source.width);
@@ -1006,7 +1010,7 @@ function ScenePropertiesSection({ profile, scene, t }: ScenePropertiesSectionPro
       await updateScene(profile.name, scene.id, { name: sceneName });
       updateCurrentScene(scene.id, { name: sceneName });
     } catch (err) {
-      toast.error(`Failed to update: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(`Failed to update: ${formatError(err)}`);
       setSceneName(scene.name);
     }
   };
@@ -1020,7 +1024,7 @@ function ScenePropertiesSection({ profile, scene, t }: ScenePropertiesSectionPro
       await updateScene(profile.name, scene.id, { transitionIn: newTransition });
       updateCurrentScene(scene.id, { transitionIn: newTransition });
     } catch (err) {
-      toast.error(`Failed to update: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(`Failed to update: ${formatError(err)}`);
     }
   };
 
@@ -1029,7 +1033,7 @@ function ScenePropertiesSection({ profile, scene, t }: ScenePropertiesSectionPro
       await updateScene(profile.name, scene.id, { transitionIn: undefined });
       updateCurrentScene(scene.id, { transitionIn: undefined });
     } catch (err) {
-      toast.error(`Failed to update: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(`Failed to update: ${formatError(err)}`);
     }
   };
 
@@ -1043,7 +1047,7 @@ function ScenePropertiesSection({ profile, scene, t }: ScenePropertiesSectionPro
       await api.profile.save({ ...profile, defaultTransition: newTransition });
       updateCurrentProfile({ defaultTransition: newTransition });
     } catch (err) {
-      toast.error(`Failed to update: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(`Failed to update: ${formatError(err)}`);
     }
   };
 
