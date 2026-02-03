@@ -1,6 +1,6 @@
 [package]
 name = "spiritstream-server"
-version = "1.2.0"
+version = "1.2.1"
 description = "SpiritStream Backend Server - Multi-Destination Streaming Application"
 authors = ["SpiritStream Contributors"]
 license = "ISC"
