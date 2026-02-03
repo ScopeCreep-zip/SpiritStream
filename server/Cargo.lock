@@ -3112,7 +3112,7 @@ dependencies = [
  "objc",
  "pipewire",
  "rand 0.8.5",
- "screencapturekit",
+ "screencapturekit 0.2.8",
  "screencapturekit-sys",
  "sysinfo",
  "tao-core-video-sys",
@@ -3143,6 +3143,12 @@ checksum = "1a5eeeb57ac94960cfe5ff4c402be6585ae4c8d29a2cf41b276048c2e849d64e"
 dependencies = [
  "screencapturekit-sys",
 ]
+
+[[package]]
+name = "screencapturekit"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ccf069cb109cf8e01ebdca0d55dfce45dbbf669e8c56ed5c62150b056d3ec9f"
 
 [[package]]
 name = "screencapturekit-sys"
@@ -3375,6 +3381,7 @@ dependencies = [
  "regex",
  "reqwest",
  "scap",
+ "screencapturekit 1.5.0",
  "serde",
  "serde_json",
  "sha2",

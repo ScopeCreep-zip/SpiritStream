@@ -29,6 +29,12 @@ mod h264_capture;
 mod audio_levels;
 mod audio_level_extractor;
 
+// macOS-specific ScreenCaptureKit audio capture
+#[cfg(target_os = "macos")]
+mod sck_audio_capture;
+#[cfg(target_os = "macos")]
+pub use sck_audio_capture::*;
+
 pub use profile_manager::*;
 pub use ffmpeg_handler::*;
 pub use ffmpeg_downloader::*;

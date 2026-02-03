@@ -2,8 +2,12 @@ use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
+use std::process::Command;
 
 fn main() {
+    // macOS: Configure Swift runtime linking for ScreenCaptureKit
+    #[cfg(target_os = "macos")]
+    configure_swift_runtime();
     // Read the streaming platforms JSON
     let json_path = PathBuf::from("..").join("data").join("streaming-platforms.json");
 
@@ -118,4 +122,28 @@ fn sanitize_to_variant(name: &str) -> String {
     }
 
     result
+}
+
+/// Configure Swift runtime linking for macOS
+/// Required for screencapturekit crate which uses Swift bridging
+#[cfg(target_os = "macos")]
+fn configure_swift_runtime() {
+    // System Swift runtime should be used first (ABI stable since macOS 10.14.4)
+    // This uses the Swift libraries bundled with the OS
+    println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
+
+    // Fallback to Xcode toolchain only if system Swift isn't available
+    // This is needed for development on older macOS versions
+    if let Ok(output) = Command::new("xcode-select").arg("-p").output() {
+        if output.status.success() {
+            let xcode_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+            // Modern Swift path in Xcode toolchain (Swift 5.5+)
+            let swift_lib_path = format!(
+                "{}/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/macosx",
+                xcode_path
+            );
+            println!("cargo:rustc-link-arg=-Wl,-rpath,{}", swift_lib_path);
+        }
+    }
 }

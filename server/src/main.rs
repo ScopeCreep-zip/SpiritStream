@@ -67,6 +67,9 @@ use spiritstream_server::services::{
     // Audio level extraction from FFmpeg-based sources
     AudioLevelExtractor,
 };
+// ScreenCaptureKit audio capture service (macOS only)
+#[cfg(target_os = "macos")]
+use spiritstream_server::services::SckAudioCaptureService;
 
 // ============================================================================
 // Constants
@@ -146,6 +149,9 @@ struct AppState {
     audio_level_service: Arc<AudioLevelService>,
     // Audio level extractor for FFmpeg-based sources (MediaFile, RTMP, ScreenCapture, etc.)
     audio_level_extractor: Arc<AudioLevelExtractor>,
+    // ScreenCaptureKit audio capture for macOS (screen, window, game capture audio)
+    #[cfg(target_os = "macos")]
+    sck_audio_capture: Arc<SckAudioCaptureService>,
     // Server port for constructing HTTP URLs
     server_port: u16,
 }
@@ -2268,6 +2274,10 @@ async fn invoke_command(
             // Stop FFmpeg audio level extraction if running for this source
             let _ = state.audio_level_extractor.stop_extraction(&source_id);
 
+            // Stop ScreenCaptureKit audio capture if running (macOS only)
+            #[cfg(target_os = "macos")]
+            let _ = state.sck_audio_capture.stop_capture(&source_id);
+
             // Determine if we should delete linked sources
             // Default to true (backward compatible) unless explicitly set to false
             let should_remove_linked = remove_linked.unwrap_or(true);
@@ -2282,6 +2292,9 @@ async fn invoke_command(
                     // Also stop audio capture and extraction for linked sources
                     let _ = state.audio_capture.stop_capture_for_source(linked_id);
                     let _ = state.audio_level_extractor.stop_extraction(linked_id);
+                    // Stop ScreenCaptureKit audio capture (macOS only)
+                    #[cfg(target_os = "macos")]
+                    let _ = state.sck_audio_capture.stop_capture(linked_id);
                 }
                 linked_audio_ids.clone()
             } else {
@@ -2970,6 +2983,18 @@ async fn invoke_command(
                 }
             }
 
+            // Stop ScreenCaptureKit captures for sources no longer in the list (macOS only)
+            #[cfg(target_os = "macos")]
+            {
+                let active_sck_captures: Vec<String> = state.sck_audio_capture.active_capture_ids();
+                for capture_id in &active_sck_captures {
+                    if !source_ids.contains(capture_id) {
+                        log::info!("Stopping ScreenCaptureKit audio capture for removed source: {}", capture_id);
+                        let _ = state.sck_audio_capture.stop_capture(capture_id);
+                    }
+                }
+            }
+
             // Set tracked sources in the level service
             state.audio_level_service.set_tracked_sources(source_ids.clone()).await;
 
@@ -3005,24 +3030,56 @@ async fn invoke_command(
                                         Some((audio_source.device_id.clone(), audio_source.name.clone()))
                                     }
                                     Source::ScreenCapture(screen_source) if screen_source.capture_audio => {
-                                        // Screen audio capture has platform-specific limitations
+                                        // Screen audio capture using platform-specific methods
+                                        let display_index = screen_source.display_id.parse::<u32>().unwrap_or(0);
+
                                         #[cfg(target_os = "macos")]
                                         {
-                                            // macOS: Screen audio requires ScreenCaptureKit (not yet integrated)
-                                            // This is a known limitation, not a failure
-                                            capture_results.insert(source_id.clone(), json!({
-                                                "success": true,  // Mark as success to avoid warning spam
-                                                "sourceType": "ScreenCapture",
-                                                "reason": "platformLimitation",
-                                                "message": "Screen audio metering requires macOS ScreenCaptureKit integration (coming soon). Audio will work in output stream."
-                                            }));
-                                            log::info!("ScreenCapture source '{}': Audio metering not available (ScreenCaptureKit integration pending)", source_id);
+                                            // macOS: Use ScreenCaptureKit for system audio capture
+                                            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+                                            let source_id_extract = source_id.clone();
+                                            let audio_level_service_extract = state.audio_level_service.clone();
+
+                                            match state.sck_audio_capture.start_display_audio_capture(
+                                                &source_id,
+                                                display_index,
+                                                tx,
+                                            ) {
+                                                Ok(()) => {
+                                                    tokio::spawn(async move {
+                                                        while let Some(level) = rx.recv().await {
+                                                            audio_level_service_extract.update_source_level(
+                                                                &source_id_extract,
+                                                                level.left_rms.unwrap_or(level.rms),
+                                                                level.right_rms.unwrap_or(level.rms),
+                                                                level.left_peak.unwrap_or(level.peak),
+                                                                level.right_peak.unwrap_or(level.peak),
+                                                            ).await;
+                                                        }
+                                                    });
+                                                    capture_results.insert(source_id.clone(), json!({
+                                                        "success": true,
+                                                        "sourceType": "ScreenCapture",
+                                                        "displayIndex": display_index,
+                                                        "method": "ScreenCaptureKit"
+                                                    }));
+                                                    log::info!("✓ Audio capture STARTED for ScreenCapture source '{}' via ScreenCaptureKit", source_id);
+                                                }
+                                                Err(e) => {
+                                                    capture_results.insert(source_id.clone(), json!({
+                                                        "success": false,
+                                                        "sourceType": "ScreenCapture",
+                                                        "reason": "captureError",
+                                                        "message": format!("Screen audio capture failed: {}. Make sure screen recording permission is granted.", e)
+                                                    }));
+                                                    log::warn!("✗ ScreenCaptureKit audio capture FAILED for source '{}': {}", source_id, e);
+                                                }
+                                            }
                                         }
 
                                         #[cfg(not(target_os = "macos"))]
                                         {
-                                            // Windows/Linux: Try system audio capture
-                                            let display_index = screen_source.display_id.parse::<u32>().unwrap_or(0);
+                                            // Windows/Linux: Use FFmpeg-based system audio capture
                                             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
                                             let source_id_extract = source_id.clone();
                                             let audio_level_service_extract = state.audio_level_service.clone();
@@ -3053,12 +3110,12 @@ async fn invoke_command(
                                                 }
                                                 Err(e) => {
                                                     capture_results.insert(source_id.clone(), json!({
-                                                        "success": true,  // Don't spam warnings for known limitations
+                                                        "success": false,
                                                         "sourceType": "ScreenCapture",
-                                                        "reason": "extractionUnavailable",
-                                                        "message": format!("Screen audio metering unavailable: {}. Audio will work in output stream.", e)
+                                                        "reason": "extractionFailed",
+                                                        "message": format!("Screen audio metering unavailable: {}", e)
                                                     }));
-                                                    log::info!("ScreenCapture source '{}': Audio metering unavailable ({})", source_id, e);
+                                                    log::warn!("✗ Audio extraction FAILED for ScreenCapture source '{}': {}", source_id, e);
                                                 }
                                             }
                                         }
@@ -3208,84 +3265,181 @@ async fn invoke_command(
                                         None
                                     }
                                     Source::WindowCapture(win_source) if win_source.capture_audio => {
-                                        // Start FFmpeg-based audio level extraction for window capture
-                                        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-                                        let source_id_extract = source_id.clone();
-                                        let audio_level_service_extract = state.audio_level_service.clone();
+                                        // Window audio capture using platform-specific methods
                                         let window_id = win_source.window_id.clone();
 
-                                        match state.audio_level_extractor.start_window_capture_extraction(
-                                            &source_id,
-                                            &window_id,
-                                            tx,
-                                        ) {
-                                            Ok(()) => {
-                                                tokio::spawn(async move {
-                                                    while let Some(level) = rx.recv().await {
-                                                        audio_level_service_extract.update_source_level(
-                                                            &source_id_extract,
-                                                            level.left_rms.unwrap_or(level.rms),
-                                                            level.right_rms.unwrap_or(level.rms),
-                                                            level.left_peak.unwrap_or(level.peak),
-                                                            level.right_peak.unwrap_or(level.peak),
-                                                        ).await;
-                                                    }
-                                                });
-                                                capture_results.insert(source_id.clone(), json!({
-                                                    "success": true,
-                                                    "sourceType": "WindowCapture",
-                                                    "windowId": window_id
-                                                }));
-                                                log::info!("✓ Audio extraction STARTED for WindowCapture source '{}'", source_id);
+                                        #[cfg(target_os = "macos")]
+                                        {
+                                            // macOS: Use ScreenCaptureKit for window audio capture
+                                            let window_id_num = window_id.parse::<u32>().unwrap_or(0);
+                                            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+                                            let source_id_extract = source_id.clone();
+                                            let audio_level_service_extract = state.audio_level_service.clone();
+
+                                            match state.sck_audio_capture.start_window_audio_capture(
+                                                &source_id,
+                                                window_id_num,
+                                                tx,
+                                            ) {
+                                                Ok(()) => {
+                                                    tokio::spawn(async move {
+                                                        while let Some(level) = rx.recv().await {
+                                                            audio_level_service_extract.update_source_level(
+                                                                &source_id_extract,
+                                                                level.left_rms.unwrap_or(level.rms),
+                                                                level.right_rms.unwrap_or(level.rms),
+                                                                level.left_peak.unwrap_or(level.peak),
+                                                                level.right_peak.unwrap_or(level.peak),
+                                                            ).await;
+                                                        }
+                                                    });
+                                                    capture_results.insert(source_id.clone(), json!({
+                                                        "success": true,
+                                                        "sourceType": "WindowCapture",
+                                                        "windowId": window_id,
+                                                        "method": "ScreenCaptureKit"
+                                                    }));
+                                                    log::info!("✓ Audio capture STARTED for WindowCapture source '{}' via ScreenCaptureKit", source_id);
+                                                }
+                                                Err(e) => {
+                                                    capture_results.insert(source_id.clone(), json!({
+                                                        "success": false,
+                                                        "sourceType": "WindowCapture",
+                                                        "reason": "captureError",
+                                                        "message": format!("Window audio capture failed: {}. Make sure screen recording permission is granted.", e)
+                                                    }));
+                                                    log::warn!("✗ ScreenCaptureKit audio capture FAILED for WindowCapture source '{}': {}", source_id, e);
+                                                }
                                             }
-                                            Err(e) => {
-                                                capture_results.insert(source_id.clone(), json!({
-                                                    "success": false,
-                                                    "sourceType": "WindowCapture",
-                                                    "reason": "extractionFailed",
-                                                    "message": format!("Failed to start audio extraction: {}", e)
-                                                }));
-                                                log::warn!("✗ Audio extraction FAILED for WindowCapture source '{}': {}", source_id, e);
+                                        }
+
+                                        #[cfg(not(target_os = "macos"))]
+                                        {
+                                            // Windows/Linux: Use FFmpeg-based system audio capture
+                                            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+                                            let source_id_extract = source_id.clone();
+                                            let audio_level_service_extract = state.audio_level_service.clone();
+
+                                            match state.audio_level_extractor.start_window_capture_extraction(
+                                                &source_id,
+                                                &window_id,
+                                                tx,
+                                            ) {
+                                                Ok(()) => {
+                                                    tokio::spawn(async move {
+                                                        while let Some(level) = rx.recv().await {
+                                                            audio_level_service_extract.update_source_level(
+                                                                &source_id_extract,
+                                                                level.left_rms.unwrap_or(level.rms),
+                                                                level.right_rms.unwrap_or(level.rms),
+                                                                level.left_peak.unwrap_or(level.peak),
+                                                                level.right_peak.unwrap_or(level.peak),
+                                                            ).await;
+                                                        }
+                                                    });
+                                                    capture_results.insert(source_id.clone(), json!({
+                                                        "success": true,
+                                                        "sourceType": "WindowCapture",
+                                                        "windowId": window_id
+                                                    }));
+                                                    log::info!("✓ Audio extraction STARTED for WindowCapture source '{}'", source_id);
+                                                }
+                                                Err(e) => {
+                                                    capture_results.insert(source_id.clone(), json!({
+                                                        "success": false,
+                                                        "sourceType": "WindowCapture",
+                                                        "reason": "extractionFailed",
+                                                        "message": format!("Failed to start audio extraction: {}", e)
+                                                    }));
+                                                    log::warn!("✗ Audio extraction FAILED for WindowCapture source '{}': {}", source_id, e);
+                                                }
                                             }
                                         }
                                         None
                                     }
                                     Source::GameCapture(game_source) if game_source.capture_audio => {
-                                        // Start FFmpeg-based audio level extraction for game capture
-                                        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-                                        let source_id_extract = source_id.clone();
-                                        let audio_level_service_extract = state.audio_level_service.clone();
+                                        // Game audio capture using platform-specific methods
 
-                                        match state.audio_level_extractor.start_game_capture_extraction(
-                                            &source_id,
-                                            tx,
-                                        ) {
-                                            Ok(()) => {
-                                                tokio::spawn(async move {
-                                                    while let Some(level) = rx.recv().await {
-                                                        audio_level_service_extract.update_source_level(
-                                                            &source_id_extract,
-                                                            level.left_rms.unwrap_or(level.rms),
-                                                            level.right_rms.unwrap_or(level.rms),
-                                                            level.left_peak.unwrap_or(level.peak),
-                                                            level.right_peak.unwrap_or(level.peak),
-                                                        ).await;
-                                                    }
-                                                });
-                                                capture_results.insert(source_id.clone(), json!({
-                                                    "success": true,
-                                                    "sourceType": "GameCapture"
-                                                }));
-                                                log::info!("✓ Audio extraction STARTED for GameCapture source '{}'", source_id);
+                                        #[cfg(target_os = "macos")]
+                                        {
+                                            // macOS: Use ScreenCaptureKit for system audio capture (game audio)
+                                            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+                                            let source_id_extract = source_id.clone();
+                                            let audio_level_service_extract = state.audio_level_service.clone();
+
+                                            match state.sck_audio_capture.start_system_audio_capture(
+                                                &source_id,
+                                                tx,
+                                            ) {
+                                                Ok(()) => {
+                                                    tokio::spawn(async move {
+                                                        while let Some(level) = rx.recv().await {
+                                                            audio_level_service_extract.update_source_level(
+                                                                &source_id_extract,
+                                                                level.left_rms.unwrap_or(level.rms),
+                                                                level.right_rms.unwrap_or(level.rms),
+                                                                level.left_peak.unwrap_or(level.peak),
+                                                                level.right_peak.unwrap_or(level.peak),
+                                                            ).await;
+                                                        }
+                                                    });
+                                                    capture_results.insert(source_id.clone(), json!({
+                                                        "success": true,
+                                                        "sourceType": "GameCapture",
+                                                        "method": "ScreenCaptureKit"
+                                                    }));
+                                                    log::info!("✓ Audio capture STARTED for GameCapture source '{}' via ScreenCaptureKit", source_id);
+                                                }
+                                                Err(e) => {
+                                                    capture_results.insert(source_id.clone(), json!({
+                                                        "success": false,
+                                                        "sourceType": "GameCapture",
+                                                        "reason": "captureError",
+                                                        "message": format!("Game audio capture failed: {}. Make sure screen recording permission is granted.", e)
+                                                    }));
+                                                    log::warn!("✗ ScreenCaptureKit audio capture FAILED for GameCapture source '{}': {}", source_id, e);
+                                                }
                                             }
-                                            Err(e) => {
-                                                capture_results.insert(source_id.clone(), json!({
-                                                    "success": false,
-                                                    "sourceType": "GameCapture",
-                                                    "reason": "extractionFailed",
-                                                    "message": format!("Failed to start audio extraction: {}", e)
-                                                }));
-                                                log::warn!("✗ Audio extraction FAILED for GameCapture source '{}': {}", source_id, e);
+                                        }
+
+                                        #[cfg(not(target_os = "macos"))]
+                                        {
+                                            // Windows/Linux: Use FFmpeg-based system audio capture
+                                            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+                                            let source_id_extract = source_id.clone();
+                                            let audio_level_service_extract = state.audio_level_service.clone();
+
+                                            match state.audio_level_extractor.start_game_capture_extraction(
+                                                &source_id,
+                                                tx,
+                                            ) {
+                                                Ok(()) => {
+                                                    tokio::spawn(async move {
+                                                        while let Some(level) = rx.recv().await {
+                                                            audio_level_service_extract.update_source_level(
+                                                                &source_id_extract,
+                                                                level.left_rms.unwrap_or(level.rms),
+                                                                level.right_rms.unwrap_or(level.rms),
+                                                                level.left_peak.unwrap_or(level.peak),
+                                                                level.right_peak.unwrap_or(level.peak),
+                                                            ).await;
+                                                        }
+                                                    });
+                                                    capture_results.insert(source_id.clone(), json!({
+                                                        "success": true,
+                                                        "sourceType": "GameCapture"
+                                                    }));
+                                                    log::info!("✓ Audio extraction STARTED for GameCapture source '{}'", source_id);
+                                                }
+                                                Err(e) => {
+                                                    capture_results.insert(source_id.clone(), json!({
+                                                        "success": false,
+                                                        "sourceType": "GameCapture",
+                                                        "reason": "extractionFailed",
+                                                        "message": format!("Failed to start audio extraction: {}", e)
+                                                    }));
+                                                    log::warn!("✗ Audio extraction FAILED for GameCapture source '{}': {}", source_id, e);
+                                                }
                                             }
                                         }
                                         None
@@ -4571,6 +4725,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let audio_level_service = Arc::new(AudioLevelService::new());
     // Initialize audio level extractor for FFmpeg-based sources
     let audio_level_extractor = Arc::new(AudioLevelExtractor::new(preview_ffmpeg_path.clone()));
+    // Initialize ScreenCaptureKit audio capture service (macOS only)
+    #[cfg(target_os = "macos")]
+    let sck_audio_capture = Arc::new(SckAudioCaptureService::new());
     // Clone event_bus for audio level service before it's moved into state
     let event_bus_for_audio = event_bus.clone();
 
@@ -4599,6 +4756,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         h264_capture,
         audio_level_service: audio_level_service.clone(),
         audio_level_extractor,
+        #[cfg(target_os = "macos")]
+        sck_audio_capture,
         server_port: port,
     };
 
