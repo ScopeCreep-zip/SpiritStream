@@ -327,12 +327,25 @@ impl SCStreamOutputTrait for AudioOutputHandler {
 }
 
 /// Audio data extracted from CMSampleBuffer
+/// ScreenCaptureKit delivers planar (non-interleaved) audio:
+/// - Buffer 0 = Left channel samples
+/// - Buffer 1 = Right channel samples (if stereo)
 struct AudioData {
-    samples: Vec<f32>,
-    channels: u16,
+    left_samples: Vec<f32>,
+    right_samples: Vec<f32>,
+}
+
+/// Convert raw bytes to f32 samples (CoreAudio uses 32-bit float)
+fn bytes_to_f32_samples(data: &[u8]) -> Vec<f32> {
+    data.chunks_exact(4)
+        .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+        .collect()
 }
 
 /// Extract audio samples from a CMSampleBuffer
+/// ScreenCaptureKit delivers planar (non-interleaved) audio format:
+/// - num_buffers >= 2: Each buffer contains one channel (planar stereo)
+/// - num_buffers == 1: Single buffer (mono, duplicated to both channels)
 fn extract_audio_from_sample_buffer(buffer: &CMSampleBuffer) -> Option<AudioData> {
     // Get the audio buffer list from the sample buffer
     let audio_buffer_list = match buffer.audio_buffer_list() {
@@ -348,45 +361,77 @@ fn extract_audio_from_sample_buffer(buffer: &CMSampleBuffer) -> Option<AudioData
         return None;
     }
 
-    // Get the first buffer (usually contains interleaved stereo data)
-    let audio_buffer = audio_buffer_list.buffer(0)?;
+    // ScreenCaptureKit uses planar (non-interleaved) audio format
+    // Each channel is in a separate buffer
+    if num_buffers >= 2 {
+        // Planar stereo: buffer 0 = left, buffer 1 = right
+        let left_buffer = audio_buffer_list.buffer(0)?;
+        let right_buffer = audio_buffer_list.buffer(1)?;
 
-    // Get raw data from the buffer
-    let data = audio_buffer.data();
+        let left_data = left_buffer.data();
+        let right_data = right_buffer.data();
 
-    if data.is_empty() {
-        return None;
-    }
+        if left_data.is_empty() && right_data.is_empty() {
+            return None;
+        }
 
-    // CoreAudio typically uses 32-bit float audio
-    // Convert bytes to f32 samples
-    let samples: Vec<f32> = data
-        .chunks_exact(4)
-        .filter_map(|chunk| {
-            if chunk.len() == 4 {
-                Some(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-            } else {
-                None
-            }
+        let left_samples = bytes_to_f32_samples(left_data);
+        let right_samples = bytes_to_f32_samples(right_data);
+
+        if left_samples.is_empty() && right_samples.is_empty() {
+            return None;
+        }
+
+        Some(AudioData {
+            left_samples,
+            right_samples,
         })
-        .collect();
+    } else {
+        // Single buffer - mono audio, use for both channels
+        let audio_buffer = audio_buffer_list.buffer(0)?;
+        let data = audio_buffer.data();
 
-    if samples.is_empty() {
-        return None;
+        if data.is_empty() {
+            return None;
+        }
+
+        let samples = bytes_to_f32_samples(data);
+
+        if samples.is_empty() {
+            return None;
+        }
+
+        // Mono: same data for both channels
+        Some(AudioData {
+            left_samples: samples.clone(),
+            right_samples: samples,
+        })
     }
-
-    // Default to stereo (2 channels) as configured in the stream
-    // AudioBufferRef doesn't expose channel count directly, so we use the configured value
-    let channels = 2u16;
-
-    Some(AudioData { samples, channels })
 }
 
-/// Calculate audio levels (RMS and peak) from audio samples
-fn calculate_audio_levels(source_id: &str, audio: &AudioData) -> ExtractedAudioLevel {
-    let channels = audio.channels as usize;
+/// Calculate RMS and peak for a single channel
+fn calculate_channel_levels(samples: &[f32]) -> (f32, f32) {
+    if samples.is_empty() {
+        return (0.0, 0.0);
+    }
 
-    if channels == 0 || audio.samples.is_empty() {
+    let mut sum_sq = 0.0f64;
+    let mut peak = 0.0f32;
+
+    for &sample in samples {
+        sum_sq += (sample as f64).powi(2);
+        peak = peak.max(sample.abs());
+    }
+
+    let rms = ((sum_sq / samples.len() as f64).sqrt() as f32).min(1.0);
+    let peak = peak.min(1.0);
+
+    (rms, peak)
+}
+
+/// Calculate audio levels (RMS and peak) from planar audio samples
+fn calculate_audio_levels(source_id: &str, audio: &AudioData) -> ExtractedAudioLevel {
+    if audio.left_samples.is_empty() && audio.right_samples.is_empty() {
         return ExtractedAudioLevel {
             source_id: source_id.to_string(),
             rms: 0.0,
@@ -398,55 +443,9 @@ fn calculate_audio_levels(source_id: &str, audio: &AudioData) -> ExtractedAudioL
         };
     }
 
-    // Deinterleave channels and calculate per-channel levels
-    let mut left_sum_sq = 0.0f64;
-    let mut left_peak = 0.0f32;
-    let mut right_sum_sq = 0.0f64;
-    let mut right_peak = 0.0f32;
-    let mut left_count = 0usize;
-    let mut right_count = 0usize;
-
-    for (i, &sample) in audio.samples.iter().enumerate() {
-        let abs_sample = sample.abs();
-
-        if channels >= 2 {
-            // Stereo: even indices are left, odd are right
-            if i % 2 == 0 {
-                left_sum_sq += (sample as f64).powi(2);
-                left_peak = left_peak.max(abs_sample);
-                left_count += 1;
-            } else {
-                right_sum_sq += (sample as f64).powi(2);
-                right_peak = right_peak.max(abs_sample);
-                right_count += 1;
-            }
-        } else {
-            // Mono: use same data for both channels
-            left_sum_sq += (sample as f64).powi(2);
-            left_peak = left_peak.max(abs_sample);
-            left_count += 1;
-            right_sum_sq = left_sum_sq;
-            right_peak = left_peak;
-            right_count = left_count;
-        }
-    }
-
-    // Calculate RMS for each channel
-    let left_rms = if left_count > 0 {
-        ((left_sum_sq / left_count as f64).sqrt() as f32).min(1.0)
-    } else {
-        0.0
-    };
-
-    let right_rms = if right_count > 0 {
-        ((right_sum_sq / right_count as f64).sqrt() as f32).min(1.0)
-    } else {
-        0.0
-    };
-
-    // Clamp peaks
-    let left_peak = left_peak.min(1.0);
-    let right_peak = right_peak.min(1.0);
+    // Calculate levels for each channel separately (planar audio)
+    let (left_rms, left_peak) = calculate_channel_levels(&audio.left_samples);
+    let (right_rms, right_peak) = calculate_channel_levels(&audio.right_samples);
 
     // Overall levels (average of channels)
     let rms = (left_rms + right_rms) / 2.0;
@@ -469,9 +468,10 @@ mod tests {
 
     #[test]
     fn test_calculate_audio_levels_silence() {
+        // Planar format: separate buffers for L and R
         let audio = AudioData {
-            samples: vec![0.0; 1024],
-            channels: 2,
+            left_samples: vec![0.0; 512],
+            right_samples: vec![0.0; 512],
         };
         let levels = calculate_audio_levels("test", &audio);
         assert!(levels.rms < 0.001);
@@ -480,20 +480,24 @@ mod tests {
 
     #[test]
     fn test_calculate_audio_levels_stereo() {
-        // Create test signal: left channel louder than right
-        let mut samples = Vec::new();
-        for _ in 0..512 {
-            samples.push(0.5);  // Left channel
-            samples.push(0.25); // Right channel
-        }
+        // Planar format: left channel louder than right
         let audio = AudioData {
-            samples,
-            channels: 2,
+            left_samples: vec![0.5; 512],   // Left channel at 0.5
+            right_samples: vec![0.25; 512], // Right channel at 0.25
         };
         let levels = calculate_audio_levels("test", &audio);
 
         assert!(levels.left_rms.unwrap() > levels.right_rms.unwrap());
         assert!((levels.left_peak.unwrap() - 0.5).abs() < 0.01);
         assert!((levels.right_peak.unwrap() - 0.25).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_calculate_channel_levels() {
+        // Test individual channel calculation
+        let samples = vec![0.5, -0.5, 0.3, -0.3];
+        let (rms, peak) = calculate_channel_levels(&samples);
+        assert!((peak - 0.5).abs() < 0.01);
+        assert!(rms > 0.0 && rms < 1.0);
     }
 }

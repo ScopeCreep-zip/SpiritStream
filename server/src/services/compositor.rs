@@ -577,6 +577,7 @@ mod tests {
                     solo: false,
                 }],
             },
+            transition_in: None,
         }
     }
 
@@ -588,6 +589,7 @@ mod tests {
                 bind_address: "0.0.0.0".to_string(),
                 port: 1935,
                 application: "live".to_string(),
+                capture_audio: true,
             }),
         ]
     }
@@ -652,6 +654,7 @@ mod tests {
             file_path: "/path/to/file.mp4".to_string(),
             loop_playback: true,
             audio_only: false,
+            capture_audio: true,
         }));
 
         let filter = Compositor::build_video_filter(&scene, &sources);
