@@ -125,7 +125,7 @@ jobs:
 
       - name: Build Tauri app (Linux)
         if: matrix.platform == 'ubuntu-22.04'
-        run: pnpm tauri build
+        run: pnpm --filter @spiritstream/desktop tauri build
 
       - name: Upload Linux artifacts
         if: matrix.platform == 'ubuntu-22.04'
