@@ -88,11 +88,16 @@ impl SckAudioCaptureService {
         level_tx: mpsc::UnboundedSender<ExtractedAudioLevel>,
         capture_type: &str,
     ) -> Result<(), String> {
-        // Check if already capturing
+        // Check if already capturing - return success if so (idempotent)
         {
             let captures = self.active_captures.lock().unwrap();
             if captures.contains_key(source_id) {
-                return Err(format!("Already capturing audio for source: {}", source_id));
+                log::debug!(
+                    "[SCK] Already capturing {} audio for source '{}', skipping",
+                    capture_type,
+                    source_id
+                );
+                return Ok(());
             }
         }
 

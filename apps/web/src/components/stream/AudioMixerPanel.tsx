@@ -1,6 +1,12 @@
 /**
  * Audio Mixer Panel
  * Unified audio mixer with combined VU meters and volume controls
+ *
+ * PERFORMANCE OPTIMIZATION:
+ * Audio level data is no longer passed as props to channel strips.
+ * Each UnifiedChannelStrip reads levels directly from a pure JS store
+ * (audioLevelStore) in a RAF loop, bypassing React's render cycle.
+ * This eliminates ~30 re-renders per second across all channel strips.
  */
 import { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -8,7 +14,7 @@ import { Plus, Volume2 } from 'lucide-react';
 import { Card, CardBody } from '@/components/ui/Card';
 import { AddSourceModal } from '@/components/modals/AddSourceModal';
 import { UnifiedChannelStrip } from './UnifiedChannelStrip';
-import { useAudioLevels, linearToDb } from '@/hooks/useAudioLevels';
+import { useAudioLevels } from '@/hooks/useAudioLevels';
 import type { Profile, Scene } from '@/types/profile';
 import type { AudioFilter } from '@/types/source';
 import { useSceneStore } from '@/stores/sceneStore';
@@ -20,17 +26,8 @@ interface AudioMixerPanelProps {
   scene?: Scene;
 }
 
-// Default audio level when no data available
-const DEFAULT_LEVEL = {
-  rms: 0,
-  peak: 0,
-  peakDb: -Infinity,
-  clipping: false,
-  leftRms: 0,
-  leftPeak: 0,
-  rightRms: 0,
-  rightPeak: 0,
-};
+// NOTE: DEFAULT_LEVEL removed - level data is read directly from audioLevelStore
+// by each UnifiedChannelStrip in its RAF loop, not passed through props
 
 export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
   const { t } = useTranslation();
@@ -38,8 +35,9 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
   const { updateCurrentAudioTrack, updateCurrentMasterVolume, updateCurrentMasterMuted } = useProfileStore();
   const [showAddModal, setShowAddModal] = useState(false);
 
-  // Get real-time audio levels, capture status, and health status from single source of truth
-  const { levels, isConnected, isInitializing, healthStatus, captureStatus } = useAudioLevels();
+  // Get connection status, capture status, and health status
+  // NOTE: `levels` removed - channel strips read directly from audioLevelStore
+  const { isConnected, isInitializing, healthStatus, captureStatus } = useAudioLevels();
 
   // Memoize source name lookup function
   const getSourceName = useCallback((sourceId: string) => {
@@ -106,26 +104,9 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
     }
   }, [profile.name, scene, setMasterMuted, updateCurrentMasterMuted, t]);
 
-  // Get audio level for a track, with fallback
-  const getTrackLevel = useCallback((sourceId: string) => {
-    const trackLevel = levels?.tracks[sourceId];
-    if (!trackLevel) return DEFAULT_LEVEL;
-    // Compute peakDb if not provided by backend
-    return {
-      ...trackLevel,
-      peakDb: trackLevel.peakDb ?? linearToDb(trackLevel.peak),
-    };
-  }, [levels]);
-
-  // Get master level with fallback
-  const getMasterLevel = useCallback(() => {
-    const masterLevel = levels?.master;
-    if (!masterLevel) return DEFAULT_LEVEL;
-    return {
-      ...masterLevel,
-      peakDb: masterLevel.peakDb ?? linearToDb(masterLevel.peak),
-    };
-  }, [levels]);
+  // NOTE: getTrackLevel and getMasterLevel functions removed
+  // UnifiedChannelStrip now reads levels directly from audioLevelStore
+  // in its RAF loop, bypassing React's render cycle entirely
 
   if (!scene) {
     return (
@@ -177,7 +158,6 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
             <div className="flex items-end gap-6">
               {scene.audioMixer.tracks.length > 0 ? (
                 scene.audioMixer.tracks.map((track) => {
-                  const level = getTrackLevel(track.sourceId);
                   const trackCaptureStatus = captureStatus[track.sourceId];
                   const isSourceHealthy = healthStatus[track.sourceId] ?? true; // assume healthy if not tracked yet
 
@@ -195,14 +175,7 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
                       key={track.sourceId}
                       trackId={track.sourceId}
                       label={getSourceName(track.sourceId)}
-                      rmsLevel={level.rms}
-                      peakLevel={level.peak}
-                      peakDb={level.peakDb}
-                      isClipping={level.clipping}
-                      leftRms={level.leftRms}
-                      leftPeak={level.leftPeak}
-                      rightRms={level.rightRms}
-                      rightPeak={level.rightPeak}
+                      // NOTE: Level props removed - component reads from audioLevelStore
                       volume={track.volume}
                       muted={track.muted}
                       solo={track.solo}
@@ -239,29 +212,17 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
               {t('stream.output', { defaultValue: 'Output' })}
             </div>
             <div className="flex items-end">
-              {(() => {
-                const masterLevel = getMasterLevel();
-                return (
-                  <UnifiedChannelStrip
-                    label={t('stream.master', { defaultValue: 'Master' })}
-                    rmsLevel={masterLevel.rms}
-                    peakLevel={masterLevel.peak}
-                    peakDb={masterLevel.peakDb}
-                    isClipping={masterLevel.clipping}
-                    leftRms={masterLevel.leftRms}
-                    leftPeak={masterLevel.leftPeak}
-                    rightRms={masterLevel.rightRms}
-                    rightPeak={masterLevel.rightPeak}
-                    volume={scene.audioMixer.masterVolume}
-                    muted={scene.audioMixer.masterMuted ?? false}
-                    solo={false}
-                    isMaster
-                    onVolumeChange={handleMasterVolumeChange}
-                    onMuteToggle={handleMasterMuteToggle}
-                    onSoloToggle={() => {}}
-                  />
-                );
-              })()}
+              <UnifiedChannelStrip
+                label={t('stream.master', { defaultValue: 'Master' })}
+                // NOTE: Level props removed - component reads from audioLevelStore
+                volume={scene.audioMixer.masterVolume}
+                muted={scene.audioMixer.masterMuted ?? false}
+                solo={false}
+                isMaster
+                onVolumeChange={handleMasterVolumeChange}
+                onMuteToggle={handleMasterMuteToggle}
+                onSoloToggle={() => {}}
+              />
             </div>
           </div>
         </div>

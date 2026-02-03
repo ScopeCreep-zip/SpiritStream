@@ -2,54 +2,48 @@
  * Unified Channel Strip
  * Combined VU meter + volume control in a single vertical bar
  * The VU meter IS the volume control - drag the arrow to adjust
+ *
+ * PERFORMANCE OPTIMIZATION:
+ * This component uses RAF-based canvas rendering that reads audio levels
+ * directly from a pure JS store (audioLevelStore), bypassing React's
+ * render cycle. This eliminates ~30 re-renders per second.
+ *
+ * The canvas redraws only when:
+ * 1. Audio level data version changes (dirty check)
+ * 2. User is dragging the volume control
  */
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AudioFilterButton } from './AudioFilterButton';
 import type { AudioFilter, Source } from '@/types/source';
 import { linearToDb, dbToLinear } from '@/hooks/useAudioLevels';
+import {
+  getTrackLevel,
+  getMasterLevel,
+  getPeakHold,
+  getMasterPeakHold,
+  getVersion,
+} from '@/lib/audio/audioLevelStore';
+import {
+  drawMeter,
+  LABEL_WIDTH,
+  BAR_WIDTH,
+  ARROW_WIDTH,
+  PADDING_Y,
+  METER_HEIGHT,
+  TOTAL_HEIGHT,
+  TOTAL_WIDTH,
+} from '@/lib/audio/meterRenderer';
 
-/**
- * Convert dB to visual position (percentage from bottom)
- * Linear dB scale: 0dB = 100%, -60dB = 0%
- * Matches plan spec: -20dB = 67%, -40dB = 33%, etc.
- */
-function dbToPosition(db: number): number {
-  const clampedDb = Math.max(-60, Math.min(0, db));
-  return ((clampedDb + 60) / 60) * 100;
-}
-
-/**
- * Convert linear amplitude (0-1) to visual position
- * First converts to dB, then to position
- */
-function linearToPosition(linear: number): number {
-  if (linear <= 0) return 0;
-  const db = 20 * Math.log10(linear);
-  return dbToPosition(db);
-}
-
-// Threshold marker colors
-const THRESHOLD_COLORS: Record<string, string> = {
-  noiseGate: '#a855f7',    // Purple
-  compressor: '#3b82f6',   // Blue
-  expander: '#f59e0b',     // Amber
-};
+// NOTE: Drawing constants and functions moved to meterRenderer.ts
+// The component now uses RAF-based rendering that reads from audioLevelStore
 
 export interface UnifiedChannelStripProps {
+  /** Track ID for reading from audio store (undefined for master) */
   trackId?: string;
   label: string;
-  // Levels (real-time from WebSocket)
-  rmsLevel: number;           // 0-1
-  peakLevel: number;          // 0-1
-  peakDb: number;             // dB value for display
-  isClipping: boolean;
-  // Stereo support (optional) - if provided, shows separate L/R levels
-  // If not provided, duplicates mono data for both channels
-  leftRms?: number;           // Left channel RMS
-  leftPeak?: number;          // Left channel peak
-  rightRms?: number;          // Right channel RMS
-  rightPeak?: number;         // Right channel peak
+  // NOTE: Level props removed - component reads from audioLevelStore directly
+  // This eliminates ~30 React re-renders per second
   // Controls
   volume: number;             // 0-1
   muted: boolean;
@@ -72,14 +66,7 @@ export interface UnifiedChannelStripProps {
 export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
   trackId,
   label,
-  rmsLevel,
-  peakLevel,
-  peakDb,
-  isClipping,
-  leftRms,
-  leftPeak,
-  rightRms,
-  rightPeak,
+  // NOTE: Level props removed - reads from audioLevelStore in RAF loop
   volume,
   muted,
   solo,
@@ -99,29 +86,22 @@ export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
   // Local volume state for responsive UI during drag
   const [localVolume, setLocalVolume] = useState(volume);
   const [isDragging, setIsDragging] = useState(false);
-  const [peakHold, setPeakHold] = useState(0);
+  // NOTE: peakHold state removed - managed by audioLevelStore
   const [showClip, setShowClip] = useState(false);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const peakHoldTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // NOTE: peakHoldTimeoutRef removed - peak hold managed by audioLevelStore
   const clipTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const animationFrameRef = useRef<number | null>(null);
 
   // Track recently committed volume to prevent sync race condition
-  // When we commit a volume change, we set this to true and clear it after a delay
-  // This prevents the sync effect from reverting to the stale prop value
   const recentlyCommittedRef = useRef(false);
   const commitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Bar dimensions - consistent for all channels with stereo L/R
-  const LABEL_WIDTH = 22;  // Space for dB labels on left
-  const BAR_WIDTH = 28;  // Meter bar width (same for all channels)
-  const ARROW_WIDTH = 8;   // Arrow width
-  const ARROW_HEIGHT = 12; // Arrow height
-  const PADDING_Y = 8;  // Vertical padding for labels at top/bottom
-  const METER_HEIGHT = 160;  // Inner meter height
-  const TOTAL_HEIGHT = METER_HEIGHT + PADDING_Y * 2;  // Total canvas height
-  const TOTAL_WIDTH = LABEL_WIDTH + BAR_WIDTH + ARROW_WIDTH;
+  // Track last store version for dirty checking
+  const lastVersionRef = useRef(-1);
+
+  // NOTE: Dimension constants now imported from meterRenderer.ts
 
   // Sync local volume when prop changes (from server)
   // Skip sync if we recently committed a value (prevents race condition with stale props)
@@ -131,56 +111,38 @@ export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
     }
   }, [volume, isDragging]);
 
-  // Update peak hold with 20s hold then decay (OBS parity - 20 seconds instead of 1.5s)
+  // NOTE: Peak hold effect removed - now managed by audioLevelStore
+
+  // Handle clipping indicator - reads from store in RAF, triggers React state for CSS animation
+  // This is the only React state update from audio data (once per clip event, not per frame)
+  const lastClipRef = useRef(false);
   useEffect(() => {
-    if (peakLevel > peakHold) {
-      setPeakHold(peakLevel);
+    // Check clipping state periodically (much less frequent than RAF)
+    const checkClipping = () => {
+      const level = isMaster ? getMasterLevel() : (trackId ? getTrackLevel(trackId) : getMasterLevel());
+      if (level.clipping && !lastClipRef.current) {
+        lastClipRef.current = true;
+        setShowClip(true);
 
-      if (peakHoldTimeoutRef.current) {
-        clearTimeout(peakHoldTimeoutRef.current);
-      }
-
-      peakHoldTimeoutRef.current = setTimeout(() => {
-        const decayInterval = setInterval(() => {
-          setPeakHold((prev) => {
-            const newVal = prev - 0.02;
-            if (newVal <= 0.01) {
-              clearInterval(decayInterval);
-              return 0;
-            }
-            return newVal;
-          });
-        }, 50);
-      }, 20000); // OBS uses 20 second peak hold
-    }
-
-    return () => {
-      if (peakHoldTimeoutRef.current) {
-        clearTimeout(peakHoldTimeoutRef.current);
+        if (clipTimeoutRef.current) {
+          clearTimeout(clipTimeoutRef.current);
+        }
+        clipTimeoutRef.current = setTimeout(() => {
+          setShowClip(false);
+          lastClipRef.current = false;
+        }, 1000);
       }
     };
-  }, [peakLevel, peakHold]);
 
-  // Handle clipping indicator (1s flash duration)
-  useEffect(() => {
-    if (isClipping) {
-      setShowClip(true);
-
-      if (clipTimeoutRef.current) {
-        clearTimeout(clipTimeoutRef.current);
-      }
-
-      clipTimeoutRef.current = setTimeout(() => {
-        setShowClip(false);
-      }, 1000);
-    }
-
+    // Check every 100ms instead of every frame
+    const interval = setInterval(checkClipping, 100);
     return () => {
+      clearInterval(interval);
       if (clipTimeoutRef.current) {
         clearTimeout(clipTimeoutRef.current);
       }
     };
-  }, [isClipping]);
+  }, [trackId, isMaster]);
 
   // Debounced save to server
   const debouncedSave = useCallback((newVolume: number) => {
@@ -196,7 +158,6 @@ export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
   useEffect(() => {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
-      if (peakHoldTimeoutRef.current) clearTimeout(peakHoldTimeoutRef.current);
       if (clipTimeoutRef.current) clearTimeout(clipTimeoutRef.current);
       if (commitTimeoutRef.current) clearTimeout(commitTimeoutRef.current);
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
@@ -208,212 +169,60 @@ export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
     f.enabled && ['noiseGate', 'compressor', 'expander'].includes(f.type)
   );
 
-  // Draw the unified meter/fader on canvas
+  // RAF-based canvas rendering
+  // Reads audio levels directly from pure JS store, bypassing React
+  // Only redraws when store version changes (dirty check) or during drag
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const context = canvas.getContext('2d', { alpha: false });
+    if (!context) return;
 
+    // Capture context in a const that TypeScript knows is non-null
+    const ctx = context;
+
+    // One-time setup: set canvas size with device pixel ratio
     const dpr = window.devicePixelRatio || 1;
-
-    // Set canvas size accounting for device pixel ratio
     canvas.width = TOTAL_WIDTH * dpr;
     canvas.height = TOTAL_HEIGHT * dpr;
     ctx.scale(dpr, dpr);
 
-    // Clear canvas
-    ctx.clearRect(0, 0, TOTAL_WIDTH, TOTAL_HEIGHT);
+    // Helper to get current render options
+    const getRenderOptions = () => {
+      const level = isMaster
+        ? getMasterLevel()
+        : (trackId ? getTrackLevel(trackId) : getMasterLevel());
+      const peakHold = isMaster
+        ? getMasterPeakHold()
+        : (trackId ? getPeakHold(trackId) : getMasterPeakHold());
+      return { level, peakHold, volume: localVolume, muted, isDragging, thresholdFilters };
+    };
 
-    // Meter bar starts after the label area, with vertical padding
-    const meterX = LABEL_WIDTH;
-    const meterTop = PADDING_Y;
-    const meterBottom = PADDING_Y + METER_HEIGHT;
+    // Draw immediately on mount (prevents flash)
+    drawMeter(ctx, getRenderOptions());
+    lastVersionRef.current = getVersion();
 
-    // 1. Background fill (dark) - only for meter area
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-    ctx.beginPath();
-    ctx.roundRect(meterX, meterTop, BAR_WIDTH, METER_HEIGHT, 4);
-    ctx.fill();
+    let rafId: number;
 
-    // Helper to convert dB position (0-100%) to Y coordinate within meter area
-    const dbToY = (position: number) => meterBottom - (position / 100) * METER_HEIGHT;
+    function render() {
+      // Dirty check: only redraw if data changed or dragging
+      const version = getVersion();
+      if (version !== lastVersionRef.current || isDragging) {
+        lastVersionRef.current = version;
+        drawMeter(ctx, getRenderOptions());
+      }
 
-    // 2. VU level fill (gradient) - draw first so dB markers appear on top
-    // OBS Parity: Show PEAK as the main fill, RMS as a bright line on top
-    // Always show stereo (L/R split) - use same data for both if stereo data not provided
-
-    // Create gradient matching plan's dB color ranges (muted colors):
-    // Green: -60dB to -20dB (0% to 67%)
-    // Yellow: -20dB to -6dB (67% to 90%)
-    // Orange: -6dB to -3dB (90% to 95%)
-    // Red: -3dB to 0dB (95% to 100%)
-    const gradient = ctx.createLinearGradient(0, meterBottom, 0, meterTop);
-    gradient.addColorStop(0, '#166534');      // Muted green at -60dB
-    gradient.addColorStop(0.67, '#15803d');   // Green up to -20dB
-    gradient.addColorStop(0.67, '#a16207');   // Muted yellow starts at -20dB
-    gradient.addColorStop(0.90, '#ca8a04');   // Yellow up to -6dB
-    gradient.addColorStop(0.90, '#c2410c');   // Muted orange starts at -6dB
-    gradient.addColorStop(0.95, '#ea580c');   // Orange up to -3dB
-    gradient.addColorStop(0.95, '#b91c1c');   // Muted red starts at -3dB
-    gradient.addColorStop(1, '#dc2626');      // Red at 0dB
-
-    // Always show stereo mode - use provided L/R data or duplicate mono data
-    const channelWidth = (BAR_WIDTH - 4) / 2 - 1; // Leave 2px gap in middle
-    const effectiveLeftPeak = muted ? 0 : (leftPeak ?? peakLevel);
-    const effectiveRightPeak = muted ? 0 : (rightPeak ?? peakLevel);
-    const effectiveLeftRms = muted ? 0 : (leftRms ?? rmsLevel);
-    const effectiveRightRms = muted ? 0 : (rightRms ?? rmsLevel);
-
-    // Left channel
-    const leftPeakPosition = linearToPosition(effectiveLeftPeak);
-    const leftPeakHeight = (leftPeakPosition / 100) * METER_HEIGHT;
-    if (leftPeakHeight > 0) {
-      ctx.fillStyle = gradient;
-      ctx.beginPath();
-      ctx.roundRect(meterX + 2, meterBottom - leftPeakHeight, channelWidth, leftPeakHeight, [0, 0, 2, 2]);
-      ctx.fill();
+      rafId = requestAnimationFrame(render);
     }
 
-    // Right channel
-    const rightX = meterX + 2 + channelWidth + 2; // 2px gap
-    const rightPeakPosition = linearToPosition(effectiveRightPeak);
-    const rightPeakHeight = (rightPeakPosition / 100) * METER_HEIGHT;
-    if (rightPeakHeight > 0) {
-      ctx.fillStyle = gradient;
-      ctx.beginPath();
-      ctx.roundRect(rightX, meterBottom - rightPeakHeight, channelWidth, rightPeakHeight, [0, 0, 2, 2]);
-      ctx.fill();
-    }
+    // Start RAF loop
+    rafId = requestAnimationFrame(render);
 
-    // Draw RMS lines ON TOP of peak fill - bright white line with dark outline for visibility
-    const leftRmsPosition = linearToPosition(effectiveLeftRms);
-    if (leftRmsPosition > 0 && effectiveLeftPeak > 0) {
-      const leftRmsY = dbToY(leftRmsPosition);
-      // Dark outline
-      ctx.fillStyle = '#000000';
-      ctx.fillRect(meterX + 2, leftRmsY - 2, channelWidth, 4);
-      // Bright inner line
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(meterX + 2, leftRmsY - 1, channelWidth, 2);
-    }
-
-    const rightRmsPosition = linearToPosition(effectiveRightRms);
-    if (rightRmsPosition > 0 && effectiveRightPeak > 0) {
-      const rightRmsY = dbToY(rightRmsPosition);
-      // Dark outline
-      ctx.fillStyle = '#000000';
-      ctx.fillRect(rightX, rightRmsY - 2, channelWidth, 4);
-      // Bright inner line
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(rightX, rightRmsY - 1, channelWidth, 2);
-    }
-
-    // Draw L/R labels at top of each channel
-    ctx.font = '6px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-    ctx.fillText('L', meterX + 2 + channelWidth / 2, meterTop + 8);
-    ctx.fillText('R', rightX + channelWidth / 2, meterTop + 8);
-
-    // Draw stereo separator line (bright line between L and R)
-    const separatorX = meterX + 2 + channelWidth + 1; // Center of the 2px gap
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-    ctx.fillRect(separatorX - 0.5, meterTop, 1, METER_HEIGHT);
-
-    // 3. dB scale markers - drawn ON TOP of VU fill so they're visible
-    ctx.font = '8px system-ui, sans-serif';
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'middle';
-
-    const labelMarkers = [0, -5, -10, -15, -20, -25, -30, -35, -40, -45, -50, -55, -60];
-    labelMarkers.forEach(db => {
-      const position = dbToPosition(db);
-      const y = dbToY(position);
-
-      // Soft tick mark across meter
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-      ctx.fillRect(meterX + 1, y - 0.5, BAR_WIDTH - 2, 1);
-
-      // Tick mark extending left from meter
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-      ctx.fillRect(meterX - 4, y - 0.5, 4, 1);
-
-      // dB label
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-      const label = db === 0 ? '0' : String(db);
-      ctx.fillText(label, meterX - 5, y);
-    });
-
-    // Reference levels: -20 dBFS and -9 dBFS (brighter markers)
-    const referenceMarkers = [
-      { db: -20, color: 'rgba(34, 197, 94, 0.9)' },   // Green for -20dB
-      { db: -9, color: 'rgba(234, 179, 8, 0.9)' },    // Yellow for -9dB
-    ];
-    referenceMarkers.forEach(({ db, color }) => {
-      const position = dbToPosition(db);
-      const y = dbToY(position);
-      ctx.fillStyle = color;
-      ctx.fillRect(meterX + 1, y - 1, BAR_WIDTH - 2, 2);
-    });
-
-    // Threshold markers for active filters (dashed lines)
-    thresholdFilters.forEach(filter => {
-      const threshold = (filter as { threshold?: number }).threshold ?? -40;
-      const position = dbToPosition(threshold);
-      const y = dbToY(position);
-      const color = THRESHOLD_COLORS[filter.type] || '#888';
-
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      ctx.setLineDash([4, 3]);
-      ctx.beginPath();
-      ctx.moveTo(meterX, y);
-      ctx.lineTo(meterX + BAR_WIDTH, y);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    });
-
-    // 5. Peak hold line (bright) - spans both channels
-    const effectivePeak = muted ? 0 : peakHold;
-    if (effectivePeak > 0.01) {
-      const peakPosition = linearToPosition(effectivePeak);
-      const peakY = dbToY(peakPosition);
-      // Color based on dB level
-      const peakDbVal = effectivePeak > 0 ? 20 * Math.log10(effectivePeak) : -60;
-      let peakColor = '#22c55e';  // Green (below -20dB)
-      if (peakDbVal > -3) peakColor = '#ef4444';       // Red (above -3dB)
-      else if (peakDbVal > -6) peakColor = '#f97316';  // Orange (-6 to -3dB)
-      else if (peakDbVal > -20) peakColor = '#eab308'; // Yellow (-20 to -6dB)
-
-      ctx.fillStyle = peakColor;
-      ctx.fillRect(meterX + 2, peakY - 1.5, BAR_WIDTH - 4, 3);
-    }
-
-    // 6. Volume arrow (triangle marker on right side of meter, pointing left into it)
-    // Per plan: filled when dragging, outline when idle
-    const volumeY = meterBottom - localVolume * METER_HEIGHT;
-    const arrowX = meterX + BAR_WIDTH; // Arrow starts at the right edge of the meter
-
-    ctx.beginPath();
-    ctx.moveTo(arrowX, volumeY);                                    // Tip (pointing left into meter)
-    ctx.lineTo(arrowX + ARROW_WIDTH, volumeY - ARROW_HEIGHT / 2);   // Top right
-    ctx.lineTo(arrowX + ARROW_WIDTH, volumeY + ARROW_HEIGHT / 2);   // Bottom right
-    ctx.closePath();
-
-    if (isDragging) {
-      // Filled when dragging
-      ctx.fillStyle = '#7C3AED';
-      ctx.fill();
-    } else {
-      // Outline when idle
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    }
-
-  }, [rmsLevel, peakLevel, peakHold, localVolume, muted, thresholdFilters, isDragging, leftRms, leftPeak, rightRms, rightPeak, BAR_WIDTH, METER_HEIGHT, TOTAL_HEIGHT, TOTAL_WIDTH, LABEL_WIDTH, PADDING_Y]);
+    return () => {
+      cancelAnimationFrame(rafId);
+    };
+  }, [trackId, isMaster, muted, localVolume, isDragging, thresholdFilters]);
 
   // Handle volume change from Y position
   const handleVolumeFromY = useCallback((clientY: number, fine: boolean = false) => {
@@ -540,9 +349,44 @@ export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
   // Calculate display values
   const volumePercent = Math.round(localVolume * 100);
 
-  // Format dB display
+  // Ref for peak dB display - updated directly without React re-renders
+  const peakDbRef = useRef<HTMLSpanElement>(null);
+
+  // Update peak dB display directly via DOM (bypasses React render cycle)
+  useEffect(() => {
+    const updatePeakDb = () => {
+      const span = peakDbRef.current;
+      if (!span) return;
+
+      const level = isMaster
+        ? getMasterLevel()
+        : (trackId ? getTrackLevel(trackId) : getMasterLevel());
+      const db = level.peakDb;
+
+      // Format dB
+      const text = (db <= -60 || !isFinite(db)) ? '-∞' : db.toFixed(1);
+      span.textContent = text;
+
+      // Update color classes based on level
+      span.className = `px-1 py-0.5 rounded ${
+        db > -3
+          ? 'text-red-400 bg-red-500/10'
+          : db > -10
+          ? 'text-yellow-400 bg-yellow-500/10'
+          : 'text-[var(--text-muted)]'
+      }`;
+    };
+
+    // Update at 10Hz - direct DOM update, no React re-renders
+    const interval = setInterval(updatePeakDb, 100);
+    updatePeakDb(); // Initial update
+
+    return () => clearInterval(interval);
+  }, [trackId, isMaster]);
+
+  // Format dB display (used for aria-valuetext)
   const formatDb = (db: number): string => {
-    if (db <= -60) return '-∞';
+    if (db <= -60 || !isFinite(db)) return '-∞';
     return db.toFixed(1);
   };
 
@@ -685,15 +529,10 @@ export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
         {/* dB and volume display */}
         <div className="flex items-center gap-1.5 text-[10px] tabular-nums font-medium">
           <span
-            className={`px-1 py-0.5 rounded ${
-              peakDb > -3
-                ? 'text-red-400 bg-red-500/10'
-                : peakDb > -10
-                ? 'text-yellow-400 bg-yellow-500/10'
-                : 'text-[var(--text-muted)]'
-            }`}
+            ref={peakDbRef}
+            className="px-1 py-0.5 rounded text-[var(--text-muted)]"
           >
-            {formatDb(peakDb)}
+            -∞
           </span>
           <span className="text-[var(--text-muted)]">
             {volumePercent}%

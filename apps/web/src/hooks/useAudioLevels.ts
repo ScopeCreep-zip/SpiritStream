@@ -1,12 +1,23 @@
 /**
  * useAudioLevels Hook
  * Listens for audio_levels WebSocket events from the backend
+ *
+ * PERFORMANCE OPTIMIZATION:
+ * Audio level data is routed to a pure JS store (audioLevelStore) that
+ * bypasses React's render cycle. This eliminates ~30 re-renders per second.
+ * Components read levels directly from the store in RAF loops.
+ *
+ * This hook only manages:
+ * - Connection status (isConnected, isInitializing)
+ * - Capture status per source
+ * - Health status per source
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { events } from '@/lib/backend/events';
 import { useConnectionStore } from '@/stores/connectionStore';
 import type { AudioCaptureResult } from '@/lib/backend/httpApi';
 import { api } from '@/lib/backend/httpApi';
+import { updateLevels, resetLevels, type AudioLevelsData } from '@/lib/audio/audioLevelStore';
 
 export interface AudioLevel {
   rms: number;      // 0-1 RMS level
@@ -20,10 +31,8 @@ export interface AudioLevel {
   rightPeak?: number; // 0-1 right channel peak
 }
 
-export interface AudioLevelsData {
-  tracks: Record<string, AudioLevel>;
-  master: AudioLevel;
-}
+// Re-export AudioLevelsData for backwards compatibility
+export type { AudioLevelsData } from '@/lib/audio/audioLevelStore';
 
 /** Per-source capture status for display in the UI */
 export type CaptureStatus = Record<string, AudioCaptureResult>;
@@ -32,7 +41,8 @@ export type CaptureStatus = Record<string, AudioCaptureResult>;
 export type SourceHealthStatus = Record<string, boolean>;
 
 interface UseAudioLevelsResult {
-  levels: AudioLevelsData | null;
+  // NOTE: `levels` has been removed - components read directly from audioLevelStore
+  // This eliminates ~30 React re-renders per second
   isConnected: boolean;
   /** True when backend is connected but waiting for first audio data */
   isInitializing: boolean;
@@ -45,10 +55,14 @@ interface UseAudioLevelsResult {
 }
 
 /**
- * Hook to subscribe to real-time audio levels from the backend
+ * Hook to subscribe to real-time audio levels from the backend.
+ *
+ * PERFORMANCE: Audio level data is routed to a pure JS store that
+ * bypasses React. Components read levels directly in RAF loops.
+ * This hook only provides connection/capture/health status.
  */
 export function useAudioLevels(): UseAudioLevelsResult {
-  const [levels, setLevels] = useState<AudioLevelsData | null>(null);
+  // NOTE: Removed setLevels state - data goes to pure JS store instead
   const [hasReceivedData, setHasReceivedData] = useState(false);
   const [captureStatus, setCaptureStatusInternal] = useState<CaptureStatus>({});
   const [healthStatus, setHealthStatus] = useState<SourceHealthStatus>({});
@@ -109,9 +123,13 @@ export function useAudioLevels(): UseAudioLevelsResult {
     console.log('[useAudioLevels] Subscribing to audio_levels events...');
 
     // Handler for audio_levels events
+    // PERFORMANCE: Routes data to pure JS store, bypasses React state
     const handleAudioLevels = (payload: AudioLevelsData) => {
       if (mounted) {
-        setLevels(payload);
+        // Update pure JS store (no React re-render)
+        updateLevels(payload);
+
+        // Only update React state for connection status
         setHasReceivedData(true);
 
         // Log first few events and then periodically to confirm data is flowing
@@ -156,12 +174,14 @@ export function useAudioLevels(): UseAudioLevelsResult {
   // Reset when disconnected
   useEffect(() => {
     if (connectionStatus !== 'connected') {
-      setLevels(null);
+      // Reset pure JS store
+      resetLevels();
       setHasReceivedData(false);
     }
   }, [connectionStatus]);
 
-  return { levels, isConnected, isInitializing, captureStatus, setCaptureStatus, healthStatus };
+  // NOTE: `levels` removed from return - components read from audioLevelStore directly
+  return { isConnected, isInitializing, captureStatus, setCaptureStatus, healthStatus };
 }
 
 /**

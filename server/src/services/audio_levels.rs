@@ -215,8 +215,9 @@ impl AudioLevelService {
         tokio::spawn(async move {
             log::info!("AudioLevelService started (real levels only)");
 
-            // ~30Hz update rate for smooth meters
-            let mut ticker = interval(Duration::from_millis(33));
+            // 20Hz update rate (OBS parity) - 50ms intervals
+            // Previously 30Hz (33ms), reduced to match OBS and decrease WebSocket traffic
+            let mut ticker = interval(Duration::from_millis(50));
             let mut emit_count: u64 = 0;
 
             while running.load(Ordering::Relaxed) {
