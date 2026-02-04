@@ -10,6 +10,11 @@ import { api } from '@/lib/backend';
  * Hook to initialize the application on startup
  * Loads profiles and syncs stream state from the Tauri backend
  * Also auto-restores the last used profile if available
+ *
+ * Optimized for parallel initialization:
+ * - Profile restore is nested inside loadProfiles() to run in parallel with other tasks
+ * - Theme setting is nested inside refreshThemes() to avoid sequential awaits
+ * - Device discovery is pre-warmed in background to populate cache
  */
 export function useInitialize() {
   const initialized = useRef(false);
@@ -25,30 +30,17 @@ export function useInitialize() {
     if (!initialized.current) {
       initialized.current = true;
 
-      // Load profiles, themes, and sync stream state in parallel
-      // Also initialize platform-specific default paths for recording/replay
-      // NOTE: refreshThemes is called here (not in themeStore hydration) to ensure
-      // the server is ready - App component's health check runs before this hook
-      // Also initialize theme event listener for live theme updates
+      // Initialize theme event listener for live theme updates
       initThemeEventListener();
+
+      // Run all initialization tasks in parallel for faster startup
+      // Profile restore and theme setting are nested inside their respective
+      // tasks to avoid sequential awaits after Promise.all
       Promise.all([
-        loadProfiles(),
-        syncWithBackend(),
-        refreshThemes(),
-        initRecordingPath(),
-        initReplayBufferPath(),
-      ])
-        .then(async () => {
-          // After profiles are loaded, try to restore last used profile
+        // Load profiles, then restore last used profile
+        loadProfiles().then(async () => {
           try {
             const settings = await api.settings.get();
-            const storedThemeId = settings.themeId || useThemeStore.getState().currentThemeId;
-            if (storedThemeId) {
-              await setTheme(storedThemeId);
-              if (!settings.themeId) {
-                await api.settings.save({ ...settings, themeId: storedThemeId });
-              }
-            }
             if (settings.lastProfile) {
               const profiles = useProfileStore.getState().profiles;
               const exists = profiles.some((p) => p.name === settings.lastProfile);
@@ -60,10 +52,32 @@ export function useInitialize() {
           } catch {
             // Ignore restore errors - user can manually select profile
           }
-        })
-        .catch(() => {
-          // Initialization errors handled elsewhere
-        });
+        }),
+        syncWithBackend(),
+        // Refresh themes, then apply stored theme
+        refreshThemes().then(async () => {
+          try {
+            const settings = await api.settings.get();
+            const storedThemeId = settings.themeId || useThemeStore.getState().currentThemeId;
+            if (storedThemeId) {
+              await setTheme(storedThemeId);
+              if (!settings.themeId) {
+                await api.settings.save({ ...settings, themeId: storedThemeId });
+              }
+            }
+          } catch {
+            // Ignore theme errors
+          }
+        }),
+        initRecordingPath(),
+        initReplayBufferPath(),
+        // Pre-warm device discovery cache in background (don't await result)
+        api.device.refreshAll().catch(() => {
+          // Ignore errors - this is just pre-warming
+        }),
+      ]).catch(() => {
+        // Initialization errors handled elsewhere
+      });
     }
-  }, [loadProfiles, loadProfile, syncWithBackend, initRecordingPath, initReplayBufferPath]);
+  }, [loadProfiles, loadProfile, syncWithBackend, setTheme, refreshThemes, initRecordingPath, initReplayBufferPath]);
 }

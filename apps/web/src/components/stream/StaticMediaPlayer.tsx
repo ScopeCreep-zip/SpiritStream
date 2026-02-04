@@ -85,6 +85,9 @@ export function StaticMediaPlayer({
           onLoad={handleLoad}
           onError={handleError}
           sandbox="allow-scripts allow-same-origin"
+          // credentialless allows cross-origin content when COEP: require-corp is set
+          // @ts-expect-error - credentialless is a valid HTML attribute but not in React types yet
+          credentialless=""
         />
       )}
 

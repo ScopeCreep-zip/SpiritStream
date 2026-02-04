@@ -131,6 +131,10 @@ export function BrowserSourceRenderer({ source, width, height }: BrowserSourceRe
         }}
         sandbox="allow-scripts allow-same-origin allow-forms"
         loading="lazy"
+        // credentialless allows cross-origin content when COEP: require-corp is set
+        // This is needed because external sites don't have CORP headers
+        // @ts-expect-error - credentialless is a valid HTML attribute but not in React types yet
+        credentialless=""
         onLoad={handleLoad}
         onError={handleError}
       />

@@ -15,6 +15,7 @@
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import { api } from '@/lib/backend';
+import { isGo2rtcAvailable } from '@/lib/go2rtcStatus';
 
 export type WebRTCStatus = 'idle' | 'loading' | 'connecting' | 'playing' | 'error' | 'unavailable';
 
@@ -88,6 +89,7 @@ async function connectWHEP(
   await pc.setLocalDescription(offer);
 
   // Wait for ICE gathering to complete (or timeout)
+  // 200ms is sufficient for local STUN - faster than default 500ms
   if (pc.iceGatheringState !== 'complete') {
     await new Promise<void>((resolve) => {
       const checkState = () => {
@@ -97,7 +99,7 @@ async function connectWHEP(
         }
       };
       pc.addEventListener('icegatheringstatechange', checkState);
-      setTimeout(resolve, 500);
+      setTimeout(resolve, 200);
     });
   }
 
@@ -179,22 +181,11 @@ export const useWebRTCConnectionStore = create<WebRTCConnectionState>()(
       set({ connections: { ...connections, [sourceId]: conn } });
 
       try {
-        // Check if go2rtc is available (with retries since it may still be starting)
-        let available = false;
-        const maxRetries = 5;
-        const retryDelay = 1000; // 1 second between retries
+        // Use cached go2rtc availability check for faster startup
+        // The cache is pre-warmed by useBackendConnection hook
+        if (conn.abortController?.signal.aborted) return;
 
-        for (let attempt = 0; attempt < maxRetries; attempt++) {
-          if (conn.abortController?.signal.aborted) return;
-
-          available = await api.webrtc.isAvailable();
-          if (available) break;
-
-          if (attempt < maxRetries - 1) {
-            console.log(`[WebRTCStore] go2rtc not ready, retrying (${attempt + 1}/${maxRetries})...`);
-            await new Promise((resolve) => setTimeout(resolve, retryDelay));
-          }
-        }
+        const available = await isGo2rtcAvailable();
 
         if (conn.abortController?.signal.aborted) return;
 
