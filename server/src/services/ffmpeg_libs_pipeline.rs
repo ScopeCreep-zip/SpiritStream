@@ -2488,6 +2488,38 @@ unsafe fn apply_encoder_options(
         }
     }
 
+    // QSV H.264 specific settings (profile and level)
+    if name_lower.contains("qsv") && name_lower.contains("264") {
+        // Default to high profile if not specified (matches CLI behavior)
+        if profile.is_none() {
+            let key = CString::new("profile").unwrap();
+            let val = CString::new("high").unwrap();
+            ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
+        }
+
+        // Set H.264 level based on resolution for streaming platform compatibility
+        // Level 4.2 supports 1080p60, level 5.1 supports 1440p60 and 4K30
+        let width = (*enc_ctx).width;
+        let height = (*enc_ctx).height;
+        let fps = if (*enc_ctx).framerate.den > 0 {
+            (*enc_ctx).framerate.num / (*enc_ctx).framerate.den
+        } else {
+            30
+        };
+
+        let level = if height > 1080 || (height == 1080 && fps > 60) {
+            "5.1"
+        } else if height >= 1080 && fps >= 60 {
+            "4.2"
+        } else {
+            "4.1"
+        };
+        let key = CString::new("level").unwrap();
+        let val = CString::new(level).unwrap();
+        ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
+        log::debug!("QSV H.264: set level {} for {}x{}@{}fps", level, width, height, fps);
+    }
+
     // Apply Twitch-safe QSV overrides
     // Twitch has strict requirements for QSV: no B-frames, no lookahead, forced IDR
     if is_twitch_target && name_lower.contains("qsv") {
@@ -2496,7 +2528,7 @@ unsafe fn apply_encoder_options(
         // Disable B-frames
         (*enc_ctx).max_b_frames = 0;
 
-        // Disable lookahead
+        // Disable lookahead (reduces latency, required for Twitch)
         let key = CString::new("look_ahead").unwrap();
         let val = CString::new("0").unwrap();
         ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
@@ -2511,7 +2543,7 @@ unsafe fn apply_encoder_options(
         let val = CString::new("1").unwrap();
         ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
 
-        // Repeat PPS/SPS for each IDR
+        // Repeat PPS/SPS for each IDR (ensures stream decoders can join mid-stream)
         let key = CString::new("repeat_pps").unwrap();
         let val = CString::new("1").unwrap();
         ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
