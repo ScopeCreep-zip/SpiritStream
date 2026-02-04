@@ -858,6 +858,7 @@ fn start_libs_pipeline(
         input_url: incoming_url.to_string(),
         expected_stream_key: expected_stream_key.map(String::from),
     });
+    pipeline.set_event_sink(Arc::new(state.event_bus.clone()));
     pipeline.add_group(group, targets)?;
     pipeline.start()?;
     guard.insert(group_id, pipeline);
@@ -1119,6 +1120,7 @@ async fn invoke_command(
                 input_url,
                 expected_stream_key,
             });
+            pipeline.set_event_sink(Arc::new(state.event_bus.clone()));
             pipeline.add_group_config(OutputGroupConfig {
                 group_id,
                 mode: OutputGroupMode::Passthrough,
@@ -1158,6 +1160,7 @@ async fn invoke_command(
                 input_url,
                 expected_stream_key,
             });
+            pipeline.set_event_sink(Arc::new(state.event_bus.clone()));
             pipeline.add_group(group, targets)?;
             pipeline.start()?;
             guard.insert(pipeline_id, pipeline);

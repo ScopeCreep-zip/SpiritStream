@@ -4,19 +4,468 @@
 
 #![cfg(feature = "ffmpeg-libs")]
 
+use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::ffi::c_void;
 use std::os::raw::c_int;
 use std::ptr;
 use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    mpsc::{self, Sender, Receiver},
 };
 use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
 use ffmpeg_sys_next as ffi;
 
-use crate::models::{OutputGroup, StreamTarget};
+use crate::models::{OutputGroup, StreamStats, StreamTarget};
+use crate::services::{emit_event, EventSink};
+
+// ============================================================================
+// Per-Group Control
+// ============================================================================
+
+/// Control state for an individual output group.
+/// Allows stopping/enabling groups without restarting the entire pipeline.
+#[derive(Clone)]
+pub struct GroupControl {
+    /// When true, stop this group and clean up its resources
+    stop_flag: Arc<AtomicBool>,
+    /// When false, skip writing packets to this group (soft disable)
+    enabled: Arc<AtomicBool>,
+}
+
+impl GroupControl {
+    fn new() -> Self {
+        Self {
+            stop_flag: Arc::new(AtomicBool::new(false)),
+            enabled: Arc::new(AtomicBool::new(true)),
+        }
+    }
+
+    /// Check if this group should stop
+    pub fn should_stop(&self) -> bool {
+        self.stop_flag.load(Ordering::SeqCst)
+    }
+
+    /// Check if this group is enabled for packet writing
+    pub fn is_enabled(&self) -> bool {
+        self.enabled.load(Ordering::SeqCst)
+    }
+
+    /// Signal this group to stop
+    pub fn stop(&self) {
+        self.stop_flag.store(true, Ordering::SeqCst);
+    }
+
+    /// Enable packet writing to this group
+    pub fn enable(&self) {
+        self.enabled.store(true, Ordering::SeqCst);
+    }
+
+    /// Disable packet writing to this group (soft stop - keeps connection)
+    pub fn disable(&self) {
+        self.enabled.store(false, Ordering::SeqCst);
+    }
+}
+
+impl Default for GroupControl {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// External handle to control a group from outside the pipeline thread
+#[derive(Clone)]
+pub struct GroupHandle {
+    pub group_id: String,
+    pub mode: OutputGroupMode,
+    control: GroupControl,
+}
+
+impl GroupHandle {
+    /// Stop this group and clean up its resources
+    pub fn stop(&self) {
+        log::info!("Stopping group {} via handle", self.group_id);
+        self.control.stop();
+    }
+
+    /// Check if this group is stopped
+    pub fn is_stopped(&self) -> bool {
+        self.control.should_stop()
+    }
+
+    /// Enable packet writing to this group
+    pub fn enable(&self) {
+        log::info!("Enabling group {} via handle", self.group_id);
+        self.control.enable();
+    }
+
+    /// Disable packet writing (soft stop - keeps RTMP connection)
+    pub fn disable(&self) {
+        log::info!("Disabling group {} via handle", self.group_id);
+        self.control.disable();
+    }
+
+    /// Check if this group is enabled
+    pub fn is_enabled(&self) -> bool {
+        self.control.is_enabled()
+    }
+}
+
+/// Commands that can be sent to the pipeline thread for runtime control
+#[derive(Debug)]
+pub enum PipelineCommand {
+    /// Stop a specific group by ID
+    StopGroup(String),
+    /// Add a new group to the running pipeline
+    AddGroup(OutputGroupConfig),
+}
+
+// ============================================================================
+// Per-Group Stats Tracking
+// ============================================================================
+
+/// Tracks statistics for a single output group during pipeline execution.
+/// Used to accumulate data that will be emitted as StreamStats events.
+struct GroupStatsTracker {
+    group_id: String,
+    /// Total video frames written
+    frame_count: u64,
+    /// Total bytes written (video + audio)
+    total_bytes: u64,
+    /// When the group started
+    start_time: Instant,
+    /// When stats were last emitted
+    last_emit: Instant,
+    /// FPS calculation: frames in the last second
+    recent_frames: u64,
+    /// Timestamp of last FPS calculation
+    last_fps_time: Instant,
+    /// Calculated FPS value
+    current_fps: f64,
+}
+
+impl GroupStatsTracker {
+    fn new(group_id: String) -> Self {
+        let now = Instant::now();
+        Self {
+            group_id,
+            frame_count: 0,
+            total_bytes: 0,
+            start_time: now,
+            last_emit: now,
+            recent_frames: 0,
+            last_fps_time: now,
+            current_fps: 0.0,
+        }
+    }
+
+    /// Record a video frame written
+    fn record_video_frame(&mut self, size_bytes: u64) {
+        self.frame_count += 1;
+        self.total_bytes += size_bytes;
+        self.recent_frames += 1;
+    }
+
+    /// Record an audio packet written
+    fn record_audio_packet(&mut self, size_bytes: u64) {
+        self.total_bytes += size_bytes;
+    }
+
+    /// Update FPS calculation if enough time has passed
+    fn update_fps(&mut self) {
+        let elapsed = self.last_fps_time.elapsed();
+        if elapsed >= Duration::from_secs(1) {
+            let secs = elapsed.as_secs_f64();
+            self.current_fps = self.recent_frames as f64 / secs;
+            self.recent_frames = 0;
+            self.last_fps_time = Instant::now();
+        }
+    }
+
+    /// Check if stats should be emitted (every ~1 second)
+    fn should_emit(&self) -> bool {
+        self.last_emit.elapsed() >= Duration::from_secs(1)
+    }
+
+    /// Generate StreamStats and reset emit timer
+    fn emit_stats(&mut self, dropped_frames: u64) -> StreamStats {
+        self.update_fps();
+        self.last_emit = Instant::now();
+
+        let elapsed_secs = self.start_time.elapsed().as_secs_f64();
+        // Calculate bitrate in kbps: (bytes * 8) / (seconds * 1000)
+        let bitrate_kbps = if elapsed_secs > 0.0 {
+            (self.total_bytes as f64 * 8.0) / (elapsed_secs * 1000.0)
+        } else {
+            0.0
+        };
+
+        // Calculate speed: how fast we're processing relative to real-time
+        // For a real-time stream, this should be ~1.0x
+        let speed = if elapsed_secs > 0.0 && self.current_fps > 0.0 {
+            // Assume 30fps as baseline for speed calculation
+            // A better approach would be to get actual input fps
+            1.0
+        } else {
+            0.0
+        };
+
+        StreamStats {
+            group_id: self.group_id.clone(),
+            frame: self.frame_count,
+            fps: self.current_fps,
+            bitrate: bitrate_kbps,
+            speed,
+            size: self.total_bytes,
+            time: elapsed_secs,
+            dropped_frames,
+            dup_frames: 0,
+        }
+    }
+}
+
+// ============================================================================
+// Bounded Packet Queue
+// ============================================================================
+
+/// Configuration for packet queue buffering
+#[derive(Debug, Clone)]
+pub struct QueueConfig {
+    /// Maximum number of packets to buffer per target
+    pub max_packets: usize,
+    /// Strategy for handling queue overflow
+    pub drop_strategy: DropStrategy,
+}
+
+impl Default for QueueConfig {
+    fn default() -> Self {
+        Self {
+            max_packets: 300, // ~10 seconds at 30fps
+            drop_strategy: DropStrategy::DropOldest,
+        }
+    }
+}
+
+/// Strategy for dropping packets when queue is full
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DropStrategy {
+    /// Drop oldest packets first (better for live streaming - keeps up with real-time)
+    DropOldest,
+    /// Drop newest packets (preserves continuity but falls behind)
+    DropNewest,
+}
+
+/// A bounded packet queue that prevents unbounded memory growth
+struct PacketQueue {
+    /// Buffered packets (each is a cloned AVPacket pointer)
+    packets: std::collections::VecDeque<*mut ffi::AVPacket>,
+    /// Maximum queue size
+    max_size: usize,
+    /// Drop strategy when full
+    drop_strategy: DropStrategy,
+    /// Total packets dropped due to overflow
+    dropped_count: u64,
+}
+
+impl PacketQueue {
+    fn new(config: &QueueConfig) -> Self {
+        Self {
+            packets: std::collections::VecDeque::with_capacity(config.max_packets),
+            max_size: config.max_packets,
+            drop_strategy: config.drop_strategy,
+            dropped_count: 0,
+        }
+    }
+
+    /// Push a packet to the queue, dropping if necessary
+    /// Returns the number of packets dropped (0 or 1)
+    fn push(&mut self, packet: *mut ffi::AVPacket) -> u64 {
+        if self.packets.len() >= self.max_size {
+            match self.drop_strategy {
+                DropStrategy::DropOldest => {
+                    // Drop oldest packet
+                    if let Some(old) = self.packets.pop_front() {
+                        unsafe { ffi::av_packet_free(&mut (old as *mut _)) };
+                    }
+                    self.packets.push_back(packet);
+                    self.dropped_count += 1;
+                    1
+                }
+                DropStrategy::DropNewest => {
+                    // Drop the incoming packet
+                    unsafe { ffi::av_packet_free(&mut (packet as *mut _)) };
+                    self.dropped_count += 1;
+                    1
+                }
+            }
+        } else {
+            self.packets.push_back(packet);
+            0
+        }
+    }
+
+    /// Pop the next packet from the queue
+    fn pop(&mut self) -> Option<*mut ffi::AVPacket> {
+        self.packets.pop_front()
+    }
+
+    /// Get the current queue length
+    fn len(&self) -> usize {
+        self.packets.len()
+    }
+
+    /// Check if queue is empty
+    fn is_empty(&self) -> bool {
+        self.packets.is_empty()
+    }
+
+    /// Get total dropped packet count
+    fn dropped(&self) -> u64 {
+        self.dropped_count
+    }
+
+    /// Clear the queue, freeing all packets
+    fn clear(&mut self) {
+        while let Some(pkt) = self.packets.pop_front() {
+            unsafe { ffi::av_packet_free(&mut (pkt as *mut _)) };
+        }
+    }
+}
+
+impl Drop for PacketQueue {
+    fn drop(&mut self) {
+        self.clear();
+    }
+}
+
+// ============================================================================
+// Error Recovery and Reconnection
+// ============================================================================
+
+/// Configuration for automatic reconnection attempts
+#[derive(Debug, Clone)]
+pub struct ReconnectionConfig {
+    /// Maximum number of retry attempts before giving up
+    pub max_retries: u32,
+    /// Initial delay between retries in seconds
+    pub initial_delay_secs: u64,
+    /// Maximum delay between retries in seconds (caps exponential growth)
+    pub max_delay_secs: u64,
+    /// Number of consecutive write failures before marking target as failed
+    pub failure_threshold: u32,
+    /// Whether to automatically attempt reconnection
+    pub auto_reconnect: bool,
+}
+
+impl Default for ReconnectionConfig {
+    fn default() -> Self {
+        Self {
+            max_retries: 5,
+            initial_delay_secs: 2,
+            max_delay_secs: 60,
+            failure_threshold: 10,
+            auto_reconnect: true,
+        }
+    }
+}
+
+/// Tracks the state of a single output target for error recovery
+struct TargetState {
+    /// URL for reconnection
+    url: String,
+    /// Consecutive write failures
+    consecutive_failures: u32,
+    /// Whether this target is currently failed/disconnected
+    is_failed: bool,
+    /// Current reconnection attempt (0 = not reconnecting)
+    reconnect_attempt: u32,
+    /// Time of last reconnection attempt
+    last_reconnect: Option<Instant>,
+    /// Whether reconnection is in progress
+    reconnecting: bool,
+}
+
+impl TargetState {
+    fn new(url: String) -> Self {
+        Self {
+            url,
+            consecutive_failures: 0,
+            is_failed: false,
+            reconnect_attempt: 0,
+            last_reconnect: None,
+            reconnecting: false,
+        }
+    }
+
+    /// Record a successful write (resets failure counter)
+    fn record_success(&mut self) {
+        self.consecutive_failures = 0;
+        if self.is_failed {
+            self.is_failed = false;
+            self.reconnect_attempt = 0;
+            log::info!("Target {} recovered", self.url);
+        }
+    }
+
+    /// Record a write failure, returns true if target should be marked as failed
+    fn record_failure(&mut self, threshold: u32) -> bool {
+        self.consecutive_failures += 1;
+        if !self.is_failed && self.consecutive_failures >= threshold {
+            self.is_failed = true;
+            log::warn!(
+                "Target {} marked as failed after {} consecutive failures",
+                self.url,
+                self.consecutive_failures
+            );
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Check if enough time has passed for next reconnection attempt
+    fn should_attempt_reconnect(&self, config: &ReconnectionConfig) -> bool {
+        if !self.is_failed || self.reconnecting {
+            return false;
+        }
+        if self.reconnect_attempt >= config.max_retries {
+            return false;
+        }
+        match self.last_reconnect {
+            None => true,
+            Some(last) => {
+                let delay = self.next_delay(config);
+                last.elapsed() >= delay
+            }
+        }
+    }
+
+    /// Calculate next reconnection delay with exponential backoff
+    fn next_delay(&self, config: &ReconnectionConfig) -> Duration {
+        let delay_secs = config.initial_delay_secs * (1u64 << self.reconnect_attempt.min(6));
+        Duration::from_secs(delay_secs.min(config.max_delay_secs))
+    }
+
+    /// Mark reconnection attempt started
+    fn start_reconnect(&mut self) {
+        self.reconnecting = true;
+        self.reconnect_attempt += 1;
+        self.last_reconnect = Some(Instant::now());
+    }
+
+    /// Mark reconnection attempt finished
+    fn finish_reconnect(&mut self, success: bool) {
+        self.reconnecting = false;
+        if success {
+            self.is_failed = false;
+            self.consecutive_failures = 0;
+            self.reconnect_attempt = 0;
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct InputPipelineConfig {
@@ -49,6 +498,12 @@ pub struct InputPipeline {
     groups: Vec<OutputGroupConfig>,
     stop_flag: Arc<AtomicBool>,
     thread: Option<JoinHandle<Result<(), String>>>,
+    /// Command sender for runtime control (created on start)
+    command_tx: Option<Sender<PipelineCommand>>,
+    /// Handles for controlling individual groups
+    group_handles: Arc<Mutex<HashMap<String, GroupHandle>>>,
+    /// Event sink for emitting stats and lifecycle events
+    event_sink: Option<Arc<dyn EventSink>>,
 }
 
 impl InputPipeline {
@@ -60,7 +515,15 @@ impl InputPipeline {
             groups: Vec::new(),
             stop_flag: Arc::new(AtomicBool::new(false)),
             thread: None,
+            command_tx: None,
+            group_handles: Arc::new(Mutex::new(HashMap::new())),
+            event_sink: None,
         }
+    }
+
+    /// Set the event sink for emitting stats and lifecycle events
+    pub fn set_event_sink(&mut self, sink: Arc<dyn EventSink>) {
+        self.event_sink = Some(sink);
     }
 
     pub fn input_id(&self) -> &str {
@@ -101,18 +564,118 @@ impl InputPipeline {
             return Err("Only one transcode group is supported in ffmpeg-libs pipeline for now".to_string());
         }
 
+        // Create command channel for runtime control
+        let (command_tx, command_rx) = mpsc::channel();
+        self.command_tx = Some(command_tx);
+
+        // Create control handles for each group
+        let mut group_controls = HashMap::new();
+        {
+            let mut handles = self.group_handles.lock()
+                .map_err(|e| format!("Lock poisoned: {e}"))?;
+            handles.clear();
+
+            for group_config in &self.groups {
+                let control = GroupControl::new();
+                let handle = GroupHandle {
+                    group_id: group_config.group_id.clone(),
+                    mode: group_config.mode,
+                    control: control.clone(),
+                };
+                handles.insert(group_config.group_id.clone(), handle);
+                group_controls.insert(group_config.group_id.clone(), control);
+            }
+        }
+
         let input_url = self.input_url.clone();
         let expected_stream_key = self.expected_stream_key.clone();
         let stop_flag = Arc::clone(&self.stop_flag);
         let groups = self.groups.clone();
+        let event_sink = self.event_sink.clone();
 
-        let handle = thread::spawn(move || run_pipeline_loop(&input_url, expected_stream_key.as_deref(), groups, stop_flag));
+        let handle = thread::spawn(move || {
+            run_pipeline_loop(
+                &input_url,
+                expected_stream_key.as_deref(),
+                groups,
+                group_controls,
+                stop_flag,
+                command_rx,
+                event_sink,
+            )
+        });
         self.thread = Some(handle);
         Ok(())
     }
 
+    /// Stop the entire pipeline (all groups and input)
     pub fn stop(&mut self) {
         self.stop_flag.store(true, Ordering::SeqCst);
+    }
+
+    /// Stop a specific group without stopping the pipeline
+    pub fn stop_group(&self, group_id: &str) -> Result<(), String> {
+        let handles = self.group_handles.lock()
+            .map_err(|e| format!("Lock poisoned: {e}"))?;
+
+        if let Some(handle) = handles.get(group_id) {
+            handle.stop();
+            Ok(())
+        } else {
+            Err(format!("Group not found: {}", group_id))
+        }
+    }
+
+    /// Enable a specific group (resume packet writing)
+    pub fn enable_group(&self, group_id: &str) -> Result<(), String> {
+        let handles = self.group_handles.lock()
+            .map_err(|e| format!("Lock poisoned: {e}"))?;
+
+        if let Some(handle) = handles.get(group_id) {
+            handle.enable();
+            Ok(())
+        } else {
+            Err(format!("Group not found: {}", group_id))
+        }
+    }
+
+    /// Disable a specific group (pause packet writing, keep connection)
+    pub fn disable_group(&self, group_id: &str) -> Result<(), String> {
+        let handles = self.group_handles.lock()
+            .map_err(|e| format!("Lock poisoned: {e}"))?;
+
+        if let Some(handle) = handles.get(group_id) {
+            handle.disable();
+            Ok(())
+        } else {
+            Err(format!("Group not found: {}", group_id))
+        }
+    }
+
+    /// Get a handle to control a specific group
+    pub fn get_group_handle(&self, group_id: &str) -> Option<GroupHandle> {
+        let handles = self.group_handles.lock().ok()?;
+        handles.get(group_id).cloned()
+    }
+
+    /// Get handles for all groups
+    pub fn get_all_group_handles(&self) -> Vec<GroupHandle> {
+        let handles = match self.group_handles.lock() {
+            Ok(h) => h,
+            Err(_) => return Vec::new(),
+        };
+        handles.values().cloned().collect()
+    }
+
+    /// Check if a specific group is running (not stopped)
+    pub fn is_group_running(&self, group_id: &str) -> bool {
+        let handles = match self.group_handles.lock() {
+            Ok(h) => h,
+            Err(_) => return false,
+        };
+        handles.get(group_id)
+            .map(|h| !h.is_stopped())
+            .unwrap_or(false)
     }
 
     pub fn join(&mut self) -> Result<(), String> {
@@ -127,15 +690,27 @@ impl InputPipeline {
 struct TargetOutput {
     ctx: *mut ffi::AVFormatContext,
     out_streams: Vec<*mut ffi::AVStream>,
+    /// Error tracking and reconnection state
+    state: TargetState,
 }
 
 struct GroupOutputs {
     group_id: String,
+    control: GroupControl,
     targets: Vec<TargetOutput>,
+    /// Reconnection configuration for this group
+    reconnect_config: ReconnectionConfig,
+    /// Queue configuration for this group
+    queue_config: QueueConfig,
+    /// Total dropped frames across all targets (for stats)
+    dropped_frames: u64,
+    /// Track if this group has been cleaned up
+    cleaned_up: bool,
 }
 
 struct TranscodeGroup {
     group_id: String,
+    control: GroupControl,
     video_stream_index: usize,
     audio_stream_index: Option<usize>,
     video_dec_ctx: *mut ffi::AVCodecContext,
@@ -151,6 +726,8 @@ struct TranscodeGroup {
     video_hw_frame: Option<*mut ffi::AVFrame>,
     audio_dec_frame: *mut ffi::AVFrame,
     outputs: Vec<TranscodeOutput>,
+    /// Track if this group has been cleaned up
+    cleaned_up: bool,
 }
 
 struct TranscodeOutput {
@@ -219,11 +796,20 @@ fn run_pipeline_loop(
     input_url: &str,
     expected_stream_key: Option<&str>,
     groups: Vec<OutputGroupConfig>,
+    group_controls: HashMap<String, GroupControl>,
     stop_flag: Arc<AtomicBool>,
+    command_rx: Receiver<PipelineCommand>,
+    event_sink: Option<Arc<dyn EventSink>>,
 ) -> Result<(), String> {
     unsafe {
         ffi::avformat_network_init();
     }
+
+    // Initialize per-group stats trackers
+    let mut stats_trackers: HashMap<String, GroupStatsTracker> = groups
+        .iter()
+        .map(|g| (g.group_id.clone(), GroupStatsTracker::new(g.group_id.clone())))
+        .collect();
 
     let mut input_ctx = unsafe { ffi::avformat_alloc_context() };
     if input_ctx.is_null() {
@@ -303,13 +889,17 @@ fn run_pipeline_loop(
     }
 
     let (video_stream_index, audio_stream_index) = find_stream_indices(input_ctx)?;
-    let group_outputs = create_group_outputs(input_ctx, &groups)?;
+    let mut group_outputs = create_group_outputs(input_ctx, &groups, &group_controls)?;
     let transcode_group_config = groups.iter()
         .find(|group| group.mode == OutputGroupMode::Transcode);
     let mut transcode_group = if let Some(config) = transcode_group_config {
+        let control = group_controls.get(&config.group_id)
+            .cloned()
+            .unwrap_or_default();
         Some(create_transcode_group(
             input_ctx,
             config,
+            control,
             video_stream_index,
             audio_stream_index,
         )?)
@@ -319,7 +909,7 @@ fn run_pipeline_loop(
 
     let mut packet = unsafe { ffi::av_packet_alloc() };
     if packet.is_null() {
-        cleanup_outputs(group_outputs);
+        cleanup_outputs(&mut group_outputs);
         if let Some(group) = transcode_group.take() {
             cleanup_transcode_group(group);
         }
@@ -328,7 +918,59 @@ fn run_pipeline_loop(
     }
 
     loop {
+        // Check global stop flag
         if stop_flag.load(Ordering::SeqCst) {
+            break;
+        }
+
+        // Process any pending commands (non-blocking)
+        while let Ok(cmd) = command_rx.try_recv() {
+            match cmd {
+                PipelineCommand::StopGroup(group_id) => {
+                    log::info!("Received command to stop group: {}", group_id);
+                    // Mark the group as stopped via control flag
+                    if let Some(control) = group_controls.get(&group_id) {
+                        control.stop();
+                    }
+                }
+                PipelineCommand::AddGroup(_config) => {
+                    // Adding groups at runtime requires more complex handling
+                    // For now, log and skip - groups must be added before start()
+                    log::warn!("AddGroup command received but runtime group addition not yet supported");
+                }
+            }
+        }
+
+        // Check per-group stop flags and clean up stopped groups
+        for group_out in group_outputs.iter_mut() {
+            if !group_out.cleaned_up && group_out.control.should_stop() {
+                log::info!("Cleaning up stopped passthrough group: {}", group_out.group_id);
+                cleanup_single_passthrough_group(group_out);
+                // Emit stream_ended event
+                if let Some(ref sink) = event_sink {
+                    emit_event(sink.as_ref(), "stream_ended", &group_out.group_id);
+                }
+            }
+        }
+
+        if let Some(ref mut tg) = transcode_group {
+            if !tg.cleaned_up && tg.control.should_stop() {
+                log::info!("Cleaning up stopped transcode group: {}", tg.group_id);
+                flush_transcode_group(tg)?;
+                cleanup_transcode_group_outputs(tg);
+                tg.cleaned_up = true;
+                // Emit stream_ended event
+                if let Some(ref sink) = event_sink {
+                    emit_event(sink.as_ref(), "stream_ended", &tg.group_id);
+                }
+            }
+        }
+
+        // Check if all groups are stopped - if so, exit the loop
+        let all_passthrough_stopped = group_outputs.iter().all(|g| g.cleaned_up);
+        let transcode_stopped = transcode_group.as_ref().map(|g| g.cleaned_up).unwrap_or(true);
+        if all_passthrough_stopped && transcode_stopped {
+            log::info!("All groups stopped, exiting pipeline loop");
             break;
         }
 
@@ -351,27 +993,201 @@ fn run_pipeline_loop(
             continue;
         }
 
-        if stream_index == video_stream_index {
-            write_passthrough_packet(packet, in_stream, &group_outputs);
+        let packet_size = unsafe { (*packet).size as u64 };
+        let is_video = stream_index == video_stream_index;
+
+        if is_video {
+            let failures = write_passthrough_packet(packet, in_stream, &mut group_outputs);
+            // Emit stream_error events for newly failed targets
+            if let Some(ref sink) = event_sink {
+                for failure in failures {
+                    emit_event(
+                        sink.as_ref(),
+                        "stream_error",
+                        &serde_json::json!({
+                            "groupId": failure.group_id,
+                            "error": format!("Target {} failed: {}", failure.target_url, failure.error),
+                            "canRetry": true,
+                            "suggestion": "Stream connection lost. Will attempt automatic reconnection."
+                        }),
+                    );
+                }
+            }
+            // Track stats for passthrough groups
+            for group_out in &group_outputs {
+                if !group_out.cleaned_up && group_out.control.is_enabled() {
+                    if let Some(tracker) = stats_trackers.get_mut(&group_out.group_id) {
+                        tracker.record_video_frame(packet_size);
+                    }
+                }
+            }
             if let Some(group) = transcode_group.as_mut() {
-                transcode_video_packet(group, in_stream, packet)?;
+                if !group.cleaned_up && group.control.is_enabled() {
+                    transcode_video_packet(group, in_stream, packet)?;
+                    // Track stats for transcode group
+                    if let Some(tracker) = stats_trackers.get_mut(&group.group_id) {
+                        tracker.record_video_frame(packet_size);
+                    }
+                }
             }
         } else if audio_stream_index == Some(stream_index) {
-            write_passthrough_packet(packet, in_stream, &group_outputs);
+            let failures = write_passthrough_packet(packet, in_stream, &mut group_outputs);
+            // Emit stream_error events for newly failed targets
+            if let Some(ref sink) = event_sink {
+                for failure in failures {
+                    emit_event(
+                        sink.as_ref(),
+                        "stream_error",
+                        &serde_json::json!({
+                            "groupId": failure.group_id,
+                            "error": format!("Target {} failed: {}", failure.target_url, failure.error),
+                            "canRetry": true,
+                            "suggestion": "Stream connection lost. Will attempt automatic reconnection."
+                        }),
+                    );
+                }
+            }
+            // Track stats for passthrough groups
+            for group_out in &group_outputs {
+                if !group_out.cleaned_up && group_out.control.is_enabled() {
+                    if let Some(tracker) = stats_trackers.get_mut(&group_out.group_id) {
+                        tracker.record_audio_packet(packet_size);
+                    }
+                }
+            }
             if let Some(group) = transcode_group.as_mut() {
-                transcode_audio_packet(group, in_stream, packet)?;
+                if !group.cleaned_up && group.control.is_enabled() {
+                    transcode_audio_packet(group, in_stream, packet)?;
+                    // Track stats for transcode group
+                    if let Some(tracker) = stats_trackers.get_mut(&group.group_id) {
+                        tracker.record_audio_packet(packet_size);
+                    }
+                }
+            }
+        }
+
+        // Attempt reconnection for failed targets
+        for group in &mut group_outputs {
+            if group.cleaned_up {
+                continue;
+            }
+            for target in &mut group.targets {
+                if target.state.should_attempt_reconnect(&group.reconnect_config) {
+                    target.state.start_reconnect();
+                    log::info!(
+                        "Attempting reconnection for target {} (attempt {}/{})",
+                        target.state.url,
+                        target.state.reconnect_attempt,
+                        group.reconnect_config.max_retries
+                    );
+
+                    // Emit reconnecting event
+                    if let Some(ref sink) = event_sink {
+                        emit_event(
+                            sink.as_ref(),
+                            "stream_reconnecting",
+                            &serde_json::json!({
+                                "groupId": group.group_id,
+                                "targetUrl": target.state.url,
+                                "attempt": target.state.reconnect_attempt,
+                                "maxAttempts": group.reconnect_config.max_retries,
+                                "delaySecs": target.state.next_delay(&group.reconnect_config).as_secs()
+                            }),
+                        );
+                    }
+
+                    // Try to reconnect (recreate the output context)
+                    match try_reconnect_target(input_ctx, &target.state.url) {
+                        Ok(new_target) => {
+                            log::info!("Reconnected target {}", target.state.url);
+                            // Preserve the URL but update the connection
+                            let url = target.state.url.clone();
+                            *target = new_target;
+                            target.state.url = url;
+                            target.state.finish_reconnect(true);
+                        }
+                        Err(e) => {
+                            log::warn!("Reconnection failed for {}: {}", target.state.url, e);
+                            target.state.finish_reconnect(false);
+
+                            // Check if we've exhausted retries
+                            if target.state.reconnect_attempt >= group.reconnect_config.max_retries {
+                                log::error!(
+                                    "Target {} has exhausted all {} reconnection attempts",
+                                    target.state.url,
+                                    group.reconnect_config.max_retries
+                                );
+                                if let Some(ref sink) = event_sink {
+                                    emit_event(
+                                        sink.as_ref(),
+                                        "stream_error",
+                                        &serde_json::json!({
+                                            "groupId": group.group_id,
+                                            "error": format!("Target {} failed permanently after {} attempts", target.state.url, group.reconnect_config.max_retries),
+                                            "canRetry": false,
+                                            "suggestion": "Maximum reconnection attempts reached. Manual intervention required."
+                                        }),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Emit stats periodically for all active groups
+        if let Some(ref sink) = event_sink {
+            for (group_id, tracker) in stats_trackers.iter_mut() {
+                // Check if this group is still active and get dropped frames count
+                let group_info = group_outputs.iter()
+                    .find(|g| &g.group_id == group_id && !g.cleaned_up)
+                    .map(|g| (true, g.dropped_frames));
+
+                let (is_active, dropped_frames) = match group_info {
+                    Some((active, dropped)) => (active, dropped),
+                    None => {
+                        // Check transcode group
+                        let transcode_active = transcode_group.as_ref()
+                            .map(|g| &g.group_id == group_id && !g.cleaned_up)
+                            .unwrap_or(false);
+                        (transcode_active, 0) // Transcode group doesn't track dropped frames yet
+                    }
+                };
+
+                if is_active && tracker.should_emit() {
+                    let stats = tracker.emit_stats(dropped_frames);
+                    emit_event(sink.as_ref(), "stream_stats", &stats);
+                }
             }
         }
 
         unsafe { ffi::av_packet_unref(packet) };
     }
 
-    if let Some(group) = transcode_group.as_mut() {
-        flush_transcode_group(group)?;
+    // Final cleanup - flush and close any groups that weren't stopped individually
+    if let Some(ref mut group) = transcode_group {
+        if !group.cleaned_up {
+            flush_transcode_group(group)?;
+        }
+    }
+
+    // Emit final stream_ended events for groups that completed normally
+    if let Some(ref sink) = event_sink {
+        for group_out in &group_outputs {
+            if !group_out.cleaned_up {
+                emit_event(sink.as_ref(), "stream_ended", &group_out.group_id);
+            }
+        }
+        if let Some(ref tg) = transcode_group {
+            if !tg.cleaned_up {
+                emit_event(sink.as_ref(), "stream_ended", &tg.group_id);
+            }
+        }
     }
 
     unsafe { ffi::av_packet_free(&mut packet) };
-    cleanup_outputs(group_outputs);
+    cleanup_outputs(&mut group_outputs);
     if let Some(group) = transcode_group.take() {
         cleanup_transcode_group(group);
     }
@@ -383,6 +1199,7 @@ fn run_pipeline_loop(
 fn create_group_outputs(
     input_ctx: *mut ffi::AVFormatContext,
     groups: &[OutputGroupConfig],
+    group_controls: &HashMap<String, GroupControl>,
 ) -> Result<Vec<GroupOutputs>, String> {
     let mut outputs = Vec::new();
     for group in groups {
@@ -396,9 +1213,18 @@ fn create_group_outputs(
             targets.push(target);
         }
 
+        let control = group_controls.get(&group.group_id)
+            .cloned()
+            .unwrap_or_default();
+
         outputs.push(GroupOutputs {
             group_id: group.group_id.clone(),
+            control,
             targets,
+            reconnect_config: ReconnectionConfig::default(),
+            queue_config: QueueConfig::default(),
+            dropped_frames: 0,
+            cleaned_up: false,
         });
     }
 
@@ -505,16 +1331,48 @@ fn create_flv_output(
     Ok(TargetOutput {
         ctx: output_ctx,
         out_streams,
+        state: TargetState::new(url.to_string()),
     })
+}
+
+/// Attempt to reconnect a failed target by creating a new output context
+fn try_reconnect_target(
+    input_ctx: *mut ffi::AVFormatContext,
+    url: &str,
+) -> Result<TargetOutput, String> {
+    // This reuses create_flv_output which will create a fresh connection
+    create_flv_output(input_ctx, url)
+}
+
+/// Information about a target that just failed
+struct TargetFailure {
+    group_id: String,
+    target_url: String,
+    error: String,
 }
 
 fn write_passthrough_packet(
     packet: *mut ffi::AVPacket,
     in_stream: *mut ffi::AVStream,
-    group_outputs: &[GroupOutputs],
-) {
-    for group in group_outputs {
-        for target in &group.targets {
+    group_outputs: &mut [GroupOutputs],
+) -> Vec<TargetFailure> {
+    let mut failures = Vec::new();
+
+    for group in group_outputs.iter_mut() {
+        // Skip groups that are stopped or disabled
+        if group.cleaned_up || !group.control.is_enabled() {
+            continue;
+        }
+
+        let threshold = group.reconnect_config.failure_threshold;
+
+        for target in &mut group.targets {
+            // Skip failed targets (they need reconnection) - count as dropped frame
+            if target.state.is_failed {
+                group.dropped_frames += 1;
+                continue;
+            }
+
             let stream_index = unsafe { (*packet).stream_index as usize };
             if stream_index >= target.out_streams.len() {
                 continue;
@@ -535,21 +1393,36 @@ fn write_passthrough_packet(
                 (*pkt_clone).stream_index = (*out_stream).index;
                 let write_ret = ffi::av_interleaved_write_frame(target.ctx, pkt_clone);
                 if write_ret < 0 {
+                    let error = ffmpeg_err(write_ret);
                     log::warn!(
                         "FFmpeg libs write failed for group {}: {}",
                         group.group_id,
-                        ffmpeg_err(write_ret)
+                        error
                     );
+                    // Track failure and check if target should be marked as failed
+                    if target.state.record_failure(threshold) {
+                        failures.push(TargetFailure {
+                            group_id: group.group_id.clone(),
+                            target_url: target.state.url.clone(),
+                            error,
+                        });
+                    }
+                } else {
+                    // Successful write - reset failure counter
+                    target.state.record_success();
                 }
                 ffi::av_packet_free(&mut pkt_clone);
             }
         }
     }
+
+    failures
 }
 
 fn create_transcode_group(
     input_ctx: *mut ffi::AVFormatContext,
     config: &OutputGroupConfig,
+    control: GroupControl,
     video_stream_index: usize,
     audio_stream_index: Option<usize>,
 ) -> Result<TranscodeGroup, String> {
@@ -946,6 +1819,7 @@ fn create_transcode_group(
 
     Ok(TranscodeGroup {
         group_id: config.group_id.clone(),
+        control,
         video_stream_index,
         audio_stream_index,
         video_dec_ctx,
@@ -961,6 +1835,7 @@ fn create_transcode_group(
         video_hw_frame,
         audio_dec_frame,
         outputs,
+        cleaned_up: false,
     })
 }
 
@@ -1373,7 +2248,84 @@ fn flush_transcode_group(group: &mut TranscodeGroup) -> Result<(), String> {
     Ok(())
 }
 
+/// Clean up a single passthrough group (close RTMP connections, free contexts)
+fn cleanup_single_passthrough_group(group: &mut GroupOutputs) {
+    if group.cleaned_up {
+        return;
+    }
+
+    log::debug!("Cleaning up passthrough group: {}", group.group_id);
+
+    for target in &mut group.targets {
+        unsafe {
+            if !target.ctx.is_null() {
+                let _ = ffi::av_write_trailer(target.ctx);
+                if (*(*target.ctx).oformat).flags & ffi::AVFMT_NOFILE == 0 {
+                    let _ = ffi::avio_closep(&mut (*target.ctx).pb);
+                }
+                ffi::avformat_free_context(target.ctx);
+                target.ctx = ptr::null_mut();
+            }
+        }
+    }
+
+    group.cleaned_up = true;
+}
+
+/// Clean up transcode group output connections only (not encoder contexts)
+/// Used when stopping a group mid-stream
+fn cleanup_transcode_group_outputs(group: &mut TranscodeGroup) {
+    log::debug!("Cleaning up transcode group outputs: {}", group.group_id);
+
+    for output in &mut group.outputs {
+        unsafe {
+            if !output.ctx.is_null() {
+                let _ = ffi::av_write_trailer(output.ctx);
+                if (*(*output.ctx).oformat).flags & ffi::AVFMT_NOFILE == 0 {
+                    let _ = ffi::avio_closep(&mut (*output.ctx).pb);
+                }
+                ffi::avformat_free_context(output.ctx);
+                output.ctx = ptr::null_mut();
+            }
+        }
+    }
+}
+
+/// Full cleanup of transcode group (all resources including encoder contexts)
 fn cleanup_transcode_group(group: TranscodeGroup) {
+    if group.cleaned_up {
+        // Outputs already cleaned, just free encoder resources
+        unsafe {
+            ffi::av_frame_free(&mut (group.video_dec_frame as *mut _));
+            ffi::av_frame_free(&mut (group.video_sw_frame as *mut _));
+            if let Some(mut hw_frame) = group.video_hw_frame {
+                ffi::av_frame_free(&mut (hw_frame as *mut _));
+            }
+            if !group.audio_dec_frame.is_null() {
+                ffi::av_frame_free(&mut (group.audio_dec_frame as *mut _));
+            }
+            if let Some(mut swr_ctx) = group.swr_ctx {
+                ffi::swr_free(&mut swr_ctx);
+            }
+            ffi::sws_freeContext(group.sws_ctx);
+            if let Some(mut frames_ref) = group.video_hw_frames_ctx {
+                ffi::av_buffer_unref(&mut frames_ref);
+            }
+            if let Some(mut audio_enc) = group.audio_enc_ctx {
+                ffi::avcodec_free_context(&mut audio_enc);
+            }
+            if let Some(mut audio_dec) = group.audio_dec_ctx {
+                ffi::avcodec_free_context(&mut audio_dec);
+            }
+            if let Some(mut device_ref) = group.video_hw_device {
+                ffi::av_buffer_unref(&mut device_ref);
+            }
+            ffi::avcodec_free_context(&mut (group.video_enc_ctx as *mut _));
+            ffi::avcodec_free_context(&mut (group.video_dec_ctx as *mut _));
+        }
+        return;
+    }
+
     unsafe {
         for output in group.outputs {
             let _ = ffi::av_write_trailer(output.ctx);
@@ -1411,17 +2363,10 @@ fn cleanup_transcode_group(group: TranscodeGroup) {
     }
 }
 
-fn cleanup_outputs(groups: Vec<GroupOutputs>) {
-    for group in groups {
-        for mut target in group.targets {
-            unsafe {
-                let _ = ffi::av_write_trailer(target.ctx);
-                if (*(*target.ctx).oformat).flags & ffi::AVFMT_NOFILE == 0 {
-                    let _ = ffi::avio_closep(&mut (*target.ctx).pb);
-                }
-                ffi::avformat_free_context(target.ctx);
-            }
-        }
+/// Clean up all passthrough groups
+fn cleanup_outputs(groups: &mut Vec<GroupOutputs>) {
+    for group in groups.iter_mut() {
+        cleanup_single_passthrough_group(group);
     }
 }
 
@@ -1543,6 +2488,38 @@ unsafe fn apply_encoder_options(
         }
     }
 
+    // QSV H.264 specific settings (profile and level)
+    if name_lower.contains("qsv") && name_lower.contains("264") {
+        // Default to high profile if not specified (matches CLI behavior)
+        if profile.is_none() {
+            let key = CString::new("profile").unwrap();
+            let val = CString::new("high").unwrap();
+            ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
+        }
+
+        // Set H.264 level based on resolution for streaming platform compatibility
+        // Level 4.2 supports 1080p60, level 5.1 supports 1440p60 and 4K30
+        let width = (*enc_ctx).width;
+        let height = (*enc_ctx).height;
+        let fps = if (*enc_ctx).framerate.den > 0 {
+            (*enc_ctx).framerate.num / (*enc_ctx).framerate.den
+        } else {
+            30
+        };
+
+        let level = if height > 1080 || (height == 1080 && fps > 60) {
+            "5.1"
+        } else if height >= 1080 && fps >= 60 {
+            "4.2"
+        } else {
+            "4.1"
+        };
+        let key = CString::new("level").unwrap();
+        let val = CString::new(level).unwrap();
+        ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
+        log::debug!("QSV H.264: set level {} for {}x{}@{}fps", level, width, height, fps);
+    }
+
     // Apply Twitch-safe QSV overrides
     // Twitch has strict requirements for QSV: no B-frames, no lookahead, forced IDR
     if is_twitch_target && name_lower.contains("qsv") {
@@ -1551,7 +2528,7 @@ unsafe fn apply_encoder_options(
         // Disable B-frames
         (*enc_ctx).max_b_frames = 0;
 
-        // Disable lookahead
+        // Disable lookahead (reduces latency, required for Twitch)
         let key = CString::new("look_ahead").unwrap();
         let val = CString::new("0").unwrap();
         ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
@@ -1566,7 +2543,7 @@ unsafe fn apply_encoder_options(
         let val = CString::new("1").unwrap();
         ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
 
-        // Repeat PPS/SPS for each IDR
+        // Repeat PPS/SPS for each IDR (ensures stream decoders can join mid-stream)
         let key = CString::new("repeat_pps").unwrap();
         let val = CString::new("1").unwrap();
         ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
