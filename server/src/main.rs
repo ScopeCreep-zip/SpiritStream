@@ -34,6 +34,7 @@ use std::{
 use subtle::ConstantTimeEq;
 use tokio::sync::{broadcast, Mutex as AsyncMutex};
 use tokio::signal;
+use tokio::task::JoinSet;
 use tower_cookies::{Cookie, CookieManagerLayer, Cookies};
 use tower_http::{
     cors::{AllowOrigin, CorsLayer},
@@ -51,7 +52,7 @@ use spiritstream_server::services::{
     Encryption, EventSink, FFmpegDownloader, FFmpegHandler, ProfileManager, SettingsManager,
     ThemeManager, DeviceDiscovery, PreviewHandler, PreviewParams,
     // Native capture services
-    ScreenCaptureService, ScreenCaptureConfig, AudioCaptureService, AudioCaptureConfig,
+    ScreenCaptureService, ScreenCaptureConfig, AudioCaptureService, AudioCaptureConfig, AudioBuffer,
     CameraCaptureService, CameraCaptureConfig,
     NativePreviewService,
     RecordingService, RecordingConfig, RecordingFormat,
@@ -1641,7 +1642,14 @@ async fn ws_handler(
         return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
     }
 
-    ws.on_upgrade(move |socket| handle_socket(socket, state.event_bus.subscribe()))
+    // Optimize WebSocket buffer sizes for real-time audio level data
+    // - write_buffer_size: 0 = eagerly write each message (lower latency for small frequent updates)
+    // - max_write_buffer_size: 64KB backpressure limit
+    // - max_message_size: 64KB limit for incoming messages (we only receive small control messages)
+    ws.write_buffer_size(0)
+        .max_write_buffer_size(64 * 1024)
+        .max_message_size(64 * 1024)
+        .on_upgrade(move |socket| handle_socket(socket, state.event_bus.subscribe()))
 }
 
 async fn handle_socket(mut socket: WebSocket, mut receiver: broadcast::Receiver<ServerEvent>) {
@@ -2960,6 +2968,7 @@ async fn invoke_command(
             let source_ids: Vec<String> = get_arg(&payload, "sourceIds")?;
             let profile_name: Option<String> = get_opt_arg(&payload, "profileName")?;
 
+            let cmd_start = std::time::Instant::now();
             log::info!("=== set_audio_monitor_sources START ===");
             log::info!("Sources requested: {:?}, Profile: {:?}", source_ids, profile_name);
 
@@ -3003,10 +3012,20 @@ async fn invoke_command(
 
             // If profile name provided, start real audio capture for audio device sources
             if let Some(profile_name) = profile_name {
+                let profile_start = std::time::Instant::now();
                 log::info!("Loading profile '{}' to start audio capture for {} sources", profile_name, source_ids.len());
                 match state.profile_manager.load(&profile_name, None).await {
                     Ok(profile) => {
+                        log::info!("Profile loaded in {:?}", profile_start.elapsed());
+                        let captures_start = std::time::Instant::now();
+
+                        // Collect AudioDevice sources for parallel CPAL capture
+                        // CPAL operations (device enumeration, stream building) are blocking
+                        // and benefit from running on the blocking threadpool in parallel
+                        let mut audio_device_captures: Vec<(String, String, String)> = Vec::new();
+
                         for source_id in &source_ids {
+                            let source_start = std::time::Instant::now();
                             // Find the source in the profile
                             if let Some(source) = profile.sources.iter().find(|s| s.id() == source_id) {
                                 let source_type = match source {
@@ -3017,7 +3036,7 @@ async fn invoke_command(
                                     Source::MediaFile(_) => "MediaFile",
                                     _ => "Other",
                                 };
-                                log::info!("Found source '{}' (name: '{}') of type: {}", source_id, source.name(), source_type);
+                                log::info!("[TIMING] Processing source '{}' (type: {})", source_id, source_type);
 
                                 // Determine device to capture based on source type
                                 // Only AudioDevice sources have direct device capture
@@ -3552,11 +3571,9 @@ async fn invoke_command(
                                     }
                                 };
 
-                                // Start audio capture if we have a device
+                                // Collect AudioDevice sources for parallel CPAL capture later
+                                // (CPAL operations are blocking and benefit from parallel execution)
                                 if let Some((device_id, device_name)) = capture_device {
-                                    let source_id_clone = source_id.clone();
-                                    let audio_level_service = state.audio_level_service.clone();
-
                                     // Skip if already capturing for this source
                                     if state.audio_capture.is_capturing_source(source_id) {
                                         log::info!("Already capturing audio for source '{}', skipping", source_id);
@@ -3566,125 +3583,12 @@ async fn invoke_command(
                                             "deviceName": device_name,
                                             "alreadyCapturing": true
                                         }));
-                                        continue;
-                                    }
-
-                                    // Try device NAME first (more reliable - name matching is unambiguous)
-                                    // Fall back to device_id (numeric index) only if name matching fails
-                                    // This avoids the FFmpeg/cpal device index mismatch problem
-                                    // Use start_input_capture_for_source to track source_id -> device mapping
-                                    log::info!("Attempting audio capture for source '{}': trying device name '{}' first", source_id, device_name);
-                                    let capture_result = state.audio_capture.start_input_capture_for_source(
-                                        source_id,
-                                        &device_name,
-                                        AudioCaptureConfig::default(),
-                                    ).or_else(|e| {
-                                        // If device name failed, try the device_id (numeric index as fallback)
-                                        log::info!("Device name '{}' failed ({}), trying device_id '{}'", device_name, e, device_id);
-                                        state.audio_capture.start_input_capture_for_source(
-                                            source_id,
-                                            &device_id,
-                                            AudioCaptureConfig::default(),
-                                        )
-                                    });
-
-                                    match capture_result {
-                                        Ok(mut receiver) => {
-                                            log::info!("✓ Audio capture STARTED for source '{}' (device: '{}')", source_id, device_name);
-                                            capture_results.insert(source_id.clone(), json!({
-                                                "success": true,
-                                                "sourceType": "AudioDevice",
-                                                "deviceName": device_name
-                                            }));
-
-                                            // Spawn task to process audio and update levels
-                                            let device_name_log = device_name.clone();
-                                            tokio::spawn(async move {
-                                                log::info!("Audio capture task running for source {} (device {})", source_id_clone, device_name_log);
-                                                let mut buffer_count = 0u64;
-                                                // Use loop with match to handle Lagged errors gracefully
-                                                // The old "while let Ok" would exit on ANY error including Lagged
-                                                loop {
-                                                    match receiver.recv().await {
-                                                        Ok(buffer) => {
-                                                            // Calculate separate L/R RMS and Peak for stereo sources
-                                                            // Following OBS's audio metering model:
-                                                            // - RMS = root mean square (average power)
-                                                            // - Peak = instantaneous maximum absolute sample value
-                                                            // Interleaved samples for N channels: [ch0_s0, ch1_s0, ch2_s0, ..., ch0_s1, ch1_s1, ...]
-                                                            let channels = buffer.channels as usize;
-                                                            let (rms_l, rms_r, peak_l, peak_r) = if buffer.samples.is_empty() || channels == 0 {
-                                                                (0.0, 0.0, 0.0, 0.0)
-                                                            } else if channels >= 2 {
-                                                                // Stereo or multi-channel: extract channels 0 (L) and 1 (R)
-                                                                // Use proper deinterleaving based on actual channel count
-                                                                let mut sum_squares_l = 0.0f32;
-                                                                let mut sum_squares_r = 0.0f32;
-                                                                let mut max_abs_l = 0.0f32;
-                                                                let mut max_abs_r = 0.0f32;
-                                                                let mut count = 0usize;
-                                                                for frame in buffer.samples.chunks_exact(channels) {
-                                                                    let sample_l = frame[0]; // Channel 0 = Left
-                                                                    let sample_r = frame[1]; // Channel 1 = Right
-                                                                    sum_squares_l += sample_l * sample_l;
-                                                                    sum_squares_r += sample_r * sample_r;
-                                                                    max_abs_l = max_abs_l.max(sample_l.abs());
-                                                                    max_abs_r = max_abs_r.max(sample_r.abs());
-                                                                    count += 1;
-                                                                }
-                                                                let rms_l = if count > 0 { (sum_squares_l / count as f32).sqrt() } else { 0.0 };
-                                                                let rms_r = if count > 0 { (sum_squares_r / count as f32).sqrt() } else { 0.0 };
-                                                                (rms_l, rms_r, max_abs_l, max_abs_r)
-                                                            } else {
-                                                                // Mono: use same value for both channels
-                                                                let mut sum_squares = 0.0f32;
-                                                                let mut max_abs = 0.0f32;
-                                                                for &sample in buffer.samples.iter() {
-                                                                    sum_squares += sample * sample;
-                                                                    max_abs = max_abs.max(sample.abs());
-                                                                }
-                                                                let rms = (sum_squares / buffer.samples.len() as f32).sqrt();
-                                                                (rms, rms, max_abs, max_abs)
-                                                            };
-                                                            // Update the audio level service with stereo RMS and Peak values
-                                                            audio_level_service.update_source_level(&source_id_clone, rms_l, rms_r, peak_l, peak_r).await;
-
-                                                            // Log periodically to confirm data is flowing
-                                                            buffer_count += 1;
-                                                            // Log first 5 buffers, then every 100th (about every 3 seconds)
-                                                            if buffer_count <= 5 || buffer_count % 100 == 0 {
-                                                                log::info!("[AudioCapture] Buffer #{} for '{}': RMS L={:.4} R={:.4}, Peak L={:.4} R={:.4}, ch={}, samples={}",
-                                                                    buffer_count, source_id_clone, rms_l, rms_r, peak_l, peak_r, buffer.channels, buffer.samples.len());
-                                                            }
-                                                        }
-                                                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                                                            // Missed some buffers due to slow processing - this is OK, just continue
-                                                            log::debug!("Audio capture lagged {} buffers for {} (processing continues)", n, source_id_clone);
-                                                            continue;
-                                                        }
-                                                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                                                            // Channel closed, stop processing
-                                                            log::info!("Audio capture channel closed for {}", source_id_clone);
-                                                            break;
-                                                        }
-                                                    }
-                                                }
-                                                log::info!("Audio capture ended for source {} (processed {} buffers)", source_id_clone, buffer_count);
-                                            });
-                                        }
-                                        Err(e) => {
-                                            log::error!("✗ Audio capture FAILED for source '{}' (device_name: '{}', device_id: '{}'): {}",
-                                                source_id, device_name, device_id, e);
-                                            capture_results.insert(source_id.clone(), json!({
-                                                "success": false,
-                                                "sourceType": "AudioDevice",
-                                                "deviceName": device_name,
-                                                "reason": "captureFailed",
-                                                "message": format!("Failed to capture from device: {}", e)
-                                            }));
-                                        }
+                                    } else {
+                                        // Collect for parallel processing
+                                        audio_device_captures.push((source_id.clone(), device_id, device_name));
                                     }
                                 }
+                                log::info!("[TIMING] Source '{}' completed in {:?}", source_id, source_start.elapsed());
                             } else {
                                 // Source not found in profile
                                 capture_results.insert(source_id.clone(), json!({
@@ -3692,8 +3596,148 @@ async fn invoke_command(
                                     "reason": "notFound",
                                     "message": "Source not found in profile"
                                 }));
+                                log::info!("[TIMING] Source '{}' not found, took {:?}", source_id, source_start.elapsed());
                             }
                         }
+
+                        // ============================================================
+                        // PARALLEL CPAL CAPTURE: Run all AudioDevice captures in parallel
+                        // Using JoinSet::spawn_blocking to run CPAL operations on the
+                        // blocking threadpool, avoiding blocking the async runtime
+                        // ============================================================
+                        if !audio_device_captures.is_empty() {
+                            log::info!("[TIMING] Starting {} AudioDevice captures in PARALLEL", audio_device_captures.len());
+                            let parallel_start = std::time::Instant::now();
+
+                            let mut capture_set: JoinSet<(String, String, Result<tokio::sync::broadcast::Receiver<AudioBuffer>, String>)> = JoinSet::new();
+
+                            for (source_id, device_id, device_name) in audio_device_captures {
+                                let audio_capture = state.audio_capture.clone();
+                                let source_id_spawn = source_id.clone();
+                                let device_id_spawn = device_id.clone();
+                                let device_name_spawn = device_name.clone();
+
+                                // spawn_blocking runs CPAL operations on the blocking threadpool
+                                // This allows multiple device enumerations to run in parallel
+                                capture_set.spawn_blocking(move || {
+                                    log::info!("[PARALLEL] Starting capture for source '{}' (device: '{}')", source_id_spawn, device_name_spawn);
+                                    let capture_start = std::time::Instant::now();
+
+                                    // Try device NAME first (more reliable)
+                                    let result = audio_capture.start_input_capture_for_source(
+                                        &source_id_spawn,
+                                        &device_name_spawn,
+                                        AudioCaptureConfig::default(),
+                                    ).or_else(|e| {
+                                        log::info!("[PARALLEL] Device name '{}' failed ({}), trying device_id '{}'", device_name_spawn, e, device_id_spawn);
+                                        audio_capture.start_input_capture_for_source(
+                                            &source_id_spawn,
+                                            &device_id_spawn,
+                                            AudioCaptureConfig::default(),
+                                        )
+                                    });
+
+                                    log::info!("[PARALLEL] Capture for '{}' completed in {:?}", source_id_spawn, capture_start.elapsed());
+                                    (source_id_spawn, device_name_spawn, result)
+                                });
+                            }
+
+                            // Collect all results (they run in parallel)
+                            while let Some(join_result) = capture_set.join_next().await {
+                                match join_result {
+                                    Ok((source_id, device_name, capture_result)) => {
+                                        match capture_result {
+                                            Ok(mut receiver) => {
+                                                log::info!("✓ Audio capture STARTED for source '{}' (device: '{}')", source_id, device_name);
+                                                capture_results.insert(source_id.clone(), json!({
+                                                    "success": true,
+                                                    "sourceType": "AudioDevice",
+                                                    "deviceName": device_name
+                                                }));
+
+                                                // Spawn task to process audio and update levels
+                                                let source_id_clone = source_id.clone();
+                                                let device_name_log = device_name.clone();
+                                                let audio_level_service = state.audio_level_service.clone();
+                                                tokio::spawn(async move {
+                                                    log::info!("Audio capture task running for source {} (device {})", source_id_clone, device_name_log);
+                                                    let mut buffer_count = 0u64;
+                                                    loop {
+                                                        match receiver.recv().await {
+                                                            Ok(buffer) => {
+                                                                let channels = buffer.channels as usize;
+                                                                let (rms_l, rms_r, peak_l, peak_r) = if buffer.samples.is_empty() || channels == 0 {
+                                                                    (0.0, 0.0, 0.0, 0.0)
+                                                                } else if channels >= 2 {
+                                                                    let mut sum_squares_l = 0.0f32;
+                                                                    let mut sum_squares_r = 0.0f32;
+                                                                    let mut max_abs_l = 0.0f32;
+                                                                    let mut max_abs_r = 0.0f32;
+                                                                    let mut count = 0usize;
+                                                                    for frame in buffer.samples.chunks_exact(channels) {
+                                                                        let sample_l = frame[0];
+                                                                        let sample_r = frame[1];
+                                                                        sum_squares_l += sample_l * sample_l;
+                                                                        sum_squares_r += sample_r * sample_r;
+                                                                        max_abs_l = max_abs_l.max(sample_l.abs());
+                                                                        max_abs_r = max_abs_r.max(sample_r.abs());
+                                                                        count += 1;
+                                                                    }
+                                                                    let rms_l = if count > 0 { (sum_squares_l / count as f32).sqrt() } else { 0.0 };
+                                                                    let rms_r = if count > 0 { (sum_squares_r / count as f32).sqrt() } else { 0.0 };
+                                                                    (rms_l, rms_r, max_abs_l, max_abs_r)
+                                                                } else {
+                                                                    let mut sum_squares = 0.0f32;
+                                                                    let mut max_abs = 0.0f32;
+                                                                    for &sample in buffer.samples.iter() {
+                                                                        sum_squares += sample * sample;
+                                                                        max_abs = max_abs.max(sample.abs());
+                                                                    }
+                                                                    let rms = (sum_squares / buffer.samples.len() as f32).sqrt();
+                                                                    (rms, rms, max_abs, max_abs)
+                                                                };
+                                                                audio_level_service.update_source_level(&source_id_clone, rms_l, rms_r, peak_l, peak_r).await;
+                                                                buffer_count += 1;
+                                                                if buffer_count <= 5 || buffer_count % 100 == 0 {
+                                                                    log::info!("[AudioCapture] Buffer #{} for '{}': RMS L={:.4} R={:.4}, Peak L={:.4} R={:.4}, ch={}, samples={}",
+                                                                        buffer_count, source_id_clone, rms_l, rms_r, peak_l, peak_r, buffer.channels, buffer.samples.len());
+                                                                }
+                                                            }
+                                                            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                                                                log::debug!("Audio capture lagged {} buffers for {} (processing continues)", n, source_id_clone);
+                                                                continue;
+                                                            }
+                                                            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                                                                log::info!("Audio capture channel closed for {}", source_id_clone);
+                                                                break;
+                                                            }
+                                                        }
+                                                    }
+                                                    log::info!("Audio capture ended for source {} (processed {} buffers)", source_id_clone, buffer_count);
+                                                });
+                                            }
+                                            Err(e) => {
+                                                log::error!("✗ Audio capture FAILED for source '{}' (device: '{}'): {}", source_id, device_name, e);
+                                                capture_results.insert(source_id.clone(), json!({
+                                                    "success": false,
+                                                    "sourceType": "AudioDevice",
+                                                    "deviceName": device_name,
+                                                    "reason": "captureFailed",
+                                                    "message": format!("Failed to capture from device: {}", e)
+                                                }));
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        log::error!("spawn_blocking task panicked: {:?}", e);
+                                    }
+                                }
+                            }
+
+                            log::info!("[TIMING] All {} parallel CPAL captures completed in {:?}", capture_results.len(), parallel_start.elapsed());
+                        }
+
+                        log::info!("All captures processed in {:?}", captures_start.elapsed());
                     }
                     Err(e) => {
                         log::error!("Failed to load profile '{}': {}", profile_name, e);
@@ -3709,6 +3753,7 @@ async fn invoke_command(
                 }
             }
 
+            log::info!("=== set_audio_monitor_sources COMPLETE in {:?} ===", cmd_start.elapsed());
             Ok(json!({
                 "captureResults": capture_results,
                 "trackedSources": source_ids.len()

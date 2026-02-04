@@ -1,8 +1,15 @@
 /**
  * Stream Page
  * Multi-input streaming with scene composition
+ *
+ * Performance optimizations (2026):
+ * - Lazy loading: Heavy components (MultiviewPanel, StudioModeLayout, PropertiesPanel)
+ *   are code-split and loaded on demand to reduce initial bundle size
+ * - Memoized handlers: useCallback for streaming handlers prevents child re-renders
+ * - useShallow: Zustand best practice for selector optimization
+ * - useTransition: React 19 concurrent feature for non-blocking UI mode switches
  */
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, lazy, Suspense, useTransition } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Play, Square, AlertTriangle, Plus, LayoutGrid, Grid3X3 } from 'lucide-react';
 import { useShallow } from 'zustand/shallow';
@@ -10,14 +17,35 @@ import { Button } from '@/components/ui/Button';
 import { Alert } from '@/components/ui/Alert';
 import { SourcesPanel } from '@/components/stream/SourcesPanel';
 import { SceneCanvas } from '@/components/stream/SceneCanvas';
-import { PropertiesPanel } from '@/components/stream/PropertiesPanel';
 import { SceneBar } from '@/components/stream/SceneBar';
 import { AudioMixerPanel } from '@/components/stream/AudioMixerPanel';
-import { StudioModeLayout } from '@/components/stream/StudioModeLayout';
 import { TransitionOverlay } from '@/components/stream/TransitionOverlay';
 import { RecordingButton } from '@/components/stream/RecordingButton';
 import { ReplayBufferButton } from '@/components/stream/ReplayBufferButton';
-import { MultiviewPanel } from '@/components/stream/MultiviewPanel';
+
+// Lazy-loaded components for code splitting
+// These components are heavier and not needed on initial render
+const PropertiesPanel = lazy(() => import('@/components/stream/PropertiesPanel').then(m => ({ default: m.PropertiesPanel })));
+const StudioModeLayout = lazy(() => import('@/components/stream/StudioModeLayout').then(m => ({ default: m.StudioModeLayout })));
+const MultiviewPanel = lazy(() => import('@/components/stream/MultiviewPanel').then(m => ({ default: m.MultiviewPanel })));
+
+// Lightweight loading fallbacks for lazy components
+const PanelSkeleton = () => (
+  <div className="h-full bg-[var(--bg-surface)] rounded-lg animate-pulse">
+    <div className="h-10 bg-[var(--bg-elevated)] rounded-t-lg" />
+    <div className="p-4 space-y-3">
+      <div className="h-4 bg-[var(--bg-elevated)] rounded w-3/4" />
+      <div className="h-4 bg-[var(--bg-elevated)] rounded w-1/2" />
+      <div className="h-4 bg-[var(--bg-elevated)] rounded w-2/3" />
+    </div>
+  </div>
+);
+
+const StudioLayoutSkeleton = () => (
+  <div className="flex-1 bg-[var(--bg-surface)] rounded-lg animate-pulse flex items-center justify-center">
+    <div className="text-[var(--text-muted)]">Loading Studio Mode...</div>
+  </div>
+);
 import { useProfileStore } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
 import { useSceneStore } from '@/stores/sceneStore';
@@ -80,9 +108,24 @@ export function Stream() {
   const [isValidating, setIsValidating] = useState(false);
   const [showMultiview, setShowMultiview] = useState(false);
 
+  // React 19 useTransition for non-blocking UI mode switches
+  // This prevents audio meters and other real-time elements from stuttering
+  // when switching between Studio Mode and normal mode
+  const [isStudioTransitioning, startStudioTransition] = useTransition();
+  const [isMultiviewTransitioning, startMultiviewTransition] = useTransition();
+
+  // Wrap studio mode toggle in transition for non-blocking UI update
+  const handleToggleStudioMode = useCallback(() => {
+    startStudioTransition(() => {
+      toggleStudioMode();
+    });
+  }, [toggleStudioMode]);
+
   // Toggle multiview with keyboard shortcut (Ctrl+M)
   const handleToggleMultiview = useCallback(() => {
-    setShowMultiview((prev) => !prev);
+    startMultiviewTransition(() => {
+      setShowMultiview((prev) => !prev);
+    });
   }, []);
 
   // Register Ctrl+M keyboard shortcut for Multiview
@@ -183,7 +226,9 @@ export function Stream() {
     [current?.outputGroups]
   );
 
-  const handleStartStreaming = async () => {
+  // Memoize streaming handlers to prevent child component re-renders
+  // These functions are passed to Button onClick, and recreating them causes Button to re-render
+  const handleStartStreaming = useCallback(async () => {
     if (!current) return;
 
     setIsValidating(true);
@@ -215,12 +260,12 @@ export function Stream() {
     } finally {
       setIsValidating(false);
     }
-  };
+  }, [current, startAllGroups, t]);
 
-  const handleStopStreaming = async () => {
+  const handleStopStreaming = useCallback(async () => {
     await stopAllGroups();
     toast.success(t('toast.streamStopped'));
-  };
+  }, [stopAllGroups, t]);
 
   // Count active streams
   const activeStreamCount = activeGroups.size;
@@ -271,14 +316,16 @@ export function Stream() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          {/* Studio Mode toggle */}
+          {/* Studio Mode toggle - uses useTransition for non-blocking UI update */}
           <button
-            onClick={toggleStudioMode}
+            onClick={handleToggleStudioMode}
+            disabled={isStudioTransitioning}
             className={cn(
               'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
               studioEnabled
                 ? 'bg-[var(--primary)] text-white'
-                : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+                : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]',
+              isStudioTransitioning && 'opacity-70'
             )}
             title={t('stream.studioMode', { defaultValue: 'Studio Mode' })}
           >
@@ -292,14 +339,16 @@ export function Stream() {
           {/* Replay Buffer button */}
           <ReplayBufferButton />
 
-          {/* Multiview toggle */}
+          {/* Multiview toggle - uses useTransition for non-blocking UI update */}
           <button
             onClick={handleToggleMultiview}
+            disabled={isMultiviewTransitioning}
             className={cn(
               'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
               showMultiview
                 ? 'bg-[var(--primary)] text-white'
-                : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+                : 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]',
+              isMultiviewTransitioning && 'opacity-70'
             )}
             title={t('stream.multiview', { defaultValue: 'Multiview (Ctrl+M)' })}
           >
@@ -338,22 +387,26 @@ export function Stream() {
             <SourcesPanel profile={current} activeScene={activeScene} />
           </div>
 
-          {/* Studio Mode Layout (center) */}
-          <StudioModeLayout
-            profile={current}
-            sources={current.sources}
-            selectedLayerId={selectedLayerId}
-            onSelectLayer={selectLayer}
-          />
-
-          {/* Properties panel (right) */}
-          <div className="w-56 lg:w-64 flex-shrink-0">
-            <PropertiesPanel
+          {/* Studio Mode Layout (center) - Lazy loaded */}
+          <Suspense fallback={<StudioLayoutSkeleton />}>
+            <StudioModeLayout
               profile={current}
-              scene={activeScene}
-              layer={selectedLayer}
-              source={selectedLayer ? current.sources.find((s) => s.id === selectedLayer.sourceId) : undefined}
+              sources={current.sources}
+              selectedLayerId={selectedLayerId}
+              onSelectLayer={selectLayer}
             />
+          </Suspense>
+
+          {/* Properties panel (right) - Lazy loaded */}
+          <div className="w-56 lg:w-64 flex-shrink-0">
+            <Suspense fallback={<PanelSkeleton />}>
+              <PropertiesPanel
+                profile={current}
+                scene={activeScene}
+                layer={selectedLayer}
+                source={selectedLayer ? current.sources.find((s) => s.id === selectedLayer.sourceId) : undefined}
+              />
+            </Suspense>
           </div>
         </div>
       ) : (
@@ -376,14 +429,16 @@ export function Stream() {
             />
           </div>
 
-          {/* Properties panel (right) */}
+          {/* Properties panel (right) - Lazy loaded */}
           <div className="w-56 lg:w-64 flex-shrink-0">
-            <PropertiesPanel
-              profile={current}
-              scene={activeScene}
-              layer={selectedLayer}
-              source={selectedLayer ? current.sources.find((s) => s.id === selectedLayer.sourceId) : undefined}
-            />
+            <Suspense fallback={<PanelSkeleton />}>
+              <PropertiesPanel
+                profile={current}
+                scene={activeScene}
+                layer={selectedLayer}
+                source={selectedLayer ? current.sources.find((s) => s.id === selectedLayer.sourceId) : undefined}
+              />
+            </Suspense>
           </div>
         </div>
       )}
@@ -400,12 +455,14 @@ export function Stream() {
         scene={activeScene}
       />
 
-      {/* Multiview panel (overlay) */}
+      {/* Multiview panel (overlay) - Lazy loaded */}
       {showMultiview && (
-        <MultiviewPanel
-          profile={current}
-          onClose={() => setShowMultiview(false)}
-        />
+        <Suspense fallback={null}>
+          <MultiviewPanel
+            profile={current}
+            onClose={() => setShowMultiview(false)}
+          />
+        </Suspense>
       )}
     </div>
   );

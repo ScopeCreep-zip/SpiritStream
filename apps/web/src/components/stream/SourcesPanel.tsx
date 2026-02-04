@@ -730,6 +730,13 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
     return [...activeScene.layers].sort((a, b) => b.zIndex - a.zIndex);
   }, [activeScene?.layers]);
 
+  // Memoize the layer IDs array for SortableContext to prevent re-renders
+  // SortableContext does shallow comparison on items array, so we need stable reference
+  const sortedLayerIds = useMemo(
+    () => sortedLayers.map((l) => l.id),
+    [sortedLayers]
+  );
+
   // Organize layers: ungrouped layers and groups with their children
   const organizedLayers = useMemo(() => {
     if (!activeScene) return { ungrouped: [], groups: [] };
@@ -1126,7 +1133,7 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
             onDragEnd={handleDragEnd}
           >
             <SortableContext
-              items={sortedLayers.map((l) => l.id)}
+              items={sortedLayerIds}
               strategy={verticalListSortingStrategy}
             >
               <div className="space-y-1">

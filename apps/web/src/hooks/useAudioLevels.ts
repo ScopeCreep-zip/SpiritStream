@@ -12,12 +12,13 @@
  * - Capture status per source
  * - Health status per source
  */
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { events } from '@/lib/backend/events';
 import { useConnectionStore } from '@/stores/connectionStore';
 import type { AudioCaptureResult } from '@/lib/backend/httpApi';
 import { api } from '@/lib/backend/httpApi';
 import { updateLevels, resetLevels, type AudioLevelsData } from '@/lib/audio/audioLevelStore';
+import { heartbeat } from '@/lib/heartbeat';
 
 export interface AudioLevel {
   rms: number;      // 0-1 RMS level
@@ -67,8 +68,6 @@ export function useAudioLevels(): UseAudioLevelsResult {
   const [captureStatus, setCaptureStatusInternal] = useState<CaptureStatus>({});
   const [healthStatus, setHealthStatus] = useState<SourceHealthStatus>({});
   const connectionStatus = useConnectionStore((s) => s.status);
-  const healthPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
   const isConnected = connectionStatus === 'connected' && hasReceivedData;
   // True when backend is connected but we haven't received audio data yet
   const isInitializing = connectionStatus === 'connected' && !hasReceivedData;
@@ -79,39 +78,28 @@ export function useAudioLevels(): UseAudioLevelsResult {
   }, []);
 
   // Poll health status periodically (every 5 seconds) when connected
+  // Uses centralized heartbeat system to reduce timer overhead
   useEffect(() => {
     if (connectionStatus !== 'connected') {
-      // Clear health polling when disconnected
-      if (healthPollRef.current) {
-        clearInterval(healthPollRef.current);
-        healthPollRef.current = null;
-      }
       setHealthStatus({});
       return;
     }
 
-    // Start health polling
-    const pollHealth = async () => {
+    // Register with heartbeat system (5 second interval)
+    const unsubscribe = heartbeat.register('audio-health', 5000, async () => {
       try {
         const result = await api.audio.getMonitorHealth();
         setHealthStatus(result.sources);
-      } catch (err) {
+      } catch {
         // Silently fail - health check is not critical
-        console.debug('[useAudioLevels] Health check failed:', err);
       }
-    };
+    });
 
-    // Initial poll
-    pollHealth();
-
-    // Poll every 5 seconds
-    healthPollRef.current = setInterval(pollHealth, 5000);
+    // Force immediate check
+    heartbeat.runNow('audio-health');
 
     return () => {
-      if (healthPollRef.current) {
-        clearInterval(healthPollRef.current);
-        healthPollRef.current = null;
-      }
+      unsubscribe();
     };
   }, [connectionStatus]);
 

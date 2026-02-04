@@ -408,13 +408,18 @@ const LayerPreview = React.memo(function LayerPreview({
     [transform, layer.locked, dragOffset, resizeOffset]
   );
 
-  // Global mouse move/up handlers
+  // Global mouse move/up handlers with RAF throttling
   useEffect(() => {
     if (!isDragging && !isResizing) return;
 
-    const handleMouseMove = (e: MouseEvent) => {
-      const deltaX = (e.clientX - dragStartRef.current.mouseX) / scale;
-      const deltaY = (e.clientY - dragStartRef.current.mouseY) / scale;
+    // RAF-based throttling to limit processing to display refresh rate
+    let rafPending = false;
+    let lastClientX = 0;
+    let lastClientY = 0;
+
+    const processMouseMove = () => {
+      const deltaX = (lastClientX - dragStartRef.current.mouseX) / scale;
+      const deltaY = (lastClientY - dragStartRef.current.mouseY) / scale;
 
       if (isDragging) {
         // Calculate new position with bounds checking
@@ -464,6 +469,15 @@ const LayerPreview = React.memo(function LayerPreview({
           y: newY - transform.y,
         });
       }
+      rafPending = false;
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      lastClientX = e.clientX;
+      lastClientY = e.clientY;
+      if (rafPending) return;
+      rafPending = true;
+      requestAnimationFrame(processMouseMove);
     };
 
     const handleMouseUp = () => {

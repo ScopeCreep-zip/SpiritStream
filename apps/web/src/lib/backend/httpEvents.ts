@@ -1,5 +1,6 @@
 import { getBackendWsUrl } from './env';
 import { useConnectionStore } from '@/stores/connectionStore';
+import { forwardAudioData, isWorkerReady } from '@/lib/audio/audioMeterWorkerBridge';
 
 type Handler<T> = (payload: T) => void;
 
@@ -21,6 +22,63 @@ let reconnectCount = 0;
 
 // When true, keep the connection alive even without handlers (for status tracking)
 let keepAlive = false;
+
+// WebSocket keepalive for background tab support
+// Browsers may close idle WebSockets after ~5 minutes in background
+const KEEPALIVE_INTERVAL_MS = 30000; // 30 seconds - send ping to keep connection alive
+let keepaliveTimer: number | null = null;
+
+/**
+ * Start keepalive ping timer.
+ * This prevents WebSocket timeout when the app is in background.
+ */
+function startKeepalive(): void {
+  if (keepaliveTimer) return;
+  keepaliveTimer = window.setInterval(() => {
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      // Send a lightweight ping message
+      // Note: The server should ignore unknown message types
+      try {
+        socket.send(JSON.stringify({ type: 'ping' }));
+      } catch {
+        // Socket may have closed, will be handled by close event
+      }
+    }
+  }, KEEPALIVE_INTERVAL_MS);
+}
+
+function stopKeepalive(): void {
+  if (keepaliveTimer) {
+    window.clearInterval(keepaliveTimer);
+    keepaliveTimer = null;
+  }
+}
+
+/**
+ * Handle visibility change - when app comes back to foreground.
+ * Immediately verify WebSocket connection and reconnect if needed.
+ */
+function handleVisibilityChange(): void {
+  if (document.visibilityState === 'visible') {
+    // App is now visible - verify WebSocket is still connected
+    if (socket && socket.readyState !== WebSocket.OPEN) {
+      console.log('[httpEvents] WebSocket disconnected while in background, reconnecting...');
+      socket = null;
+      openPromise = null;
+      reconnectCount = 0; // Reset count for immediate reconnect
+      if (handlers.size > 0 || keepAlive) {
+        ensureSocket().catch(() => {
+          // Connection errors handled by WebSocket event listeners
+        });
+      }
+    }
+  }
+}
+
+// Register visibility change handler
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+}
 
 function notifyConnected() {
   const store = useConnectionStore.getState();
@@ -95,13 +153,28 @@ function ensureSocket(): Promise<void> {
     socket.addEventListener('open', () => {
       openPromise = null;
       notifyConnected();
+      startKeepalive(); // Start keepalive pings for background tab support
       resolve();
     });
 
     socket.addEventListener('message', (event) => {
       if (!event.data) return;
+      const rawData = event.data as string;
+
+      // Check if this is an audio_levels event (quick string check)
+      const isAudioLevels = rawData.includes('"event":"audio_levels"');
+
+      // Forward audio data to worker for off-thread canvas rendering
+      if (isAudioLevels && isWorkerReady()) {
+        forwardAudioData(rawData);
+      }
+
+      // Parse and dispatch to main thread handlers
+      // NOTE: audio_levels is still parsed for the main thread store update,
+      // which is needed for DOM updates (peak dB display) even when worker
+      // handles canvas rendering. The store update is fast (just object mutation).
       try {
-        const parsed = JSON.parse(event.data as string) as {
+        const parsed = JSON.parse(rawData) as {
           event?: string;
           payload?: unknown;
         };
@@ -119,6 +192,7 @@ function ensureSocket(): Promise<void> {
     socket.addEventListener('close', (event) => {
       socket = null;
       openPromise = null;
+      stopKeepalive(); // Stop keepalive pings
 
       // Check if this is an auth failure (401 Unauthorized returns code 1008)
       if (event.code === 1008 || event.reason === 'Unauthorized') {
@@ -193,6 +267,7 @@ export function initConnection(): void {
 export function disconnectSocket(): void {
   keepAlive = false;
   reconnectCount = 0; // Reset counter for fresh start on next connection
+  stopKeepalive(); // Stop keepalive pings
   if (reconnectTimer) {
     window.clearTimeout(reconnectTimer);
     reconnectTimer = null;

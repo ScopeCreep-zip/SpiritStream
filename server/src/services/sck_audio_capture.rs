@@ -297,10 +297,10 @@ impl SCStreamOutputTrait for AudioOutputHandler {
 
         // Extract audio data from CMSampleBuffer using audio_buffer_list
         if let Some(audio_data) = extract_audio_from_sample_buffer(&sample_buffer) {
-            // Rate limit to ~30Hz (every 33ms)
+            // Rate limit to ~10Hz (every 100ms) to match AudioLevelService emit rate
             let should_emit = {
                 let mut last_emit = self.last_emit.lock().unwrap();
-                if last_emit.elapsed() >= Duration::from_millis(33) {
+                if last_emit.elapsed() >= Duration::from_millis(100) {
                     *last_emit = Instant::now();
                     true
                 } else {

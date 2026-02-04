@@ -52,12 +52,21 @@ export function TBar({ disabled }: TBarProps) {
     [canUse, startTBarDrag, setTBarProgress, getProgressFromEvent]
   );
 
-  // Global mouse events for drag
+  // Global mouse events for drag with RAF throttling
   useEffect(() => {
     if (!tBarDragging) return;
 
+    let rafPending = false;
+    let lastY = 0;
+
     const handleMouseMove = (e: MouseEvent) => {
-      setTBarProgress(getProgressFromEvent(e.clientY));
+      lastY = e.clientY;
+      if (rafPending) return;
+      rafPending = true;
+      requestAnimationFrame(() => {
+        setTBarProgress(getProgressFromEvent(lastY));
+        rafPending = false;
+      });
     };
 
     const handleMouseUp = () => {
@@ -84,11 +93,21 @@ export function TBar({ disabled }: TBarProps) {
     [canUse, startTBarDrag, setTBarProgress, getProgressFromEvent]
   );
 
+  // Touch events with RAF throttling
   useEffect(() => {
     if (!tBarDragging) return;
 
+    let rafPending = false;
+    let lastY = 0;
+
     const handleTouchMove = (e: TouchEvent) => {
-      setTBarProgress(getProgressFromEvent(e.touches[0].clientY));
+      lastY = e.touches[0].clientY;
+      if (rafPending) return;
+      rafPending = true;
+      requestAnimationFrame(() => {
+        setTBarProgress(getProgressFromEvent(lastY));
+        rafPending = false;
+      });
     };
 
     const handleTouchEnd = () => {

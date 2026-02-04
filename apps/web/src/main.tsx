@@ -7,6 +7,10 @@ import { Projector } from './views/Projector';
 import './lib/i18n'; // Initialize i18n before app renders
 import './styles/tokens.css';
 import './styles/globals.css';
+import { initAudioMeterWorker } from './lib/audio/audioMeterWorkerBridge';
+
+// Initialize audio meter worker for off-thread rendering
+initAudioMeterWorker();
 
 // TanStack Query client with sensible defaults
 const queryClient = new QueryClient({

@@ -215,9 +215,10 @@ impl AudioLevelService {
         tokio::spawn(async move {
             log::info!("AudioLevelService started (real levels only)");
 
-            // 20Hz update rate (OBS parity) - 50ms intervals
-            // Previously 30Hz (33ms), reduced to match OBS and decrease WebSocket traffic
-            let mut ticker = interval(Duration::from_millis(50));
+            // 10Hz update rate - 100ms intervals
+            // Visual metering at 10Hz is sufficient while reducing WebSocket traffic by 50%
+            // OBS audio thread runs at ~48Hz but visual meters update less frequently
+            let mut ticker = interval(Duration::from_millis(100));
             let mut emit_count: u64 = 0;
 
             while running.load(Ordering::Relaxed) {
@@ -272,15 +273,15 @@ impl AudioLevelService {
                     if tracked.peak_l > state.peak_hold_l {
                         state.peak_hold_l = tracked.peak_l;
                     } else {
-                        // Decay coefficient ~0.98 at 30Hz = ~660ms decay to 50%
-                        state.peak_hold_l = (state.peak_hold_l * 0.98).max(tracked.peak_l * 0.5);
+                        // Decay coefficient ~0.96 at 10Hz = same decay rate as 0.98 at 20Hz
+                        state.peak_hold_l = (state.peak_hold_l * 0.96).max(tracked.peak_l * 0.5);
                     }
 
                     // Peak hold for R channel (from actual peak, not RMS)
                     if tracked.peak_r > state.peak_hold_r {
                         state.peak_hold_r = tracked.peak_r;
                     } else {
-                        state.peak_hold_r = (state.peak_hold_r * 0.98).max(tracked.peak_r * 0.5);
+                        state.peak_hold_r = (state.peak_hold_r * 0.96).max(tracked.peak_r * 0.5);
                     }
 
                     // Overall peak (max of L and R)

@@ -80,66 +80,53 @@ export function SharedWebRTCPlayer({
     }
   }, [stream]);
 
-  // Listen for video ready events - using multiple signals for reliability
+  // Listen for video ready events - event-driven approach (no polling)
   // The green tint appears when H.264 decoder hasn't received a keyframe yet
   // We wait for BOTH dimensions AND readyState >= HAVE_CURRENT_DATA
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
-    let frameCheckId: number | null = null;
-    let isChecking = false; // Prevent overlapping RAF loops from concurrent events
-
     // Check if video has actually decoded content
     // readyState >= 2 (HAVE_CURRENT_DATA) means decoder has rendered at least one frame
-    // This is more reliable than just checking dimensions, which can be set from H.264 SPS
-    // metadata before actual pixels are decoded
     const checkVideoReady = () => {
-      if (!mountedRef.current) return true; // Stop if unmounted
+      if (!mountedRef.current) return;
       if (video.videoWidth > 0 &&
           video.videoHeight > 0 &&
           video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
         setVideoReady(true);
-        return true;
       }
-      return false;
     };
 
-    // Handle loadeddata/canplay events - but also verify decoder readiness
+    // Handle standard video events
     const handleVideoEvent = () => {
-      if (isChecking) return; // Prevent concurrent polling loops
-      if (checkVideoReady()) return;
+      checkVideoReady();
+    };
 
-      isChecking = true;
-      let attempts = 0;
-      // Poll for up to ~1000ms to cover screen capture's 500ms keyframe interval
-      // (15-frame keyframe interval @ 30fps = ~500ms for first keyframe)
-      const MAX_POLL_ATTEMPTS = 60;
-
-      const pollDimensions = () => {
-        if (!mountedRef.current || checkVideoReady() || attempts++ >= MAX_POLL_ATTEMPTS) {
-          frameCheckId = null;
-          isChecking = false;
-          return;
-        }
-        frameCheckId = requestAnimationFrame(pollDimensions);
-      };
-      frameCheckId = requestAnimationFrame(pollDimensions);
+    // Handle resize event - fired when video dimensions change (after decoder initialization)
+    // This is the reliable signal that the decoder has received a keyframe
+    const handleResize = () => {
+      checkVideoReady();
     };
 
     // Listen to multiple events for better coverage across stream types
+    // - loadeddata: metadata and first frame loaded
+    // - canplay: enough data to start playback
+    // - resize: dimensions changed (fires after decoder has a keyframe)
+    // - playing: playback actually started
     video.addEventListener('loadeddata', handleVideoEvent);
     video.addEventListener('canplay', handleVideoEvent);
+    video.addEventListener('resize', handleResize);
+    video.addEventListener('playing', handleVideoEvent);
 
     // Check immediately in case video is already ready
-    handleVideoEvent();
+    checkVideoReady();
 
     return () => {
       video.removeEventListener('loadeddata', handleVideoEvent);
       video.removeEventListener('canplay', handleVideoEvent);
-      if (frameCheckId !== null) {
-        cancelAnimationFrame(frameCheckId);
-      }
+      video.removeEventListener('resize', handleResize);
+      video.removeEventListener('playing', handleVideoEvent);
     };
   }, [stream]);
 

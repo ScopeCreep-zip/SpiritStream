@@ -3,6 +3,8 @@
  *
  * Exports pure JavaScript audio level store and rendering utilities
  * for high-performance audio metering that bypasses React's render cycle.
+ *
+ * Also exports Web Worker-based rendering for complete main thread offloading.
  */
 
 export {
@@ -29,3 +31,24 @@ export {
   TOTAL_WIDTH,
   type MeterRenderOptions,
 } from './meterRenderer';
+
+export {
+  registerMeterRenderer,
+  shouldUpdatePeakDb,
+  shouldCheckClipping,
+  getActiveRendererCount,
+} from './audioAnimationManager';
+
+// Web Worker-based rendering (OffscreenCanvas)
+export {
+  initAudioMeterWorker,
+  terminateAudioMeterWorker,
+  registerMeterCanvas,
+  unregisterMeterCanvas,
+  updateMeterConfig,
+  forwardAudioData,
+  isWorkerReady,
+  hasSharedMemory,
+  getMasterLevelFromShared,
+  getSharedVersion,
+} from './audioMeterWorkerBridge';
