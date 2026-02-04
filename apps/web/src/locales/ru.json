@@ -1,18 +1,18 @@
 {
   "audio": {
     "bitrates": {
+      "64": "64 кбит/с (низкая)",
+      "96": "96 кбит/с",
       "128": "128 кбит/с (стандарт)",
+      "192": "192 кбит/с",
+      "256": "256 кбит/с",
+      "320": "320 кбит/с (лучшее)",
       "128k": "128 кбит/с",
       "160k": "160 кбит/с",
-      "192": "192 кбит/с",
       "192k": "192 кбит/с",
-      "256": "256 кбит/с",
       "256k": "256 кбит/с",
-      "320": "320 кбит/с (лучшее)",
       "320k": "320 кбит/с (лучшее)",
-      "64": "64 кбит/с (низкая)",
       "64k": "64 кбит/с",
-      "96": "96 кбит/с",
       "96k": "96 кбит/с"
     },
     "codecs": {
@@ -74,7 +74,9 @@
     "warning": "Предупреждение",
     "yes": "Да",
     "loadProfileFirst": "Please load a profile first",
-    "select": "Select"
+    "select": "Select",
+    "unknownError": "Unknown error",
+    "images": "Images"
   },
   "connection": {
     "connected": "Connected",
@@ -289,7 +291,8 @@
     "selectFile": "Select File",
     "selectFileFirst": "Please select a file",
     "selectedDirectory": "Selected directory:",
-    "typePath": "Type a path and press Enter..."
+    "typePath": "Type a path and press Enter...",
+    "browseFailed": "Failed to browse directory"
   },
   "header": {
     "dashboard": {
@@ -465,7 +468,11 @@
     "bindAddressPlaceholder": "0.0.0.0",
     "keyframeIntervalPlaceholder": "2",
     "portPlaceholder": "1935",
-    "videoBitratePlaceholder": "6000"
+    "videoBitratePlaceholder": "6000",
+    "profileStreamKeyWarningTitle": "Stream key missing",
+    "profileStreamKeyWarningBody": "This profile does not have an input stream key. Leaving it blank can cause connection errors on some RTMP servers and increases the security risk of unintended publishers.",
+    "profileStreamKeyWarningEdit": "Edit profile",
+    "profileStreamKeyWarningNeverShow": "Never show this warning for this profile"
   },
   "nav": {
     "configuration": "Конфигурация",

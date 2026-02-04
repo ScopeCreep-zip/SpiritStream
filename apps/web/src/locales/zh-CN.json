@@ -1,4 +1,4 @@
-﻿{
+{
   "nav": {
     "main": "主要的",
     "dashboard": "仪表板",
@@ -254,11 +254,11 @@
       "854x480": "480p (854x480)"
     },
     "frameRates": {
-      "60": "60 FPS",
-      "50": "50 FPS",
-      "30": "30 FPS",
+      "24": "24 FPS",
       "25": "25FPS",
-      "24": "24 FPS"
+      "30": "30 FPS",
+      "50": "50 FPS",
+      "60": "60 FPS"
     },
     "generatePtsDescription": "生成时间戳并同步音频时间。以轻微的 CPU 代价提高直播稳定性并修复编码问题。"
   },
@@ -269,18 +269,18 @@
       "libopus": "Opus"
     },
     "bitrates": {
+      "64": "64 kbps（低）",
+      "96": "96kbps",
+      "128": "128 kbps（标准）",
+      "192": "192kbps",
+      "256": "256kbps",
       "320": "320 kbps（最佳）",
       "320k": "320 kbps（最佳）",
-      "256": "256kbps",
       "256k": "256kbps",
-      "192": "192kbps",
       "192k": "192kbps",
       "160k": "160kbps",
-      "128": "128 kbps（标准）",
       "128k": "128kbps",
-      "96": "96kbps",
       "96k": "96kbps",
-      "64": "64 kbps（低）",
       "64k": "64kbps"
     },
     "channels": {
@@ -670,7 +670,9 @@
     "switchToDarkMode": "切换到深色模式",
     "switchToLightMode": "切换到灯光模式",
     "loadProfileFirst": "Please load a profile first",
-    "select": "Select"
+    "select": "Select",
+    "unknownError": "Unknown error",
+    "images": "Images"
   },
   "errors": {
     "loadingFailed": "加载失败",
@@ -770,7 +772,8 @@
     "enterFileName": "Enter file name",
     "fileNameRequired": "File name is required",
     "selectFileFirst": "Please select a file",
-    "selectedDirectory": "Selected directory:"
+    "selectedDirectory": "Selected directory:",
+    "browseFailed": "Failed to browse directory"
   },
   "obs": {
     "title": "OBS Integration",

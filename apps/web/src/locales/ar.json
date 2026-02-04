@@ -1,18 +1,18 @@
 {
   "audio": {
     "bitrates": {
+      "64": "64 كيلوبت في الثانية (منخفض)",
+      "96": "96 كيلو بايت في الثانية",
       "128": "128 كيلوبت في الثانية (قياسي)",
+      "192": "192 كيلو بايت في الثانية",
+      "256": "256 كيلو بايت في الثانية",
+      "320": "320 كيلو بايت في الثانية (الأفضل)",
       "128k": "128 كيلو بايت في الثانية",
       "160k": "160 كيلو بايت في الثانية",
-      "192": "192 كيلو بايت في الثانية",
       "192k": "192 كيلو بايت في الثانية",
-      "256": "256 كيلو بايت في الثانية",
       "256k": "256 كيلو بايت في الثانية",
-      "320": "320 كيلو بايت في الثانية (الأفضل)",
       "320k": "320 كيلو بايت في الثانية (الأفضل)",
-      "64": "64 كيلوبت في الثانية (منخفض)",
       "64k": "64 كيلو بايت في الثانية",
-      "96": "96 كيلو بايت في الثانية",
       "96k": "96 كيلو بايت في الثانية"
     },
     "codecs": {
@@ -74,7 +74,9 @@
     "warning": "تحذير",
     "yes": "نعم",
     "loadProfileFirst": "Please load a profile first",
-    "select": "Select"
+    "select": "Select",
+    "unknownError": "Unknown error",
+    "images": "Images"
   },
   "connection": {
     "connected": "Connected",
@@ -289,7 +291,8 @@
     "selectFile": "Select File",
     "selectFileFirst": "Please select a file",
     "selectedDirectory": "Selected directory:",
-    "typePath": "Type a path and press Enter..."
+    "typePath": "Type a path and press Enter...",
+    "browseFailed": "Failed to browse directory"
   },
   "header": {
     "dashboard": {
@@ -465,7 +468,11 @@
     "bindAddressPlaceholder": "0.0.0.0",
     "keyframeIntervalPlaceholder": "2",
     "portPlaceholder": "1935",
-    "videoBitratePlaceholder": "6000"
+    "videoBitratePlaceholder": "6000",
+    "profileStreamKeyWarningTitle": "Stream key missing",
+    "profileStreamKeyWarningBody": "This profile does not have an input stream key. Leaving it blank can cause connection errors on some RTMP servers and increases the security risk of unintended publishers.",
+    "profileStreamKeyWarningEdit": "Edit profile",
+    "profileStreamKeyWarningNeverShow": "Never show this warning for this profile"
   },
   "nav": {
     "configuration": "إعدادات",

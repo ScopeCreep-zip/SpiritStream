@@ -196,7 +196,7 @@ export function FileBrowserModal({
 
         const json = await response.json();
         if (!json.ok) {
-          throw new Error(json.error || 'Unknown error');
+          throw new Error(json.error || t('common.unknownError', 'Unknown error'));
         }
         const data: BrowseResponse = json.data;
         setCurrentPath(data.path);
@@ -207,7 +207,7 @@ export function FileBrowserModal({
       } catch (err) {
         console.error('[FileBrowser] Browse failed:', err);
         // Map server errors to user-friendly messages
-        const errorMessage = err instanceof Error ? err.message : 'Failed to browse directory';
+        const errorMessage = err instanceof Error ? err.message : t('fileBrowser.browseFailed', 'Failed to browse directory');
         const friendlyError = getFriendlyError(errorMessage, t);
         setError(friendlyError);
       } finally {

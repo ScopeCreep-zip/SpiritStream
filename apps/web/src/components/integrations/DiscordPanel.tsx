@@ -203,7 +203,7 @@ export function DiscordPanel() {
     try {
       const result = await dialogs.openFilePath({
         title: t('discord.selectImage'),
-        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }],
+        filters: [{ name: t('common.images', 'Images'), extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }],
       });
 
       if (result && discordSettings) {
