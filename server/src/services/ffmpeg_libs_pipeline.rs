@@ -11,14 +11,16 @@ use std::os::raw::c_int;
 use std::ptr;
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     mpsc::{self, Sender, Receiver},
 };
 use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 
 use ffmpeg_sys_next as ffi;
 
-use crate::models::{OutputGroup, StreamTarget};
+use crate::models::{OutputGroup, StreamStats, StreamTarget};
+use crate::services::{emit_event, EventSink};
 
 // ============================================================================
 // Per-Group Control
@@ -121,6 +123,110 @@ pub enum PipelineCommand {
     AddGroup(OutputGroupConfig),
 }
 
+// ============================================================================
+// Per-Group Stats Tracking
+// ============================================================================
+
+/// Tracks statistics for a single output group during pipeline execution.
+/// Used to accumulate data that will be emitted as StreamStats events.
+struct GroupStatsTracker {
+    group_id: String,
+    /// Total video frames written
+    frame_count: u64,
+    /// Total bytes written (video + audio)
+    total_bytes: u64,
+    /// When the group started
+    start_time: Instant,
+    /// When stats were last emitted
+    last_emit: Instant,
+    /// FPS calculation: frames in the last second
+    recent_frames: u64,
+    /// Timestamp of last FPS calculation
+    last_fps_time: Instant,
+    /// Calculated FPS value
+    current_fps: f64,
+}
+
+impl GroupStatsTracker {
+    fn new(group_id: String) -> Self {
+        let now = Instant::now();
+        Self {
+            group_id,
+            frame_count: 0,
+            total_bytes: 0,
+            start_time: now,
+            last_emit: now,
+            recent_frames: 0,
+            last_fps_time: now,
+            current_fps: 0.0,
+        }
+    }
+
+    /// Record a video frame written
+    fn record_video_frame(&mut self, size_bytes: u64) {
+        self.frame_count += 1;
+        self.total_bytes += size_bytes;
+        self.recent_frames += 1;
+    }
+
+    /// Record an audio packet written
+    fn record_audio_packet(&mut self, size_bytes: u64) {
+        self.total_bytes += size_bytes;
+    }
+
+    /// Update FPS calculation if enough time has passed
+    fn update_fps(&mut self) {
+        let elapsed = self.last_fps_time.elapsed();
+        if elapsed >= Duration::from_secs(1) {
+            let secs = elapsed.as_secs_f64();
+            self.current_fps = self.recent_frames as f64 / secs;
+            self.recent_frames = 0;
+            self.last_fps_time = Instant::now();
+        }
+    }
+
+    /// Check if stats should be emitted (every ~1 second)
+    fn should_emit(&self) -> bool {
+        self.last_emit.elapsed() >= Duration::from_secs(1)
+    }
+
+    /// Generate StreamStats and reset emit timer
+    fn emit_stats(&mut self) -> StreamStats {
+        self.update_fps();
+        self.last_emit = Instant::now();
+
+        let elapsed_secs = self.start_time.elapsed().as_secs_f64();
+        // Calculate bitrate in kbps: (bytes * 8) / (seconds * 1000)
+        let bitrate_kbps = if elapsed_secs > 0.0 {
+            (self.total_bytes as f64 * 8.0) / (elapsed_secs * 1000.0)
+        } else {
+            0.0
+        };
+
+        // Calculate speed: how fast we're processing relative to real-time
+        // For a real-time stream, this should be ~1.0x
+        let speed = if elapsed_secs > 0.0 && self.current_fps > 0.0 {
+            // Assume 30fps as baseline for speed calculation
+            // A better approach would be to get actual input fps
+            1.0
+        } else {
+            0.0
+        };
+
+        StreamStats {
+            group_id: self.group_id.clone(),
+            frame: self.frame_count,
+            fps: self.current_fps,
+            bitrate: bitrate_kbps,
+            speed,
+            size: self.total_bytes,
+            time: elapsed_secs,
+            dropped_frames: 0, // Not tracked in libs pipeline yet
+            dup_frames: 0,     // Not tracked in libs pipeline yet
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct InputPipelineConfig {
     pub input_id: String,
@@ -156,6 +262,8 @@ pub struct InputPipeline {
     command_tx: Option<Sender<PipelineCommand>>,
     /// Handles for controlling individual groups
     group_handles: Arc<Mutex<HashMap<String, GroupHandle>>>,
+    /// Event sink for emitting stats and lifecycle events
+    event_sink: Option<Arc<dyn EventSink>>,
 }
 
 impl InputPipeline {
@@ -169,7 +277,13 @@ impl InputPipeline {
             thread: None,
             command_tx: None,
             group_handles: Arc::new(Mutex::new(HashMap::new())),
+            event_sink: None,
         }
+    }
+
+    /// Set the event sink for emitting stats and lifecycle events
+    pub fn set_event_sink(&mut self, sink: Arc<dyn EventSink>) {
+        self.event_sink = Some(sink);
     }
 
     pub fn input_id(&self) -> &str {
@@ -237,6 +351,7 @@ impl InputPipeline {
         let expected_stream_key = self.expected_stream_key.clone();
         let stop_flag = Arc::clone(&self.stop_flag);
         let groups = self.groups.clone();
+        let event_sink = self.event_sink.clone();
 
         let handle = thread::spawn(move || {
             run_pipeline_loop(
@@ -246,6 +361,7 @@ impl InputPipeline {
                 group_controls,
                 stop_flag,
                 command_rx,
+                event_sink,
             )
         });
         self.thread = Some(handle);
@@ -435,10 +551,17 @@ fn run_pipeline_loop(
     group_controls: HashMap<String, GroupControl>,
     stop_flag: Arc<AtomicBool>,
     command_rx: Receiver<PipelineCommand>,
+    event_sink: Option<Arc<dyn EventSink>>,
 ) -> Result<(), String> {
     unsafe {
         ffi::avformat_network_init();
     }
+
+    // Initialize per-group stats trackers
+    let mut stats_trackers: HashMap<String, GroupStatsTracker> = groups
+        .iter()
+        .map(|g| (g.group_id.clone(), GroupStatsTracker::new(g.group_id.clone())))
+        .collect();
 
     let mut input_ctx = unsafe { ffi::avformat_alloc_context() };
     if input_ctx.is_null() {
@@ -575,6 +698,10 @@ fn run_pipeline_loop(
             if !group_out.cleaned_up && group_out.control.should_stop() {
                 log::info!("Cleaning up stopped passthrough group: {}", group_out.group_id);
                 cleanup_single_passthrough_group(group_out);
+                // Emit stream_ended event
+                if let Some(ref sink) = event_sink {
+                    emit_event(sink.as_ref(), "stream_ended", &group_out.group_id);
+                }
             }
         }
 
@@ -584,6 +711,10 @@ fn run_pipeline_loop(
                 flush_transcode_group(tg)?;
                 cleanup_transcode_group_outputs(tg);
                 tg.cleaned_up = true;
+                // Emit stream_ended event
+                if let Some(ref sink) = event_sink {
+                    emit_event(sink.as_ref(), "stream_ended", &tg.group_id);
+                }
             }
         }
 
@@ -614,18 +745,62 @@ fn run_pipeline_loop(
             continue;
         }
 
-        if stream_index == video_stream_index {
+        let packet_size = unsafe { (*packet).size as u64 };
+        let is_video = stream_index == video_stream_index;
+
+        if is_video {
             write_passthrough_packet(packet, in_stream, &group_outputs);
+            // Track stats for passthrough groups
+            for group_out in &group_outputs {
+                if !group_out.cleaned_up && group_out.control.is_enabled() {
+                    if let Some(tracker) = stats_trackers.get_mut(&group_out.group_id) {
+                        tracker.record_video_frame(packet_size);
+                    }
+                }
+            }
             if let Some(group) = transcode_group.as_mut() {
                 if !group.cleaned_up && group.control.is_enabled() {
                     transcode_video_packet(group, in_stream, packet)?;
+                    // Track stats for transcode group
+                    if let Some(tracker) = stats_trackers.get_mut(&group.group_id) {
+                        tracker.record_video_frame(packet_size);
+                    }
                 }
             }
         } else if audio_stream_index == Some(stream_index) {
             write_passthrough_packet(packet, in_stream, &group_outputs);
+            // Track stats for passthrough groups
+            for group_out in &group_outputs {
+                if !group_out.cleaned_up && group_out.control.is_enabled() {
+                    if let Some(tracker) = stats_trackers.get_mut(&group_out.group_id) {
+                        tracker.record_audio_packet(packet_size);
+                    }
+                }
+            }
             if let Some(group) = transcode_group.as_mut() {
                 if !group.cleaned_up && group.control.is_enabled() {
                     transcode_audio_packet(group, in_stream, packet)?;
+                    // Track stats for transcode group
+                    if let Some(tracker) = stats_trackers.get_mut(&group.group_id) {
+                        tracker.record_audio_packet(packet_size);
+                    }
+                }
+            }
+        }
+
+        // Emit stats periodically for all active groups
+        if let Some(ref sink) = event_sink {
+            for (group_id, tracker) in stats_trackers.iter_mut() {
+                // Check if this group is still active
+                let is_active = group_outputs.iter()
+                    .any(|g| &g.group_id == group_id && !g.cleaned_up)
+                    || transcode_group.as_ref()
+                        .map(|g| &g.group_id == group_id && !g.cleaned_up)
+                        .unwrap_or(false);
+
+                if is_active && tracker.should_emit() {
+                    let stats = tracker.emit_stats();
+                    emit_event(sink.as_ref(), "stream_stats", &stats);
                 }
             }
         }
@@ -637,6 +812,20 @@ fn run_pipeline_loop(
     if let Some(ref mut group) = transcode_group {
         if !group.cleaned_up {
             flush_transcode_group(group)?;
+        }
+    }
+
+    // Emit final stream_ended events for groups that completed normally
+    if let Some(ref sink) = event_sink {
+        for group_out in &group_outputs {
+            if !group_out.cleaned_up {
+                emit_event(sink.as_ref(), "stream_ended", &group_out.group_id);
+            }
+        }
+        if let Some(ref tg) = transcode_group {
+            if !tg.cleaned_up {
+                emit_event(sink.as_ref(), "stream_ended", &tg.group_id);
+            }
         }
     }
 
