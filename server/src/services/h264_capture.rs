@@ -45,7 +45,7 @@ struct H264CaptureSession {
 pub struct H264EncodingConfig {
     /// Video bitrate in kbps (default: 4000)
     pub bitrate_kbps: u32,
-    /// Keyframe interval in frames (default: 30 = 1 second at 30fps)
+    /// Keyframe interval in frames (default: 5 = ~160ms at 30fps for faster preview)
     pub keyframe_interval: u32,
     /// Encoding preset (ultrafast, superfast, veryfast, faster, fast, medium)
     pub preset: String,
@@ -57,7 +57,7 @@ impl Default for H264EncodingConfig {
     fn default() -> Self {
         Self {
             bitrate_kbps: 4000,
-            keyframe_interval: 15, // Reduced from 30 for faster initial frame
+            keyframe_interval: 5, // ~160ms at 30fps for faster preview switching
             preset: "ultrafast".to_string(),
             use_hw_accel: true,
         }
@@ -1040,7 +1040,7 @@ mod tests {
     fn test_encoding_config_defaults() {
         let config = H264EncodingConfig::default();
         assert_eq!(config.bitrate_kbps, 4000);
-        assert_eq!(config.keyframe_interval, 15); // Reduced from 30 for faster initial frame
+        assert_eq!(config.keyframe_interval, 5); // ~160ms at 30fps for faster preview switching
         assert_eq!(config.preset, "ultrafast");
         assert!(config.use_hw_accel);
     }

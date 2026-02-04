@@ -6,6 +6,10 @@
 // - has_permission(): Use has_permission_cached() for sync contexts, or check via PermissionsService
 // - start_*_capture(): Safe - capture runs in dedicated thread with dispatch queues
 // - stop_capture(): Safe on any thread
+//
+// Performance Notes:
+// - scap::get_all_targets() can block for 3-10 seconds on macOS (ScreenCaptureKit enumeration)
+// - We cache targets with a 5-second TTL to avoid repeated blocking calls
 
 use scap::{
     capturer::{Capturer, Options, Resolution},
@@ -13,11 +17,66 @@ use scap::{
     Target,
 };
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 
 use super::permissions::PermissionsService;
+
+/// Cache TTL for scap targets (5 seconds)
+const TARGET_CACHE_TTL: Duration = Duration::from_secs(5);
+
+/// Cached scap targets with timestamp
+struct TargetCache {
+    targets: Vec<Target>,
+    last_refresh: Instant,
+}
+
+/// Global cache for scap targets to avoid repeated 3-10s blocking calls
+static TARGET_CACHE: OnceLock<RwLock<Option<TargetCache>>> = OnceLock::new();
+
+fn get_target_cache() -> &'static RwLock<Option<TargetCache>> {
+    TARGET_CACHE.get_or_init(|| RwLock::new(None))
+}
+
+/// Get scap targets with caching
+/// Returns cached targets if within TTL, otherwise refreshes the cache
+fn get_targets_cached() -> Vec<Target> {
+    let cache = get_target_cache();
+
+    // Try to read from cache
+    {
+        if let Ok(guard) = cache.read() {
+            if let Some(ref c) = *guard {
+                if c.last_refresh.elapsed() < TARGET_CACHE_TTL {
+                    return c.targets.clone();
+                }
+            }
+        }
+    }
+
+    // Cache miss or expired - refresh
+    let targets = scap::get_all_targets();
+
+    // Update cache
+    if let Ok(mut guard) = cache.write() {
+        *guard = Some(TargetCache {
+            targets: targets.clone(),
+            last_refresh: Instant::now(),
+        });
+    }
+
+    targets
+}
+
+/// Invalidate the target cache (e.g., when displays are added/removed)
+#[allow(dead_code)]
+pub fn invalidate_target_cache() {
+    if let Ok(mut guard) = get_target_cache().write() {
+        *guard = None;
+    }
+}
 
 /// Information about an available display
 #[derive(Debug, Clone, serde::Serialize)]
@@ -102,9 +161,9 @@ impl ScreenCaptureService {
     }
 
     /// List available displays/monitors (sync version - use list_displays_async in async contexts)
-    /// WARNING: scap::get_all_targets() can block for 3-10 seconds on macOS
+    /// Uses cached targets to avoid repeated 3-10s blocking calls on macOS
     pub fn list_displays() -> Vec<DisplayInfo> {
-        let targets = scap::get_all_targets();
+        let targets = get_targets_cached();
 
         targets
             .into_iter()
@@ -142,9 +201,9 @@ impl ScreenCaptureService {
     }
 
     /// List available windows (sync version - use list_windows_async in async contexts)
-    /// WARNING: scap::get_all_targets() can block for 3-10 seconds on macOS
+    /// Uses cached targets to avoid repeated 3-10s blocking calls on macOS
     pub fn list_windows() -> Vec<WindowInfo> {
-        let targets = scap::get_all_targets();
+        let targets = get_targets_cached();
 
         targets
             .into_iter()
@@ -202,8 +261,8 @@ impl ScreenCaptureService {
             }
         }
 
-        // Find the display
-        let targets = scap::get_all_targets();
+        // Find the display (uses cached targets for performance)
+        let targets = get_targets_cached();
         let display = targets
             .into_iter()
             .find_map(|t| {
@@ -288,8 +347,8 @@ impl ScreenCaptureService {
             }
         }
 
-        // Find the window
-        let targets = scap::get_all_targets();
+        // Find the window (uses cached targets for performance)
+        let targets = get_targets_cached();
         let window = targets
             .into_iter()
             .find_map(|t| {

@@ -920,10 +920,13 @@ async fn static_file_handler(
     };
 
     // Build response with appropriate headers
+    // Cross-Origin-Resource-Policy: cross-origin is required because the frontend uses
+    // Cross-Origin-Embedder-Policy: require-corp for SharedArrayBuffer support in audio workers
     let mut response = Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", content_type)
-        .header("Cache-Control", "public, max-age=3600");
+        .header("Cache-Control", "public, max-age=3600")
+        .header("Cross-Origin-Resource-Policy", "cross-origin");
 
     // For HTML files, add a permissive CSP to allow external resources (fonts, stylesheets, etc.)
     // This is necessary because user-provided HTML content may include external dependencies
@@ -4693,17 +4696,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let theme_manager = Arc::new(ThemeManager::new(app_data_dir.clone(), PathBuf::from(&themes_dir)));
 
-    // Sync themes and verify sync worked
-    log::info!("Starting theme sync from {themes_dir:?} to user data");
-    theme_manager.sync_project_themes();
-
-    // Verify sync worked by listing available themes
-    let synced_themes = theme_manager.list_themes();
-    log::info!(
-        "Theme sync complete. Available themes ({}): {:?}",
-        synced_themes.len(),
-        synced_themes.iter().map(|t| &t.id).collect::<Vec<_>>()
-    );
+    // Sync themes in background to avoid blocking startup
+    // Theme sync can take time with many themes or slow disk I/O
+    {
+        let theme_manager_clone = theme_manager.clone();
+        tokio::task::spawn_blocking(move || {
+            log::info!("Starting theme sync in background");
+            theme_manager_clone.sync_project_themes();
+            let synced_themes = theme_manager_clone.list_themes();
+            log::info!(
+                "Theme sync complete. Available themes ({}): {:?}",
+                synced_themes.len(),
+                synced_themes.iter().map(|t| &t.id).collect::<Vec<_>>()
+            );
+        });
+    }
 
     let theme_event_sink: Arc<dyn EventSink> = Arc::new(event_bus.clone());
     theme_manager.start_watcher(theme_event_sink);
@@ -4733,6 +4740,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let audio_capture_warmup = audio_capture.clone();
         tokio::task::spawn_blocking(move || {
             audio_capture_warmup.warm_cache();
+        });
+    }
+    // Pre-warm device discovery cache in background for faster first enumeration
+    // Device discovery via FFmpeg can take 5-10 seconds, so caching helps startup
+    {
+        let discovery = DeviceDiscovery::new(preview_ffmpeg_path.clone());
+        tokio::spawn(async move {
+            match discovery.refresh_devices_async().await {
+                Ok(devices) => log::info!(
+                    "Device discovery pre-warm complete: {} cameras, {} displays, {} audio, {} capture cards",
+                    devices.cameras.len(), devices.displays.len(),
+                    devices.audio_devices.len(), devices.capture_cards.len()
+                ),
+                Err(e) => log::warn!("Device discovery pre-warm failed (will retry on demand): {}", e),
+            }
         });
     }
     let camera_capture = Arc::new(CameraCaptureService::new(preview_ffmpeg_path.clone()));

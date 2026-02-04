@@ -18,6 +18,9 @@
  * - React 19 use() hook: https://react.dev/reference/react/use
  */
 
+// Import worker URL for module worker creation
+// The crossOriginIsolation plugin in vite.config.ts sets CORP headers on all
+// responses, allowing worker module imports to work with COEP
 import AudioMeterWorkerUrl from './audioMeterWorker.ts?worker&url';
 
 // Worker instance (singleton)
@@ -65,6 +68,9 @@ export function initAudioMeterWorker(): void {
   if (worker) return;
 
   try {
+    // Create module worker using Vite's ?worker&url import
+    // The crossOriginIsolation plugin sets CORP headers on all responses,
+    // allowing the worker's module imports to work with COEP
     worker = new Worker(AudioMeterWorkerUrl, { type: 'module' });
 
     worker.onmessage = (e: MessageEvent) => {
