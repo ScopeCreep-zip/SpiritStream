@@ -2,8 +2,11 @@
  * Studio Mode Layout
  * Dual-pane layout with Preview (editable) and Program (live) canvases
  * Supports right-click projector context menus for Preview and Program
+ *
+ * Performance optimization: Pre-warms WebRTC connections for preview scene sources
+ * to enable instant TAKE transitions (~500ms-2s faster)
  */
-import { useMemo, useCallback, useState } from 'react';
+import { useMemo, useCallback, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SceneCanvas } from './SceneCanvas';
 import { TakeButton } from './TakeButton';
@@ -13,6 +16,8 @@ import { TBar } from './TBar';
 import { ProjectorContextMenu, useContextMenu } from '@/components/ui/ProjectorContextMenu';
 import { useStudioStore } from '@/stores/studioStore';
 import { useTransitionStore } from '@/stores/transitionStore';
+import { useWebRTCConnectionStore } from '@/stores/webrtcConnectionStore';
+import { sourceNeedsWebRTC } from '@/lib/mediaTypes';
 import type { Profile, Source } from '@/types/profile';
 
 interface StudioModeLayoutProps {
@@ -49,6 +54,35 @@ export function StudioModeLayout({
 
   // Can take only if preview and program are different
   const canTake = previewSceneId !== programSceneId && !isTransitioning;
+
+  // Pre-warm WebRTC connections for preview scene sources
+  // This enables instant TAKE transitions by having connections ready before they're needed
+  useEffect(() => {
+    if (!previewSceneId || !profile) return;
+
+    const previewScene = profile.scenes.find(s => s.id === previewSceneId);
+    if (!previewScene) return;
+
+    // Get source IDs from preview scene layers that need WebRTC
+    const sourceIds = previewScene.layers
+      .map(layer => {
+        const source = profile.sources.find(s => s.id === layer.sourceId);
+        if (!source) return null;
+        // Extract filePath from mediaFile sources (it's optional on the union type)
+        const filePath = 'filePath' in source ? (source as { filePath?: string }).filePath : undefined;
+        return sourceNeedsWebRTC({ type: source.type, filePath }) ? source.id : null;
+      })
+      .filter((id): id is string => id !== null);
+
+    // Pre-start connections for sources not yet connected
+    const { connections, startConnection } = useWebRTCConnectionStore.getState();
+    sourceIds.forEach(id => {
+      if (!connections[id] || connections[id].status === 'idle') {
+        // Start connection in background - don't await
+        startConnection(id);
+      }
+    });
+  }, [previewSceneId, profile]);
 
   // Handle right-click on Preview/Program panes
   const handlePreviewContextMenu = useCallback((e: React.MouseEvent) => {

@@ -2,8 +2,13 @@
  * Sources Panel
  * OBS-style layer management panel showing layers in the active scene
  * Supports drag-and-drop reordering where top of list = highest zIndex (rendered on top)
+ *
+ * Performance optimizations:
+ * - useDeferredValue for layer list to prevent UI blocking during rapid scene switches
+ * - memo on SortableLayerItem and GroupHeader to prevent unnecessary re-renders
+ * - useMemo for source lookup map and sorted layers
  */
-import { useState, useMemo, useCallback, useRef, useEffect, memo } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect, memo, useDeferredValue } from 'react';
 import { useContextMenu } from '@/hooks/useContextMenu';
 import { useTranslation } from 'react-i18next';
 import {
@@ -724,11 +729,16 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   );
 
+  // Use deferred value for active scene to prevent UI blocking during rapid scene switches
+  // This allows the UI to remain responsive while the layer list updates in the background
+  const deferredActiveScene = useDeferredValue(activeScene);
+
   // Sort layers by zIndex descending (highest zIndex = top of list = rendered on top)
+  // Uses deferred scene to prevent blocking during scene transitions
   const sortedLayers = useMemo(() => {
-    if (!activeScene) return [];
-    return [...activeScene.layers].sort((a, b) => b.zIndex - a.zIndex);
-  }, [activeScene?.layers]);
+    if (!deferredActiveScene) return [];
+    return [...deferredActiveScene.layers].sort((a, b) => b.zIndex - a.zIndex);
+  }, [deferredActiveScene?.layers]);
 
   // Memoize the layer IDs array for SortableContext to prevent re-renders
   // SortableContext does shallow comparison on items array, so we need stable reference
@@ -738,29 +748,33 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
   );
 
   // Organize layers: ungrouped layers and groups with their children
+  // Uses deferred scene to prevent blocking during scene transitions
   const organizedLayers = useMemo(() => {
-    if (!activeScene) return { ungrouped: [], groups: [] };
+    if (!deferredActiveScene) return { ungrouped: [], groups: [] };
 
     const groupedLayerIds = new Set(
-      activeScene.groups?.flatMap((g) => g.layerIds) ?? []
+      deferredActiveScene.groups?.flatMap((g) => g.layerIds) ?? []
     );
 
     // Ungrouped layers sorted by zIndex (descending)
     const ungrouped = sortedLayers.filter((l) => !groupedLayerIds.has(l.id));
 
     // Groups with their layers
-    const groups = (activeScene.groups ?? []).map((group) => ({
+    const groups = (deferredActiveScene.groups ?? []).map((group) => ({
       group,
       layers: sortedLayers.filter((l) => group.layerIds.includes(l.id)),
     }));
 
     return { ungrouped, groups };
-  }, [activeScene, sortedLayers]);
+  }, [deferredActiveScene, sortedLayers]);
+
+  // Use deferred value for profile sources to prevent UI blocking during source updates
+  const deferredSources = useDeferredValue(profile.sources);
 
   // Create source lookup map for O(1) access instead of O(n) find()
   const sourceMap = useMemo(
-    () => new Map(profile.sources.map((s) => [s.id, s])),
-    [profile.sources]
+    () => new Map(deferredSources.map((s) => [s.id, s])),
+    [deferredSources]
   );
 
   // Create reusable error handlers

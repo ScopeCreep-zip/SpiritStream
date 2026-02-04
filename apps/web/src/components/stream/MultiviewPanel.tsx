@@ -1,8 +1,11 @@
 /**
  * Multiview Panel
  * Grid view of all scenes for quick switching
+ *
+ * Performance optimizations:
+ * - Uses startTransition for scene switches to prevent UI blocking
  */
-import { useState, useCallback } from 'react';
+import { useState, useCallback, startTransition } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Grid2X2, Grid3X3, LayoutGrid } from 'lucide-react';
 import { SceneCard } from './SceneCard';
@@ -33,12 +36,18 @@ export function MultiviewPanel({ profile, onClose }: MultiviewPanelProps) {
   const handleSceneClick = useCallback(async (sceneId: string) => {
     if (studioEnabled) {
       // In Studio Mode, clicking sends to Preview
-      setPreviewScene(sceneId);
+      // Use startTransition to prevent UI blocking during state update
+      startTransition(() => {
+        setPreviewScene(sceneId);
+      });
     } else {
       // In Normal Mode, persist to backend then update local state
+      // Use startTransition for the local state update to keep UI responsive
       try {
         await setActiveScene(profile.name, sceneId);
-        setCurrentActiveScene(sceneId);
+        startTransition(() => {
+          setCurrentActiveScene(sceneId);
+        });
       } catch (err) {
         console.error('[MultiviewPanel] Failed to switch scene:', err);
         toast.error(`Failed to switch scene: ${err instanceof Error ? err.message : String(err)}`);

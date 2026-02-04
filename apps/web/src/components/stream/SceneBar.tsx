@@ -9,8 +9,11 @@
  * - Scene tabs with right-click projector context menu
  * - Quick projector button for current scene
  * - Studio mode tally indicators
+ *
+ * Performance optimizations:
+ * - Uses startTransition for scene switches to prevent UI blocking
  */
-import { useState, useCallback } from 'react';
+import { useState, useCallback, startTransition } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus, Copy, Trash2, MonitorPlay, LayoutGrid } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
@@ -110,9 +113,12 @@ export function SceneBar({ profile, activeSceneId }: SceneBarProps) {
     if (isTransitioning) return;
 
     // In Studio Mode, clicking loads to Preview only
+    // Use startTransition to prevent UI blocking during state update
     if (studioEnabled) {
       if (sceneId !== previewSceneId) {
-        setPreviewScene(sceneId);
+        startTransition(() => {
+          setPreviewScene(sceneId);
+        });
       }
       return;
     }
@@ -122,8 +128,10 @@ export function SceneBar({ profile, activeSceneId }: SceneBarProps) {
 
     try {
       await setActiveScene(profile.name, sceneId);
-      // Update local state instead of reloading entire profile
-      setCurrentActiveScene(sceneId);
+      // Update local state with startTransition to keep UI responsive
+      startTransition(() => {
+        setCurrentActiveScene(sceneId);
+      });
     } catch (err) {
       toast.error(t('stream.sceneSwitchFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to switch scene: ${err instanceof Error ? err.message : String(err)}` }));
     }

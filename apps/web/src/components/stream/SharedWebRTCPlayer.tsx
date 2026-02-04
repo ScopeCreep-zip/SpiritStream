@@ -67,6 +67,7 @@ export function SharedWebRTCPlayer({
   }, []);
 
   // Attach stream to video element when it changes
+  // Apply low-latency hints for broadcast-grade preview
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -74,6 +75,29 @@ export function SharedWebRTCPlayer({
     if (stream) {
       video.srcObject = stream;
       setVideoReady(false); // Reset when stream changes - wait for decoder to initialize
+
+      // Low-latency hints for live content
+      video.playsInline = true;
+      video.muted = true;
+      video.disablePictureInPicture = true;
+      // Disable audio pitch preservation to avoid stretching artifacts
+      (video as HTMLVideoElement & { preservesPitch?: boolean }).preservesPitch = false;
+
+      // Catch up to live edge on play - reduces latency from buffered content
+      const handleCanPlay = () => {
+        if (video.buffered.length > 0) {
+          const liveEdge = video.buffered.end(video.buffered.length - 1);
+          // Only jump if we're more than 100ms behind live edge
+          if (liveEdge - video.currentTime > 0.1) {
+            video.currentTime = liveEdge;
+          }
+        }
+      };
+      video.addEventListener('canplay', handleCanPlay, { once: true });
+
+      return () => {
+        video.removeEventListener('canplay', handleCanPlay);
+      };
     } else {
       video.srcObject = null;
       setVideoReady(false);

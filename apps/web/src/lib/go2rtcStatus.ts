@@ -8,6 +8,10 @@
  * Usage:
  * - Call preWarmGo2rtc() early during app initialization
  * - Use isGo2rtcAvailable() when starting WebRTC connections
+ *
+ * Performance optimizations:
+ * - Reduced retry delay from 500ms to 200ms for faster cold start
+ * - Pre-warms RTCPeerConnection pool when go2rtc becomes available
  */
 
 import { api } from '@/lib/backend';
@@ -19,16 +23,17 @@ let go2rtcAvailable: boolean | null = null;
 let checkPromise: Promise<boolean> | null = null;
 
 /** Maximum retry attempts for availability check */
-const MAX_RETRIES = 10;
+const MAX_RETRIES = 15;
 
-/** Delay between retries in milliseconds */
-const RETRY_DELAY_MS = 500;
+/** Delay between retries in milliseconds - reduced from 500ms to 200ms for faster cold start */
+const RETRY_DELAY_MS = 200;
 
 /**
  * Check if go2rtc is available, with caching.
  *
- * On first call, performs retries with 500ms delays until go2rtc responds
- * or max retries are exhausted. Subsequent calls return cached result immediately.
+ * On first call, performs retries with 200ms delays until go2rtc responds
+ * or max retries are exhausted (3s total vs previous 5s). Subsequent calls
+ * return cached result immediately.
  *
  * @returns Promise that resolves to true if go2rtc is available, false otherwise
  */
@@ -50,6 +55,14 @@ export async function isGo2rtcAvailable(): Promise<boolean> {
         const available = await api.webrtc.isAvailable();
         if (available) {
           go2rtcAvailable = true;
+          // Pre-warm WebRTC connection pool now that go2rtc is available
+          // This reduces first-connection latency by having connections ready
+          try {
+            const { preWarmConnectionPool } = await import('@/stores/webrtcConnectionStore');
+            preWarmConnectionPool(2);
+          } catch {
+            // Ignore if module not available
+          }
           return true;
         }
       } catch {

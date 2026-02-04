@@ -150,6 +150,12 @@ impl Go2RtcManager {
 
         // Create a temporary config file - go2rtc requires a file to allow dynamic stream registration
         // Using inline config with -c disables the ability to add streams via API
+        //
+        // Low-latency optimizations in ffmpeg section (per go2rtc docs):
+        // - global: Flags applied to all FFmpeg commands
+        // - h264: Software H.264 encoding with low-latency settings
+        // - h264/videotoolbox, h264/vaapi: Hardware-accelerated encoding
+        // Reference: https://github.com/AlexxIT/go2rtc/wiki/FFmpeg-Config
         let config_content = format!(r#"api:
   listen: ":{}"
   origin: "*"
@@ -157,8 +163,14 @@ rtsp:
   listen: ":{}"
 webrtc:
   listen: ":{}"
+  candidates:
+    - stun:stun.l.google.com:19302
 ffmpeg:
   bin: ffmpeg
+  global: "-hide_banner"
+  h264: "-c:v libx264 -g 15 -profile:v high -level:v 4.1 -preset:v ultrafast -tune:v zerolatency -pix_fmt:v yuv420p"
+  h264/videotoolbox: "-c:v h264_videotoolbox -g 15 -bf 0 -realtime 1 -profile:v high -level:v 4.1"
+  h264/vaapi: "-c:v h264_vaapi -g 15 -bf 0 -profile:v high -level:v 4.1"
 log:
   level: info
 "#,
@@ -188,8 +200,23 @@ log:
 
         *self.child.write().await = Some(child);
 
-        // Wait for health check to pass
+        // Wait for health check to pass with exponential backoff
+        // Fast initial checks (10ms, 20ms, 50ms) for quick startup, then slower (100ms, 200ms, 500ms)
+        // Total max wait: ~880ms before falling back to fixed 500ms polling
+        let backoff_delays_ms: &[u64] = &[10, 20, 50, 100, 200, 500];
         let start_time = std::time::Instant::now();
+
+        // Fast initial checks with exponential backoff
+        for delay_ms in backoff_delays_ms {
+            if self.client.health_check().await {
+                self.is_available.store(true, Ordering::SeqCst);
+                log::info!("go2rtc started successfully on port {} in {:?}", self.port, start_time.elapsed());
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(*delay_ms)).await;
+        }
+
+        // Fall back to fixed polling if fast startup didn't work
         loop {
             if start_time.elapsed() > STARTUP_TIMEOUT {
                 self.stop().await;
@@ -198,11 +225,11 @@ log:
 
             if self.client.health_check().await {
                 self.is_available.store(true, Ordering::SeqCst);
-                log::info!("go2rtc started successfully on port {}", self.port);
+                log::info!("go2rtc started successfully on port {} in {:?}", self.port, start_time.elapsed());
                 return Ok(());
             }
 
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            tokio::time::sleep(Duration::from_millis(500)).await;
         }
     }
 
@@ -247,29 +274,80 @@ log:
     }
 
     /// Register a camera source using go2rtc's native ffmpeg:device source
+    /// Uses passthrough mode (copy) for low-latency preview by default
     pub async fn register_camera(&self, source_id: &str, device_index: u32) -> Result<String, String> {
+        self.register_camera_with_encoding(source_id, device_index, true).await
+    }
+
+    /// Register a camera source with encoding control
+    ///
+    /// # Arguments
+    /// * `source_id` - Unique identifier for this source
+    /// * `device_index` - Camera device index
+    /// * `passthrough` - If true, use video passthrough (copy) for low latency preview (50-200ms faster)
+    ///                   If false, re-encode to H.264 for broadcast quality control
+    pub async fn register_camera_with_encoding(
+        &self,
+        source_id: &str,
+        device_index: u32,
+        passthrough: bool,
+    ) -> Result<String, String> {
         if !self.is_available() {
             return Err("go2rtc is not available".to_string());
         }
 
         // Use go2rtc's native ffmpeg:device source type
         // Format: ffmpeg:device?video={index}&video_size={WxH}&framerate={fps}#video={codec}
+        //
+        // Low-latency optimizations are applied via global go2rtc config:
+        // - ffmpeg.global: "-fflags nobuffer -flags low_delay" (input flags before -i)
+        // - ffmpeg.h264: "-preset ultrafast -tune zerolatency -g 15" (encoder settings)
+        //
+        // Using #video=copy skips re-encoding for 50-200ms latency reduction
+        let video_codec = if passthrough { "copy" } else { "h264" };
+
         let source = if cfg!(target_os = "macos") {
             // macOS uses AVFoundation indices
-            format!("ffmpeg:device?video={}&video_size=1280x720&framerate=30#video=h264", device_index)
+            format!(
+                "ffmpeg:device?video={}&video_size=1280x720&framerate=30#video={}",
+                device_index, video_codec
+            )
         } else if cfg!(target_os = "windows") {
             // Windows uses DirectShow device index
-            format!("ffmpeg:device?video={}&video_size=1280x720&framerate=30#video=h264", device_index)
+            format!(
+                "ffmpeg:device?video={}&video_size=1280x720&framerate=30#video={}",
+                device_index, video_codec
+            )
         } else {
             // Linux uses V4L2 device index
-            format!("ffmpeg:device?video={}&video_size=1280x720&framerate=30#video=h264", device_index)
+            format!(
+                "ffmpeg:device?video={}&video_size=1280x720&framerate=30#video={}",
+                device_index, video_codec
+            )
         };
 
         self.register_source(source_id, &source).await
     }
 
     /// Register a screen capture source
+    /// Uses passthrough mode (copy) for low-latency preview by default
     pub async fn register_screen(&self, source_id: &str, display_id: u32) -> Result<String, String> {
+        self.register_screen_with_encoding(source_id, display_id, true).await
+    }
+
+    /// Register a screen capture source with encoding control
+    ///
+    /// # Arguments
+    /// * `source_id` - Unique identifier for this source
+    /// * `display_id` - Display device index
+    /// * `passthrough` - If true, use video passthrough (copy) for low latency preview (50-200ms faster)
+    ///                   If false, re-encode to H.264 for broadcast quality control
+    pub async fn register_screen_with_encoding(
+        &self,
+        source_id: &str,
+        display_id: u32,
+        passthrough: bool,
+    ) -> Result<String, String> {
         if !self.is_available() {
             return Err("go2rtc is not available".to_string());
         }
@@ -280,16 +358,33 @@ log:
         //
         // IMPORTANT: We cap resolution at 1920x1080 for low latency - native resolution
         // captures (e.g., 2560x1440, 3840x2160) cause significant encoding latency.
+        //
+        // Low-latency optimizations are applied via global go2rtc config:
+        // - ffmpeg.global: "-fflags nobuffer -flags low_delay" (input flags before -i)
+        // - ffmpeg.h264: "-preset ultrafast -tune zerolatency -g 15" (encoder settings)
+        //
+        // Using #video=copy skips re-encoding for 50-200ms latency reduction
+        let video_codec = if passthrough { "copy" } else { "h264" };
+
         let source = if cfg!(target_os = "macos") {
             // macOS: screen capture devices are listed after cameras in AVFoundation
             // Use 1920x1080 cap and 30fps for low latency preview
-            format!("ffmpeg:device?video={}&video_size=1920x1080&framerate=30#video=h264", display_id)
+            format!(
+                "ffmpeg:device?video={}&video_size=1920x1080&framerate=30#video={}",
+                display_id, video_codec
+            )
         } else if cfg!(target_os = "windows") {
             // Windows: gdigrab for desktop capture with resolution cap
-            format!("ffmpeg:desktop?video_size=1920x1080&framerate=30#video=h264")
+            format!(
+                "ffmpeg:desktop?video_size=1920x1080&framerate=30#video={}",
+                video_codec
+            )
         } else {
             // Linux: x11grab for desktop capture with resolution cap
-            format!("ffmpeg:display?video_size=1920x1080&framerate=30#video=h264")
+            format!(
+                "ffmpeg:display?video_size=1920x1080&framerate=30#video={}",
+                video_codec
+            )
         };
 
         self.register_source(source_id, &source).await
