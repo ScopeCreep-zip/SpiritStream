@@ -2544,9 +2544,42 @@ unsafe fn apply_encoder_options(
         ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
 
         // Repeat PPS/SPS for each IDR (ensures stream decoders can join mid-stream)
+        // Note: repeat_pps may not be supported on older FFmpeg/QSV versions; av_opt_set
+        // will return an error but we continue anyway as the stream may still work
         let key = CString::new("repeat_pps").unwrap();
         let val = CString::new("1").unwrap();
+        let ret = ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
+        if ret < 0 {
+            log::debug!("QSV repeat_pps not supported (error {}), continuing without it", ret);
+        }
+    } else if name_lower.contains("qsv") {
+        // Non-Twitch QSV defaults aligned with OBS for best quality
+        // Enable B-frames for better compression
+        (*enc_ctx).max_b_frames = 3;
+
+        // Enable lookahead for better rate control
+        let key = CString::new("look_ahead").unwrap();
+        let val = CString::new("1").unwrap();
         ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
+
+        // Lookahead depth (60 frames = 1 second at 60fps)
+        // Use shorter depth for low-latency presets
+        let preset_lower = preset.map(|p| p.to_lowercase()).unwrap_or_default();
+        let depth = if preset_lower.contains("fast") || preset_lower.contains("low") {
+            "30"
+        } else {
+            "60"
+        };
+        let key = CString::new("look_ahead_depth").unwrap();
+        let val = CString::new(depth).unwrap();
+        ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
+
+        // Async depth for better GPU utilization
+        let key = CString::new("async_depth").unwrap();
+        let val = CString::new("4").unwrap();
+        ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
+
+        log::debug!("QSV: set B-frames=3, look_ahead=1, look_ahead_depth={}, async_depth=4", depth);
     }
 
     // Apply common hardware encoder optimizations
