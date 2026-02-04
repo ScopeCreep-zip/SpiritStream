@@ -4,19 +4,122 @@
 
 #![cfg(feature = "ffmpeg-libs")]
 
+use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::ffi::c_void;
 use std::os::raw::c_int;
 use std::ptr;
 use std::sync::{
-    Arc,
+    Arc, Mutex,
     atomic::{AtomicBool, Ordering},
+    mpsc::{self, Sender, Receiver},
 };
 use std::thread::{self, JoinHandle};
 
 use ffmpeg_sys_next as ffi;
 
 use crate::models::{OutputGroup, StreamTarget};
+
+// ============================================================================
+// Per-Group Control
+// ============================================================================
+
+/// Control state for an individual output group.
+/// Allows stopping/enabling groups without restarting the entire pipeline.
+#[derive(Clone)]
+pub struct GroupControl {
+    /// When true, stop this group and clean up its resources
+    stop_flag: Arc<AtomicBool>,
+    /// When false, skip writing packets to this group (soft disable)
+    enabled: Arc<AtomicBool>,
+}
+
+impl GroupControl {
+    fn new() -> Self {
+        Self {
+            stop_flag: Arc::new(AtomicBool::new(false)),
+            enabled: Arc::new(AtomicBool::new(true)),
+        }
+    }
+
+    /// Check if this group should stop
+    pub fn should_stop(&self) -> bool {
+        self.stop_flag.load(Ordering::SeqCst)
+    }
+
+    /// Check if this group is enabled for packet writing
+    pub fn is_enabled(&self) -> bool {
+        self.enabled.load(Ordering::SeqCst)
+    }
+
+    /// Signal this group to stop
+    pub fn stop(&self) {
+        self.stop_flag.store(true, Ordering::SeqCst);
+    }
+
+    /// Enable packet writing to this group
+    pub fn enable(&self) {
+        self.enabled.store(true, Ordering::SeqCst);
+    }
+
+    /// Disable packet writing to this group (soft stop - keeps connection)
+    pub fn disable(&self) {
+        self.enabled.store(false, Ordering::SeqCst);
+    }
+}
+
+impl Default for GroupControl {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// External handle to control a group from outside the pipeline thread
+#[derive(Clone)]
+pub struct GroupHandle {
+    pub group_id: String,
+    pub mode: OutputGroupMode,
+    control: GroupControl,
+}
+
+impl GroupHandle {
+    /// Stop this group and clean up its resources
+    pub fn stop(&self) {
+        log::info!("Stopping group {} via handle", self.group_id);
+        self.control.stop();
+    }
+
+    /// Check if this group is stopped
+    pub fn is_stopped(&self) -> bool {
+        self.control.should_stop()
+    }
+
+    /// Enable packet writing to this group
+    pub fn enable(&self) {
+        log::info!("Enabling group {} via handle", self.group_id);
+        self.control.enable();
+    }
+
+    /// Disable packet writing (soft stop - keeps RTMP connection)
+    pub fn disable(&self) {
+        log::info!("Disabling group {} via handle", self.group_id);
+        self.control.disable();
+    }
+
+    /// Check if this group is enabled
+    pub fn is_enabled(&self) -> bool {
+        self.control.is_enabled()
+    }
+}
+
+/// Commands that can be sent to the pipeline thread for runtime control
+#[derive(Debug)]
+pub enum PipelineCommand {
+    /// Stop a specific group by ID
+    StopGroup(String),
+    /// Add a new group to the running pipeline
+    AddGroup(OutputGroupConfig),
+}
 
 #[derive(Debug, Clone)]
 pub struct InputPipelineConfig {
@@ -49,6 +152,10 @@ pub struct InputPipeline {
     groups: Vec<OutputGroupConfig>,
     stop_flag: Arc<AtomicBool>,
     thread: Option<JoinHandle<Result<(), String>>>,
+    /// Command sender for runtime control (created on start)
+    command_tx: Option<Sender<PipelineCommand>>,
+    /// Handles for controlling individual groups
+    group_handles: Arc<Mutex<HashMap<String, GroupHandle>>>,
 }
 
 impl InputPipeline {
@@ -60,6 +167,8 @@ impl InputPipeline {
             groups: Vec::new(),
             stop_flag: Arc::new(AtomicBool::new(false)),
             thread: None,
+            command_tx: None,
+            group_handles: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -101,18 +210,116 @@ impl InputPipeline {
             return Err("Only one transcode group is supported in ffmpeg-libs pipeline for now".to_string());
         }
 
+        // Create command channel for runtime control
+        let (command_tx, command_rx) = mpsc::channel();
+        self.command_tx = Some(command_tx);
+
+        // Create control handles for each group
+        let mut group_controls = HashMap::new();
+        {
+            let mut handles = self.group_handles.lock()
+                .map_err(|e| format!("Lock poisoned: {e}"))?;
+            handles.clear();
+
+            for group_config in &self.groups {
+                let control = GroupControl::new();
+                let handle = GroupHandle {
+                    group_id: group_config.group_id.clone(),
+                    mode: group_config.mode,
+                    control: control.clone(),
+                };
+                handles.insert(group_config.group_id.clone(), handle);
+                group_controls.insert(group_config.group_id.clone(), control);
+            }
+        }
+
         let input_url = self.input_url.clone();
         let expected_stream_key = self.expected_stream_key.clone();
         let stop_flag = Arc::clone(&self.stop_flag);
         let groups = self.groups.clone();
 
-        let handle = thread::spawn(move || run_pipeline_loop(&input_url, expected_stream_key.as_deref(), groups, stop_flag));
+        let handle = thread::spawn(move || {
+            run_pipeline_loop(
+                &input_url,
+                expected_stream_key.as_deref(),
+                groups,
+                group_controls,
+                stop_flag,
+                command_rx,
+            )
+        });
         self.thread = Some(handle);
         Ok(())
     }
 
+    /// Stop the entire pipeline (all groups and input)
     pub fn stop(&mut self) {
         self.stop_flag.store(true, Ordering::SeqCst);
+    }
+
+    /// Stop a specific group without stopping the pipeline
+    pub fn stop_group(&self, group_id: &str) -> Result<(), String> {
+        let handles = self.group_handles.lock()
+            .map_err(|e| format!("Lock poisoned: {e}"))?;
+
+        if let Some(handle) = handles.get(group_id) {
+            handle.stop();
+            Ok(())
+        } else {
+            Err(format!("Group not found: {}", group_id))
+        }
+    }
+
+    /// Enable a specific group (resume packet writing)
+    pub fn enable_group(&self, group_id: &str) -> Result<(), String> {
+        let handles = self.group_handles.lock()
+            .map_err(|e| format!("Lock poisoned: {e}"))?;
+
+        if let Some(handle) = handles.get(group_id) {
+            handle.enable();
+            Ok(())
+        } else {
+            Err(format!("Group not found: {}", group_id))
+        }
+    }
+
+    /// Disable a specific group (pause packet writing, keep connection)
+    pub fn disable_group(&self, group_id: &str) -> Result<(), String> {
+        let handles = self.group_handles.lock()
+            .map_err(|e| format!("Lock poisoned: {e}"))?;
+
+        if let Some(handle) = handles.get(group_id) {
+            handle.disable();
+            Ok(())
+        } else {
+            Err(format!("Group not found: {}", group_id))
+        }
+    }
+
+    /// Get a handle to control a specific group
+    pub fn get_group_handle(&self, group_id: &str) -> Option<GroupHandle> {
+        let handles = self.group_handles.lock().ok()?;
+        handles.get(group_id).cloned()
+    }
+
+    /// Get handles for all groups
+    pub fn get_all_group_handles(&self) -> Vec<GroupHandle> {
+        let handles = match self.group_handles.lock() {
+            Ok(h) => h,
+            Err(_) => return Vec::new(),
+        };
+        handles.values().cloned().collect()
+    }
+
+    /// Check if a specific group is running (not stopped)
+    pub fn is_group_running(&self, group_id: &str) -> bool {
+        let handles = match self.group_handles.lock() {
+            Ok(h) => h,
+            Err(_) => return false,
+        };
+        handles.get(group_id)
+            .map(|h| !h.is_stopped())
+            .unwrap_or(false)
     }
 
     pub fn join(&mut self) -> Result<(), String> {
@@ -131,11 +338,15 @@ struct TargetOutput {
 
 struct GroupOutputs {
     group_id: String,
+    control: GroupControl,
     targets: Vec<TargetOutput>,
+    /// Track if this group has been cleaned up
+    cleaned_up: bool,
 }
 
 struct TranscodeGroup {
     group_id: String,
+    control: GroupControl,
     video_stream_index: usize,
     audio_stream_index: Option<usize>,
     video_dec_ctx: *mut ffi::AVCodecContext,
@@ -151,6 +362,8 @@ struct TranscodeGroup {
     video_hw_frame: Option<*mut ffi::AVFrame>,
     audio_dec_frame: *mut ffi::AVFrame,
     outputs: Vec<TranscodeOutput>,
+    /// Track if this group has been cleaned up
+    cleaned_up: bool,
 }
 
 struct TranscodeOutput {
@@ -219,7 +432,9 @@ fn run_pipeline_loop(
     input_url: &str,
     expected_stream_key: Option<&str>,
     groups: Vec<OutputGroupConfig>,
+    group_controls: HashMap<String, GroupControl>,
     stop_flag: Arc<AtomicBool>,
+    command_rx: Receiver<PipelineCommand>,
 ) -> Result<(), String> {
     unsafe {
         ffi::avformat_network_init();
@@ -303,13 +518,17 @@ fn run_pipeline_loop(
     }
 
     let (video_stream_index, audio_stream_index) = find_stream_indices(input_ctx)?;
-    let group_outputs = create_group_outputs(input_ctx, &groups)?;
+    let mut group_outputs = create_group_outputs(input_ctx, &groups, &group_controls)?;
     let transcode_group_config = groups.iter()
         .find(|group| group.mode == OutputGroupMode::Transcode);
     let mut transcode_group = if let Some(config) = transcode_group_config {
+        let control = group_controls.get(&config.group_id)
+            .cloned()
+            .unwrap_or_default();
         Some(create_transcode_group(
             input_ctx,
             config,
+            control,
             video_stream_index,
             audio_stream_index,
         )?)
@@ -319,7 +538,7 @@ fn run_pipeline_loop(
 
     let mut packet = unsafe { ffi::av_packet_alloc() };
     if packet.is_null() {
-        cleanup_outputs(group_outputs);
+        cleanup_outputs(&mut group_outputs);
         if let Some(group) = transcode_group.take() {
             cleanup_transcode_group(group);
         }
@@ -328,7 +547,51 @@ fn run_pipeline_loop(
     }
 
     loop {
+        // Check global stop flag
         if stop_flag.load(Ordering::SeqCst) {
+            break;
+        }
+
+        // Process any pending commands (non-blocking)
+        while let Ok(cmd) = command_rx.try_recv() {
+            match cmd {
+                PipelineCommand::StopGroup(group_id) => {
+                    log::info!("Received command to stop group: {}", group_id);
+                    // Mark the group as stopped via control flag
+                    if let Some(control) = group_controls.get(&group_id) {
+                        control.stop();
+                    }
+                }
+                PipelineCommand::AddGroup(_config) => {
+                    // Adding groups at runtime requires more complex handling
+                    // For now, log and skip - groups must be added before start()
+                    log::warn!("AddGroup command received but runtime group addition not yet supported");
+                }
+            }
+        }
+
+        // Check per-group stop flags and clean up stopped groups
+        for group_out in group_outputs.iter_mut() {
+            if !group_out.cleaned_up && group_out.control.should_stop() {
+                log::info!("Cleaning up stopped passthrough group: {}", group_out.group_id);
+                cleanup_single_passthrough_group(group_out);
+            }
+        }
+
+        if let Some(ref mut tg) = transcode_group {
+            if !tg.cleaned_up && tg.control.should_stop() {
+                log::info!("Cleaning up stopped transcode group: {}", tg.group_id);
+                flush_transcode_group(tg)?;
+                cleanup_transcode_group_outputs(tg);
+                tg.cleaned_up = true;
+            }
+        }
+
+        // Check if all groups are stopped - if so, exit the loop
+        let all_passthrough_stopped = group_outputs.iter().all(|g| g.cleaned_up);
+        let transcode_stopped = transcode_group.as_ref().map(|g| g.cleaned_up).unwrap_or(true);
+        if all_passthrough_stopped && transcode_stopped {
+            log::info!("All groups stopped, exiting pipeline loop");
             break;
         }
 
@@ -354,24 +617,31 @@ fn run_pipeline_loop(
         if stream_index == video_stream_index {
             write_passthrough_packet(packet, in_stream, &group_outputs);
             if let Some(group) = transcode_group.as_mut() {
-                transcode_video_packet(group, in_stream, packet)?;
+                if !group.cleaned_up && group.control.is_enabled() {
+                    transcode_video_packet(group, in_stream, packet)?;
+                }
             }
         } else if audio_stream_index == Some(stream_index) {
             write_passthrough_packet(packet, in_stream, &group_outputs);
             if let Some(group) = transcode_group.as_mut() {
-                transcode_audio_packet(group, in_stream, packet)?;
+                if !group.cleaned_up && group.control.is_enabled() {
+                    transcode_audio_packet(group, in_stream, packet)?;
+                }
             }
         }
 
         unsafe { ffi::av_packet_unref(packet) };
     }
 
-    if let Some(group) = transcode_group.as_mut() {
-        flush_transcode_group(group)?;
+    // Final cleanup - flush and close any groups that weren't stopped individually
+    if let Some(ref mut group) = transcode_group {
+        if !group.cleaned_up {
+            flush_transcode_group(group)?;
+        }
     }
 
     unsafe { ffi::av_packet_free(&mut packet) };
-    cleanup_outputs(group_outputs);
+    cleanup_outputs(&mut group_outputs);
     if let Some(group) = transcode_group.take() {
         cleanup_transcode_group(group);
     }
@@ -383,6 +653,7 @@ fn run_pipeline_loop(
 fn create_group_outputs(
     input_ctx: *mut ffi::AVFormatContext,
     groups: &[OutputGroupConfig],
+    group_controls: &HashMap<String, GroupControl>,
 ) -> Result<Vec<GroupOutputs>, String> {
     let mut outputs = Vec::new();
     for group in groups {
@@ -396,9 +667,15 @@ fn create_group_outputs(
             targets.push(target);
         }
 
+        let control = group_controls.get(&group.group_id)
+            .cloned()
+            .unwrap_or_default();
+
         outputs.push(GroupOutputs {
             group_id: group.group_id.clone(),
+            control,
             targets,
+            cleaned_up: false,
         });
     }
 
@@ -514,6 +791,11 @@ fn write_passthrough_packet(
     group_outputs: &[GroupOutputs],
 ) {
     for group in group_outputs {
+        // Skip groups that are stopped or disabled
+        if group.cleaned_up || !group.control.is_enabled() {
+            continue;
+        }
+
         for target in &group.targets {
             let stream_index = unsafe { (*packet).stream_index as usize };
             if stream_index >= target.out_streams.len() {
@@ -550,6 +832,7 @@ fn write_passthrough_packet(
 fn create_transcode_group(
     input_ctx: *mut ffi::AVFormatContext,
     config: &OutputGroupConfig,
+    control: GroupControl,
     video_stream_index: usize,
     audio_stream_index: Option<usize>,
 ) -> Result<TranscodeGroup, String> {
@@ -946,6 +1229,7 @@ fn create_transcode_group(
 
     Ok(TranscodeGroup {
         group_id: config.group_id.clone(),
+        control,
         video_stream_index,
         audio_stream_index,
         video_dec_ctx,
@@ -961,6 +1245,7 @@ fn create_transcode_group(
         video_hw_frame,
         audio_dec_frame,
         outputs,
+        cleaned_up: false,
     })
 }
 
@@ -1373,7 +1658,84 @@ fn flush_transcode_group(group: &mut TranscodeGroup) -> Result<(), String> {
     Ok(())
 }
 
+/// Clean up a single passthrough group (close RTMP connections, free contexts)
+fn cleanup_single_passthrough_group(group: &mut GroupOutputs) {
+    if group.cleaned_up {
+        return;
+    }
+
+    log::debug!("Cleaning up passthrough group: {}", group.group_id);
+
+    for target in &mut group.targets {
+        unsafe {
+            if !target.ctx.is_null() {
+                let _ = ffi::av_write_trailer(target.ctx);
+                if (*(*target.ctx).oformat).flags & ffi::AVFMT_NOFILE == 0 {
+                    let _ = ffi::avio_closep(&mut (*target.ctx).pb);
+                }
+                ffi::avformat_free_context(target.ctx);
+                target.ctx = ptr::null_mut();
+            }
+        }
+    }
+
+    group.cleaned_up = true;
+}
+
+/// Clean up transcode group output connections only (not encoder contexts)
+/// Used when stopping a group mid-stream
+fn cleanup_transcode_group_outputs(group: &mut TranscodeGroup) {
+    log::debug!("Cleaning up transcode group outputs: {}", group.group_id);
+
+    for output in &mut group.outputs {
+        unsafe {
+            if !output.ctx.is_null() {
+                let _ = ffi::av_write_trailer(output.ctx);
+                if (*(*output.ctx).oformat).flags & ffi::AVFMT_NOFILE == 0 {
+                    let _ = ffi::avio_closep(&mut (*output.ctx).pb);
+                }
+                ffi::avformat_free_context(output.ctx);
+                output.ctx = ptr::null_mut();
+            }
+        }
+    }
+}
+
+/// Full cleanup of transcode group (all resources including encoder contexts)
 fn cleanup_transcode_group(group: TranscodeGroup) {
+    if group.cleaned_up {
+        // Outputs already cleaned, just free encoder resources
+        unsafe {
+            ffi::av_frame_free(&mut (group.video_dec_frame as *mut _));
+            ffi::av_frame_free(&mut (group.video_sw_frame as *mut _));
+            if let Some(mut hw_frame) = group.video_hw_frame {
+                ffi::av_frame_free(&mut (hw_frame as *mut _));
+            }
+            if !group.audio_dec_frame.is_null() {
+                ffi::av_frame_free(&mut (group.audio_dec_frame as *mut _));
+            }
+            if let Some(mut swr_ctx) = group.swr_ctx {
+                ffi::swr_free(&mut swr_ctx);
+            }
+            ffi::sws_freeContext(group.sws_ctx);
+            if let Some(mut frames_ref) = group.video_hw_frames_ctx {
+                ffi::av_buffer_unref(&mut frames_ref);
+            }
+            if let Some(mut audio_enc) = group.audio_enc_ctx {
+                ffi::avcodec_free_context(&mut audio_enc);
+            }
+            if let Some(mut audio_dec) = group.audio_dec_ctx {
+                ffi::avcodec_free_context(&mut audio_dec);
+            }
+            if let Some(mut device_ref) = group.video_hw_device {
+                ffi::av_buffer_unref(&mut device_ref);
+            }
+            ffi::avcodec_free_context(&mut (group.video_enc_ctx as *mut _));
+            ffi::avcodec_free_context(&mut (group.video_dec_ctx as *mut _));
+        }
+        return;
+    }
+
     unsafe {
         for output in group.outputs {
             let _ = ffi::av_write_trailer(output.ctx);
@@ -1411,17 +1773,10 @@ fn cleanup_transcode_group(group: TranscodeGroup) {
     }
 }
 
-fn cleanup_outputs(groups: Vec<GroupOutputs>) {
-    for group in groups {
-        for mut target in group.targets {
-            unsafe {
-                let _ = ffi::av_write_trailer(target.ctx);
-                if (*(*target.ctx).oformat).flags & ffi::AVFMT_NOFILE == 0 {
-                    let _ = ffi::avio_closep(&mut (*target.ctx).pb);
-                }
-                ffi::avformat_free_context(target.ctx);
-            }
-        }
+/// Clean up all passthrough groups
+fn cleanup_outputs(groups: &mut Vec<GroupOutputs>) {
+    for group in groups.iter_mut() {
+        cleanup_single_passthrough_group(group);
     }
 }
 
