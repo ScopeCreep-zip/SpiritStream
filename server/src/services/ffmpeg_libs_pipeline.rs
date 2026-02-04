@@ -191,7 +191,7 @@ impl GroupStatsTracker {
     }
 
     /// Generate StreamStats and reset emit timer
-    fn emit_stats(&mut self) -> StreamStats {
+    fn emit_stats(&mut self, dropped_frames: u64) -> StreamStats {
         self.update_fps();
         self.last_emit = Instant::now();
 
@@ -221,8 +221,248 @@ impl GroupStatsTracker {
             speed,
             size: self.total_bytes,
             time: elapsed_secs,
-            dropped_frames: 0, // Not tracked in libs pipeline yet
-            dup_frames: 0,     // Not tracked in libs pipeline yet
+            dropped_frames,
+            dup_frames: 0,
+        }
+    }
+}
+
+// ============================================================================
+// Bounded Packet Queue
+// ============================================================================
+
+/// Configuration for packet queue buffering
+#[derive(Debug, Clone)]
+pub struct QueueConfig {
+    /// Maximum number of packets to buffer per target
+    pub max_packets: usize,
+    /// Strategy for handling queue overflow
+    pub drop_strategy: DropStrategy,
+}
+
+impl Default for QueueConfig {
+    fn default() -> Self {
+        Self {
+            max_packets: 300, // ~10 seconds at 30fps
+            drop_strategy: DropStrategy::DropOldest,
+        }
+    }
+}
+
+/// Strategy for dropping packets when queue is full
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DropStrategy {
+    /// Drop oldest packets first (better for live streaming - keeps up with real-time)
+    DropOldest,
+    /// Drop newest packets (preserves continuity but falls behind)
+    DropNewest,
+}
+
+/// A bounded packet queue that prevents unbounded memory growth
+struct PacketQueue {
+    /// Buffered packets (each is a cloned AVPacket pointer)
+    packets: std::collections::VecDeque<*mut ffi::AVPacket>,
+    /// Maximum queue size
+    max_size: usize,
+    /// Drop strategy when full
+    drop_strategy: DropStrategy,
+    /// Total packets dropped due to overflow
+    dropped_count: u64,
+}
+
+impl PacketQueue {
+    fn new(config: &QueueConfig) -> Self {
+        Self {
+            packets: std::collections::VecDeque::with_capacity(config.max_packets),
+            max_size: config.max_packets,
+            drop_strategy: config.drop_strategy,
+            dropped_count: 0,
+        }
+    }
+
+    /// Push a packet to the queue, dropping if necessary
+    /// Returns the number of packets dropped (0 or 1)
+    fn push(&mut self, packet: *mut ffi::AVPacket) -> u64 {
+        if self.packets.len() >= self.max_size {
+            match self.drop_strategy {
+                DropStrategy::DropOldest => {
+                    // Drop oldest packet
+                    if let Some(old) = self.packets.pop_front() {
+                        unsafe { ffi::av_packet_free(&mut (old as *mut _)) };
+                    }
+                    self.packets.push_back(packet);
+                    self.dropped_count += 1;
+                    1
+                }
+                DropStrategy::DropNewest => {
+                    // Drop the incoming packet
+                    unsafe { ffi::av_packet_free(&mut (packet as *mut _)) };
+                    self.dropped_count += 1;
+                    1
+                }
+            }
+        } else {
+            self.packets.push_back(packet);
+            0
+        }
+    }
+
+    /// Pop the next packet from the queue
+    fn pop(&mut self) -> Option<*mut ffi::AVPacket> {
+        self.packets.pop_front()
+    }
+
+    /// Get the current queue length
+    fn len(&self) -> usize {
+        self.packets.len()
+    }
+
+    /// Check if queue is empty
+    fn is_empty(&self) -> bool {
+        self.packets.is_empty()
+    }
+
+    /// Get total dropped packet count
+    fn dropped(&self) -> u64 {
+        self.dropped_count
+    }
+
+    /// Clear the queue, freeing all packets
+    fn clear(&mut self) {
+        while let Some(pkt) = self.packets.pop_front() {
+            unsafe { ffi::av_packet_free(&mut (pkt as *mut _)) };
+        }
+    }
+}
+
+impl Drop for PacketQueue {
+    fn drop(&mut self) {
+        self.clear();
+    }
+}
+
+// ============================================================================
+// Error Recovery and Reconnection
+// ============================================================================
+
+/// Configuration for automatic reconnection attempts
+#[derive(Debug, Clone)]
+pub struct ReconnectionConfig {
+    /// Maximum number of retry attempts before giving up
+    pub max_retries: u32,
+    /// Initial delay between retries in seconds
+    pub initial_delay_secs: u64,
+    /// Maximum delay between retries in seconds (caps exponential growth)
+    pub max_delay_secs: u64,
+    /// Number of consecutive write failures before marking target as failed
+    pub failure_threshold: u32,
+    /// Whether to automatically attempt reconnection
+    pub auto_reconnect: bool,
+}
+
+impl Default for ReconnectionConfig {
+    fn default() -> Self {
+        Self {
+            max_retries: 5,
+            initial_delay_secs: 2,
+            max_delay_secs: 60,
+            failure_threshold: 10,
+            auto_reconnect: true,
+        }
+    }
+}
+
+/// Tracks the state of a single output target for error recovery
+struct TargetState {
+    /// URL for reconnection
+    url: String,
+    /// Consecutive write failures
+    consecutive_failures: u32,
+    /// Whether this target is currently failed/disconnected
+    is_failed: bool,
+    /// Current reconnection attempt (0 = not reconnecting)
+    reconnect_attempt: u32,
+    /// Time of last reconnection attempt
+    last_reconnect: Option<Instant>,
+    /// Whether reconnection is in progress
+    reconnecting: bool,
+}
+
+impl TargetState {
+    fn new(url: String) -> Self {
+        Self {
+            url,
+            consecutive_failures: 0,
+            is_failed: false,
+            reconnect_attempt: 0,
+            last_reconnect: None,
+            reconnecting: false,
+        }
+    }
+
+    /// Record a successful write (resets failure counter)
+    fn record_success(&mut self) {
+        self.consecutive_failures = 0;
+        if self.is_failed {
+            self.is_failed = false;
+            self.reconnect_attempt = 0;
+            log::info!("Target {} recovered", self.url);
+        }
+    }
+
+    /// Record a write failure, returns true if target should be marked as failed
+    fn record_failure(&mut self, threshold: u32) -> bool {
+        self.consecutive_failures += 1;
+        if !self.is_failed && self.consecutive_failures >= threshold {
+            self.is_failed = true;
+            log::warn!(
+                "Target {} marked as failed after {} consecutive failures",
+                self.url,
+                self.consecutive_failures
+            );
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Check if enough time has passed for next reconnection attempt
+    fn should_attempt_reconnect(&self, config: &ReconnectionConfig) -> bool {
+        if !self.is_failed || self.reconnecting {
+            return false;
+        }
+        if self.reconnect_attempt >= config.max_retries {
+            return false;
+        }
+        match self.last_reconnect {
+            None => true,
+            Some(last) => {
+                let delay = self.next_delay(config);
+                last.elapsed() >= delay
+            }
+        }
+    }
+
+    /// Calculate next reconnection delay with exponential backoff
+    fn next_delay(&self, config: &ReconnectionConfig) -> Duration {
+        let delay_secs = config.initial_delay_secs * (1u64 << self.reconnect_attempt.min(6));
+        Duration::from_secs(delay_secs.min(config.max_delay_secs))
+    }
+
+    /// Mark reconnection attempt started
+    fn start_reconnect(&mut self) {
+        self.reconnecting = true;
+        self.reconnect_attempt += 1;
+        self.last_reconnect = Some(Instant::now());
+    }
+
+    /// Mark reconnection attempt finished
+    fn finish_reconnect(&mut self, success: bool) {
+        self.reconnecting = false;
+        if success {
+            self.is_failed = false;
+            self.consecutive_failures = 0;
+            self.reconnect_attempt = 0;
         }
     }
 }
@@ -450,12 +690,20 @@ impl InputPipeline {
 struct TargetOutput {
     ctx: *mut ffi::AVFormatContext,
     out_streams: Vec<*mut ffi::AVStream>,
+    /// Error tracking and reconnection state
+    state: TargetState,
 }
 
 struct GroupOutputs {
     group_id: String,
     control: GroupControl,
     targets: Vec<TargetOutput>,
+    /// Reconnection configuration for this group
+    reconnect_config: ReconnectionConfig,
+    /// Queue configuration for this group
+    queue_config: QueueConfig,
+    /// Total dropped frames across all targets (for stats)
+    dropped_frames: u64,
     /// Track if this group has been cleaned up
     cleaned_up: bool,
 }
@@ -749,7 +997,22 @@ fn run_pipeline_loop(
         let is_video = stream_index == video_stream_index;
 
         if is_video {
-            write_passthrough_packet(packet, in_stream, &group_outputs);
+            let failures = write_passthrough_packet(packet, in_stream, &mut group_outputs);
+            // Emit stream_error events for newly failed targets
+            if let Some(ref sink) = event_sink {
+                for failure in failures {
+                    emit_event(
+                        sink.as_ref(),
+                        "stream_error",
+                        &serde_json::json!({
+                            "groupId": failure.group_id,
+                            "error": format!("Target {} failed: {}", failure.target_url, failure.error),
+                            "canRetry": true,
+                            "suggestion": "Stream connection lost. Will attempt automatic reconnection."
+                        }),
+                    );
+                }
+            }
             // Track stats for passthrough groups
             for group_out in &group_outputs {
                 if !group_out.cleaned_up && group_out.control.is_enabled() {
@@ -768,7 +1031,22 @@ fn run_pipeline_loop(
                 }
             }
         } else if audio_stream_index == Some(stream_index) {
-            write_passthrough_packet(packet, in_stream, &group_outputs);
+            let failures = write_passthrough_packet(packet, in_stream, &mut group_outputs);
+            // Emit stream_error events for newly failed targets
+            if let Some(ref sink) = event_sink {
+                for failure in failures {
+                    emit_event(
+                        sink.as_ref(),
+                        "stream_error",
+                        &serde_json::json!({
+                            "groupId": failure.group_id,
+                            "error": format!("Target {} failed: {}", failure.target_url, failure.error),
+                            "canRetry": true,
+                            "suggestion": "Stream connection lost. Will attempt automatic reconnection."
+                        }),
+                    );
+                }
+            }
             // Track stats for passthrough groups
             for group_out in &group_outputs {
                 if !group_out.cleaned_up && group_out.control.is_enabled() {
@@ -788,18 +1066,97 @@ fn run_pipeline_loop(
             }
         }
 
+        // Attempt reconnection for failed targets
+        for group in &mut group_outputs {
+            if group.cleaned_up {
+                continue;
+            }
+            for target in &mut group.targets {
+                if target.state.should_attempt_reconnect(&group.reconnect_config) {
+                    target.state.start_reconnect();
+                    log::info!(
+                        "Attempting reconnection for target {} (attempt {}/{})",
+                        target.state.url,
+                        target.state.reconnect_attempt,
+                        group.reconnect_config.max_retries
+                    );
+
+                    // Emit reconnecting event
+                    if let Some(ref sink) = event_sink {
+                        emit_event(
+                            sink.as_ref(),
+                            "stream_reconnecting",
+                            &serde_json::json!({
+                                "groupId": group.group_id,
+                                "targetUrl": target.state.url,
+                                "attempt": target.state.reconnect_attempt,
+                                "maxAttempts": group.reconnect_config.max_retries,
+                                "delaySecs": target.state.next_delay(&group.reconnect_config).as_secs()
+                            }),
+                        );
+                    }
+
+                    // Try to reconnect (recreate the output context)
+                    match try_reconnect_target(input_ctx, &target.state.url) {
+                        Ok(new_target) => {
+                            log::info!("Reconnected target {}", target.state.url);
+                            // Preserve the URL but update the connection
+                            let url = target.state.url.clone();
+                            *target = new_target;
+                            target.state.url = url;
+                            target.state.finish_reconnect(true);
+                        }
+                        Err(e) => {
+                            log::warn!("Reconnection failed for {}: {}", target.state.url, e);
+                            target.state.finish_reconnect(false);
+
+                            // Check if we've exhausted retries
+                            if target.state.reconnect_attempt >= group.reconnect_config.max_retries {
+                                log::error!(
+                                    "Target {} has exhausted all {} reconnection attempts",
+                                    target.state.url,
+                                    group.reconnect_config.max_retries
+                                );
+                                if let Some(ref sink) = event_sink {
+                                    emit_event(
+                                        sink.as_ref(),
+                                        "stream_error",
+                                        &serde_json::json!({
+                                            "groupId": group.group_id,
+                                            "error": format!("Target {} failed permanently after {} attempts", target.state.url, group.reconnect_config.max_retries),
+                                            "canRetry": false,
+                                            "suggestion": "Maximum reconnection attempts reached. Manual intervention required."
+                                        }),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Emit stats periodically for all active groups
         if let Some(ref sink) = event_sink {
             for (group_id, tracker) in stats_trackers.iter_mut() {
-                // Check if this group is still active
-                let is_active = group_outputs.iter()
-                    .any(|g| &g.group_id == group_id && !g.cleaned_up)
-                    || transcode_group.as_ref()
-                        .map(|g| &g.group_id == group_id && !g.cleaned_up)
-                        .unwrap_or(false);
+                // Check if this group is still active and get dropped frames count
+                let group_info = group_outputs.iter()
+                    .find(|g| &g.group_id == group_id && !g.cleaned_up)
+                    .map(|g| (true, g.dropped_frames));
+
+                let (is_active, dropped_frames) = match group_info {
+                    Some((active, dropped)) => (active, dropped),
+                    None => {
+                        // Check transcode group
+                        let transcode_active = transcode_group.as_ref()
+                            .map(|g| &g.group_id == group_id && !g.cleaned_up)
+                            .unwrap_or(false);
+                        (transcode_active, 0) // Transcode group doesn't track dropped frames yet
+                    }
+                };
 
                 if is_active && tracker.should_emit() {
-                    let stats = tracker.emit_stats();
+                    let stats = tracker.emit_stats(dropped_frames);
                     emit_event(sink.as_ref(), "stream_stats", &stats);
                 }
             }
@@ -864,6 +1221,9 @@ fn create_group_outputs(
             group_id: group.group_id.clone(),
             control,
             targets,
+            reconnect_config: ReconnectionConfig::default(),
+            queue_config: QueueConfig::default(),
+            dropped_frames: 0,
             cleaned_up: false,
         });
     }
@@ -971,21 +1331,48 @@ fn create_flv_output(
     Ok(TargetOutput {
         ctx: output_ctx,
         out_streams,
+        state: TargetState::new(url.to_string()),
     })
+}
+
+/// Attempt to reconnect a failed target by creating a new output context
+fn try_reconnect_target(
+    input_ctx: *mut ffi::AVFormatContext,
+    url: &str,
+) -> Result<TargetOutput, String> {
+    // This reuses create_flv_output which will create a fresh connection
+    create_flv_output(input_ctx, url)
+}
+
+/// Information about a target that just failed
+struct TargetFailure {
+    group_id: String,
+    target_url: String,
+    error: String,
 }
 
 fn write_passthrough_packet(
     packet: *mut ffi::AVPacket,
     in_stream: *mut ffi::AVStream,
-    group_outputs: &[GroupOutputs],
-) {
-    for group in group_outputs {
+    group_outputs: &mut [GroupOutputs],
+) -> Vec<TargetFailure> {
+    let mut failures = Vec::new();
+
+    for group in group_outputs.iter_mut() {
         // Skip groups that are stopped or disabled
         if group.cleaned_up || !group.control.is_enabled() {
             continue;
         }
 
-        for target in &group.targets {
+        let threshold = group.reconnect_config.failure_threshold;
+
+        for target in &mut group.targets {
+            // Skip failed targets (they need reconnection) - count as dropped frame
+            if target.state.is_failed {
+                group.dropped_frames += 1;
+                continue;
+            }
+
             let stream_index = unsafe { (*packet).stream_index as usize };
             if stream_index >= target.out_streams.len() {
                 continue;
@@ -1006,16 +1393,30 @@ fn write_passthrough_packet(
                 (*pkt_clone).stream_index = (*out_stream).index;
                 let write_ret = ffi::av_interleaved_write_frame(target.ctx, pkt_clone);
                 if write_ret < 0 {
+                    let error = ffmpeg_err(write_ret);
                     log::warn!(
                         "FFmpeg libs write failed for group {}: {}",
                         group.group_id,
-                        ffmpeg_err(write_ret)
+                        error
                     );
+                    // Track failure and check if target should be marked as failed
+                    if target.state.record_failure(threshold) {
+                        failures.push(TargetFailure {
+                            group_id: group.group_id.clone(),
+                            target_url: target.state.url.clone(),
+                            error,
+                        });
+                    }
+                } else {
+                    // Successful write - reset failure counter
+                    target.state.record_success();
                 }
                 ffi::av_packet_free(&mut pkt_clone);
             }
         }
     }
+
+    failures
 }
 
 fn create_transcode_group(
