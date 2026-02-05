@@ -1704,7 +1704,19 @@ fn create_transcode_group(
         }
         if let Some(interval) = group.video.keyframe_interval_seconds {
             if output_fps.num > 0 {
-                (*video_enc_ctx).gop_size = (output_fps.num as i32).saturating_mul(interval as i32);
+                let gop_size = (output_fps.num as i32).saturating_mul(interval as i32);
+                (*video_enc_ctx).gop_size = gop_size;
+
+                // For software encoders (libx264/libx265), set additional keyframe options
+                // to ensure consistent keyframe placement (matches CLI behavior)
+                let codec_lower = group.video.codec.to_ascii_lowercase();
+                if codec_lower == "libx264" || codec_lower == "libx265" {
+                    // keyint_min ensures minimum GOP size (prevents scene-detect early keyframes)
+                    (*video_enc_ctx).keyint_min = gop_size;
+
+                    // Disable scene change detection for consistent keyframe intervals
+                    // This is set via x264-params/x265-params in apply_encoder_options
+                }
             }
         }
     }
@@ -2757,8 +2769,19 @@ unsafe fn apply_encoder_options(
             ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
         } else if name_lower.contains("qsv") {
             let key = CString::new("preset").unwrap();
+            // Map custom preset names to QSV presets (matches CLI behavior)
             // QSV presets: veryfast, faster, fast, medium, slow, slower, veryslow
-            ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), preset_c.as_ptr(), 0);
+            let preset_lower = preset_val.to_lowercase();
+            let qsv_preset = match preset_lower.as_str() {
+                "quality" => "slow",
+                "balanced" => "medium",
+                "performance" => "fast",
+                "speed" => "veryfast",
+                "low_latency" | "low-latency" | "lowlatency" => "veryfast",
+                _ => preset_val, // Pass through if already a valid FFmpeg preset
+            };
+            let val = CString::new(qsv_preset).unwrap_or_default();
+            ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
         } else if name_lower.contains("amf") {
             let key = CString::new("quality").unwrap();
             // AMF quality: speed, balanced, quality
@@ -2889,13 +2912,13 @@ unsafe fn apply_encoder_options(
         ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
 
         // Lookahead depth (60 frames = 1 second at 60fps)
-        // Use shorter depth for low-latency presets
+        // Use shorter depth for low-latency presets (matches CLI behavior)
         let preset_lower = preset.map(|p| p.to_lowercase()).unwrap_or_default();
-        let depth = if preset_lower.contains("fast") || preset_lower.contains("low") {
-            "30"
-        } else {
-            "60"
-        };
+        let is_low_latency = matches!(
+            preset_lower.as_str(),
+            "low_latency" | "low-latency" | "lowlatency"
+        );
+        let depth = if is_low_latency { "30" } else { "60" };
         let key = CString::new("look_ahead_depth").unwrap();
         let val = CString::new(depth).unwrap();
         ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
@@ -2939,18 +2962,21 @@ unsafe fn apply_encoder_options(
 
     // Software encoder CBR enforcement (libx264, libx265)
     // These require encoder-specific options to enable NAL-HRD signaling for true CBR
+    // Also disable scene change detection for consistent keyframe intervals (matches CLI)
     if name_lower == "libx264" {
         // x264-params: nal-hrd=cbr enables NAL HRD signaling, force-cfr=1 ensures constant frame rate
+        // scenecut=0 disables scene change detection for consistent keyframe placement
         let key = CString::new("x264-params").unwrap();
-        let val = CString::new("nal-hrd=cbr:force-cfr=1").unwrap();
+        let val = CString::new("nal-hrd=cbr:force-cfr=1:scenecut=0").unwrap();
         ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
-        log::debug!("libx264: enabled NAL-HRD CBR mode");
+        log::debug!("libx264: enabled NAL-HRD CBR mode, disabled scenecut");
     } else if name_lower == "libx265" {
         // x265-params: nal-hrd=cbr enables NAL HRD signaling for HEVC
+        // scenecut=0 disables scene change detection
         let key = CString::new("x265-params").unwrap();
-        let val = CString::new("nal-hrd=cbr").unwrap();
+        let val = CString::new("nal-hrd=cbr:scenecut=0").unwrap();
         ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
-        log::debug!("libx265: enabled NAL-HRD CBR mode");
+        log::debug!("libx265: enabled NAL-HRD CBR mode, disabled scenecut");
     }
 }
 
