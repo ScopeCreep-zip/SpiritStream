@@ -738,6 +738,8 @@ struct TranscodeOutput {
     ctx: *mut ffi::AVFormatContext,
     video_out_index: i32,
     audio_out_index: Option<i32>,
+    /// Bitstream filter for extradata (dump_extra for QSV encoders to FLV)
+    video_bsf_ctx: Option<*mut ffi::AVBSFContext>,
 }
 
 fn parse_rtmp_listen_url(url: &str) -> (String, Option<String>, Option<String>) {
@@ -1439,6 +1441,37 @@ unsafe fn create_aac_bsf(codecpar: *const ffi::AVCodecParameters) -> Result<*mut
     Ok(bsf_ctx)
 }
 
+/// Create a dump_extra bitstream filter for ensuring SPS/PPS NAL units in each packet
+/// Required for QSV encoders outputting to FLV/RTMP to allow mid-stream joins
+unsafe fn create_dump_extra_bsf(codecpar: *const ffi::AVCodecParameters) -> Result<*mut ffi::AVBSFContext, String> {
+    let filter_name = CString::new("dump_extra").unwrap();
+    let filter = ffi::av_bsf_get_by_name(filter_name.as_ptr());
+    if filter.is_null() {
+        return Err("dump_extra filter not found".to_string());
+    }
+
+    let mut bsf_ctx: *mut ffi::AVBSFContext = ptr::null_mut();
+    let alloc_ret = ffi::av_bsf_alloc(filter, &mut bsf_ctx);
+    if alloc_ret < 0 {
+        return Err(format!("Failed to allocate BSF context: {}", ffmpeg_err(alloc_ret)));
+    }
+
+    let copy_ret = ffi::avcodec_parameters_copy((*bsf_ctx).par_in, codecpar);
+    if copy_ret < 0 {
+        ffi::av_bsf_free(&mut bsf_ctx);
+        return Err(format!("Failed to copy BSF input params: {}", ffmpeg_err(copy_ret)));
+    }
+
+    let init_ret = ffi::av_bsf_init(bsf_ctx);
+    if init_ret < 0 {
+        ffi::av_bsf_free(&mut bsf_ctx);
+        return Err(format!("Failed to init BSF: {}", ffmpeg_err(init_ret)));
+    }
+
+    log::debug!("Created dump_extra bitstream filter for QSV video");
+    Ok(bsf_ctx)
+}
+
 /// Attempt to reconnect a failed target by creating a new output context
 fn try_reconnect_target(
     input_ctx: *mut ffi::AVFormatContext,
@@ -2008,6 +2041,9 @@ fn create_transcode_outputs(
     audio_stream_index: Option<usize>,
     targets: &[String],
 ) -> Result<Vec<TranscodeOutput>, String> {
+    // Check if this is a QSV encoder - needs dump_extra BSF for FLV output
+    let is_qsv = group.video.codec.to_ascii_lowercase().contains("qsv");
+
     let mut outputs = Vec::new();
     for target_url in targets {
         let mut output_ctx: *mut ffi::AVFormatContext = ptr::null_mut();
@@ -2116,10 +2152,26 @@ fn create_transcode_outputs(
             return Err(format!("Failed to write output header: {}", ffmpeg_err(header_ret)));
         }
 
+        // Create dump_extra BSF for QSV encoders (writes SPS/PPS to each IDR frame)
+        let video_bsf_ctx = if is_qsv {
+            unsafe {
+                match create_dump_extra_bsf((*video_stream).codecpar) {
+                    Ok(bsf) => Some(bsf),
+                    Err(e) => {
+                        log::warn!("Failed to create dump_extra BSF for QSV, continuing without it: {}", e);
+                        None
+                    }
+                }
+            }
+        } else {
+            None
+        };
+
         outputs.push(TranscodeOutput {
             ctx: output_ctx,
             video_out_index: unsafe { (*video_stream).index },
             audio_out_index,
+            video_bsf_ctx,
         });
     }
 
@@ -2212,7 +2264,7 @@ fn write_encoded_packet(
     group: &mut TranscodeGroup,
     is_video: bool,
 ) -> Result<(), String> {
-    for output in &group.outputs {
+    for output in &mut group.outputs {
         let out_index = if is_video {
             output.video_out_index
         } else {
@@ -2226,6 +2278,10 @@ fn write_encoded_packet(
         if pkt_clone.is_null() {
             continue;
         }
+
+        // Check if we need to apply video BSF (dump_extra for QSV)
+        let needs_video_bsf = is_video && output.video_bsf_ctx.is_some();
+
         unsafe {
             let out_stream = *(*output.ctx).streams.add(out_index as usize);
             let time_base = if is_video {
@@ -2233,17 +2289,56 @@ fn write_encoded_packet(
             } else {
                 (*group.audio_enc_ctx.unwrap()).time_base
             };
-            ffi::av_packet_rescale_ts(pkt_clone, time_base, (*out_stream).time_base);
-            (*pkt_clone).stream_index = out_index;
-            let write_ret = ffi::av_interleaved_write_frame(output.ctx, pkt_clone);
-            if write_ret < 0 {
-                log::warn!(
-                    "FFmpeg libs transcode write failed for group {}: {}",
-                    group.group_id,
-                    ffmpeg_err(write_ret)
-                );
+
+            if needs_video_bsf {
+                // Apply dump_extra bitstream filter
+                let bsf_ctx = output.video_bsf_ctx.unwrap();
+                let send_ret = ffi::av_bsf_send_packet(bsf_ctx, pkt_clone);
+                if send_ret < 0 {
+                    log::warn!("Video BSF send failed: {}", ffmpeg_err(send_ret));
+                    ffi::av_packet_free(&mut pkt_clone);
+                    continue;
+                }
+
+                // Receive and write filtered packets
+                loop {
+                    let mut filtered_pkt = ffi::av_packet_alloc();
+                    if filtered_pkt.is_null() {
+                        break;
+                    }
+                    let recv_ret = ffi::av_bsf_receive_packet(bsf_ctx, filtered_pkt);
+                    if recv_ret < 0 {
+                        ffi::av_packet_free(&mut filtered_pkt);
+                        break;
+                    }
+
+                    ffi::av_packet_rescale_ts(filtered_pkt, time_base, (*out_stream).time_base);
+                    (*filtered_pkt).stream_index = out_index;
+                    let write_ret = ffi::av_interleaved_write_frame(output.ctx, filtered_pkt);
+                    if write_ret < 0 {
+                        log::warn!(
+                            "FFmpeg libs transcode write failed for group {}: {}",
+                            group.group_id,
+                            ffmpeg_err(write_ret)
+                        );
+                    }
+                    ffi::av_packet_free(&mut filtered_pkt);
+                }
+                ffi::av_packet_free(&mut pkt_clone);
+            } else {
+                // No BSF needed, write directly
+                ffi::av_packet_rescale_ts(pkt_clone, time_base, (*out_stream).time_base);
+                (*pkt_clone).stream_index = out_index;
+                let write_ret = ffi::av_interleaved_write_frame(output.ctx, pkt_clone);
+                if write_ret < 0 {
+                    log::warn!(
+                        "FFmpeg libs transcode write failed for group {}: {}",
+                        group.group_id,
+                        ffmpeg_err(write_ret)
+                    );
+                }
+                ffi::av_packet_free(&mut pkt_clone);
             }
-            ffi::av_packet_free(&mut pkt_clone);
         }
     }
     Ok(())
@@ -2459,6 +2554,11 @@ fn cleanup_transcode_group_outputs(group: &mut TranscodeGroup) {
 
     for output in &mut group.outputs {
         unsafe {
+            // Free video BSF context if present
+            if let Some(mut bsf_ctx) = output.video_bsf_ctx.take() {
+                ffi::av_bsf_free(&mut bsf_ctx);
+            }
+
             if !output.ctx.is_null() {
                 let _ = ffi::av_write_trailer(output.ctx);
                 if (*(*output.ctx).oformat).flags & ffi::AVFMT_NOFILE == 0 {
@@ -2507,7 +2607,12 @@ fn cleanup_transcode_group(group: TranscodeGroup) {
     }
 
     unsafe {
-        for output in group.outputs {
+        for mut output in group.outputs {
+            // Free video BSF context if present
+            if let Some(mut bsf_ctx) = output.video_bsf_ctx.take() {
+                ffi::av_bsf_free(&mut bsf_ctx);
+            }
+
             let _ = ffi::av_write_trailer(output.ctx);
             if (*(*output.ctx).oformat).flags & ffi::AVFMT_NOFILE == 0 {
                 let _ = ffi::avio_closep(&mut (*output.ctx).pb);
