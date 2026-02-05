@@ -1293,7 +1293,21 @@ fn create_flv_output(
             return Err(format!("Failed to copy codec parameters: {}", ffmpeg_err(copy_ret)));
         }
 
+        // Set FLV codec tags for RTMP compatibility
+        // FLV uses specific tags: 7 for H.264 video, 10 for AAC audio
         unsafe {
+            let out_codecpar = (*out_stream).codecpar;
+            if codec_type == ffi::AVMediaType::AVMEDIA_TYPE_VIDEO {
+                // Check if H.264 (AVC)
+                if (*codecpar).codec_id == ffi::AVCodecID::AV_CODEC_ID_H264 {
+                    (*out_codecpar).codec_tag = 7;
+                }
+            } else if codec_type == ffi::AVMediaType::AVMEDIA_TYPE_AUDIO {
+                // Check if AAC
+                if (*codecpar).codec_id == ffi::AVCodecID::AV_CODEC_ID_AAC {
+                    (*out_codecpar).codec_tag = 10;
+                }
+            }
             (*out_stream).time_base = (*in_stream).time_base;
         }
         out_streams[idx] = out_stream;
@@ -1876,6 +1890,10 @@ fn create_transcode_outputs(
         }
         unsafe {
             (*video_stream).time_base = (*video_enc_ctx).time_base;
+            // Set FLV codec tag for H.264 video (tag 7)
+            if (*video_enc_ctx).codec_id == ffi::AVCodecID::AV_CODEC_ID_H264 {
+                (*(*video_stream).codecpar).codec_tag = 7;
+            }
         }
 
         let mut audio_out_index = None;
@@ -1894,6 +1912,10 @@ fn create_transcode_outputs(
                 }
                 unsafe {
                     (*out_stream).time_base = (*in_stream).time_base;
+                    // Set FLV codec tag for AAC audio (tag 10)
+                    if (*(*in_stream).codecpar).codec_id == ffi::AVCodecID::AV_CODEC_ID_AAC {
+                        (*(*out_stream).codecpar).codec_tag = 10;
+                    }
                 }
                 audio_out_index = Some(unsafe { (*out_stream).index });
             } else if let Some(audio_enc_ctx) = audio_enc_ctx {
@@ -1909,6 +1931,10 @@ fn create_transcode_outputs(
                 }
                 unsafe {
                     (*out_stream).time_base = (*audio_enc_ctx).time_base;
+                    // Set FLV codec tag for AAC audio (tag 10)
+                    if (*audio_enc_ctx).codec_id == ffi::AVCodecID::AV_CODEC_ID_AAC {
+                        (*(*out_stream).codecpar).codec_tag = 10;
+                    }
                 }
                 audio_out_index = Some(unsafe { (*out_stream).index });
             }
