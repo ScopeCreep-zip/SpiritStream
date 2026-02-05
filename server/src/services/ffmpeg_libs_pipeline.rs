@@ -1517,6 +1517,11 @@ fn create_transcode_group(
         (*video_enc_ctx).pix_fmt = enc_pix_fmt;
         if let Some(bit_rate) = parse_bitrate_to_bits(&group.video.bitrate) {
             (*video_enc_ctx).bit_rate = bit_rate;
+            // CBR enforcement: set min/max rate equal to target bitrate
+            // Buffer size is 2x bitrate (2 seconds of buffer at target rate)
+            (*video_enc_ctx).rc_min_rate = bit_rate;
+            (*video_enc_ctx).rc_max_rate = bit_rate;
+            (*video_enc_ctx).rc_buffer_size = (bit_rate * 2) as i32;
         }
         if let Some(interval) = group.video.keyframe_interval_seconds {
             if output_fps.num > 0 {
@@ -2635,6 +2640,22 @@ unsafe fn apply_encoder_options(
 
         // Disable B-frames for streaming (improves latency and compatibility)
         (*enc_ctx).max_b_frames = 0;
+    }
+
+    // Software encoder CBR enforcement (libx264, libx265)
+    // These require encoder-specific options to enable NAL-HRD signaling for true CBR
+    if name_lower == "libx264" {
+        // x264-params: nal-hrd=cbr enables NAL HRD signaling, force-cfr=1 ensures constant frame rate
+        let key = CString::new("x264-params").unwrap();
+        let val = CString::new("nal-hrd=cbr:force-cfr=1").unwrap();
+        ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
+        log::debug!("libx264: enabled NAL-HRD CBR mode");
+    } else if name_lower == "libx265" {
+        // x265-params: nal-hrd=cbr enables NAL HRD signaling for HEVC
+        let key = CString::new("x265-params").unwrap();
+        let val = CString::new("nal-hrd=cbr").unwrap();
+        ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
+        log::debug!("libx265: enabled NAL-HRD CBR mode");
     }
 }
 
