@@ -1250,6 +1250,36 @@ fn find_stream_indices(input_ctx: *mut ffi::AVFormatContext) -> Result<(usize, O
     Ok((video_index, audio_stream_index))
 }
 
+/// Add RTMP protocol options for connection resilience
+/// These match OBS Studio's RTMP configuration for maximum stability
+unsafe fn add_rtmp_options(opts: &mut *mut ffi::AVDictionary, url: &str) {
+    if !url.starts_with("rtmp://") && !url.starts_with("rtmps://") {
+        return;
+    }
+
+    // timeout: 30 seconds in microseconds (receive timeout)
+    let key = CString::new("timeout").unwrap();
+    let val = CString::new("30000000").unwrap();
+    ffi::av_dict_set(opts, key.as_ptr(), val.as_ptr(), 0);
+
+    // rtmp_buffer: 30 seconds in milliseconds (client buffer)
+    let key = CString::new("rtmp_buffer").unwrap();
+    let val = CString::new("30000").unwrap();
+    ffi::av_dict_set(opts, key.as_ptr(), val.as_ptr(), 0);
+
+    // tcp_keepalive: Enable TCP keepalive probes to detect dead connections
+    let key = CString::new("tcp_keepalive").unwrap();
+    let val = CString::new("1").unwrap();
+    ffi::av_dict_set(opts, key.as_ptr(), val.as_ptr(), 0);
+
+    // rtmp_live: Live stream mode (optimizes for live rather than VOD)
+    let key = CString::new("rtmp_live").unwrap();
+    let val = CString::new("live").unwrap();
+    ffi::av_dict_set(opts, key.as_ptr(), val.as_ptr(), 0);
+
+    log::debug!("RTMP output: added resilience options (timeout=30s, buffer=30s, keepalive=1, live=live)");
+}
+
 fn create_flv_output(
     input_ctx: *mut ffi::AVFormatContext,
     url: &str,
@@ -1317,6 +1347,8 @@ fn create_flv_output(
     let flvflags = CString::new("no_duration_filesize").unwrap();
     unsafe {
         ffi::av_dict_set(&mut opts, CString::new("flvflags").unwrap().as_ptr(), flvflags.as_ptr(), 0);
+        // Add RTMP resilience options for RTMP/RTMPS URLs
+        add_rtmp_options(&mut opts, url);
     }
 
     let open_ret = unsafe {
@@ -1948,6 +1980,8 @@ fn create_transcode_outputs(
         let mut opts: *mut ffi::AVDictionary = ptr::null_mut();
         unsafe {
             ffi::av_dict_set(&mut opts, CString::new("flvflags").unwrap().as_ptr(), CString::new("no_duration_filesize").unwrap().as_ptr(), 0);
+            // Add RTMP resilience options for RTMP/RTMPS URLs
+            add_rtmp_options(&mut opts, target_url);
         }
         let open_ret = unsafe {
             if (*(*output_ctx).oformat).flags & ffi::AVFMT_NOFILE == 0 {
