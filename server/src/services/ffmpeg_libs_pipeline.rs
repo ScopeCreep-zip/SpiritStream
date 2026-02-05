@@ -723,6 +723,8 @@ struct TranscodeGroup {
     audio_enc_ctx: Option<*mut ffi::AVCodecContext>,
     video_hw_device: Option<*mut ffi::AVBufferRef>,
     video_hw_frames_ctx: Option<*mut ffi::AVBufferRef>,
+    /// Decoder hardware frames context (for zero-copy path)
+    video_dec_hw_frames_ctx: Option<*mut ffi::AVBufferRef>,
     sws_ctx: *mut ffi::SwsContext,
     swr_ctx: Option<*mut ffi::SwrContext>,
     video_dec_frame: *mut ffi::AVFrame,
@@ -730,6 +732,8 @@ struct TranscodeGroup {
     video_hw_frame: Option<*mut ffi::AVFrame>,
     audio_dec_frame: *mut ffi::AVFrame,
     outputs: Vec<TranscodeOutput>,
+    /// True if using hardware decoder (zero-copy path enabled)
+    using_hw_decode: bool,
     /// Track if this group has been cleaned up
     cleaned_up: bool,
 }
@@ -2022,6 +2026,7 @@ fn create_transcode_group(
         audio_enc_ctx,
         video_hw_device,
         video_hw_frames_ctx,
+        video_dec_hw_frames_ctx: None, // TODO: Set when hw decode is enabled
         sws_ctx,
         swr_ctx,
         video_dec_frame,
@@ -2029,6 +2034,7 @@ fn create_transcode_group(
         video_hw_frame,
         audio_dec_frame,
         outputs,
+        using_hw_decode: false, // TODO: Set true when hw decode is enabled
         cleaned_up: false,
     })
 }
@@ -2591,6 +2597,9 @@ fn cleanup_transcode_group(group: TranscodeGroup) {
             if let Some(mut frames_ref) = group.video_hw_frames_ctx {
                 ffi::av_buffer_unref(&mut frames_ref);
             }
+            if let Some(mut frames_ref) = group.video_dec_hw_frames_ctx {
+                ffi::av_buffer_unref(&mut frames_ref);
+            }
             if let Some(mut audio_enc) = group.audio_enc_ctx {
                 ffi::avcodec_free_context(&mut audio_enc);
             }
@@ -2632,6 +2641,9 @@ fn cleanup_transcode_group(group: TranscodeGroup) {
         }
         ffi::sws_freeContext(group.sws_ctx);
         if let Some(mut frames_ref) = group.video_hw_frames_ctx {
+            ffi::av_buffer_unref(&mut frames_ref);
+        }
+        if let Some(mut frames_ref) = group.video_dec_hw_frames_ctx {
             ffi::av_buffer_unref(&mut frames_ref);
         }
         if let Some(mut audio_enc) = group.audio_enc_ctx {
@@ -3016,6 +3028,194 @@ fn create_hw_frames_ctx(
     }
 
     Ok(frames_ref)
+}
+
+/// Get the hardware decoder name that pairs with a given hardware encoder.
+/// This enables zero-copy transcoding where decode and encode share the same device.
+///
+/// # Arguments
+/// * `encoder_name` - The name of the hardware encoder (e.g., "h264_nvenc", "hevc_qsv")
+/// * `input_codec_id` - The FFmpeg codec ID of the input stream
+///
+/// # Returns
+/// * `Some(decoder_name)` if a matching hardware decoder exists
+/// * `None` if no hardware decoder is available or recommended
+///
+/// # Zero-Copy Path
+/// When the hardware decoder and encoder share the same device context, frames
+/// can stay on GPU throughout the transcode pipeline:
+/// - NVDEC + NVENC: Share CUDA device, frames in CUDA memory
+/// - QSV decode + QSV encode: Share QSV device, frames in QSV memory
+/// - VideoToolbox decode + VideoToolbox encode: Share VT device
+///
+/// This eliminates CPU↔GPU transfers, significantly improving performance for
+/// same-resolution transcodes or when GPU-accelerated scaling is available.
+fn hw_decoder_for_encoder(encoder_name: &str, input_codec_id: ffi::AVCodecID) -> Option<&'static str> {
+    let name = encoder_name.to_ascii_lowercase();
+
+    // NVIDIA NVENC pairs with NVDEC (CUVID)
+    if name.contains("nvenc") {
+        return match input_codec_id {
+            ffi::AVCodecID::AV_CODEC_ID_H264 => Some("h264_cuvid"),
+            ffi::AVCodecID::AV_CODEC_ID_HEVC => Some("hevc_cuvid"),
+            ffi::AVCodecID::AV_CODEC_ID_VP8 => Some("vp8_cuvid"),
+            ffi::AVCodecID::AV_CODEC_ID_VP9 => Some("vp9_cuvid"),
+            ffi::AVCodecID::AV_CODEC_ID_AV1 => Some("av1_cuvid"),
+            ffi::AVCodecID::AV_CODEC_ID_MPEG4 => Some("mpeg4_cuvid"),
+            ffi::AVCodecID::AV_CODEC_ID_MPEG2VIDEO => Some("mpeg2_cuvid"),
+            _ => None,
+        };
+    }
+
+    // Intel QSV encode pairs with QSV decode
+    if name.contains("qsv") {
+        return match input_codec_id {
+            ffi::AVCodecID::AV_CODEC_ID_H264 => Some("h264_qsv"),
+            ffi::AVCodecID::AV_CODEC_ID_HEVC => Some("hevc_qsv"),
+            ffi::AVCodecID::AV_CODEC_ID_VP8 => Some("vp8_qsv"),
+            ffi::AVCodecID::AV_CODEC_ID_VP9 => Some("vp9_qsv"),
+            ffi::AVCodecID::AV_CODEC_ID_AV1 => Some("av1_qsv"),
+            ffi::AVCodecID::AV_CODEC_ID_MPEG2VIDEO => Some("mpeg2_qsv"),
+            ffi::AVCodecID::AV_CODEC_ID_MJPEG => Some("mjpeg_qsv"),
+            _ => None,
+        };
+    }
+
+    // AMD AMF doesn't have matching hardware decoders in FFmpeg
+    // (AMF is encode-only, decode uses D3D11VA which is different)
+    if name.contains("amf") {
+        return None;
+    }
+
+    // Apple VideoToolbox has unified decode/encode
+    if name.contains("videotoolbox") {
+        return match input_codec_id {
+            ffi::AVCodecID::AV_CODEC_ID_H264 => Some("h264_videotoolbox"),
+            ffi::AVCodecID::AV_CODEC_ID_HEVC => Some("hevc_videotoolbox"),
+            _ => None,
+        };
+    }
+
+    None
+}
+
+/// Check if zero-copy transcoding is possible between decoder and encoder.
+/// Zero-copy requires:
+/// 1. Hardware decoder and encoder on same device type
+/// 2. Compatible pixel formats (or GPU scaling available)
+/// 3. Same resolution (or GPU scaling available)
+///
+/// # Returns
+/// * `true` if frames can stay on GPU throughout
+/// * `false` if CPU transfer is required
+fn can_use_zero_copy(
+    encoder_name: &str,
+    input_width: i32,
+    input_height: i32,
+    output_width: i32,
+    output_height: i32,
+) -> bool {
+    let name = encoder_name.to_ascii_lowercase();
+
+    // NVIDIA NVENC + NVDEC: Zero-copy supported with CUDA scaling
+    // GPU can handle resolution changes via CUDA NPP or scale_cuda filter
+    if name.contains("nvenc") {
+        // NVENC/NVDEC support zero-copy even with resolution changes
+        // via scale_cuda filter or NPP scaling
+        return true;
+    }
+
+    // Intel QSV: Zero-copy requires same resolution or vpp_qsv filter
+    if name.contains("qsv") {
+        // QSV can do GPU scaling via vpp_qsv filter
+        // For now, only enable zero-copy for same resolution
+        // TODO: Add vpp_qsv filter support for GPU scaling
+        return input_width == output_width && input_height == output_height;
+    }
+
+    // VideoToolbox: Zero-copy supported, system handles scaling
+    if name.contains("videotoolbox") {
+        return true;
+    }
+
+    // AMF: No hardware decoder, can't do zero-copy
+    false
+}
+
+/// Attempt to initialize hardware decoder for zero-copy path.
+/// Falls back to software decoder if hardware decoder is unavailable.
+///
+/// # Arguments
+/// * `encoder_name` - The hardware encoder being used
+/// * `input_codecpar` - The codec parameters from the input stream
+/// * `hw_device_ctx` - The hardware device context (shared with encoder)
+///
+/// # Returns
+/// * `Ok((decoder_ctx, is_hw_decode))` - Decoder context and whether it's hardware
+/// * `Err(reason)` - Why hardware decode couldn't be initialized
+unsafe fn try_init_hw_decoder(
+    encoder_name: &str,
+    input_codecpar: *const ffi::AVCodecParameters,
+    hw_device_ctx: *mut ffi::AVBufferRef,
+) -> Result<(*mut ffi::AVCodecContext, bool), String> {
+    let input_codec_id = (*input_codecpar).codec_id;
+
+    // Check if there's a matching hardware decoder
+    let hw_decoder_name = match hw_decoder_for_encoder(encoder_name, input_codec_id) {
+        Some(name) => name,
+        None => {
+            return Err(format!(
+                "No hardware decoder available for encoder {} and codec {:?}",
+                encoder_name, input_codec_id
+            ));
+        }
+    };
+
+    // Find the hardware decoder
+    let decoder_name_cstr = match CString::new(hw_decoder_name) {
+        Ok(s) => s,
+        Err(_) => return Err("Invalid decoder name".to_string()),
+    };
+
+    let hw_decoder = ffi::avcodec_find_decoder_by_name(decoder_name_cstr.as_ptr());
+    if hw_decoder.is_null() {
+        return Err(format!("Hardware decoder {} not found in FFmpeg build", hw_decoder_name));
+    }
+
+    // Allocate decoder context
+    let dec_ctx = ffi::avcodec_alloc_context3(hw_decoder);
+    if dec_ctx.is_null() {
+        return Err("Failed to allocate hardware decoder context".to_string());
+    }
+
+    // Copy codec parameters
+    let params_ret = ffi::avcodec_parameters_to_context(dec_ctx, input_codecpar);
+    if params_ret < 0 {
+        ffi::avcodec_free_context(&mut (dec_ctx as *mut _));
+        return Err(format!("Failed to copy codec params to hw decoder: {}", ffmpeg_err(params_ret)));
+    }
+
+    // Attach the hardware device context (shared with encoder)
+    if !hw_device_ctx.is_null() {
+        let dec_device_ref = ffi::av_buffer_ref(hw_device_ctx);
+        if !dec_device_ref.is_null() {
+            (*dec_ctx).hw_device_ctx = dec_device_ref;
+        }
+    }
+
+    // Open the decoder
+    let open_ret = ffi::avcodec_open2(dec_ctx, hw_decoder, ptr::null_mut());
+    if open_ret < 0 {
+        ffi::avcodec_free_context(&mut (dec_ctx as *mut _));
+        return Err(format!("Failed to open hardware decoder {}: {}", hw_decoder_name, ffmpeg_err(open_ret)));
+    }
+
+    log::info!(
+        "Initialized hardware decoder {} for zero-copy transcode with {}",
+        hw_decoder_name, encoder_name
+    );
+
+    Ok((dec_ctx, true))
 }
 
 fn ffmpeg_err(code: i32) -> String {
