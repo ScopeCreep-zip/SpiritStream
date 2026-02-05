@@ -1,8 +1,10 @@
 import { useEffect } from 'react';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { events } from '@/lib/backend';
 import { useChatStore } from '@/stores/chatStore';
 import type { ChatMessage } from '@/types/chat';
 import { CHAT_MESSAGE_EVENT, CHAT_OVERLAY_SETTINGS_EVENT } from '@/lib/chatEvents';
+
+type UnlistenFn = () => void;
 
 export function useChatListener() {
   const addMessage = useChatStore((state) => state.addMessage);
@@ -12,8 +14,8 @@ export function useChatListener() {
     let unlistenMessages: UnlistenFn | null = null;
     let unlistenOverlay: UnlistenFn | null = null;
 
-    listen<ChatMessage>(CHAT_MESSAGE_EVENT, (event) => {
-      addMessage(event.payload);
+    events.on<ChatMessage>(CHAT_MESSAGE_EVENT, (payload) => {
+      addMessage(payload);
     })
       .then((unsubscribe) => {
         unlistenMessages = unsubscribe;
@@ -22,8 +24,8 @@ export function useChatListener() {
         console.error('Failed to listen for chat messages:', error);
       });
 
-    listen<{ transparent: boolean }>(CHAT_OVERLAY_SETTINGS_EVENT, (event) => {
-      setOverlayTransparent(event.payload.transparent);
+    events.on<{ transparent: boolean }>(CHAT_OVERLAY_SETTINGS_EVENT, (payload) => {
+      setOverlayTransparent(payload.transparent);
     })
       .then((unsubscribe) => {
         unlistenOverlay = unsubscribe;
