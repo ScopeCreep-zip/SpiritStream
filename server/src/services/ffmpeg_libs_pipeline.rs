@@ -2270,7 +2270,10 @@ fn write_encoded_packet(
     group: &mut TranscodeGroup,
     is_video: bool,
 ) -> Result<(), String> {
-    for output in &mut group.outputs {
+    let output_count = group.outputs.len();
+    let is_single_target = output_count == 1;
+
+    for (idx, output) in group.outputs.iter_mut().enumerate() {
         let out_index = if is_video {
             output.video_out_index
         } else {
@@ -2280,10 +2283,22 @@ fn write_encoded_packet(
             }
         };
 
-        let mut pkt_clone = unsafe { ffi::av_packet_clone(enc_pkt) };
-        if pkt_clone.is_null() {
-            continue;
-        }
+        // Optimization: skip cloning for single-target groups or last target in multi-target
+        // For single target, use the original packet directly
+        // For multi-target, clone for all but the last (use original for last)
+        let is_last_target = idx == output_count - 1;
+        let (pkt_to_write, needs_free) = if is_single_target || is_last_target {
+            // Use original packet directly (caller handles freeing)
+            (enc_pkt, false)
+        } else {
+            // Clone for this target
+            let clone = unsafe { ffi::av_packet_clone(enc_pkt) };
+            if clone.is_null() {
+                continue;
+            }
+            (clone, true)
+        };
+        let mut pkt_clone = pkt_to_write;
 
         // Check if we need to apply video BSF (dump_extra for QSV)
         let needs_video_bsf = is_video && output.video_bsf_ctx.is_some();
@@ -2302,7 +2317,9 @@ fn write_encoded_packet(
                 let send_ret = ffi::av_bsf_send_packet(bsf_ctx, pkt_clone);
                 if send_ret < 0 {
                     log::warn!("Video BSF send failed: {}", ffmpeg_err(send_ret));
-                    ffi::av_packet_free(&mut pkt_clone);
+                    if needs_free {
+                        ffi::av_packet_free(&mut pkt_clone);
+                    }
                     continue;
                 }
 
@@ -2330,7 +2347,9 @@ fn write_encoded_packet(
                     }
                     ffi::av_packet_free(&mut filtered_pkt);
                 }
-                ffi::av_packet_free(&mut pkt_clone);
+                if needs_free {
+                    ffi::av_packet_free(&mut pkt_clone);
+                }
             } else {
                 // No BSF needed, write directly
                 ffi::av_packet_rescale_ts(pkt_clone, time_base, (*out_stream).time_base);
@@ -2343,7 +2362,9 @@ fn write_encoded_packet(
                         ffmpeg_err(write_ret)
                     );
                 }
-                ffi::av_packet_free(&mut pkt_clone);
+                if needs_free {
+                    ffi::av_packet_free(&mut pkt_clone);
+                }
             }
         }
     }
@@ -2360,27 +2381,34 @@ fn transcode_audio_packet(
     }
 
     if group.audio_dec_ctx.is_none() || group.audio_enc_ctx.is_none() {
-        // Audio copy path.
-        let mut pkt_clone = unsafe { ffi::av_packet_clone(packet) };
-        if pkt_clone.is_null() {
-            return Ok(());
-        }
+        // Audio copy path - optimized to avoid unnecessary cloning.
+        let output_count = group.outputs.len();
 
-        for output in &group.outputs {
+        for (idx, output) in group.outputs.iter().enumerate() {
             let out_index = match output.audio_out_index {
                 Some(idx) => idx,
                 None => continue,
             };
 
-            let mut pkt_target = unsafe { ffi::av_packet_clone(pkt_clone) };
-            if pkt_target.is_null() {
-                continue;
-            }
+            // Optimization: skip cloning for single-target or last target
+            let is_last_target = idx == output_count - 1;
+            let (pkt_to_write, needs_free) = if output_count == 1 || is_last_target {
+                // Use original packet directly (caller handles it)
+                (packet, false)
+            } else {
+                // Clone for this target
+                let clone = unsafe { ffi::av_packet_clone(packet) };
+                if clone.is_null() {
+                    continue;
+                }
+                (clone, true)
+            };
+
             unsafe {
                 let out_stream = *(*output.ctx).streams.add(out_index as usize);
-                ffi::av_packet_rescale_ts(pkt_target, (*in_stream).time_base, (*out_stream).time_base);
-                (*pkt_target).stream_index = out_index;
-                let write_ret = ffi::av_interleaved_write_frame(output.ctx, pkt_target);
+                ffi::av_packet_rescale_ts(pkt_to_write, (*in_stream).time_base, (*out_stream).time_base);
+                (*pkt_to_write).stream_index = out_index;
+                let write_ret = ffi::av_interleaved_write_frame(output.ctx, pkt_to_write);
                 if write_ret < 0 {
                     log::warn!(
                         "FFmpeg libs audio copy write failed for group {}: {}",
@@ -2388,11 +2416,12 @@ fn transcode_audio_packet(
                         ffmpeg_err(write_ret)
                     );
                 }
-                ffi::av_packet_free(&mut pkt_target);
+                if needs_free {
+                    ffi::av_packet_free(&mut (pkt_to_write as *mut _));
+                }
             }
         }
 
-        unsafe { ffi::av_packet_free(&mut pkt_clone) };
         return Ok(());
     }
 
