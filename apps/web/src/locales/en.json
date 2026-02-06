@@ -105,7 +105,7 @@
     "title": "Chat Platforms",
     "twitch": {
       "channel": "Channel Name",
-      "channelPlaceholder": "e.g., shroud",
+      "channelPlaceholder": "e.g., SpiritArtLife",
       "description": "Connect to a Twitch channel chat",
       "enterChannel": "Please enter a channel name",
       "oauthToken": "OAuth Token (Optional)",
@@ -120,7 +120,7 @@
       "apiKeyPlaceholder": "AIzaSy...",
       "channelId": "Channel",
       "channelIdHint": "Enter a channel handle (@username) or ID. We'll automatically find the current live stream.",
-      "channelIdPlaceholder": "e.g., @mkbhd or UCBcRF18a7Qf58cCRy5xuWwQ",
+      "channelIdPlaceholder": "e.g., @SpiritArtLife or UCBcRF18a7Qf58cCRy5xuWwQ",
       "description": "Connect to a YouTube channel's live chat",
       "enterApiKey": "Please enter an API key",
       "enterChannelId": "Please enter a channel ID or handle",
