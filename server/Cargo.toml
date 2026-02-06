@@ -31,6 +31,7 @@ base64 = "0.22"
 zeroize = { version = "1.7", features = ["derive"] }
 
 # Performance
+thread-priority = "1"
 memchr = "2"
 dashmap = "6"
 dcv-color-primitives = "0.6"

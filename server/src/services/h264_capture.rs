@@ -184,28 +184,29 @@ impl H264CaptureService {
         let source_id_clone = source_id.clone();
         let capture_audio = source.capture_audio;
 
-        // Spawn the capture + encoding thread
-        let capture_handle = std::thread::spawn(move || {
-            run_capture_encoding_loop(
-                frame_rx,
-                stop_flag_clone,
-                data_ready_clone,
-                last_accessed_clone,
-                session_width_clone,
-                session_height_clone,
-                encoder_alive_clone,
-                frames_written_clone,
-                frames_dropped_clone,
-                ffmpeg_path,
-                width,
-                height,
-                fps,
-                encoding,
-                source_id_clone,
-                capture_audio,
-                rtsp_url,
-            );
-        });
+        // Spawn the capture + encoding thread with elevated priority
+        let capture_handle = super::thread_config::CaptureThreadKind::Encoding
+            .spawn(&format!("ss-h264-rtsp-{}", source_id), move || {
+                run_capture_encoding_loop(
+                    frame_rx,
+                    stop_flag_clone,
+                    data_ready_clone,
+                    last_accessed_clone,
+                    session_width_clone,
+                    session_height_clone,
+                    encoder_alive_clone,
+                    frames_written_clone,
+                    frames_dropped_clone,
+                    ffmpeg_path,
+                    width,
+                    height,
+                    fps,
+                    encoding,
+                    source_id_clone,
+                    capture_audio,
+                    rtsp_url,
+                );
+            });
 
         // Store the session
         {
@@ -317,28 +318,29 @@ impl H264CaptureService {
         let source_id_clone = source_id.clone();
         let capture_audio = source.capture_audio;
 
-        // Spawn the capture + encoding thread (HTTP mode)
-        let capture_handle = std::thread::spawn(move || {
-            run_capture_encoding_loop_http(
-                frame_rx,
-                output_tx_clone,
-                stop_flag_clone,
-                data_ready_clone,
-                last_accessed_clone,
-                session_width_clone,
-                session_height_clone,
-                encoder_alive_clone,
-                frames_written_clone,
-                frames_dropped_clone,
-                ffmpeg_path,
-                width,
-                height,
-                fps,
-                encoding,
-                source_id_clone,
-                capture_audio,
-            );
-        });
+        // Spawn the capture + encoding thread (HTTP mode) with elevated priority
+        let capture_handle = super::thread_config::CaptureThreadKind::Encoding
+            .spawn(&format!("ss-h264-http-{}", source_id), move || {
+                run_capture_encoding_loop_http(
+                    frame_rx,
+                    output_tx_clone,
+                    stop_flag_clone,
+                    data_ready_clone,
+                    last_accessed_clone,
+                    session_width_clone,
+                    session_height_clone,
+                    encoder_alive_clone,
+                    frames_written_clone,
+                    frames_dropped_clone,
+                    ffmpeg_path,
+                    width,
+                    height,
+                    fps,
+                    encoding,
+                    source_id_clone,
+                    capture_audio,
+                );
+            });
 
         // Store the session
         {
@@ -405,6 +407,148 @@ impl H264CaptureService {
             }
         }
         None
+    }
+
+    /// Start compositing a scene: spawns FFmpeg with filter_complex
+    /// reading individual source streams from HTTP, outputting MPEG-TS.
+    ///
+    /// The session key is `scene_{scene_id}`. Each source layer in the scene
+    /// must already have an active HTTP capture (at `/api/capture/{source_id}/stream`).
+    ///
+    /// Returns a broadcast receiver for the composited MPEG-TS stream.
+    pub fn start_scene_capture(
+        &self,
+        scene_id: &str,
+        scene: &crate::models::Scene,
+        sources: &[crate::models::Source],
+        server_port: u16,
+        encoding_config: Option<H264EncodingConfig>,
+    ) -> Result<broadcast::Receiver<Bytes>, String> {
+        let session_key = format!("scene_{}", scene_id);
+        let encoding = encoding_config.unwrap_or_default();
+
+        // Check if already compositing this scene
+        {
+            let sessions = self.sessions.lock().unwrap();
+            if let Some(session) = sessions.get(&session_key) {
+                if let Some(ref tx) = session.output_tx {
+                    session.last_accessed.store(epoch_millis_now(), Ordering::Relaxed);
+                    return Ok(tx.subscribe());
+                }
+            }
+        }
+
+        log::info!("Starting scene composite for scene: {} (key: {})", scene_id, session_key);
+
+        // Build FFmpeg args using HTTP inputs from individual source streams
+        let ffmpeg_args = super::compositor::Compositor::build_scene_composite_args(
+            scene,
+            sources,
+            server_port,
+            &encoding.preset,
+            encoding.bitrate_kbps,
+            encoding.keyframe_interval,
+            encoding.use_hw_accel,
+        );
+
+        log::debug!("Scene composite FFmpeg command: {} {:?}", self.ffmpeg_path, ffmpeg_args);
+
+        // Spawn FFmpeg
+        let mut ffmpeg = Command::new(&self.ffmpeg_path)
+            .args(&ffmpeg_args)
+            .stdin(Stdio::null()) // No stdin — inputs come from HTTP
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Failed to spawn FFmpeg for scene composite: {}", e))?;
+
+        let ffmpeg_pid = ffmpeg.id();
+        log::info!("Scene composite FFmpeg started (PID: {}) for {}", ffmpeg_pid, session_key);
+
+        let stdout = ffmpeg.stdout.take().expect("stdout");
+
+        // Stderr reader
+        if let Some(stderr) = ffmpeg.stderr.take() {
+            spawn_stderr_reader(stderr, format!("scene:{}", scene_id));
+        }
+
+        // Create output broadcast channel
+        let (output_tx, output_rx) = broadcast::channel::<Bytes>(DEFAULT_CHANNEL_CAPACITY);
+
+        // Session state
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let data_ready = Arc::new(AtomicBool::new(false));
+        let last_accessed = Arc::new(AtomicU64::new(epoch_millis_now()));
+        let session_width = Arc::new(AtomicU32::new(scene.canvas_width));
+        let session_height = Arc::new(AtomicU32::new(scene.canvas_height));
+        let encoder_alive = Arc::new(AtomicBool::new(true));
+        let frames_written = Arc::new(AtomicU64::new(0));
+        let frames_dropped = Arc::new(AtomicU64::new(0));
+
+        // Output reader thread
+        let stop_clone = stop_flag.clone();
+        let data_ready_clone = data_ready.clone();
+        let session_key_clone = session_key.clone();
+        let output_tx_clone = output_tx.clone();
+        let output_thread_handle = super::thread_config::CaptureThreadKind::Encoding
+            .spawn(&format!("ss-scene-out-{}", scene_id), move || {
+                read_mpegts_output(stdout, output_tx_clone, stop_clone, data_ready_clone, session_key_clone);
+            });
+
+        // Lifecycle monitor
+        let monitor_alive = encoder_alive.clone();
+        let monitor_stop = stop_flag.clone();
+        let monitor_source = session_key.clone();
+        let mut ffmpeg_for_monitor = ffmpeg;
+        let _monitor_handle = super::thread_config::CaptureThreadKind::Monitor
+            .spawn(&format!("ss-scene-mon-{}", scene_id), move || {
+                loop {
+                    if monitor_stop.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    match ffmpeg_for_monitor.try_wait() {
+                        Ok(Some(status)) => {
+                            log::error!("[SceneComposite:{}] FFmpeg exited: {:?}", monitor_source, status);
+                            monitor_alive.store(false, Ordering::SeqCst);
+                            break;
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            log::error!("[SceneComposite:{}] Monitor error: {}", monitor_source, e);
+                            break;
+                        }
+                    }
+                    std::thread::sleep(Duration::from_millis(500));
+                }
+                ffmpeg_for_monitor
+            });
+
+        // The capture handle wraps the output thread (so we have a JoinHandle to store)
+        let capture_handle = output_thread_handle;
+
+        // Store the session
+        {
+            let mut sessions = self.sessions.lock().unwrap();
+            sessions.insert(
+                session_key.clone(),
+                H264CaptureSession {
+                    stop_flag,
+                    data_ready,
+                    output_tx: Some(output_tx),
+                    last_accessed,
+                    _capture_handle: capture_handle,
+                    width: session_width,
+                    height: session_height,
+                    display_id: 0, // Not a display capture
+                    encoder_alive,
+                    frames_written,
+                    frames_dropped,
+                },
+            );
+        }
+
+        log::info!("Scene composite session created: {} ({}x{})", session_key, scene.canvas_width, scene.canvas_height);
+        Ok(output_rx)
     }
 
     /// Check if a capture session is active
@@ -542,27 +686,28 @@ impl H264CaptureService {
         let ffmpeg_path = self.ffmpeg_path.clone();
         let source_id_owned = source_id.to_string();
 
-        let capture_handle = std::thread::spawn(move || {
-            run_capture_frame_encoding_loop(
-                frame_rx,
-                output_tx_clone,
-                stop_clone,
-                data_ready_clone,
-                last_accessed_clone,
-                width_clone,
-                height_clone,
-                alive_clone,
-                written_clone,
-                dropped_clone,
-                ffmpeg_path,
-                initial_width,
-                initial_height,
-                initial_pix_fmt,
-                fps,
-                encoding,
-                source_id_owned,
-            );
-        });
+        let capture_handle = super::thread_config::CaptureThreadKind::Encoding
+            .spawn(&format!("ss-h264-cf-{}", source_id), move || {
+                run_capture_frame_encoding_loop(
+                    frame_rx,
+                    output_tx_clone,
+                    stop_clone,
+                    data_ready_clone,
+                    last_accessed_clone,
+                    width_clone,
+                    height_clone,
+                    alive_clone,
+                    written_clone,
+                    dropped_clone,
+                    ffmpeg_path,
+                    initial_width,
+                    initial_height,
+                    initial_pix_fmt,
+                    fps,
+                    encoding,
+                    source_id_owned,
+                );
+            });
 
         {
             let mut sessions = self.sessions.lock().unwrap();
@@ -796,19 +941,20 @@ fn build_ffmpeg_encoding_args(
 
 /// Spawn an FFmpeg stderr reader thread to prevent pipe buffer fill
 fn spawn_stderr_reader(stderr: std::process::ChildStderr, label: String) {
-    std::thread::spawn(move || {
-        let reader = std::io::BufReader::new(stderr);
-        use std::io::BufRead;
-        for line in reader.lines() {
-            match line {
-                Ok(line) if !line.trim().is_empty() => {
-                    log::warn!("[{}] FFmpeg: {}", label, line.trim());
+    super::thread_config::CaptureThreadKind::StderrReader
+        .spawn(&format!("ss-stderr-{}", label), move || {
+            let reader = std::io::BufReader::new(stderr);
+            use std::io::BufRead;
+            for line in reader.lines() {
+                match line {
+                    Ok(line) if !line.trim().is_empty() => {
+                        log::warn!("[{}] FFmpeg: {}", label, line.trim());
+                    }
+                    Err(_) => break,
+                    _ => {}
                 }
-                Err(_) => break,
-                _ => {}
             }
-        }
-    });
+        });
 }
 
 /// Drain the broadcast receiver to get the most recent frame (C1: drain-to-latest).
@@ -1059,27 +1205,28 @@ fn run_capture_encoding_loop(
         let monitor_stop = stop_flag.clone();
         let monitor_source = source_id.clone();
         let mut ffmpeg_for_monitor = ffmpeg;
-        let monitor_thread = std::thread::spawn(move || {
-            loop {
-                if monitor_stop.load(Ordering::SeqCst) {
-                    break;
-                }
-                match ffmpeg_for_monitor.try_wait() {
-                    Ok(Some(status)) => {
-                        log::error!("[H264/RTSP:{}] FFmpeg exited unexpectedly: {:?}", monitor_source, status);
-                        monitor_alive.store(false, Ordering::SeqCst);
+        let monitor_thread = super::thread_config::CaptureThreadKind::Monitor
+            .spawn(&format!("ss-h264-mon-{}", monitor_source), move || {
+                loop {
+                    if monitor_stop.load(Ordering::SeqCst) {
                         break;
                     }
-                    Ok(None) => {} // Still running
-                    Err(e) => {
-                        log::error!("[H264/RTSP:{}] Failed to check FFmpeg status: {}", monitor_source, e);
-                        break;
+                    match ffmpeg_for_monitor.try_wait() {
+                        Ok(Some(status)) => {
+                            log::error!("[H264:{}] FFmpeg exited unexpectedly: {:?}", monitor_source, status);
+                            monitor_alive.store(false, Ordering::SeqCst);
+                            break;
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            log::error!("[H264:{}] Failed to check FFmpeg status: {}", monitor_source, e);
+                            break;
+                        }
                     }
+                    std::thread::sleep(Duration::from_millis(500));
                 }
-                std::thread::sleep(Duration::from_millis(500));
-            }
-            ffmpeg_for_monitor
-        });
+                ffmpeg_for_monitor
+            });
 
         // Run inner encoding loop
         let result = run_encoding_inner_loop(
@@ -1211,36 +1358,38 @@ fn run_capture_encoding_loop_http(
         let data_ready_clone = data_ready.clone();
         let source_id_clone = source_id.clone();
         let output_tx_clone = output_tx.clone();
-        let output_thread = std::thread::spawn(move || {
-            read_mpegts_output(stdout, output_tx_clone, stop_clone, data_ready_clone, source_id_clone);
-        });
+        let output_thread = super::thread_config::CaptureThreadKind::Encoding
+            .spawn(&format!("ss-mpegts-http-{}", source_id), move || {
+                read_mpegts_output(stdout, output_tx_clone, stop_clone, data_ready_clone, source_id_clone);
+            });
 
         // D3: FFmpeg lifecycle monitor
         let monitor_alive = encoder_alive.clone();
         let monitor_stop = stop_flag.clone();
         let monitor_source = source_id.clone();
         let mut ffmpeg_for_monitor = ffmpeg;
-        let monitor_thread = std::thread::spawn(move || {
-            loop {
-                if monitor_stop.load(Ordering::SeqCst) {
-                    break;
-                }
-                match ffmpeg_for_monitor.try_wait() {
-                    Ok(Some(status)) => {
-                        log::error!("[H264/HTTP:{}] FFmpeg exited unexpectedly: {:?}", monitor_source, status);
-                        monitor_alive.store(false, Ordering::SeqCst);
+        let monitor_thread = super::thread_config::CaptureThreadKind::Monitor
+            .spawn(&format!("ss-h264-mon-{}", monitor_source), move || {
+                loop {
+                    if monitor_stop.load(Ordering::SeqCst) {
                         break;
                     }
-                    Ok(None) => {}
-                    Err(e) => {
-                        log::error!("[H264/HTTP:{}] Failed to check FFmpeg status: {}", monitor_source, e);
-                        break;
+                    match ffmpeg_for_monitor.try_wait() {
+                        Ok(Some(status)) => {
+                            log::error!("[H264:{}] FFmpeg exited unexpectedly: {:?}", monitor_source, status);
+                            monitor_alive.store(false, Ordering::SeqCst);
+                            break;
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            log::error!("[H264:{}] Failed to check FFmpeg status: {}", monitor_source, e);
+                            break;
+                        }
                     }
+                    std::thread::sleep(Duration::from_millis(500));
                 }
-                std::thread::sleep(Duration::from_millis(500));
-            }
-            ffmpeg_for_monitor
-        });
+                ffmpeg_for_monitor
+            });
 
         // Run inner encoding loop
         let result = run_encoding_inner_loop(
@@ -1573,31 +1722,33 @@ fn run_capture_frame_encoding_loop(
         let data_ready_clone = data_ready.clone();
         let source_clone = source_id.clone();
         let output_tx_clone = output_tx.clone();
-        let output_thread = std::thread::spawn(move || {
-            read_mpegts_output(stdout, output_tx_clone, stop_clone, data_ready_clone, source_clone);
-        });
+        let output_thread = super::thread_config::CaptureThreadKind::Encoding
+            .spawn(&format!("ss-mpegts-cf-{}", source_id), move || {
+                read_mpegts_output(stdout, output_tx_clone, stop_clone, data_ready_clone, source_clone);
+            });
 
         // Lifecycle monitor
         let monitor_alive = encoder_alive.clone();
         let monitor_stop = stop_flag.clone();
         let monitor_source = source_id.clone();
         let mut ffmpeg_for_monitor = ffmpeg;
-        let monitor_thread = std::thread::spawn(move || {
-            loop {
-                if monitor_stop.load(Ordering::SeqCst) { break; }
-                match ffmpeg_for_monitor.try_wait() {
-                    Ok(Some(status)) => {
-                        log::error!("[CaptureFrame:{}] FFmpeg exited: {:?}", monitor_source, status);
-                        monitor_alive.store(false, Ordering::SeqCst);
-                        break;
+        let monitor_thread = super::thread_config::CaptureThreadKind::Monitor
+            .spawn(&format!("ss-h264-mon-{}", monitor_source), move || {
+                loop {
+                    if monitor_stop.load(Ordering::SeqCst) { break; }
+                    match ffmpeg_for_monitor.try_wait() {
+                        Ok(Some(status)) => {
+                            log::error!("[CaptureFrame:{}] FFmpeg exited: {:?}", monitor_source, status);
+                            monitor_alive.store(false, Ordering::SeqCst);
+                            break;
+                        }
+                        Ok(None) => {}
+                        Err(_) => break,
                     }
-                    Ok(None) => {}
-                    Err(_) => break,
+                    std::thread::sleep(Duration::from_millis(500));
                 }
-                std::thread::sleep(Duration::from_millis(500));
-            }
-            ffmpeg_for_monitor
-        });
+                ffmpeg_for_monitor
+            });
 
         // Inner encoding loop
         let frame_interval = Duration::from_millis((1000 / fps.max(1)) as u64);

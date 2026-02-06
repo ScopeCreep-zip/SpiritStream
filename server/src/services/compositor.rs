@@ -519,6 +519,122 @@ impl Compositor {
         filter_parts.join(";")
     }
 
+    /// Build input arguments using HTTP source streams instead of native devices.
+    /// Each source reads from its MPEG-TS HTTP endpoint (for scene composite mode).
+    /// This avoids device contention since captures are already running individually.
+    pub fn build_http_input_args(
+        scene: &Scene,
+        sources: &[Source],
+        server_port: u16,
+    ) -> Vec<String> {
+        let mut args = Vec::new();
+
+        // Deduplicate: track which source IDs we've already added as inputs
+        let mut seen = std::collections::HashSet::new();
+
+        for layer in &scene.layers {
+            if !layer.visible || seen.contains(&layer.source_id) {
+                continue;
+            }
+            seen.insert(layer.source_id.clone());
+
+            // Check if this source has audio (for audio-only sources, skip video input)
+            let has_video = sources.iter().find(|s| s.id() == layer.source_id)
+                .map(|s| Self::source_has_video(s))
+                .unwrap_or(true);
+
+            if has_video {
+                args.extend([
+                    "-fflags".to_string(), "nobuffer".to_string(),
+                    "-flags".to_string(), "low_delay".to_string(),
+                    "-f".to_string(), "mpegts".to_string(),
+                    "-i".to_string(),
+                    format!("http://127.0.0.1:{}/api/capture/{}/stream", server_port, layer.source_id),
+                ]);
+            }
+        }
+
+        args
+    }
+
+    /// Check if a source produces video (as opposed to audio-only)
+    fn source_has_video(source: &Source) -> bool {
+        !matches!(source, Source::AudioDevice(_))
+    }
+
+    /// Build a complete FFmpeg command line for scene compositing via HTTP inputs.
+    /// Combines HTTP input args + filter_complex + MPEG-TS output to stdout.
+    pub fn build_scene_composite_args(
+        scene: &Scene,
+        sources: &[Source],
+        server_port: u16,
+        encoding_preset: &str,
+        bitrate_kbps: u32,
+        keyframe_interval: u32,
+        use_hw_accel: bool,
+    ) -> Vec<String> {
+        let mut args = vec![
+            "-hide_banner".to_string(),
+            "-v".to_string(), "error".to_string(),
+        ];
+
+        // HTTP inputs (reads from individual source MPEG-TS streams)
+        args.extend(Self::build_http_input_args(scene, sources, server_port));
+
+        // Filter complex for compositing
+        let filter = Self::build_filter_complex(scene, sources);
+        args.extend(["-filter_complex".to_string(), filter]);
+
+        // Map outputs
+        args.extend([
+            "-map".to_string(), "[vout]".to_string(),
+            "-map".to_string(), "[aout]".to_string(),
+        ]);
+
+        // Video encoder
+        if use_hw_accel && cfg!(target_os = "macos") {
+            args.extend([
+                "-c:v".to_string(), "h264_videotoolbox".to_string(),
+                "-realtime".to_string(), "1".to_string(),
+                "-prio_speed".to_string(), "1".to_string(),
+                "-allow_sw".to_string(), "1".to_string(),
+                "-profile:v".to_string(), "baseline".to_string(),
+            ]);
+        } else {
+            args.extend([
+                "-c:v".to_string(), "libx264".to_string(),
+                "-preset".to_string(), encoding_preset.to_string(),
+                "-tune".to_string(), "zerolatency".to_string(),
+                "-profile:v".to_string(), "baseline".to_string(),
+            ]);
+        }
+
+        args.extend([
+            "-g".to_string(), keyframe_interval.to_string(),
+            "-b:v".to_string(), format!("{}k", bitrate_kbps),
+            "-maxrate".to_string(), format!("{}k", bitrate_kbps * 2),
+            "-bufsize".to_string(), format!("{}k", bitrate_kbps),
+            "-pix_fmt".to_string(), "yuv420p".to_string(),
+        ]);
+
+        // Audio encoder
+        args.extend([
+            "-c:a".to_string(), "aac".to_string(),
+            "-b:a".to_string(), "128k".to_string(),
+            "-ar".to_string(), "48000".to_string(),
+        ]);
+
+        // MPEG-TS output to stdout
+        args.extend([
+            "-flush_packets".to_string(), "1".to_string(),
+            "-f".to_string(), "mpegts".to_string(),
+            "-muxdelay".to_string(), "0".to_string(),
+            "pipe:1".to_string(),
+        ]);
+
+        args
+    }
+
     /// Build combined filter_complex for both video and audio
     pub fn build_filter_complex(scene: &Scene, sources: &[Source]) -> String {
         let video_filter = Self::build_video_filter(scene, sources);

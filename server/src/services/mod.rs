@@ -29,6 +29,8 @@ mod capture_frame;
 mod h264_capture;
 mod audio_levels;
 mod audio_level_extractor;
+mod thread_config;
+mod source_lifecycle;
 
 // macOS-specific ScreenCaptureKit audio capture
 #[cfg(target_os = "macos")]
@@ -64,3 +66,5 @@ pub use capture_frame::*;
 pub use h264_capture::*;
 pub use audio_levels::*;
 pub use audio_level_extractor::*;
+pub use thread_config::*;
+pub use source_lifecycle::*;

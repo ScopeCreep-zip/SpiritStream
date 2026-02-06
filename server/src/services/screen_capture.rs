@@ -300,18 +300,19 @@ impl ScreenCaptureService {
         let stop_flag = Arc::new(AtomicBool::new(false));
         let stop_flag_clone = stop_flag.clone();
 
-        // Start capture in background thread
-        let handle = std::thread::spawn(move || {
-            capturer.start_capture();
+        // Start capture in background thread with elevated priority
+        let handle = super::thread_config::CaptureThreadKind::VideoCapture
+            .spawn(&format!("ss-display-{}", display_id), move || {
+                capturer.start_capture();
 
-            while !stop_flag_clone.load(Ordering::Relaxed) {
-                if let Ok(frame) = capturer.get_next_frame() {
-                    let _ = frame_tx.send(Arc::new(frame));
+                while !stop_flag_clone.load(Ordering::Relaxed) {
+                    if let Ok(frame) = capturer.get_next_frame() {
+                        let _ = frame_tx.send(Arc::new(frame));
+                    }
                 }
-            }
 
-            capturer.stop_capture();
-        });
+                capturer.stop_capture();
+            });
 
         // Store active capture
         {
@@ -386,18 +387,19 @@ impl ScreenCaptureService {
         let stop_flag = Arc::new(AtomicBool::new(false));
         let stop_flag_clone = stop_flag.clone();
 
-        // Start capture in background thread
-        let handle = std::thread::spawn(move || {
-            capturer.start_capture();
+        // Start capture in background thread with elevated priority
+        let handle = super::thread_config::CaptureThreadKind::VideoCapture
+            .spawn(&format!("ss-window-{}", window_id), move || {
+                capturer.start_capture();
 
-            while !stop_flag_clone.load(Ordering::Relaxed) {
-                if let Ok(frame) = capturer.get_next_frame() {
-                    let _ = frame_tx.send(Arc::new(frame));
+                while !stop_flag_clone.load(Ordering::Relaxed) {
+                    if let Ok(frame) = capturer.get_next_frame() {
+                        let _ = frame_tx.send(Arc::new(frame));
+                    }
                 }
-            }
 
-            capturer.stop_capture();
-        });
+                capturer.stop_capture();
+            });
 
         // Store active capture
         {

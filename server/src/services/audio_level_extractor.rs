@@ -418,15 +418,16 @@ impl AudioLevelExtractor {
         let source_id_clone = source_id.to_string();
         let source_type = config.source_type.clone();
 
-        // Spawn thread to parse FFmpeg output
-        std::thread::spawn(move || {
-            parse_ffmpeg_audio_levels(
-                stderr,
-                stop_flag_clone,
-                source_id_clone,
-                level_tx,
-            );
-        });
+        // Spawn thread to parse FFmpeg output with audio capture priority
+        super::thread_config::CaptureThreadKind::AudioCapture
+            .spawn(&format!("ss-audio-ext-{}", source_id), move || {
+                parse_ffmpeg_audio_levels(
+                    stderr,
+                    stop_flag_clone,
+                    source_id_clone,
+                    level_tx,
+                );
+            });
 
         // Store active extraction
         {

@@ -329,23 +329,24 @@ impl CameraCaptureService {
         // Spawn stderr reader thread for debuggability
         if let Some(stderr) = process.stderr.take() {
             let camera_id_log = camera_id.to_string();
-            std::thread::spawn(move || {
-                use std::io::BufRead;
-                let reader = BufReader::new(stderr);
-                for line in reader.lines() {
-                    match line {
-                        Ok(line) if !line.trim().is_empty() => {
-                            if line.contains("error") || line.contains("Error") || line.contains("Invalid") {
-                                log::warn!("[CameraFFmpeg:{}] {}", camera_id_log, line.trim());
-                            } else {
-                                log::debug!("[CameraFFmpeg:{}] {}", camera_id_log, line.trim());
+            super::thread_config::CaptureThreadKind::StderrReader
+                .spawn(&format!("ss-cam-stderr-{}", camera_id), move || {
+                    use std::io::BufRead;
+                    let reader = BufReader::new(stderr);
+                    for line in reader.lines() {
+                        match line {
+                            Ok(line) if !line.trim().is_empty() => {
+                                if line.contains("error") || line.contains("Error") || line.contains("Invalid") {
+                                    log::warn!("[CameraFFmpeg:{}] {}", camera_id_log, line.trim());
+                                } else {
+                                    log::debug!("[CameraFFmpeg:{}] {}", camera_id_log, line.trim());
+                                }
                             }
+                            Err(_) => break,
+                            _ => {}
                         }
-                        Err(_) => break,
-                        _ => {}
                     }
-                }
-            });
+                });
         }
 
         // Start frame reading thread
@@ -356,7 +357,8 @@ impl CameraCaptureService {
         let width = config.width;
         let height = config.height;
 
-        std::thread::spawn(move || {
+        super::thread_config::CaptureThreadKind::VideoCapture
+            .spawn(&format!("ss-cam-frames-{}", camera_id), move || {
             let frame_size = (width * height * 3) as usize; // RGB24
             let mut reader = BufReader::new(stdout);
             let mut buffer = vec![0u8; frame_size];

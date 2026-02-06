@@ -67,6 +67,8 @@ use spiritstream_server::services::{
     AudioLevelService,
     // Audio level extraction from FFmpeg-based sources
     AudioLevelExtractor,
+    // Source lifecycle management
+    SourceLifecycleManager,
 };
 // ScreenCaptureKit audio capture service (macOS only)
 #[cfg(target_os = "macos")]
@@ -150,6 +152,8 @@ struct AppState {
     // ScreenCaptureKit audio capture for macOS (screen, window, game capture audio)
     #[cfg(target_os = "macos")]
     sck_audio_capture: Arc<SckAudioCaptureService>,
+    // Source lifecycle management (scene-based start/stop)
+    source_lifecycle: Arc<SourceLifecycleManager>,
     // Server port for constructing HTTP URLs
     server_port: u16,
 }
@@ -2618,8 +2622,73 @@ async fn invoke_command(
                 .await?;
 
             // Verify scene exists
-            if !profile.scenes.iter().any(|s| s.id == scene_id) {
-                return Err(format!("Scene {} not found", scene_id));
+            let new_scene = profile.scenes.iter().find(|s| s.id == scene_id)
+                .ok_or_else(|| format!("Scene {} not found", scene_id))?
+                .clone();
+
+            // Get old active scene for lifecycle diff
+            let old_scene = profile.active_scene_id.as_ref().and_then(|old_id| {
+                profile.scenes.iter().find(|s| s.id == *old_id).cloned()
+            });
+
+            // Compute source lifecycle diff (which sources to start/stop)
+            let diff = state.source_lifecycle.compute_scene_diff(
+                old_scene.as_ref(),
+                &new_scene,
+                None, // Preview scene is managed by frontend in Studio Mode
+            );
+
+            if !diff.to_start.is_empty() || !diff.to_stop.is_empty() {
+                log::info!(
+                    "Scene switch lifecycle: start={:?}, stop={:?}",
+                    diff.to_start, diff.to_stop
+                );
+            }
+
+            // Stop captures for sources no longer needed
+            for source_id in &diff.to_stop {
+                // Stop H264 capture if running
+                let _ = state.h264_capture.stop_capture(source_id);
+                // Stop camera capture if running
+                let _ = state.camera_capture.stop_capture(source_id);
+                log::debug!("Stopped capture for source: {}", source_id);
+            }
+
+            // Stop old scene composite if it was running
+            if let Some(ref old) = old_scene {
+                let old_scene_key = format!("scene_{}", old.id);
+                if state.h264_capture.is_capturing(&old_scene_key) {
+                    let _ = state.h264_capture.stop_capture(&old_scene_key);
+                    let _ = state.go2rtc_manager.unregister_source(&old_scene_key).await;
+                    log::debug!("Stopped old scene composite: {}", old_scene_key);
+                }
+            }
+
+            // Start scene composite for the new active scene if it has multiple visible layers
+            let visible_layers: Vec<_> = new_scene.layers.iter().filter(|l| l.visible).collect();
+            if visible_layers.len() > 1 {
+                let scene_stream_id = format!("scene_{}", scene_id);
+                match state.h264_capture.start_scene_capture(
+                    &scene_id,
+                    &new_scene,
+                    &profile.sources,
+                    state.server_port,
+                    None,
+                ) {
+                    Ok(_) => {
+                        log::info!("Started scene composite for scene: {}", scene_id);
+
+                        // Register scene composite with go2rtc for WebRTC preview
+                        let go2rtc_source = format!(
+                            "http://127.0.0.1:{}/api/capture/{}/stream#video=copy",
+                            state.server_port, scene_stream_id
+                        );
+                        if let Err(e) = state.go2rtc_manager.register_source(&scene_stream_id, &go2rtc_source).await {
+                            log::warn!("Failed to register scene composite with go2rtc: {}", e);
+                        }
+                    }
+                    Err(e) => log::warn!("Failed to start scene composite: {}", e),
+                }
             }
 
             profile.active_scene_id = Some(scene_id.clone());
@@ -4943,6 +5012,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         audio_level_extractor,
         #[cfg(target_os = "macos")]
         sck_audio_capture,
+        source_lifecycle: Arc::new(SourceLifecycleManager::new()),
         server_port: port,
     };
 
