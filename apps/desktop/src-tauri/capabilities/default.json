@@ -3,12 +3,21 @@
   "identifier": "default",
   "description": "Default capability for SpiritStream Desktop",
   "windows": [
-    "main"
+    "main",
+    "chat-overlay"
   ],
   "permissions": [
     "core:default",
     "core:window:default",
+    "core:window:allow-create",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:window:allow-start-dragging",
+    "core:window:allow-close",
+    "core:window:allow-set-always-on-top",
     "core:webview:default",
+    "core:webview:allow-create-webview",
+    "core:webview:allow-create-webview-window",
     "core:app:default",
     "core:resources:default",
     "core:menu:default",

@@ -7,11 +7,13 @@ const MAX_MESSAGES = 500;
 interface ChatStore {
   messages: ChatMessage[];
   overlayTransparent: boolean;
+  overlayAlwaysOnTop: boolean;
 
   addMessage: (message: ChatMessage) => void;
   addMessages: (messages: ChatMessage[]) => void;
   clearMessages: () => void;
   setOverlayTransparent: (transparent: boolean) => void;
+  setOverlayAlwaysOnTop: (alwaysOnTop: boolean) => void;
 }
 
 export const useChatStore = create<ChatStore>()(
@@ -19,6 +21,7 @@ export const useChatStore = create<ChatStore>()(
     (set) => ({
       messages: [],
       overlayTransparent: false,
+      overlayAlwaysOnTop: true,
 
       addMessage: (message) =>
         set((state) => ({
@@ -33,11 +36,14 @@ export const useChatStore = create<ChatStore>()(
       clearMessages: () => set({ messages: [] }),
 
       setOverlayTransparent: (transparent) => set({ overlayTransparent: transparent }),
+
+      setOverlayAlwaysOnTop: (alwaysOnTop) => set({ overlayAlwaysOnTop: alwaysOnTop }),
     }),
     {
       name: 'spiritstream-chat',
       partialize: (state) => ({
         overlayTransparent: state.overlayTransparent,
+        overlayAlwaysOnTop: state.overlayAlwaysOnTop,
       }),
     }
   )

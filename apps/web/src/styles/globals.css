@@ -97,12 +97,15 @@ body {
   min-height: 100vh;
 }
 
+/* Chat overlay window styles */
+html[data-window='chat-overlay'],
 body[data-window='chat-overlay'] {
   background: var(--bg-base);
 }
 
+html[data-window='chat-overlay'][data-overlay-transparent='true'],
 body[data-window='chat-overlay'][data-overlay-transparent='true'] {
-  background: transparent;
+  background: transparent !important;
 }
 
 body[data-window='chat-overlay'] #root {
