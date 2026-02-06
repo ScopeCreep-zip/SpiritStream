@@ -46,6 +46,7 @@ import { useThemeStore } from '@/stores/themeStore';
 import { ChatOverlay } from '@/views/ChatOverlay';
 import { checkAuth, checkServerHealth, checkServerReadyDetailed, ServerReadyStatus } from '@/lib/backend/env';
 import { initConnection } from '@/lib/backend/httpEvents';
+import { setupMainWindowCloseHandler } from '@/lib/chatWindow';
 import { api } from '@/lib/backend';
 
 // Import all views
@@ -76,10 +77,18 @@ export type View =
 
 // View meta is now handled via translations using keys like header.dashboard.title
 const getWindowLabel = () => {
+  // Check URL query parameter first (for browser popup mode)
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('overlay') === 'chat') {
+      return 'chat-overlay';
+    }
+  }
+
+  // Check Tauri window label (for desktop mode)
   try {
     return WebviewWindow.getCurrent().label;
-  } catch (error) {
-    console.warn('Failed to read current window label:', error);
+  } catch {
     return 'main';
   }
 };
@@ -275,6 +284,11 @@ function AppContent() {
 
   // Listen for OBS WebSocket events and handle OBS -> SpiritStream triggering
   useObsEvents();
+
+  // Set up handler to close chat overlay when main window closes
+  useEffect(() => {
+    setupMainWindowCloseHandler();
+  }, []);
 
   // Store hooks
   const { setLanguage } = useLanguageStore();
