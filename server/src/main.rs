@@ -41,7 +41,8 @@ use spiritstream_server::models::{OutputGroup, Profile, RtmpInput, Settings, Obs
 use spiritstream_server::services::{
     prune_logs, read_recent_logs, validate_extension, validate_path_within_any,
     ChatManager, DiscordWebhookService, Encryption, EventSink, FFmpegDownloader, FFmpegHandler,
-    OAuthService, OAuthConfig, ObsWebSocketHandler, ProfileManager, SettingsManager, ThemeManager, ObsConfig,
+    OAuthCallback, OAuthCallbackServer, OAuthConfig, OAuthService, ObsConfig, ObsWebSocketHandler,
+    ProfileManager, SettingsManager, ThemeManager,
 };
 
 // ============================================================================
@@ -1354,6 +1355,95 @@ async fn invoke_command(
         "oauth_start_flow" => {
             let provider: String = get_arg(&payload, "provider")?;
             let result = state.oauth_service.start_flow(&provider).await?;
+
+            // Start the local callback server to receive the OAuth redirect
+            let (callback_server, mut callback_rx) =
+                OAuthCallbackServer::start(result.callback_port).await.map_err(|e| {
+                    format!("Failed to start OAuth callback server: {e}")
+                })?;
+
+            let oauth_service = state.oauth_service.clone();
+            let settings_manager = state.settings_manager.clone();
+            let event_bus = state.event_bus.clone();
+            let provider_name = provider.clone();
+
+            tokio::spawn(async move {
+                let timeout = tokio::time::sleep(std::time::Duration::from_secs(180));
+                tokio::pin!(timeout);
+
+                let callback = tokio::select! {
+                    res = &mut callback_rx => res.ok(),
+                    _ = &mut timeout => None,
+                };
+
+                match callback {
+                    Some(OAuthCallback::Success { code, state }) => {
+                        match oauth_service.complete_flow(&provider_name, &code, &state).await {
+                            Ok(result) => {
+                                let mut settings = match settings_manager.load() {
+                                    Ok(settings) => settings,
+                                    Err(err) => {
+                                        log::error!("Failed to load settings after OAuth: {err}");
+                                        callback_server.shutdown();
+                                        return;
+                                    }
+                                };
+
+                                let now = chrono::Utc::now().timestamp();
+                                let expires_at = result.tokens.expires_in.map(|e| now + e as i64).unwrap_or(0);
+
+                                match provider_name.as_str() {
+                                    "twitch" => {
+                                        settings.twitch_oauth_access_token = result.tokens.access_token.clone();
+                                        settings.twitch_oauth_refresh_token =
+                                            result.tokens.refresh_token.clone().unwrap_or_default();
+                                        settings.twitch_oauth_expires_at = expires_at;
+                                        settings.twitch_oauth_user_id = result.user_info.user_id.clone();
+                                        settings.twitch_oauth_username = result.user_info.username.clone();
+                                        settings.twitch_oauth_display_name = result.user_info.display_name.clone();
+                                        if settings.chat_twitch_channel.is_empty() {
+                                            settings.chat_twitch_channel = result.user_info.username.clone();
+                                        }
+                                    }
+                                    "youtube" => {
+                                        settings.youtube_oauth_access_token = result.tokens.access_token.clone();
+                                        settings.youtube_oauth_refresh_token =
+                                            result.tokens.refresh_token.clone().unwrap_or_default();
+                                        settings.youtube_oauth_expires_at = expires_at;
+                                        settings.youtube_oauth_channel_id = result.user_info.user_id.clone();
+                                        settings.youtube_oauth_channel_name = result.user_info.display_name.clone();
+                                        if settings.chat_youtube_channel_id.is_empty() {
+                                            settings.chat_youtube_channel_id = result.user_info.user_id.clone();
+                                        }
+                                    }
+                                    _ => {}
+                                }
+
+                                if let Err(err) = settings_manager.save(&settings) {
+                                    log::error!("Failed to save OAuth settings: {err}");
+                                } else {
+                                    event_bus.emit("oauth_complete", json!(result.user_info));
+                                }
+                            }
+                            Err(err) => {
+                                log::error!("OAuth completion failed for {provider_name}: {err}");
+                            }
+                        }
+                    }
+                    Some(OAuthCallback::Error { error, description }) => {
+                        if let Some(description) = description {
+                            log::warn!("OAuth callback error for {provider_name}: {error} ({description})");
+                        } else {
+                            log::warn!("OAuth callback error for {provider_name}: {error}");
+                        }
+                    }
+                    None => {
+                        log::warn!("OAuth callback timed out for {provider_name}");
+                    }
+                }
+
+                callback_server.shutdown();
+            });
 
             // Open the auth URL in the default browser
             if let Err(e) = opener::open(&result.auth_url) {
