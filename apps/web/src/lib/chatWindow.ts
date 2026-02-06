@@ -124,19 +124,39 @@ export async function setOverlayAlwaysOnTop(alwaysOnTop: boolean) {
  * Call this once from the main app on mount.
  */
 export function setupMainWindowCloseHandler() {
-  // Use beforeunload for both browser and Tauri - simpler and more reliable
+  // For browser, close popup when main window unloads
   window.addEventListener('beforeunload', () => {
     if (browserPopup && !browserPopup.closed) {
       browserPopup.close();
     }
+  });
+}
 
-    // For Tauri, fire-and-forget close the overlay
-    if (isTauri()) {
-      import('@tauri-apps/api/webviewWindow').then(({ WebviewWindow }) => {
-        WebviewWindow.getByLabel(CHAT_OVERLAY_LABEL).then((overlay) => {
-          overlay?.close();
-        });
+/**
+ * Set up listener on the overlay to close when main window is destroyed.
+ * Call this from the ChatOverlay component.
+ */
+export async function setupOverlayAutoClose() {
+  if (!isTauri()) return;
+
+  try {
+    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+
+    const mainWindow = await WebviewWindow.getByLabel('main');
+    const overlayWindow = getCurrentWindow();
+
+    if (mainWindow) {
+      // Listen for main window being destroyed
+      mainWindow.onCloseRequested(async () => {
+        try {
+          await overlayWindow.close();
+        } catch {
+          // Main window is closing, ignore errors
+        }
       });
     }
-  });
+  } catch (error) {
+    console.error('Failed to set up overlay auto-close:', error);
+  }
 }

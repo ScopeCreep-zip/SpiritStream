@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { CHAT_OVERLAY_SETTINGS_EVENT, CHAT_OVERLAY_ALWAYS_ON_TOP_EVENT } from '@/lib/chatEvents';
 import { isTauri } from '@/lib/backend/env';
+import { setupOverlayAutoClose } from '@/lib/chatWindow';
 import { useChatStore } from '@/stores/chatStore';
 
 export function ChatOverlay() {
@@ -16,6 +17,11 @@ export function ChatOverlay() {
   const overlayTransparent = useChatStore((state) => state.overlayTransparent);
   const setOverlayTransparent = useChatStore((state) => state.setOverlayTransparent);
   const [draftMessage, setDraftMessage] = useState('');
+
+  // Set up auto-close when main window closes
+  useEffect(() => {
+    setupOverlayAutoClose();
+  }, []);
 
   // Listen for settings changes from the main window
   useEffect(() => {
