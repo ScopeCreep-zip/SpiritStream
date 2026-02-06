@@ -4,6 +4,7 @@
 use std::path::PathBuf;
 use std::sync::RwLock;
 use crate::models::Settings;
+use serde_json::Value;
 
 /// Manages application settings storage and retrieval
 pub struct SettingsManager {
@@ -35,8 +36,21 @@ impl SettingsManager {
             let content = std::fs::read_to_string(&self.settings_path)
                 .map_err(|e| format!("Failed to read settings: {e}"))?;
 
-            serde_json::from_str(&content)
-                .map_err(|e| format!("Failed to parse settings: {e}"))?
+            let mut user_value: Value = serde_json::from_str(&content)
+                .map_err(|e| format!("Failed to parse settings: {e}"))?;
+            let defaults_value = serde_json::to_value(Settings::default())
+                .map_err(|e| format!("Failed to build default settings: {e}"))?;
+
+            let changed = merge_missing_settings(&mut user_value, &defaults_value);
+
+            let settings: Settings = serde_json::from_value(user_value)
+                .map_err(|e| format!("Failed to parse settings: {e}"))?;
+
+            if changed {
+                self.save_internal(&settings)?;
+            }
+
+            settings
         } else {
             // Return defaults and save them
             let defaults = Settings::default();
@@ -137,5 +151,28 @@ impl SettingsManager {
         }
 
         Ok(())
+    }
+}
+
+fn merge_missing_settings(target: &mut Value, defaults: &Value) -> bool {
+    match (target, defaults) {
+        (Value::Object(target_map), Value::Object(defaults_map)) => {
+            let mut changed = false;
+            for (key, default_value) in defaults_map {
+                match target_map.get_mut(key) {
+                    Some(target_value) => {
+                        if merge_missing_settings(target_value, default_value) {
+                            changed = true;
+                        }
+                    }
+                    None => {
+                        target_map.insert(key.clone(), default_value.clone());
+                        changed = true;
+                    }
+                }
+            }
+            changed
+        }
+        _ => false,
     }
 }

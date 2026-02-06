@@ -39,6 +39,7 @@ regex = "1.10"
 notify = "6"
 dirs-next = "2.0"
 opener = "0.7"
+urlencoding = "2.1"
 
 # OBS WebSocket
 obws = { version = "0.14", features = ["events"] }

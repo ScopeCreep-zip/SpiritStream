@@ -95,9 +95,9 @@ pub enum ChatCredentials {
     Twitch {
         /// Twitch channel name to join
         channel: String,
-        /// OAuth token for authentication (optional for read-only)
+        /// Authentication method (optional - anonymous read-only if not provided)
         #[serde(skip_serializing_if = "Option::is_none")]
-        oauth_token: Option<String>,
+        auth: Option<TwitchAuth>,
     },
     #[serde(rename_all = "camelCase")]
     TikTok {
@@ -112,8 +112,8 @@ pub enum ChatCredentials {
         /// YouTube channel ID or handle (e.g., "UCxxxxxx" or "@channelname")
         /// The backend will automatically find the current live stream
         channel_id: String,
-        /// API key for YouTube Data API (required for reading public chat)
-        api_key: String,
+        /// Authentication method
+        auth: YouTubeAuth,
     },
     #[serde(rename_all = "camelCase")]
     Kick {
@@ -126,6 +126,54 @@ pub enum ChatCredentials {
         video_id: String,
         /// Facebook access token
         access_token: String,
+    },
+}
+
+/// Twitch authentication options
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "method", rename_all = "camelCase")]
+pub enum TwitchAuth {
+    /// User-provided OAuth token (from twitchtokengenerator.com or similar)
+    #[serde(rename_all = "camelCase")]
+    UserToken {
+        /// OAuth token (with or without "oauth:" prefix)
+        oauth_token: String,
+    },
+    /// App OAuth - user authenticated via "Login with Twitch" flow
+    #[serde(rename_all = "camelCase")]
+    AppOAuth {
+        /// Access token from OAuth flow
+        access_token: String,
+        /// Refresh token for renewal
+        #[serde(skip_serializing_if = "Option::is_none")]
+        refresh_token: Option<String>,
+        /// Token expiration timestamp (Unix epoch seconds)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        expires_at: Option<i64>,
+    },
+}
+
+/// YouTube authentication options
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "method", rename_all = "camelCase")]
+pub enum YouTubeAuth {
+    /// User-provided API key (preferred - uses user's own quota)
+    #[serde(rename_all = "camelCase")]
+    ApiKey {
+        /// Google API key with YouTube Data API enabled
+        key: String,
+    },
+    /// App OAuth - user authenticated via "Login with Google" flow
+    #[serde(rename_all = "camelCase")]
+    AppOAuth {
+        /// Access token from OAuth flow
+        access_token: String,
+        /// Refresh token for renewal
+        #[serde(skip_serializing_if = "Option::is_none")]
+        refresh_token: Option<String>,
+        /// Token expiration timestamp (Unix epoch seconds)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        expires_at: Option<i64>,
     },
 }
 

@@ -44,7 +44,7 @@ import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValid
 import { toast } from '@/hooks/useToast';
 import { useThemeStore } from '@/stores/themeStore';
 import { ChatOverlay } from '@/views/ChatOverlay';
-import { checkAuth, checkServerHealth, checkServerReady } from '@/lib/backend/env';
+import { checkAuth, checkServerHealth, checkServerReadyDetailed, ServerReadyStatus } from '@/lib/backend/env';
 import { initConnection } from '@/lib/backend/httpEvents';
 import { api } from '@/lib/backend';
 
@@ -108,9 +108,34 @@ function ChatOverlayApp() {
 function MainApp() {
   const { t } = useTranslation();
 
+  type ServerStatus = 'checking' | 'unreachable' | 'not-ready' | 'ready';
+
   // Server health check state
-  const [serverHealthy, setServerHealthy] = useState<boolean | null>(null);
+  const [serverStatus, setServerStatus] = useState<ServerStatus>('checking');
+  const [readyDetails, setReadyDetails] = useState<ServerReadyStatus | null>(null);
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
+
+  const formatReadyDetails = (details: ServerReadyStatus | null): string[] => {
+    if (!details) return [];
+
+    if (details.errors?.length) {
+      return details.errors.map((item) => `${item.check}: ${item.error}`);
+    }
+
+    if (details.failed?.length) {
+      return details.failed.map((item) => `${item} check failed`);
+    }
+
+    if (typeof details.status === 'number') {
+      return [`HTTP ${details.status} from /ready`];
+    }
+
+    if (details.lastError) {
+      return [details.lastError];
+    }
+
+    return [];
+  };
 
   // Check server health on mount
   useEffect(() => {
@@ -118,21 +143,29 @@ function MainApp() {
 
     const checkHealth = async () => {
       setIsCheckingHealth(true);
+      setServerStatus('checking');
+      setReadyDetails(null);
 
       // Give the server time to start (especially in Tauri where launcher is spawning it)
       const healthy = await checkServerHealth(10, 500);
       if (cancelled) return;
 
       if (!healthy) {
-        setServerHealthy(false);
+        setServerStatus('unreachable');
         setIsCheckingHealth(false);
         return;
       }
 
-      const ready = await checkServerReady(15, 400);
+      const ready = await checkServerReadyDetailed(15, 400);
       if (cancelled) return;
 
-      setServerHealthy(ready);
+      if (ready.ready) {
+        setServerStatus('ready');
+        setReadyDetails(null);
+      } else {
+        setServerStatus('not-ready');
+        setReadyDetails(ready);
+      }
       setIsCheckingHealth(false);
     };
 
@@ -146,25 +179,59 @@ function MainApp() {
   // Retry handler for connection error
   const handleRetryConnection = async () => {
     setIsCheckingHealth(true);
-    setServerHealthy(null); // Reset to loading state
+    setServerStatus('checking');
+    setReadyDetails(null);
 
     const healthy = await checkServerHealth(15, 500);
     if (healthy) {
-      const ready = await checkServerReady(15, 400);
-      setServerHealthy(ready);
+      const ready = await checkServerReadyDetailed(15, 400);
+      if (ready.ready) {
+        setServerStatus('ready');
+        setReadyDetails(null);
+      } else {
+        setServerStatus('not-ready');
+        setReadyDetails(ready);
+      }
     } else {
-      setServerHealthy(false);
+      setServerStatus('unreachable');
     }
     setIsCheckingHealth(false);
   };
 
   // Show connection error overlay if server is unreachable
-  if (serverHealthy === false) {
-    return <ConnectionError onRetry={handleRetryConnection} isRetrying={isCheckingHealth} />;
+  if (serverStatus === 'unreachable' || serverStatus === 'not-ready') {
+    const details = serverStatus === 'not-ready' ? formatReadyDetails(readyDetails) : undefined;
+    const title =
+      serverStatus === 'not-ready'
+        ? t('connection.notReadyTitle', { defaultValue: 'Backend not ready' })
+        : undefined;
+    const description =
+      serverStatus === 'not-ready'
+        ? t('connection.notReadyDescription', {
+            defaultValue: 'The backend is running but failed its readiness checks.',
+          })
+        : undefined;
+    const helpText =
+      serverStatus === 'not-ready'
+        ? t('connection.notReadyHelp', {
+            defaultValue: 'Fix the issue(s) above or check the server logs, then retry.',
+          })
+        : undefined;
+
+    return (
+      <ConnectionError
+        onRetry={handleRetryConnection}
+        isRetrying={isCheckingHealth}
+        title={title}
+        description={description}
+        helpText={helpText}
+        details={details}
+      />
+    );
   }
 
   // Show loading state while checking server health
-  if (serverHealthy === null) {
+  if (serverStatus === 'checking') {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-[var(--bg-base)]">
         <div className="text-[var(--text-secondary)]">{t('common.loading', { defaultValue: 'Loading...' })}</div>

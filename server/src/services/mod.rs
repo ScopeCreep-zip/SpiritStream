@@ -16,6 +16,7 @@ mod events;
 mod path_validator;
 mod obs_websocket;
 mod discord_webhook;
+mod oauth;
 
 pub use profile_manager::*;
 pub use ffmpeg_handler::*;
@@ -31,3 +32,4 @@ pub use events::*;
 pub use path_validator::*;
 pub use obs_websocket::*;
 pub use discord_webhook::*;
+pub use oauth::*;

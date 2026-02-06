@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use log::{info, warn, error};
+use rand::Rng;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, Mutex};
@@ -7,7 +8,7 @@ use twitch_irc::login::StaticLoginCredentials;
 use twitch_irc::message::ServerMessage;
 use twitch_irc::{ClientConfig, SecureTCPTransport, TwitchIRCClient};
 
-use crate::models::{ChatConnectionStatus, ChatCredentials, ChatMessage, ChatPlatform as ChatPlatformEnum};
+use crate::models::{ChatConnectionStatus, ChatCredentials, ChatMessage, ChatPlatform as ChatPlatformEnum, TwitchAuth};
 
 use super::platform::{ChatPlatform, PlatformError, PlatformResult};
 
@@ -105,7 +106,14 @@ impl ChatPlatform for TwitchConnector {
 
         // Extract Twitch credentials
         let (channel, oauth_token) = match credentials {
-            ChatCredentials::Twitch { channel, oauth_token } => (channel, oauth_token),
+            ChatCredentials::Twitch { channel, auth } => {
+                // Extract OAuth token from auth method if provided
+                let token = auth.and_then(|a| match a {
+                    TwitchAuth::UserToken { oauth_token } => Some(oauth_token),
+                    TwitchAuth::AppOAuth { access_token, .. } => Some(access_token),
+                });
+                (channel, token)
+            }
             _ => {
                 return Err(PlatformError::InvalidConfig(
                     "Expected Twitch credentials".to_string(),
@@ -138,11 +146,21 @@ impl ChatPlatform for TwitchConnector {
         }
 
         // Create login credentials (anonymous if no OAuth token provided)
-        let login_credentials = if let Some(_token) = oauth_token {
-            // For authenticated connection, you'd parse username from token
-            // For now, we'll use anonymous connection
-            StaticLoginCredentials::anonymous()
+        let login_credentials = if let Some(token) = oauth_token {
+            // Normalize token (remove "oauth:" prefix if present)
+            let clean_token = token.strip_prefix("oauth:").unwrap_or(&token).to_string();
+            // For authenticated connection, we need the username
+            // The twitch-irc crate will validate the token and get the username
+            // For simplicity, we use "justinfan" prefix which works for read-only
+            // TODO: Implement token validation to get actual username for write access
+            info!("Using authenticated connection for Twitch");
+            let mut rng = rand::thread_rng();
+            StaticLoginCredentials::new(
+                format!("justinfan{}", rng.gen_range(10000..90000u32)),
+                Some(clean_token),
+            )
         } else {
+            info!("Using anonymous connection for Twitch (read-only)");
             StaticLoginCredentials::anonymous()
         };
 
