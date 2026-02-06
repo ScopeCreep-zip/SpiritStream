@@ -1,6 +1,7 @@
 // Compositor Service
 // Generates FFmpeg filter_complex strings for scene composition
 
+use std::collections::HashMap;
 use crate::models::{Scene, Source, SourceLayer};
 
 /// Compositor service for generating FFmpeg filter graphs
@@ -251,7 +252,46 @@ impl Compositor {
                     "-i".to_string(), "color=c=0xFF8C00:s=1920x1080:r=30:d=3600".to_string(),
                 ]
             }
+            Source::Whip(whip) => {
+                // WHIP sources are WebRTC ingest - go2rtc handles via http: source
+                // For FFmpeg compositor, use HTTP-FLV or similar output from go2rtc
+                vec![
+                    "-f".to_string(), "flv".to_string(),
+                    "-i".to_string(), whip.ingest_url.clone(),
+                ]
+            }
+            Source::Srt(srt) => {
+                // SRT sources - use FFmpeg's native SRT support
+                let mode_param = match srt.mode {
+                    crate::models::SrtMode::Listener => "listener",
+                    crate::models::SrtMode::Caller => "caller",
+                };
+                let mut url = format!(
+                    "srt://{}:{}?mode={}&latency={}",
+                    srt.host, srt.port, mode_param, srt.latency * 1000  // FFmpeg uses microseconds
+                );
+                if let Some(ref passphrase) = srt.passphrase {
+                    url.push_str(&format!("&passphrase={}", passphrase));
+                }
+                if let Some(ref stream_id) = srt.stream_id {
+                    url.push_str(&format!("&streamid={}", stream_id));
+                }
+                vec!["-i".to_string(), url]
+            }
         }
+    }
+
+    /// Build a deduplicated source-id→input-index mapping (computed once per filter build)
+    fn build_source_index_map(scene: &Scene) -> HashMap<String, usize> {
+        let mut map = HashMap::new();
+        let mut index = 0;
+        for layer in &scene.layers {
+            if !map.contains_key(&layer.source_id) {
+                map.insert(layer.source_id.clone(), index);
+                index += 1;
+            }
+        }
+        map
     }
 
     /// Build video filter_complex string for compositing multiple sources
@@ -270,10 +310,13 @@ impl Compositor {
             );
         }
 
+        // Pre-compute source index map once (O(N) instead of O(N^2))
+        let index_map = Self::build_source_index_map(scene);
+
         if visible_layers.len() == 1 {
             // Single source - just scale and position
             let layer = visible_layers[0];
-            let input_idx = Self::get_input_index(scene, sources, &layer.source_id);
+            let input_idx = index_map.get(&layer.source_id).copied().unwrap_or(0);
             return Self::build_single_layer_filter(
                 input_idx,
                 layer,
@@ -283,7 +326,7 @@ impl Compositor {
         }
 
         // Multiple sources - build composite filter
-        Self::build_composite_filter(scene, sources, &visible_layers)
+        Self::build_composite_filter(scene, sources, &visible_layers, &index_map)
     }
 
     /// Build filter for a single layer
@@ -331,8 +374,9 @@ impl Compositor {
     /// Build composite filter for multiple layers
     fn build_composite_filter(
         scene: &Scene,
-        sources: &[Source],
+        _sources: &[Source],
         layers: &[&SourceLayer],
+        index_map: &HashMap<String, usize>,
     ) -> String {
         let mut filter_parts = Vec::new();
         let mut sorted_layers = layers.to_vec();
@@ -340,7 +384,7 @@ impl Compositor {
 
         // First, scale each input to its layer size
         for (i, layer) in sorted_layers.iter().enumerate() {
-            let input_idx = Self::get_input_index(scene, sources, &layer.source_id);
+            let input_idx = index_map.get(&layer.source_id).copied().unwrap_or(0);
             let t = &layer.transform;
 
             let mut source_filter = format!("[{}:v]", input_idx);
@@ -395,7 +439,7 @@ impl Compositor {
     }
 
     /// Build audio filter with optional metering
-    pub fn build_audio_filter_with_metering(scene: &Scene, sources: &[Source], enable_metering: bool) -> String {
+    pub fn build_audio_filter_with_metering(scene: &Scene, _sources: &[Source], enable_metering: bool) -> String {
         let mixer = &scene.audio_mixer;
         let active_tracks: Vec<_> = mixer.tracks
             .iter()
@@ -429,13 +473,16 @@ impl Compositor {
             return format!("anullsrc=r=48000:cl=stereo{}[aout]", astats_filter);
         }
 
+        // Pre-compute source index map once
+        let index_map = Self::build_source_index_map(scene);
+
         // Effective master volume (0 if muted)
         let effective_master = if mixer.master_muted { 0.0 } else { mixer.master_volume };
 
         if tracks_to_mix.len() == 1 {
             // Single audio source
             let track = tracks_to_mix[0];
-            let input_idx = Self::get_input_index(scene, sources, &track.source_id);
+            let input_idx = index_map.get(&track.source_id).copied().unwrap_or(0);
             let volume_filter = if track.volume != 1.0 || effective_master != 1.0 {
                 format!("volume={}", track.volume * effective_master)
             } else {
@@ -449,7 +496,7 @@ impl Compositor {
         let mut audio_labels = Vec::new();
 
         for (i, track) in tracks_to_mix.iter().enumerate() {
-            let input_idx = Self::get_input_index(scene, sources, &track.source_id);
+            let input_idx = index_map.get(&track.source_id).copied().unwrap_or(0);
             let label = format!("a{}", i);
 
             // Apply per-track volume with effective master (0 if muted)
@@ -478,30 +525,6 @@ impl Compositor {
         let audio_filter = Self::build_audio_filter(scene, sources);
 
         format!("{};{}", video_filter, audio_filter)
-    }
-
-    /// Get the FFmpeg input index for a source
-    /// Returns the index based on the order sources appear in the scene's layers
-    fn get_input_index(scene: &Scene, _sources: &[Source], source_id: &str) -> usize {
-        let used_source_ids: Vec<&str> = scene.layers
-            .iter()
-            .map(|l| l.source_id.as_str())
-            .collect();
-
-        // Find the index of this source in the deduplicated list
-        let mut seen = std::collections::HashSet::new();
-        let mut index = 0;
-        for id in used_source_ids {
-            if !seen.contains(id) {
-                if id == source_id {
-                    return index;
-                }
-                seen.insert(id);
-                index += 1;
-            }
-        }
-
-        0 // Fallback to first input
     }
 
     /// Build complete FFmpeg arguments for scene-based streaming

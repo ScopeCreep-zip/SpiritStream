@@ -1501,5 +1501,9 @@ function getSourceTypeDescription(type: SourceType): string {
       return 'Embed another scene as a source';
     case 'ndi':
       return 'Receive NDI video over network';
+    case 'whip':
+      return 'Ultra-low latency WebRTC ingest (RFC 9725)';
+    case 'srt':
+      return 'Reliable UDP streaming for remote contribution';
   }
 }

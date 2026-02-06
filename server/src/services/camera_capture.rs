@@ -60,6 +60,8 @@ struct ActiveCapture {
     process: Child,
     camera_name: String,
     frame_tx: broadcast::Sender<Arc<VideoFrame>>,
+    /// CaptureFrame broadcast for unified pipeline (E2)
+    capture_frame_tx: broadcast::Sender<Arc<super::capture_frame::CaptureFrame>>,
     stop_flag: Arc<std::sync::atomic::AtomicBool>,
 }
 
@@ -315,17 +317,41 @@ impl CameraCaptureService {
         let mut process = Command::new(&self.ffmpeg_path)
             .args(&args)
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| format!("Failed to start FFmpeg: {}", e))?;
 
-        // Create broadcast channel for frames
+        // Create broadcast channels for frames
         let (frame_tx, frame_rx) = broadcast::channel(16);
+        let (capture_frame_tx, _) = broadcast::channel::<Arc<super::capture_frame::CaptureFrame>>(16);
         let stop_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        // Spawn stderr reader thread for debuggability
+        if let Some(stderr) = process.stderr.take() {
+            let camera_id_log = camera_id.to_string();
+            std::thread::spawn(move || {
+                use std::io::BufRead;
+                let reader = BufReader::new(stderr);
+                for line in reader.lines() {
+                    match line {
+                        Ok(line) if !line.trim().is_empty() => {
+                            if line.contains("error") || line.contains("Error") || line.contains("Invalid") {
+                                log::warn!("[CameraFFmpeg:{}] {}", camera_id_log, line.trim());
+                            } else {
+                                log::debug!("[CameraFFmpeg:{}] {}", camera_id_log, line.trim());
+                            }
+                        }
+                        Err(_) => break,
+                        _ => {}
+                    }
+                }
+            });
+        }
 
         // Start frame reading thread
         let stdout = process.stdout.take().ok_or("Failed to capture stdout")?;
         let tx_clone = frame_tx.clone();
+        let cf_tx_clone = capture_frame_tx.clone();
         let stop_flag_clone = stop_flag.clone();
         let width = config.width;
         let height = config.height;
@@ -339,12 +365,27 @@ impl CameraCaptureService {
             while !stop_flag_clone.load(std::sync::atomic::Ordering::Relaxed) {
                 match reader.read_exact(&mut buffer) {
                     Ok(_) => {
+                        let ts = start_time.elapsed().as_millis() as u64;
+                        // Swap buffer ownership to avoid clone
+                        let data = std::mem::replace(&mut buffer, vec![0u8; frame_size]);
+
+                        // Broadcast as CaptureFrame for unified pipeline (E2)
+                        let cf = super::capture_frame::CaptureFrame {
+                            data: data.clone(),
+                            width,
+                            height,
+                            pixel_format: super::capture_frame::PixelFormat::RGB24,
+                            timestamp_ms: ts,
+                        };
+                        let _ = cf_tx_clone.send(Arc::new(cf));
+
+                        // Legacy VideoFrame broadcast
                         let frame = VideoFrame {
-                            data: buffer.clone(),
+                            data,
                             width,
                             height,
                             pixel_format: "rgb24".to_string(),
-                            timestamp_ms: start_time.elapsed().as_millis() as u64,
+                            timestamp_ms: ts,
                         };
                         let _ = tx_clone.send(Arc::new(frame));
                     }
@@ -362,6 +403,7 @@ impl CameraCaptureService {
                     process,
                     camera_name: camera.name.clone(),
                     frame_tx,
+                    capture_frame_tx,
                     stop_flag,
                 },
             );
@@ -422,6 +464,13 @@ impl CameraCaptureService {
     pub fn subscribe_capture(&self, camera_id: &str) -> Option<broadcast::Receiver<Arc<VideoFrame>>> {
         let captures = self.active_captures.lock().unwrap();
         captures.get(camera_id).map(|c| c.frame_tx.subscribe())
+    }
+
+    /// Subscribe to an existing camera capture to receive CaptureFrame (unified pipeline)
+    /// Returns None if the capture doesn't exist
+    pub fn subscribe_capture_frames(&self, camera_id: &str) -> Option<broadcast::Receiver<Arc<super::capture_frame::CaptureFrame>>> {
+        let captures = self.active_captures.lock().unwrap();
+        captures.get(camera_id).map(|c| c.capture_frame_tx.subscribe())
     }
 }
 

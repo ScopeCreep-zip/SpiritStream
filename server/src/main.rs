@@ -84,15 +84,9 @@ const DEFAULT_RATE_LIMIT_PER_MINUTE: u32 = 300;
 // Event System
 // ============================================================================
 
-#[derive(Clone, Serialize)]
-struct ServerEvent {
-    event: String,
-    payload: Value,
-}
-
 #[derive(Clone)]
 struct EventBus {
-    sender: broadcast::Sender<ServerEvent>,
+    sender: broadcast::Sender<Arc<String>>,
 }
 
 impl EventBus {
@@ -101,17 +95,20 @@ impl EventBus {
         Self { sender }
     }
 
-    fn subscribe(&self) -> broadcast::Receiver<ServerEvent> {
+    fn subscribe(&self) -> broadcast::Receiver<Arc<String>> {
         self.sender.subscribe()
     }
 }
 
 impl EventSink for EventBus {
     fn emit(&self, event: &str, payload: Value) {
-        let _ = self.sender.send(ServerEvent {
-            event: event.to_string(),
-            payload,
-        });
+        // Pre-serialize once, broadcast Arc<String> to all clients
+        if let Ok(json) = serde_json::to_string(&json!({
+            "event": event,
+            "payload": payload,
+        })) {
+            let _ = self.sender.send(Arc::new(json));
+        }
     }
 }
 
@@ -219,10 +216,13 @@ impl Log for ServerLogger {
             Level::Trace => 5,
         };
 
-        self.event_bus.emit(
-            "log://log",
-            json!({ "level": level_number, "message": message, "target": target }),
-        );
+        // Only construct and broadcast log JSON when WebSocket clients are listening
+        if self.event_bus.sender.receiver_count() > 0 {
+            self.event_bus.emit(
+                "log://log",
+                json!({ "level": level_number, "message": message, "target": target }),
+            );
+        }
     }
 
     fn flush(&self) {}
@@ -1457,10 +1457,70 @@ async fn webrtc_start_handler(
     // go2rtc uses native source formats like ffmpeg:device for cameras
     let go2rtc_source = match &source {
         Source::Camera(cam) => {
-            // Parse device_id - it may be numeric index or device name
-            let device_index = cam.device_id.parse::<u32>().unwrap_or(0);
-            // Use go2rtc's native ffmpeg:device source
-            format!("ffmpeg:device?video={}&video_size=1280x720&framerate=30#video=h264", device_index)
+            // E3: Unified camera pipeline — use CameraCaptureService → H264CaptureService
+            // instead of go2rtc's ffmpeg:device (which spawns a third FFmpeg process)
+            let camera_capture = state.camera_capture.clone();
+            let h264_capture = state.h264_capture.clone();
+            let cam_id = cam.device_id.clone();
+            let source_id_cam = source_id.clone();
+            let cam_width = cam.width.unwrap_or(1280);
+            let cam_height = cam.height.unwrap_or(720);
+            let cam_fps = cam.fps.unwrap_or(30);
+            let server_port = state.server_port;
+
+            let capture_result = tokio::task::spawn_blocking(move || -> Result<(), String> {
+                use spiritstream_server::services::{PixelFormat, CameraCaptureConfig};
+
+                // Start camera capture if not already running
+                if !camera_capture.is_capturing(&cam_id) {
+                    let config = CameraCaptureConfig {
+                        width: cam_width,
+                        height: cam_height,
+                        fps: cam_fps,
+                        pixel_format: None,
+                    };
+                    camera_capture.start_capture(&cam_id, config)
+                        .map_err(|e| format!("Camera capture failed: {}", e))?;
+                }
+
+                // Get CaptureFrame subscriber
+                let frame_rx = camera_capture.subscribe_capture_frames(&cam_id)
+                    .ok_or_else(|| "Failed to subscribe to camera frames".to_string())?;
+
+                // Feed into H264 encoder if not already encoding
+                if !h264_capture.is_capturing(&source_id_cam) {
+                    h264_capture.start_capture_from_frames(
+                        &source_id_cam,
+                        frame_rx,
+                        cam_width,
+                        cam_height,
+                        PixelFormat::RGB24,
+                        cam_fps,
+                        None,
+                    )?;
+                }
+
+                // Wait for data
+                h264_capture.wait_for_data(&source_id_cam, std::time::Duration::from_secs(10))
+            }).await;
+
+            match capture_result {
+                Ok(Ok(())) => {
+                    log::info!("Camera unified pipeline ready for {}", source_id);
+                }
+                Ok(Err(e)) => {
+                    return Json(json!({ "ok": false, "error": format!("Camera capture failed: {}", e) }));
+                }
+                Err(e) => {
+                    return Json(json!({ "ok": false, "error": format!("Camera capture task failed: {}", e) }));
+                }
+            }
+
+            // Serve via HTTP MPEG-TS endpoint with passthrough
+            format!(
+                "http://127.0.0.1:{}/api/capture/{}/stream#video=copy",
+                server_port, source_id
+            )
         }
         Source::ScreenCapture(screen) => {
             // Check screen recording permission first (macOS)
@@ -1528,6 +1588,29 @@ async fn webrtc_start_handler(
                 }
             }
 
+            // Wait for the capture pipeline to start producing MPEG-TS data.
+            // This prevents go2rtc from connecting before FFmpeg is ready,
+            // which would cause a timeout (200 OK but zero bytes for seconds).
+            let h264_capture_wait = state.h264_capture.clone();
+            let source_id_wait = source_id.clone();
+            let wait_result = tokio::task::spawn_blocking(move || {
+                h264_capture_wait.wait_for_data(&source_id_wait, std::time::Duration::from_secs(10))
+            }).await;
+
+            match wait_result {
+                Ok(Ok(())) => {
+                    log::debug!("H264 capture data ready for {}", source_id);
+                }
+                Ok(Err(e)) => {
+                    log::error!("H264 capture not producing data: {}", e);
+                    return Json(json!({ "ok": false, "error": format!("Screen capture not producing data: {}", e) }));
+                }
+                Err(e) => {
+                    log::error!("Wait task failed: {}", e);
+                    return Json(json!({ "ok": false, "error": "Screen capture wait failed" }));
+                }
+            }
+
             // Build HTTP URL pointing to our MPEG-TS stream endpoint
             // CRITICAL: Add #video=copy to tell go2rtc to passthrough without re-encoding!
             // This preserves bt709 color space and reduces latency.
@@ -1581,6 +1664,37 @@ async fn webrtc_start_handler(
             // NDI requires NDI SDK
             return Json(json!({ "ok": false, "error": "NDI source requires NDI SDK to be installed" }));
         }
+        Source::Whip(whip) => {
+            // WHIP (WebRTC-HTTP Ingestion Protocol) - RFC 9725
+            // go2rtc handles WHIP natively via http: source type
+            // Format: http:{ingest_url}#video=h264#audio=opus
+            format!("http:{}#video=h264#audio=opus", whip.ingest_url)
+        }
+        Source::Srt(srt) => {
+            // SRT (Secure Reliable Transport) - go2rtc supports natively
+            // Format depends on mode:
+            //   Listener: srt://0.0.0.0:9000?mode=listener
+            //   Caller: srt://host:port?mode=caller
+            let mode_param = match srt.mode {
+                spiritstream_server::models::SrtMode::Listener => "listener",
+                spiritstream_server::models::SrtMode::Caller => "caller",
+            };
+
+            let mut url = format!("srt://{}:{}?mode={}&latency={}",
+                srt.host, srt.port, mode_param, srt.latency);
+
+            // Add optional passphrase
+            if let Some(ref passphrase) = srt.passphrase {
+                url.push_str(&format!("&passphrase={}", passphrase));
+            }
+
+            // Add optional stream ID
+            if let Some(ref stream_id) = srt.stream_id {
+                url.push_str(&format!("&streamid={}", stream_id));
+            }
+
+            url
+        }
     };
 
     log::debug!("Registering go2rtc source '{}': {}", source_id, go2rtc_source);
@@ -1628,6 +1742,11 @@ async fn webrtc_stop_handler(
     Json(json!({ "ok": true }))
 }
 
+// ============================================================================
+// Frame Buffer Endpoints (zero-copy native preview)
+// ============================================================================
+
+/// Frame buffer creation request
 async fn ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
@@ -1655,12 +1774,11 @@ async fn ws_handler(
         .on_upgrade(move |socket| handle_socket(socket, state.event_bus.subscribe()))
 }
 
-async fn handle_socket(mut socket: WebSocket, mut receiver: broadcast::Receiver<ServerEvent>) {
-    while let Ok(event) = receiver.recv().await {
-        if let Ok(payload) = serde_json::to_string(&event) {
-            if socket.send(Message::Text(payload)).await.is_err() {
-                break;
-            }
+async fn handle_socket(mut socket: WebSocket, mut receiver: broadcast::Receiver<Arc<String>>) {
+    while let Ok(json) = receiver.recv().await {
+        // Already pre-serialized in EventBus::emit — zero per-client serialization
+        if socket.send(Message::Text((*json).clone())).await.is_err() {
+            break;
         }
     }
 }

@@ -8,7 +8,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { X, Maximize2, Minimize2 } from 'lucide-react';
 import { SceneCanvas } from '@/components/stream/SceneCanvas';
-import { SharedWebRTCPlayer } from '@/components/stream/SharedWebRTCPlayer';
+import { WorkerVideoPreview } from '@/components/stream/WorkerVideoPreview';
 import { useProfileStore } from '@/stores/profileStore';
 import { useStudioStore } from '@/stores/studioStore';
 import { cn } from '@/lib/utils';
@@ -311,7 +311,7 @@ function SourceProjector({ source, sourceName }: SourceProjectorProps) {
 
   return (
     <div className="w-full h-full">
-      <SharedWebRTCPlayer
+      <WorkerVideoPreview
         sourceId={source.id}
         sourceName={sourceName}
         sourceType={source.type as 'rtmp' | 'mediaFile' | 'screenCapture' | 'camera' | 'captureCard' | 'audioDevice'}

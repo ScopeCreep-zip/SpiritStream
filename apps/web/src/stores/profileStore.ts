@@ -60,6 +60,8 @@ interface ProfileState {
   removeCurrentLayer: (sceneId: string, layerId: string) => void;
   reorderCurrentLayers: (sceneId: string, layerIds: string[]) => void;
   addCurrentLayer: (sceneId: string, layer: import('@/types/scene').SourceLayer) => void;
+  /** Batch update multiple layers in a single state update (reduces re-renders during drag operations) */
+  batchUpdateLayers: (sceneId: string, updates: Array<{ layerId: string; changes: Partial<import('@/types/scene').SourceLayer> }>) => void;
 
   // Audio mixer management (local state updates without auto-save)
   // Use these after audio API calls to sync local state without reloading entire profile
@@ -460,6 +462,33 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         },
       });
     }
+  },
+
+  // Batch update multiple layers in a single state update
+  // This reduces re-renders during drag operations where multiple layers may be updated
+  batchUpdateLayers: (sceneId, updates) => {
+    const current = get().current;
+    if (!current || updates.length === 0) return;
+
+    set({
+      current: {
+        ...current,
+        scenes: current.scenes.map((scene) => {
+          if (scene.id !== sceneId) return scene;
+
+          // Create a map for O(1) lookup of updates
+          const updateMap = new Map(updates.map(u => [u.layerId, u.changes]));
+
+          return {
+            ...scene,
+            layers: scene.layers.map((layer) => {
+              const changes = updateMap.get(layer.id);
+              return changes ? { ...layer, ...changes } : layer;
+            }),
+          };
+        }),
+      },
+    });
   },
 
   // Add an audio track locally without triggering save (used when adding audio sources)

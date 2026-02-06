@@ -30,6 +30,9 @@ rand = "0.8"
 base64 = "0.22"
 zeroize = { version = "1.7", features = ["derive"] }
 
+# Performance
+memchr = "2"
+
 # Utilities
 uuid = { version = "1.0", features = ["v4", "serde"] }
 which = "6.0"

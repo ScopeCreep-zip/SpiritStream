@@ -1,6 +1,7 @@
 // Native Preview Service
 // Encodes raw frames from native capture to JPEG for preview
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -232,6 +233,125 @@ impl NativePreviewService {
         Ok(frame_rx_out)
     }
 
+    /// Start a unified preview from CaptureFrame source (E4)
+    /// Works for any capture source type (camera, screen, capture card)
+    pub fn start_preview(
+        &self,
+        preview_id: &str,
+        mut frame_rx: broadcast::Receiver<Arc<super::capture_frame::CaptureFrame>>,
+        config: NativePreviewConfig,
+    ) -> Result<broadcast::Receiver<Bytes>, String> {
+        // Check if already running
+        {
+            let previews = self.active_previews.lock()
+                .map_err(|e| format!("Lock poisoned: {}", e))?;
+
+            if let Some(preview) = previews.get(preview_id) {
+                return Ok(preview.frame_tx.subscribe());
+            }
+        }
+
+        let (frame_tx, frame_rx_out) = broadcast::channel::<Bytes>(16);
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let stop_flag_clone = stop_flag.clone();
+        let preview_id_clone = preview_id.to_string();
+        let tx_clone = frame_tx.clone();
+
+        std::thread::spawn(move || {
+            let frame_interval_ms = 1000 / config.fps.max(1);
+            let mut last_frame_time = Instant::now();
+
+            while !stop_flag_clone.load(Ordering::Relaxed) {
+                match frame_rx.blocking_recv() {
+                    Ok(frame) => {
+                        // Rate limit
+                        let elapsed = last_frame_time.elapsed().as_millis() as u32;
+                        if elapsed < frame_interval_ms {
+                            continue;
+                        }
+                        last_frame_time = Instant::now();
+
+                        if frame.validate().is_err() {
+                            continue;
+                        }
+
+                        // Encode based on pixel format
+                        let result = match frame.pixel_format {
+                            super::capture_frame::PixelFormat::RGB24 => {
+                                Self::encode_rgb_to_jpeg(
+                                    &frame.data, frame.width, frame.height,
+                                    config.width, config.height, config.quality,
+                                )
+                            }
+                            super::capture_frame::PixelFormat::BGRA => {
+                                Self::encode_bgra_to_jpeg(
+                                    &frame.data, frame.width, frame.height,
+                                    config.width, config.height, config.quality,
+                                )
+                            }
+                            super::capture_frame::PixelFormat::NV12 => {
+                                // Convert NV12 to BGRA then encode
+                                let (y_len, _uv_len) = (
+                                    (frame.width * frame.height) as usize,
+                                    (frame.width * frame.height / 2) as usize,
+                                );
+                                if frame.data.len() >= y_len {
+                                    let y_plane = &frame.data[..y_len];
+                                    let uv_plane = &frame.data[y_len..];
+                                    let bgra = Self::yuv_to_bgra(
+                                        y_plane, uv_plane,
+                                        frame.width as usize, frame.height as usize,
+                                    );
+                                    Self::encode_bgra_to_jpeg(
+                                        &bgra, frame.width, frame.height,
+                                        config.width, config.height, config.quality,
+                                    )
+                                } else {
+                                    Err("NV12 data too short".to_string())
+                                }
+                            }
+                        };
+
+                        match result {
+                            Ok(jpeg_data) => {
+                                if tx_clone.send(Bytes::from(jpeg_data)).is_err() {
+                                    log::debug!("[NativePreview:{}] No receivers, stopping", preview_id_clone);
+                                    break;
+                                }
+                            }
+                            Err(e) => {
+                                log::warn!("[NativePreview:{}] Encode error: {}", preview_id_clone, e);
+                            }
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        log::info!("[NativePreview:{}] Source closed", preview_id_clone);
+                        break;
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        log::debug!("[NativePreview:{}] Lagged {} frames", preview_id_clone, n);
+                    }
+                }
+            }
+
+            log::info!("[NativePreview:{}] Preview thread stopped", preview_id_clone);
+        });
+
+        {
+            let mut previews = self.active_previews.lock()
+                .map_err(|e| format!("Lock poisoned: {}", e))?;
+
+            previews.insert(preview_id.to_string(), ActivePreview {
+                stop_flag,
+                frame_tx,
+                last_accessed: Instant::now(),
+            });
+        }
+
+        log::info!("[NativePreview:{}] Started unified preview", preview_id);
+        Ok(frame_rx_out)
+    }
+
     /// Stop a preview by ID
     pub fn stop_preview(&self, preview_id: &str) {
         if let Ok(mut previews) = self.active_previews.lock() {
@@ -286,12 +406,12 @@ impl NativePreviewService {
             .unwrap_or(false)
     }
 
-    /// Extract frame data from scap Frame
-    fn extract_scap_frame_data(frame: &scap::frame::Frame) -> Option<(Vec<u8>, u32, u32)> {
+    /// Extract frame data from scap Frame (zero-copy for BGRA, conversion for others)
+    fn extract_scap_frame_data(frame: &scap::frame::Frame) -> Option<(Cow<'_, [u8]>, u32, u32)> {
         match frame {
             scap::frame::Frame::BGRA(bgra_frame) => {
                 Some((
-                    bgra_frame.data.clone(),
+                    Cow::Borrowed(&bgra_frame.data),
                     bgra_frame.width as u32,
                     bgra_frame.height as u32,
                 ))
@@ -307,7 +427,7 @@ impl NativePreviewService {
                         bgra.push(255);      // A
                     }
                 }
-                Some((bgra, rgb_frame.width as u32, rgb_frame.height as u32))
+                Some((Cow::Owned(bgra), rgb_frame.width as u32, rgb_frame.height as u32))
             }
             scap::frame::Frame::YUVFrame(yuv_frame) => {
                 // Convert YUV to BGRA
@@ -319,7 +439,7 @@ impl NativePreviewService {
                     width,
                     height,
                 );
-                Some((bgra, width as u32, height as u32))
+                Some((Cow::Owned(bgra), width as u32, height as u32))
             }
             _ => {
                 log::warn!("[NativePreview] Unsupported frame type");

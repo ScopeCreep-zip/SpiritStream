@@ -36,6 +36,10 @@ pub enum Source {
     GameCapture(GameCaptureSource),
     /// NDI source (network video over NDI protocol)
     Ndi(NdiSource),
+    /// WHIP source (WebRTC-HTTP Ingestion Protocol, RFC 9725)
+    Whip(WhipSource),
+    /// SRT source (Secure Reliable Transport)
+    Srt(SrtSource),
 }
 
 impl Source {
@@ -56,6 +60,8 @@ impl Source {
             Source::NestedScene(s) => &s.id,
             Source::GameCapture(s) => &s.id,
             Source::Ndi(s) => &s.id,
+            Source::Whip(s) => &s.id,
+            Source::Srt(s) => &s.id,
         }
     }
 
@@ -76,6 +82,8 @@ impl Source {
             Source::NestedScene(s) => &s.name,
             Source::GameCapture(s) => &s.name,
             Source::Ndi(s) => &s.name,
+            Source::Whip(s) => &s.name,
+            Source::Srt(s) => &s.name,
         }
     }
 
@@ -96,6 +104,8 @@ impl Source {
             Source::NestedScene(_) => true,
             Source::GameCapture(_) => true,
             Source::Ndi(_) => true,
+            Source::Whip(_) => true,
+            Source::Srt(_) => true,
         }
     }
 
@@ -118,6 +128,8 @@ impl Source {
             Source::NestedScene(_) => false,
             Source::GameCapture(s) => s.capture_audio,
             Source::Ndi(s) => s.capture_audio,
+            Source::Whip(s) => s.capture_audio,
+            Source::Srt(s) => s.capture_audio,
         }
     }
 }
@@ -633,4 +645,80 @@ pub struct NdiSource {
 
 fn default_receiver_name() -> String {
     "SpiritStream".to_string()
+}
+
+/// WHIP source - WebRTC-HTTP Ingestion Protocol (RFC 9725)
+/// Ultra-low-latency ingest via WebRTC, sub-100ms latency
+/// Supported by OBS 30+, Cloudflare, AWS MediaLive
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WhipSource {
+    /// Unique identifier
+    pub id: String,
+    /// User-friendly name
+    pub name: String,
+    /// WHIP ingest endpoint URL (e.g., https://example.com/whip/stream)
+    pub ingest_url: String,
+    /// Optional Bearer token for authentication
+    #[serde(default)]
+    pub bearer_token: Option<String>,
+    /// Whether to capture audio from this source
+    #[serde(default = "default_true")]
+    pub capture_audio: bool,
+}
+
+/// SRT connection mode
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SrtMode {
+    /// Listen for incoming SRT connections (receiver mode)
+    #[default]
+    Listener,
+    /// Connect to remote SRT server (sender mode)
+    Caller,
+}
+
+/// SRT source - Secure Reliable Transport
+/// Reliable UDP streaming for contribution feeds over unreliable networks
+/// Low latency with error correction, industry standard for remote contribution
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SrtSource {
+    /// Unique identifier
+    pub id: String,
+    /// User-friendly name
+    pub name: String,
+    /// SRT connection mode (listener or caller)
+    #[serde(default)]
+    pub mode: SrtMode,
+    /// Host address (for caller mode) or bind address (for listener mode)
+    #[serde(default = "default_srt_host")]
+    pub host: String,
+    /// SRT port
+    #[serde(default = "default_srt_port")]
+    pub port: u16,
+    /// Optional passphrase for encryption (AES-128/192/256)
+    #[serde(default)]
+    pub passphrase: Option<String>,
+    /// Latency in milliseconds (default: 120ms, range: 0-60000)
+    #[serde(default = "default_srt_latency")]
+    pub latency: u32,
+    /// Stream ID for multiplexing multiple streams
+    #[serde(default)]
+    pub stream_id: Option<String>,
+    /// Whether to capture audio from this source
+    #[serde(default = "default_true")]
+    pub capture_audio: bool,
+}
+
+fn default_srt_host() -> String {
+    "0.0.0.0".to_string()
+}
+
+fn default_srt_port() -> u16 {
+    9000
+}
+
+fn default_srt_latency() -> u32 {
+    120
 }

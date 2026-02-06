@@ -23,74 +23,120 @@ import { isGo2rtcAvailable } from '@/lib/go2rtcStatus';
 
 export type WebRTCStatus = 'idle' | 'loading' | 'connecting' | 'playing' | 'error' | 'unavailable';
 
-/**
- * RTCPeerConnection pool for reusing connections
- * Reduces connection setup time by keeping pre-configured connections ready
- * Increased from 4 to 8 for multi-source scenarios (Studio Mode, Multiview)
- */
-const MAX_POOL_SIZE = 8;
-const connectionPool: RTCPeerConnection[] = [];
-
 const rtcConfig: RTCConfiguration = {
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
 };
 
 /**
- * Get a connection from the pool or create a new one
+ * Thread-safe RTCPeerConnection pool
+ * Uses mutex pattern to prevent concurrent access corruption.
+ *
+ * Key design decisions:
+ * - Async acquire() with simple mutex to prevent race conditions
+ * - WHEP connections must NOT stop receiver tracks (remote from go2rtc)
+ * - Pre-warming adds transceivers to save 20-30ms during connection setup
  */
-function getPooledConnection(): RTCPeerConnection {
-  const pooled = connectionPool.pop();
-  if (pooled && pooled.connectionState !== 'closed') {
-    return pooled;
-  }
-  return new RTCPeerConnection(rtcConfig);
-}
+class ConnectionPool {
+  private pool: RTCPeerConnection[] = [];
+  private acquiring = false;
+  private readonly maxSize = 8;
 
-/**
- * Return a connection to the pool for reuse, or close it if pool is full
- */
-function releaseConnection(pc: RTCPeerConnection): void {
-  // Only pool connections that are still usable
-  if (pc.connectionState === 'closed' || pc.connectionState === 'failed') {
-    return;
-  }
+  /**
+   * Acquire a connection from the pool or create a new one.
+   * Uses mutex to prevent race conditions during concurrent access.
+   */
+  async acquire(): Promise<RTCPeerConnection> {
+    // Simple mutex - wait if another acquire is in progress
+    while (this.acquiring) {
+      await new Promise(resolve => setTimeout(resolve, 1));
+    }
+    this.acquiring = true;
 
-  // Reset connection state for reuse
-  try {
-    // Remove all tracks
-    pc.getSenders().forEach((sender) => {
-      try {
-        pc.removeTrack(sender);
-      } catch {
-        // Ignore errors during cleanup
+    try {
+      const pooled = this.pool.pop();
+      if (pooled && pooled.connectionState !== 'closed') {
+        return pooled;
       }
-    });
+      return new RTCPeerConnection(rtcConfig);
+    } finally {
+      this.acquiring = false;
+    }
+  }
 
-    // If pool has room, add to pool; otherwise close
-    if (connectionPool.length < MAX_POOL_SIZE) {
-      connectionPool.push(pc);
-    } else {
+  /**
+   * Return a connection to the pool for reuse, or close it if pool is full.
+   *
+   * IMPORTANT: For WHEP connections, we must NOT stop receiver tracks!
+   * Receiver tracks are remote tracks from go2rtc - stopping them tells the
+   * server to stop sending, which kills the camera feed on the server side.
+   */
+  release(pc: RTCPeerConnection): void {
+    // Only pool connections that are still usable
+    if (pc.connectionState === 'closed' || pc.connectionState === 'failed') {
+      return;
+    }
+
+    try {
+      // Remove all senders (outgoing tracks) - these are OUR tracks
+      pc.getSenders().forEach((sender) => {
+        try {
+          pc.removeTrack(sender);
+        } catch {
+          // Ignore errors during cleanup
+        }
+      });
+
+      // DO NOT stop receiver tracks! They are remote tracks from go2rtc.
+      // Stopping them would signal go2rtc to stop the camera capture.
+
+      // Clear all event handlers to prevent memory leaks
+      pc.ontrack = null;
+      pc.onicecandidate = null;
+      pc.oniceconnectionstatechange = null;
+      pc.onconnectionstatechange = null;
+
+      // If pool has room, add to pool; otherwise close
+      if (this.pool.length < this.maxSize) {
+        this.pool.push(pc);
+      } else {
+        pc.close();
+      }
+    } catch {
+      // If cleanup fails, just close the connection
       pc.close();
     }
-  } catch {
-    // If cleanup fails, just close the connection
-    pc.close();
+  }
+
+  /**
+   * Pre-warm the pool with ready-to-use connections.
+   * Pre-configures transceivers to save 20-30ms during connection setup.
+   */
+  preWarm(count: number = 4): void {
+    const toAdd = Math.min(count, this.maxSize - this.pool.length);
+    for (let i = 0; i < toAdd; i++) {
+      const pc = new RTCPeerConnection(rtcConfig);
+      // Pre-add transceivers to save 20-30ms during connection
+      pc.addTransceiver('video', { direction: 'recvonly' });
+      pc.addTransceiver('audio', { direction: 'recvonly' });
+      this.pool.push(pc);
+    }
+  }
+
+  /** Get current pool size (for debugging) */
+  get size(): number {
+    return this.pool.length;
   }
 }
 
+// Singleton instance
+const connectionPool = new ConnectionPool();
+
 /**
- * Pre-warm the connection pool with ready-to-use connections
- * Pre-configures transceivers to save 20-30ms during connection setup
+ * Pre-warm the connection pool with ready-to-use connections.
+ * Call this early in app startup for faster initial connections.
  */
 export function preWarmConnectionPool(count: number = 4): void {
-  const toAdd = Math.min(count, MAX_POOL_SIZE - connectionPool.length);
-  for (let i = 0; i < toAdd; i++) {
-    const pc = new RTCPeerConnection(rtcConfig);
-    // Pre-add transceivers to save 20-30ms during connection
-    pc.addTransceiver('video', { direction: 'recvonly' });
-    pc.addTransceiver('audio', { direction: 'recvonly' });
-    connectionPool.push(pc);
-  }
+  connectionPool.preWarm(count);
 }
 
 interface WebRTCConnection {
@@ -138,12 +184,12 @@ async function connectWHEP(
   whepUrl: string,
   signal: AbortSignal
 ): Promise<{ pc: RTCPeerConnection; stream: MediaStream }> {
-  // Get connection from pool or create new one
-  const pc = getPooledConnection();
+  // Get connection from pool or create new one (async for thread safety)
+  const pc = await connectionPool.acquire();
 
   // Clean up on abort - return to pool instead of closing
   signal.addEventListener('abort', () => {
-    releaseConnection(pc);
+    connectionPool.release(pc);
   });
 
   // Create a promise that resolves when we get a stream
@@ -272,7 +318,10 @@ export const useWebRTCConnectionStore = create<WebRTCConnectionState>()(
       // Abort any existing connection attempt
       existing?.abortController?.abort();
 
-      set({ connections: { ...connections, [sourceId]: conn } });
+      // Use functional update to prevent race conditions
+      set((state) => ({
+        connections: { ...state.connections, [sourceId]: conn }
+      }));
 
       try {
         // Use cached go2rtc availability check for faster startup
@@ -285,32 +334,32 @@ export const useWebRTCConnectionStore = create<WebRTCConnectionState>()(
 
         if (!available) {
           console.log('[WebRTCStore] go2rtc not available for:', sourceId);
-          set({
+          // Use functional update to prevent race conditions
+          set((state) => ({
             connections: {
-              ...get().connections,
+              ...state.connections,
               [sourceId]: {
-                ...conn,
+                ...createDefaultConnection(),
                 status: 'unavailable',
                 error: 'go2rtc WebRTC server is not running',
                 isConnecting: false,
               },
             },
-          });
+          }));
           return;
         }
 
-        // Update status to connecting
-        {
-          const current = get().connections[sourceId];
-          if (current) {
-            set({
-              connections: {
-                ...get().connections,
-                [sourceId]: { ...current, status: 'connecting' },
-              },
-            });
-          }
-        }
+        // Update status to connecting - use functional update to prevent race conditions
+        set((state) => {
+          const current = state.connections[sourceId];
+          if (!current) return state;
+          return {
+            connections: {
+              ...state.connections,
+              [sourceId]: { ...current, status: 'connecting' },
+            },
+          };
+        });
 
         // Start WebRTC stream for this source
         const info = await api.webrtc.start(sourceId);
@@ -319,17 +368,18 @@ export const useWebRTCConnectionStore = create<WebRTCConnectionState>()(
 
         if (!info.available) {
           console.log('[WebRTCStore] WebRTC stream not available for:', sourceId);
-          set({
+          // Use functional update to prevent race conditions
+          set((state) => ({
             connections: {
-              ...get().connections,
+              ...state.connections,
               [sourceId]: {
-                ...conn,
+                ...createDefaultConnection(),
                 status: 'unavailable',
                 error: 'WebRTC stream could not be started',
                 isConnecting: false,
               },
             },
-          });
+          }));
           return;
         }
 
@@ -344,20 +394,21 @@ export const useWebRTCConnectionStore = create<WebRTCConnectionState>()(
             );
 
             console.log('[WebRTCStore] WHEP connected for:', sourceId);
-            set({
+            // Use functional update to prevent race conditions
+            set((state) => ({
               connections: {
-                ...get().connections,
+                ...state.connections,
                 [sourceId]: {
-                  ...conn,
                   pc,
                   stream,
                   status: 'playing',
                   error: undefined,
+                  abortController: state.connections[sourceId]?.abortController ?? null,
                   isConnecting: false,
                   retryCount: 0, // Reset retry count on success
                 },
               },
-            });
+            }));
             return;
           } catch (e) {
             if (e instanceof DOMException && e.name === 'AbortError') {
@@ -367,34 +418,37 @@ export const useWebRTCConnectionStore = create<WebRTCConnectionState>()(
           }
         }
 
-        // All methods failed
-        set({
+        // All methods failed - use functional update to prevent race conditions
+        set((state) => ({
           connections: {
-            ...get().connections,
+            ...state.connections,
             [sourceId]: {
-              ...conn,
+              ...createDefaultConnection(),
               status: 'error',
               error: 'Could not establish WebRTC connection',
               isConnecting: false,
+              retryCount: state.connections[sourceId]?.retryCount ?? 0,
             },
           },
-        });
+        }));
       } catch (e) {
         if (e instanceof DOMException && e.name === 'AbortError') {
           return;
         }
         console.error(`[WebRTCStore] Connection error for ${sourceId}:`, e);
-        set({
+        // Use functional update to prevent race conditions
+        set((state) => ({
           connections: {
-            ...get().connections,
+            ...state.connections,
             [sourceId]: {
-              ...conn,
+              ...createDefaultConnection(),
               status: 'error',
               error: e instanceof Error ? e.message : 'Connection failed',
               isConnecting: false,
+              retryCount: state.connections[sourceId]?.retryCount ?? 0,
             },
           },
-        });
+        }));
       }
     },
 
@@ -407,10 +461,22 @@ export const useWebRTCConnectionStore = create<WebRTCConnectionState>()(
       // Abort any ongoing connection attempt
       conn.abortController?.abort();
 
+      // CRITICAL: Stop all MediaStream tracks to release camera/microphone resources
+      // This must happen before releasing the peer connection to avoid resource leaks
+      if (conn.stream) {
+        conn.stream.getTracks().forEach((track) => {
+          try {
+            track.stop();
+          } catch {
+            // Ignore errors during cleanup
+          }
+        });
+      }
+
       // Release the peer connection back to pool for reuse
       // (more efficient than closing and creating new connections)
       if (conn.pc) {
-        releaseConnection(conn.pc);
+        connectionPool.release(conn.pc);
       }
 
       // Remove from registry
@@ -437,14 +503,15 @@ export const useWebRTCConnectionStore = create<WebRTCConnectionState>()(
     },
 
     retryConnection: async (sourceId: string) => {
-      const { connections, startConnection } = get();
-      const conn = connections[sourceId];
+      const { startConnection } = get();
 
-      if (conn) {
-        // Increment retry count
-        set({
+      // Use functional update to prevent race conditions
+      set((state) => {
+        const conn = state.connections[sourceId];
+        if (!conn) return state;
+        return {
           connections: {
-            ...connections,
+            ...state.connections,
             [sourceId]: {
               ...conn,
               retryCount: conn.retryCount + 1,
@@ -452,8 +519,8 @@ export const useWebRTCConnectionStore = create<WebRTCConnectionState>()(
               error: undefined,
             },
           },
-        });
-      }
+        };
+      });
 
       await startConnection(sourceId);
     },

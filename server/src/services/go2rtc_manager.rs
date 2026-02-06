@@ -167,10 +167,24 @@ webrtc:
     - stun:stun.l.google.com:19302
 ffmpeg:
   bin: ffmpeg
-  global: "-hide_banner"
-  h264: "-c:v libx264 -g 15 -profile:v high -level:v 4.1 -preset:v ultrafast -tune:v zerolatency -pix_fmt:v yuv420p"
-  h264/videotoolbox: "-c:v h264_videotoolbox -g 15 -bf 0 -realtime 1 -profile:v high -level:v 4.1"
+  # Low-latency input flags: disable buffering, reduce probing, prioritize speed
+  global: "-hide_banner -fflags nobuffer -flags low_delay -probesize 32 -analyzeduration 0"
+  # H.264 software encoding: ultrafast preset, zero latency tuning, frequent keyframes (every 500ms @ 30fps)
+  h264: "-c:v libx264 -g 15 -bf 0 -profile:v high -level:v 4.1 -preset:v ultrafast -tune:v zerolatency -pix_fmt:v yuv420p"
+  # macOS VideoToolbox hardware encoding: realtime mode, no B-frames
+  h264/videotoolbox: "-c:v h264_videotoolbox -g 15 -bf 0 -realtime 1 -prio_speed 1 -profile:v high -level:v 4.1"
+  # Linux VAAPI hardware encoding: no B-frames for lower latency
   h264/vaapi: "-c:v h264_vaapi -g 15 -bf 0 -profile:v high -level:v 4.1"
+  # NVIDIA NVENC hardware encoding: low-latency high quality preset
+  h264/nvenc: "-c:v h264_nvenc -g 15 -bf 0 -preset llhq -zerolatency 1 -profile:v high -level:v 4.1"
+  # AV1 software encoding (SVT-AV1): preset 10 for speed, 50% bitrate savings vs H.264
+  av1: "-c:v libsvtav1 -preset 10 -crf 30 -g 30 -svtav1-params tune=0:enable-overlays=1"
+  # AV1 NVIDIA NVENC: low-latency preset for RTX 40+ series
+  av1/nvenc: "-c:v av1_nvenc -preset p1 -tune ll -g 30 -bf 0"
+  # AV1 Intel QuickSync: for Intel Arc and 12th+ gen iGPUs
+  av1/qsv: "-c:v av1_qsv -preset veryfast -g 30"
+  # AV1 AMD AMF: for RX 7000 series
+  av1/amf: "-c:v av1_amf -quality speed -g 30"
 log:
   level: info
 "#,

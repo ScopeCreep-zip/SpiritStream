@@ -18,7 +18,7 @@ import type { Scene, SourceLayer, Transform } from '@/types/scene';
 import type { Source } from '@/types/source';
 import { useSceneStore } from '@/stores/sceneStore';
 import { useProfileStore } from '@/stores/profileStore';
-import { SharedWebRTCPlayer } from './SharedWebRTCPlayer';
+import { WorkerVideoPreview } from './WorkerVideoPreview';
 import { StaticMediaPlayer } from './StaticMediaPlayer';
 import { TextSourceRenderer } from './TextSourceRenderer';
 import { BrowserSourceRenderer } from './BrowserSourceRenderer';
@@ -602,8 +602,8 @@ const LayerPreview = React.memo(function LayerPreview({
               nativeHeight={canvasHeight}
             />
           ) : (
-            // All other sources use WebRTC
-            <SharedWebRTCPlayer
+            // All other sources use WebRTC via worker for low-latency rendering
+            <WorkerVideoPreview
               sourceId={source.id}
               sourceName={sourceName}
               sourceType={source.type}

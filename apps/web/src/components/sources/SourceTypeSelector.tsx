@@ -18,6 +18,8 @@ import {
   ListVideo,
   Layers,
   Network,
+  Zap,
+  Shield,
 } from 'lucide-react';
 import type { SourceType } from '@/types/source';
 import { getSourceTypeLabel } from '@/types/source';
@@ -42,6 +44,8 @@ export const SOURCE_TYPE_OPTIONS: SourceTypeOption[] = [
   { type: 'mediaPlaylist', icon: <ListVideo className="w-5 h-5" /> },
   { type: 'nestedScene', icon: <Layers className="w-5 h-5" /> },
   { type: 'ndi', icon: <Network className="w-5 h-5" /> },
+  { type: 'whip', icon: <Zap className="w-5 h-5" /> },
+  { type: 'srt', icon: <Shield className="w-5 h-5" /> },
 ];
 
 export function getSourceTypeDescription(type: SourceType): string {
@@ -74,6 +78,10 @@ export function getSourceTypeDescription(type: SourceType): string {
       return 'Embed another scene as a source';
     case 'ndi':
       return 'Receive NDI video over network';
+    case 'whip':
+      return 'Ultra-low latency WebRTC ingest (RFC 9725)';
+    case 'srt':
+      return 'Reliable UDP streaming for remote contribution';
   }
 }
 

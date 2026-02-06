@@ -11,7 +11,7 @@ export const HTML_EXTENSIONS = ['html', 'htm'] as const;
 export const STATIC_EXTENSIONS = [...IMAGE_EXTENSIONS, ...HTML_EXTENSIONS] as const;
 
 // Source types that are rendered client-side (CSS/iframe) and don't need WebRTC
-export const CLIENT_RENDERED_SOURCE_TYPES = ['color', 'text', 'browser'] as const;
+export const CLIENT_RENDERED_SOURCE_TYPES = ['color', 'text', 'browser', 'nestedScene', 'mediaPlaylist'] as const;
 
 /**
  * Check if a file path is a static media file (image or HTML)

@@ -10,7 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { Layers, AlertTriangle } from 'lucide-react';
 import type { Scene } from '@/types/scene';
 import type { Source, NestedSceneSource, ColorSource } from '@/types/source';
-import { SharedWebRTCPlayer } from './SharedWebRTCPlayer';
+import { WorkerVideoPreview } from './WorkerVideoPreview';
 
 interface NestedSceneRendererProps {
   source: NestedSceneSource;
@@ -154,8 +154,8 @@ export function NestedSceneRenderer({
                 maxDepth={maxDepth}
               />
             ) : (
-              // Use WebRTC player for other source types
-              <SharedWebRTCPlayer
+              // Use WebRTC via worker for low-latency rendering
+              <WorkerVideoPreview
                 sourceId={layerSource.id}
                 sourceName={layerSource.name}
                 sourceType={layerSource.type}

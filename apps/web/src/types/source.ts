@@ -20,7 +20,9 @@ export type SourceType =
   | 'browser'
   | 'mediaPlaylist'
   | 'nestedScene'
-  | 'ndi';
+  | 'ndi'
+  | 'whip'
+  | 'srt';
 
 /**
  * Base source interface
@@ -243,6 +245,44 @@ export interface NDISource extends BaseSource {
 }
 
 /**
+ * WHIP source - WebRTC-HTTP Ingestion Protocol (RFC 9725)
+ * Ultra-low-latency ingest via WebRTC, sub-100ms latency
+ * Supported by OBS 30+, Cloudflare, AWS MediaLive
+ */
+export interface WhipSource extends BaseSource {
+  type: 'whip';
+  /** WHIP ingest endpoint URL (e.g., https://example.com/whip/stream) */
+  ingestUrl: string;
+  /** Optional Bearer token for authentication */
+  bearerToken?: string;
+  /** Whether to capture audio from this source */
+  captureAudio: boolean;
+}
+
+/**
+ * SRT source - Secure Reliable Transport
+ * Reliable UDP streaming for contribution feeds over unreliable networks
+ * Low latency with error correction, industry standard for remote contribution
+ */
+export interface SrtSource extends BaseSource {
+  type: 'srt';
+  /** SRT connection mode */
+  mode: 'listener' | 'caller';
+  /** Host address (for caller mode) or bind address (for listener mode) */
+  host: string;
+  /** SRT port */
+  port: number;
+  /** Optional passphrase for encryption */
+  passphrase?: string;
+  /** Latency in milliseconds (default: 120ms, range: 0-60000) */
+  latency?: number;
+  /** Stream ID for multiplexing */
+  streamId?: string;
+  /** Whether to capture audio from this source */
+  captureAudio: boolean;
+}
+
+/**
  * Union type for all source types
  */
 export type Source =
@@ -259,7 +299,9 @@ export type Source =
   | BrowserSource
   | MediaPlaylistSource
   | NestedSceneSource
-  | NDISource;
+  | NDISource
+  | WhipSource
+  | SrtSource;
 
 // Device discovery result types
 
@@ -346,6 +388,8 @@ export function sourceHasVideo(source: Source): boolean {
     case 'browser':
     case 'nestedScene':
     case 'ndi':
+    case 'whip':
+    case 'srt':
       return true;
     case 'mediaFile':
       return !source.audioOnly;
@@ -383,6 +427,10 @@ export function sourceHasAudio(source: Source): boolean {
     case 'gameCapture':
       return source.captureAudio;
     case 'mediaPlaylist':
+      return source.captureAudio;
+    case 'whip':
+      return source.captureAudio;
+    case 'srt':
       return source.captureAudio;
     case 'color':
     case 'text':
@@ -610,6 +658,36 @@ export function createDefaultNDISource(
   };
 }
 
+export function createDefaultWhipSource(
+  name = 'WHIP Input',
+  ingestUrl = ''
+): WhipSource {
+  return {
+    type: 'whip',
+    id: crypto.randomUUID(),
+    name,
+    ingestUrl,
+    captureAudio: true,
+  };
+}
+
+export function createDefaultSrtSource(
+  name = 'SRT Input',
+  host = '0.0.0.0',
+  port = 9000
+): SrtSource {
+  return {
+    type: 'srt',
+    id: crypto.randomUUID(),
+    name,
+    mode: 'listener',
+    host,
+    port,
+    latency: 120,
+    captureAudio: true,
+  };
+}
+
 /**
  * Get a human-readable label for source type
  */
@@ -643,6 +721,10 @@ export function getSourceTypeLabel(type: SourceType): string {
       return 'Nested Scene';
     case 'ndi':
       return 'NDI Source';
+    case 'whip':
+      return 'WHIP Input';
+    case 'srt':
+      return 'SRT Input';
   }
 }
 
@@ -679,6 +761,10 @@ export function getSourceTypeIcon(type: SourceType): string {
       return 'Layers';
     case 'ndi':
       return 'Network';
+    case 'whip':
+      return 'Zap'; // Lightning for ultra-low latency
+    case 'srt':
+      return 'Shield'; // Shield for reliable transport
   }
 }
 

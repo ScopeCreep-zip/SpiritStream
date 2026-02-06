@@ -11,6 +11,29 @@ let socket: WebSocket | null = null;
 let openPromise: Promise<void> | null = null;
 let reconnectTimer: number | null = null;
 
+// Store listener references for cleanup to prevent memory leaks on reconnection
+// Each reconnection previously added NEW listeners while old ones remained attached
+let currentListeners: {
+  open: (() => void) | null;
+  message: ((e: MessageEvent) => void) | null;
+  close: ((e: CloseEvent) => void) | null;
+  error: (() => void) | null;
+} = { open: null, message: null, close: null, error: null };
+
+/**
+ * Remove all event listeners from the current socket.
+ * CRITICAL: Must be called before creating new listeners to prevent memory leaks.
+ */
+function cleanupSocketListeners(): void {
+  if (socket) {
+    if (currentListeners.open) socket.removeEventListener('open', currentListeners.open);
+    if (currentListeners.message) socket.removeEventListener('message', currentListeners.message);
+    if (currentListeners.close) socket.removeEventListener('close', currentListeners.close);
+    if (currentListeners.error) socket.removeEventListener('error', currentListeners.error);
+  }
+  currentListeners = { open: null, message: null, close: null, error: null };
+}
+
 // Track if we were previously connected (for showing reconnection toasts)
 let wasConnected = false;
 
@@ -150,14 +173,15 @@ function ensureSocket(): Promise<void> {
   openPromise = new Promise((resolve) => {
     socket = new WebSocket(wsUrl);
 
-    socket.addEventListener('open', () => {
+    // Create named handlers so we can remove them later
+    const handleOpen = () => {
       openPromise = null;
       notifyConnected();
       startKeepalive(); // Start keepalive pings for background tab support
       resolve();
-    });
+    };
 
-    socket.addEventListener('message', (event) => {
+    const handleMessage = (event: MessageEvent) => {
       if (!event.data) return;
       const rawData = event.data as string;
 
@@ -187,9 +211,11 @@ function ensureSocket(): Promise<void> {
       } catch (error) {
         console.warn('Failed to parse backend event:', error);
       }
-    });
+    };
 
-    socket.addEventListener('close', (event) => {
+    const handleClose = (event: CloseEvent) => {
+      // CRITICAL: Clean up listeners before nullifying socket to prevent memory leaks
+      cleanupSocketListeners();
       socket = null;
       openPromise = null;
       stopKeepalive(); // Stop keepalive pings
@@ -205,19 +231,35 @@ function ensureSocket(): Promise<void> {
       if (handlers.size > 0 || keepAlive) {
         scheduleReconnect();
       }
-    });
+    };
 
-    socket.addEventListener('error', () => {
+    const handleError = () => {
       if (socket && socket.readyState === WebSocket.OPEN) {
         return;
       }
+      // Clean up listeners if socket is closing
+      cleanupSocketListeners();
       socket = null;
       openPromise = null;
       notifyDisconnected('Connection error');
       if (handlers.size > 0 || keepAlive) {
         scheduleReconnect();
       }
-    });
+    };
+
+    // Store references for cleanup
+    currentListeners = {
+      open: handleOpen,
+      message: handleMessage,
+      close: handleClose,
+      error: handleError,
+    };
+
+    // Add listeners
+    socket.addEventListener('open', handleOpen);
+    socket.addEventListener('message', handleMessage);
+    socket.addEventListener('close', handleClose);
+    socket.addEventListener('error', handleError);
   });
 
   return openPromise;
@@ -234,11 +276,14 @@ function scheduleReconnect() {
 
   reconnectCount++;
 
-  // Exponential backoff: 1s, 1.5s, 2.25s, ... up to 30s max
-  const delay = Math.min(
-    INITIAL_RECONNECT_DELAY * Math.pow(1.5, reconnectCount - 1),
-    MAX_RECONNECT_DELAY
-  );
+  // First 3 attempts use faster retry (200ms) for quick recovery from startup race conditions
+  // After that, use exponential backoff: 1s, 1.5s, 2.25s, ... up to 30s max
+  const delay = reconnectCount <= 3
+    ? 200
+    : Math.min(
+        INITIAL_RECONNECT_DELAY * Math.pow(1.5, reconnectCount - 4),
+        MAX_RECONNECT_DELAY
+      );
 
   reconnectTimer = window.setTimeout(() => {
     reconnectTimer = null;
@@ -252,12 +297,20 @@ function scheduleReconnect() {
  * Initialize the WebSocket connection proactively.
  * Call this early in app startup to establish connection status.
  * The connection will be kept alive and auto-reconnect even without handlers.
+ *
+ * A small delay is added before the first connection attempt to avoid
+ * race conditions where the health check passes but the WebSocket handler
+ * isn't quite ready yet (common on macOS/Safari).
  */
 export function initConnection(): void {
   keepAlive = true;
-  ensureSocket().catch(() => {
-    // Connection errors handled by WebSocket event listeners
-  });
+  // Small delay before initial connection to avoid race condition with server startup
+  // The health check passes before WebSocket upgrade handler is fully ready
+  setTimeout(() => {
+    ensureSocket().catch(() => {
+      // Connection errors handled by WebSocket event listeners
+    });
+  }, 100);
 }
 
 /**
@@ -273,6 +326,8 @@ export function disconnectSocket(): void {
     reconnectTimer = null;
   }
   if (socket) {
+    // Clean up listeners before closing to prevent memory leaks
+    cleanupSocketListeners();
     socket.close();
     socket = null;
   }

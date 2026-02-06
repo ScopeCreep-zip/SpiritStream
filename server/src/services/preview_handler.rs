@@ -499,6 +499,34 @@ impl PreviewHandler {
                     format!("color=c=0xFF8C00:s={}x{}:d=3600", DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT),
                 ])
             }
+            Source::Whip(whip) => {
+                // WHIP sources are WebRTC ingest - use HTTP-FLV from go2rtc
+                // For preview, we need to pull from go2rtc's relay output
+                Ok(vec![
+                    "-f".to_string(),
+                    "flv".to_string(),
+                    "-i".to_string(),
+                    whip.ingest_url.clone(),
+                ])
+            }
+            Source::Srt(srt) => {
+                // SRT sources - use FFmpeg's native SRT support
+                let mode_param = match srt.mode {
+                    crate::models::SrtMode::Listener => "listener",
+                    crate::models::SrtMode::Caller => "caller",
+                };
+                let mut url = format!(
+                    "srt://{}:{}?mode={}&latency={}",
+                    srt.host, srt.port, mode_param, srt.latency * 1000  // FFmpeg uses microseconds
+                );
+                if let Some(ref passphrase) = srt.passphrase {
+                    url.push_str(&format!("&passphrase={}", passphrase));
+                }
+                if let Some(ref stream_id) = srt.stream_id {
+                    url.push_str(&format!("&streamid={}", stream_id));
+                }
+                Ok(vec!["-i".to_string(), url])
+            }
         }
     }
 
@@ -783,9 +811,9 @@ impl PreviewHandler {
         Some(frame)
     }
 
-    /// Find subsequence in slice
+    /// Find subsequence in slice (SIMD-accelerated via memchr)
     fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-        haystack.windows(needle.len()).position(|w| w == needle)
+        memchr::memmem::find(haystack, needle)
     }
 
     /// Get cached frame from a running preview (if available)
