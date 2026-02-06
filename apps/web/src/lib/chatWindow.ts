@@ -135,6 +135,9 @@ export function setupMainWindowCloseHandler() {
 /**
  * Set up listener on the overlay to close when main window is destroyed.
  * Call this from the ChatOverlay component.
+ *
+ * Uses polling to check if main window still exists, since event-based
+ * approaches can block the main window from closing.
  */
 export async function setupOverlayAutoClose() {
   if (!isTauri()) return;
@@ -143,19 +146,22 @@ export async function setupOverlayAutoClose() {
     const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
     const { getCurrentWindow } = await import('@tauri-apps/api/window');
 
-    const mainWindow = await WebviewWindow.getByLabel('main');
     const overlayWindow = getCurrentWindow();
 
-    if (mainWindow) {
-      // Listen for main window being destroyed
-      mainWindow.onCloseRequested(async () => {
-        try {
-          await overlayWindow.close();
-        } catch {
-          // Main window is closing, ignore errors
+    // Poll to check if main window still exists
+    const checkInterval = setInterval(async () => {
+      try {
+        const mainWindow = await WebviewWindow.getByLabel('main');
+        if (!mainWindow) {
+          clearInterval(checkInterval);
+          overlayWindow.close().catch(() => {});
         }
-      });
-    }
+      } catch {
+        // If we can't check, main window is probably gone
+        clearInterval(checkInterval);
+        overlayWindow.close().catch(() => {});
+      }
+    }, 500);
   } catch (error) {
     console.error('Failed to set up overlay auto-close:', error);
   }
