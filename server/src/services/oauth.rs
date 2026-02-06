@@ -106,14 +106,42 @@ impl OAuthConfig {
         true // Embedded client ID is always available
     }
 
-    /// Get Twitch client ID (user-provided or embedded)
-    pub fn get_twitch_client_id(&self) -> &str {
-        self.twitch_client_id.as_deref().unwrap_or(TWITCH_CLIENT_ID)
+    /// Get Twitch client ID (user-provided, env override, or embedded)
+    pub fn get_twitch_client_id(&self) -> String {
+        if let Some(value) = self.twitch_client_id.as_deref() {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return trimmed.to_string();
+            }
+        }
+
+        if let Ok(value) = std::env::var("SPIRITSTREAM_TWITCH_CLIENT_ID") {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return trimmed.to_string();
+            }
+        }
+
+        TWITCH_CLIENT_ID.to_string()
     }
 
-    /// Get YouTube client ID (user-provided or embedded)
-    pub fn get_youtube_client_id(&self) -> &str {
-        self.youtube_client_id.as_deref().unwrap_or(YOUTUBE_CLIENT_ID)
+    /// Get YouTube client ID (user-provided, env override, or embedded)
+    pub fn get_youtube_client_id(&self) -> String {
+        if let Some(value) = self.youtube_client_id.as_deref() {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return trimmed.to_string();
+            }
+        }
+
+        if let Ok(value) = std::env::var("SPIRITSTREAM_YOUTUBE_CLIENT_ID") {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return trimmed.to_string();
+            }
+        }
+
+        YOUTUBE_CLIENT_ID.to_string()
     }
 }
 
@@ -301,8 +329,8 @@ impl OAuthService {
         let config = self.config.lock().await;
 
         let (provider, client_id) = match provider_name {
-            "twitch" => (OAuthProvider::twitch(), config.get_twitch_client_id().to_string()),
-            "youtube" => (OAuthProvider::youtube(), config.get_youtube_client_id().to_string()),
+            "twitch" => (OAuthProvider::twitch(), config.get_twitch_client_id()),
+            "youtube" => (OAuthProvider::youtube(), config.get_youtube_client_id()),
             _ => return Err(format!("Unknown provider: {}", provider_name)),
         };
 
@@ -371,8 +399,8 @@ impl OAuthService {
         let config = self.config.lock().await;
 
         let (provider, client_id) = match provider_name {
-            "twitch" => (OAuthProvider::twitch(), config.get_twitch_client_id().to_string()),
-            "youtube" => (OAuthProvider::youtube(), config.get_youtube_client_id().to_string()),
+            "twitch" => (OAuthProvider::twitch(), config.get_twitch_client_id()),
+            "youtube" => (OAuthProvider::youtube(), config.get_youtube_client_id()),
             _ => return Err(format!("Unknown provider: {}", provider_name)),
         };
 
@@ -424,8 +452,8 @@ impl OAuthService {
         let config = self.config.lock().await;
 
         let (provider, client_id) = match provider_name {
-            "twitch" => (OAuthProvider::twitch(), config.get_twitch_client_id().to_string()),
-            "youtube" => (OAuthProvider::youtube(), config.get_youtube_client_id().to_string()),
+            "twitch" => (OAuthProvider::twitch(), config.get_twitch_client_id()),
+            "youtube" => (OAuthProvider::youtube(), config.get_youtube_client_id()),
             _ => return Err(format!("Unknown provider: {}", provider_name)),
         };
 
@@ -465,7 +493,7 @@ impl OAuthService {
     /// Fetch Twitch user info using an access token
     pub async fn fetch_twitch_user(&self, access_token: &str) -> Result<TwitchUser, String> {
         let config = self.config.lock().await;
-        let client_id = config.get_twitch_client_id().to_string();
+        let client_id = config.get_twitch_client_id();
         drop(config);
 
         let response = self
@@ -601,7 +629,7 @@ impl OAuthService {
         match provider_name {
             "twitch" => {
                 let config = self.config.lock().await;
-                let client_id = config.get_twitch_client_id().to_string();
+                let client_id = config.get_twitch_client_id();
                 drop(config);
 
                 let response = self
