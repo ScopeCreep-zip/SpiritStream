@@ -79,8 +79,9 @@ const STALE_FRAME_THRESHOLD_SECS: u64 = 5;
 struct PreviewProcess {
     child: Child,
     last_accessed: Instant,
-    /// Cached latest frame for snapshot requests
-    latest_frame: Arc<Mutex<Option<Bytes>>>,
+    /// Lock-free frame output (reader side of triple buffer)
+    /// Writer never blocks reader, reader always gets most recent frame
+    latest_frame_output: triple_buffer::Output<Option<Bytes>>,
     /// When the last frame was received (for staleness detection)
     last_frame_time: Arc<Mutex<Instant>>,
     /// Whether the reader thread is still alive
@@ -633,9 +634,10 @@ impl PreviewHandler {
         // Create broadcast channel for frames
         let (tx, rx) = broadcast::channel::<Bytes>(16);
 
-        // Create shared cache for latest frame (used by snapshot endpoint)
-        let latest_frame: Arc<Mutex<Option<Bytes>>> = Arc::new(Mutex::new(None));
-        let latest_frame_clone = Arc::clone(&latest_frame);
+        // Create triple buffer for lock-free frame caching (used by snapshot endpoint)
+        // Writer (MJPEG reader thread) never blocks reader (HTTP handler)
+        let triple_buf = triple_buffer::TripleBuffer::new(&None::<Bytes>);
+        let (latest_frame_input, latest_frame_output) = triple_buf.split();
 
         // Create liveness tracking for the reader thread
         let last_frame_time: Arc<Mutex<Instant>> = Arc::new(Mutex::new(Instant::now()));
@@ -647,7 +649,7 @@ impl PreviewHandler {
         let source_id_clone = source_id.clone();
         std::thread::spawn(move || {
             Self::read_mjpeg_stream(
-                stdout, tx, latest_frame_clone, last_frame_time_clone,
+                stdout, tx, latest_frame_input, last_frame_time_clone,
                 is_alive_clone, source_id_clone
             );
         });
@@ -677,7 +679,7 @@ impl PreviewHandler {
             previews.insert(source_id, PreviewProcess {
                 child,
                 last_accessed: Instant::now(),
-                latest_frame,
+                latest_frame_output,
                 last_frame_time,
                 is_alive,
             });
@@ -690,7 +692,7 @@ impl PreviewHandler {
     fn read_mjpeg_stream(
         mut stdout: std::process::ChildStdout,
         tx: broadcast::Sender<Bytes>,
-        latest_frame: Arc<Mutex<Option<Bytes>>>,
+        mut latest_frame_input: triple_buffer::Input<Option<Bytes>>,
         last_frame_time: Arc<Mutex<Instant>>,
         is_alive: Arc<AtomicBool>,
         source_id: String,
@@ -740,10 +742,8 @@ impl PreviewHandler {
 
                         let frame_bytes = Bytes::from(frame);
 
-                        // Cache the latest frame and update timestamp for staleness detection
-                        if let Ok(mut cached) = latest_frame.lock() {
-                            *cached = Some(frame_bytes.clone());
-                        }
+                        // Cache the latest frame (lock-free triple buffer) and update timestamp
+                        latest_frame_input.write(Some(frame_bytes.clone()));
                         if let Ok(mut time) = last_frame_time.lock() {
                             *time = Instant::now();
                         }
@@ -818,9 +818,10 @@ impl PreviewHandler {
 
     /// Get cached frame from a running preview (if available)
     /// Returns None if the preview is dead or frame is stale
+    /// Uses lock-free triple buffer read — never blocks the MJPEG writer thread
     pub fn get_cached_frame(&self, source_id: &str) -> Option<Vec<u8>> {
-        let previews = self.source_previews.lock().ok()?;
-        let preview = previews.get(source_id)?;
+        let mut previews = self.source_previews.lock().ok()?;
+        let preview = previews.get_mut(source_id)?;
 
         // Check if the reader thread is still alive
         if !preview.is_alive.load(Ordering::SeqCst) {
@@ -838,7 +839,8 @@ impl PreviewHandler {
             }
         }
 
-        let frame = preview.latest_frame.lock().ok()?;
+        // Lock-free read from triple buffer
+        let frame = preview.latest_frame_output.read();
         frame.as_ref().map(|b| b.to_vec())
     }
 
@@ -1092,9 +1094,9 @@ impl PreviewHandler {
         // Create broadcast channel for frames
         let (tx, rx) = broadcast::channel::<Bytes>(16);
 
-        // Create shared cache for latest frame and liveness tracking
-        let latest_frame: Arc<Mutex<Option<Bytes>>> = Arc::new(Mutex::new(None));
-        let latest_frame_clone = Arc::clone(&latest_frame);
+        // Create triple buffer for lock-free frame caching
+        let triple_buf = triple_buffer::TripleBuffer::new(&None::<Bytes>);
+        let (latest_frame_input, latest_frame_output) = triple_buf.split();
         let last_frame_time: Arc<Mutex<Instant>> = Arc::new(Mutex::new(Instant::now()));
         let last_frame_time_clone = Arc::clone(&last_frame_time);
         let is_alive: Arc<AtomicBool> = Arc::new(AtomicBool::new(true));
@@ -1106,7 +1108,7 @@ impl PreviewHandler {
             Self::read_mjpeg_stream(
                 stdout,
                 tx,
-                latest_frame_clone,
+                latest_frame_input,
                 last_frame_time_clone,
                 is_alive_clone,
                 format!("scene:{}", scene_id_clone),
@@ -1137,7 +1139,7 @@ impl PreviewHandler {
             *scene_preview = Some(PreviewProcess {
                 child,
                 last_accessed: Instant::now(),
-                latest_frame,
+                latest_frame_output,
                 last_frame_time,
                 is_alive,
             });
@@ -1148,9 +1150,10 @@ impl PreviewHandler {
 
     /// Get cached frame from the scene preview (if available)
     /// Returns None if the preview is dead or frame is stale
+    /// Uses lock-free triple buffer read
     pub fn get_scene_cached_frame(&self) -> Option<Vec<u8>> {
-        let preview = self.scene_preview.lock().ok()?;
-        let proc = preview.as_ref()?;
+        let mut preview = self.scene_preview.lock().ok()?;
+        let proc = preview.as_mut()?;
 
         // Check if the reader thread is still alive
         if !proc.is_alive.load(Ordering::SeqCst) {
@@ -1168,7 +1171,8 @@ impl PreviewHandler {
             }
         }
 
-        let frame = proc.latest_frame.lock().ok()?;
+        // Lock-free read from triple buffer
+        let frame = proc.latest_frame_output.read();
         frame.as_ref().map(|b| b.to_vec())
     }
 

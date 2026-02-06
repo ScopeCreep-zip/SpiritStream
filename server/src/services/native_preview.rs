@@ -448,8 +448,59 @@ impl NativePreviewService {
         }
     }
 
-    /// Convert YUV (NV12) to BGRA
+    /// Convert YUV (NV12) to BGRA using SIMD-accelerated dcv-color-primitives
+    /// Falls back to scalar conversion if SIMD conversion fails
     fn yuv_to_bgra(y_plane: &[u8], uv_plane: &[u8], width: usize, height: usize) -> Vec<u8> {
+        // Try SIMD-accelerated conversion first (8-10x faster than scalar)
+        if let Some(result) = Self::yuv_to_bgra_simd(y_plane, uv_plane, width, height) {
+            return result;
+        }
+
+        // Scalar fallback
+        Self::yuv_to_bgra_scalar(y_plane, uv_plane, width, height)
+    }
+
+    /// SIMD-accelerated NV12→BGRA via dcv-color-primitives (SSE4.1/AVX2/NEON)
+    fn yuv_to_bgra_simd(y_plane: &[u8], uv_plane: &[u8], width: usize, height: usize) -> Option<Vec<u8>> {
+        use dcv_color_primitives as dcp;
+
+        let src_format = dcp::ImageFormat {
+            pixel_format: dcp::PixelFormat::Nv12,
+            color_space: dcp::ColorSpace::Bt601,
+            num_planes: 2,
+        };
+
+        let dst_format = dcp::ImageFormat {
+            pixel_format: dcp::PixelFormat::Bgra,
+            color_space: dcp::ColorSpace::Rgb,
+            num_planes: 1,
+        };
+
+        let mut bgra = vec![0u8; width * height * 4];
+
+        let src_buffers = [y_plane, uv_plane];
+        let dst_buffers = &mut [bgra.as_mut_slice()];
+
+        match dcp::convert_image(
+            width as u32,
+            height as u32,
+            &src_format,
+            None, // auto-detect strides
+            &src_buffers,
+            &dst_format,
+            None,
+            dst_buffers,
+        ) {
+            Ok(()) => Some(bgra),
+            Err(e) => {
+                log::debug!("[NativePreview] SIMD color conversion failed: {:?}, using scalar fallback", e);
+                None
+            }
+        }
+    }
+
+    /// Scalar NV12→BGRA fallback (used when SIMD is unavailable)
+    fn yuv_to_bgra_scalar(y_plane: &[u8], uv_plane: &[u8], width: usize, height: usize) -> Vec<u8> {
         let mut bgra = vec![0u8; width * height * 4];
 
         for row in 0..height {

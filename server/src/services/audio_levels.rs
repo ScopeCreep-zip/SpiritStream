@@ -2,6 +2,7 @@
 // Monitors audio sources and emits real level data to WebSocket clients
 
 use crate::services::events::{emit_event, EventSink};
+use dashmap::DashMap;
 use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -128,8 +129,9 @@ pub struct AudioLevelService {
     /// Running state
     running: Arc<AtomicBool>,
     /// Tracked source IDs and their data (level + last update time)
-    tracked_sources: Arc<Mutex<HashMap<String, TrackedSource>>>,
-    /// Internal track states for smoothing
+    /// Uses DashMap for lock-free concurrent access from audio capture threads
+    tracked_sources: Arc<DashMap<String, TrackedSource>>,
+    /// Internal track states for smoothing (only accessed in emit loop + set_tracked_sources)
     track_states: Arc<Mutex<HashMap<String, TrackState>>>,
 }
 
@@ -137,7 +139,7 @@ impl AudioLevelService {
     pub fn new() -> Self {
         Self {
             running: Arc::new(AtomicBool::new(false)),
-            tracked_sources: Arc::new(Mutex::new(HashMap::new())),
+            tracked_sources: Arc::new(DashMap::new()),
             track_states: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -149,16 +151,15 @@ impl AudioLevelService {
 
     /// Set the list of tracked source IDs
     pub async fn set_tracked_sources(&self, source_ids: Vec<String>) {
-        let mut sources = self.tracked_sources.lock().await;
         let mut states = self.track_states.lock().await;
 
-        // Remove sources no longer tracked
-        sources.retain(|id, _| source_ids.contains(id));
+        // Remove sources no longer tracked (DashMap: no global lock needed)
+        self.tracked_sources.retain(|id, _| source_ids.contains(id));
         states.retain(|id, _| source_ids.contains(id));
 
         // Add new sources with zero level
         for id in source_ids {
-            sources.entry(id.clone()).or_insert_with(TrackedSource::default);
+            self.tracked_sources.entry(id.clone()).or_insert_with(TrackedSource::default);
             states.entry(id).or_insert_with(TrackState::default);
         }
     }
@@ -168,7 +169,8 @@ impl AudioLevelService {
     /// - RMS = root mean square (average power)
     /// - Peak = instantaneous maximum absolute sample value
     /// For mono sources, pass the same value for both channels
-    pub async fn update_source_level(
+    /// Lock-free via DashMap — never blocks the emit loop or other audio threads
+    pub fn update_source_level(
         &self,
         source_id: &str,
         rms_l: f32,
@@ -176,8 +178,7 @@ impl AudioLevelService {
         peak_l: f32,
         peak_r: f32,
     ) {
-        let mut sources = self.tracked_sources.lock().await;
-        if let Some(tracked) = sources.get_mut(source_id) {
+        if let Some(mut tracked) = self.tracked_sources.get_mut(source_id) {
             tracked.rms_l = rms_l.clamp(0.0, 1.0);
             tracked.rms_r = rms_r.clamp(0.0, 1.0);
             tracked.peak_l = peak_l.clamp(0.0, 1.0);
@@ -189,8 +190,9 @@ impl AudioLevelService {
             let warned = WARNED.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()));
             if let Ok(mut set) = warned.lock() {
                 if set.insert(source_id.to_string()) {
+                    let keys: Vec<_> = self.tracked_sources.iter().map(|e| e.key().clone()).collect();
                     log::warn!("Audio level update for untracked source '{}'. Tracked sources: {:?}",
-                        source_id, sources.keys().collect::<Vec<_>>());
+                        source_id, keys);
                 }
             }
         }
@@ -198,15 +200,15 @@ impl AudioLevelService {
 
     /// Get health status for all tracked sources
     /// A source is considered "healthy" if it received an update within the last 2 seconds
-    pub async fn get_health_status(&self) -> HashMap<String, bool> {
-        let sources = self.tracked_sources.lock().await;
-        let timeout = Duration::from_secs(2);
+    /// Lock-free via DashMap iteration
+    pub fn get_health_status(&self) -> HashMap<String, bool> {
+        let timeout = std::time::Duration::from_secs(2);
 
-        sources
+        self.tracked_sources
             .iter()
-            .map(|(id, tracked)| {
-                let healthy = tracked.last_update.elapsed() < timeout;
-                (id.clone(), healthy)
+            .map(|entry| {
+                let healthy = entry.value().last_update.elapsed() < timeout;
+                (entry.key().clone(), healthy)
             })
             .collect()
     }
@@ -230,14 +232,16 @@ impl AudioLevelService {
             // OBS audio thread runs at ~48Hz but visual meters update less frequently
             let mut ticker = interval(Duration::from_millis(100));
             let mut emit_count: u64 = 0;
+            // Pre-allocate tracks HashMap outside the loop — reused each tick via clear()
+            // Avoids re-allocating ~10 times/sec (10Hz emit rate)
+            let mut tracks: HashMap<String, AudioLevel> = HashMap::new();
 
             while running.load(Ordering::Relaxed) {
                 ticker.tick().await;
 
-                let sources = tracked_sources.lock().await;
                 let mut states = track_states.lock().await;
 
-                if sources.is_empty() {
+                if tracked_sources.is_empty() {
                     // No sources to monitor, emit empty data
                     let data = AudioLevelsData {
                         tracks: HashMap::new(),
@@ -247,7 +251,8 @@ impl AudioLevelService {
                     continue;
                 }
 
-                let mut tracks = HashMap::new();
+                // Reuse capacity from previous tick, only grow if source count increased
+                tracks.clear();
                 let mut master_rms_sum = 0.0;
                 let mut master_rms_l_sum = 0.0;
                 let mut master_rms_r_sum = 0.0;
@@ -256,7 +261,10 @@ impl AudioLevelService {
                 let mut master_peak_r = 0.0f32;
                 let mut master_clipping = false;
 
-                for (source_id, tracked) in sources.iter() {
+                // DashMap iteration: per-shard locks, doesn't block update_source_level()
+                for entry in tracked_sources.iter() {
+                    let source_id = entry.key();
+                    let tracked = entry.value();
                     let state = states.entry(source_id.clone()).or_insert_with(TrackState::default);
 
                     // RMS values (average power) - apply smoothing with O(1) running sums
@@ -345,7 +353,7 @@ impl AudioLevelService {
                 }
 
                 // Calculate master RMS
-                let num_sources = sources.len() as f32;
+                let num_sources = tracked_sources.len() as f32;
                 let master_rms = (master_rms_sum / num_sources).sqrt();
                 let master_rms_l = (master_rms_l_sum / num_sources).sqrt();
                 let master_rms_r = (master_rms_r_sum / num_sources).sqrt();
@@ -359,8 +367,9 @@ impl AudioLevelService {
                     Some(-96.0)
                 };
 
+                // Move tracks into data for emission, reclaim after to reuse capacity
                 let data = AudioLevelsData {
-                    tracks,
+                    tracks: std::mem::take(&mut tracks),
                     master: AudioLevel {
                         rms: master_rms,
                         peak: master_peak,
@@ -385,6 +394,9 @@ impl AudioLevelService {
                 }
 
                 emit_event(event_sink.as_ref(), "audio_levels", &data);
+
+                // Reclaim the HashMap to reuse its allocated capacity next tick
+                tracks = data.tracks;
             }
 
             log::info!("AudioLevelService stopped");

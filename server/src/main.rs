@@ -3194,7 +3194,7 @@ async fn invoke_command(
                                                                 level.right_rms.unwrap_or(level.rms),
                                                                 level.left_peak.unwrap_or(level.peak),
                                                                 level.right_peak.unwrap_or(level.peak),
-                                                            ).await;
+                                                            );
                                                         }
                                                     });
                                                     capture_results.insert(source_id.clone(), json!({
@@ -3238,7 +3238,7 @@ async fn invoke_command(
                                                                 level.right_rms.unwrap_or(level.rms),
                                                                 level.left_peak.unwrap_or(level.peak),
                                                                 level.right_peak.unwrap_or(level.peak),
-                                                            ).await;
+                                                            );
                                                         }
                                                     });
                                                     capture_results.insert(source_id.clone(), json!({
@@ -3283,7 +3283,7 @@ async fn invoke_command(
                                                             level.right_rms.unwrap_or(level.rms),
                                                             level.left_peak.unwrap_or(level.peak),
                                                             level.right_peak.unwrap_or(level.peak),
-                                                        ).await;
+                                                        );
                                                     }
                                                 });
                                                 capture_results.insert(source_id.clone(), json!({
@@ -3338,7 +3338,7 @@ async fn invoke_command(
                                                             level.right_rms.unwrap_or(level.rms),
                                                             level.left_peak.unwrap_or(level.peak),
                                                             level.right_peak.unwrap_or(level.peak),
-                                                        ).await;
+                                                        );
                                                     }
                                                 });
                                                 capture_results.insert(source_id.clone(), json!({
@@ -3382,7 +3382,7 @@ async fn invoke_command(
                                                             level.right_rms.unwrap_or(level.rms),
                                                             level.left_peak.unwrap_or(level.peak),
                                                             level.right_peak.unwrap_or(level.peak),
-                                                        ).await;
+                                                        );
                                                     }
                                                 });
                                                 capture_results.insert(source_id.clone(), json!({
@@ -3430,7 +3430,7 @@ async fn invoke_command(
                                                                 level.right_rms.unwrap_or(level.rms),
                                                                 level.left_peak.unwrap_or(level.peak),
                                                                 level.right_peak.unwrap_or(level.peak),
-                                                            ).await;
+                                                            );
                                                         }
                                                     });
                                                     capture_results.insert(source_id.clone(), json!({
@@ -3474,7 +3474,7 @@ async fn invoke_command(
                                                                 level.right_rms.unwrap_or(level.rms),
                                                                 level.left_peak.unwrap_or(level.peak),
                                                                 level.right_peak.unwrap_or(level.peak),
-                                                            ).await;
+                                                            );
                                                         }
                                                     });
                                                     capture_results.insert(source_id.clone(), json!({
@@ -3520,7 +3520,7 @@ async fn invoke_command(
                                                                 level.right_rms.unwrap_or(level.rms),
                                                                 level.left_peak.unwrap_or(level.peak),
                                                                 level.right_peak.unwrap_or(level.peak),
-                                                            ).await;
+                                                            );
                                                         }
                                                     });
                                                     capture_results.insert(source_id.clone(), json!({
@@ -3562,7 +3562,7 @@ async fn invoke_command(
                                                                 level.right_rms.unwrap_or(level.rms),
                                                                 level.left_peak.unwrap_or(level.peak),
                                                                 level.right_peak.unwrap_or(level.peak),
-                                                            ).await;
+                                                            );
                                                         }
                                                     });
                                                     capture_results.insert(source_id.clone(), json!({
@@ -3606,7 +3606,7 @@ async fn invoke_command(
                                                                 level.right_rms.unwrap_or(level.rms),
                                                                 level.left_peak.unwrap_or(level.peak),
                                                                 level.right_peak.unwrap_or(level.peak),
-                                                            ).await;
+                                                            );
                                                         }
                                                     });
                                                     capture_results.insert(source_id.clone(), json!({
@@ -3659,7 +3659,7 @@ async fn invoke_command(
                                                             level.right_rms.unwrap_or(level.rms),
                                                             level.left_peak.unwrap_or(level.peak),
                                                             level.right_peak.unwrap_or(level.peak),
-                                                        ).await;
+                                                        );
                                                     }
                                                 });
                                                 capture_results.insert(source_id.clone(), json!({
@@ -3817,7 +3817,7 @@ async fn invoke_command(
                                                                     let rms = (sum_squares / buffer.samples.len() as f32).sqrt();
                                                                     (rms, rms, max_abs, max_abs)
                                                                 };
-                                                                audio_level_service.update_source_level(&source_id_clone, rms_l, rms_r, peak_l, peak_r).await;
+                                                                audio_level_service.update_source_level(&source_id_clone, rms_l, rms_r, peak_l, peak_r);
                                                                 buffer_count += 1;
                                                                 if buffer_count <= 5 || buffer_count % 100 == 0 {
                                                                     log::info!("[AudioCapture] Buffer #{} for '{}': RMS L={:.4} R={:.4}, Peak L={:.4} R={:.4}, ch={}, samples={}",
@@ -3887,7 +3887,7 @@ async fn invoke_command(
         }
 
         "get_audio_monitor_health" => {
-            let health = state.audio_level_service.get_health_status().await;
+            let health = state.audio_level_service.get_health_status();
             Ok(json!({
                 "sources": health
             }))
@@ -4281,7 +4281,7 @@ async fn audio_levels_stop_handler(State(state): State<AppState>) -> impl IntoRe
 /// GET /api/audio-levels/health - Get audio level monitoring health status
 async fn audio_levels_health_handler(State(state): State<AppState>) -> impl IntoResponse {
     let running = state.audio_level_service.is_running();
-    let health = state.audio_level_service.get_health_status().await;
+    let health = state.audio_level_service.get_health_status();
 
     Json(json!({
         "ok": true,

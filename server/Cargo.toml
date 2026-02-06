@@ -32,6 +32,10 @@ zeroize = { version = "1.7", features = ["derive"] }
 
 # Performance
 memchr = "2"
+dashmap = "6"
+dcv-color-primitives = "0.6"
+triple_buffer = "8"
+rtrb = "0.3"
 
 # Utilities
 uuid = { version = "1.0", features = ["v4", "serde"] }

@@ -6,6 +6,7 @@ use cpal::{Device, DeviceId, Host, SampleFormat, Stream, StreamConfig};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 use tokio::sync::broadcast;
 
 /// Information about an audio device
@@ -617,78 +618,107 @@ impl AudioCaptureService {
         let sample_rate = stream_config.sample_rate;
         let channels = stream_config.channels;
 
-        // Create broadcast channel
+        // Create broadcast channel for subscribers
         let (tx, rx) = broadcast::channel::<AudioBuffer>(64);
         let stop_flag = Arc::new(AtomicBool::new(false));
-        let stop_flag_clone = stop_flag.clone();
+        let stop_flag_callback = stop_flag.clone();
+        let stop_flag_processor = stop_flag.clone();
 
         let start_time = std::time::Instant::now();
 
-        // Build the stream based on sample format
-        let stream = match sample_format {
-            SampleFormat::F32 => {
-                let tx = tx.clone();
-                device.build_input_stream(
-                    &stream_config,
-                    move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                        if stop_flag_clone.load(Ordering::Relaxed) {
-                            return;
+        // Create lock-free ring buffer for SPSC delivery from audio callback to processing thread
+        // Size: 1 second of stereo audio at 48kHz = 96000 samples
+        let ring_capacity = (sample_rate as usize) * (channels as usize);
+        let (mut producer, mut consumer) = rtrb::RingBuffer::<f32>::new(ring_capacity);
+
+        // Spawn processing thread: reads from ring buffer, broadcasts to subscribers
+        // This isolates the real-time audio callback from any synchronization
+        let tx_processor = tx.clone();
+        let device_id_log = device_id.to_string();
+        std::thread::Builder::new()
+            .name(format!("audio-proc-{}", device_id))
+            .spawn(move || {
+                let chunk_size = 256 * channels as usize; // ~5.3ms at 48kHz
+                let mut local_buf = Vec::with_capacity(chunk_size);
+
+                while !stop_flag_processor.load(Ordering::Relaxed) {
+                    let available = consumer.slots();
+                    if available >= chunk_size {
+                        local_buf.clear();
+                        // Read samples from ring buffer
+                        if let Ok(chunk) = consumer.read_chunk(chunk_size) {
+                            let (first, second) = chunk.as_slices();
+                            local_buf.extend_from_slice(first);
+                            local_buf.extend_from_slice(second);
+                            chunk.commit_all();
                         }
+
                         let buffer = AudioBuffer {
-                            samples: data.to_vec(),
+                            samples: local_buf.clone(),
                             sample_rate,
                             channels,
                             timestamp_ms: start_time.elapsed().as_millis() as u64,
                         };
-                        let _ = tx.send(buffer);
+                        if tx_processor.send(buffer).is_err() {
+                            // No receivers
+                            break;
+                        }
+                    } else {
+                        // Brief sleep to avoid busy-waiting (max 1ms additional latency)
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                }
+                log::debug!("[AudioCapture:{}] Processing thread stopped", device_id_log);
+            })
+            .map_err(|e| format!("Failed to spawn audio processing thread: {}", e))?;
+
+        // Build the stream based on sample format
+        // Audio callbacks write directly to ring buffer (wait-free, no allocation)
+        let stream = match sample_format {
+            SampleFormat::F32 => {
+                device.build_input_stream(
+                    &stream_config,
+                    move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                        if stop_flag_callback.load(Ordering::Relaxed) {
+                            return;
+                        }
+                        // Wait-free write to ring buffer (no allocation, no lock)
+                        if let Ok(chunk) = producer.write_chunk_uninit(data.len()) {
+                            chunk.fill_from_iter(data.iter().copied());
+                        }
+                        // If ring buffer full, samples are dropped (consumer not keeping up)
                     },
                     |err| log::error!("Audio stream error: {}", err),
                     None,
                 )
             }
             SampleFormat::I16 => {
-                let tx = tx.clone();
                 device.build_input_stream(
                     &stream_config,
                     move |data: &[i16], _: &cpal::InputCallbackInfo| {
-                        if stop_flag_clone.load(Ordering::Relaxed) {
+                        if stop_flag_callback.load(Ordering::Relaxed) {
                             return;
                         }
-                        // Convert i16 to f32
-                        let samples: Vec<f32> = data.iter()
-                            .map(|&s| s as f32 / i16::MAX as f32)
-                            .collect();
-                        let buffer = AudioBuffer {
-                            samples,
-                            sample_rate,
-                            channels,
-                            timestamp_ms: start_time.elapsed().as_millis() as u64,
-                        };
-                        let _ = tx.send(buffer);
+                        // Convert i16 to f32 and write to ring buffer (no allocation)
+                        if let Ok(chunk) = producer.write_chunk_uninit(data.len()) {
+                            chunk.fill_from_iter(data.iter().map(|&s| s as f32 / i16::MAX as f32));
+                        }
                     },
                     |err| log::error!("Audio stream error: {}", err),
                     None,
                 )
             }
             SampleFormat::U16 => {
-                let tx = tx.clone();
                 device.build_input_stream(
                     &stream_config,
                     move |data: &[u16], _: &cpal::InputCallbackInfo| {
-                        if stop_flag_clone.load(Ordering::Relaxed) {
+                        if stop_flag_callback.load(Ordering::Relaxed) {
                             return;
                         }
-                        // Convert u16 to f32
-                        let samples: Vec<f32> = data.iter()
-                            .map(|&s| (s as f32 / u16::MAX as f32) * 2.0 - 1.0)
-                            .collect();
-                        let buffer = AudioBuffer {
-                            samples,
-                            sample_rate,
-                            channels,
-                            timestamp_ms: start_time.elapsed().as_millis() as u64,
-                        };
-                        let _ = tx.send(buffer);
+                        // Convert u16 to f32 and write to ring buffer (no allocation)
+                        if let Ok(chunk) = producer.write_chunk_uninit(data.len()) {
+                            chunk.fill_from_iter(data.iter().map(|&s| (s as f32 / u16::MAX as f32) * 2.0 - 1.0));
+                        }
                     },
                     |err| log::error!("Audio stream error: {}", err),
                     None,
