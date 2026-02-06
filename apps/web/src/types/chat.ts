@@ -14,12 +14,38 @@ export type ChatPlatform = 'twitch' | 'tiktok' | 'youtube' | 'kick' | 'facebook'
 // Chat connection status
 export type ChatConnectionStatus = 'connected' | 'disconnected' | 'connecting' | 'error';
 
+// Twitch authentication options
+export type TwitchAuth =
+  | {
+      method: 'userToken';
+      oauthToken: string;
+    }
+  | {
+      method: 'appOAuth';
+      accessToken: string;
+      refreshToken?: string;
+      expiresAt?: number;
+    };
+
+// YouTube authentication options
+export type YouTubeAuth =
+  | {
+      method: 'apiKey';
+      key: string;
+    }
+  | {
+      method: 'appOAuth';
+      accessToken: string;
+      refreshToken?: string;
+      expiresAt?: number;
+    };
+
 // Chat credentials (discriminated union based on platform)
 export type ChatCredentials =
   | {
       type: 'twitch';
       channel: string;
-      oauthToken?: string;
+      auth?: TwitchAuth;
     }
   | {
       type: 'tiktok';
@@ -29,7 +55,7 @@ export type ChatCredentials =
   | {
       type: 'youtube';
       channelId: string;
-      apiKey?: string;
+      auth: YouTubeAuth;
     }
   | {
       type: 'kick';
@@ -37,8 +63,8 @@ export type ChatCredentials =
     }
   | {
       type: 'facebook';
-      pageId: string;
-      accessToken?: string;
+      videoId: string;
+      accessToken: string;
     };
 
 // Chat configuration
@@ -54,4 +80,19 @@ export interface ChatPlatformStatus {
   status: ChatConnectionStatus;
   messageCount: number;
   error?: string;
+}
+
+// OAuth account info returned from oauth_get_account
+export interface OAuthAccount {
+  loggedIn: boolean;
+  userId?: string;
+  username?: string;
+  displayName?: string;
+}
+
+// OAuth flow result returned from oauth_start_flow
+export interface OAuthFlowResult {
+  authUrl: string;
+  callbackPort: number;
+  state: string;
 }

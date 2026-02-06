@@ -17,7 +17,7 @@ use governor::{
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use log::{Level, LevelFilter, Log, Metadata, Record};
-use chrono::Local;
+use chrono::{Local, Utc};
 use std::{
     env,
     fs::OpenOptions,
@@ -41,7 +41,7 @@ use spiritstream_server::models::{OutputGroup, Profile, RtmpInput, Settings, Obs
 use spiritstream_server::services::{
     prune_logs, read_recent_logs, validate_extension, validate_path_within_any,
     ChatManager, DiscordWebhookService, Encryption, EventSink, FFmpegDownloader, FFmpegHandler,
-    ObsWebSocketHandler, ProfileManager, SettingsManager, ThemeManager, ObsConfig,
+    OAuthService, OAuthConfig, ObsWebSocketHandler, ProfileManager, SettingsManager, ThemeManager, ObsConfig,
 };
 
 // ============================================================================
@@ -101,6 +101,7 @@ struct AppState {
     obs_handler: Arc<ObsWebSocketHandler>,
     discord_service: Arc<DiscordWebhookService>,
     chat_manager: Arc<ChatManager>,
+    oauth_service: Arc<OAuthService>,
     event_bus: EventBus,
     log_dir: PathBuf,
     app_data_dir: PathBuf,
@@ -442,39 +443,60 @@ async fn health() -> impl IntoResponse {
 }
 
 /// Readiness check - verifies critical services are functional
-async fn ready(State(state): State<AppState>) -> impl IntoResponse {
-    let mut checks: Vec<(&str, bool)> = Vec::new();
+    async fn ready(State(state): State<AppState>) -> impl IntoResponse {
+        #[derive(Debug, Serialize)]
+        struct ReadyCheckError {
+            check: &'static str,
+            error: String,
+        }
 
-    // Check 1: ProfileManager can access profiles directory
-    let profiles_ok = state.profile_manager.get_all_names().await.is_ok();
-    checks.push(("profiles", profiles_ok));
+        let mut errors: Vec<ReadyCheckError> = Vec::new();
 
-    // Check 2: SettingsManager can load settings
-    let settings_ok = state.settings_manager.load().is_ok();
-    checks.push(("settings", settings_ok));
+        // Check 1: ProfileManager can access profiles directory
+        let profiles_ok = match state.profile_manager.get_all_names().await {
+            Ok(_) => true,
+            Err(err) => {
+                errors.push(ReadyCheckError {
+                    check: "profiles",
+                    error: err,
+                });
+                false
+            }
+        };
 
-    // Check 3: ThemeManager initialized (theme list is always available after init)
-    let themes_ok = true;
-    checks.push(("themes", themes_ok));
+        // Check 2: SettingsManager can load settings
+        let settings_ok = match state.settings_manager.load() {
+            Ok(_) => true,
+            Err(err) => {
+                errors.push(ReadyCheckError {
+                    check: "settings",
+                    error: err,
+                });
+                false
+            }
+        };
 
-    let all_ok = checks.iter().all(|(_, ok)| *ok);
-    let failed: Vec<&str> = checks
-        .iter()
-        .filter(|(_, ok)| !ok)
-        .map(|(name, _)| *name)
-        .collect();
+        // Check 3: ThemeManager initialized (theme list is always available after init)
+        let themes_ok = true;
 
-    if all_ok {
-        Json(json!({ "ready": true })).into_response()
-    } else {
-        log::warn!("Readiness check failed: {failed:?}");
-        (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({ "ready": false, "failed": failed })),
-        )
-            .into_response()
+        let all_ok = profiles_ok && settings_ok && themes_ok;
+        let failed: Vec<&str> = errors.iter().map(|item| item.check).collect();
+
+        if all_ok {
+            Json(json!({ "ready": true })).into_response()
+        } else {
+            log::warn!("Readiness check failed: {errors:?}");
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({
+                    "ready": false,
+                    "failed": failed,
+                    "errors": errors,
+                })),
+            )
+                .into_response()
+        }
     }
-}
 
 // ============================================================================
 // File Browser Endpoints (for HTTP mode dialogs)
@@ -1320,6 +1342,201 @@ async fn invoke_command(
             Ok(json!(connected))
         }
 
+        // ============================================================================
+        // OAuth Commands
+        // ============================================================================
+        "oauth_is_configured" => {
+            let provider: String = get_arg(&payload, "provider")?;
+            // Always configured now with embedded client IDs
+            let configured = state.oauth_service.is_configured(&provider).await;
+            Ok(json!(configured))
+        }
+        "oauth_start_flow" => {
+            let provider: String = get_arg(&payload, "provider")?;
+            let result = state.oauth_service.start_flow(&provider).await?;
+
+            // Open the auth URL in the default browser
+            if let Err(e) = opener::open(&result.auth_url) {
+                log::warn!("Failed to open browser: {}. URL: {}", e, result.auth_url);
+            }
+
+            Ok(json!(result))
+        }
+        "oauth_complete_flow" => {
+            // Complete OAuth flow: exchange code, fetch user info, store tokens
+            let provider: String = get_arg(&payload, "provider")?;
+            let code: String = get_arg(&payload, "code")?;
+            let oauth_state: String = get_arg(&payload, "state")?;
+
+            // Complete the flow (exchange code + fetch user info)
+            let result = state.oauth_service.complete_flow(&provider, &code, &oauth_state).await?;
+
+            // Store tokens and user info in settings
+            let mut settings = state.settings_manager.load()?;
+            let now = chrono::Utc::now().timestamp();
+            let expires_at = result.tokens.expires_in.map(|e| now + e as i64).unwrap_or(0);
+
+            match provider.as_str() {
+                "twitch" => {
+                    settings.twitch_oauth_access_token = result.tokens.access_token.clone();
+                    settings.twitch_oauth_refresh_token = result.tokens.refresh_token.clone().unwrap_or_default();
+                    settings.twitch_oauth_expires_at = expires_at;
+                    settings.twitch_oauth_user_id = result.user_info.user_id.clone();
+                    settings.twitch_oauth_username = result.user_info.username.clone();
+                    settings.twitch_oauth_display_name = result.user_info.display_name.clone();
+                    // Also set the channel to the logged-in user by default
+                    if settings.chat_twitch_channel.is_empty() {
+                        settings.chat_twitch_channel = result.user_info.username.clone();
+                    }
+                }
+                "youtube" => {
+                    settings.youtube_oauth_access_token = result.tokens.access_token.clone();
+                    settings.youtube_oauth_refresh_token = result.tokens.refresh_token.clone().unwrap_or_default();
+                    settings.youtube_oauth_expires_at = expires_at;
+                    settings.youtube_oauth_channel_id = result.user_info.user_id.clone();
+                    settings.youtube_oauth_channel_name = result.user_info.display_name.clone();
+                    // Also set the channel ID for chat
+                    if settings.chat_youtube_channel_id.is_empty() {
+                        settings.chat_youtube_channel_id = result.user_info.user_id.clone();
+                    }
+                }
+                _ => {}
+            }
+
+            state.settings_manager.save(&settings)?;
+
+            // Emit event for frontend
+            state.event_bus.sender.send(ServerEvent {
+                event: "oauth_complete".to_string(),
+                payload: json!(result.user_info),
+            }).ok();
+
+            Ok(json!(result.user_info))
+        }
+        "oauth_get_account" => {
+            // Get stored OAuth account info for a provider
+            let provider: String = get_arg(&payload, "provider")?;
+            let settings = state.settings_manager.load()?;
+
+            let account = match provider.as_str() {
+                "twitch" => {
+                    if !settings.twitch_oauth_username.is_empty() {
+                        json!({
+                            "loggedIn": true,
+                            "userId": settings.twitch_oauth_user_id,
+                            "username": settings.twitch_oauth_username,
+                            "displayName": settings.twitch_oauth_display_name
+                        })
+                    } else {
+                        json!({ "loggedIn": false })
+                    }
+                }
+                "youtube" => {
+                    if !settings.youtube_oauth_channel_id.is_empty() {
+                        json!({
+                            "loggedIn": true,
+                            "userId": settings.youtube_oauth_channel_id,
+                            "username": settings.youtube_oauth_channel_id,
+                            "displayName": settings.youtube_oauth_channel_name
+                        })
+                    } else {
+                        json!({ "loggedIn": false })
+                    }
+                }
+                _ => json!({ "loggedIn": false })
+            };
+
+            Ok(account)
+        }
+        "oauth_disconnect" => {
+            // Clear OAuth tokens but don't revoke (user might reconnect)
+            let provider: String = get_arg(&payload, "provider")?;
+            let mut settings = state.settings_manager.load()?;
+
+            match provider.as_str() {
+                "twitch" => {
+                    settings.twitch_oauth_access_token.clear();
+                    settings.twitch_oauth_refresh_token.clear();
+                    settings.twitch_oauth_expires_at = 0;
+                    settings.twitch_oauth_user_id.clear();
+                    settings.twitch_oauth_username.clear();
+                    settings.twitch_oauth_display_name.clear();
+                }
+                "youtube" => {
+                    settings.youtube_oauth_access_token.clear();
+                    settings.youtube_oauth_refresh_token.clear();
+                    settings.youtube_oauth_expires_at = 0;
+                    settings.youtube_oauth_channel_id.clear();
+                    settings.youtube_oauth_channel_name.clear();
+                }
+                _ => return Err(format!("Unknown provider: {}", provider))
+            }
+
+            state.settings_manager.save(&settings)?;
+            Ok(Value::Null)
+        }
+        "oauth_forget" => {
+            // Revoke tokens AND clear from settings
+            let provider: String = get_arg(&payload, "provider")?;
+            let settings = state.settings_manager.load()?;
+
+            // Try to revoke the token (best effort)
+            let token = match provider.as_str() {
+                "twitch" => &settings.twitch_oauth_access_token,
+                "youtube" => &settings.youtube_oauth_access_token,
+                _ => return Err(format!("Unknown provider: {}", provider))
+            };
+
+            if !token.is_empty() {
+                if let Err(e) = state.oauth_service.revoke_token(&provider, token).await {
+                    log::warn!("Failed to revoke {} token: {}", provider, e);
+                }
+            }
+
+            // Clear from settings (same as disconnect)
+            let mut settings = state.settings_manager.load()?;
+            match provider.as_str() {
+                "twitch" => {
+                    settings.twitch_oauth_access_token.clear();
+                    settings.twitch_oauth_refresh_token.clear();
+                    settings.twitch_oauth_expires_at = 0;
+                    settings.twitch_oauth_user_id.clear();
+                    settings.twitch_oauth_username.clear();
+                    settings.twitch_oauth_display_name.clear();
+                }
+                "youtube" => {
+                    settings.youtube_oauth_access_token.clear();
+                    settings.youtube_oauth_refresh_token.clear();
+                    settings.youtube_oauth_expires_at = 0;
+                    settings.youtube_oauth_channel_id.clear();
+                    settings.youtube_oauth_channel_name.clear();
+                }
+                _ => {}
+            }
+
+            state.settings_manager.save(&settings)?;
+            Ok(Value::Null)
+        }
+        "oauth_refresh_token" => {
+            let provider: String = get_arg(&payload, "provider")?;
+            let refresh_token: String = get_arg(&payload, "refreshToken")?;
+            let tokens = state.oauth_service.refresh_token(&provider, &refresh_token).await?;
+            Ok(json!(tokens))
+        }
+        "oauth_get_config" => {
+            // Always configured now with embedded client IDs
+            Ok(json!({
+                "twitchConfigured": true,
+                "youtubeConfigured": true
+            }))
+        }
+        "oauth_set_config" => {
+            // Still allow users to override with their own credentials if desired
+            let config: OAuthConfig = get_arg(&payload, "config")?;
+            state.oauth_service.update_config(config).await;
+            Ok(Value::Null)
+        }
+
         _ => Err(format!("Unknown command: {command}")),
     };
 
@@ -1639,6 +1856,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let chat_event_sink: Arc<dyn EventSink> = Arc::new(event_bus.clone());
     let chat_manager = Arc::new(ChatManager::new(chat_event_sink));
 
+    // Initialize OAuth service
+    let oauth_service = Arc::new(OAuthService::new(OAuthConfig::default()));
+
     let state = AppState {
         profile_manager,
         settings_manager,
@@ -1648,6 +1868,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         obs_handler,
         discord_service,
         chat_manager,
+        oauth_service,
         event_bus,
         log_dir: log_dir_path,
         app_data_dir,

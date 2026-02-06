@@ -129,6 +129,26 @@ export function useUpdateSetting() {
         discordCooldownEnabled: current.discordCooldownEnabled ?? true,
         discordCooldownSeconds: current.discordCooldownSeconds ?? 60,
         discordImagePath: current.discordImagePath ?? '',
+        chatTwitchChannel: current.chatTwitchChannel ?? '',
+        chatTwitchOauthToken: current.chatTwitchOauthToken ?? '',
+        chatYoutubeChannelId: current.chatYoutubeChannelId ?? '',
+        chatYoutubeApiKey: current.chatYoutubeApiKey ?? '',
+        chatAutoConnect: current.chatAutoConnect ?? false,
+        // Twitch OAuth account
+        twitchOauthAccessToken: current.twitchOauthAccessToken ?? '',
+        twitchOauthRefreshToken: current.twitchOauthRefreshToken ?? '',
+        twitchOauthExpiresAt: current.twitchOauthExpiresAt ?? 0,
+        twitchOauthUserId: current.twitchOauthUserId ?? '',
+        twitchOauthUsername: current.twitchOauthUsername ?? '',
+        twitchOauthDisplayName: current.twitchOauthDisplayName ?? '',
+        // YouTube OAuth account
+        youtubeOauthAccessToken: current.youtubeOauthAccessToken ?? '',
+        youtubeOauthRefreshToken: current.youtubeOauthRefreshToken ?? '',
+        youtubeOauthExpiresAt: current.youtubeOauthExpiresAt ?? 0,
+        youtubeOauthChannelId: current.youtubeOauthChannelId ?? '',
+        youtubeOauthChannelName: current.youtubeOauthChannelName ?? '',
+        // YouTube auth mode
+        youtubeUseApiKey: current.youtubeUseApiKey ?? false,
         [key]: value,
       };
 
@@ -223,6 +243,26 @@ export function useSaveSettings() {
         discordCooldownEnabled: current.discordCooldownEnabled ?? true,
         discordCooldownSeconds: current.discordCooldownSeconds ?? 60,
         discordImagePath: current.discordImagePath ?? '',
+        chatTwitchChannel: current.chatTwitchChannel ?? '',
+        chatTwitchOauthToken: current.chatTwitchOauthToken ?? '',
+        chatYoutubeChannelId: current.chatYoutubeChannelId ?? '',
+        chatYoutubeApiKey: current.chatYoutubeApiKey ?? '',
+        chatAutoConnect: current.chatAutoConnect ?? false,
+        // Twitch OAuth account
+        twitchOauthAccessToken: current.twitchOauthAccessToken ?? '',
+        twitchOauthRefreshToken: current.twitchOauthRefreshToken ?? '',
+        twitchOauthExpiresAt: current.twitchOauthExpiresAt ?? 0,
+        twitchOauthUserId: current.twitchOauthUserId ?? '',
+        twitchOauthUsername: current.twitchOauthUsername ?? '',
+        twitchOauthDisplayName: current.twitchOauthDisplayName ?? '',
+        // YouTube OAuth account
+        youtubeOauthAccessToken: current.youtubeOauthAccessToken ?? '',
+        youtubeOauthRefreshToken: current.youtubeOauthRefreshToken ?? '',
+        youtubeOauthExpiresAt: current.youtubeOauthExpiresAt ?? 0,
+        youtubeOauthChannelId: current.youtubeOauthChannelId ?? '',
+        youtubeOauthChannelName: current.youtubeOauthChannelName ?? '',
+        // YouTube auth mode
+        youtubeUseApiKey: current.youtubeUseApiKey ?? false,
         ...updates,
       };
 

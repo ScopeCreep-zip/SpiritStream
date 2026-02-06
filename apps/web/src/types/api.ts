@@ -41,6 +41,24 @@ export interface AppSettings {
   chatYoutubeChannelId: string;
   chatYoutubeApiKey: string;
   chatAutoConnect: boolean;
+
+  // Twitch OAuth account (from "Login with Twitch")
+  twitchOauthAccessToken: string;
+  twitchOauthRefreshToken: string;
+  twitchOauthExpiresAt: number;
+  twitchOauthUserId: string;
+  twitchOauthUsername: string;
+  twitchOauthDisplayName: string;
+
+  // YouTube OAuth account (from "Sign in with Google")
+  youtubeOauthAccessToken: string;
+  youtubeOauthRefreshToken: string;
+  youtubeOauthExpiresAt: number;
+  youtubeOauthChannelId: string;
+  youtubeOauthChannelName: string;
+
+  // YouTube auth mode preference (false = OAuth, true = user's API key)
+  youtubeUseApiKey: boolean;
 }
 
 /**

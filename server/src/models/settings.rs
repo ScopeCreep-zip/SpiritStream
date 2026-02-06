@@ -7,6 +7,30 @@ fn default_log_retention_days() -> u32 {
     30
 }
 
+fn default_language() -> String {
+    "en".to_string()
+}
+
+fn default_start_minimized() -> bool {
+    false
+}
+
+fn default_show_notifications() -> bool {
+    true
+}
+
+fn default_ffmpeg_path() -> String {
+    String::new()
+}
+
+fn default_auto_download_ffmpeg() -> bool {
+    true
+}
+
+fn default_encrypt_stream_keys() -> bool {
+    false
+}
+
 fn default_backend_host() -> String {
     "127.0.0.1".to_string()
 }
@@ -55,15 +79,21 @@ pub enum ObsIntegrationDirection {
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     // General
+    #[serde(default = "default_language")]
     pub language: String,
+    #[serde(default = "default_start_minimized")]
     pub start_minimized: bool,
+    #[serde(default = "default_show_notifications")]
     pub show_notifications: bool,
 
     // FFmpeg
+    #[serde(default = "default_ffmpeg_path")]
     pub ffmpeg_path: String,
+    #[serde(default = "default_auto_download_ffmpeg")]
     pub auto_download_ffmpeg: bool,
 
     // Data & Privacy
+    #[serde(default = "default_encrypt_stream_keys")]
     pub encrypt_stream_keys: bool,
 
     // Log retention
@@ -128,6 +158,36 @@ pub struct Settings {
     pub chat_youtube_api_key: String,
     #[serde(default)]
     pub chat_auto_connect: bool,
+
+    // Twitch OAuth account (from "Login with Twitch")
+    #[serde(default)]
+    pub twitch_oauth_access_token: String,
+    #[serde(default)]
+    pub twitch_oauth_refresh_token: String,
+    #[serde(default)]
+    pub twitch_oauth_expires_at: i64,
+    #[serde(default)]
+    pub twitch_oauth_user_id: String,
+    #[serde(default)]
+    pub twitch_oauth_username: String,
+    #[serde(default)]
+    pub twitch_oauth_display_name: String,
+
+    // YouTube OAuth account (from "Sign in with Google")
+    #[serde(default)]
+    pub youtube_oauth_access_token: String,
+    #[serde(default)]
+    pub youtube_oauth_refresh_token: String,
+    #[serde(default)]
+    pub youtube_oauth_expires_at: i64,
+    #[serde(default)]
+    pub youtube_oauth_channel_id: String,
+    #[serde(default)]
+    pub youtube_oauth_channel_name: String,
+
+    // YouTube auth mode preference (false = OAuth, true = user's API key)
+    #[serde(default)]
+    pub youtube_use_api_key: bool,
 }
 
 impl Default for Settings {
@@ -164,6 +224,24 @@ impl Default for Settings {
             chat_youtube_channel_id: String::new(),
             chat_youtube_api_key: String::new(),
             chat_auto_connect: false,
+
+            // Twitch OAuth account
+            twitch_oauth_access_token: String::new(),
+            twitch_oauth_refresh_token: String::new(),
+            twitch_oauth_expires_at: 0,
+            twitch_oauth_user_id: String::new(),
+            twitch_oauth_username: String::new(),
+            twitch_oauth_display_name: String::new(),
+
+            // YouTube OAuth account
+            youtube_oauth_access_token: String::new(),
+            youtube_oauth_refresh_token: String::new(),
+            youtube_oauth_expires_at: 0,
+            youtube_oauth_channel_id: String::new(),
+            youtube_oauth_channel_name: String::new(),
+
+            // YouTube auth mode
+            youtube_use_api_key: false,
         }
     }
 }
