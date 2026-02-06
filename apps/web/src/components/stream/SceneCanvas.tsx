@@ -343,9 +343,20 @@ const LayerPreview = React.memo(function LayerPreview({
   const isDraggingRef = useRef(false);
   const isResizingRef = useRef<ResizeDirection>(null);
 
+  // Refs for values read inside the global mouse event handlers
+  // Prevents useEffect from re-registering listeners 30-60x/sec during drag
+  const dragOffsetRef = useRef(dragOffset);
+  const resizeOffsetRef = useRef(resizeOffset);
+  const transformRef = useRef(transform);
+  const onTransformChangeRef = useRef(onTransformChange);
+
   // Keep refs in sync with state (runs synchronously during render)
   isDraggingRef.current = isDragging;
   isResizingRef.current = isResizing;
+  dragOffsetRef.current = dragOffset;
+  resizeOffsetRef.current = resizeOffset;
+  transformRef.current = transform;
+  onTransformChangeRef.current = onTransformChange;
 
   // Reset offsets only when transform actually changes from server
   // Using refs to check dragging state prevents the effect from running when dragging state changes
@@ -409,6 +420,8 @@ const LayerPreview = React.memo(function LayerPreview({
   );
 
   // Global mouse move/up handlers with RAF throttling
+  // Reads transform/offset values from refs so this effect only re-runs when
+  // isDragging/isResizing change (not every frame during drag)
   useEffect(() => {
     if (!isDragging && !isResizing) return;
 
@@ -420,20 +433,21 @@ const LayerPreview = React.memo(function LayerPreview({
     const processMouseMove = () => {
       const deltaX = (lastClientX - dragStartRef.current.mouseX) / scale;
       const deltaY = (lastClientY - dragStartRef.current.mouseY) / scale;
+      const t = transformRef.current;
 
-      if (isDragging) {
+      if (isDraggingRef.current) {
         // Calculate new position with bounds checking
-        const newX = Math.max(0, Math.min(canvasWidth - transform.width, dragStartRef.current.layerX + deltaX));
-        const newY = Math.max(0, Math.min(canvasHeight - transform.height, dragStartRef.current.layerY + deltaY));
-        setDragOffset({ x: newX - transform.x, y: newY - transform.y });
-      } else if (isResizing) {
+        const newX = Math.max(0, Math.min(canvasWidth - t.width, dragStartRef.current.layerX + deltaX));
+        const newY = Math.max(0, Math.min(canvasHeight - t.height, dragStartRef.current.layerY + deltaY));
+        setDragOffset({ x: newX - t.x, y: newY - t.y });
+      } else if (isResizingRef.current) {
         let newWidth = dragStartRef.current.width;
         let newHeight = dragStartRef.current.height;
         let newX = dragStartRef.current.layerX;
         let newY = dragStartRef.current.layerY;
 
         // Calculate resize based on direction
-        switch (isResizing) {
+        switch (isResizingRef.current) {
           case 'se':
             newWidth = Math.max(50, dragStartRef.current.width + deltaX);
             newHeight = Math.max(50, dragStartRef.current.height + deltaY);
@@ -463,10 +477,10 @@ const LayerPreview = React.memo(function LayerPreview({
         newHeight = Math.min(newHeight, canvasHeight - newY);
 
         setResizeOffset({
-          width: newWidth - transform.width,
-          height: newHeight - transform.height,
-          x: newX - transform.x,
-          y: newY - transform.y,
+          width: newWidth - t.width,
+          height: newHeight - t.height,
+          x: newX - t.x,
+          y: newY - t.y,
         });
       }
       rafPending = false;
@@ -481,23 +495,27 @@ const LayerPreview = React.memo(function LayerPreview({
     };
 
     const handleMouseUp = () => {
-      if (isDragging) {
-        const newX = transform.x + dragOffset.x;
-        const newY = transform.y + dragOffset.y;
-        if (dragOffset.x !== 0 || dragOffset.y !== 0) {
-          onTransformChange({ x: Math.round(newX), y: Math.round(newY) });
+      const t = transformRef.current;
+
+      if (isDraggingRef.current) {
+        const dOff = dragOffsetRef.current;
+        const newX = t.x + dOff.x;
+        const newY = t.y + dOff.y;
+        if (dOff.x !== 0 || dOff.y !== 0) {
+          onTransformChangeRef.current({ x: Math.round(newX), y: Math.round(newY) });
         }
         // Don't reset dragOffset here - the useEffect will reset it when transform updates
         setIsDragging(false);
       }
 
-      if (isResizing) {
-        const newWidth = transform.width + resizeOffset.width;
-        const newHeight = transform.height + resizeOffset.height;
-        const newX = transform.x + resizeOffset.x;
-        const newY = transform.y + resizeOffset.y;
-        if (resizeOffset.width !== 0 || resizeOffset.height !== 0) {
-          onTransformChange({
+      if (isResizingRef.current) {
+        const rOff = resizeOffsetRef.current;
+        const newWidth = t.width + rOff.width;
+        const newHeight = t.height + rOff.height;
+        const newX = t.x + rOff.x;
+        const newY = t.y + rOff.y;
+        if (rOff.width !== 0 || rOff.height !== 0) {
+          onTransformChangeRef.current({
             x: Math.round(newX),
             y: Math.round(newY),
             width: Math.round(newWidth),
@@ -516,7 +534,7 @@ const LayerPreview = React.memo(function LayerPreview({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, isResizing, scale, transform, dragOffset, resizeOffset, canvasWidth, canvasHeight, onTransformChange]);
+  }, [isDragging, isResizing, scale, canvasWidth, canvasHeight]);
 
   if (!visible) return null;
 

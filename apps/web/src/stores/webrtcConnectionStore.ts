@@ -38,19 +38,21 @@ const rtcConfig: RTCConfiguration = {
  */
 class ConnectionPool {
   private pool: RTCPeerConnection[] = [];
-  private acquiring = false;
   private readonly maxSize = 8;
+  /** Promise-based mutex queue — waiters resolve in order without busy-waiting */
+  private mutexQueue: Array<() => void> = [];
+  private locked = false;
 
   /**
    * Acquire a connection from the pool or create a new one.
-   * Uses mutex to prevent race conditions during concurrent access.
+   * Uses promise-based mutex to prevent race conditions without busy-waiting.
    */
   async acquire(): Promise<RTCPeerConnection> {
-    // Simple mutex - wait if another acquire is in progress
-    while (this.acquiring) {
-      await new Promise(resolve => setTimeout(resolve, 1));
+    // Wait for mutex via promise chain (no polling, no wasted CPU cycles)
+    if (this.locked) {
+      await new Promise<void>(resolve => this.mutexQueue.push(resolve));
     }
-    this.acquiring = true;
+    this.locked = true;
 
     try {
       const pooled = this.pool.pop();
@@ -59,7 +61,13 @@ class ConnectionPool {
       }
       return new RTCPeerConnection(rtcConfig);
     } finally {
-      this.acquiring = false;
+      // Release mutex: resolve next waiter or unlock
+      if (this.mutexQueue.length > 0) {
+        const next = this.mutexQueue.shift()!;
+        next();
+      } else {
+        this.locked = false;
+      }
     }
   }
 

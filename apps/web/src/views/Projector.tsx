@@ -3,7 +3,7 @@
  * Fullscreen output for external displays or streaming preview
  * Supports: scene, source, preview, program, and multiview projector types
  */
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { X, Maximize2, Minimize2 } from 'lucide-react';
@@ -21,7 +21,8 @@ export function Projector() {
   const [searchParams] = useSearchParams();
   const [showControls, setShowControls] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [mouseTimer, setMouseTimer] = useState<NodeJS.Timeout | null>(null);
+  const mouseTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const showControlsRef = useRef(false);
 
   // Parse projector configuration from URL
   const projectorConfig = useMemo(
@@ -56,28 +57,31 @@ export function Projector() {
   }, []);
 
   // Auto-hide controls after mouse inactivity
+  // Uses refs for timer and showControls to prevent useCallback re-creation on every move
   const handleMouseMove = useCallback(() => {
-    setShowControls(true);
-
-    if (mouseTimer) {
-      clearTimeout(mouseTimer);
+    if (!showControlsRef.current) {
+      showControlsRef.current = true;
+      setShowControls(true);
     }
 
-    const timer = setTimeout(() => {
+    if (mouseTimerRef.current) {
+      clearTimeout(mouseTimerRef.current);
+    }
+
+    mouseTimerRef.current = setTimeout(() => {
+      showControlsRef.current = false;
       setShowControls(false);
     }, 3000);
-
-    setMouseTimer(timer);
-  }, [mouseTimer]);
+  }, []);
 
   // Cleanup timer on unmount
   useEffect(() => {
     return () => {
-      if (mouseTimer) {
-        clearTimeout(mouseTimer);
+      if (mouseTimerRef.current) {
+        clearTimeout(mouseTimerRef.current);
       }
     };
-  }, [mouseTimer]);
+  }, []);
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -183,8 +187,6 @@ export function Projector() {
         return (
           <MultiviewProjector
             scenes={current.scenes}
-            sources={current.sources}
-            profileName={current.name}
             activeSceneId={current.activeSceneId}
             previewSceneId={previewSceneId ?? undefined}
             programSceneId={programSceneId ?? undefined}
@@ -370,8 +372,6 @@ function SceneProjector({ scene, sources, scenes, profileName, type }: SceneProj
  */
 interface MultiviewProjectorProps {
   scenes: Scene[];
-  sources: Source[];
-  profileName: string;
   activeSceneId?: string;
   previewSceneId?: string;
   programSceneId?: string;
@@ -379,8 +379,6 @@ interface MultiviewProjectorProps {
 
 function MultiviewProjector({
   scenes,
-  sources,
-  profileName,
   activeSceneId,
   previewSceneId,
   programSceneId,
@@ -403,22 +401,15 @@ function MultiviewProjector({
             <div
               key={scene.id}
               className={cn(
-                'relative rounded-lg overflow-hidden',
+                'relative rounded-lg overflow-hidden bg-black',
                 isProgram && 'ring-4 ring-red-500',
                 isPreview && !isProgram && 'ring-4 ring-green-500',
                 !isPreview && !isProgram && isActive && 'ring-2 ring-primary'
               )}
             >
-              <SceneCanvas
-                scene={scene}
-                sources={sources}
-                scenes={scenes}
-                selectedLayerId={null}
-                onSelectLayer={() => {}}
-                profileName={profileName}
-                studioMode="program"
-                hideHeader
-              />
+              {/* Single WHEP stream per scene instead of full SceneCanvas with per-layer previews.
+                  Uses the scene's composite go2rtc feed — reduces from N*layers to N WebRTC connections. */}
+              <MultiviewSceneCell scene={scene} />
 
               {/* Scene label overlay */}
               <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/80 to-transparent">
@@ -445,6 +436,49 @@ function MultiviewProjector({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Multiview Scene Cell - Renders a single scene as a lightweight WHEP preview
+ * Uses the scene's first video source for preview instead of compositing all layers client-side.
+ * This reduces WebRTC connections from N*layers to N for the entire multiview grid.
+ */
+function MultiviewSceneCell({ scene }: { scene: Scene }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ width: 320, height: 180 });
+
+  // Measure container size for WorkerVideoPreview
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) {
+        const { width, height } = entry.contentRect;
+        if (width > 0 && height > 0) {
+          setSize({ width: Math.floor(width), height: Math.floor(height) });
+        }
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // Use the scene composite source ID for the WHEP stream
+  // go2rtc registers scene composites as "scene_{sceneId}"
+  const sceneSourceId = `scene_${scene.id}`;
+
+  return (
+    <div ref={containerRef} className="w-full h-full">
+      <WorkerVideoPreview
+        sourceId={sceneSourceId}
+        sourceName={scene.name}
+        width={size.width}
+        height={size.height}
+      />
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { immer } from 'zustand/middleware/immer';
 import { api } from '@/lib/backend';
 import i18n from '@/lib/i18n';
 import {
@@ -134,7 +135,8 @@ const createSummary = (profile: Profile, isEncrypted: boolean = false): ProfileS
   };
 };
 
-export const useProfileStore = create<ProfileState>((set, get) => ({
+export const useProfileStore = create<ProfileState>()(
+  immer((set, get) => ({
   profiles: [],
   current: null,
   loading: false,
@@ -339,311 +341,159 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
 
   // Update sources without triggering save (used after source API calls)
   setCurrentSources: (sources) => {
-    const current = get().current;
-    if (current) {
-      set({ current: { ...current, sources } });
-    }
+    set((state) => {
+      if (state.current) state.current.sources = sources;
+    });
   },
 
   // Update a single source locally without triggering save (used after updateSource API)
   updateCurrentSource: (source) => {
-    const current = get().current;
-    if (current) {
-      set({
-        current: {
-          ...current,
-          sources: current.sources.map((s) => (s.id === source.id ? source : s)),
-        },
-      });
-    }
+    set((state) => {
+      if (!state.current) return;
+      const idx = state.current.sources.findIndex((s) => s.id === source.id);
+      if (idx !== -1) state.current.sources[idx] = source;
+    });
   },
 
   // Remove a source locally without triggering save (used after removeSource API)
   // Also removes from all scenes (layers and audio tracks) to match backend behavior
   removeCurrentSource: (sourceId) => {
-    const current = get().current;
-    if (current) {
-      set({
-        current: {
-          ...current,
-          sources: current.sources.filter((s) => s.id !== sourceId),
-          // Also remove from all scenes (layers and audio mixer tracks)
-          scenes: current.scenes.map((scene) => ({
-            ...scene,
-            layers: scene.layers.filter((l) => l.sourceId !== sourceId),
-            audioMixer: {
-              ...scene.audioMixer,
-              tracks: scene.audioMixer.tracks.filter((t) => t.sourceId !== sourceId),
-            },
-          })),
-        },
-      });
-    }
+    set((state) => {
+      if (!state.current) return;
+      state.current.sources = state.current.sources.filter((s) => s.id !== sourceId);
+      for (const scene of state.current.scenes) {
+        scene.layers = scene.layers.filter((l) => l.sourceId !== sourceId);
+        scene.audioMixer.tracks = scene.audioMixer.tracks.filter((t) => t.sourceId !== sourceId);
+      }
+    });
   },
 
   // Update a layer locally without triggering save (used after updateLayer API)
   updateCurrentLayer: (sceneId, layerId, updates) => {
-    const current = get().current;
-    if (current) {
-      set({
-        current: {
-          ...current,
-          scenes: current.scenes.map((scene) =>
-            scene.id === sceneId
-              ? {
-                  ...scene,
-                  layers: scene.layers.map((layer) =>
-                    layer.id === layerId ? { ...layer, ...updates } : layer
-                  ),
-                }
-              : scene
-          ),
-        },
-      });
-    }
+    set((state) => {
+      const scene = state.current?.scenes.find((s) => s.id === sceneId);
+      if (!scene) return;
+      const layer = scene.layers.find((l) => l.id === layerId);
+      if (layer) Object.assign(layer, updates);
+    });
   },
 
   // Remove a layer locally without triggering save (used after removeLayer API)
   removeCurrentLayer: (sceneId, layerId) => {
-    const current = get().current;
-    if (current) {
-      set({
-        current: {
-          ...current,
-          scenes: current.scenes.map((scene) =>
-            scene.id === sceneId
-              ? {
-                  ...scene,
-                  layers: scene.layers.filter((layer) => layer.id !== layerId),
-                }
-              : scene
-          ),
-        },
-      });
-    }
+    set((state) => {
+      const scene = state.current?.scenes.find((s) => s.id === sceneId);
+      if (scene) {
+        scene.layers = scene.layers.filter((l) => l.id !== layerId);
+      }
+    });
   },
 
   // Reorder layers locally without triggering save (used after reorderLayers API)
   reorderCurrentLayers: (sceneId, layerIds) => {
-    const current = get().current;
-    if (current) {
-      set({
-        current: {
-          ...current,
-          scenes: current.scenes.map((scene) => {
-            if (scene.id !== sceneId) return scene;
-            // Reorder layers based on layerIds, assigning new zIndex values
-            const layerMap = new Map(scene.layers.map((l) => [l.id, l]));
-            const reorderedLayers = layerIds
-              .map((id, index) => {
-                const layer = layerMap.get(id);
-                return layer ? { ...layer, zIndex: index } : null;
-              })
-              .filter((l): l is NonNullable<typeof l> => l !== null);
-            return { ...scene, layers: reorderedLayers };
-          }),
-        },
-      });
-    }
+    set((state) => {
+      const scene = state.current?.scenes.find((s) => s.id === sceneId);
+      if (!scene) return;
+      const layerMap = new Map(scene.layers.map((l) => [l.id, l]));
+      const reordered: typeof scene.layers = [];
+      for (let i = 0; i < layerIds.length; i++) {
+        const layer = layerMap.get(layerIds[i]);
+        if (layer) {
+          layer.zIndex = i;
+          reordered.push(layer);
+        }
+      }
+      scene.layers = reordered;
+    });
   },
 
   // Add a layer locally without triggering save (used after addLayer API)
   addCurrentLayer: (sceneId, layer) => {
-    const current = get().current;
-    if (current) {
-      set({
-        current: {
-          ...current,
-          scenes: current.scenes.map((scene) =>
-            scene.id === sceneId
-              ? { ...scene, layers: [...scene.layers, layer] }
-              : scene
-          ),
-        },
-      });
-    }
+    set((state) => {
+      const scene = state.current?.scenes.find((s) => s.id === sceneId);
+      if (scene) scene.layers.push(layer);
+    });
   },
 
   // Batch update multiple layers in a single state update
   // This reduces re-renders during drag operations where multiple layers may be updated
   batchUpdateLayers: (sceneId, updates) => {
-    const current = get().current;
-    if (!current || updates.length === 0) return;
-
-    set({
-      current: {
-        ...current,
-        scenes: current.scenes.map((scene) => {
-          if (scene.id !== sceneId) return scene;
-
-          // Create a map for O(1) lookup of updates
-          const updateMap = new Map(updates.map(u => [u.layerId, u.changes]));
-
-          return {
-            ...scene,
-            layers: scene.layers.map((layer) => {
-              const changes = updateMap.get(layer.id);
-              return changes ? { ...layer, ...changes } : layer;
-            }),
-          };
-        }),
-      },
+    if (updates.length === 0) return;
+    set((state) => {
+      const scene = state.current?.scenes.find((s) => s.id === sceneId);
+      if (!scene) return;
+      const updateMap = new Map(updates.map((u) => [u.layerId, u.changes]));
+      for (const layer of scene.layers) {
+        const changes = updateMap.get(layer.id);
+        if (changes) Object.assign(layer, changes);
+      }
     });
   },
 
   // Add an audio track locally without triggering save (used when adding audio sources)
   addCurrentAudioTrack: (sceneId, track) => {
-    const current = get().current;
-    if (current) {
-      set({
-        current: {
-          ...current,
-          scenes: current.scenes.map((scene) =>
-            scene.id === sceneId
-              ? {
-                  ...scene,
-                  audioMixer: {
-                    ...scene.audioMixer,
-                    tracks: [...scene.audioMixer.tracks, track],
-                  },
-                }
-              : scene
-          ),
-        },
-      });
-    }
+    set((state) => {
+      const scene = state.current?.scenes.find((s) => s.id === sceneId);
+      if (scene) scene.audioMixer.tracks.push(track);
+    });
   },
 
   // Update an audio track locally without triggering save (used after setTrackVolume/setTrackMuted/setTrackSolo API)
   updateCurrentAudioTrack: (sceneId, sourceId, updates) => {
-    const current = get().current;
-    if (current) {
-      set({
-        current: {
-          ...current,
-          scenes: current.scenes.map((scene) =>
-            scene.id === sceneId
-              ? {
-                  ...scene,
-                  audioMixer: {
-                    ...scene.audioMixer,
-                    tracks: scene.audioMixer.tracks.map((track) =>
-                      track.sourceId === sourceId ? { ...track, ...updates } : track
-                    ),
-                  },
-                }
-              : scene
-          ),
-        },
-      });
-    }
+    set((state) => {
+      const scene = state.current?.scenes.find((s) => s.id === sceneId);
+      if (!scene) return;
+      const track = scene.audioMixer.tracks.find((t) => t.sourceId === sourceId);
+      if (track) Object.assign(track, updates);
+    });
   },
 
   // Update master volume locally without triggering save (used after setMasterVolume API)
   updateCurrentMasterVolume: (sceneId, masterVolume) => {
-    const current = get().current;
-    if (current) {
-      set({
-        current: {
-          ...current,
-          scenes: current.scenes.map((scene) =>
-            scene.id === sceneId
-              ? {
-                  ...scene,
-                  audioMixer: {
-                    ...scene.audioMixer,
-                    masterVolume,
-                  },
-                }
-              : scene
-          ),
-        },
-      });
-    }
+    set((state) => {
+      const scene = state.current?.scenes.find((s) => s.id === sceneId);
+      if (scene) scene.audioMixer.masterVolume = masterVolume;
+    });
   },
 
   // Update master muted locally without triggering save (used after setMasterMuted API)
   updateCurrentMasterMuted: (sceneId, masterMuted) => {
-    const current = get().current;
-    if (current) {
-      set({
-        current: {
-          ...current,
-          scenes: current.scenes.map((scene) =>
-            scene.id === sceneId
-              ? {
-                  ...scene,
-                  audioMixer: {
-                    ...scene.audioMixer,
-                    masterMuted,
-                  },
-                }
-              : scene
-          ),
-        },
-      });
-    }
+    set((state) => {
+      const scene = state.current?.scenes.find((s) => s.id === sceneId);
+      if (scene) scene.audioMixer.masterMuted = masterMuted;
+    });
   },
 
   // Add a scene locally without triggering save (used after createScene API)
   addCurrentScene: (scene) => {
-    const current = get().current;
-    if (current) {
-      set({
-        current: {
-          ...current,
-          scenes: [...current.scenes, scene],
-        },
-      });
-    }
+    set((state) => {
+      if (state.current) state.current.scenes.push(scene);
+    });
   },
 
   // Remove a scene locally without triggering save (used after deleteScene API)
   removeCurrentScene: (sceneId) => {
-    const current = get().current;
-    if (current) {
-      const newScenes = current.scenes.filter((s) => s.id !== sceneId);
-      // If we deleted the active scene, switch to the first available scene
-      const newActiveSceneId =
-        current.activeSceneId === sceneId
-          ? newScenes[0]?.id ?? ''
-          : current.activeSceneId;
-      set({
-        current: {
-          ...current,
-          scenes: newScenes,
-          activeSceneId: newActiveSceneId,
-        },
-      });
-    }
+    set((state) => {
+      if (!state.current) return;
+      state.current.scenes = state.current.scenes.filter((s) => s.id !== sceneId);
+      if (state.current.activeSceneId === sceneId) {
+        state.current.activeSceneId = state.current.scenes[0]?.id ?? '';
+      }
+    });
   },
 
   // Set active scene locally without triggering save (used after setActiveScene API)
   setCurrentActiveScene: (sceneId) => {
-    const current = get().current;
-    if (current) {
-      set({
-        current: {
-          ...current,
-          activeSceneId: sceneId,
-        },
-      });
-    }
+    set((state) => {
+      if (state.current) state.current.activeSceneId = sceneId;
+    });
   },
 
   // Update scene properties locally without triggering save (used after updateScene API)
   updateCurrentScene: (sceneId, updates) => {
-    const current = get().current;
-    if (current) {
-      set({
-        current: {
-          ...current,
-          scenes: current.scenes.map((scene) =>
-            scene.id === sceneId ? { ...scene, ...updates } : scene
-          ),
-        },
-      });
-    }
+    set((state) => {
+      const scene = state.current?.scenes.find((s) => s.id === sceneId);
+      if (scene) Object.assign(scene, updates);
+    });
   },
 
   // Select and load a profile by name
@@ -678,18 +528,16 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
 
   // Update profile properties locally without triggering save (used after profile API calls)
   updateCurrentProfile: (updates) => {
-    const current = get().current;
-    if (current) {
-      set({ current: { ...current, ...updates } });
-    }
+    set((state) => {
+      if (state.current) Object.assign(state.current, updates);
+    });
   },
 
   updateProfile: async (updates) => {
-    const current = get().current;
-    if (current) {
-      set({ current: { ...current, ...updates } });
-      await get().saveProfile();
-    }
+    set((state) => {
+      if (state.current) Object.assign(state.current, updates);
+    });
+    await get().saveProfile();
   },
 
   reorderProfiles: async (fromIndex, toIndex) => {
@@ -714,134 +562,81 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   },
 
   addOutputGroup: async (group) => {
-    const current = get().current;
-    if (current) {
-      set({
-        current: {
-          ...current,
-          outputGroups: [...current.outputGroups, group],
-        },
-      });
-      await get().saveProfile();
-    }
+    set((state) => {
+      if (state.current) state.current.outputGroups.push(group);
+    });
+    await get().saveProfile();
   },
 
   updateOutputGroup: async (groupId, updates) => {
-    const current = get().current;
-    if (current) {
-      set({
-        current: {
-          ...current,
-          outputGroups: current.outputGroups.map((g) =>
-            g.id === groupId ? { ...g, ...updates } : g
-          ),
-        },
-      });
-      await get().saveProfile();
-    }
+    set((state) => {
+      const group = state.current?.outputGroups.find((g) => g.id === groupId);
+      if (group) Object.assign(group, updates);
+    });
+    await get().saveProfile();
   },
 
   removeOutputGroup: async (groupId) => {
     const current = get().current;
-    if (current) {
-      // Prevent deletion of the default passthrough group
-      const groupToDelete = current.outputGroups.find((g) => g.id === groupId);
-      if (groupToDelete?.isDefault) {
-        console.warn('Cannot delete the default passthrough output group');
-        return;
+    if (!current) return;
+    const groupToDelete = current.outputGroups.find((g) => g.id === groupId);
+    if (groupToDelete?.isDefault) {
+      console.warn('Cannot delete the default passthrough output group');
+      return;
+    }
+    set((state) => {
+      if (state.current) {
+        state.current.outputGroups = state.current.outputGroups.filter((g) => g.id !== groupId);
       }
-
-      set({
-        current: {
-          ...current,
-          outputGroups: current.outputGroups.filter((g) => g.id !== groupId),
-        },
-      });
-      await get().saveProfile();
-    }
-  },
-
-  addStreamTarget: async (groupId, target) => {
-    const current = get().current;
-    if (current) {
-      set({
-        current: {
-          ...current,
-          outputGroups: current.outputGroups.map((g) =>
-            g.id === groupId ? { ...g, streamTargets: [...g.streamTargets, target] } : g
-          ),
-        },
-      });
-      await get().saveProfile();
-    }
-  },
-
-  updateStreamTarget: async (groupId, targetId, updates) => {
-    const current = get().current;
-    if (current) {
-      set({
-        current: {
-          ...current,
-          outputGroups: current.outputGroups.map((g) =>
-            g.id === groupId
-              ? {
-                  ...g,
-                  streamTargets: g.streamTargets.map((t) =>
-                    t.id === targetId ? { ...t, ...updates } : t
-                  ),
-                }
-              : g
-          ),
-        },
-      });
-      await get().saveProfile();
-    }
-  },
-
-  removeStreamTarget: async (groupId, targetId) => {
-    const current = get().current;
-    if (current) {
-      set({
-        current: {
-          ...current,
-          outputGroups: current.outputGroups.map((g) =>
-            g.id === groupId
-              ? { ...g, streamTargets: g.streamTargets.filter((t) => t.id !== targetId) }
-              : g
-          ),
-        },
-      });
-      await get().saveProfile();
-    }
-  },
-
-  moveStreamTarget: async (fromGroupId, toGroupId, targetId) => {
-    const current = get().current;
-    if (!current || fromGroupId === toGroupId) return;
-
-    // Find the target in the source group
-    const sourceGroup = current.outputGroups.find((g: OutputGroup) => g.id === fromGroupId);
-    const target = sourceGroup?.streamTargets.find((t: StreamTarget) => t.id === targetId);
-    if (!target) return;
-
-    // Remove from source group and add to destination group
-    set({
-      current: {
-        ...current,
-        outputGroups: current.outputGroups.map((g: OutputGroup) => {
-          if (g.id === fromGroupId) {
-            return {
-              ...g,
-              streamTargets: g.streamTargets.filter((t: StreamTarget) => t.id !== targetId),
-            };
-          }
-          if (g.id === toGroupId) {
-            return { ...g, streamTargets: [...g.streamTargets, target] };
-          }
-          return g;
-        }),
-      },
     });
     await get().saveProfile();
   },
-}));
+
+  addStreamTarget: async (groupId, target) => {
+    set((state) => {
+      const group = state.current?.outputGroups.find((g) => g.id === groupId);
+      if (group) group.streamTargets.push(target);
+    });
+    await get().saveProfile();
+  },
+
+  updateStreamTarget: async (groupId, targetId, updates) => {
+    set((state) => {
+      const group = state.current?.outputGroups.find((g) => g.id === groupId);
+      if (!group) return;
+      const target = group.streamTargets.find((t) => t.id === targetId);
+      if (target) Object.assign(target, updates);
+    });
+    await get().saveProfile();
+  },
+
+  removeStreamTarget: async (groupId, targetId) => {
+    set((state) => {
+      const group = state.current?.outputGroups.find((g) => g.id === groupId);
+      if (group) {
+        group.streamTargets = group.streamTargets.filter((t) => t.id !== targetId);
+      }
+    });
+    await get().saveProfile();
+  },
+
+  moveStreamTarget: async (fromGroupId, toGroupId, targetId) => {
+    if (fromGroupId === toGroupId) return;
+    const current = get().current;
+    if (!current) return;
+    const sourceGroup = current.outputGroups.find((g) => g.id === fromGroupId);
+    const target = sourceGroup?.streamTargets.find((t) => t.id === targetId);
+    if (!target) return;
+
+    set((state) => {
+      if (!state.current) return;
+      const from = state.current.outputGroups.find((g) => g.id === fromGroupId);
+      const to = state.current.outputGroups.find((g) => g.id === toGroupId);
+      if (from && to) {
+        from.streamTargets = from.streamTargets.filter((t) => t.id !== targetId);
+        to.streamTargets.push(target);
+      }
+    });
+    await get().saveProfile();
+  },
+})));

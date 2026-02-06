@@ -99,7 +99,11 @@ export function NestedSceneRenderer({
 
   // Render the nested scene's layers
   // Sort layers by zIndex (lowest first = back, highest last = front)
-  const sortedLayers = [...referencedScene.layers].sort((a, b) => a.zIndex - b.zIndex);
+  // Memoized to avoid re-sorting on every render
+  const sortedLayers = useMemo(
+    () => [...referencedScene.layers].sort((a, b) => a.zIndex - b.zIndex),
+    [referencedScene.layers]
+  );
 
   // Calculate scale factors for nested layers
   const scaleX = width / referencedScene.canvasWidth;

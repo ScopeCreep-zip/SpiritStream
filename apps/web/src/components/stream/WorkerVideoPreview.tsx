@@ -171,6 +171,11 @@ export function WorkerVideoPreview({
     }
   }, [stream]);
 
+  // Adaptive resize quality: 'low' for thumbnails, 'medium' for mid-size, 'high' for full
+  // Reduces GPU cost for small canvases (multiview, nested scenes)
+  const resizeQuality: 'low' | 'medium' | 'high' =
+    width < 320 ? 'low' : width < 640 ? 'medium' : 'high';
+
   // Start frame capture when video and worker are ready
   useEffect(() => {
     const video = videoRef.current;
@@ -259,7 +264,7 @@ export function WorkerVideoPreview({
             const bitmap = await createImageBitmap(currentVideo, {
               resizeWidth: width,
               resizeHeight: height,
-              resizeQuality: 'high',
+              resizeQuality,
             });
 
             // Track if we successfully transferred ownership to the worker
@@ -311,7 +316,7 @@ export function WorkerVideoPreview({
         cancelAnimationFrame(rafId);
       }
     };
-  }, [stream, workerRegistered, width, height, canvasId]); // Note: removed videoReady from deps to prevent restart loop
+  }, [stream, workerRegistered, width, height, canvasId, resizeQuality]); // Note: removed videoReady from deps to prevent restart loop
 
   // Listen for video ready events (both worker and fallback modes)
   // In worker mode, these events set videoReady independently of the frame capture loop,
