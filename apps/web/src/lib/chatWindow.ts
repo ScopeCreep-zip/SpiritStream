@@ -138,6 +138,10 @@ export function setupMainWindowCloseHandler() {
  *
  * Uses polling to check if main window still exists, since event-based
  * approaches can block the main window from closing.
+ *
+ * TODO: Find a more elegant solution - possibly handle this in Rust/main.rs
+ * by configuring the app to quit when the main window closes, or use
+ * parent-child window relationships in Tauri.
  */
 export async function setupOverlayAutoClose() {
   if (!isTauri()) return;
