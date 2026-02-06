@@ -17,7 +17,7 @@ use governor::{
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use log::{Level, LevelFilter, Log, Metadata, Record};
-use chrono::{Local, Utc};
+use chrono::Local;
 use std::{
     env,
     fs::OpenOptions,

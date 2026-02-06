@@ -1,4 +1,4 @@
-//! OAuth 2.0 authentication service for Twitch and YouTube
+﻿//! OAuth 2.0 authentication service for Twitch and YouTube
 //!
 //! This module handles the OAuth flow for desktop applications using the
 //! loopback redirect method (localhost callback) with PKCE for security.
@@ -143,6 +143,26 @@ impl OAuthConfig {
 
         YOUTUBE_CLIENT_ID.to_string()
     }
+
+    /// Get YouTube client secret (user-provided or env override)
+    /// Required for Google Desktop apps even with PKCE
+    pub fn get_youtube_client_secret(&self) -> Option<String> {
+        if let Some(value) = self.youtube_client_secret.as_deref() {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+
+        if let Ok(value) = std::env::var("SPIRITSTREAM_YOUTUBE_CLIENT_SECRET") {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+
+        None
+    }
 }
 
 /// Result of initiating an OAuth flow
@@ -161,6 +181,7 @@ pub struct OAuthFlowResult {
 #[derive(Debug, Clone)]
 struct PendingOAuthFlow {
     provider: String,
+    #[allow(dead_code)] // Stored for debugging, key is in HashMap
     state: String,
     code_verifier: String,
     redirect_uri: String,
@@ -350,6 +371,18 @@ impl OAuthService {
         let auth_url =
             Self::build_auth_url_with_pkce(&provider, &client_id, &redirect_uri, &state, &code_challenge);
 
+        // Debug: log provider + client_id hint (avoid full ID in logs)
+        let id_len = client_id.len();
+        let (id_prefix, id_suffix) = if id_len > 12 {
+            (&client_id[..6], &client_id[id_len - 6..])
+        } else {
+            (client_id.as_str(), client_id.as_str())
+        };
+        info!(
+            "OAuth start: provider={}, client_id_hint={}...{}, len={}",
+            provider_name, id_prefix, id_suffix, id_len
+        );
+
         // Store the pending flow
         let pending_flow = PendingOAuthFlow {
             provider: provider_name.to_string(),
@@ -398,9 +431,13 @@ impl OAuthService {
 
         let config = self.config.lock().await;
 
-        let (provider, client_id) = match provider_name {
-            "twitch" => (OAuthProvider::twitch(), config.get_twitch_client_id()),
-            "youtube" => (OAuthProvider::youtube(), config.get_youtube_client_id()),
+        let (provider, client_id, client_secret) = match provider_name {
+            "twitch" => (OAuthProvider::twitch(), config.get_twitch_client_id(), None),
+            "youtube" => (
+                OAuthProvider::youtube(),
+                config.get_youtube_client_id(),
+                config.get_youtube_client_secret(),
+            ),
             _ => return Err(format!("Unknown provider: {}", provider_name)),
         };
 
@@ -414,9 +451,16 @@ impl OAuthService {
         params.insert("grant_type", "authorization_code");
         params.insert("redirect_uri", pending_flow.redirect_uri.as_str());
 
+        // Google Desktop apps require client_secret even with PKCE (non-standard)
+        let client_secret_owned = client_secret.clone();
+        if let Some(ref secret) = client_secret_owned {
+            params.insert("client_secret", secret.as_str());
+        }
+
         info!(
-            "Exchanging {} authorization code for tokens (PKCE)",
-            provider_name
+            "Exchanging {} authorization code for tokens (PKCE{})",
+            provider_name,
+            if client_secret.is_some() { " + secret" } else { "" }
         );
 
         let response = self
@@ -451,9 +495,13 @@ impl OAuthService {
     ) -> Result<OAuthTokens, String> {
         let config = self.config.lock().await;
 
-        let (provider, client_id) = match provider_name {
-            "twitch" => (OAuthProvider::twitch(), config.get_twitch_client_id()),
-            "youtube" => (OAuthProvider::youtube(), config.get_youtube_client_id()),
+        let (provider, client_id, client_secret) = match provider_name {
+            "twitch" => (OAuthProvider::twitch(), config.get_twitch_client_id(), None),
+            "youtube" => (
+                OAuthProvider::youtube(),
+                config.get_youtube_client_id(),
+                config.get_youtube_client_secret(),
+            ),
             _ => return Err(format!("Unknown provider: {}", provider_name)),
         };
 
@@ -463,6 +511,12 @@ impl OAuthService {
         params.insert("client_id", client_id.as_str());
         params.insert("refresh_token", refresh_token);
         params.insert("grant_type", "refresh_token");
+
+        // Google Desktop apps require client_secret even for refresh (non-standard)
+        let client_secret_owned = client_secret;
+        if let Some(ref secret) = client_secret_owned {
+            params.insert("client_secret", secret.as_str());
+        }
 
         info!("Refreshing {} access token", provider_name);
 
@@ -802,7 +856,7 @@ impl OAuthCallbackServer {
 </head>
 <body>
     <div class="container">
-        <h1>✓ Authentication Successful</h1>
+        <h1>Authentication Successful</h1>
         <p>You can close this window and return to SpiritStream.</p>
         <script>setTimeout(() => window.close(), 3000);</script>
     </div>
@@ -831,7 +885,7 @@ impl OAuthCallbackServer {
 </head>
 <body>
     <div class="container">
-        <h1>✗ Authentication Failed</h1>
+        <h1>Authentication Failed</h1>
         <p>{}</p>
     </div>
 </body>
@@ -863,3 +917,4 @@ pub enum OAuthCallback {
         description: Option<String>,
     },
 }
+
