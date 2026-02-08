@@ -277,7 +277,7 @@ function TwitchCard({
           <p className="text-xs text-[var(--text-tertiary)]">
             {t(
               'chat.streamTiedHint',
-              'Chat connects when you start streaming. YouTube may take ~30s to activate.'
+              'Chat connects when you start streaming. YouTube may take ~10s to activate.'
             )}
           </p>
           <div className="flex items-center gap-2">
@@ -608,7 +608,7 @@ function YouTubeCard({
           <p className="text-xs text-[var(--text-tertiary)]">
             {t(
               'chat.streamTiedHint',
-              'Chat connects when you start streaming. YouTube may take ~30s to activate.'
+              'Chat connects when you start streaming. YouTube may take ~10s to activate.'
             )}
           </p>
           <div className="flex items-center gap-2">

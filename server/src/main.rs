@@ -614,9 +614,9 @@ async fn connect_youtube_chat_with_retry(
         return;
     }
 
-    // Phase 2: Data is flowing. Give YouTube ~30s to register the broadcast.
-    log::info!("Stream data detected -- waiting 30s for YouTube to register broadcast...");
-    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+    // Phase 2: Data is flowing. Give YouTube ~10s to register the broadcast.
+    log::info!("Stream data detected -- waiting 10s for YouTube to register broadcast...");
+    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
 
     // Phase 3: Attempt connect with a few retries (15s apart)
     // Load fresh settings each attempt so we pick up refreshed tokens
