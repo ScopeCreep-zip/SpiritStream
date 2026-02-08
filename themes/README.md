@@ -73,7 +73,7 @@ If you want both modes, create a second file (for example, `my-theme-dark.jsonc`
 
 ## Required Tokens
 
-The required token list is derived from `src-frontend/styles/tokens.css`. Each theme file must provide all required tokens in its `tokens` map.
+The required token list is derived from `apps/web/src/styles/tokens.css`. Each theme file must provide all required tokens in its `tokens` map.
 
 ## Troubleshooting
 

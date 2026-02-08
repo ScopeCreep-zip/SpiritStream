@@ -22,60 +22,6 @@ export interface AppSettings {
 
   // Tracks which profile to load on startup
   lastProfile: string | null;
-
-  // =========================================================================
-  // GLOBAL OAUTH TOKENS (app-wide, not per-profile)
-  // =========================================================================
-
-  // Twitch OAuth account (from "Login with Twitch")
-  twitchOauthAccessToken: string;
-  twitchOauthRefreshToken: string;
-  twitchOauthExpiresAt: number;
-  twitchOauthUserId: string;
-  twitchOauthUsername: string;
-  twitchOauthDisplayName: string;
-
-  // YouTube OAuth account (from "Sign in with Google")
-  youtubeOauthAccessToken: string;
-  youtubeOauthRefreshToken: string;
-  youtubeOauthExpiresAt: number;
-  youtubeOauthChannelId: string;
-  youtubeOauthChannelName: string;
-
-  // =========================================================================
-  // LEGACY FIELDS (read for migration, not written back)
-  // These have moved to ProfileSettings but are kept here for backward
-  // compatibility when reading old settings from the backend.
-  // =========================================================================
-  language?: string;
-  showNotifications?: boolean;
-  encryptStreamKeys?: boolean;
-  themeId?: string;
-  backendRemoteEnabled?: boolean;
-  backendUiEnabled?: boolean;
-  backendHost?: string;
-  backendPort?: number;
-  backendToken?: string;
-  obsHost?: string;
-  obsPort?: number;
-  obsPassword?: string;
-  obsUseAuth?: boolean;
-  obsDirection?: ObsIntegrationDirection;
-  obsAutoConnect?: boolean;
-  discordWebhookEnabled?: boolean;
-  discordWebhookUrl?: string;
-  discordGoLiveMessage?: string;
-  discordCooldownEnabled?: boolean;
-  discordCooldownSeconds?: number;
-  discordImagePath?: string;
-  chatTwitchChannel?: string;
-  chatYoutubeChannelId?: string;
-  chatYoutubeApiKey?: string;
-  chatTwitchSendEnabled?: boolean;
-  chatYoutubeSendEnabled?: boolean;
-  chatSendAllEnabled?: boolean;
-  chatCrosspostEnabled?: boolean;
-  youtubeUseApiKey?: boolean;
 }
 /**
  * Report returned after successful key rotation

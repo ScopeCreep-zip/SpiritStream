@@ -116,7 +116,7 @@ zeroize = "1.6"     # Securely clear sensitive data from memory
 ### Encryption Service
 
 ```rust
-// src-tauri/src/services/encryption.rs
+// apps/desktop/src-tauri/src/services/encryption.rs
 use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,

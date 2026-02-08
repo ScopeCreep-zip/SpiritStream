@@ -547,10 +547,10 @@ verify_installation() {
     fi
 
     # Verify Cargo.toml exists (sanity check we're in right directory)
-    if [[ -f "src-tauri/Cargo.toml" ]]; then
-        print_pass "src-tauri/Cargo.toml found"
+    if [[ -f "apps/desktop/src-tauri/Cargo.toml" ]]; then
+        print_pass "apps/desktop/src-tauri/Cargo.toml found"
     else
-        print_fail "src-tauri/Cargo.toml not found (wrong directory?)"
+        print_fail "apps/desktop/src-tauri/Cargo.toml not found (wrong directory?)"
     fi
 
     echo ""

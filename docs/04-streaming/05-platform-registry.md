@@ -142,7 +142,7 @@ Edit `data/streaming-platforms.json`:
 ### 2. Rebuild
 
 ```bash
-cargo build --manifest-path src-tauri/Cargo.toml
+cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml
 ```
 
 The `Platform::Rumble` enum variant is automatically generated.

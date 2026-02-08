@@ -33,7 +33,7 @@ Notes:
 
 ## Required Tokens
 
-The required token list is derived from `src-frontend/styles/tokens.css`.
+The required token list is derived from `apps/web/src/styles/tokens.css`.
 Each theme file must include every required token in its `tokens` map.
 
 ## Where Themes Live

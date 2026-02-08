@@ -81,7 +81,7 @@ Unlike Electron, Tauri provides strong isolation between the frontend and backen
 Tauri 2.x uses a capability system to control what the frontend can access:
 
 ```json
-// src-tauri/capabilities/default.json
+// apps/desktop/src-tauri/capabilities/default.json
 {
   "identifier": "default",
   "description": "Default capabilities for SpiritStream",
@@ -112,7 +112,7 @@ Tauri 2.x uses a capability system to control what the frontend can access:
 The CSP restricts what resources the frontend can load:
 
 ```json
-// src-tauri/tauri.conf.json
+// apps/desktop/src-tauri/tauri.conf.json
 {
   "app": {
     "security": {
@@ -168,7 +168,7 @@ sequenceDiagram
 ### Implementation
 
 ```rust
-// src-tauri/src/services/encryption.rs
+// apps/desktop/src-tauri/src/services/encryption.rs
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use argon2::{Argon2, password_hash::SaltString};
 

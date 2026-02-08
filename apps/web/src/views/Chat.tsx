@@ -11,9 +11,10 @@ import { ChatList } from '@/components/chat/ChatList';
 import { CHAT_OVERLAY_SETTINGS_EVENT, CHAT_OVERLAY_ALWAYS_ON_TOP_EVENT } from '@/lib/chatEvents';
 import { openChatOverlay, setOverlayAlwaysOnTop } from '@/lib/chatWindow';
 import { useChatStore } from '@/stores/chatStore';
+import { useProfileStore } from '@/stores/profileStore';
 import { api, dialogs } from '@/lib/backend';
 import type { ChatMessage, ChatPlatformStatus } from '@/types/chat';
-import type { AppSettings } from '@/types/api';
+import { createDefaultChatSettings } from '@/types/profile';
 import { toast } from '@/hooks/useToast';
 import { cn } from '@/lib/cn';
 
@@ -26,7 +27,11 @@ export function Chat() {
   const setOverlayAlwaysOnTopState = useChatStore((state) => state.setOverlayAlwaysOnTop);
   const clearMessages = useChatStore((state) => state.clearMessages);
   const [statuses, setStatuses] = useState<ChatPlatformStatus[]>([]);
-  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const currentProfile = useProfileStore((state) => state.current);
+  const chatSettings = useMemo(
+    () => currentProfile?.settings?.chat ?? createDefaultChatSettings(),
+    [currentProfile]
+  );
   const [activeStreamCount, setActiveStreamCount] = useState(0);
   const [draftMessage, setDraftMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -54,12 +59,10 @@ export function Chat() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [loadedSettings, loadedStatuses, streamCount] = await Promise.all([
-          api.settings.get(),
+        const [loadedStatuses, streamCount] = await Promise.all([
           api.chat.getStatus(),
           api.stream.getActiveCount(),
         ]);
-        setSettings(loadedSettings);
         setStatuses(loadedStatuses);
         setActiveStreamCount(streamCount);
       } catch (error) {
@@ -72,13 +75,11 @@ export function Chat() {
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
-        const [loadedStatuses, loadedSettings, streamCount] = await Promise.all([
+        const [loadedStatuses, streamCount] = await Promise.all([
           api.chat.getStatus(),
-          api.settings.get(),
           api.stream.getActiveCount(),
         ]);
         setStatuses(loadedStatuses);
-        setSettings(loadedSettings);
         setActiveStreamCount(streamCount);
       } catch (error) {
         console.error('Failed to refresh chat status:', error);
@@ -89,14 +90,15 @@ export function Chat() {
   }, []);
 
   const sendTargets = useMemo(() => {
-    if (!settings) return [];
     return statuses.filter((status) => {
       if (status.status !== 'connected') return false;
-      if (status.platform === 'twitch') return settings.chatTwitchSendEnabled;
-      if (status.platform === 'youtube') return settings.chatYoutubeSendEnabled;
+      if (status.platform === 'twitch') return chatSettings.twitchSendEnabled;
+      if (status.platform === 'youtube') {
+        return chatSettings.youtubeSendEnabled && !chatSettings.youtubeUseApiKey;
+      }
       return false;
     });
-  }, [settings, statuses]);
+  }, [chatSettings, statuses]);
 
   const canSend = draftMessage.trim().length > 0 && sendTargets.length > 0;
   const sendTargetLabel = useMemo(() => {
@@ -218,8 +220,6 @@ export function Chat() {
   };
 
   const platformStates = useMemo(() => {
-    if (!settings) return [];
-
     const getStatus = (platform: ChatPlatformStatus['platform']) =>
       statuses.find((status) => status.platform === platform)?.status ?? 'disconnected';
 
@@ -227,19 +227,19 @@ export function Chat() {
       {
         id: 'twitch',
         label: 'Twitch',
-        configured: settings.chatTwitchChannel.trim().length > 0,
-        sendEnabled: settings.chatTwitchSendEnabled,
+        configured: chatSettings.twitchChannel.trim().length > 0,
+        sendEnabled: chatSettings.twitchSendEnabled,
         status: getStatus('twitch'),
       },
       {
         id: 'youtube',
         label: 'YouTube',
-        configured: settings.chatYoutubeChannelId.trim().length > 0,
-        sendEnabled: settings.chatYoutubeSendEnabled,
+        configured: chatSettings.youtubeChannelId.trim().length > 0,
+        sendEnabled: chatSettings.youtubeSendEnabled && !chatSettings.youtubeUseApiKey,
         status: getStatus('youtube'),
       },
     ];
-  }, [settings, statuses]);
+  }, [chatSettings, statuses]);
 
   const statusDotClass = (status: ChatPlatformStatus['status']) => {
     switch (status) {
@@ -255,14 +255,14 @@ export function Chat() {
   };
 
   const sendDisabledReason = useMemo(() => {
-    if (!settings) {
-      return t('common.loading', { defaultValue: 'Loading...' });
-    }
-
     const isStreaming = activeStreamCount > 0;
     const configuredPlatforms = [
-      settings.chatTwitchChannel.trim() ? 'twitch' : null,
-      settings.chatYoutubeChannelId.trim() ? 'youtube' : null,
+      chatSettings.twitchChannel.trim() ? 'twitch' : null,
+      chatSettings.youtubeChannelId.trim() ? 'youtube' : null,
+    ].filter(Boolean);
+    const sendEnabledPlatforms = [
+      chatSettings.twitchSendEnabled ? 'twitch' : null,
+      chatSettings.youtubeSendEnabled && !chatSettings.youtubeUseApiKey ? 'youtube' : null,
     ].filter(Boolean);
 
     if (!isStreaming) {
@@ -274,6 +274,17 @@ export function Chat() {
     if (configuredPlatforms.length === 0) {
       return t('chat.sendRequiresConfig', {
         defaultValue: 'Configure a chat platform in Integrations to enable sending.',
+      });
+    }
+
+    if (sendEnabledPlatforms.length === 0) {
+      if (chatSettings.youtubeUseApiKey && !chatSettings.twitchSendEnabled) {
+        return t('chat.sendRequiresLogin', {
+          defaultValue: 'YouTube API key mode is read-only. Sign in or enable another platform to send.',
+        });
+      }
+      return t('chat.sendDisabledHint', {
+        defaultValue: 'Enable sending in Integrations and connect your chat to send messages.',
       });
     }
 
@@ -300,7 +311,7 @@ export function Chat() {
     return t('chat.sendDisabledHint', {
       defaultValue: 'Enable sending in Integrations and connect your chat to send messages.',
     });
-  }, [activeStreamCount, settings, statuses, t]);
+  }, [activeStreamCount, chatSettings, statuses, t]);
 
   const handleSend = async () => {
     const trimmed = draftMessage.trim();

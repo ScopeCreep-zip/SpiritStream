@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   MessageSquare,
@@ -21,8 +21,10 @@ import { Toggle } from '@/components/ui/Toggle';
 import { api, events } from '@/lib/backend';
 import { toast } from '@/hooks/useToast';
 import { cn } from '@/lib/cn';
+import { useProfileStore } from '@/stores/profileStore';
 import type { ChatPlatform, ChatPlatformStatus, OAuthAccount } from '@/types/chat';
-import type { AppSettings } from '@/types/api';
+import type { ChatSettings } from '@/types/profile';
+import { createDefaultChatSettings } from '@/types/profile';
 
 // ============================================================================
 // Types
@@ -671,8 +673,13 @@ function formatError(error: unknown): string {
 
 export function ChatPanel() {
   const { t } = useTranslation();
+  const currentProfile = useProfileStore((state) => state.current);
+  const updateProfileSettings = useProfileStore((state) => state.updateProfileSettings);
+  const chatSettings = useMemo(
+    () => currentProfile?.settings?.chat ?? createDefaultChatSettings(),
+    [currentProfile]
+  );
   const [platformStatuses, setPlatformStatuses] = useState<ChatPlatformStatus[]>([]);
-  const [, setSettings] = useState<AppSettings | null>(null);
   const [twitchAccount, setTwitchAccount] = useState<OAuthAccount | null>(null);
   const [youtubeAccount, setYoutubeAccount] = useState<OAuthAccount | null>(null);
 
@@ -685,64 +692,86 @@ export function ChatPanel() {
   const [youtubeSendEnabled, setYoutubeSendEnabled] = useState(false);
   const [crosspostEnabled, setCrosspostEnabled] = useState(false);
 
+
   // Pending OAuth flow state
   const pendingOAuthRef = useRef<{ provider: string; state: string } | null>(null);
 
-  // Load settings and OAuth accounts on mount
+  // Load settings and OAuth accounts when the active profile changes
   useEffect(() => {
+    let cancelled = false;
+
+    if (!currentProfile) {
+      setPlatformStatuses([]);
+      setTwitchAccount(null);
+      setYoutubeAccount(null);
+      return;
+    }
+
     const loadInitialData = async () => {
       try {
-        const [loadedSettings, statuses, twitchAcc, youtubeAcc] = await Promise.all([
-          api.settings.get(),
+        const [statuses, twitchAcc, youtubeAcc] = await Promise.all([
           api.chat.getStatus(),
           api.oauth.getAccount('twitch'),
           api.oauth.getAccount('youtube'),
         ]);
 
-        setSettings(loadedSettings);
+        if (cancelled) return;
         setPlatformStatuses(statuses);
         setTwitchAccount(twitchAcc);
         setYoutubeAccount(youtubeAcc);
-
-        // Initialize form state from settings
-        setTwitchChannel(loadedSettings.chatTwitchChannel || '');
-        setYoutubeChannelId(loadedSettings.chatYoutubeChannelId || '');
-        setYoutubeApiKey(loadedSettings.chatYoutubeApiKey || '');
-        setYoutubeUseApiKey(loadedSettings.youtubeUseApiKey || false);
-        setTwitchSendEnabled(loadedSettings.chatTwitchSendEnabled || false);
-        setYoutubeSendEnabled(loadedSettings.chatYoutubeSendEnabled || false);
-        setCrosspostEnabled(loadedSettings.chatCrosspostEnabled || false);
-
-        // Default channel to logged-in user if not set
-        if (!loadedSettings.chatTwitchChannel && twitchAcc.loggedIn && twitchAcc.username) {
-          setTwitchChannel(twitchAcc.username);
-        }
-        if (!loadedSettings.chatYoutubeChannelId && youtubeAcc.loggedIn && youtubeAcc.userId) {
-          setYoutubeChannelId(youtubeAcc.userId);
-        }
       } catch (error) {
         console.error('Failed to load chat settings:', error);
       }
     };
 
     loadInitialData();
-  }, []);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentProfile?.name]);
+
+  useEffect(() => {
+    setTwitchChannel(chatSettings.twitchChannel || '');
+    setYoutubeChannelId(chatSettings.youtubeChannelId || '');
+    setYoutubeApiKey(chatSettings.youtubeApiKey || '');
+    setYoutubeUseApiKey(chatSettings.youtubeUseApiKey || false);
+    setTwitchSendEnabled(chatSettings.twitchSendEnabled || false);
+    setYoutubeSendEnabled(chatSettings.youtubeSendEnabled || false);
+    setCrosspostEnabled(chatSettings.crosspostEnabled || false);
+  }, [chatSettings]);
 
   // Save settings helper -- always loads fresh settings from backend first
   // to avoid overwriting OAuth tokens or other values saved by other flows
-  const saveSettings = useCallback(
-    async (updates: Partial<AppSettings>) => {
+  const saveChatSettings = useCallback(
+    async (updates: Partial<ChatSettings>) => {
+      if (!currentProfile?.settings) return;
       try {
-        const freshSettings = await api.settings.get();
-        const newSettings = { ...freshSettings, ...updates };
-        setSettings(newSettings);
-        await api.settings.save(newSettings);
+        const nextChat = { ...currentProfile.settings.chat, ...updates };
+        await updateProfileSettings({ chat: nextChat });
       } catch (error) {
-        console.error('Failed to save settings:', error);
+        console.error('Failed to save chat settings:', error);
       }
     },
-    []
+    [currentProfile, updateProfileSettings]
   );
+
+  useEffect(() => {
+    if (!chatSettings.twitchChannel && twitchAccount?.loggedIn && twitchAccount.username) {
+      setTwitchChannel(twitchAccount.username);
+      saveChatSettings({ twitchChannel: twitchAccount.username });
+    }
+    if (!chatSettings.youtubeChannelId && youtubeAccount?.loggedIn && youtubeAccount.userId) {
+      setYoutubeChannelId(youtubeAccount.userId);
+      saveChatSettings({ youtubeChannelId: youtubeAccount.userId });
+    }
+  }, [
+    chatSettings.twitchChannel,
+    chatSettings.youtubeChannelId,
+    twitchAccount,
+    youtubeAccount,
+    saveChatSettings,
+  ]);
 
   // Chat auto-connect/disconnect is handled by the backend on stream start/stop.
   // Listen for backend events to update UI status.
@@ -780,14 +809,14 @@ export function ChatPanel() {
             setTwitchAccount({ loggedIn: true, userId, username, displayName });
             if (!twitchChannel && username) {
               setTwitchChannel(username);
-              saveSettings({ chatTwitchChannel: username });
+              saveChatSettings({ twitchChannel: username });
             }
             toast.success(t('chat.oauth.loginSuccess', 'Signed in to Twitch'));
           } else if (provider === 'youtube') {
             setYoutubeAccount({ loggedIn: true, userId, username, displayName });
             if (!youtubeChannelId && userId) {
               setYoutubeChannelId(userId);
-              saveSettings({ chatYoutubeChannelId: userId });
+              saveChatSettings({ youtubeChannelId: userId });
             }
             toast.success(t('chat.oauth.loginSuccess', 'Signed in to YouTube'));
           }
@@ -852,7 +881,7 @@ export function ChatPanel() {
       if (unlistenConnectionLost) unlistenConnectionLost();
       if (unlistenConnectionRestored) unlistenConnectionRestored();
     };
-  }, [twitchChannel, youtubeChannelId, t, saveSettings]);
+  }, [twitchChannel, youtubeChannelId, t, saveChatSettings]);
 
   // Get status for a platform
   const getStatusForPlatform = (platform: ChatPlatform): ChatPlatformStatus | null => {
@@ -884,35 +913,33 @@ export function ChatPanel() {
     await api.oauth.disconnect('twitch');
     setTwitchAccount({ loggedIn: false });
     setTwitchSendEnabled(false);
-    saveSettings({ chatTwitchSendEnabled: false });
-  }, [saveSettings]);
+    saveChatSettings({ twitchSendEnabled: false });
+  }, [saveChatSettings]);
 
   const handleTwitchForget = useCallback(async () => {
     await api.oauth.forget('twitch');
     setTwitchAccount({ loggedIn: false });
     setTwitchChannel('');
     setTwitchSendEnabled(false);
-    // Reload settings from backend (forget clears channel + tokens server-side)
-    const freshSettings = await api.settings.get();
-    setSettings(freshSettings);
-  }, []);
+    await saveChatSettings({ twitchChannel: '', twitchSendEnabled: false });
+  }, [saveChatSettings]);
 
   // Save channel name to settings on blur so clearing it actually persists
   const handleTwitchChannelSave = useCallback(() => {
-    saveSettings({ chatTwitchChannel: twitchChannel });
-  }, [twitchChannel, saveSettings]);
+    saveChatSettings({ twitchChannel });
+  }, [twitchChannel, saveChatSettings]);
 
   const handleTwitchClear = useCallback(() => {
     setTwitchChannel('');
-    saveSettings({ chatTwitchChannel: '' });
-  }, [saveSettings]);
+    saveChatSettings({ twitchChannel: '' });
+  }, [saveChatSettings]);
 
   const handleTwitchSendEnabledChange = useCallback(
     (enabled: boolean) => {
       setTwitchSendEnabled(enabled);
-      saveSettings({ chatTwitchSendEnabled: enabled });
+      saveChatSettings({ twitchSendEnabled: enabled });
     },
-    [saveSettings]
+    [saveChatSettings]
   );
 
   // ============================================================================
@@ -940,68 +967,74 @@ export function ChatPanel() {
     await api.oauth.disconnect('youtube');
     setYoutubeAccount({ loggedIn: false });
     setYoutubeSendEnabled(false);
-    saveSettings({ chatYoutubeSendEnabled: false });
-  }, [saveSettings]);
+    saveChatSettings({ youtubeSendEnabled: false });
+  }, [saveChatSettings]);
 
   const handleYoutubeForget = useCallback(async () => {
     await api.oauth.forget('youtube');
     setYoutubeAccount({ loggedIn: false });
     setYoutubeChannelId('');
     setYoutubeSendEnabled(false);
-    // Reload settings from backend (forget clears channel + tokens server-side)
-    const freshSettings = await api.settings.get();
-    setSettings(freshSettings);
-  }, []);
+    await saveChatSettings({ youtubeChannelId: '', youtubeSendEnabled: false });
+  }, [saveChatSettings]);
 
   // Save channel ID to settings on blur so clearing it actually persists
   const handleYoutubeChannelIdSave = useCallback(() => {
-    saveSettings({ chatYoutubeChannelId: youtubeChannelId });
-  }, [youtubeChannelId, saveSettings]);
+    saveChatSettings({ youtubeChannelId });
+  }, [youtubeChannelId, saveChatSettings]);
 
   const handleYoutubeApiKeySave = useCallback(() => {
-    saveSettings({ chatYoutubeApiKey: youtubeApiKey });
-  }, [youtubeApiKey, saveSettings]);
+    saveChatSettings({ youtubeApiKey });
+  }, [youtubeApiKey, saveChatSettings]);
 
   const handleYoutubeUseApiKeyChange = useCallback(
     (useKey: boolean) => {
       setYoutubeUseApiKey(useKey);
       if (useKey) {
         setYoutubeSendEnabled(false);
-        saveSettings({ youtubeUseApiKey: useKey, chatYoutubeSendEnabled: false });
+        saveChatSettings({ youtubeUseApiKey: useKey, youtubeSendEnabled: false });
       } else {
-        saveSettings({ youtubeUseApiKey: useKey });
+        saveChatSettings({ youtubeUseApiKey: useKey });
       }
     },
-    [saveSettings]
+    [saveChatSettings]
   );
 
   const handleYoutubeClear = useCallback(() => {
     setYoutubeChannelId('');
-    saveSettings({ chatYoutubeChannelId: '' });
-  }, [saveSettings]);
+    saveChatSettings({ youtubeChannelId: '' });
+  }, [saveChatSettings]);
 
   const handleYoutubeSendEnabledChange = useCallback(
     (enabled: boolean) => {
       setYoutubeSendEnabled(enabled);
-      saveSettings({ chatYoutubeSendEnabled: enabled });
+      saveChatSettings({ youtubeSendEnabled: enabled });
     },
-    [saveSettings]
+    [saveChatSettings]
   );
 
   const handleYoutubeUseMyChannel = useCallback(() => {
     if (youtubeAccount?.userId) {
       setYoutubeChannelId(youtubeAccount.userId);
-      saveSettings({ chatYoutubeChannelId: youtubeAccount.userId });
+      saveChatSettings({ youtubeChannelId: youtubeAccount.userId });
     }
-  }, [youtubeAccount, saveSettings]);
+  }, [youtubeAccount, saveChatSettings]);
 
   const handleCrosspostChange = useCallback(
     (enabled: boolean) => {
       setCrosspostEnabled(enabled);
-      saveSettings({ chatCrosspostEnabled: enabled });
+      saveChatSettings({ crosspostEnabled: enabled });
     },
-    [saveSettings]
+    [saveChatSettings]
   );
+
+  if (!currentProfile) {
+    return (
+      <div className="flex items-center justify-center p-8 text-[var(--text-tertiary)]">
+        {t('common.loadProfileFirst', 'Please load a profile first')}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

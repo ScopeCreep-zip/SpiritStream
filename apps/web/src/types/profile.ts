@@ -60,6 +60,26 @@ export interface ChatSettings {
 }
 
 /**
+ * OAuth account + token details
+ */
+export interface OAuthProfileAccount {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+  userId: string;
+  username: string;
+  displayName: string;
+}
+
+/**
+ * OAuth settings for a profile
+ */
+export interface OAuthSettings {
+  twitch: OAuthProfileAccount;
+  youtube: OAuthProfileAccount;
+}
+
+/**
  * Per-profile settings (theme, language, integrations, security)
  */
 export interface ProfileSettings {
@@ -76,6 +96,7 @@ export interface ProfileSettings {
   obs: ObsSettings;
   discord: DiscordSettings;
   chat: ChatSettings;
+  oauth: OAuthSettings;
 }
 
 /**
@@ -259,7 +280,7 @@ export const createDefaultObsSettings = (): ObsSettings => ({
 export const createDefaultDiscordSettings = (): DiscordSettings => ({
   webhookEnabled: false,
   webhookUrl: '',
-  goLiveMessage: '**Stream is now live!** ðŸŽ®\n\nCome join the stream!',
+  goLiveMessage: '**Stream is now live!**\n\nCome join the stream!',
   cooldownEnabled: true,
   cooldownSeconds: 60,
   imagePath: '',
@@ -276,6 +297,20 @@ export const createDefaultChatSettings = (): ChatSettings => ({
   youtubeUseApiKey: false,
 });
 
+export const createDefaultOAuthProfileAccount = (): OAuthProfileAccount => ({
+  accessToken: '',
+  refreshToken: '',
+  expiresAt: 0,
+  userId: '',
+  username: '',
+  displayName: '',
+});
+
+export const createDefaultOAuthSettings = (): OAuthSettings => ({
+  twitch: createDefaultOAuthProfileAccount(),
+  youtube: createDefaultOAuthProfileAccount(),
+});
+
 export const createDefaultProfileSettings = (): ProfileSettings => ({
   themeId: 'spirit-dark',
   language: 'en',
@@ -285,6 +320,7 @@ export const createDefaultProfileSettings = (): ProfileSettings => ({
   obs: createDefaultObsSettings(),
   discord: createDefaultDiscordSettings(),
   chat: createDefaultChatSettings(),
+  oauth: createDefaultOAuthSettings(),
 });
 
 export const createDefaultProfile = (name: string = 'New Profile'): Profile => ({

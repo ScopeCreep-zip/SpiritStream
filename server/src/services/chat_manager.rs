@@ -9,7 +9,7 @@ use tokio::sync::{mpsc, oneshot, Mutex};
 use chrono::Local;
 
 use crate::models::{
-    ChatConfig, ChatConnectionStatus, ChatMessage, ChatMessageDirection, ChatPlatform, ChatPlatformStatus,
+    ChatConfig, ChatConnectionStatus, ChatMessage, ChatMessageDirection, ChatPlatform, ChatPlatformStatus, ChatSettings,
 };
 use crate::services::chat::{ChatPlatform as ChatPlatformTrait, TikTokConnector, TwitchConnector, YouTubeConnector};
 use crate::services::EventSink;
@@ -26,6 +26,7 @@ pub struct ChatManager {
     log_session_start_ms: Arc<AtomicI64>,
     crosspost_enabled: Arc<AtomicBool>,
     send_enabled: Arc<Mutex<HashMap<ChatPlatform, bool>>>,
+    chat_settings: Arc<Mutex<ChatSettings>>,
 }
 
 impl ChatManager {
@@ -46,6 +47,7 @@ impl ChatManager {
             log_session_start_ms,
             crosspost_enabled: Arc::new(AtomicBool::new(false)),
             send_enabled: Arc::new(Mutex::new(HashMap::new())),
+            chat_settings: Arc::new(Mutex::new(ChatSettings::default())),
         };
 
         // Start message handler
@@ -180,6 +182,23 @@ impl ChatManager {
         }
 
         results
+    }
+
+    /// Update the cached chat settings for the active profile.
+    pub async fn update_profile_chat_settings(&self, settings: ChatSettings) {
+        {
+            let mut guard = self.chat_settings.lock().await;
+            *guard = settings.clone();
+        }
+
+        self.set_crosspost_enabled(settings.crosspost_enabled);
+        self.set_send_enabled(ChatPlatform::Twitch, settings.twitch_send_enabled).await;
+        self.set_send_enabled(ChatPlatform::YouTube, settings.youtube_send_enabled).await;
+    }
+
+    /// Get the cached chat settings for the active profile.
+    pub async fn profile_chat_settings(&self) -> ChatSettings {
+        self.chat_settings.lock().await.clone()
     }
 
     /// Enable or disable crossposting of inbound messages.

@@ -221,8 +221,6 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       console.log('[ProfileStore] Profile loaded from backend:', {
         profileId: profile.id,
         profileName: profile.name,
-        chatConfigsCount: profile.chatConfigs?.length || 0,
-        chatPlatforms: profile.chatConfigs?.map((c) => c.platform) || [],
       });
       set({
         current: profile,
@@ -323,7 +321,6 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     console.log('[ProfileStore] saveProfile called:', {
       profileId: current.id,
       profileName: current.name,
-      chatConfigsCount: current.chatConfigs?.length || 0,
       hasPassword: !!password,
     });
 
@@ -392,7 +389,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   // Duplicate a profile
   duplicateProfile: async (name) => {
     try {
-      const profile = await api.profile.load(name);
+      const profile = await api.profile.load(name, undefined, false);
       const newProfile: Profile = {
         ...profile,
         id: crypto.randomUUID(),
@@ -414,8 +411,6 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         profileId: current.id,
         profileName: current.name,
         updateKeys: Object.keys(updates),
-        chatConfigsCount: (updates.chatConfigs as any)?.length,
-        updatedChatConfigsCount: updatedProfile.chatConfigs?.length,
       });
       set({ current: updatedProfile });
       await get().saveProfile();

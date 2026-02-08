@@ -48,7 +48,6 @@ import { ChatOverlay } from '@/views/ChatOverlay';
 import { checkAuth, checkServerHealth, checkServerReadyDetailed, ServerReadyStatus, isTauri } from '@/lib/backend/env';
 import { initConnection } from '@/lib/backend/httpEvents';
 import { setupMainWindowCloseHandler } from '@/lib/chatWindow';
-import { api } from '@/lib/backend';
 import { CHAT_OVERLAY_SYNC_EVENT, CHAT_OVERLAY_SYNC_REQUEST_EVENT } from '@/lib/chatEvents';
 import { useChatStore } from '@/stores/chatStore';
 
@@ -131,7 +130,8 @@ function MainApp() {
     const handleMessage = (event: MessageEvent) => {
       if (!event.data || event.data.type !== 'chat-overlay-sync-request') return;
       const messages = useChatStore.getState().messages;
-      event.source?.postMessage({ type: 'chat-overlay-sync', messages }, '*');
+      const target = event.source as Window | null;
+      target?.postMessage({ type: 'chat-overlay-sync', messages }, { targetOrigin: '*' });
     };
 
     window.addEventListener('message', handleMessage);
@@ -340,22 +340,18 @@ function AppContent() {
   // Apply profile-specific theme and language when profile changes
   useEffect(() => {
     const applyProfileSettings = async () => {
-      if (!current) return;
+      if (!current?.settings) return;
 
       try {
-        // Get global settings as fallback
-        const globalSettings = await api.settings.get();
-
-        // Apply theme (profile-specific or global fallback)
-        const effectiveTheme = current.theme || globalSettings.themeId;
-        if (effectiveTheme && effectiveTheme !== currentThemeId) {
-          await setTheme(effectiveTheme);
+        // Apply theme (profile-specific)
+        const themeId = current.settings.themeId;
+        if (themeId && themeId !== currentThemeId) {
+          await setTheme(themeId);
         }
 
-        // Apply language (profile-specific or global fallback)
-        const effectiveLanguage = current.language || globalSettings.language;
-        if (effectiveLanguage) {
-          setLanguage(effectiveLanguage as any);
+        // Apply language (profile-specific)
+        if (current.settings.language) {
+          setLanguage(current.settings.language as any);
         }
       } catch (error) {
         console.error('Failed to apply profile settings:', error);

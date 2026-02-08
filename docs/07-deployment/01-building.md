@@ -21,7 +21,7 @@ spiritstream/
 │   │   └── src/
 │   └── desktop/                # Tauri wrapper (minimal)
 │       ├── package.json        # @spiritstream/desktop
-│       └── src-tauri/
+│       └── apps/desktop/src-tauri/
 │           ├── Cargo.toml
 │           ├── tauri.conf.json
 │           └── binaries/       # Server sidecar

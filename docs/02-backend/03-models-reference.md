@@ -38,7 +38,7 @@ The top-level configuration entity representing a streaming setup. A user typica
 Profiles are stored as individual JSON files in the app data directory, optionally encrypted with a password. The `incoming_url` is where SpiritStream receives video—usually from OBS via a local RTMP server or a capture card.
 
 ```rust
-// src-tauri/src/models/profile.rs
+// apps/desktop/src-tauri/src/models/profile.rs
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -205,7 +205,7 @@ RTMP streaming destination. Each target represents one place your stream goes—
 **Security note:** Stream keys are sensitive credentials. They're encrypted at rest when profiles are password-protected, and the `stream_key` field supports environment variable references (`${MY_STREAM_KEY}`) for users who prefer not to store keys in profile files at all.
 
 ```rust
-// src-tauri/src/models/stream_target.rs
+// apps/desktop/src-tauri/src/models/stream_target.rs
 
 // Platform enum auto-generated from data/streaming-platforms.json at build time
 include!(concat!(env!("OUT_DIR"), "/generated_platforms.rs"));
@@ -360,7 +360,7 @@ Platform models provide metadata about streaming services. They're used for UI c
 Different platforms embed stream keys in URLs differently. This enum captures the two strategies SpiritStream needs to handle:
 
 ```rust
-// src-tauri/src/services/platform_registry.rs
+// apps/desktop/src-tauri/src/services/platform_registry.rs
 
 pub enum StreamKeyPlacement {
     /// Append stream key to URL (e.g., rtmp://server/app/{key})

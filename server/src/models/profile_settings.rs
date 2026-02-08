@@ -41,7 +41,7 @@ fn default_obs_port() -> u16 {
 }
 
 fn default_discord_go_live_message() -> String {
-    "**Stream is now live!** 🎮\n\nCome join the stream!".to_string()
+    "**Stream is now live!**\n\nCome join the stream!".to_string()
 }
 
 fn default_discord_cooldown_enabled() -> bool {
@@ -186,6 +186,127 @@ impl Default for DiscordSettings {
 }
 
 // ============================================================================
+// Chat Integration Settings
+// ============================================================================
+
+/// Chat integration settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatSettings {
+    /// Twitch channel name
+    #[serde(default)]
+    pub twitch_channel: String,
+
+    /// YouTube channel ID
+    #[serde(default)]
+    pub youtube_channel_id: String,
+
+    /// YouTube API key (optional if using OAuth)
+    #[serde(default)]
+    pub youtube_api_key: String,
+
+    /// Allow sending to Twitch chat
+    #[serde(default)]
+    pub twitch_send_enabled: bool,
+
+    /// Allow sending to YouTube chat
+    #[serde(default)]
+    pub youtube_send_enabled: bool,
+
+    /// Send messages to all enabled platforms
+    #[serde(default)]
+    pub send_all_enabled: bool,
+
+    /// Crosspost inbound chat messages to other platforms
+    #[serde(default)]
+    pub crosspost_enabled: bool,
+
+    /// Use API key instead of OAuth for YouTube chat
+    #[serde(default)]
+    pub youtube_use_api_key: bool,
+}
+
+impl Default for ChatSettings {
+    fn default() -> Self {
+        Self {
+            twitch_channel: String::new(),
+            youtube_channel_id: String::new(),
+            youtube_api_key: String::new(),
+            twitch_send_enabled: false,
+            youtube_send_enabled: false,
+            send_all_enabled: true,
+            crosspost_enabled: false,
+            youtube_use_api_key: false,
+        }
+    }
+}
+
+// ============================================================================
+// OAuth Settings (per-profile)
+// ============================================================================
+
+/// OAuth account + token data for a provider
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OAuthAccount {
+    /// Access token for API calls
+    #[serde(default)]
+    pub access_token: String,
+
+    /// Refresh token (if available)
+    #[serde(default)]
+    pub refresh_token: String,
+
+    /// Token expiration timestamp (Unix epoch seconds)
+    #[serde(default)]
+    pub expires_at: i64,
+
+    /// Provider user/channel ID
+    #[serde(default)]
+    pub user_id: String,
+
+    /// Provider username/handle (if available)
+    #[serde(default)]
+    pub username: String,
+
+    /// Provider display name (if available)
+    #[serde(default)]
+    pub display_name: String,
+}
+
+impl Default for OAuthAccount {
+    fn default() -> Self {
+        Self {
+            access_token: String::new(),
+            refresh_token: String::new(),
+            expires_at: 0,
+            user_id: String::new(),
+            username: String::new(),
+            display_name: String::new(),
+        }
+    }
+}
+
+/// OAuth configuration per profile
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OAuthSettings {
+    #[serde(default)]
+    pub twitch: OAuthAccount,
+    #[serde(default)]
+    pub youtube: OAuthAccount,
+}
+
+impl Default for OAuthSettings {
+    fn default() -> Self {
+        Self {
+            twitch: OAuthAccount::default(),
+            youtube: OAuthAccount::default(),
+        }
+    }
+}
+
+// ============================================================================
 // Profile Settings (combines all per-profile settings)
 // ============================================================================
 
@@ -223,6 +344,14 @@ pub struct ProfileSettings {
     /// Discord webhook integration settings
     #[serde(default)]
     pub discord: DiscordSettings,
+
+    /// Chat integration settings
+    #[serde(default)]
+    pub chat: ChatSettings,
+
+    /// OAuth tokens + account info (per profile)
+    #[serde(default)]
+    pub oauth: OAuthSettings,
 }
 
 impl Default for ProfileSettings {
@@ -235,6 +364,8 @@ impl Default for ProfileSettings {
             backend: BackendSettings::default(),
             obs: ObsSettings::default(),
             discord: DiscordSettings::default(),
+            chat: ChatSettings::default(),
+            oauth: OAuthSettings::default(),
         }
     }
 }
@@ -265,5 +396,245 @@ impl ProfileSettings {
             && self.discord.cooldown_enabled == default_discord_cooldown_enabled()
             && self.discord.cooldown_seconds == default_discord_cooldown_seconds()
             && self.discord.image_path.is_empty()
+            && self.chat.twitch_channel.is_empty()
+            && self.chat.youtube_channel_id.is_empty()
+            && self.chat.youtube_api_key.is_empty()
+            && self.chat.twitch_send_enabled == false
+            && self.chat.youtube_send_enabled == false
+            && self.chat.send_all_enabled == true
+            && self.chat.crosspost_enabled == false
+            && self.chat.youtube_use_api_key == false
+            && self.oauth.twitch.access_token.is_empty()
+            && self.oauth.twitch.refresh_token.is_empty()
+            && self.oauth.twitch.expires_at == 0
+            && self.oauth.twitch.user_id.is_empty()
+            && self.oauth.twitch.username.is_empty()
+            && self.oauth.twitch.display_name.is_empty()
+            && self.oauth.youtube.access_token.is_empty()
+            && self.oauth.youtube.refresh_token.is_empty()
+            && self.oauth.youtube.expires_at == 0
+            && self.oauth.youtube.user_id.is_empty()
+            && self.oauth.youtube.username.is_empty()
+            && self.oauth.youtube.display_name.is_empty()
+    }
+
+    /// Merge legacy settings into this profile, only filling values that are still at defaults.
+    /// Returns true if any fields were updated.
+    pub fn merge_missing(&mut self, legacy: &ProfileSettings) -> bool {
+        let defaults = ProfileSettings::default();
+        let mut changed = false;
+
+        if self.theme_id == defaults.theme_id && legacy.theme_id != defaults.theme_id {
+            self.theme_id = legacy.theme_id.clone();
+            changed = true;
+        }
+        if self.language == defaults.language && legacy.language != defaults.language {
+            self.language = legacy.language.clone();
+            changed = true;
+        }
+        if self.show_notifications == defaults.show_notifications
+            && legacy.show_notifications != defaults.show_notifications
+        {
+            self.show_notifications = legacy.show_notifications;
+            changed = true;
+        }
+        if self.encrypt_stream_keys == defaults.encrypt_stream_keys
+            && legacy.encrypt_stream_keys != defaults.encrypt_stream_keys
+        {
+            self.encrypt_stream_keys = legacy.encrypt_stream_keys;
+            changed = true;
+        }
+
+        if self.backend.remote_enabled == defaults.backend.remote_enabled
+            && legacy.backend.remote_enabled != defaults.backend.remote_enabled
+        {
+            self.backend.remote_enabled = legacy.backend.remote_enabled;
+            changed = true;
+        }
+        if self.backend.ui_enabled == defaults.backend.ui_enabled
+            && legacy.backend.ui_enabled != defaults.backend.ui_enabled
+        {
+            self.backend.ui_enabled = legacy.backend.ui_enabled;
+            changed = true;
+        }
+        if self.backend.host == defaults.backend.host && legacy.backend.host != defaults.backend.host {
+            self.backend.host = legacy.backend.host.clone();
+            changed = true;
+        }
+        if self.backend.port == defaults.backend.port && legacy.backend.port != defaults.backend.port {
+            self.backend.port = legacy.backend.port;
+            changed = true;
+        }
+        if self.backend.token.is_empty() && !legacy.backend.token.is_empty() {
+            self.backend.token = legacy.backend.token.clone();
+            changed = true;
+        }
+
+        if self.obs.host == defaults.obs.host && legacy.obs.host != defaults.obs.host {
+            self.obs.host = legacy.obs.host.clone();
+            changed = true;
+        }
+        if self.obs.port == defaults.obs.port && legacy.obs.port != defaults.obs.port {
+            self.obs.port = legacy.obs.port;
+            changed = true;
+        }
+        if self.obs.password.is_empty() && !legacy.obs.password.is_empty() {
+            self.obs.password = legacy.obs.password.clone();
+            changed = true;
+        }
+        if self.obs.use_auth == defaults.obs.use_auth && legacy.obs.use_auth != defaults.obs.use_auth {
+            self.obs.use_auth = legacy.obs.use_auth;
+            changed = true;
+        }
+        if self.obs.direction == defaults.obs.direction && legacy.obs.direction != defaults.obs.direction {
+            self.obs.direction = legacy.obs.direction;
+            changed = true;
+        }
+        if self.obs.auto_connect == defaults.obs.auto_connect
+            && legacy.obs.auto_connect != defaults.obs.auto_connect
+        {
+            self.obs.auto_connect = legacy.obs.auto_connect;
+            changed = true;
+        }
+
+        if self.discord.webhook_enabled == defaults.discord.webhook_enabled
+            && legacy.discord.webhook_enabled != defaults.discord.webhook_enabled
+        {
+            self.discord.webhook_enabled = legacy.discord.webhook_enabled;
+            changed = true;
+        }
+        if self.discord.webhook_url.is_empty() && !legacy.discord.webhook_url.is_empty() {
+            self.discord.webhook_url = legacy.discord.webhook_url.clone();
+            changed = true;
+        }
+        if self.discord.go_live_message == defaults.discord.go_live_message
+            && legacy.discord.go_live_message != defaults.discord.go_live_message
+        {
+            self.discord.go_live_message = legacy.discord.go_live_message.clone();
+            changed = true;
+        }
+        if self.discord.cooldown_enabled == defaults.discord.cooldown_enabled
+            && legacy.discord.cooldown_enabled != defaults.discord.cooldown_enabled
+        {
+            self.discord.cooldown_enabled = legacy.discord.cooldown_enabled;
+            changed = true;
+        }
+        if self.discord.cooldown_seconds == defaults.discord.cooldown_seconds
+            && legacy.discord.cooldown_seconds != defaults.discord.cooldown_seconds
+        {
+            self.discord.cooldown_seconds = legacy.discord.cooldown_seconds;
+            changed = true;
+        }
+        if self.discord.image_path.is_empty() && !legacy.discord.image_path.is_empty() {
+            self.discord.image_path = legacy.discord.image_path.clone();
+            changed = true;
+        }
+
+        if self.chat.twitch_channel.is_empty() && !legacy.chat.twitch_channel.is_empty() {
+            self.chat.twitch_channel = legacy.chat.twitch_channel.clone();
+            changed = true;
+        }
+        if self.chat.youtube_channel_id.is_empty() && !legacy.chat.youtube_channel_id.is_empty() {
+            self.chat.youtube_channel_id = legacy.chat.youtube_channel_id.clone();
+            changed = true;
+        }
+        if self.chat.youtube_api_key.is_empty() && !legacy.chat.youtube_api_key.is_empty() {
+            self.chat.youtube_api_key = legacy.chat.youtube_api_key.clone();
+            changed = true;
+        }
+        if self.chat.twitch_send_enabled == defaults.chat.twitch_send_enabled
+            && legacy.chat.twitch_send_enabled != defaults.chat.twitch_send_enabled
+        {
+            self.chat.twitch_send_enabled = legacy.chat.twitch_send_enabled;
+            changed = true;
+        }
+        if self.chat.youtube_send_enabled == defaults.chat.youtube_send_enabled
+            && legacy.chat.youtube_send_enabled != defaults.chat.youtube_send_enabled
+        {
+            self.chat.youtube_send_enabled = legacy.chat.youtube_send_enabled;
+            changed = true;
+        }
+        if self.chat.send_all_enabled == defaults.chat.send_all_enabled
+            && legacy.chat.send_all_enabled != defaults.chat.send_all_enabled
+        {
+            self.chat.send_all_enabled = legacy.chat.send_all_enabled;
+            changed = true;
+        }
+        if self.chat.crosspost_enabled == defaults.chat.crosspost_enabled
+            && legacy.chat.crosspost_enabled != defaults.chat.crosspost_enabled
+        {
+            self.chat.crosspost_enabled = legacy.chat.crosspost_enabled;
+            changed = true;
+        }
+        if self.chat.youtube_use_api_key == defaults.chat.youtube_use_api_key
+            && legacy.chat.youtube_use_api_key != defaults.chat.youtube_use_api_key
+        {
+            self.chat.youtube_use_api_key = legacy.chat.youtube_use_api_key;
+            changed = true;
+        }
+
+        if self.oauth.twitch.access_token.is_empty()
+            && !legacy.oauth.twitch.access_token.is_empty()
+        {
+            self.oauth.twitch.access_token = legacy.oauth.twitch.access_token.clone();
+            changed = true;
+        }
+        if self.oauth.twitch.refresh_token.is_empty()
+            && !legacy.oauth.twitch.refresh_token.is_empty()
+        {
+            self.oauth.twitch.refresh_token = legacy.oauth.twitch.refresh_token.clone();
+            changed = true;
+        }
+        if self.oauth.twitch.expires_at == 0 && legacy.oauth.twitch.expires_at > 0 {
+            self.oauth.twitch.expires_at = legacy.oauth.twitch.expires_at;
+            changed = true;
+        }
+        if self.oauth.twitch.user_id.is_empty() && !legacy.oauth.twitch.user_id.is_empty() {
+            self.oauth.twitch.user_id = legacy.oauth.twitch.user_id.clone();
+            changed = true;
+        }
+        if self.oauth.twitch.username.is_empty() && !legacy.oauth.twitch.username.is_empty() {
+            self.oauth.twitch.username = legacy.oauth.twitch.username.clone();
+            changed = true;
+        }
+        if self.oauth.twitch.display_name.is_empty()
+            && !legacy.oauth.twitch.display_name.is_empty()
+        {
+            self.oauth.twitch.display_name = legacy.oauth.twitch.display_name.clone();
+            changed = true;
+        }
+
+        if self.oauth.youtube.access_token.is_empty()
+            && !legacy.oauth.youtube.access_token.is_empty()
+        {
+            self.oauth.youtube.access_token = legacy.oauth.youtube.access_token.clone();
+            changed = true;
+        }
+        if self.oauth.youtube.refresh_token.is_empty()
+            && !legacy.oauth.youtube.refresh_token.is_empty()
+        {
+            self.oauth.youtube.refresh_token = legacy.oauth.youtube.refresh_token.clone();
+            changed = true;
+        }
+        if self.oauth.youtube.expires_at == 0 && legacy.oauth.youtube.expires_at > 0 {
+            self.oauth.youtube.expires_at = legacy.oauth.youtube.expires_at;
+            changed = true;
+        }
+        if self.oauth.youtube.user_id.is_empty() && !legacy.oauth.youtube.user_id.is_empty() {
+            self.oauth.youtube.user_id = legacy.oauth.youtube.user_id.clone();
+            changed = true;
+        }
+        if self.oauth.youtube.username.is_empty() && !legacy.oauth.youtube.username.is_empty() {
+            self.oauth.youtube.username = legacy.oauth.youtube.username.clone();
+            changed = true;
+        }
+        if self.oauth.youtube.display_name.is_empty()
+            && !legacy.oauth.youtube.display_name.is_empty()
+        {
+            self.oauth.youtube.display_name = legacy.oauth.youtube.display_name.clone();
+            changed = true;
+        }
+
+        changed
     }
 }

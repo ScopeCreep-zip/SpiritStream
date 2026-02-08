@@ -109,7 +109,7 @@ App
 ### Service Layer
 
 ```
-src-tauri/src/services/
+apps/desktop/src-tauri/src/services/
 ├── mod.rs              # Service exports
 ├── profile_manager.rs  # Profile CRUD
 ├── ffmpeg_handler.rs   # Stream processing
@@ -275,7 +275,7 @@ interface Store {
 ### Command Registration
 
 ```rust
-// src-tauri/src/main.rs
+// apps/desktop/src-tauri/src/main.rs
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -310,7 +310,7 @@ fn main() {
 ### Command Pattern
 
 ```rust
-// src-tauri/src/commands/profile.rs
+// apps/desktop/src-tauri/src/commands/profile.rs
 use tauri::State;
 use crate::services::ProfileManager;
 use crate::models::Profile;

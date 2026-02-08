@@ -85,8 +85,8 @@ export const api = {
   profile: {
     getAll: () => invokeHttp<string[]>('get_all_profiles'),
     getSummaries: () => invokeHttp<ProfileSummary[]>('get_profile_summaries'),
-    load: (name: string, password?: string) =>
-      invokeHttp<Profile>('load_profile', { name, password }),
+    load: (name: string, password?: string, setActive: boolean = true) =>
+      invokeHttp<Profile>('load_profile', { name, password, setActive }),
     save: (profile: Profile, password?: string) =>
       invokeHttp<void>('save_profile', { profile, password }),
     delete: (name: string) => invokeHttp<void>('delete_profile', { name }),

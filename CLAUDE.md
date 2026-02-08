@@ -97,7 +97,7 @@ spiritstream/
 │   └── desktop/                  # Tauri wrapper (minimal)
 │       ├── package.json          # @spiritstream/desktop
 │       ├── vite.config.ts        # Points to ../web
-│       └── src-tauri/
+│       └── apps/desktop/src-tauri/
 │           ├── Cargo.toml        # Minimal deps (launcher only)
 │           ├── tauri.conf.json   # Sidecar config
 │           ├── binaries/         # Server sidecar binary
