@@ -138,6 +138,10 @@ body[data-window='chat-overlay'] #root {
   outline-offset: var(--ring-offset-width);
 }
 
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
 /* Links */
 a {
   color: var(--primary);
