@@ -1,4 +1,4 @@
-{
+﻿{
   "id": "spirit-light",
   "name": "Spirit Light",
   "mode": "light",
@@ -46,6 +46,7 @@
     "--text-on-brand": "#FFFFFF",
     "--border-default": "#E5E7EB",
     "--border-muted": "#F3F4F6",
+    "--border-subtle": "#F3F4F6",
     "--border-strong": "#D1D5DB",
     "--border-stronger": "#9CA3AF",
     "--border-interactive": "#8B5CF6",

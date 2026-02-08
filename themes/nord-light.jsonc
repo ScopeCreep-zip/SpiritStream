@@ -1,4 +1,4 @@
-{
+﻿{
   "id": "nord-light",
   "name": "Nord Light",
   "mode": "light",
@@ -46,6 +46,7 @@
     "--border-interactive": "#81A1C1",
     "--border-interactive-hover": "#88C0D0",
     "--border-muted": "#D8DEE9",
+    "--border-subtle": "#D8DEE9",
     "--border-strong": "#B8C0CC",
     "--border-stronger": "#A8B0BC",
     "--success": "#A3BE8C",

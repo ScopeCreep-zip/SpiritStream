@@ -1,4 +1,4 @@
-{
+﻿{
   "id": "nord-dark",
   "name": "Nord Dark",
   "mode": "dark",
@@ -46,6 +46,7 @@
     "--border-interactive": "#88C0D0",
     "--border-interactive-hover": "#9BCFD8",
     "--border-muted": "#3B4252",
+    "--border-subtle": "#3B4252",
     "--border-strong": "#5C667A",
     "--border-stronger": "#6C768A",
     "--success": "#A3BE8C",

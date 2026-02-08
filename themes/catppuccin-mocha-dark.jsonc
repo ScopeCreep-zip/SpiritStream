@@ -1,4 +1,4 @@
-{
+﻿{
   "id": "catppuccin-mocha-dark",
   "name": "Catppuccin Mocha Dark",
   "mode": "dark",
@@ -46,6 +46,7 @@
     "--border-interactive": "#CBA6F7",
     "--border-interactive-hover": "#D5B8F9",
     "--border-muted": "#313244",
+    "--border-subtle": "#313244",
     "--border-strong": "#585B70",
     "--border-stronger": "#6C7086",
     "--success": "#A6E3A1",

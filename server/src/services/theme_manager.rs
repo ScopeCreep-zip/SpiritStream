@@ -168,7 +168,8 @@ impl ThemeManager {
     pub fn install_theme(&self, source_path: &Path) -> Result<ThemeSummary, String> {
         let content = fs::read_to_string(source_path)
             .map_err(|e| format!("Failed to read theme file: {e}"))?;
-        let theme = Self::parse_theme(&content)?;
+        let mut theme = Self::parse_theme(&content)?;
+        Self::apply_token_fallbacks(&mut theme.tokens);
 
         Self::validate_theme(&theme)?;
 
@@ -309,7 +310,8 @@ impl ThemeManager {
     fn load_theme_file(path: &Path) -> Result<ThemeFile, String> {
         let content = fs::read_to_string(path)
             .map_err(|e| format!("Failed to read theme: {e}"))?;
-        let theme = Self::parse_theme(&content)?;
+        let mut theme = Self::parse_theme(&content)?;
+        Self::apply_token_fallbacks(&mut theme.tokens);
         Self::validate_theme(&theme)?;
         Ok(theme)
     }
@@ -330,6 +332,14 @@ impl ThemeManager {
         let sanitized = strip_jsonc_comments(content);
         serde_json::from_str(&sanitized)
             .map_err(|e| format!("Invalid theme JSON: {e}"))
+    }
+
+    fn apply_token_fallbacks(tokens: &mut HashMap<String, String>) {
+        if !tokens.contains_key("--border-subtle") {
+            if let Some(border_muted) = tokens.get("--border-muted").cloned() {
+                tokens.insert("--border-subtle".to_string(), border_muted);
+            }
+        }
     }
 
     fn validate_theme(theme: &ThemeFile) -> Result<(), String> {

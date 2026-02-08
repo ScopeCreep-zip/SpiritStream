@@ -1,4 +1,4 @@
-{
+﻿{
   "id": "kalifornia",
   "name": "Kalifornia",
   "mode": "dark",
@@ -55,6 +55,7 @@
     "--text-on-brand": "#FFF5FC",
     "--border-default": "#6A1458",
     "--border-muted": "#5A0F4A",
+    "--border-subtle": "#5A0F4A",
     "--border-strong": "#8B1F6F",
     "--border-stronger": "#A53585",
     "--border-interactive": "#FF2AD5",
@@ -120,3 +121,4 @@
     "--scrollbar-thumb-hover": "#A53585"
   }
 }
+

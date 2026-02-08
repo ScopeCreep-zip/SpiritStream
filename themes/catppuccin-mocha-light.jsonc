@@ -1,4 +1,4 @@
-{
+﻿{
   "id": "catppuccin-mocha-light",
   "name": "Catppuccin Mocha Light",
   "mode": "light",
@@ -46,6 +46,7 @@
     "--border-interactive": "#8839EF",
     "--border-interactive-hover": "#9B5AFF",
     "--border-muted": "#DCE0E8",
+    "--border-subtle": "#DCE0E8",
     "--border-strong": "#BCC0CC",
     "--border-stronger": "#ACB0BC",
     "--success": "#40A02B",
