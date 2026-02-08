@@ -4,6 +4,7 @@
  */
 import type { Platform } from './generated-platforms';
 import type { ObsIntegrationDirection } from './api';
+import type { ChatPlatform } from './chat';
 export type { Platform };
 
 // ============================================================================
@@ -51,12 +52,18 @@ export interface DiscordSettings {
 export interface ChatSettings {
   twitchChannel: string;
   youtubeChannelId: string;
+  trovoChannelId: string;
+  stripchatUsername: string;
   youtubeApiKey: string;
   twitchSendEnabled: boolean;
   youtubeSendEnabled: boolean;
+  trovoSendEnabled: boolean;
+  stripchatSendEnabled: boolean;
   sendAllEnabled: boolean;
   crosspostEnabled: boolean;
   youtubeUseApiKey: boolean;
+  visiblePlatforms: ChatPlatform[];
+  visibilityPanelCollapsed: boolean;
 }
 
 /**
@@ -289,12 +296,18 @@ export const createDefaultDiscordSettings = (): DiscordSettings => ({
 export const createDefaultChatSettings = (): ChatSettings => ({
   twitchChannel: '',
   youtubeChannelId: '',
+  trovoChannelId: '',
+  stripchatUsername: '',
   youtubeApiKey: '',
   twitchSendEnabled: false,
   youtubeSendEnabled: false,
+  trovoSendEnabled: false,
+  stripchatSendEnabled: false,
   sendAllEnabled: true,
   crosspostEnabled: false,
   youtubeUseApiKey: false,
+  visiblePlatforms: [],
+  visibilityPanelCollapsed: true,
 });
 
 export const createDefaultOAuthProfileAccount = (): OAuthProfileAccount => ({

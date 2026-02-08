@@ -5,6 +5,8 @@ import type { ChatMessage, ChatPlatform } from '@/types/chat';
 const CHAT_PLATFORM_STYLES: Record<ChatPlatform, { abbreviation: string; color: string; textColor: string }> = {
   twitch: { abbreviation: 'TW', color: '#9146FF', textColor: '#FFFFFF' },
   youtube: { abbreviation: 'YT', color: '#FF0000', textColor: '#FFFFFF' },
+  trovo: { abbreviation: 'TR', color: '#1ECD97', textColor: '#000000' },
+  stripchat: { abbreviation: 'SC', color: '#F97316', textColor: '#FFFFFF' },
   tiktok: { abbreviation: 'TK', color: '#000000', textColor: '#FFFFFF' },
   kick: { abbreviation: 'KK', color: '#53FC18', textColor: '#000000' },
   facebook: { abbreviation: 'FB', color: '#1877F2', textColor: '#FFFFFF' },

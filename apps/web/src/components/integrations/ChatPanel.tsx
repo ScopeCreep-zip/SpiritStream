@@ -6,6 +6,7 @@ import {
   WifiOff,
   Loader2,
   AlertCircle,
+  ChevronDown,
   Eye,
   EyeOff,
   ExternalLink,
@@ -686,11 +687,17 @@ export function ChatPanel() {
   // Local state for form fields
   const [twitchChannel, setTwitchChannel] = useState('');
   const [youtubeChannelId, setYoutubeChannelId] = useState('');
+  const [trovoChannelId, setTrovoChannelId] = useState('');
+  const [stripchatUsername, setStripchatUsername] = useState('');
   const [youtubeApiKey, setYoutubeApiKey] = useState('');
   const [youtubeUseApiKey, setYoutubeUseApiKey] = useState(false);
   const [twitchSendEnabled, setTwitchSendEnabled] = useState(false);
   const [youtubeSendEnabled, setYoutubeSendEnabled] = useState(false);
+  const [trovoSendEnabled, setTrovoSendEnabled] = useState(false);
+  const [stripchatSendEnabled, setStripchatSendEnabled] = useState(false);
   const [crosspostEnabled, setCrosspostEnabled] = useState(false);
+  const [visiblePlatforms, setVisiblePlatforms] = useState<ChatPlatform[]>([]);
+  const [visibilityPanelCollapsed, setVisibilityPanelCollapsed] = useState(true);
 
 
   // Pending OAuth flow state
@@ -734,11 +741,17 @@ export function ChatPanel() {
   useEffect(() => {
     setTwitchChannel(chatSettings.twitchChannel || '');
     setYoutubeChannelId(chatSettings.youtubeChannelId || '');
+    setTrovoChannelId(chatSettings.trovoChannelId || '');
+    setStripchatUsername(chatSettings.stripchatUsername || '');
     setYoutubeApiKey(chatSettings.youtubeApiKey || '');
     setYoutubeUseApiKey(chatSettings.youtubeUseApiKey || false);
     setTwitchSendEnabled(chatSettings.twitchSendEnabled || false);
     setYoutubeSendEnabled(chatSettings.youtubeSendEnabled || false);
+    setTrovoSendEnabled(chatSettings.trovoSendEnabled || false);
+    setStripchatSendEnabled(chatSettings.stripchatSendEnabled || false);
     setCrosspostEnabled(chatSettings.crosspostEnabled || false);
+    setVisiblePlatforms(chatSettings.visiblePlatforms || []);
+    setVisibilityPanelCollapsed(chatSettings.visibilityPanelCollapsed ?? true);
   }, [chatSettings]);
 
   // Save settings helper -- always loads fresh settings from backend first
@@ -829,7 +842,14 @@ export function ChatPanel() {
         async (payload) => {
           const statuses = await api.chat.getStatus();
           setPlatformStatuses(statuses);
-          const name = payload.platform === 'twitch' ? 'Twitch' : 'YouTube';
+          const name =
+            payload.platform === 'twitch'
+              ? 'Twitch'
+              : payload.platform === 'youtube'
+                ? 'YouTube'
+                : payload.platform === 'trovo'
+                  ? 'Trovo'
+                  : payload.platform;
           toast.success(t('chat.autoConnected', { platform: name, defaultValue: '{{platform}} chat connected' }));
         }
       );
@@ -1020,6 +1040,51 @@ export function ChatPanel() {
     }
   }, [youtubeAccount, saveChatSettings]);
 
+  const handleTrovoRetry = useCallback(async () => {
+    try {
+      await api.chat.retryConnection('trovo');
+      const statuses = await api.chat.getStatus();
+      setPlatformStatuses(statuses);
+      toast.success(t('chat.retrySuccess', { platform: 'Trovo', defaultValue: 'Retrying Trovo chat' }));
+    } catch (error) {
+      toast.error(formatError(error));
+    }
+  }, [t]);
+
+  const handleTrovoChannelSave = useCallback(() => {
+    saveChatSettings({ trovoChannelId });
+  }, [trovoChannelId, saveChatSettings]);
+
+  const handleTrovoClear = useCallback(() => {
+    setTrovoChannelId('');
+    saveChatSettings({ trovoChannelId: '' });
+  }, [saveChatSettings]);
+
+  const handleTrovoSendEnabledChange = useCallback(
+    (enabled: boolean) => {
+      setTrovoSendEnabled(enabled);
+      saveChatSettings({ trovoSendEnabled: enabled });
+    },
+    [saveChatSettings]
+  );
+
+  const handleStripchatUsernameSave = useCallback(() => {
+    saveChatSettings({ stripchatUsername });
+  }, [stripchatUsername, saveChatSettings]);
+
+  const handleStripchatClear = useCallback(() => {
+    setStripchatUsername('');
+    saveChatSettings({ stripchatUsername: '' });
+  }, [saveChatSettings]);
+
+  const handleStripchatSendEnabledChange = useCallback(
+    (enabled: boolean) => {
+      setStripchatSendEnabled(enabled);
+      saveChatSettings({ stripchatSendEnabled: enabled });
+    },
+    [saveChatSettings]
+  );
+
   const handleCrosspostChange = useCallback(
     (enabled: boolean) => {
       setCrosspostEnabled(enabled);
@@ -1027,6 +1092,83 @@ export function ChatPanel() {
     },
     [saveChatSettings]
   );
+
+  const autoVisiblePlatforms = useMemo(() => {
+    const auto = new Set<ChatPlatform>();
+    const statusMap = new Map(platformStatuses.map((status) => [status.platform, status.status]));
+    const isActive = (platform: ChatPlatform) => {
+      const status = statusMap.get(platform);
+      return status === 'connected' || status === 'connecting';
+    };
+
+    if (
+      twitchChannel.trim() ||
+      twitchAccount?.loggedIn ||
+      isActive('twitch')
+    ) {
+      auto.add('twitch');
+    }
+    if (
+      youtubeChannelId.trim() ||
+      youtubeAccount?.loggedIn ||
+      isActive('youtube')
+    ) {
+      auto.add('youtube');
+    }
+    if (trovoChannelId.trim() || isActive('trovo')) {
+      auto.add('trovo');
+    }
+    if (stripchatUsername.trim() || isActive('stripchat')) {
+      auto.add('stripchat');
+    }
+
+    return auto;
+  }, [
+    platformStatuses,
+    twitchChannel,
+    youtubeChannelId,
+    trovoChannelId,
+    stripchatUsername,
+    twitchAccount,
+    youtubeAccount,
+  ]);
+
+  const resolvedVisiblePlatforms = useMemo<ChatPlatform[]>(() => {
+    if (visiblePlatforms.length > 0) {
+      return visiblePlatforms;
+    }
+    const auto = Array.from(autoVisiblePlatforms);
+    return auto.length > 0 ? auto : ['twitch', 'youtube'];
+  }, [visiblePlatforms, autoVisiblePlatforms]);
+
+  const handleVisibilityToggle = useCallback(
+    (platform: ChatPlatform, enabled: boolean) => {
+      const base = visiblePlatforms.length > 0 ? visiblePlatforms : resolvedVisiblePlatforms;
+      let next = enabled ? [...base, platform] : base.filter((p) => p !== platform);
+      next = Array.from(new Set(next));
+
+      if (next.length === 0) {
+        return;
+      }
+
+      setVisiblePlatforms(next);
+      saveChatSettings({ visiblePlatforms: next });
+    },
+    [visiblePlatforms, resolvedVisiblePlatforms, saveChatSettings]
+  );
+
+  const handleVisibilityReset = useCallback(() => {
+    setVisiblePlatforms([]);
+    saveChatSettings({ visiblePlatforms: [] });
+  }, [saveChatSettings]);
+
+  const handleVisibilityCollapseToggle = useCallback(() => {
+    setVisibilityPanelCollapsed((prev) => {
+      const next = !prev;
+      saveChatSettings({ visibilityPanelCollapsed: next });
+      return next;
+    });
+  }, [saveChatSettings]);
 
   if (!currentProfile) {
     return (
@@ -1049,6 +1191,78 @@ export function ChatPanel() {
         </div>
       </div>
 
+      <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={handleVisibilityCollapseToggle}
+            className="flex-1 flex items-center justify-between gap-3 text-left"
+            aria-expanded={!visibilityPanelCollapsed}
+          >
+            <div>
+              <p className="text-sm font-medium text-[var(--text-primary)]">
+                {t('chat.visibility.title', { defaultValue: 'Visible platforms' })}
+              </p>
+              <p className="text-xs text-[var(--text-tertiary)]">
+                {visiblePlatforms.length > 0
+                  ? t('chat.visibility.mode.custom', { defaultValue: 'Custom' })
+                  : t('chat.visibility.mode.auto', { defaultValue: 'Auto (active platforms)' })}
+              </p>
+            </div>
+            <ChevronDown
+              className={cn(
+                'w-4 h-4 text-[var(--text-tertiary)] transition-transform duration-200',
+                !visibilityPanelCollapsed && 'rotate-180'
+              )}
+            />
+          </button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleVisibilityReset}
+            disabled={visiblePlatforms.length === 0}
+          >
+            {t('chat.visibility.reset', { defaultValue: 'Reset to auto' })}
+          </Button>
+        </div>
+        {!visibilityPanelCollapsed && (
+          <>
+            <p className="text-xs text-[var(--text-tertiary)]">
+              {t(
+                'chat.visibility.hint',
+                'By default, active platforms are shown. Toggle to customize.'
+              )}
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Toggle
+                checked={resolvedVisiblePlatforms.includes('twitch')}
+                onChange={(enabled) => handleVisibilityToggle('twitch', enabled)}
+                label={t('chat.twitch.title', { defaultValue: 'Twitch' })}
+                description={t('chat.visibility.twitch', { defaultValue: 'Show Twitch settings' })}
+              />
+              <Toggle
+                checked={resolvedVisiblePlatforms.includes('youtube')}
+                onChange={(enabled) => handleVisibilityToggle('youtube', enabled)}
+                label={t('chat.youtube.title', { defaultValue: 'YouTube' })}
+                description={t('chat.visibility.youtube', { defaultValue: 'Show YouTube settings' })}
+              />
+              <Toggle
+                checked={resolvedVisiblePlatforms.includes('trovo')}
+                onChange={(enabled) => handleVisibilityToggle('trovo', enabled)}
+                label={t('chat.trovo.title', { defaultValue: 'Trovo' })}
+                description={t('chat.visibility.trovo', { defaultValue: 'Show Trovo settings' })}
+              />
+              <Toggle
+                checked={resolvedVisiblePlatforms.includes('stripchat')}
+                onChange={(enabled) => handleVisibilityToggle('stripchat', enabled)}
+                label={t('chat.stripchat.title', { defaultValue: 'Stripchat' })}
+                description={t('chat.visibility.stripchat', { defaultValue: 'Show Stripchat settings' })}
+              />
+            </div>
+          </>
+        )}
+      </div>
+
       <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4">
         <Toggle
           checked={crosspostEnabled}
@@ -1063,40 +1277,165 @@ export function ChatPanel() {
 
       {/* Platform Cards */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <TwitchCard
-          status={getStatusForPlatform('twitch')}
-          account={twitchAccount}
-          channel={twitchChannel}
-          sendEnabled={twitchSendEnabled}
-          onSendEnabledChange={handleTwitchSendEnabledChange}
-          onRetry={handleTwitchRetry}
-          onClear={handleTwitchClear}
-          onLogin={handleTwitchLogin}
-          onLogout={handleTwitchLogout}
-          onForget={handleTwitchForget}
-          onChannelChange={setTwitchChannel}
-          onChannelSave={handleTwitchChannelSave}
-        />
-        <YouTubeCard
-          status={getStatusForPlatform('youtube')}
-          account={youtubeAccount}
-          channelId={youtubeChannelId}
-          apiKey={youtubeApiKey}
-          useApiKey={youtubeUseApiKey}
-          sendEnabled={youtubeSendEnabled}
-          onSendEnabledChange={handleYoutubeSendEnabledChange}
-          onRetry={handleYoutubeRetry}
-          onClear={handleYoutubeClear}
-          onLogin={handleYoutubeLogin}
-          onLogout={handleYoutubeLogout}
-          onForget={handleYoutubeForget}
-          onChannelIdChange={setYoutubeChannelId}
-          onChannelIdSave={handleYoutubeChannelIdSave}
-          onUseMyChannel={handleYoutubeUseMyChannel}
-          onApiKeyChange={setYoutubeApiKey}
-          onApiKeySave={handleYoutubeApiKeySave}
-          onUseApiKeyChange={handleYoutubeUseApiKeyChange}
-        />
+        {resolvedVisiblePlatforms.includes('twitch') && (
+          <TwitchCard
+            status={getStatusForPlatform('twitch')}
+            account={twitchAccount}
+            channel={twitchChannel}
+            sendEnabled={twitchSendEnabled}
+            onSendEnabledChange={handleTwitchSendEnabledChange}
+            onRetry={handleTwitchRetry}
+            onClear={handleTwitchClear}
+            onLogin={handleTwitchLogin}
+            onLogout={handleTwitchLogout}
+            onForget={handleTwitchForget}
+            onChannelChange={setTwitchChannel}
+            onChannelSave={handleTwitchChannelSave}
+          />
+        )}
+        {resolvedVisiblePlatforms.includes('youtube') && (
+          <YouTubeCard
+            status={getStatusForPlatform('youtube')}
+            account={youtubeAccount}
+            channelId={youtubeChannelId}
+            apiKey={youtubeApiKey}
+            useApiKey={youtubeUseApiKey}
+            sendEnabled={youtubeSendEnabled}
+            onSendEnabledChange={handleYoutubeSendEnabledChange}
+            onRetry={handleYoutubeRetry}
+            onClear={handleYoutubeClear}
+            onLogin={handleYoutubeLogin}
+            onLogout={handleYoutubeLogout}
+            onForget={handleYoutubeForget}
+            onChannelIdChange={setYoutubeChannelId}
+            onChannelIdSave={handleYoutubeChannelIdSave}
+            onUseMyChannel={handleYoutubeUseMyChannel}
+            onApiKeyChange={setYoutubeApiKey}
+            onApiKeySave={handleYoutubeApiKeySave}
+            onUseApiKeyChange={handleYoutubeUseApiKeyChange}
+          />
+        )}
+        {resolvedVisiblePlatforms.includes('trovo') && (
+          <Card>
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-[#1ECD97]/10">
+                <MessageSquare className="w-5 h-5 text-[#1ECD97]" />
+              </div>
+              <div className="flex-1">
+                <CardTitle>{t('chat.trovo.title', 'Trovo')}</CardTitle>
+                <CardDescription>
+                  {t('chat.trovo.description', 'Read Trovo chat using channel ID')}
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardBody className="space-y-4">
+            <Input
+              label={t('chat.trovo.channelId', 'Channel ID')}
+              value={trovoChannelId}
+              onChange={(e) => setTrovoChannelId(e.target.value)}
+              onBlur={handleTrovoChannelSave}
+              placeholder={t('chat.trovo.channelIdPlaceholder', 'e.g. 100000021')}
+            />
+            <p className="text-xs text-[var(--text-tertiary)]">
+              {t(
+                'chat.trovo.channelIdHint',
+                'Requires SPIRITSTREAM_TROVO_CLIENT_ID in environment. Read-only chat is supported.'
+              )}
+            </p>
+            <Toggle
+              checked={trovoSendEnabled}
+              onChange={handleTrovoSendEnabledChange}
+              label={t('chat.sendEnabled', 'Allow sending messages')}
+              description={t('chat.trovo.sendHint', 'Trovo sending is not available yet')}
+              disabled
+            />
+            {getStatusForPlatform('trovo')?.error && (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-[var(--status-error)]/10 border border-[var(--status-error)]/20">
+                <AlertCircle className="w-4 h-4 text-[var(--status-error)] flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-[var(--status-error)]">{getStatusForPlatform('trovo')?.error}</p>
+              </div>
+            )}
+            <div className="flex items-center justify-between pt-2">
+              <p className="text-xs text-[var(--text-tertiary)]">
+                {t(
+                  'chat.streamTiedHint',
+                  'Chat connects when you start streaming. YouTube may take ~10s to activate.'
+                )}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleTrovoRetry}
+                  disabled={!trovoChannelId.trim()}
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  {t('chat.retry', 'Retry')}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={handleTrovoClear} disabled={!trovoChannelId.trim()}>
+                  <Trash2 className="w-4 h-4" />
+                  {t('chat.clear', 'Clear')}
+                </Button>
+              </div>
+            </div>
+          </CardBody>
+        </Card>
+        )}
+        {resolvedVisiblePlatforms.includes('stripchat') && (
+          <Card>
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-[var(--bg-base)]">
+                <MessageSquare className="w-5 h-5 text-[var(--text-secondary)]" />
+              </div>
+              <div className="flex-1">
+                <CardTitle>{t('chat.stripchat.title', 'Stripchat')}</CardTitle>
+                <CardDescription>
+                  {t('chat.stripchat.description', 'Configuration placeholder')}
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardBody className="space-y-4">
+            <Input
+              label={t('chat.stripchat.username', 'Username')}
+              value={stripchatUsername}
+              onChange={(e) => setStripchatUsername(e.target.value)}
+              onBlur={handleStripchatUsernameSave}
+              placeholder={t('chat.stripchat.usernamePlaceholder', 'model_username')}
+            />
+            <Toggle
+              checked={stripchatSendEnabled}
+              onChange={handleStripchatSendEnabledChange}
+              label={t('chat.sendEnabled', 'Allow sending messages')}
+              description={t('chat.stripchat.sendHint', 'Stripchat sending is not available yet')}
+              disabled
+            />
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-[var(--status-warning)]/10 border border-[var(--status-warning)]/20">
+              <AlertCircle className="w-4 h-4 text-[var(--status-warning)] flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-[var(--status-warning)]">
+                {t(
+                  'chat.stripchat.unavailableHint',
+                  'Public Stripchat docs currently expose studio stats APIs, not a stable chat API.'
+                )}
+              </p>
+            </div>
+            <div className="flex justify-end">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleStripchatClear}
+                disabled={!stripchatUsername.trim()}
+              >
+                <Trash2 className="w-4 h-4" />
+                {t('chat.clear', 'Clear')}
+              </Button>
+            </div>
+          </CardBody>
+        </Card>
+        )}
       </div>
     </div>
   );

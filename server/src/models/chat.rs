@@ -9,6 +9,8 @@ pub enum ChatPlatform {
     #[serde(rename = "tiktok")]
     TikTok,
     YouTube,
+    Trovo,
+    Stripchat,
     Kick,
     Facebook,
 }
@@ -19,6 +21,8 @@ impl ChatPlatform {
             ChatPlatform::Twitch => "twitch",
             ChatPlatform::TikTok => "tiktok",
             ChatPlatform::YouTube => "youtube",
+            ChatPlatform::Trovo => "trovo",
+            ChatPlatform::Stripchat => "stripchat",
             ChatPlatform::Kick => "kick",
             ChatPlatform::Facebook => "facebook",
         }
@@ -166,6 +170,16 @@ pub enum ChatCredentials {
         channel_id: String,
         /// Authentication method
         auth: YouTubeAuth,
+    },
+    #[serde(rename_all = "camelCase")]
+    Trovo {
+        /// Trovo channel ID (numeric user/channel ID)
+        channel_id: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    Stripchat {
+        /// Stripchat model username
+        username: String,
     },
     #[serde(rename_all = "camelCase")]
     Kick {

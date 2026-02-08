@@ -11,7 +11,10 @@ use chrono::Local;
 use crate::models::{
     ChatConfig, ChatConnectionStatus, ChatMessage, ChatMessageDirection, ChatPlatform, ChatPlatformStatus, ChatSettings,
 };
-use crate::services::chat::{ChatPlatform as ChatPlatformTrait, TikTokConnector, TwitchConnector, YouTubeConnector};
+use crate::services::chat::{
+    ChatPlatform as ChatPlatformTrait, StripchatConnector, TikTokConnector, TrovoConnector,
+    TwitchConnector, YouTubeConnector,
+};
 use crate::services::EventSink;
 
 /// Central manager for all chat platform connections
@@ -64,6 +67,8 @@ impl ChatManager {
             ChatPlatform::Twitch => Box::new(TwitchConnector::new()),
             ChatPlatform::TikTok => Box::new(TikTokConnector::new()),
             ChatPlatform::YouTube => Box::new(YouTubeConnector::new()),
+            ChatPlatform::Trovo => Box::new(TrovoConnector::new()),
+            ChatPlatform::Stripchat => Box::new(StripchatConnector::new()),
             _ => {
                 // For unimplemented platforms (Kick, Facebook), return a stub
                 Box::new(TwitchConnector::new()) // Placeholder
@@ -194,6 +199,8 @@ impl ChatManager {
         self.set_crosspost_enabled(settings.crosspost_enabled);
         self.set_send_enabled(ChatPlatform::Twitch, settings.twitch_send_enabled).await;
         self.set_send_enabled(ChatPlatform::YouTube, settings.youtube_send_enabled).await;
+        self.set_send_enabled(ChatPlatform::Trovo, settings.trovo_send_enabled).await;
+        self.set_send_enabled(ChatPlatform::Stripchat, settings.stripchat_send_enabled).await;
     }
 
     /// Get the cached chat settings for the active profile.

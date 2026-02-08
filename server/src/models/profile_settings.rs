@@ -52,6 +52,10 @@ fn default_discord_cooldown_seconds() -> u32 {
     60
 }
 
+fn default_chat_visibility_panel_collapsed() -> bool {
+    true
+}
+
 // ============================================================================
 // Backend/Remote Access Settings
 // ============================================================================
@@ -201,6 +205,14 @@ pub struct ChatSettings {
     #[serde(default)]
     pub youtube_channel_id: String,
 
+    /// Trovo channel ID (numeric)
+    #[serde(default)]
+    pub trovo_channel_id: String,
+
+    /// Stripchat username
+    #[serde(default)]
+    pub stripchat_username: String,
+
     /// YouTube API key (optional if using OAuth)
     #[serde(default)]
     pub youtube_api_key: String,
@@ -213,6 +225,14 @@ pub struct ChatSettings {
     #[serde(default)]
     pub youtube_send_enabled: bool,
 
+    /// Allow sending to Trovo chat
+    #[serde(default)]
+    pub trovo_send_enabled: bool,
+
+    /// Allow sending to Stripchat chat
+    #[serde(default)]
+    pub stripchat_send_enabled: bool,
+
     /// Send messages to all enabled platforms
     #[serde(default)]
     pub send_all_enabled: bool,
@@ -224,6 +244,14 @@ pub struct ChatSettings {
     /// Use API key instead of OAuth for YouTube chat
     #[serde(default)]
     pub youtube_use_api_key: bool,
+
+    /// Visible chat platform cards (empty = auto)
+    #[serde(default)]
+    pub visible_platforms: Vec<String>,
+
+    /// Collapse the visibility panel by default
+    #[serde(default = "default_chat_visibility_panel_collapsed")]
+    pub visibility_panel_collapsed: bool,
 }
 
 impl Default for ChatSettings {
@@ -231,12 +259,18 @@ impl Default for ChatSettings {
         Self {
             twitch_channel: String::new(),
             youtube_channel_id: String::new(),
+            trovo_channel_id: String::new(),
+            stripchat_username: String::new(),
             youtube_api_key: String::new(),
             twitch_send_enabled: false,
             youtube_send_enabled: false,
+            trovo_send_enabled: false,
+            stripchat_send_enabled: false,
             send_all_enabled: true,
             crosspost_enabled: false,
             youtube_use_api_key: false,
+            visible_platforms: Vec::new(),
+            visibility_panel_collapsed: default_chat_visibility_panel_collapsed(),
         }
     }
 }
@@ -398,12 +432,18 @@ impl ProfileSettings {
             && self.discord.image_path.is_empty()
             && self.chat.twitch_channel.is_empty()
             && self.chat.youtube_channel_id.is_empty()
+            && self.chat.trovo_channel_id.is_empty()
+            && self.chat.stripchat_username.is_empty()
             && self.chat.youtube_api_key.is_empty()
             && self.chat.twitch_send_enabled == false
             && self.chat.youtube_send_enabled == false
+            && self.chat.trovo_send_enabled == false
+            && self.chat.stripchat_send_enabled == false
             && self.chat.send_all_enabled == true
             && self.chat.crosspost_enabled == false
             && self.chat.youtube_use_api_key == false
+            && self.chat.visible_platforms.is_empty()
+            && self.chat.visibility_panel_collapsed == default_chat_visibility_panel_collapsed()
             && self.oauth.twitch.access_token.is_empty()
             && self.oauth.twitch.refresh_token.is_empty()
             && self.oauth.twitch.expires_at == 0
@@ -538,6 +578,14 @@ impl ProfileSettings {
             self.chat.youtube_channel_id = legacy.chat.youtube_channel_id.clone();
             changed = true;
         }
+        if self.chat.trovo_channel_id.is_empty() && !legacy.chat.trovo_channel_id.is_empty() {
+            self.chat.trovo_channel_id = legacy.chat.trovo_channel_id.clone();
+            changed = true;
+        }
+        if self.chat.stripchat_username.is_empty() && !legacy.chat.stripchat_username.is_empty() {
+            self.chat.stripchat_username = legacy.chat.stripchat_username.clone();
+            changed = true;
+        }
         if self.chat.youtube_api_key.is_empty() && !legacy.chat.youtube_api_key.is_empty() {
             self.chat.youtube_api_key = legacy.chat.youtube_api_key.clone();
             changed = true;
@@ -552,6 +600,18 @@ impl ProfileSettings {
             && legacy.chat.youtube_send_enabled != defaults.chat.youtube_send_enabled
         {
             self.chat.youtube_send_enabled = legacy.chat.youtube_send_enabled;
+            changed = true;
+        }
+        if self.chat.trovo_send_enabled == defaults.chat.trovo_send_enabled
+            && legacy.chat.trovo_send_enabled != defaults.chat.trovo_send_enabled
+        {
+            self.chat.trovo_send_enabled = legacy.chat.trovo_send_enabled;
+            changed = true;
+        }
+        if self.chat.stripchat_send_enabled == defaults.chat.stripchat_send_enabled
+            && legacy.chat.stripchat_send_enabled != defaults.chat.stripchat_send_enabled
+        {
+            self.chat.stripchat_send_enabled = legacy.chat.stripchat_send_enabled;
             changed = true;
         }
         if self.chat.send_all_enabled == defaults.chat.send_all_enabled
@@ -570,6 +630,16 @@ impl ProfileSettings {
             && legacy.chat.youtube_use_api_key != defaults.chat.youtube_use_api_key
         {
             self.chat.youtube_use_api_key = legacy.chat.youtube_use_api_key;
+            changed = true;
+        }
+        if self.chat.visible_platforms.is_empty() && !legacy.chat.visible_platforms.is_empty() {
+            self.chat.visible_platforms = legacy.chat.visible_platforms.clone();
+            changed = true;
+        }
+        if self.chat.visibility_panel_collapsed == defaults.chat.visibility_panel_collapsed
+            && legacy.chat.visibility_panel_collapsed != defaults.chat.visibility_panel_collapsed
+        {
+            self.chat.visibility_panel_collapsed = legacy.chat.visibility_panel_collapsed;
             changed = true;
         }
 

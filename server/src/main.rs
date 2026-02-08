@@ -559,6 +559,7 @@ async fn auto_connect_chat_platforms(
     let chat_settings = state.chat_manager.profile_chat_settings().await;
     if chat_settings.twitch_channel.trim().is_empty()
         && chat_settings.youtube_channel_id.trim().is_empty()
+        && chat_settings.trovo_channel_id.trim().is_empty()
     {
         return;
     }
@@ -614,6 +615,21 @@ async fn auto_connect_chat_platforms(
             }
         } else {
             log::debug!("Twitch chat already connected, skipping auto-connect");
+        }
+    }
+
+    // Trovo: read-only websocket chat (requires TROVO_CLIENT_ID + channel ID)
+    if !chat_settings.trovo_channel_id.is_empty() {
+        let already_connected = state.chat_manager
+            .get_platform_status(ChatPlatform::Trovo)
+            .await
+            .map(|s| s.status == spiritstream_server::models::ChatConnectionStatus::Connected)
+            .unwrap_or(false);
+
+        if !already_connected {
+            connect_trovo_chat(&state.chat_manager, &chat_settings, &state.event_bus).await;
+        } else {
+            log::debug!("Trovo chat already connected, skipping auto-connect");
         }
     }
 
@@ -679,6 +695,33 @@ async fn connect_twitch_chat(
                 log::debug!("Twitch chat already connected");
             } else {
                 log::warn!("Failed to auto-connect Twitch chat: {e}");
+            }
+        }
+    }
+}
+
+async fn connect_trovo_chat(
+    chat_manager: &Arc<ChatManager>,
+    chat_settings: &ChatSettings,
+    event_bus: &EventBus,
+) {
+    let config = ChatConfig {
+        platform: ChatPlatform::Trovo,
+        enabled: true,
+        credentials: ChatCredentials::Trovo {
+            channel_id: chat_settings.trovo_channel_id.clone(),
+        },
+    };
+    match chat_manager.connect(config).await {
+        Ok(()) => {
+            log::info!("Auto-connected to Trovo chat");
+            event_bus.emit("chat_auto_connected", json!({ "platform": "trovo" }));
+        }
+        Err(e) => {
+            if e.to_lowercase().contains("already connected") {
+                log::debug!("Trovo chat already connected");
+            } else {
+                log::warn!("Failed to auto-connect Trovo chat: {e}");
             }
         }
     }
@@ -1009,6 +1052,12 @@ async fn start_chat_reconnect_task(
                             continue;
                         }
                         connect_twitch_chat(&state.chat_manager, &chat_settings, &profile_settings, &state.event_bus).await;
+                    }
+                    ChatPlatform::Trovo => {
+                        if chat_settings.trovo_channel_id.is_empty() {
+                            continue;
+                        }
+                        connect_trovo_chat(&state.chat_manager, &chat_settings, &state.event_bus).await;
                     }
                     ChatPlatform::YouTube => {
                         let has_oauth = !chat_settings.youtube_use_api_key
@@ -2278,6 +2327,12 @@ async fn invoke_command(
             if chat_settings.youtube_send_enabled && !chat_settings.youtube_use_api_key {
                 targets.push(ChatPlatform::YouTube);
             }
+            if chat_settings.trovo_send_enabled {
+                targets.push(ChatPlatform::Trovo);
+            }
+            if chat_settings.stripchat_send_enabled {
+                targets.push(ChatPlatform::Stripchat);
+            }
 
             if targets.is_empty() {
                 return Err("No chat platforms are enabled for sending".to_string());
@@ -2468,6 +2523,12 @@ async fn invoke_command(
                         return Err("Twitch chat is not configured".to_string());
                     }
                     connect_twitch_chat(&state.chat_manager, &chat_settings, &profile_settings, &state.event_bus).await;
+                }
+                ChatPlatform::Trovo => {
+                    if chat_settings.trovo_channel_id.is_empty() {
+                        return Err("Trovo chat is not configured".to_string());
+                    }
+                    connect_trovo_chat(&state.chat_manager, &chat_settings, &state.event_bus).await;
                 }
                 ChatPlatform::YouTube => {
                     let has_oauth = !chat_settings.youtube_use_api_key

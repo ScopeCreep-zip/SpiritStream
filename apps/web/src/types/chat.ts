@@ -12,7 +12,14 @@ export interface ChatMessage {
 }
 
 // Chat platform enum
-export type ChatPlatform = 'twitch' | 'tiktok' | 'youtube' | 'kick' | 'facebook';
+export type ChatPlatform =
+  | 'twitch'
+  | 'tiktok'
+  | 'youtube'
+  | 'trovo'
+  | 'stripchat'
+  | 'kick'
+  | 'facebook';
 
 // Chat connection status
 export type ChatConnectionStatus = 'connected' | 'disconnected' | 'connecting' | 'error';
@@ -59,6 +66,14 @@ export type ChatCredentials =
       type: 'youtube';
       channelId: string;
       auth: YouTubeAuth;
+    }
+  | {
+      type: 'trovo';
+      channelId: string;
+    }
+  | {
+      type: 'stripchat';
+      username: string;
     }
   | {
       type: 'kick';
