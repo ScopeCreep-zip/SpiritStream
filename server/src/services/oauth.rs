@@ -1,4 +1,4 @@
-﻿//! OAuth 2.0 authentication service for Twitch and YouTube
+//! OAuth 2.0 authentication service for Twitch and YouTube
 //!
 //! This module handles the OAuth flow for desktop applications using the
 //! loopback redirect method (localhost callback) with PKCE for security.
@@ -54,7 +54,7 @@ impl OAuthProvider {
             name: "youtube",
             auth_url: "https://accounts.google.com/o/oauth2/v2/auth",
             token_url: "https://oauth2.googleapis.com/token",
-            scopes: vec!["https://www.googleapis.com/auth/youtube.readonly"],
+            scopes: vec!["https://www.googleapis.com/auth/youtube.force-ssl"],
         }
     }
 }
@@ -84,13 +84,13 @@ pub struct OAuthConfig {
     /// Optional user-provided Twitch OAuth client ID (overrides embedded)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub twitch_client_id: Option<String>,
-    /// Optional user-provided Twitch OAuth client secret (for non-PKCE flows)
+    /// Optional user-provided Twitch OAuth client secret (for confidential flows)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub twitch_client_secret: Option<String>,
     /// Optional user-provided YouTube/Google OAuth client ID (overrides embedded)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub youtube_client_id: Option<String>,
-    /// Optional user-provided YouTube/Google OAuth client secret (for non-PKCE flows)
+    /// Optional user-provided YouTube/Google OAuth client secret (for confidential flows)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub youtube_client_secret: Option<String>,
 }
@@ -123,6 +123,25 @@ impl OAuthConfig {
         }
 
         TWITCH_CLIENT_ID.to_string()
+    }
+
+    /// Get Twitch client secret (user-provided or env override)
+    pub fn get_twitch_client_secret(&self) -> Option<String> {
+        if let Some(value) = self.twitch_client_secret.as_deref() {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+
+        if let Ok(value) = std::env::var("SPIRITSTREAM_TWITCH_CLIENT_SECRET") {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+
+        None
     }
 
     /// Get YouTube client ID (user-provided, env override, or embedded)
@@ -285,14 +304,25 @@ impl OAuthService {
     }
 
     /// Find an available port for the callback server
+    /// Uses a small set of fixed ports so that redirect URIs can be pre-registered
+    /// with OAuth providers (Twitch requires exact match including port)
     fn find_available_port() -> Result<u16, String> {
-        // Try ports in a range that's unlikely to conflict
-        for port in 49152..65535 {
+        // Preferred fixed ports for OAuth callbacks -- register these in provider consoles
+        const PREFERRED_PORTS: &[u16] = &[8891, 8892, 8893, 8894, 8895];
+
+        for &port in PREFERRED_PORTS {
             if TcpListener::bind(format!("127.0.0.1:{}", port)).is_ok() {
                 return Ok(port);
             }
         }
-        Err("No available port found".to_string())
+
+        // Fallback to ephemeral range if all preferred ports are busy
+        for port in 49152..49162 {
+            if TcpListener::bind(format!("127.0.0.1:{}", port)).is_ok() {
+                return Ok(port);
+            }
+        }
+        Err("No available port found for OAuth callback".to_string())
     }
 
     /// Clean up expired pending flows (older than 10 minutes)
@@ -302,25 +332,30 @@ impl OAuthService {
         flows.retain(|_, flow| now.duration_since(flow.created_at) < Duration::from_secs(600));
     }
 
-    /// Build the authorization URL with PKCE
-    fn build_auth_url_with_pkce(
+    /// Build the authorization URL (PKCE optional for code flow)
+    fn build_auth_url(
         provider: &OAuthProvider,
         client_id: &str,
         redirect_uri: &str,
         state: &str,
-        code_challenge: &str,
+        response_type: &str,
+        code_challenge: Option<&str>,
     ) -> String {
         let scopes = provider.scopes.join(" ");
 
         let mut params = vec![
             ("client_id", client_id),
             ("redirect_uri", redirect_uri),
-            ("response_type", "code"),
+            ("response_type", response_type),
             ("scope", &scopes),
             ("state", state),
-            ("code_challenge", code_challenge),
-            ("code_challenge_method", "S256"),
         ];
+
+        // Add PKCE params only for authorization code flow
+        if let Some(challenge) = code_challenge {
+            params.push(("code_challenge", challenge));
+            params.push(("code_challenge_method", "S256"));
+        }
 
         // YouTube/Google requires additional params
         if provider.name == "youtube" {
@@ -342,16 +377,26 @@ impl OAuthService {
         format!("{}?{}", provider.auth_url, query)
     }
 
-    /// Start the OAuth flow for a provider (PKCE flow)
+    /// Start the OAuth flow for a provider.
+    /// Twitch uses implicit flow when no client secret is configured.
+    /// YouTube always uses authorization code + PKCE.
     pub async fn start_flow(&self, provider_name: &str) -> Result<OAuthFlowResult, String> {
         // Clean up any expired flows
         self.cleanup_expired_flows().await;
 
         let config = self.config.lock().await;
 
-        let (provider, client_id) = match provider_name {
-            "twitch" => (OAuthProvider::twitch(), config.get_twitch_client_id()),
-            "youtube" => (OAuthProvider::youtube(), config.get_youtube_client_id()),
+        let (provider, client_id, client_secret) = match provider_name {
+            "twitch" => (
+                OAuthProvider::twitch(),
+                config.get_twitch_client_id(),
+                config.get_twitch_client_secret(),
+            ),
+            "youtube" => (
+                OAuthProvider::youtube(),
+                config.get_youtube_client_id(),
+                config.get_youtube_client_secret(),
+            ),
             _ => return Err(format!("Unknown provider: {}", provider_name)),
         };
 
@@ -359,17 +404,38 @@ impl OAuthService {
 
         // Find an available port
         let port = Self::find_available_port()?;
-        let redirect_uri = format!("http://127.0.0.1:{}/oauth/callback", port);
+        let redirect_uri = format!("http://localhost:{}/oauth/callback", port);
 
-        // Generate PKCE pair
-        let (code_verifier, code_challenge) = generate_pkce_pair();
+        // Decide which flow to use
+        let (use_implicit, use_pkce) = match provider_name {
+            // Twitch requires client secret for auth-code token exchange.
+            // If no secret is configured, fall back to implicit flow.
+            "twitch" => (client_secret.is_none(), false),
+            // YouTube uses auth code + PKCE.
+            _ => (false, true),
+        };
+
+        // Generate PKCE pair only when needed
+        let (code_verifier, code_challenge) = if use_pkce {
+            let (v, c) = generate_pkce_pair();
+            (v, Some(c))
+        } else {
+            (String::new(), None)
+        };
 
         // Generate a random state for CSRF protection
         let state = uuid::Uuid::new_v4().to_string();
 
-        // Build the auth URL with PKCE
-        let auth_url =
-            Self::build_auth_url_with_pkce(&provider, &client_id, &redirect_uri, &state, &code_challenge);
+        // Build the auth URL
+        let response_type = if use_implicit { "token" } else { "code" };
+        let auth_url = Self::build_auth_url(
+            &provider,
+            &client_id,
+            &redirect_uri,
+            &state,
+            response_type,
+            code_challenge.as_deref(),
+        );
 
         // Debug: log provider + client_id hint (avoid full ID in logs)
         let id_len = client_id.len();
@@ -397,10 +463,14 @@ impl OAuthService {
             flows.insert(state.clone(), pending_flow);
         }
 
-        info!(
-            "Starting {} OAuth flow with PKCE on port {}",
-            provider_name, port
-        );
+        let flow_label = if use_implicit {
+            "implicit"
+        } else if use_pkce {
+            "PKCE"
+        } else {
+            "auth code"
+        };
+        info!("Starting {} OAuth flow with {} on port {}", provider_name, flow_label, port);
 
         Ok(OAuthFlowResult {
             auth_url,
@@ -432,7 +502,11 @@ impl OAuthService {
         let config = self.config.lock().await;
 
         let (provider, client_id, client_secret) = match provider_name {
-            "twitch" => (OAuthProvider::twitch(), config.get_twitch_client_id(), None),
+            "twitch" => (
+                OAuthProvider::twitch(),
+                config.get_twitch_client_id(),
+                config.get_twitch_client_secret(),
+            ),
             "youtube" => (
                 OAuthProvider::youtube(),
                 config.get_youtube_client_id(),
@@ -447,7 +521,9 @@ impl OAuthService {
         let mut params = HashMap::new();
         params.insert("client_id", client_id.as_str());
         params.insert("code", code);
-        params.insert("code_verifier", pending_flow.code_verifier.as_str());
+        if !pending_flow.code_verifier.is_empty() {
+            params.insert("code_verifier", pending_flow.code_verifier.as_str());
+        }
         params.insert("grant_type", "authorization_code");
         params.insert("redirect_uri", pending_flow.redirect_uri.as_str());
 
@@ -496,7 +572,11 @@ impl OAuthService {
         let config = self.config.lock().await;
 
         let (provider, client_id, client_secret) = match provider_name {
-            "twitch" => (OAuthProvider::twitch(), config.get_twitch_client_id(), None),
+            "twitch" => (
+                OAuthProvider::twitch(),
+                config.get_twitch_client_id(),
+                config.get_twitch_client_secret(),
+            ),
             "youtube" => (
                 OAuthProvider::youtube(),
                 config.get_youtube_client_id(),
@@ -789,9 +869,19 @@ impl OAuthCallbackServer {
                                     let _ = callback_tx.send(callback);
                                     break;
                                 } else {
-                                    // Send error response
-                                    let response = Self::error_response("Invalid callback");
-                                    let _ = socket.write_all(response.as_bytes()).await;
+                                    // No query params -- might be implicit flow with token in fragment.
+                                    // Check if the path is /oauth/callback (without query)
+                                    let first_line = request.lines().next().unwrap_or("");
+                                    let path = first_line.split_whitespace().nth(1).unwrap_or("");
+                                    if path.starts_with("/oauth/callback") {
+                                        // Serve HTML that extracts fragment and redirects with query params
+                                        let response = Self::fragment_extraction_response();
+                                        let _ = socket.write_all(response.as_bytes()).await;
+                                        // Don't break -- wait for the second request with query params
+                                    } else {
+                                        let response = Self::error_response("Invalid callback");
+                                        let _ = socket.write_all(response.as_bytes()).await;
+                                    }
                                 }
                             }
                         }
@@ -813,7 +903,16 @@ impl OAuthCallbackServer {
             return None;
         }
 
-        let query = path.split('?').nth(1)?;
+        let query = match path.split('?').nth(1) {
+            Some(q) => q,
+            None => {
+                // No query params -- this is an implicit flow redirect where the
+                // token is in the URL fragment (client-side only). Return None so
+                // the callback server serves the fragment-extraction HTML page.
+                return None;
+            }
+        };
+
         let params: HashMap<&str, &str> = query
             .split('&')
             .filter_map(|pair| {
@@ -832,7 +931,16 @@ impl OAuthCallbackServer {
             });
         }
 
-        // Get authorization code and state
+        // Check for implicit flow (access_token in query params, forwarded from fragment)
+        if let Some(access_token) = params.get("access_token") {
+            let state = params.get("state")?;
+            return Some(OAuthCallback::ImplicitSuccess {
+                access_token: urlencoding::decode(access_token).unwrap_or_default().to_string(),
+                state: urlencoding::decode(state).unwrap_or_default().to_string(),
+            });
+        }
+
+        // Authorization code flow
         let code = params.get("code")?;
         let state = params.get("state")?;
 
@@ -840,6 +948,46 @@ impl OAuthCallbackServer {
             code: urlencoding::decode(code).unwrap_or_default().to_string(),
             state: urlencoding::decode(state).unwrap_or_default().to_string(),
         })
+    }
+
+    /// HTML page that extracts OAuth token from URL fragment (implicit flow)
+    /// and redirects to the same URL with the fragment as query parameters.
+    fn fragment_extraction_response() -> String {
+        let body = r#"<!DOCTYPE html>
+<html>
+<head>
+    <title>Processing Authentication...</title>
+    <style>
+        body { font-family: system-ui; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #1a1a2e; color: #eee; }
+        .container { text-align: center; }
+        h1 { color: #a78bfa; }
+        p { color: #9ca3af; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Processing...</h1>
+        <p>Completing authentication, please wait.</p>
+    </div>
+    <script>
+        // The OAuth token is in the URL fragment (#access_token=...)
+        // Fragments aren't sent to the server, so we redirect with them as query params
+        if (window.location.hash) {
+            var params = window.location.hash.substring(1);
+            window.location.replace('/oauth/callback?' + params);
+        } else {
+            document.querySelector('h1').textContent = 'Authentication Failed';
+            document.querySelector('p').textContent = 'No authentication data received.';
+        }
+    </script>
+</body>
+</html>"#;
+
+        format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        )
     }
 
     fn success_response() -> String {
@@ -911,7 +1059,10 @@ impl OAuthCallbackServer {
 /// OAuth callback result
 #[derive(Debug, Clone)]
 pub enum OAuthCallback {
+    /// Authorization code flow callback (YouTube, etc.)
     Success { code: String, state: String },
+    /// Implicit flow callback (legacy) -- token arrives directly
+    ImplicitSuccess { access_token: String, state: String },
     Error {
         error: String,
         description: Option<String>,

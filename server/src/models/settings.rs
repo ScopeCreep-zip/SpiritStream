@@ -151,13 +151,15 @@ pub struct Settings {
     #[serde(default)]
     pub chat_twitch_channel: String,
     #[serde(default)]
-    pub chat_twitch_oauth_token: String,
-    #[serde(default)]
     pub chat_youtube_channel_id: String,
     #[serde(default)]
     pub chat_youtube_api_key: String,
     #[serde(default)]
-    pub chat_auto_connect: bool,
+    pub chat_twitch_send_enabled: bool,
+    #[serde(default)]
+    pub chat_youtube_send_enabled: bool,
+    #[serde(default)]
+    pub chat_send_all_enabled: bool,
 
     // Twitch OAuth account (from "Login with Twitch")
     #[serde(default)]
@@ -220,10 +222,11 @@ impl Default for Settings {
             discord_cooldown_seconds: default_discord_cooldown_seconds(),
             discord_image_path: String::new(),
             chat_twitch_channel: String::new(),
-            chat_twitch_oauth_token: String::new(),
             chat_youtube_channel_id: String::new(),
             chat_youtube_api_key: String::new(),
-            chat_auto_connect: false,
+            chat_twitch_send_enabled: false,
+            chat_youtube_send_enabled: false,
+            chat_send_all_enabled: true,
 
             // Twitch OAuth account
             twitch_oauth_access_token: String::new(),

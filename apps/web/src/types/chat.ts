@@ -3,9 +3,12 @@ import type { Platform } from './profile';
 export interface ChatMessage {
   id: string;
   platform: Platform;
+  platforms?: ChatPlatform[];
   username: string;
   message: string;
   timestamp: number;
+  direction?: 'inbound' | 'outbound';
+  sourceId?: string;
 }
 
 // Chat platform enum
@@ -22,7 +25,7 @@ export type TwitchAuth =
     }
   | {
       method: 'appOAuth';
-      accessToken: string;
+      accessToken?: string;
       refreshToken?: string;
       expiresAt?: number;
     };
@@ -35,7 +38,7 @@ export type YouTubeAuth =
     }
   | {
       method: 'appOAuth';
-      accessToken: string;
+      accessToken?: string;
       refreshToken?: string;
       expiresAt?: number;
     };
@@ -80,6 +83,17 @@ export interface ChatPlatformStatus {
   status: ChatConnectionStatus;
   messageCount: number;
   error?: string;
+}
+
+export interface ChatSendResult {
+  platform: ChatPlatform;
+  success: boolean;
+  error?: string;
+}
+
+export interface ChatLogStatus {
+  active: boolean;
+  startedAt?: number;
 }
 
 // OAuth account info returned from oauth_get_account

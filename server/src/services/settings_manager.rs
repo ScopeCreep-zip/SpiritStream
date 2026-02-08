@@ -4,11 +4,25 @@
 use std::path::PathBuf;
 use std::sync::RwLock;
 use crate::models::Settings;
+use crate::services::encryption::Encryption;
 use serde_json::Value;
+
+/// Fields in settings.json (camelCase) that contain sensitive data and should be encrypted at rest
+const SENSITIVE_FIELDS: &[&str] = &[
+    "twitchOauthAccessToken",
+    "twitchOauthRefreshToken",
+    "youtubeOauthAccessToken",
+    "youtubeOauthRefreshToken",
+    "chatYoutubeApiKey",
+    "obsPassword",
+    "backendToken",
+    "discordWebhookUrl",
+];
 
 /// Manages application settings storage and retrieval
 pub struct SettingsManager {
     settings_path: PathBuf,
+    app_data_dir: PathBuf,
     cache: RwLock<Option<Settings>>,
 }
 
@@ -18,6 +32,7 @@ impl SettingsManager {
         let settings_path = app_data_dir.join("settings.json");
         Self {
             settings_path,
+            app_data_dir,
             cache: RwLock::new(None),
         }
     }
@@ -42,6 +57,9 @@ impl SettingsManager {
                 .map_err(|e| format!("Failed to build default settings: {e}"))?;
 
             let changed = merge_missing_settings(&mut user_value, &defaults_value);
+
+            // Decrypt sensitive fields (ENC:: values become plaintext in memory)
+            self.decrypt_sensitive_fields(&mut user_value);
 
             let settings: Settings = serde_json::from_value(user_value)
                 .map_err(|e| format!("Failed to parse settings: {e}"))?;
@@ -86,7 +104,13 @@ impl SettingsManager {
                 .map_err(|e| format!("Failed to create settings directory: {e}"))?;
         }
 
-        let content = serde_json::to_string_pretty(settings)
+        let mut value = serde_json::to_value(settings)
+            .map_err(|e| format!("Failed to serialize settings: {e}"))?;
+
+        // Encrypt sensitive fields before writing to disk
+        self.encrypt_sensitive_fields(&mut value);
+
+        let content = serde_json::to_string_pretty(&value)
             .map_err(|e| format!("Failed to serialize settings: {e}"))?;
 
         std::fs::write(&self.settings_path, content)
@@ -128,6 +152,48 @@ impl SettingsManager {
         }
 
         Ok(())
+    }
+
+    /// Decrypt sensitive fields in a JSON Value (ENC:: -> plaintext)
+    /// Used after reading from disk so in-memory Settings always has plaintext
+    fn decrypt_sensitive_fields(&self, value: &mut Value) {
+        if let Value::Object(map) = value {
+            for &field in SENSITIVE_FIELDS {
+                if let Some(Value::String(val)) = map.get(field) {
+                    if Encryption::is_encrypted(val) {
+                        match Encryption::decrypt_token(val, &self.app_data_dir) {
+                            Ok(plaintext) => {
+                                map.insert(field.to_string(), Value::String(plaintext));
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to decrypt settings field '{}': {}", field, e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Encrypt sensitive fields in a JSON Value (plaintext -> ENC::)
+    /// Used before writing to disk so on-disk settings always has encrypted tokens
+    fn encrypt_sensitive_fields(&self, value: &mut Value) {
+        if let Value::Object(map) = value {
+            for &field in SENSITIVE_FIELDS {
+                if let Some(Value::String(val)) = map.get(field) {
+                    if !val.is_empty() && !Encryption::is_encrypted(val) {
+                        match Encryption::encrypt_token(val, &self.app_data_dir) {
+                            Ok(encrypted) => {
+                                map.insert(field.to_string(), Value::String(encrypted));
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to encrypt settings field '{}': {}", field, e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// Clear all app data

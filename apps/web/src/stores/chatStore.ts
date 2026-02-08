@@ -25,12 +25,19 @@ export const useChatStore = create<ChatStore>()(
 
       addMessage: (message) =>
         set((state) => ({
-          messages: [...state.messages, message].slice(-MAX_MESSAGES),
+          messages: state.messages.some((existing) => existing.id === message.id)
+            ? state.messages
+            : [...state.messages, message].slice(-MAX_MESSAGES),
         })),
 
       addMessages: (messages) =>
         set((state) => ({
-          messages: [...state.messages, ...messages].slice(-MAX_MESSAGES),
+          messages: [
+            ...state.messages,
+            ...messages.filter(
+              (message) => !state.messages.some((existing) => existing.id === message.id)
+            ),
+          ].slice(-MAX_MESSAGES),
         })),
 
       clearMessages: () => set({ messages: [] }),

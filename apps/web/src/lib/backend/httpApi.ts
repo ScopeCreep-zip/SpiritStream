@@ -10,7 +10,7 @@ import type {
   ObsIntegrationDirection,
 } from '@/types/api';
 import type { ThemeSummary } from '@/types/theme';
-import type { ChatConfig, ChatPlatform, ChatPlatformStatus } from '@/types/chat';
+import type { ChatConfig, ChatLogStatus, ChatPlatform, ChatPlatformStatus, ChatSendResult } from '@/types/chat';
 import { getBackendBaseUrl, safeFetch } from './env';
 
 interface InvokeOk<T> {
@@ -192,12 +192,20 @@ export const api = {
   chat: {
     /** Connect to a chat platform */
     connect: (config: ChatConfig) => invokeHttp<void>('connect_chat', { config }),
+    /** Send a chat message to all enabled platforms */
+    sendMessage: (message: string) => invokeHttp<ChatSendResult[]>('send_chat_message', { message }),
     /** Disconnect from a chat platform */
     disconnect: (platform: ChatPlatform) => invokeHttp<void>('disconnect_chat', { platform }),
+    /** Retry a chat platform connection */
+    retryConnection: (platform: ChatPlatform) => invokeHttp<void>('retry_chat_connection', { platform }),
     /** Disconnect from all chat platforms */
     disconnectAll: () => invokeHttp<void>('disconnect_all_chat'),
     /** Get status of all connected chat platforms */
     getStatus: () => invokeHttp<ChatPlatformStatus[]>('get_chat_status'),
+    /** Get current chat log session status */
+    getLogStatus: () => invokeHttp<ChatLogStatus>('chat_get_log_status'),
+    /** Export the current chat log session to a file path */
+    exportLog: (path: string) => invokeHttp<void>('chat_export_log', { path }),
     /** Get status of a specific chat platform */
     getPlatformStatus: (platform: ChatPlatform) =>
       invokeHttp<ChatPlatformStatus | null>('get_platform_chat_status', { platform }),

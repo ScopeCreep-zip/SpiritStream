@@ -37,10 +37,11 @@ export interface AppSettings {
   discordImagePath: string;
   // Chat platform settings
   chatTwitchChannel: string;
-  chatTwitchOauthToken: string;
   chatYoutubeChannelId: string;
   chatYoutubeApiKey: string;
-  chatAutoConnect: boolean;
+  chatTwitchSendEnabled: boolean;
+  chatYoutubeSendEnabled: boolean;
+  chatSendAllEnabled: boolean;
 
   // Twitch OAuth account (from "Login with Twitch")
   twitchOauthAccessToken: string;

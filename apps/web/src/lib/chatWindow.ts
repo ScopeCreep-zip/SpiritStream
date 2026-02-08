@@ -2,7 +2,16 @@ import { isTauri } from './backend/env';
 import { useChatStore } from '@/stores/chatStore';
 
 const CHAT_OVERLAY_LABEL = 'chat-overlay';
-const CHAT_OVERLAY_URL = '/?overlay=chat';
+const CHAT_OVERLAY_PATH = '/?overlay=chat';
+
+function getOverlayUrl(): string {
+  if (typeof window === 'undefined') return CHAT_OVERLAY_PATH;
+  try {
+    return new URL(CHAT_OVERLAY_PATH, window.location.origin).toString();
+  } catch {
+    return CHAT_OVERLAY_PATH;
+  }
+}
 
 // Track browser popup window reference
 let browserPopup: Window | null = null;
@@ -29,7 +38,7 @@ async function openTauriOverlay() {
     transparent: true,
     center: true,
     alwaysOnTop,
-    url: CHAT_OVERLAY_URL,
+    url: getOverlayUrl(),
   });
 
   overlay.once('tauri://created', () => {
@@ -60,7 +69,7 @@ function openBrowserPopup() {
   const top = window.screenY + (window.outerHeight - height) / 2;
 
   browserPopup = window.open(
-    CHAT_OVERLAY_URL,
+    getOverlayUrl(),
     CHAT_OVERLAY_LABEL,
     `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=no`
   );

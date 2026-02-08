@@ -61,6 +61,25 @@ pub trait ChatPlatform: Send + Sync {
     fn is_connected(&self) -> bool {
         matches!(self.status(), ChatConnectionStatus::Connected)
     }
+
+    /// Send a chat message (if supported by the platform and authenticated)
+    async fn send_message(&mut self, _message: String) -> PlatformResult<()> {
+        Err(PlatformError::Platform("Sending messages is not supported for this platform".to_string()))
+    }
+
+    /// Whether the current connection can send messages
+    fn can_send(&self) -> bool {
+        false
+    }
+
+    /// Get last error message (if any)
+    fn last_error(&self) -> Option<String> {
+        None
+    }
+
+    /// Update the OAuth access token for platforms that poll APIs.
+    /// Default is a no-op. YouTube overrides this to swap the token mid-session.
+    fn update_token(&mut self, _token: String) {}
 }
 
 /// Type alias for a boxed chat platform

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { X } from 'lucide-react';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -6,7 +6,6 @@ import { listen } from '@tauri-apps/api/event';
 import { cn } from '@/lib/cn';
 import { ChatList } from '@/components/chat/ChatList';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
 import { CHAT_OVERLAY_SETTINGS_EVENT, CHAT_OVERLAY_ALWAYS_ON_TOP_EVENT } from '@/lib/chatEvents';
 import { isTauri } from '@/lib/backend/env';
 import { setupOverlayAutoClose } from '@/lib/chatWindow';
@@ -16,7 +15,6 @@ export function ChatOverlay() {
   const messages = useChatStore((state) => state.messages);
   const overlayTransparent = useChatStore((state) => state.overlayTransparent);
   const setOverlayTransparent = useChatStore((state) => state.setOverlayTransparent);
-  const [draftMessage, setDraftMessage] = useState('');
 
   // Set up auto-close when main window closes
   useEffect(() => {
@@ -93,13 +91,6 @@ export function ChatOverlay() {
     });
   };
 
-  const handleSend = () => {
-    const trimmed = draftMessage.trim();
-    if (!trimmed) return;
-    console.info('[ChatOverlay] Send not wired yet:', trimmed);
-    setDraftMessage('');
-  };
-
   return (
     <div
       className={cn(
@@ -108,7 +99,7 @@ export function ChatOverlay() {
       )}
     >
       <div
-        className="flex items-center justify-end px-10 pt-4 pb-2 cursor-grab active:cursor-grabbing"
+        className="flex items-center justify-end px-6 pt-3 pb-2 cursor-grab active:cursor-grabbing"
         data-tauri-drag-region
         onPointerDown={handleDragStart}
       >
@@ -123,39 +114,14 @@ export function ChatOverlay() {
           <X className="w-4 h-4" />
         </Button>
       </div>
-      <div className="flex-1 min-h-0 px-10">
+      <div className="flex-1 min-h-0 px-6 pb-6">
         <ChatList
           messages={messages}
           showEmptyState={false}
           density="compact"
-          className="h-full pb-4"
+          className="h-full"
         />
       </div>
-      <form
-        className="flex items-center gap-3 px-10 pb-10 pt-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          handleSend();
-        }}
-      >
-        <div className="flex-1 min-w-0">
-          <Input
-            value={draftMessage}
-            onChange={(event) => setDraftMessage(event.target.value)}
-            placeholder="Type a message..."
-            aria-label="Chat message"
-            className="w-full"
-          />
-        </div>
-        <Button
-          type="submit"
-          size="sm"
-          disabled={!draftMessage.trim()}
-          className="w-24 shrink-0"
-        >
-          Send
-        </Button>
-      </form>
     </div>
   );
 }

@@ -12,15 +12,16 @@ import {
   User,
   LogOut,
   Trash2,
+  RefreshCw,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Toggle } from '@/components/ui/Toggle';
-import { api } from '@/lib/backend';
+import { api, events } from '@/lib/backend';
 import { toast } from '@/hooks/useToast';
 import { cn } from '@/lib/cn';
-import type { ChatPlatform, ChatPlatformStatus, ChatConfig, ChatCredentials, OAuthAccount } from '@/types/chat';
+import type { ChatPlatform, ChatPlatformStatus, OAuthAccount } from '@/types/chat';
 import type { AppSettings } from '@/types/api';
 
 // ============================================================================
@@ -29,36 +30,38 @@ import type { AppSettings } from '@/types/api';
 
 interface TwitchCardProps {
   status: ChatPlatformStatus | null;
-  isConnecting: boolean;
   account: OAuthAccount | null;
   channel: string;
-  autoConnect: boolean;
-  onConnect: (config: ChatConfig) => Promise<void>;
-  onDisconnect: () => Promise<void>;
+  sendEnabled: boolean;
+  onSendEnabledChange: (enabled: boolean) => void;
+  onRetry: () => Promise<void>;
+  onClear: () => void;
   onLogin: () => Promise<void>;
   onLogout: () => Promise<void>;
   onForget: () => Promise<void>;
   onChannelChange: (channel: string) => void;
-  onAutoConnectChange: (enabled: boolean) => void;
+  onChannelSave: () => void;
 }
 
 interface YouTubeCardProps {
   status: ChatPlatformStatus | null;
-  isConnecting: boolean;
   account: OAuthAccount | null;
   channelId: string;
   apiKey: string;
   useApiKey: boolean;
-  autoConnect: boolean;
-  onConnect: (config: ChatConfig) => Promise<void>;
-  onDisconnect: () => Promise<void>;
+  sendEnabled: boolean;
+  onSendEnabledChange: (enabled: boolean) => void;
+  onRetry: () => Promise<void>;
+  onClear: () => void;
   onLogin: () => Promise<void>;
   onLogout: () => Promise<void>;
   onForget: () => Promise<void>;
   onChannelIdChange: (channelId: string) => void;
+  onChannelIdSave: () => void;
+  onUseMyChannel: () => void;
   onApiKeyChange: (apiKey: string) => void;
+  onApiKeySave: () => void;
   onUseApiKeyChange: (useApiKey: boolean) => void;
-  onAutoConnectChange: (enabled: boolean) => void;
 }
 
 // ============================================================================
@@ -67,25 +70,37 @@ interface YouTubeCardProps {
 
 function TwitchCard({
   status,
-  isConnecting,
   account,
   channel,
-  autoConnect,
-  onConnect,
-  onDisconnect,
+  sendEnabled,
+  onSendEnabledChange,
+  onRetry,
+  onClear,
   onLogin,
   onLogout,
   onForget,
   onChannelChange,
-  onAutoConnectChange,
+  onChannelSave,
 }: TwitchCardProps) {
   const { t } = useTranslation();
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const isConnected = status?.status === 'connected';
+  const isConnecting = status?.status === 'connecting';
   const hasError = status?.status === 'error';
   const isLoggedIn = account?.loggedIn ?? false;
+  const isConfigured = !!channel.trim();
+
+  const statusLabel = isConnecting
+    ? t('chat.connecting')
+    : isConnected
+      ? t('chat.connected', 'Chat connected')
+      : hasError
+        ? t('chat.error')
+        : isConfigured
+          ? t('chat.waitingForStream', 'Waiting for stream')
+          : t('chat.notConfigured', 'Not configured');
 
   const handleLogin = async () => {
     setIsLoggingIn(true);
@@ -119,30 +134,6 @@ function TwitchCard({
     } finally {
       setIsLoggingOut(false);
     }
-  };
-
-  const handleConnect = async () => {
-    if (!channel.trim()) {
-      toast.error(t('chat.twitch.enterChannel'));
-      return;
-    }
-
-    const credentials: ChatCredentials = {
-      type: 'twitch',
-      channel: channel.trim(),
-      // Use OAuth token if logged in, otherwise anonymous read-only
-      auth: isLoggedIn
-        ? { method: 'appOAuth', accessToken: '' } // Backend will use stored token
-        : undefined,
-    };
-
-    const config: ChatConfig = {
-      platform: 'twitch',
-      enabled: true,
-      credentials,
-    };
-
-    await onConnect(config);
   };
 
   return (
@@ -179,13 +170,7 @@ function TwitchCard({
                     : 'text-[var(--text-tertiary)]'
               )}
             >
-              {isConnecting
-                ? t('chat.connecting')
-                : isConnected
-                  ? t('chat.connected')
-                  : hasError
-                    ? t('chat.error')
-                    : t('chat.disconnected')}
+              {statusLabel}
             </span>
           </div>
         </div>
@@ -207,38 +192,40 @@ function TwitchCard({
                 <p className="text-[var(--text-secondary)]">{t('chat.notLoggedIn', 'Not logged in')}</p>
               )}
             </div>
-            {isLoggedIn ? (
-              <div className="flex gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleLogout}
-                  disabled={isLoggingOut}
-                  title={t('chat.disconnect', 'Disconnect')}
-                >
-                  <LogOut className="w-4 h-4" />
+            <div className="flex gap-2">
+              {isLoggedIn ? (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleLogout}
+                    disabled={isLoggingOut}
+                    title={t('chat.signOut', 'Sign out')}
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleForget}
+                    disabled={isLoggingOut}
+                    title={t('chat.forgetAccount', 'Forget Account')}
+                    className="text-[var(--status-error)] hover:text-[var(--status-error)]"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </>
+              ) : (
+                <Button variant="outline" size="sm" onClick={handleLogin} disabled={isLoggingIn} className="gap-2">
+                  {isLoggingIn ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <ExternalLink className="w-4 h-4" />
+                  )}
+                  {t('chat.twitch.loginWithTwitch', 'Login with Twitch')}
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleForget}
-                  disabled={isLoggingOut}
-                  title={t('chat.forgetAccount', 'Forget Account')}
-                  className="text-[var(--status-error)] hover:text-[var(--status-error)]"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </div>
-            ) : (
-              <Button variant="outline" size="sm" onClick={handleLogin} disabled={isLoggingIn} className="gap-2">
-                {isLoggingIn ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <ExternalLink className="w-4 h-4" />
-                )}
-                {t('chat.twitch.loginWithTwitch', 'Login with Twitch')}
-              </Button>
-            )}
+              )}
+            </div>
           </div>
         </div>
 
@@ -247,12 +234,26 @@ function TwitchCard({
           label={t('chat.twitch.channel')}
           value={channel}
           onChange={(e) => onChannelChange(e.target.value)}
+          onBlur={onChannelSave}
           placeholder={isLoggedIn ? account?.username : t('chat.twitch.channelPlaceholder')}
           disabled={isConnected || isConnecting}
         />
         {!isLoggedIn && (
           <p className="text-xs text-[var(--text-tertiary)]">
             {t('chat.twitch.readOnlyHint', 'Read-only without login')}
+          </p>
+        )}
+        <Toggle
+          checked={sendEnabled}
+          onChange={onSendEnabledChange}
+          disabled={!isLoggedIn}
+          label={t('chat.sendEnabled', 'Allow sending messages')}
+          description={t('chat.sendEnabledHint', 'Send messages from SpiritStream')}
+          className="pt-1"
+        />
+        {!isLoggedIn && (
+          <p className="text-xs text-[var(--text-tertiary)]">
+            {t('chat.sendRequiresLogin', 'Sign in to send messages')}
           </p>
         )}
 
@@ -271,23 +272,34 @@ function TwitchCard({
           </div>
         )}
 
-        {/* Auto-connect and Connect button */}
+        {/* Stream-tied lifecycle hint + retry/clear */}
         <div className="flex items-center justify-between pt-2">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <Toggle checked={autoConnect} onChange={onAutoConnectChange} />
-            <span className="text-sm text-[var(--text-secondary)]">{t('chat.autoConnect')}</span>
-          </label>
-          {isConnected ? (
-            <Button variant="outline" onClick={onDisconnect} disabled={isConnecting}>
-              <WifiOff className="w-4 h-4" />
-              {t('chat.disconnect')}
+          <p className="text-xs text-[var(--text-tertiary)]">
+            {t(
+              'chat.streamTiedHint',
+              'Chat connects when you start streaming. YouTube may take ~30s to activate.'
+            )}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onRetry}
+              disabled={!isConfigured || isConnecting}
+            >
+              <RefreshCw className="w-4 h-4" />
+              {t('chat.retry', 'Retry')}
             </Button>
-          ) : (
-            <Button variant="primary" onClick={handleConnect} disabled={isConnecting || !channel.trim()}>
-              {isConnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wifi className="w-4 h-4" />}
-              {t('chat.connect')}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onClear}
+              disabled={!isConfigured || isConnecting}
+            >
+              <Trash2 className="w-4 h-4" />
+              {t('chat.clear', 'Clear')}
             </Button>
-          )}
+          </div>
         </div>
       </CardBody>
     </Card>
@@ -300,30 +312,50 @@ function TwitchCard({
 
 function YouTubeCard({
   status,
-  isConnecting,
   account,
   channelId,
   apiKey,
   useApiKey,
-  autoConnect,
-  onConnect,
-  onDisconnect,
+  sendEnabled,
+  onSendEnabledChange,
+  onRetry,
+  onClear,
   onLogin,
   onLogout,
   onForget,
   onChannelIdChange,
+  onChannelIdSave,
+  onUseMyChannel,
   onApiKeyChange,
+  onApiKeySave,
   onUseApiKeyChange,
-  onAutoConnectChange,
 }: YouTubeCardProps) {
   const { t } = useTranslation();
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(useApiKey);
+  useEffect(() => {
+    if (useApiKey) {
+      setShowAdvanced(true);
+    }
+  }, [useApiKey]);
 
   const isConnected = status?.status === 'connected';
+  const isConnecting = status?.status === 'connecting';
   const hasError = status?.status === 'error';
   const isLoggedIn = account?.loggedIn ?? false;
+  const isConfigured = !!channelId.trim();
+
+  const statusLabel = isConnecting
+    ? t('chat.connecting')
+    : isConnected
+      ? t('chat.connected', 'Chat connected')
+      : hasError
+        ? t('chat.error')
+        : isConfigured
+          ? t('chat.waitingForStream', 'Waiting for stream')
+          : t('chat.notConfigured', 'Not configured');
 
   const handleLogin = async () => {
     setIsLoggingIn(true);
@@ -359,35 +391,7 @@ function YouTubeCard({
     }
   };
 
-  const handleConnect = async () => {
-    if (!channelId.trim()) {
-      toast.error(t('chat.youtube.enterChannelId'));
-      return;
-    }
-
-    if (useApiKey && !apiKey.trim()) {
-      toast.error(t('chat.youtube.enterApiKey'));
-      return;
-    }
-
-    const credentials: ChatCredentials = {
-      type: 'youtube',
-      channelId: channelId.trim(),
-      auth: useApiKey
-        ? { method: 'apiKey', key: apiKey.trim() }
-        : { method: 'appOAuth', accessToken: '' }, // Backend will use stored token
-    };
-
-    const config: ChatConfig = {
-      platform: 'youtube',
-      enabled: true,
-      credentials,
-    };
-
-    await onConnect(config);
-  };
-
-  const canConnect = useApiKey ? channelId.trim() && apiKey.trim() : channelId.trim() && isLoggedIn;
+  const canSend = !useApiKey && isLoggedIn;
 
   return (
     <Card>
@@ -423,13 +427,7 @@ function YouTubeCard({
                     : 'text-[var(--text-tertiary)]'
               )}
             >
-              {isConnecting
-                ? t('chat.connecting')
-                : isConnected
-                  ? t('chat.connected')
-                  : hasError
-                    ? t('chat.error')
-                    : t('chat.disconnected')}
+              {statusLabel}
             </span>
           </div>
         </div>
@@ -437,47 +435,36 @@ function YouTubeCard({
       <CardBody className="space-y-4">
         {/* Auth mode selector */}
         <div className="space-y-2">
-          <label className="text-sm font-medium text-[var(--text-primary)]">
-            {t('chat.youtube.authMethod', 'Authentication Method')}
-          </label>
-          <div className="space-y-2">
-            <label className="flex items-center gap-3 p-3 rounded-lg border border-[var(--border-subtle)] cursor-pointer hover:bg-[var(--bg-elevated)] transition-colors">
-              <input
-                type="radio"
-                name="youtube-auth"
-                checked={!useApiKey}
-                onChange={() => onUseApiKeyChange(false)}
-                className="w-4 h-4 text-[var(--primary)]"
-                disabled={isConnected}
-              />
-              <div className="flex-1">
-                <p className="font-medium text-[var(--text-primary)]">
-                  {t('chat.youtube.useOAuth', 'Sign in with Google')}
-                </p>
-                <p className="text-xs text-[var(--text-tertiary)]">
-                  {t('chat.youtube.oauthHint', 'Uses shared app quota')}
-                </p>
-              </div>
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-medium text-[var(--text-primary)]">
+              {t('chat.youtube.authMethod', 'Authentication Method')}
             </label>
-            <label className="flex items-center gap-3 p-3 rounded-lg border border-[var(--border-subtle)] cursor-pointer hover:bg-[var(--bg-elevated)] transition-colors">
-              <input
-                type="radio"
-                name="youtube-auth"
-                checked={useApiKey}
-                onChange={() => onUseApiKeyChange(true)}
-                className="w-4 h-4 text-[var(--primary)]"
-                disabled={isConnected}
-              />
-              <div className="flex-1">
-                <p className="font-medium text-[var(--text-primary)]">
-                  {t('chat.youtube.useApiKey', 'Use my own API Key')}
-                </p>
-                <p className="text-xs text-[var(--text-tertiary)]">
-                  {t('chat.youtube.apiKeyHint', 'Uses your quota - recommended for high usage')}
-                </p>
-              </div>
-            </label>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              disabled={isConnected}
+            >
+              {showAdvanced ? t('chat.advancedHide', 'Hide advanced') : t('chat.advancedShow', 'Advanced')}
+            </Button>
           </div>
+          <div className="p-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
+            <p className="font-medium text-[var(--text-primary)]">
+              {t('chat.youtube.useOAuth', 'Sign in with Google')}
+            </p>
+            <p className="text-xs text-[var(--text-tertiary)]">
+              {t('chat.youtube.oauthHint', 'Uses shared app quota')}
+            </p>
+          </div>
+          {showAdvanced && (
+            <Toggle
+              checked={useApiKey}
+              onChange={onUseApiKeyChange}
+              disabled={isConnected}
+              label={t('chat.youtube.useApiKey', 'Use my own API Key')}
+              description={t('chat.youtube.apiKeyHint', 'Uses your quota - recommended for high usage')}
+            />
+          )}
         </div>
 
         {/* OAuth account section (when OAuth mode is selected) */}
@@ -504,7 +491,7 @@ function YouTubeCard({
                     size="sm"
                     onClick={handleLogout}
                     disabled={isLoggingOut}
-                    title={t('chat.disconnect', 'Disconnect')}
+                    title={t('chat.signOut', 'Sign out')}
                   >
                     <LogOut className="w-4 h-4" />
                   </Button>
@@ -530,6 +517,11 @@ function YouTubeCard({
                 </Button>
               )}
             </div>
+            {!isLoggedIn && (
+              <p className="mt-2 text-xs text-[var(--text-tertiary)]">
+                {t('chat.youtube.loginRequired', 'Sign in is required to read YouTube chat')}
+              </p>
+            )}
           </div>
         )}
 
@@ -539,10 +531,20 @@ function YouTubeCard({
             label={t('chat.youtube.channelId')}
             value={channelId}
             onChange={(e) => onChannelIdChange(e.target.value)}
+            onBlur={onChannelIdSave}
             placeholder={t('chat.youtube.channelIdPlaceholder')}
             disabled={isConnected || isConnecting}
           />
-          <p className="text-xs text-[var(--text-tertiary)] mt-1">{t('chat.youtube.channelIdHint')}</p>
+          <div className="flex items-center justify-between mt-1">
+            <p className="text-xs text-[var(--text-tertiary)]">
+              {t('chat.youtube.channelIdHint', 'Use your YouTube channel ID')}
+            </p>
+            {!useApiKey && isLoggedIn && account?.userId && (
+              <Button variant="ghost" size="sm" onClick={onUseMyChannel} disabled={isConnected || isConnecting}>
+                {t('chat.youtube.useMyChannel', 'Use my channel')}
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* API Key input (when API key mode is selected) */}
@@ -553,6 +555,7 @@ function YouTubeCard({
               type={showApiKey ? 'text' : 'password'}
               value={apiKey}
               onChange={(e) => onApiKeyChange(e.target.value)}
+              onBlur={onApiKeySave}
               placeholder={t('chat.youtube.apiKeyPlaceholder')}
               disabled={isConnected || isConnecting}
             />
@@ -570,6 +573,20 @@ function YouTubeCard({
             </button>
           </div>
         )}
+        <Toggle
+          checked={sendEnabled}
+          onChange={onSendEnabledChange}
+          disabled={!canSend}
+          label={t('chat.sendEnabled', 'Allow sending messages')}
+          description={t('chat.sendEnabledHint', 'Send messages from SpiritStream')}
+        />
+        {!canSend && (
+          <p className="text-xs text-[var(--text-tertiary)]">
+            {useApiKey
+              ? t('chat.youtube.apiKeyReadOnly', 'API keys are read-only')
+              : t('chat.sendRequiresLogin', 'Sign in to send messages')}
+          </p>
+        )}
 
         {/* Error message */}
         {hasError && status?.error && (
@@ -586,23 +603,34 @@ function YouTubeCard({
           </div>
         )}
 
-        {/* Auto-connect and Connect button */}
+        {/* Stream-tied lifecycle hint + retry/clear */}
         <div className="flex items-center justify-between pt-2">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <Toggle checked={autoConnect} onChange={onAutoConnectChange} />
-            <span className="text-sm text-[var(--text-secondary)]">{t('chat.autoConnect')}</span>
-          </label>
-          {isConnected ? (
-            <Button variant="outline" onClick={onDisconnect} disabled={isConnecting}>
-              <WifiOff className="w-4 h-4" />
-              {t('chat.disconnect')}
+          <p className="text-xs text-[var(--text-tertiary)]">
+            {t(
+              'chat.streamTiedHint',
+              'Chat connects when you start streaming. YouTube may take ~30s to activate.'
+            )}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onRetry}
+              disabled={!isConfigured || isConnecting}
+            >
+              <RefreshCw className="w-4 h-4" />
+              {t('chat.retry', 'Retry')}
             </Button>
-          ) : (
-            <Button variant="primary" onClick={handleConnect} disabled={isConnecting || !canConnect}>
-              {isConnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wifi className="w-4 h-4" />}
-              {t('chat.connect')}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onClear}
+              disabled={!isConfigured || isConnecting}
+            >
+              <Trash2 className="w-4 h-4" />
+              {t('chat.clear', 'Clear')}
             </Button>
-          )}
+          </div>
         </div>
       </CardBody>
     </Card>
@@ -644,8 +672,7 @@ function formatError(error: unknown): string {
 export function ChatPanel() {
   const { t } = useTranslation();
   const [platformStatuses, setPlatformStatuses] = useState<ChatPlatformStatus[]>([]);
-  const [connectingPlatform, setConnectingPlatform] = useState<ChatPlatform | null>(null);
-  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [, setSettings] = useState<AppSettings | null>(null);
   const [twitchAccount, setTwitchAccount] = useState<OAuthAccount | null>(null);
   const [youtubeAccount, setYoutubeAccount] = useState<OAuthAccount | null>(null);
 
@@ -654,11 +681,11 @@ export function ChatPanel() {
   const [youtubeChannelId, setYoutubeChannelId] = useState('');
   const [youtubeApiKey, setYoutubeApiKey] = useState('');
   const [youtubeUseApiKey, setYoutubeUseApiKey] = useState(false);
-  const [autoConnect, setAutoConnect] = useState(false);
+  const [twitchSendEnabled, setTwitchSendEnabled] = useState(false);
+  const [youtubeSendEnabled, setYoutubeSendEnabled] = useState(false);
 
   // Pending OAuth flow state
   const pendingOAuthRef = useRef<{ provider: string; state: string } | null>(null);
-  const autoConnectAttempted = useRef(false);
 
   // Load settings and OAuth accounts on mount
   useEffect(() => {
@@ -681,7 +708,8 @@ export function ChatPanel() {
         setYoutubeChannelId(loadedSettings.chatYoutubeChannelId || '');
         setYoutubeApiKey(loadedSettings.chatYoutubeApiKey || '');
         setYoutubeUseApiKey(loadedSettings.youtubeUseApiKey || false);
-        setAutoConnect(loadedSettings.chatAutoConnect || false);
+        setTwitchSendEnabled(loadedSettings.chatTwitchSendEnabled || false);
+        setYoutubeSendEnabled(loadedSettings.chatYoutubeSendEnabled || false);
 
         // Default channel to logged-in user if not set
         if (!loadedSettings.chatTwitchChannel && twitchAcc.loggedIn && twitchAcc.username) {
@@ -698,59 +726,24 @@ export function ChatPanel() {
     loadInitialData();
   }, []);
 
-  // Auto-connect on startup if enabled
-  useEffect(() => {
-    if (!settings || autoConnectAttempted.current) return;
-    if (!settings.chatAutoConnect) return;
-
-    autoConnectAttempted.current = true;
-
-    const autoConnectPlatforms = async () => {
-      // Auto-connect to Twitch if channel is configured
-      if (twitchChannel) {
-        try {
-          const config: ChatConfig = {
-            platform: 'twitch',
-            enabled: true,
-            credentials: {
-              type: 'twitch',
-              channel: twitchChannel,
-              auth: twitchAccount?.loggedIn ? { method: 'appOAuth', accessToken: '' } : undefined,
-            },
-          };
-          await api.chat.connect(config);
-        } catch (error) {
-          console.error('Auto-connect to Twitch failed:', error);
-        }
+  // Save settings helper -- always loads fresh settings from backend first
+  // to avoid overwriting OAuth tokens or other values saved by other flows
+  const saveSettings = useCallback(
+    async (updates: Partial<AppSettings>) => {
+      try {
+        const freshSettings = await api.settings.get();
+        const newSettings = { ...freshSettings, ...updates };
+        setSettings(newSettings);
+        await api.settings.save(newSettings);
+      } catch (error) {
+        console.error('Failed to save settings:', error);
       }
+    },
+    []
+  );
 
-      // Auto-connect to YouTube if configured
-      if (youtubeChannelId && (youtubeUseApiKey ? youtubeApiKey : youtubeAccount?.loggedIn)) {
-        try {
-          const config: ChatConfig = {
-            platform: 'youtube',
-            enabled: true,
-            credentials: {
-              type: 'youtube',
-              channelId: youtubeChannelId,
-              auth: youtubeUseApiKey
-                ? { method: 'apiKey', key: youtubeApiKey }
-                : { method: 'appOAuth', accessToken: '' },
-            },
-          };
-          await api.chat.connect(config);
-        } catch (error) {
-          console.error('Auto-connect to YouTube failed:', error);
-        }
-      }
-
-      // Refresh status after auto-connect attempts
-      const statuses = await api.chat.getStatus();
-      setPlatformStatuses(statuses);
-    };
-
-    autoConnectPlatforms();
-  }, [settings, twitchChannel, twitchAccount, youtubeChannelId, youtubeApiKey, youtubeUseApiKey, youtubeAccount]);
+  // Chat auto-connect/disconnect is handled by the backend on stream start/stop.
+  // Listen for backend events to update UI status.
 
   // Poll for status updates
   useEffect(() => {
@@ -766,22 +759,98 @@ export function ChatPanel() {
     return () => clearInterval(interval);
   }, []);
 
-  // Save settings helper
-  const saveSettings = useCallback(
-    async (updates: Partial<AppSettings>) => {
-      if (!settings) return;
+  // Listen for oauth_complete events -- update account state (chat connects on stream start)
+  useEffect(() => {
+    let unlistenOAuth: (() => void) | null = null;
+    let unlistenAutoConnect: (() => void) | null = null;
+    let unlistenAutoDisconnect: (() => void) | null = null;
+    let unlistenConnectionLost: (() => void) | null = null;
+    let unlistenConnectionRestored: (() => void) | null = null;
 
-      const newSettings = { ...settings, ...updates };
-      setSettings(newSettings);
+    const setup = async () => {
+      // OAuth login completed -- update account state
+      unlistenOAuth = await events.on<{ provider: string; userId: string; username: string; displayName: string }>(
+        'oauth_complete',
+        async (payload) => {
+          const { provider, userId, username, displayName } = payload;
 
-      try {
-        await api.settings.save(newSettings);
-      } catch (error) {
-        console.error('Failed to save settings:', error);
-      }
-    },
-    [settings]
-  );
+          if (provider === 'twitch') {
+            setTwitchAccount({ loggedIn: true, userId, username, displayName });
+            if (!twitchChannel && username) {
+              setTwitchChannel(username);
+              saveSettings({ chatTwitchChannel: username });
+            }
+            toast.success(t('chat.oauth.loginSuccess', 'Signed in to Twitch'));
+          } else if (provider === 'youtube') {
+            setYoutubeAccount({ loggedIn: true, userId, username, displayName });
+            if (!youtubeChannelId && userId) {
+              setYoutubeChannelId(userId);
+              saveSettings({ chatYoutubeChannelId: userId });
+            }
+            toast.success(t('chat.oauth.loginSuccess', 'Signed in to YouTube'));
+          }
+        }
+      );
+
+      // Chat auto-connected by backend on stream start
+      unlistenAutoConnect = await events.on<{ platform: string }>(
+        'chat_auto_connected',
+        async (payload) => {
+          const statuses = await api.chat.getStatus();
+          setPlatformStatuses(statuses);
+          const name = payload.platform === 'twitch' ? 'Twitch' : 'YouTube';
+          toast.success(t('chat.autoConnected', { platform: name, defaultValue: '{{platform}} chat connected' }));
+        }
+      );
+
+      // Chat auto-disconnected by backend on stream stop
+      unlistenAutoDisconnect = await events.on(
+        'chat_auto_disconnected',
+        async () => {
+          const statuses = await api.chat.getStatus();
+          setPlatformStatuses(statuses);
+        }
+      );
+
+      unlistenConnectionLost = await events.on<{ platform: string; error: string }>(
+        'chat_connection_lost',
+        async (payload) => {
+          const statuses = await api.chat.getStatus();
+          setPlatformStatuses(statuses);
+          toast.error(
+            t('chat.connectionLost', {
+              platform: payload.platform,
+              defaultValue: '{{platform}} chat connection lost',
+            }) + (payload.error ? `: ${payload.error}` : '')
+          );
+        }
+      );
+
+      unlistenConnectionRestored = await events.on<{ platform: string }>(
+        'chat_connection_restored',
+        async (payload) => {
+          const statuses = await api.chat.getStatus();
+          setPlatformStatuses(statuses);
+          toast.success(
+            t('chat.connectionRestored', {
+              platform: payload.platform,
+              defaultValue: '{{platform}} chat reconnected',
+            })
+          );
+        }
+      );
+    };
+
+    setup();
+
+    return () => {
+      if (unlistenOAuth) unlistenOAuth();
+      if (unlistenAutoConnect) unlistenAutoConnect();
+      if (unlistenAutoDisconnect) unlistenAutoDisconnect();
+      if (unlistenConnectionLost) unlistenConnectionLost();
+      if (unlistenConnectionRestored) unlistenConnectionRestored();
+    };
+  }, [twitchChannel, youtubeChannelId, t, saveSettings]);
 
   // Get status for a platform
   const getStatusForPlatform = (platform: ChatPlatform): ChatPlatformStatus | null => {
@@ -792,37 +861,14 @@ export function ChatPanel() {
   // Twitch Handlers
   // ============================================================================
 
-  const handleTwitchConnect = useCallback(
-    async (config: ChatConfig) => {
-      setConnectingPlatform('twitch');
-      try {
-        // Save channel to settings
-        await saveSettings({ chatTwitchChannel: twitchChannel });
-
-        await api.chat.connect(config);
-        const statuses = await api.chat.getStatus();
-        setPlatformStatuses(statuses);
-        toast.success(t('chat.connectSuccess', { platform: 'Twitch' }));
-      } catch (error) {
-        toast.error(formatError(error));
-      } finally {
-        setConnectingPlatform(null);
-      }
-    },
-    [twitchChannel, saveSettings, t]
-  );
-
-  const handleTwitchDisconnect = useCallback(async () => {
-    setConnectingPlatform('twitch');
+  const handleTwitchRetry = useCallback(async () => {
     try {
-      await api.chat.disconnect('twitch');
+      await api.chat.retryConnection('twitch');
       const statuses = await api.chat.getStatus();
       setPlatformStatuses(statuses);
-      toast.success(t('chat.disconnectSuccess', { platform: 'Twitch' }));
+      toast.success(t('chat.retrySuccess', { platform: 'Twitch', defaultValue: 'Retrying Twitch chat' }));
     } catch (error) {
       toast.error(formatError(error));
-    } finally {
-      setConnectingPlatform(null);
     }
   }, [t]);
 
@@ -830,82 +876,55 @@ export function ChatPanel() {
     const result = await api.oauth.startFlow('twitch');
     pendingOAuthRef.current = { provider: 'twitch', state: result.state };
     toast.info(t('chat.oauth.browserOpened', 'Check your browser to complete authentication'));
-
-    // Poll for OAuth completion (backend stores tokens after callback)
-    const pollInterval = setInterval(async () => {
-      try {
-        const account = await api.oauth.getAccount('twitch');
-        if (account.loggedIn) {
-          clearInterval(pollInterval);
-          setTwitchAccount(account);
-          // Default channel to logged-in user
-          if (!twitchChannel) {
-            setTwitchChannel(account.username || '');
-          }
-          toast.success(t('chat.oauth.loginSuccess', 'Logged in successfully'));
-          pendingOAuthRef.current = null;
-        }
-      } catch {
-        // Ignore polling errors
-      }
-    }, 2000);
-
-    // Stop polling after 2 minutes
-    setTimeout(() => {
-      clearInterval(pollInterval);
-      pendingOAuthRef.current = null;
-    }, 120000);
   }, [twitchChannel, t]);
 
   const handleTwitchLogout = useCallback(async () => {
     await api.oauth.disconnect('twitch');
     setTwitchAccount({ loggedIn: false });
-  }, []);
+    setTwitchSendEnabled(false);
+    saveSettings({ chatTwitchSendEnabled: false });
+  }, [saveSettings]);
 
   const handleTwitchForget = useCallback(async () => {
     await api.oauth.forget('twitch');
     setTwitchAccount({ loggedIn: false });
+    setTwitchChannel('');
+    setTwitchSendEnabled(false);
+    // Reload settings from backend (forget clears channel + tokens server-side)
+    const freshSettings = await api.settings.get();
+    setSettings(freshSettings);
   }, []);
+
+  // Save channel name to settings on blur so clearing it actually persists
+  const handleTwitchChannelSave = useCallback(() => {
+    saveSettings({ chatTwitchChannel: twitchChannel });
+  }, [twitchChannel, saveSettings]);
+
+  const handleTwitchClear = useCallback(() => {
+    setTwitchChannel('');
+    saveSettings({ chatTwitchChannel: '' });
+  }, [saveSettings]);
+
+  const handleTwitchSendEnabledChange = useCallback(
+    (enabled: boolean) => {
+      setTwitchSendEnabled(enabled);
+      saveSettings({ chatTwitchSendEnabled: enabled });
+    },
+    [saveSettings]
+  );
 
   // ============================================================================
   // YouTube Handlers
   // ============================================================================
 
-  const handleYoutubeConnect = useCallback(
-    async (config: ChatConfig) => {
-      setConnectingPlatform('youtube');
-      try {
-        // Save settings
-        await saveSettings({
-          chatYoutubeChannelId: youtubeChannelId,
-          chatYoutubeApiKey: youtubeApiKey,
-          youtubeUseApiKey: youtubeUseApiKey,
-        });
-
-        await api.chat.connect(config);
-        const statuses = await api.chat.getStatus();
-        setPlatformStatuses(statuses);
-        toast.success(t('chat.connectSuccess', { platform: 'YouTube' }));
-      } catch (error) {
-        toast.error(formatError(error));
-      } finally {
-        setConnectingPlatform(null);
-      }
-    },
-    [youtubeChannelId, youtubeApiKey, youtubeUseApiKey, saveSettings, t]
-  );
-
-  const handleYoutubeDisconnect = useCallback(async () => {
-    setConnectingPlatform('youtube');
+  const handleYoutubeRetry = useCallback(async () => {
     try {
-      await api.chat.disconnect('youtube');
+      await api.chat.retryConnection('youtube');
       const statuses = await api.chat.getStatus();
       setPlatformStatuses(statuses);
-      toast.success(t('chat.disconnectSuccess', { platform: 'YouTube' }));
+      toast.success(t('chat.retrySuccess', { platform: 'YouTube', defaultValue: 'Retrying YouTube chat' }));
     } catch (error) {
       toast.error(formatError(error));
-    } finally {
-      setConnectingPlatform(null);
     }
   }, [t]);
 
@@ -913,58 +932,66 @@ export function ChatPanel() {
     const result = await api.oauth.startFlow('youtube');
     pendingOAuthRef.current = { provider: 'youtube', state: result.state };
     toast.info(t('chat.oauth.browserOpened', 'Check your browser to complete authentication'));
-
-    // Poll for OAuth completion
-    const pollInterval = setInterval(async () => {
-      try {
-        const account = await api.oauth.getAccount('youtube');
-        if (account.loggedIn) {
-          clearInterval(pollInterval);
-          setYoutubeAccount(account);
-          // Default channel ID to logged-in user
-          if (!youtubeChannelId) {
-            setYoutubeChannelId(account.userId || '');
-          }
-          toast.success(t('chat.oauth.loginSuccess', 'Logged in successfully'));
-          pendingOAuthRef.current = null;
-        }
-      } catch {
-        // Ignore polling errors
-      }
-    }, 2000);
-
-    // Stop polling after 2 minutes
-    setTimeout(() => {
-      clearInterval(pollInterval);
-      pendingOAuthRef.current = null;
-    }, 120000);
   }, [youtubeChannelId, t]);
 
   const handleYoutubeLogout = useCallback(async () => {
     await api.oauth.disconnect('youtube');
     setYoutubeAccount({ loggedIn: false });
-  }, []);
+    setYoutubeSendEnabled(false);
+    saveSettings({ chatYoutubeSendEnabled: false });
+  }, [saveSettings]);
 
   const handleYoutubeForget = useCallback(async () => {
     await api.oauth.forget('youtube');
     setYoutubeAccount({ loggedIn: false });
+    setYoutubeChannelId('');
+    setYoutubeSendEnabled(false);
+    // Reload settings from backend (forget clears channel + tokens server-side)
+    const freshSettings = await api.settings.get();
+    setSettings(freshSettings);
   }, []);
 
-  const handleAutoConnectChange = useCallback(
-    (enabled: boolean) => {
-      setAutoConnect(enabled);
-      saveSettings({ chatAutoConnect: enabled });
-    },
-    [saveSettings]
-  );
+  // Save channel ID to settings on blur so clearing it actually persists
+  const handleYoutubeChannelIdSave = useCallback(() => {
+    saveSettings({ chatYoutubeChannelId: youtubeChannelId });
+  }, [youtubeChannelId, saveSettings]);
+
+  const handleYoutubeApiKeySave = useCallback(() => {
+    saveSettings({ chatYoutubeApiKey: youtubeApiKey });
+  }, [youtubeApiKey, saveSettings]);
 
   const handleYoutubeUseApiKeyChange = useCallback(
     (useKey: boolean) => {
       setYoutubeUseApiKey(useKey);
-      saveSettings({ youtubeUseApiKey: useKey });
+      if (useKey) {
+        setYoutubeSendEnabled(false);
+        saveSettings({ youtubeUseApiKey: useKey, chatYoutubeSendEnabled: false });
+      } else {
+        saveSettings({ youtubeUseApiKey: useKey });
+      }
     },
     [saveSettings]
   );
+
+  const handleYoutubeClear = useCallback(() => {
+    setYoutubeChannelId('');
+    saveSettings({ chatYoutubeChannelId: '' });
+  }, [saveSettings]);
+
+  const handleYoutubeSendEnabledChange = useCallback(
+    (enabled: boolean) => {
+      setYoutubeSendEnabled(enabled);
+      saveSettings({ chatYoutubeSendEnabled: enabled });
+    },
+    [saveSettings]
+  );
+
+  const handleYoutubeUseMyChannel = useCallback(() => {
+    if (youtubeAccount?.userId) {
+      setYoutubeChannelId(youtubeAccount.userId);
+      saveSettings({ chatYoutubeChannelId: youtubeAccount.userId });
+    }
+  }, [youtubeAccount, saveSettings]);
 
   return (
     <div className="space-y-6">
@@ -983,35 +1010,37 @@ export function ChatPanel() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <TwitchCard
           status={getStatusForPlatform('twitch')}
-          isConnecting={connectingPlatform === 'twitch'}
           account={twitchAccount}
           channel={twitchChannel}
-          autoConnect={autoConnect}
-          onConnect={handleTwitchConnect}
-          onDisconnect={handleTwitchDisconnect}
+          sendEnabled={twitchSendEnabled}
+          onSendEnabledChange={handleTwitchSendEnabledChange}
+          onRetry={handleTwitchRetry}
+          onClear={handleTwitchClear}
           onLogin={handleTwitchLogin}
           onLogout={handleTwitchLogout}
           onForget={handleTwitchForget}
           onChannelChange={setTwitchChannel}
-          onAutoConnectChange={handleAutoConnectChange}
+          onChannelSave={handleTwitchChannelSave}
         />
         <YouTubeCard
           status={getStatusForPlatform('youtube')}
-          isConnecting={connectingPlatform === 'youtube'}
           account={youtubeAccount}
           channelId={youtubeChannelId}
           apiKey={youtubeApiKey}
           useApiKey={youtubeUseApiKey}
-          autoConnect={autoConnect}
-          onConnect={handleYoutubeConnect}
-          onDisconnect={handleYoutubeDisconnect}
+          sendEnabled={youtubeSendEnabled}
+          onSendEnabledChange={handleYoutubeSendEnabledChange}
+          onRetry={handleYoutubeRetry}
+          onClear={handleYoutubeClear}
           onLogin={handleYoutubeLogin}
           onLogout={handleYoutubeLogout}
           onForget={handleYoutubeForget}
           onChannelIdChange={setYoutubeChannelId}
+          onChannelIdSave={handleYoutubeChannelIdSave}
+          onUseMyChannel={handleYoutubeUseMyChannel}
           onApiKeyChange={setYoutubeApiKey}
+          onApiKeySave={handleYoutubeApiKeySave}
           onUseApiKeyChange={handleYoutubeUseApiKeyChange}
-          onAutoConnectChange={handleAutoConnectChange}
         />
       </div>
     </div>

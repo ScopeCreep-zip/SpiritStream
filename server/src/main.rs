@@ -17,15 +17,17 @@ use governor::{
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use log::{Level, LevelFilter, Log, Metadata, Record};
-use chrono::Local;
+use chrono::{DateTime, Duration, Local, TimeZone, Timelike};
 use std::{
+    collections::HashMap,
     env,
-    fs::OpenOptions,
-    io::Write,
+    fs::{File, OpenOptions},
+    io::{BufRead, BufReader, BufWriter, Write},
     net::{IpAddr, Ipv4Addr, SocketAddr},
     num::NonZeroU32,
     path::PathBuf,
     sync::{Arc, Mutex},
+    time::Instant,
 };
 use subtle::ConstantTimeEq;
 use tokio::sync::{broadcast, Mutex as AsyncMutex};
@@ -37,7 +39,7 @@ use tower_http::{
 };
 
 use spiritstream_server::commands::{get_encoders, test_ffmpeg, test_rtmp_target, validate_ffmpeg_path};
-use spiritstream_server::models::{OutputGroup, Profile, RtmpInput, Settings, ObsIntegrationDirection, ChatConfig, ChatPlatform};
+use spiritstream_server::models::{OutputGroup, Profile, RtmpInput, Settings, ObsIntegrationDirection, ChatConfig, ChatPlatform, ChatCredentials, TwitchAuth, YouTubeAuth, ChatMessage, ChatSendResult};
 use spiritstream_server::services::{
     prune_logs, read_recent_logs, validate_extension, validate_path_within_any,
     ChatManager, DiscordWebhookService, Encryption, EventSink, FFmpegDownloader, FFmpegHandler,
@@ -212,10 +214,66 @@ fn bearer_token(headers: &HeaderMap) -> Option<&str> {
         .filter(|value| !value.is_empty())
 }
 
+/// Mask sensitive patterns in text (tokens, keys, passwords, ENC:: values)
+fn mask_sensitive(text: &str) -> String {
+    use regex::Regex;
+    use std::sync::OnceLock;
+
+    static TOKEN_RE: OnceLock<Regex> = OnceLock::new();
+    static ENC_RE: OnceLock<Regex> = OnceLock::new();
+
+    // Match long alphanumeric strings that follow keywords like token, key, password, secret, Bearer
+    let token_re = TOKEN_RE.get_or_init(|| {
+        Regex::new(r#"(?i)(token|key|password|secret|bearer|oauth|access_token|refresh_token|authorization)[=:\s]+['"]?([A-Za-z0-9_\-./+]{20,})['"]?"#).unwrap()
+    });
+    // Match ENC:: prefixed values
+    let enc_re = ENC_RE.get_or_init(|| {
+        Regex::new(r#"ENC::[A-Za-z0-9+/=]{10,}"#).unwrap()
+    });
+
+    let result = token_re.replace_all(text, "$1=[REDACTED]");
+    enc_re.replace_all(&result, "[ENCRYPTED]").to_string()
+}
+
+/// Redact sensitive keys from a JSON payload before logging
+fn redact_payload(value: &Value) -> Value {
+    const REDACT_KEYS: &[&str] = &[
+        "token", "key", "password", "secret", "oauth", "accessToken",
+        "refreshToken", "oauthToken", "apiKey", "access_token", "refresh_token",
+        "session_token", "webhookUrl",
+    ];
+
+    match value {
+        Value::Object(map) => {
+            let mut redacted = serde_json::Map::new();
+            for (k, v) in map {
+                let lower = k.to_lowercase();
+                if REDACT_KEYS.iter().any(|s| lower.contains(&s.to_lowercase())) {
+                    if let Value::String(s) = v {
+                        if !s.is_empty() {
+                            redacted.insert(k.clone(), Value::String("[REDACTED]".to_string()));
+                        } else {
+                            redacted.insert(k.clone(), v.clone());
+                        }
+                    } else {
+                        redacted.insert(k.clone(), Value::String("[REDACTED]".to_string()));
+                    }
+                } else {
+                    redacted.insert(k.clone(), redact_payload(v));
+                }
+            }
+            Value::Object(redacted)
+        }
+        Value::Array(arr) => Value::Array(arr.iter().map(redact_payload).collect()),
+        other => other.clone(),
+    }
+}
+
 /// Sanitize error messages to prevent information disclosure
 fn sanitize_error(error: &str) -> String {
-    log::warn!("[sanitize_error] Original error: {}", error);
-    eprintln!("[sanitize_error] Original error: {}", error);
+    let masked = mask_sensitive(error);
+    log::warn!("[sanitize_error] Original error: {}", masked);
+    eprintln!("[sanitize_error] Original error: {}", masked);
     let lower = error.to_lowercase();
 
     if lower.contains("failed to read") || lower.contains("no such file") || lower.contains("not found") {
@@ -223,6 +281,18 @@ fn sanitize_error(error: &str) -> String {
     }
     // Chat platform errors - pass through user-friendly messages
     if lower.contains("does not exist on twitch") || lower.contains("channel") && lower.contains("not found") {
+        return error.to_string();
+    }
+    if lower.contains("failed to connect to") {
+        return error.to_string();
+    }
+    if lower.contains("no active live broadcast") || lower.contains("not currently live") {
+        return error.to_string();
+    }
+    if lower.contains("already connected") || lower.contains("not connected") {
+        return error.to_string();
+    }
+    if lower.contains("no youtube oauth token") || lower.contains("no twitch oauth token") || lower.contains("please sign in") {
         return error.to_string();
     }
     if lower.contains("parse") || lower.contains("invalid") {
@@ -258,6 +328,523 @@ fn sanitize_error(error: &str) -> String {
     // In debug mode, we could log the actual error server-side
     log::debug!("Sanitized error: {error}");
     "Operation failed".to_string()
+}
+
+// ============================================================================
+// Chat Auto-Connect / Auto-Disconnect (tied to stream lifecycle)
+// ============================================================================
+
+/// Ensure an OAuth token is fresh, refreshing it via the OAuth service if expired.
+/// Returns the (possibly refreshed) access token, and updates settings on disk if refreshed.
+/// Adds a 5-minute buffer so we refresh tokens that will expire within the next 5 minutes.
+async fn ensure_fresh_oauth_token(
+    provider: &str,
+    access_token: &str,
+    refresh_token: &str,
+    expires_at: i64,
+    oauth_service: &OAuthService,
+    settings_manager: &SettingsManager,
+) -> Result<String, String> {
+    if access_token.is_empty() {
+        return Err(format!("No {} OAuth token available", provider));
+    }
+
+    // Check if token is expired or will expire within 5 minutes
+    let now = chrono::Utc::now().timestamp();
+    let needs_refresh = expires_at > 0 && now >= (expires_at - 300);
+
+    if !needs_refresh {
+        return Ok(access_token.to_string());
+    }
+
+    if refresh_token.is_empty() {
+        return Err(format!("{} token expired and no refresh token available", provider));
+    }
+
+    log::info!("{} OAuth token expired (expired {}s ago), refreshing...", provider, now - expires_at);
+
+    let tokens = oauth_service.refresh_token(provider, refresh_token).await?;
+
+    // Update settings with new token
+    let mut settings = settings_manager.load()?;
+    let new_expires_at = tokens.expires_in.map(|s| now + s as i64).unwrap_or(0);
+
+    match provider {
+        "twitch" => {
+            settings.twitch_oauth_access_token = tokens.access_token.clone();
+            if let Some(ref rt) = tokens.refresh_token {
+                settings.twitch_oauth_refresh_token = rt.clone();
+            }
+            settings.twitch_oauth_expires_at = new_expires_at;
+        }
+        "youtube" => {
+            settings.youtube_oauth_access_token = tokens.access_token.clone();
+            if let Some(ref rt) = tokens.refresh_token {
+                settings.youtube_oauth_refresh_token = rt.clone();
+            }
+            settings.youtube_oauth_expires_at = new_expires_at;
+        }
+        _ => {}
+    }
+
+    settings_manager.save(&settings)?;
+    log::info!("{} OAuth token refreshed successfully (new expiry in {}s)", provider,
+        tokens.expires_in.unwrap_or(0));
+
+    Ok(tokens.access_token)
+}
+
+fn build_hour_keys(start: DateTime<Local>, end: DateTime<Local>) -> Vec<String> {
+    let mut keys = Vec::new();
+
+    let start_hour = start
+        .with_minute(0)
+        .and_then(|d| d.with_second(0))
+        .and_then(|d| d.with_nanosecond(0))
+        .unwrap_or(start);
+    let end_hour = end
+        .with_minute(0)
+        .and_then(|d| d.with_second(0))
+        .and_then(|d| d.with_nanosecond(0))
+        .unwrap_or(end);
+
+    let mut cursor = start_hour;
+    while cursor <= end_hour {
+        keys.push(cursor.format("%Y%m%d-%H").to_string());
+        cursor = cursor + Duration::hours(1);
+    }
+
+    keys
+}
+
+/// Auto-connect all configured chat platforms when a stream starts.
+/// Runs as a fire-and-forget background task -- errors are logged, never block the stream.
+async fn auto_connect_chat_platforms(
+    chat_manager: Arc<ChatManager>,
+    settings_manager: Arc<SettingsManager>,
+    oauth_service: Arc<OAuthService>,
+    event_bus: EventBus,
+    ffmpeg_handler: Arc<FFmpegHandler>,
+) {
+    let settings = match settings_manager.load() {
+        Ok(s) => s,
+        Err(e) => {
+            log::error!("Failed to load settings for chat auto-connect: {e}");
+            return;
+        }
+    };
+
+    // Twitch: refresh token if needed, then connect immediately (IRC works even when offline)
+    if !settings.chat_twitch_channel.is_empty() {
+        let already_connected = chat_manager
+            .get_platform_status(ChatPlatform::Twitch)
+            .await
+            .map(|s| s.status == spiritstream_server::models::ChatConnectionStatus::Connected)
+            .unwrap_or(false);
+
+        if !already_connected {
+            if !settings.twitch_oauth_access_token.is_empty() {
+                // Refresh token if expired
+                match ensure_fresh_oauth_token(
+                    "twitch",
+                    &settings.twitch_oauth_access_token,
+                    &settings.twitch_oauth_refresh_token,
+                    settings.twitch_oauth_expires_at,
+                    &oauth_service,
+                    &settings_manager,
+                )
+                .await
+                {
+                    Ok(fresh_token) => {
+                        let mut fresh_settings = settings.clone();
+                        fresh_settings.twitch_oauth_access_token = fresh_token;
+                        connect_twitch_chat(&chat_manager, &fresh_settings, &event_bus).await;
+                    }
+                    Err(e) => {
+                        log::warn!("Twitch token refresh failed, trying with existing token: {e}");
+                        connect_twitch_chat(&chat_manager, &settings, &event_bus).await;
+                    }
+                }
+            } else {
+                connect_twitch_chat(&chat_manager, &settings, &event_bus).await;
+            }
+        } else {
+            log::debug!("Twitch chat already connected, skipping auto-connect");
+        }
+    }
+
+    // YouTube: connect with retry (broadcast won't be live until OBS starts streaming)
+    if !settings.chat_youtube_channel_id.is_empty() {
+        let has_oauth = !settings.youtube_oauth_access_token.is_empty();
+        let has_api_key = !settings.chat_youtube_api_key.is_empty();
+
+        if has_oauth || has_api_key {
+            let already_connected = chat_manager
+                .get_platform_status(ChatPlatform::YouTube)
+                .await
+                .map(|s| s.status == spiritstream_server::models::ChatConnectionStatus::Connected)
+                .unwrap_or(false);
+
+            if !already_connected {
+                // Spawn as separate task -- retries can take up to 5 minutes
+                tokio::spawn(connect_youtube_chat_with_retry(
+                    chat_manager.clone(),
+                    settings_manager.clone(),
+                    oauth_service.clone(),
+                    event_bus.clone(),
+                    ffmpeg_handler,
+                ));
+            } else {
+                log::debug!("YouTube chat already connected, skipping auto-connect");
+            }
+        }
+    }
+}
+
+async fn connect_twitch_chat(
+    chat_manager: &Arc<ChatManager>,
+    settings: &Settings,
+    event_bus: &EventBus,
+) {
+    let auth = if settings.twitch_oauth_access_token.is_empty() {
+        None
+    } else {
+        Some(TwitchAuth::AppOAuth {
+            access_token: settings.twitch_oauth_access_token.clone(),
+            refresh_token: Some(settings.twitch_oauth_refresh_token.clone())
+                .filter(|s| !s.is_empty()),
+            expires_at: if settings.twitch_oauth_expires_at > 0 {
+                Some(settings.twitch_oauth_expires_at)
+            } else {
+                None
+            },
+        })
+    };
+
+    let config = ChatConfig {
+        platform: ChatPlatform::Twitch,
+        enabled: true,
+        credentials: ChatCredentials::Twitch {
+            channel: settings.chat_twitch_channel.clone(),
+            auth,
+        },
+    };
+    match chat_manager.connect(config).await {
+        Ok(()) => {
+            log::info!("Auto-connected to Twitch chat");
+            event_bus.emit("chat_auto_connected", json!({ "platform": "twitch" }));
+        }
+        Err(e) => {
+            if e.to_lowercase().contains("already connected") {
+                log::debug!("Twitch chat already connected");
+            } else {
+                log::warn!("Failed to auto-connect Twitch chat: {e}");
+            }
+        }
+    }
+}
+
+/// Wait for stream data to flow, then connect YouTube chat.
+///
+/// SpiritStream starts its RTMP relay *before* OBS connects, so the YouTube
+/// broadcast won't be "active" until OBS is streaming and YouTube has ingested
+/// enough data. We subscribe to the EventBus, wait for the first `stream_stats`
+/// event (proof that data is flowing from OBS), give YouTube time to register
+/// the broadcast, then attempt to connect with a few retries.
+async fn connect_youtube_chat_with_retry(
+    chat_manager: Arc<ChatManager>,
+    settings_manager: Arc<SettingsManager>,
+    oauth_service: Arc<OAuthService>,
+    event_bus: EventBus,
+    ffmpeg_handler: Arc<FFmpegHandler>,
+) {
+    let build_config = |s: &Settings, token_override: Option<&str>| -> ChatConfig {
+        let auth = if !s.youtube_oauth_access_token.is_empty() || token_override.is_some() {
+            YouTubeAuth::AppOAuth {
+                access_token: token_override
+                    .unwrap_or(&s.youtube_oauth_access_token)
+                    .to_string(),
+                refresh_token: Some(s.youtube_oauth_refresh_token.clone())
+                    .filter(|t| !t.is_empty()),
+                expires_at: if s.youtube_oauth_expires_at > 0 {
+                    Some(s.youtube_oauth_expires_at)
+                } else {
+                    None
+                },
+            }
+        } else {
+            YouTubeAuth::ApiKey {
+                key: s.chat_youtube_api_key.clone(),
+            }
+        };
+        ChatConfig {
+            platform: ChatPlatform::YouTube,
+            enabled: true,
+            credentials: ChatCredentials::YouTube {
+                channel_id: s.chat_youtube_channel_id.clone(),
+                auth,
+            },
+        }
+    };
+
+    // Phase 1: Wait for stream_stats (OBS connected, data flowing)
+    log::info!("YouTube chat: waiting for stream data before connecting...");
+    let mut rx = event_bus.subscribe();
+    let got_stats = tokio::time::timeout(
+        std::time::Duration::from_secs(300), // 5 min max wait for OBS
+        async {
+            loop {
+                match rx.recv().await {
+                    Ok(event) if event.event == "stream_stats" => return,
+                    Ok(_) => continue,
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(_) => return, // channel closed
+                }
+            }
+        },
+    )
+    .await;
+
+    if got_stats.is_err() {
+        log::warn!("YouTube chat: timed out waiting for stream data (OBS never connected?)");
+        return;
+    }
+    if ffmpeg_handler.active_count() == 0 {
+        log::info!("YouTube chat: stream stopped before OBS data arrived");
+        return;
+    }
+
+    // Phase 2: Data is flowing. Give YouTube ~30s to register the broadcast.
+    log::info!("Stream data detected -- waiting 30s for YouTube to register broadcast...");
+    tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+
+    // Phase 3: Attempt connect with a few retries (15s apart)
+    // Load fresh settings each attempt so we pick up refreshed tokens
+    const MAX_RETRIES: u32 = 6; // 6 x 15s = 90s of retries after initial wait
+    for attempt in 0..=MAX_RETRIES {
+        if ffmpeg_handler.active_count() == 0 {
+            log::info!("YouTube chat: stream stopped, cancelling connect");
+            return;
+        }
+
+        // Load fresh settings and refresh token if needed
+        let settings = match settings_manager.load() {
+            Ok(s) => s,
+            Err(e) => {
+                log::warn!("YouTube chat: failed to load settings: {e}");
+                return;
+            }
+        };
+
+        // Refresh YouTube OAuth token if expired (skip for API key mode)
+        let fresh_token = if !settings.youtube_oauth_access_token.is_empty() {
+            match ensure_fresh_oauth_token(
+                "youtube",
+                &settings.youtube_oauth_access_token,
+                &settings.youtube_oauth_refresh_token,
+                settings.youtube_oauth_expires_at,
+                &oauth_service,
+                &settings_manager,
+            ).await {
+                Ok(token) => Some(token),
+                Err(e) => {
+                    log::warn!("YouTube token refresh failed: {e}");
+                    None // try with existing token anyway
+                }
+            }
+        } else {
+            None
+        };
+
+        let config = build_config(&settings, fresh_token.as_deref());
+        match chat_manager.connect(config).await {
+            Ok(()) => {
+                log::info!("Auto-connected to YouTube chat");
+                event_bus.emit("chat_auto_connected", json!({ "platform": "youtube" }));
+                return;
+            }
+            Err(e) => {
+                let lower = e.to_lowercase();
+                if lower.contains("already connected") {
+                    log::debug!("YouTube chat already connected");
+                    return;
+                } else if lower.contains("no active live broadcast") || lower.contains("not live") {
+                    if attempt < MAX_RETRIES {
+                        log::info!(
+                            "YouTube broadcast not live yet (attempt {}/{}), retrying in 15s...",
+                            attempt + 1,
+                            MAX_RETRIES + 1
+                        );
+                        tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+                    } else {
+                        log::warn!("YouTube chat: broadcast never went live after all retries");
+                    }
+                } else {
+                    log::warn!("Failed to auto-connect YouTube chat: {e}");
+                    return;
+                }
+            }
+        }
+    }
+}
+
+/// Auto-disconnect all chat platforms when all streams stop.
+async fn auto_disconnect_chat_platforms(
+    chat_manager: Arc<ChatManager>,
+    event_bus: EventBus,
+) {
+    if chat_manager.is_any_connected().await {
+        match chat_manager.disconnect_all().await {
+            Ok(()) => {
+                log::info!("Auto-disconnected all chat platforms");
+                event_bus.emit("chat_auto_disconnected", json!({}));
+            }
+            Err(e) => {
+                log::warn!("Failed to auto-disconnect chat: {e}");
+            }
+        }
+    }
+}
+
+/// Background task to refresh YouTube OAuth tokens and update the live chat connector.
+async fn start_youtube_token_refresh_task(
+    chat_manager: Arc<ChatManager>,
+    settings_manager: Arc<SettingsManager>,
+    oauth_service: Arc<OAuthService>,
+) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+        loop {
+            interval.tick().await;
+
+            let is_connected = chat_manager
+                .get_platform_status(ChatPlatform::YouTube)
+                .await
+                .map(|s| s.status == spiritstream_server::models::ChatConnectionStatus::Connected)
+                .unwrap_or(false);
+
+            if !is_connected {
+                continue;
+            }
+
+            let settings = match settings_manager.load() {
+                Ok(s) => s,
+                Err(e) => {
+                    log::warn!("YouTube token refresh: failed to load settings: {e}");
+                    continue;
+                }
+            };
+
+            if settings.youtube_oauth_access_token.is_empty()
+                || settings.youtube_oauth_refresh_token.is_empty()
+                || settings.youtube_oauth_expires_at <= 0
+            {
+                continue;
+            }
+
+            let previous_token = settings.youtube_oauth_access_token.clone();
+            match ensure_fresh_oauth_token(
+                "youtube",
+                &previous_token,
+                &settings.youtube_oauth_refresh_token,
+                settings.youtube_oauth_expires_at,
+                &oauth_service,
+                &settings_manager,
+            )
+            .await
+            {
+                Ok(fresh_token) => {
+                    if fresh_token != previous_token {
+                        if let Err(e) = chat_manager
+                            .update_platform_token(ChatPlatform::YouTube, fresh_token)
+                            .await
+                        {
+                            log::warn!("Failed to update YouTube chat token: {e}");
+                        } else {
+                            log::info!("YouTube chat token refreshed and updated");
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!("YouTube token refresh failed: {e}");
+                }
+            }
+        }
+    });
+}
+
+/// Background task to retry chat connections when a platform drops.
+async fn start_chat_reconnect_task(
+    chat_manager: Arc<ChatManager>,
+    settings_manager: Arc<SettingsManager>,
+    oauth_service: Arc<OAuthService>,
+    event_bus: EventBus,
+    ffmpeg_handler: Arc<FFmpegHandler>,
+) {
+    tokio::spawn(async move {
+        let mut last_attempts: HashMap<ChatPlatform, Instant> = HashMap::new();
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(15));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+        loop {
+            interval.tick().await;
+
+            if ffmpeg_handler.active_count() == 0 {
+                continue;
+            }
+
+            let statuses = chat_manager.get_status().await;
+            for status in statuses {
+                if status.status != spiritstream_server::models::ChatConnectionStatus::Error {
+                    continue;
+                }
+
+                if last_attempts
+                    .get(&status.platform)
+                    .map(|last| last.elapsed() < std::time::Duration::from_secs(30))
+                    .unwrap_or(false)
+                {
+                    continue;
+                }
+                last_attempts.insert(status.platform, Instant::now());
+
+                let settings = match settings_manager.load() {
+                    Ok(s) => s,
+                    Err(e) => {
+                        log::warn!("Chat reconnect: failed to load settings: {e}");
+                        continue;
+                    }
+                };
+
+                match status.platform {
+                    ChatPlatform::Twitch => {
+                        if settings.chat_twitch_channel.is_empty() {
+                            continue;
+                        }
+                        connect_twitch_chat(&chat_manager, &settings, &event_bus).await;
+                    }
+                    ChatPlatform::YouTube => {
+                        if settings.chat_youtube_channel_id.is_empty()
+                            || (settings.youtube_oauth_access_token.is_empty()
+                                && settings.chat_youtube_api_key.is_empty())
+                        {
+                            continue;
+                        }
+                        tokio::spawn(connect_youtube_chat_with_retry(
+                            chat_manager.clone(),
+                            settings_manager.clone(),
+                            oauth_service.clone(),
+                            event_bus.clone(),
+                            ffmpeg_handler.clone(),
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+        }
+    });
 }
 
 fn parse_bool(value: &str) -> Option<bool> {
@@ -870,7 +1457,8 @@ async fn invoke_command(
 ) -> Result<Value, String> {
     // Only log non-polling commands to reduce noise
     if !QUIET_COMMANDS.contains(&command) {
-        log::info!("[invoke_command] Command: {}, Payload: {:?}", command, payload);
+        let safe_payload = redact_payload(&payload);
+        log::info!("[invoke_command] Command: {}, Payload: {:?}", command, safe_payload);
     }
 
     let result = match command {
@@ -946,26 +1534,60 @@ async fn invoke_command(
         "start_stream" => {
             let group: OutputGroup = get_arg(&payload, "group")?;
             let incoming_url: String = get_arg(&payload, "incomingUrl")?;
+            let was_streaming = state.ffmpeg_handler.active_count() > 0;
             let event_sink: Arc<dyn EventSink> = Arc::new(state.event_bus.clone());
             let pid = state.ffmpeg_handler.start(&group, &incoming_url, event_sink)?;
             // Reset reconnection state on successful manual start
             state.ffmpeg_handler.reset_reconnection_state(&group.id);
+            // Auto-connect chat platforms on first stream start
+            if !was_streaming {
+                state.chat_manager.start_log_session();
+                let chat_mgr = state.chat_manager.clone();
+                let settings_mgr = state.settings_manager.clone();
+                let oauth_svc = state.oauth_service.clone();
+                let bus = state.event_bus.clone();
+                let ffmpeg = state.ffmpeg_handler.clone();
+                tokio::spawn(auto_connect_chat_platforms(chat_mgr, settings_mgr, oauth_svc, bus, ffmpeg));
+            }
             Ok(json!(pid))
         }
         "start_all_streams" => {
             let groups: Vec<OutputGroup> = get_arg(&payload, "groups")?;
             let incoming_url: String = get_arg(&payload, "incomingUrl")?;
+            let was_streaming = state.ffmpeg_handler.active_count() > 0;
             let event_sink: Arc<dyn EventSink> = Arc::new(state.event_bus.clone());
             let pids = state.ffmpeg_handler.start_all(&groups, &incoming_url, event_sink)?;
+            // Auto-connect chat platforms when streams start
+            if !was_streaming {
+                state.chat_manager.start_log_session();
+            }
+            let chat_mgr = state.chat_manager.clone();
+            let settings_mgr = state.settings_manager.clone();
+            let oauth_svc = state.oauth_service.clone();
+            let bus = state.event_bus.clone();
+            let ffmpeg = state.ffmpeg_handler.clone();
+            tokio::spawn(auto_connect_chat_platforms(chat_mgr, settings_mgr, oauth_svc, bus, ffmpeg));
             Ok(json!(pids))
         }
         "stop_stream" => {
             let group_id: String = get_arg(&payload, "groupId")?;
             state.ffmpeg_handler.stop(&group_id)?;
+            // Auto-disconnect chat when no more streams are running
+            if state.ffmpeg_handler.active_count() == 0 {
+                state.chat_manager.end_log_session();
+                let chat_mgr = state.chat_manager.clone();
+                let bus = state.event_bus.clone();
+                tokio::spawn(auto_disconnect_chat_platforms(chat_mgr, bus));
+            }
             Ok(Value::Null)
         }
         "stop_all_streams" => {
             state.ffmpeg_handler.stop_all()?;
+            state.chat_manager.end_log_session();
+            // Auto-disconnect all chat platforms
+            let chat_mgr = state.chat_manager.clone();
+            let bus = state.event_bus.clone();
+            tokio::spawn(auto_disconnect_chat_platforms(chat_mgr, bus));
             Ok(Value::Null)
         }
         "retry_stream" => {
@@ -1316,13 +1938,250 @@ async fn invoke_command(
         // Chat Commands
         // ============================================================================
         "connect_chat" => {
-            let config: ChatConfig = get_arg(&payload, "config")?;
+            let mut config: ChatConfig = get_arg(&payload, "config")?;
+
+            // Enrich credentials with stored OAuth tokens when frontend sends empty placeholders,
+            // and refresh expired tokens automatically.
+            let settings = state.settings_manager.load()?;
+            config.credentials = match config.credentials {
+                ChatCredentials::Twitch { channel, auth } => {
+                    let enriched_auth = match auth {
+                        Some(TwitchAuth::AppOAuth { access_token, refresh_token, expires_at })
+                            if access_token.is_empty() =>
+                        {
+                            if settings.twitch_oauth_access_token.is_empty() {
+                                return Err("No Twitch OAuth token stored. Please login with Twitch first.".to_string());
+                            }
+                            // Refresh token if expired
+                            let fresh_token = ensure_fresh_oauth_token(
+                                "twitch",
+                                &settings.twitch_oauth_access_token,
+                                &settings.twitch_oauth_refresh_token,
+                                settings.twitch_oauth_expires_at,
+                                &state.oauth_service,
+                                &state.settings_manager,
+                            ).await.unwrap_or_else(|e| {
+                                log::warn!("Twitch token refresh failed: {e}");
+                                settings.twitch_oauth_access_token.clone()
+                            });
+                            Some(TwitchAuth::AppOAuth {
+                                access_token: fresh_token,
+                                refresh_token: if refresh_token.is_none() {
+                                    Some(settings.twitch_oauth_refresh_token.clone())
+                                        .filter(|s| !s.is_empty())
+                                } else {
+                                    refresh_token
+                                },
+                                expires_at: if expires_at.is_none() && settings.twitch_oauth_expires_at > 0 {
+                                    Some(settings.twitch_oauth_expires_at)
+                                } else {
+                                    expires_at
+                                },
+                            })
+                        }
+                        other => other,
+                    };
+                    ChatCredentials::Twitch { channel, auth: enriched_auth }
+                }
+                ChatCredentials::YouTube { channel_id, auth } => {
+                    let enriched_auth = match auth {
+                        YouTubeAuth::AppOAuth { access_token, refresh_token, expires_at }
+                            if access_token.is_empty() =>
+                        {
+                            if settings.youtube_oauth_access_token.is_empty() {
+                                return Err("No YouTube OAuth token stored. Please sign in with Google first.".to_string());
+                            }
+                            // Refresh token if expired
+                            let fresh_token = ensure_fresh_oauth_token(
+                                "youtube",
+                                &settings.youtube_oauth_access_token,
+                                &settings.youtube_oauth_refresh_token,
+                                settings.youtube_oauth_expires_at,
+                                &state.oauth_service,
+                                &state.settings_manager,
+                            ).await.unwrap_or_else(|e| {
+                                log::warn!("YouTube token refresh failed: {e}");
+                                settings.youtube_oauth_access_token.clone()
+                            });
+                            YouTubeAuth::AppOAuth {
+                                access_token: fresh_token,
+                                refresh_token: if refresh_token.is_none() {
+                                    Some(settings.youtube_oauth_refresh_token.clone())
+                                        .filter(|s| !s.is_empty())
+                                } else {
+                                    refresh_token
+                                },
+                                expires_at: if expires_at.is_none() && settings.youtube_oauth_expires_at > 0 {
+                                    Some(settings.youtube_oauth_expires_at)
+                                } else {
+                                    expires_at
+                                },
+                            }
+                        }
+                        other => other,
+                    };
+                    ChatCredentials::YouTube { channel_id, auth: enriched_auth }
+                }
+                other => other,
+            };
+
             state.chat_manager.connect(config).await?;
+            Ok(Value::Null)
+        }
+        "send_chat_message" => {
+            let message: String = get_arg(&payload, "message")?;
+            let trimmed = message.trim().to_string();
+            if trimmed.is_empty() {
+                return Err("Message cannot be empty".to_string());
+            }
+
+            let settings = state.settings_manager.load()?;
+            let mut targets = Vec::new();
+            if settings.chat_twitch_send_enabled {
+                targets.push(ChatPlatform::Twitch);
+            }
+            if settings.chat_youtube_send_enabled {
+                targets.push(ChatPlatform::YouTube);
+            }
+
+            if targets.is_empty() {
+                return Err("No chat platforms are enabled for sending".to_string());
+            }
+
+            let results = state.chat_manager.send_message(trimmed.clone(), &targets).await;
+            let mut send_results: Vec<ChatSendResult> = Vec::new();
+            let mut successes: Vec<ChatPlatform> = Vec::new();
+
+            for (platform, result) in results {
+                match result {
+                    Ok(()) => {
+                        successes.push(platform);
+                        send_results.push(ChatSendResult {
+                            platform,
+                            success: true,
+                            error: None,
+                        });
+                    }
+                    Err(err) => {
+                        send_results.push(ChatSendResult {
+                            platform,
+                            success: false,
+                            error: Some(err),
+                        });
+                    }
+                }
+            }
+
+            if !successes.is_empty() {
+                let outbound = ChatMessage::new_outbound(
+                    successes,
+                    "You".to_string(),
+                    trimmed,
+                );
+                state.chat_manager.log_message(outbound.clone());
+                if let Ok(payload) = serde_json::to_value(&outbound) {
+                    state.event_bus.emit("chat_message", payload);
+                }
+            }
+
+            Ok(json!(send_results))
+        }
+        "chat_export_log" => {
+            let path: String = get_arg(&payload, "path")?;
+            let start_ms = state
+                .chat_manager
+                .log_session_start_ms()
+                .ok_or_else(|| "No active chat session to export".to_string())?;
+
+            // Flush any buffered log lines before exporting
+            state.chat_manager.flush_chat_logs().await?;
+
+            let end_ms = chrono::Local::now().timestamp_millis();
+            let start_dt = Local
+                .timestamp_millis_opt(start_ms)
+                .single()
+                .unwrap_or_else(Local::now);
+            let end_dt = Local
+                .timestamp_millis_opt(end_ms)
+                .single()
+                .unwrap_or_else(Local::now);
+
+            let hour_keys = build_hour_keys(start_dt, end_dt);
+            let mut writer = BufWriter::new(
+                File::create(&path).map_err(|e| format!("Failed to create export file: {}", e))?,
+            );
+
+            for key in hour_keys {
+                let src_path = state.log_dir.join(format!("chatlog_{}.jsonl", key));
+                if !src_path.exists() {
+                    continue;
+                }
+
+                let file = File::open(&src_path)
+                    .map_err(|e| format!("Failed to read chat log {}: {}", src_path.display(), e))?;
+                let reader = BufReader::new(file);
+                for line in reader.lines() {
+                    let line = line.map_err(|e| format!("Failed to read chat log: {}", e))?;
+                    if line.trim().is_empty() {
+                        continue;
+                    }
+                    if let Ok(message) = serde_json::from_str::<ChatMessage>(&line) {
+                        if message.timestamp >= start_ms && message.timestamp <= end_ms {
+                            writer
+                                .write_all(line.as_bytes())
+                                .map_err(|e| format!("Failed to write export file: {}", e))?;
+                            writer
+                                .write_all(b"\n")
+                                .map_err(|e| format!("Failed to write export file: {}", e))?;
+                        }
+                    }
+                }
+            }
+
+            writer
+                .flush()
+                .map_err(|e| format!("Failed to finalize export file: {}", e))?;
+
             Ok(Value::Null)
         }
         "disconnect_chat" => {
             let platform: ChatPlatform = get_arg(&payload, "platform")?;
             state.chat_manager.disconnect(platform).await?;
+            Ok(Value::Null)
+        }
+        "retry_chat_connection" => {
+            let platform: ChatPlatform = get_arg(&payload, "platform")?;
+            let settings = state.settings_manager.load()?;
+
+            if state.ffmpeg_handler.active_count() == 0 {
+                return Err("Cannot reconnect chat when no stream is active".to_string());
+            }
+
+            match platform {
+                ChatPlatform::Twitch => {
+                    if settings.twitch_oauth_access_token.is_empty() || settings.chat_twitch_channel.is_empty() {
+                        return Err("Twitch chat is not configured".to_string());
+                    }
+                    connect_twitch_chat(&state.chat_manager, &settings, &state.event_bus).await;
+                }
+                ChatPlatform::YouTube => {
+                    if settings.chat_youtube_channel_id.is_empty()
+                        || (settings.youtube_oauth_access_token.is_empty()
+                            && settings.chat_youtube_api_key.is_empty())
+                    {
+                        return Err("YouTube chat is not configured".to_string());
+                    }
+                    tokio::spawn(connect_youtube_chat_with_retry(
+                        state.chat_manager.clone(),
+                        state.settings_manager.clone(),
+                        state.oauth_service.clone(),
+                        state.event_bus.clone(),
+                        state.ffmpeg_handler.clone(),
+                    ));
+                }
+                _ => return Err("Retry not supported for this platform".to_string()),
+            }
+
             Ok(Value::Null)
         }
         "disconnect_all_chat" => {
@@ -1332,6 +2191,13 @@ async fn invoke_command(
         "get_chat_status" => {
             let status = state.chat_manager.get_status().await;
             Ok(json!(status))
+        }
+        "chat_get_log_status" => {
+            let start_ms = state.chat_manager.log_session_start_ms();
+            Ok(json!({
+                "active": start_ms.is_some(),
+                "startedAt": start_ms
+            }))
         }
         "get_platform_chat_status" => {
             let platform: ChatPlatform = get_arg(&payload, "platform")?;
@@ -1427,6 +2293,56 @@ async fn invoke_command(
                             }
                             Err(err) => {
                                 log::error!("OAuth completion failed for {provider_name}: {err}");
+                            }
+                        }
+                    }
+                    Some(OAuthCallback::ImplicitSuccess { access_token, state: _state }) => {
+                        // Implicit flow (legacy) -- token received directly, no exchange needed
+                        log::info!("Implicit OAuth flow completed for {provider_name}");
+
+                        // Fetch user info using the access token
+                        let user_info_result = match provider_name.as_str() {
+                            "twitch" => oauth_service.fetch_twitch_user(&access_token).await.map(|u| {
+                                spiritstream_server::services::OAuthUserInfo {
+                                    provider: "twitch".to_string(),
+                                    user_id: u.id,
+                                    username: u.login,
+                                    display_name: u.display_name,
+                                }
+                            }),
+                            _ => Err("Implicit flow not supported for this provider".to_string()),
+                        };
+
+                        match user_info_result {
+                            Ok(user_info) => {
+                                let mut settings = match settings_manager.load() {
+                                    Ok(s) => s,
+                                    Err(err) => {
+                                        log::error!("Failed to load settings after OAuth: {err}");
+                                        callback_server.shutdown();
+                                        return;
+                                    }
+                                };
+
+                                // Implicit flow tokens don't have refresh tokens or expiry
+                                settings.twitch_oauth_access_token = access_token;
+                                settings.twitch_oauth_refresh_token.clear();
+                                settings.twitch_oauth_expires_at = 0;
+                                settings.twitch_oauth_user_id = user_info.user_id.clone();
+                                settings.twitch_oauth_username = user_info.username.clone();
+                                settings.twitch_oauth_display_name = user_info.display_name.clone();
+                                if settings.chat_twitch_channel.is_empty() {
+                                    settings.chat_twitch_channel = user_info.username.clone();
+                                }
+
+                                if let Err(err) = settings_manager.save(&settings) {
+                                    log::error!("Failed to save OAuth settings: {err}");
+                                } else {
+                                    event_bus.emit("oauth_complete", json!(user_info));
+                                }
+                            }
+                            Err(err) => {
+                                log::error!("Failed to fetch user info for {provider_name}: {err}");
                             }
                         }
                     }
@@ -1583,7 +2499,7 @@ async fn invoke_command(
                 }
             }
 
-            // Clear from settings (same as disconnect)
+            // Clear from settings (same as disconnect + clear channel config)
             let mut settings = state.settings_manager.load()?;
             match provider.as_str() {
                 "twitch" => {
@@ -1593,6 +2509,7 @@ async fn invoke_command(
                     settings.twitch_oauth_user_id.clear();
                     settings.twitch_oauth_username.clear();
                     settings.twitch_oauth_display_name.clear();
+                    settings.chat_twitch_channel.clear();
                 }
                 "youtube" => {
                     settings.youtube_oauth_access_token.clear();
@@ -1600,6 +2517,7 @@ async fn invoke_command(
                     settings.youtube_oauth_expires_at = 0;
                     settings.youtube_oauth_channel_id.clear();
                     settings.youtube_oauth_channel_name.clear();
+                    settings.chat_youtube_channel_id.clear();
                 }
                 _ => {}
             }
@@ -1723,6 +2641,9 @@ fn init_logger(log_dir: &std::path::Path, event_bus: EventBus) -> Result<(), Box
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Load .env file if present (ignore if missing)
+    dotenvy::dotenv().ok();
+
     // Load configuration from environment
     let data_dir = env::var("SPIRITSTREAM_DATA_DIR").unwrap_or_else(|_| "data".to_string());
     let log_dir = env::var("SPIRITSTREAM_LOG_DIR")
@@ -1944,10 +2865,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize Chat manager
     let chat_event_sink: Arc<dyn EventSink> = Arc::new(event_bus.clone());
-    let chat_manager = Arc::new(ChatManager::new(chat_event_sink));
+    let chat_manager = Arc::new(ChatManager::new(chat_event_sink, log_dir_path.clone()));
 
     // Initialize OAuth service
     let oauth_service = Arc::new(OAuthService::new(OAuthConfig::default()));
+
+    // Start background YouTube token refresh task
+    start_youtube_token_refresh_task(
+        chat_manager.clone(),
+        settings_manager.clone(),
+        oauth_service.clone(),
+    )
+    .await;
+
+    // Start chat reconnect task (stream-tied)
+    start_chat_reconnect_task(
+        chat_manager.clone(),
+        settings_manager.clone(),
+        oauth_service.clone(),
+        event_bus.clone(),
+        ffmpeg_handler.clone(),
+    )
+    .await;
 
     let state = AppState {
         profile_manager,
@@ -2030,3 +2969,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
