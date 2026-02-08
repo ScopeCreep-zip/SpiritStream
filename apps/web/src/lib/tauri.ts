@@ -11,7 +11,14 @@ import type {
   RtmpTestResult,
 } from '@/types/api';
 import type { ThemeSummary } from '@/types/theme';
-import type { ChatConfig, ChatLogStatus, ChatPlatform, ChatPlatformStatus, ChatSendResult } from '@/types/chat';
+import type {
+  ChatConfig,
+  ChatLogStatus,
+  ChatPlatform,
+  ChatPlatformStatus,
+  ChatSendResult,
+  ChatMessage,
+} from '@/types/chat';
 
 /**
  * Type-safe Tauri API wrapper
@@ -122,6 +129,8 @@ export const api = {
     getStatus: () => invoke<ChatPlatformStatus[]>('get_chat_status'),
     getLogStatus: () => invoke<ChatLogStatus>('chat_get_log_status'),
     exportLog: (path: string) => invoke<void>('chat_export_log', { path }),
+    searchSession: (query: string, limit?: number) =>
+      invoke<ChatMessage[]>('chat_search_session', { query, limit }),
     getPlatformStatus: (platform: ChatPlatform) =>
       invoke<ChatPlatformStatus | null>('get_platform_chat_status', { platform }),
     isConnected: () => invoke<boolean>('is_chat_connected'),

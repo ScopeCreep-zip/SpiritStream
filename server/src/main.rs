@@ -2144,6 +2144,73 @@ async fn invoke_command(
 
             Ok(Value::Null)
         }
+        "chat_search_session" => {
+            let query: String = get_arg(&payload, "query")?;
+            let limit: Option<usize> = get_opt_arg(&payload, "limit")?;
+            let limit = limit.unwrap_or(500);
+
+            let start_ms = state
+                .chat_manager
+                .log_session_start_ms()
+                .ok_or_else(|| "No active chat session to search".to_string())?;
+
+            let query = query.trim().to_lowercase();
+            if query.is_empty() {
+                return Ok(json!([]));
+            }
+
+            let end_ms = chrono::Local::now().timestamp_millis();
+            let start_dt = Local
+                .timestamp_millis_opt(start_ms)
+                .single()
+                .unwrap_or_else(Local::now);
+            let end_dt = Local
+                .timestamp_millis_opt(end_ms)
+                .single()
+                .unwrap_or_else(Local::now);
+
+            let hour_keys = build_hour_keys(start_dt, end_dt);
+            let mut matches: Vec<ChatMessage> = Vec::new();
+
+            for key in hour_keys {
+                if matches.len() >= limit {
+                    break;
+                }
+
+                let src_path = state.log_dir.join(format!("chatlog_{}.jsonl", key));
+                if !src_path.exists() {
+                    continue;
+                }
+
+                let file = File::open(&src_path)
+                    .map_err(|e| format!("Failed to read chat log {}: {}", src_path.display(), e))?;
+                let reader = BufReader::new(file);
+                for line in reader.lines() {
+                    if matches.len() >= limit {
+                        break;
+                    }
+                    let line = line.map_err(|e| format!("Failed to read chat log: {}", e))?;
+                    if line.trim().is_empty() {
+                        continue;
+                    }
+                    let message = match serde_json::from_str::<ChatMessage>(&line) {
+                        Ok(m) => m,
+                        Err(_) => continue,
+                    };
+                    if message.timestamp < start_ms || message.timestamp > end_ms {
+                        continue;
+                    }
+
+                    let username = message.username.to_lowercase();
+                    let text = message.message.to_lowercase();
+                    if username.contains(&query) || text.contains(&query) {
+                        matches.push(message);
+                    }
+                }
+            }
+
+            Ok(json!(matches))
+        }
         "disconnect_chat" => {
             let platform: ChatPlatform = get_arg(&payload, "platform")?;
             state.chat_manager.disconnect(platform).await?;

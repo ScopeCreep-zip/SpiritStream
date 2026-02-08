@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { SquareArrowOutUpRight, Trash2, Send, Download } from 'lucide-react';
+import { SquareArrowOutUpRight, Trash2, Send, Download, Search } from 'lucide-react';
 import { emit } from '@tauri-apps/api/event';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Toggle } from '@/components/ui/Toggle';
 import { Input } from '@/components/ui/Input';
+import { Modal } from '@/components/ui/Modal';
 import { ChatList } from '@/components/chat/ChatList';
 import { CHAT_OVERLAY_SETTINGS_EVENT, CHAT_OVERLAY_ALWAYS_ON_TOP_EVENT } from '@/lib/chatEvents';
 import { openChatOverlay, setOverlayAlwaysOnTop } from '@/lib/chatWindow';
 import { useChatStore } from '@/stores/chatStore';
 import { api, dialogs } from '@/lib/backend';
-import type { ChatPlatformStatus } from '@/types/chat';
+import type { ChatMessage, ChatPlatformStatus } from '@/types/chat';
 import type { AppSettings } from '@/types/api';
 import { toast } from '@/hooks/useToast';
 import { cn } from '@/lib/cn';
@@ -29,6 +30,11 @@ export function Chat() {
   const [activeStreamCount, setActiveStreamCount] = useState(0);
   const [draftMessage, setDraftMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchScope, setSearchScope] = useState<'memory' | 'session'>('memory');
+  const [searchResults, setSearchResults] = useState<ChatMessage[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const handleTransparentToggle = (transparent: boolean) => {
     setOverlayTransparent(transparent);
@@ -100,6 +106,41 @@ export function Chat() {
       .join(', ');
   }, [sendTargets]);
 
+  const filteredMessages = useMemo(() => {
+    if (!searchQuery.trim() || searchScope === 'session') {
+      return messages;
+    }
+
+    const query = searchQuery.trim().toLowerCase();
+    return messages.filter((message) => {
+      return (
+        message.username.toLowerCase().includes(query) ||
+        message.message.toLowerCase().includes(query)
+      );
+    });
+  }, [messages, searchQuery, searchScope]);
+
+  const modalMessages = useMemo(() => {
+    if (searchScope === 'session') {
+      return searchQuery.trim().length > 0 ? searchResults : [];
+    }
+    return filteredMessages;
+  }, [filteredMessages, searchResults, searchQuery, searchScope]);
+
+  const searchEmptyLabel = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return searchScope === 'session'
+        ? t('chat.searchSessionHint', {
+            defaultValue: 'Enter a search term to scan the current stream session.',
+          })
+        : t('chat.searchMemoryHint', {
+            defaultValue: 'Type to filter the messages currently on screen.',
+          });
+    }
+
+    return t('chat.searchNoResults', { defaultValue: 'No matching messages.' });
+  }, [searchQuery, searchScope, t]);
+
   const formatTimestampForFile = (date: Date) => {
     const pad = (value: number) => String(value).padStart(2, '0');
     return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(
@@ -152,6 +193,27 @@ export function Chat() {
       toast.error(
         t('chat.exportFailed', { defaultValue: 'Failed to export chat log.' })
       );
+    }
+  };
+
+  const handleSearchSession = async () => {
+    const query = searchQuery.trim();
+    if (!query) {
+      setSearchResults([]);
+      return;
+    }
+
+    try {
+      setIsSearching(true);
+      const results = await api.chat.searchSession(query, 500);
+      setSearchResults(results);
+    } catch (error) {
+      console.error('Failed to search chat session:', error);
+      toast.error(
+        t('chat.searchFailed', { defaultValue: 'Failed to search chat logs.' })
+      );
+    } finally {
+      setIsSearching(false);
     }
   };
 
@@ -305,6 +367,10 @@ export function Chat() {
               <Download className="w-4 h-4" />
               {t('chat.exportLog', { defaultValue: 'Export chat' })}
             </Button>
+            <Button variant="ghost" size="sm" onClick={() => setSearchOpen(true)}>
+              <Search className="w-4 h-4" />
+              {t('chat.search', { defaultValue: 'Search' })}
+            </Button>
             <Button size="sm" onClick={openChatOverlay}>
               <SquareArrowOutUpRight className="w-4 h-4" />
               {t('chat.popOut', { defaultValue: 'Pop out' })}
@@ -387,6 +453,78 @@ export function Chat() {
           )}
         </div>
       </CardBody>
+      <Modal
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        title={t('chat.searchTitle', { defaultValue: 'Search chat' })}
+        maxWidth="720px"
+      >
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex-1 min-w-[240px]">
+              <Input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder={t('chat.searchPlaceholder', { defaultValue: 'Search chat...' })}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && searchScope === 'session') {
+                    event.preventDefault();
+                    handleSearchSession();
+                  }
+                }}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant={searchScope === 'memory' ? 'secondary' : 'ghost'}
+                size="sm"
+                onClick={() => setSearchScope('memory')}
+              >
+                {t('chat.searchInMemory', { defaultValue: 'On screen' })}
+              </Button>
+              <Button
+                variant={searchScope === 'session' ? 'secondary' : 'ghost'}
+                size="sm"
+                onClick={() => setSearchScope('session')}
+                disabled={activeStreamCount === 0}
+              >
+                {t('chat.searchSession', { defaultValue: 'Full session' })}
+              </Button>
+              {searchScope === 'session' && (
+                <Button
+                  size="sm"
+                  onClick={handleSearchSession}
+                  disabled={!searchQuery.trim() || isSearching}
+                  className="gap-2"
+                >
+                  <Search className="w-4 h-4" />
+                  {isSearching
+                    ? t('chat.searching', { defaultValue: 'Searching...' })
+                    : t('chat.search', { defaultValue: 'Search' })}
+                </Button>
+              )}
+            </div>
+          </div>
+          <ChatList
+            messages={modalMessages}
+            className="max-h-[480px]"
+            emptyLabel={searchEmptyLabel}
+            showTimestamps
+          />
+          <div className="flex items-center justify-between text-xs text-[var(--text-tertiary)]">
+            <span>
+              {searchScope === 'session'
+                ? t('chat.searchSessionHint', {
+                    defaultValue: 'Enter a search term to scan the current stream session.',
+                  })
+                : t('chat.searchMemoryHint', {
+                    defaultValue: 'Type to filter the messages currently on screen.',
+                  })}
+            </span>
+            <span>{t('chat.searchLimit', { defaultValue: 'Up to 500 matches.' })}</span>
+          </div>
+        </div>
+      </Modal>
     </Card>
   );
 }

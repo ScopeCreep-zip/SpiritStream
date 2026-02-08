@@ -10,7 +10,14 @@ import type {
   ObsIntegrationDirection,
 } from '@/types/api';
 import type { ThemeSummary } from '@/types/theme';
-import type { ChatConfig, ChatLogStatus, ChatPlatform, ChatPlatformStatus, ChatSendResult } from '@/types/chat';
+import type {
+  ChatConfig,
+  ChatLogStatus,
+  ChatPlatform,
+  ChatPlatformStatus,
+  ChatSendResult,
+  ChatMessage,
+} from '@/types/chat';
 import { getBackendBaseUrl, safeFetch } from './env';
 
 interface InvokeOk<T> {
@@ -206,6 +213,9 @@ export const api = {
     getLogStatus: () => invokeHttp<ChatLogStatus>('chat_get_log_status'),
     /** Export the current chat log session to a file path */
     exportLog: (path: string) => invokeHttp<void>('chat_export_log', { path }),
+    /** Search current chat session logs */
+    searchSession: (query: string, limit?: number) =>
+      invokeHttp<ChatMessage[]>('chat_search_session', { query, limit }),
     /** Get status of a specific chat platform */
     getPlatformStatus: (platform: ChatPlatform) =>
       invokeHttp<ChatPlatformStatus | null>('get_platform_chat_status', { platform }),
