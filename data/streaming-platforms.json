@@ -612,6 +612,14 @@
       "color": "#9489A8"
     },
     {
+      "name": "Streamplace",
+      "displayName": "Streamplace",
+      "defaultUrl": "rtmps://stream.place:1935/live",
+      "streamKeyPlacement": "append",
+      "abbreviation": "SP",
+      "color": "#9489A8"
+    },
+    {
       "name": "Streamway",
       "displayName": "Streamway",
       "defaultUrl": "rtmp://injest.streamway.in/LiveApp",

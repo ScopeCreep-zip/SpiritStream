@@ -80,6 +80,7 @@ export type Platform =
   | 'SOOP Global'
   | 'SOOP Korea'
   | 'STAGE TEN'
+  | 'Streamplace'
   | 'Streamway'
   | 'Stripchat'
   | 'Switchboard Live'
@@ -690,6 +691,14 @@ export const PLATFORMS: Record<Platform, {
     color: '#9489A8',
     textColor: '#000000',
     defaultServer: 'rtmps://app-rtmp.stageten.tv:443/stageten',
+    streamKeyPlacement: 'append',
+  },
+  'Streamplace': {
+    displayName: 'Streamplace',
+    abbreviation: 'SP',
+    color: '#9489A8',
+    textColor: '#000000',
+    defaultServer: 'rtmps://stream.place:1935/live',
     streamKeyPlacement: 'append',
   },
   'Streamway': {
