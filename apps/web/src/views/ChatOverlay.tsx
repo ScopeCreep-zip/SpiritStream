@@ -2,19 +2,26 @@ import { useEffect } from 'react';
 import { X } from 'lucide-react';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { listen } from '@tauri-apps/api/event';
+import { emit, listen } from '@tauri-apps/api/event';
 import { cn } from '@/lib/cn';
 import { ChatList } from '@/components/chat/ChatList';
 import { Button } from '@/components/ui/Button';
-import { CHAT_OVERLAY_SETTINGS_EVENT, CHAT_OVERLAY_ALWAYS_ON_TOP_EVENT } from '@/lib/chatEvents';
+import {
+  CHAT_OVERLAY_SETTINGS_EVENT,
+  CHAT_OVERLAY_ALWAYS_ON_TOP_EVENT,
+  CHAT_OVERLAY_SYNC_EVENT,
+  CHAT_OVERLAY_SYNC_REQUEST_EVENT,
+} from '@/lib/chatEvents';
 import { isTauri } from '@/lib/backend/env';
 import { setupOverlayAutoClose } from '@/lib/chatWindow';
 import { useChatStore } from '@/stores/chatStore';
+import type { ChatMessage } from '@/types/chat';
 
 export function ChatOverlay() {
   const messages = useChatStore((state) => state.messages);
   const overlayTransparent = useChatStore((state) => state.overlayTransparent);
   const setOverlayTransparent = useChatStore((state) => state.setOverlayTransparent);
+  const addMessages = useChatStore((state) => state.addMessages);
 
   // Set up auto-close when main window closes
   useEffect(() => {
@@ -27,6 +34,7 @@ export function ChatOverlay() {
 
     let unlistenTransparent: (() => void) | undefined;
     let unlistenAlwaysOnTop: (() => void) | undefined;
+    let unlistenSync: (() => void) | undefined;
 
     listen<{ transparent: boolean }>(CHAT_OVERLAY_SETTINGS_EVENT, (event) => {
       setOverlayTransparent(event.payload.transparent);
@@ -45,11 +53,46 @@ export function ChatOverlay() {
       unlistenAlwaysOnTop = fn;
     });
 
+    listen<{ messages: ChatMessage[] }>(CHAT_OVERLAY_SYNC_EVENT, (event) => {
+      if (event.payload?.messages?.length) {
+        addMessages(event.payload.messages);
+      }
+    }).then((fn) => {
+      unlistenSync = fn;
+    });
+
     return () => {
       unlistenTransparent?.();
       unlistenAlwaysOnTop?.();
+      unlistenSync?.();
     };
-  }, [setOverlayTransparent]);
+  }, [addMessages, setOverlayTransparent]);
+
+  useEffect(() => {
+    if (isTauri()) {
+      emit(CHAT_OVERLAY_SYNC_REQUEST_EVENT, {}).catch((error) => {
+        console.error('Failed to request chat overlay sync:', error);
+      });
+      return;
+    }
+
+    if (!window.opener) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      if (!event.data || event.data.type !== 'chat-overlay-sync') return;
+      const payload = event.data as { messages?: ChatMessage[] };
+      if (payload.messages?.length) {
+        addMessages(payload.messages);
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    window.opener.postMessage({ type: 'chat-overlay-sync-request' }, '*');
+
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
+  }, [addMessages]);
 
   useEffect(() => {
     if (typeof document === 'undefined') return;

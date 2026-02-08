@@ -15,6 +15,7 @@ import {
   Plug,
 } from 'lucide-react';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { emit, listen } from '@tauri-apps/api/event';
 
 import { AppShell } from '@/components/layout/AppShell';
 import { Sidebar, SidebarHeader, SidebarNav, SidebarFooter } from '@/components/layout/Sidebar';
@@ -44,10 +45,12 @@ import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValid
 import { toast } from '@/hooks/useToast';
 import { useThemeStore } from '@/stores/themeStore';
 import { ChatOverlay } from '@/views/ChatOverlay';
-import { checkAuth, checkServerHealth, checkServerReadyDetailed, ServerReadyStatus } from '@/lib/backend/env';
+import { checkAuth, checkServerHealth, checkServerReadyDetailed, ServerReadyStatus, isTauri } from '@/lib/backend/env';
 import { initConnection } from '@/lib/backend/httpEvents';
 import { setupMainWindowCloseHandler } from '@/lib/chatWindow';
 import { api } from '@/lib/backend';
+import { CHAT_OVERLAY_SYNC_EVENT, CHAT_OVERLAY_SYNC_REQUEST_EVENT } from '@/lib/chatEvents';
+import { useChatStore } from '@/stores/chatStore';
 
 // Import all views
 import {
@@ -123,6 +126,35 @@ function MainApp() {
   const [serverStatus, setServerStatus] = useState<ServerStatus>('checking');
   const [readyDetails, setReadyDetails] = useState<ServerReadyStatus | null>(null);
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (!event.data || event.data.type !== 'chat-overlay-sync-request') return;
+      const messages = useChatStore.getState().messages;
+      event.source?.postMessage({ type: 'chat-overlay-sync', messages }, '*');
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+
+    let unlisten: (() => void) | null = null;
+    listen(CHAT_OVERLAY_SYNC_REQUEST_EVENT, () => {
+      const messages = useChatStore.getState().messages;
+      emit(CHAT_OVERLAY_SYNC_EVENT, { messages }).catch((error) => {
+        console.error('Failed to sync chat overlay:', error);
+      });
+    }).then((unsubscribe) => {
+      unlisten = unsubscribe;
+    });
+
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, []);
 
   const formatReadyDetails = (details: ServerReadyStatus | null): string[] => {
     if (!details) return [];
