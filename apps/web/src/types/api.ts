@@ -42,6 +42,7 @@ export interface AppSettings {
   chatTwitchSendEnabled: boolean;
   chatYoutubeSendEnabled: boolean;
   chatSendAllEnabled: boolean;
+  chatCrosspostEnabled: boolean;
 
   // Twitch OAuth account (from "Login with Twitch")
   twitchOauthAccessToken: string;

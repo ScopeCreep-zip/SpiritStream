@@ -683,6 +683,7 @@ export function ChatPanel() {
   const [youtubeUseApiKey, setYoutubeUseApiKey] = useState(false);
   const [twitchSendEnabled, setTwitchSendEnabled] = useState(false);
   const [youtubeSendEnabled, setYoutubeSendEnabled] = useState(false);
+  const [crosspostEnabled, setCrosspostEnabled] = useState(false);
 
   // Pending OAuth flow state
   const pendingOAuthRef = useRef<{ provider: string; state: string } | null>(null);
@@ -710,6 +711,7 @@ export function ChatPanel() {
         setYoutubeUseApiKey(loadedSettings.youtubeUseApiKey || false);
         setTwitchSendEnabled(loadedSettings.chatTwitchSendEnabled || false);
         setYoutubeSendEnabled(loadedSettings.chatYoutubeSendEnabled || false);
+        setCrosspostEnabled(loadedSettings.chatCrosspostEnabled || false);
 
         // Default channel to logged-in user if not set
         if (!loadedSettings.chatTwitchChannel && twitchAcc.loggedIn && twitchAcc.username) {
@@ -993,6 +995,14 @@ export function ChatPanel() {
     }
   }, [youtubeAccount, saveSettings]);
 
+  const handleCrosspostChange = useCallback(
+    (enabled: boolean) => {
+      setCrosspostEnabled(enabled);
+      saveSettings({ chatCrosspostEnabled: enabled });
+    },
+    [saveSettings]
+  );
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -1004,6 +1014,18 @@ export function ChatPanel() {
           <h2 className="text-lg font-semibold text-[var(--text-primary)]">{t('chat.title')}</h2>
           <p className="text-sm text-[var(--text-secondary)]">{t('chat.description')}</p>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4">
+        <Toggle
+          checked={crosspostEnabled}
+          onChange={handleCrosspostChange}
+          label={t('chat.crosspostEnabled', 'Crosspost chat messages')}
+          description={t(
+            'chat.crosspostHint',
+            'Relay incoming messages to all enabled platforms that allow sending.'
+          )}
+        />
       </div>
 
       {/* Platform Cards */}

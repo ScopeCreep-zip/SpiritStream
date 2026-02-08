@@ -160,6 +160,8 @@ pub struct Settings {
     pub chat_youtube_send_enabled: bool,
     #[serde(default)]
     pub chat_send_all_enabled: bool,
+    #[serde(default)]
+    pub chat_crosspost_enabled: bool,
 
     // Twitch OAuth account (from "Login with Twitch")
     #[serde(default)]
@@ -227,6 +229,7 @@ impl Default for Settings {
             chat_twitch_send_enabled: false,
             chat_youtube_send_enabled: false,
             chat_send_all_enabled: true,
+            chat_crosspost_enabled: false,
 
             // Twitch OAuth account
             twitch_oauth_access_token: String::new(),

@@ -135,6 +135,7 @@ export function useUpdateSetting() {
         chatTwitchSendEnabled: current.chatTwitchSendEnabled ?? false,
         chatYoutubeSendEnabled: current.chatYoutubeSendEnabled ?? false,
         chatSendAllEnabled: current.chatSendAllEnabled ?? true,
+        chatCrosspostEnabled: current.chatCrosspostEnabled ?? false,
         // Twitch OAuth account
         twitchOauthAccessToken: current.twitchOauthAccessToken ?? '',
         twitchOauthRefreshToken: current.twitchOauthRefreshToken ?? '',
@@ -250,6 +251,7 @@ export function useSaveSettings() {
         chatTwitchSendEnabled: current.chatTwitchSendEnabled ?? false,
         chatYoutubeSendEnabled: current.chatYoutubeSendEnabled ?? false,
         chatSendAllEnabled: current.chatSendAllEnabled ?? true,
+        chatCrosspostEnabled: current.chatCrosspostEnabled ?? false,
         // Twitch OAuth account
         twitchOauthAccessToken: current.twitchOauthAccessToken ?? '',
         twitchOauthRefreshToken: current.twitchOauthRefreshToken ?? '',

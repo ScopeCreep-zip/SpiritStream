@@ -81,6 +81,8 @@
     "connecting": "Connecting...",
     "connectFailed": "Failed to connect to chat",
     "connectSuccess": "Connected to {{platform}} chat",
+    "crosspostEnabled": "Crosspost chat messages",
+    "crosspostHint": "Relay incoming messages to all enabled platforms that allow sending.",
     "description": "Connect to chat platforms to aggregate messages",
     "disconnect": "Disconnect",
     "disconnected": "Disconnected",

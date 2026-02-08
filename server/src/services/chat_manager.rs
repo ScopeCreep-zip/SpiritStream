@@ -3,13 +3,13 @@ use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot, Mutex};
 use chrono::Local;
 
 use crate::models::{
-    ChatConfig, ChatConnectionStatus, ChatMessage, ChatPlatform, ChatPlatformStatus,
+    ChatConfig, ChatConnectionStatus, ChatMessage, ChatMessageDirection, ChatPlatform, ChatPlatformStatus,
 };
 use crate::services::chat::{ChatPlatform as ChatPlatformTrait, TikTokConnector, TwitchConnector, YouTubeConnector};
 use crate::services::EventSink;
@@ -24,6 +24,8 @@ pub struct ChatManager {
     message_tx: mpsc::UnboundedSender<ChatMessage>,
     log_tx: mpsc::UnboundedSender<ChatLogCommand>,
     log_session_start_ms: Arc<AtomicI64>,
+    crosspost_enabled: Arc<AtomicBool>,
+    send_enabled: Arc<Mutex<HashMap<ChatPlatform, bool>>>,
 }
 
 impl ChatManager {
@@ -42,6 +44,8 @@ impl ChatManager {
             message_tx,
             log_tx,
             log_session_start_ms,
+            crosspost_enabled: Arc::new(AtomicBool::new(false)),
+            send_enabled: Arc::new(Mutex::new(HashMap::new())),
         };
 
         // Start message handler
@@ -178,6 +182,17 @@ impl ChatManager {
         results
     }
 
+    /// Enable or disable crossposting of inbound messages.
+    pub fn set_crosspost_enabled(&self, enabled: bool) {
+        self.crosspost_enabled.store(enabled, Ordering::Relaxed);
+    }
+
+    /// Update per-platform send enable flags for crossposting.
+    pub async fn set_send_enabled(&self, platform: ChatPlatform, enabled: bool) {
+        let mut map = self.send_enabled.lock().await;
+        map.insert(platform, enabled);
+    }
+
     /// Disconnect from all platforms
     pub async fn disconnect_all(&self) -> Result<(), String> {
         info!("Disconnecting from all chat platforms");
@@ -247,6 +262,9 @@ impl ChatManager {
         let event_sink = self.event_sink.clone();
         let message_rx = self.message_rx.clone();
         let log_tx = self.log_tx.clone();
+        let platforms = self.platforms.clone();
+        let crosspost_enabled = self.crosspost_enabled.clone();
+        let send_enabled = self.send_enabled.clone();
 
         tokio::spawn(async move {
             use std::collections::{HashSet, VecDeque};
@@ -282,6 +300,52 @@ impl ChatManager {
                         event_sink.emit("chat_message", payload);
                     } else {
                         error!("Failed to serialize chat message");
+                    }
+
+                    // Crosspost inbound messages to other enabled platforms.
+                    if message.direction == ChatMessageDirection::Inbound
+                        && crosspost_enabled.load(Ordering::Relaxed)
+                    {
+                        let origin = message.platform;
+                        let text = message.message.clone();
+                        let targets = {
+                            let enabled = send_enabled.lock().await;
+                            let connectors = platforms.lock().await;
+                            let mut list = Vec::new();
+
+                            for (platform, connector) in connectors.iter() {
+                                if *platform == origin {
+                                    continue;
+                                }
+                                if !connector.can_send() {
+                                    continue;
+                                }
+                                if !enabled.get(platform).copied().unwrap_or(false) {
+                                    continue;
+                                }
+                                list.push(*platform);
+                            }
+
+                            list
+                        };
+
+                        if !targets.is_empty() {
+                            let platforms = platforms.clone();
+                            tokio::spawn(async move {
+                                let mut connectors = platforms.lock().await;
+                                for platform in targets {
+                                    if let Some(connector) = connectors.get_mut(&platform) {
+                                        if let Err(err) = connector.send_message(text.clone()).await {
+                                            warn!(
+                                                "Crosspost to {} failed: {}",
+                                                platform.as_str(),
+                                                err
+                                            );
+                                        }
+                                    }
+                                }
+                            });
+                        }
                     }
                 }
 

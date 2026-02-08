@@ -1670,6 +1670,9 @@ async fn invoke_command(
             let settings: Settings = get_arg(&payload, "settings")?;
             state.settings_manager.save(&settings)?;
             let _ = prune_logs(&state.log_dir, settings.log_retention_days);
+            state.chat_manager.set_crosspost_enabled(settings.chat_crosspost_enabled);
+            state.chat_manager.set_send_enabled(ChatPlatform::Twitch, settings.chat_twitch_send_enabled).await;
+            state.chat_manager.set_send_enabled(ChatPlatform::YouTube, settings.chat_youtube_send_enabled).await;
             state.event_bus.emit("settings_changed", json!({}));
             Ok(Value::Null)
         }
@@ -2933,6 +2936,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize Chat manager
     let chat_event_sink: Arc<dyn EventSink> = Arc::new(event_bus.clone());
     let chat_manager = Arc::new(ChatManager::new(chat_event_sink, log_dir_path.clone()));
+    if let Some(ref settings) = settings {
+        chat_manager.set_crosspost_enabled(settings.chat_crosspost_enabled);
+        chat_manager.set_send_enabled(ChatPlatform::Twitch, settings.chat_twitch_send_enabled).await;
+        chat_manager.set_send_enabled(ChatPlatform::YouTube, settings.chat_youtube_send_enabled).await;
+    }
 
     // Initialize OAuth service
     let oauth_service = Arc::new(OAuthService::new(OAuthConfig::default()));
