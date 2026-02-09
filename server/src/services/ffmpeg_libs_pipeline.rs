@@ -557,13 +557,6 @@ impl InputPipeline {
             return Err("FFmpeg libs pipeline already started".to_string());
         }
 
-        let transcode_count = self.groups.iter()
-            .filter(|group| group.mode == OutputGroupMode::Transcode)
-            .count();
-        if transcode_count > 1 {
-            return Err("Only one transcode group is supported in ffmpeg-libs pipeline for now".to_string());
-        }
-
         // Create command channel for runtime control
         let (command_tx, command_rx) = mpsc::channel();
         self.command_tx = Some(command_tx);
@@ -914,27 +907,25 @@ fn run_pipeline_loop(
 
     let (video_stream_index, audio_stream_index) = find_stream_indices(input_ctx)?;
     let mut group_outputs = create_group_outputs(input_ctx, &groups, &group_controls)?;
-    let transcode_group_config = groups.iter()
-        .find(|group| group.mode == OutputGroupMode::Transcode);
-    let mut transcode_group = if let Some(config) = transcode_group_config {
+    let mut transcode_groups: Vec<TranscodeGroup> = Vec::new();
+    for config in groups.iter().filter(|group| group.mode == OutputGroupMode::Transcode) {
         let control = group_controls.get(&config.group_id)
             .cloned()
             .unwrap_or_default();
-        Some(create_transcode_group(
+        let group = create_transcode_group(
             input_ctx,
             config,
             control,
             video_stream_index,
             audio_stream_index,
-        )?)
-    } else {
-        None
-    };
+        )?;
+        transcode_groups.push(group);
+    }
 
     let mut packet = unsafe { ffi::av_packet_alloc() };
     if packet.is_null() {
         cleanup_outputs(&mut group_outputs);
-        if let Some(group) = transcode_group.take() {
+        for group in transcode_groups.drain(..) {
             cleanup_transcode_group(group);
         }
         unsafe { ffi::avformat_close_input(&mut input_ctx) };
@@ -977,7 +968,7 @@ fn run_pipeline_loop(
             }
         }
 
-        if let Some(ref mut tg) = transcode_group {
+        for tg in transcode_groups.iter_mut() {
             if !tg.cleaned_up && tg.control.should_stop() {
                 log::info!("Cleaning up stopped transcode group: {}", tg.group_id);
                 flush_transcode_group(tg)?;
@@ -992,7 +983,7 @@ fn run_pipeline_loop(
 
         // Check if all groups are stopped - if so, exit the loop
         let all_passthrough_stopped = group_outputs.iter().all(|g| g.cleaned_up);
-        let transcode_stopped = transcode_group.as_ref().map(|g| g.cleaned_up).unwrap_or(true);
+        let transcode_stopped = transcode_groups.iter().all(|g| g.cleaned_up);
         if all_passthrough_stopped && transcode_stopped {
             log::info!("All groups stopped, exiting pipeline loop");
             break;
@@ -1045,7 +1036,7 @@ fn run_pipeline_loop(
                     }
                 }
             }
-            if let Some(group) = transcode_group.as_mut() {
+            for group in transcode_groups.iter_mut() {
                 if !group.cleaned_up && group.control.is_enabled() {
                     transcode_video_packet(group, in_stream, packet)?;
                     // Track stats for transcode group
@@ -1079,7 +1070,7 @@ fn run_pipeline_loop(
                     }
                 }
             }
-            if let Some(group) = transcode_group.as_mut() {
+            for group in transcode_groups.iter_mut() {
                 if !group.cleaned_up && group.control.is_enabled() {
                     transcode_audio_packet(group, in_stream, packet)?;
                     // Track stats for transcode group
@@ -1172,9 +1163,8 @@ fn run_pipeline_loop(
                     Some((active, dropped)) => (active, dropped),
                     None => {
                         // Check transcode group
-                        let transcode_active = transcode_group.as_ref()
-                            .map(|g| &g.group_id == group_id && !g.cleaned_up)
-                            .unwrap_or(false);
+                        let transcode_active = transcode_groups.iter()
+                            .any(|g| &g.group_id == group_id && !g.cleaned_up);
                         (transcode_active, 0) // Transcode group doesn't track dropped frames yet
                     }
                 };
@@ -1190,7 +1180,7 @@ fn run_pipeline_loop(
     }
 
     // Final cleanup - flush and close any groups that weren't stopped individually
-    if let Some(ref mut group) = transcode_group {
+    for group in transcode_groups.iter_mut() {
         if !group.cleaned_up {
             flush_transcode_group(group)?;
         }
@@ -1203,7 +1193,7 @@ fn run_pipeline_loop(
                 emit_event(sink.as_ref(), "stream_ended", &group_out.group_id);
             }
         }
-        if let Some(ref tg) = transcode_group {
+        for tg in &transcode_groups {
             if !tg.cleaned_up {
                 emit_event(sink.as_ref(), "stream_ended", &tg.group_id);
             }
@@ -1212,7 +1202,7 @@ fn run_pipeline_loop(
 
     unsafe { ffi::av_packet_free(&mut packet) };
     cleanup_outputs(&mut group_outputs);
-    if let Some(group) = transcode_group.take() {
+    for group in transcode_groups {
         cleanup_transcode_group(group);
     }
     unsafe { ffi::avformat_close_input(&mut input_ctx) };
