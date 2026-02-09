@@ -698,6 +698,7 @@ export function ChatPanel() {
   const [crosspostEnabled, setCrosspostEnabled] = useState(false);
   const [visiblePlatforms, setVisiblePlatforms] = useState<ChatPlatform[]>([]);
   const [visibilityPanelCollapsed, setVisibilityPanelCollapsed] = useState(true);
+  const showStripchat = false;
 
 
   // Pending OAuth flow state
@@ -1118,7 +1119,7 @@ export function ChatPanel() {
     if (trovoChannelId.trim() || isActive('trovo')) {
       auto.add('trovo');
     }
-    if (stripchatUsername.trim() || isActive('stripchat')) {
+    if (showStripchat && (stripchatUsername.trim() || isActive('stripchat'))) {
       auto.add('stripchat');
     }
 
@@ -1131,19 +1132,25 @@ export function ChatPanel() {
     stripchatUsername,
     twitchAccount,
     youtubeAccount,
+    showStripchat,
   ]);
 
   const resolvedVisiblePlatforms = useMemo<ChatPlatform[]>(() => {
-    if (visiblePlatforms.length > 0) {
-      return visiblePlatforms;
-    }
     const auto = Array.from(autoVisiblePlatforms);
-    return auto.length > 0 ? auto : ['twitch', 'youtube'];
+    const preferred = visiblePlatforms.length > 0 ? visiblePlatforms : auto;
+    const filtered = preferred.filter((platform) => platform !== 'stripchat');
+    if (filtered.length > 0) {
+      return filtered;
+    }
+    const fallback = auto.filter((platform) => platform !== 'stripchat');
+    return fallback.length > 0 ? fallback : ['twitch', 'youtube'];
   }, [visiblePlatforms, autoVisiblePlatforms]);
 
   const handleVisibilityToggle = useCallback(
     (platform: ChatPlatform, enabled: boolean) => {
-      const base = visiblePlatforms.length > 0 ? visiblePlatforms : resolvedVisiblePlatforms;
+      const base = (visiblePlatforms.length > 0 ? visiblePlatforms : resolvedVisiblePlatforms).filter(
+        (p) => p !== 'stripchat'
+      );
       let next = enabled ? [...base, platform] : base.filter((p) => p !== platform);
       next = Array.from(new Set(next));
 
@@ -1152,7 +1159,7 @@ export function ChatPanel() {
       }
 
       setVisiblePlatforms(next);
-      saveChatSettings({ visiblePlatforms: next });
+      saveChatSettings({ visiblePlatforms: next.filter((p) => p !== 'stripchat') });
     },
     [visiblePlatforms, resolvedVisiblePlatforms, saveChatSettings]
   );
@@ -1252,12 +1259,14 @@ export function ChatPanel() {
                 label={t('chat.trovo.title', { defaultValue: 'Trovo' })}
                 description={t('chat.visibility.trovo', { defaultValue: 'Show Trovo settings' })}
               />
-              <Toggle
-                checked={resolvedVisiblePlatforms.includes('stripchat')}
-                onChange={(enabled) => handleVisibilityToggle('stripchat', enabled)}
-                label={t('chat.stripchat.title', { defaultValue: 'Stripchat' })}
-                description={t('chat.visibility.stripchat', { defaultValue: 'Show Stripchat settings' })}
-              />
+              {showStripchat && (
+                <Toggle
+                  checked={resolvedVisiblePlatforms.includes('stripchat')}
+                  onChange={(enabled) => handleVisibilityToggle('stripchat', enabled)}
+                  label={t('chat.stripchat.title', { defaultValue: 'Stripchat' })}
+                  description={t('chat.visibility.stripchat', { defaultValue: 'Show Stripchat settings' })}
+                />
+              )}
             </div>
           </>
         )}
@@ -1383,7 +1392,7 @@ export function ChatPanel() {
           </CardBody>
         </Card>
         )}
-        {resolvedVisiblePlatforms.includes('stripchat') && (
+        {showStripchat && resolvedVisiblePlatforms.includes('stripchat') && (
           <Card>
           <CardHeader>
             <div className="flex items-center gap-3">

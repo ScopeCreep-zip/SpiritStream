@@ -97,7 +97,6 @@ export function Chat() {
         return chatSettings.youtubeSendEnabled && !chatSettings.youtubeUseApiKey;
       }
       if (status.platform === 'trovo') return chatSettings.trovoSendEnabled;
-      if (status.platform === 'stripchat') return chatSettings.stripchatSendEnabled;
       return false;
     });
   }, [chatSettings, statuses]);
@@ -110,7 +109,6 @@ export function Chat() {
         if (target.platform === 'twitch') return 'Twitch';
         if (target.platform === 'youtube') return 'YouTube';
         if (target.platform === 'trovo') return 'Trovo';
-        if (target.platform === 'stripchat') return 'Stripchat';
         return target.platform;
       })
       .join(', ');
@@ -253,13 +251,6 @@ export function Chat() {
         sendEnabled: chatSettings.trovoSendEnabled,
         status: getStatus('trovo'),
       },
-      {
-        id: 'stripchat',
-        label: 'Stripchat',
-        configured: chatSettings.stripchatUsername.trim().length > 0,
-        sendEnabled: chatSettings.stripchatSendEnabled,
-        status: getStatus('stripchat'),
-      },
     ];
   }, [chatSettings, statuses]);
 
@@ -282,13 +273,11 @@ export function Chat() {
       chatSettings.twitchChannel.trim() ? 'twitch' : null,
       chatSettings.youtubeChannelId.trim() ? 'youtube' : null,
       chatSettings.trovoChannelId.trim() ? 'trovo' : null,
-      chatSettings.stripchatUsername.trim() ? 'stripchat' : null,
     ].filter(Boolean);
     const sendEnabledPlatforms = [
       chatSettings.twitchSendEnabled ? 'twitch' : null,
       chatSettings.youtubeSendEnabled && !chatSettings.youtubeUseApiKey ? 'youtube' : null,
       chatSettings.trovoSendEnabled ? 'trovo' : null,
-      chatSettings.stripchatSendEnabled ? 'stripchat' : null,
     ].filter(Boolean);
 
     if (!isStreaming) {
