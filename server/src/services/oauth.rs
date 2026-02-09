@@ -297,10 +297,7 @@ impl OAuthService {
 
     /// Check if a provider is configured (always true with embedded IDs)
     pub async fn is_configured(&self, provider: &str) -> bool {
-        match provider {
-            "twitch" | "youtube" => true,
-            _ => false,
-        }
+        matches!(provider, "twitch" | "youtube")
     }
 
     /// Find an available port for the callback server
@@ -1068,4 +1065,3 @@ pub enum OAuthCallback {
         description: Option<String>,
     },
 }
-

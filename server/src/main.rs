@@ -409,7 +409,7 @@ fn build_hour_keys(start: DateTime<Local>, end: DateTime<Local>) -> Vec<String> 
     let mut cursor = start_hour;
     while cursor <= end_hour {
         keys.push(cursor.format("%Y%m%d-%H").to_string());
-        cursor = cursor + Duration::hours(1);
+        cursor += Duration::hours(1);
     }
 
     keys
@@ -1722,7 +1722,7 @@ async fn invoke_command(
                     }
                 }
 
-                set_active_profile(&state, &profile).await;
+                set_active_profile(state, &profile).await;
             }
 
             Ok(json!(profile))
@@ -1740,7 +1740,7 @@ async fn invoke_command(
                 guard.as_deref() == Some(profile.name.as_str())
             };
             if is_active {
-                set_active_profile(&state, &profile).await;
+                set_active_profile(state, &profile).await;
             }
             state.event_bus.emit("profile_changed", json!({ "action": "saved", "name": profile.name }));
             Ok(Value::Null)
@@ -2213,7 +2213,7 @@ async fn invoke_command(
 
             // Enrich credentials with stored OAuth tokens when frontend sends empty placeholders,
             // and refresh expired tokens automatically.
-            let mut profile_settings = get_active_profile_settings(&state)
+            let mut profile_settings = get_active_profile_settings(state)
                 .await
                 .ok_or_else(|| "No active profile loaded".to_string())?;
             config.credentials = match config.credentials {
@@ -2247,7 +2247,7 @@ async fn invoke_command(
                                     profile_settings.oauth.twitch.refresh_token = rt;
                                 }
                                 profile_settings.oauth.twitch.expires_at = fresh.expires_at;
-                                if let Err(err) = persist_active_profile_settings(&state, profile_settings.clone()).await {
+                                if let Err(err) = persist_active_profile_settings(state, profile_settings.clone()).await {
                                     log::warn!("Failed to persist Twitch OAuth refresh: {err}");
                                 }
                             }
@@ -2300,7 +2300,7 @@ async fn invoke_command(
                                     profile_settings.oauth.youtube.refresh_token = rt;
                                 }
                                 profile_settings.oauth.youtube.expires_at = fresh.expires_at;
-                                if let Err(err) = persist_active_profile_settings(&state, profile_settings.clone()).await {
+                                if let Err(err) = persist_active_profile_settings(state, profile_settings.clone()).await {
                                     log::warn!("Failed to persist YouTube OAuth refresh: {err}");
                                 }
                             }
@@ -2526,7 +2526,7 @@ async fn invoke_command(
         "retry_chat_connection" => {
             let platform: ChatPlatform = get_arg(&payload, "platform")?;
             let chat_settings = state.chat_manager.profile_chat_settings().await;
-            let profile_settings = get_active_profile_settings(&state)
+            let profile_settings = get_active_profile_settings(state)
                 .await
                 .ok_or_else(|| "No active profile loaded".to_string())?;
 
@@ -2598,7 +2598,7 @@ async fn invoke_command(
         }
         "oauth_start_flow" => {
             let provider: String = get_arg(&payload, "provider")?;
-            if get_active_profile_name(&state).await.is_none() {
+            if get_active_profile_name(state).await.is_none() {
                 return Err("No active profile loaded".to_string());
             }
             let result = state.oauth_service.start_flow(&provider).await?;
@@ -2722,7 +2722,7 @@ async fn invoke_command(
             let provider: String = get_arg(&payload, "provider")?;
             let code: String = get_arg(&payload, "code")?;
             let oauth_state: String = get_arg(&payload, "state")?;
-            if get_active_profile_name(&state).await.is_none() {
+            if get_active_profile_name(state).await.is_none() {
                 return Err("No active profile loaded".to_string());
             }
 
@@ -2733,7 +2733,7 @@ async fn invoke_command(
             let now = chrono::Utc::now().timestamp();
             let expires_at = result.tokens.expires_in.map(|e| now + e as i64).unwrap_or(0);
             update_profile_oauth_account(
-                &state,
+                state,
                 &provider,
                 result.tokens.access_token.clone(),
                 result.tokens.refresh_token.clone(),
@@ -2753,7 +2753,7 @@ async fn invoke_command(
         "oauth_get_account" => {
             // Get stored OAuth account info for a provider
             let provider: String = get_arg(&payload, "provider")?;
-            let profile_settings = get_active_profile_settings(&state).await;
+            let profile_settings = get_active_profile_settings(state).await;
 
             let account = match provider.as_str() {
                 "twitch" => {
@@ -2800,13 +2800,13 @@ async fn invoke_command(
         "oauth_disconnect" => {
             // Clear OAuth tokens but don't revoke (user might reconnect)
             let provider: String = get_arg(&payload, "provider")?;
-            clear_profile_oauth_account(&state, &provider).await?;
+            clear_profile_oauth_account(state, &provider).await?;
             Ok(Value::Null)
         }
         "oauth_forget" => {
             // Revoke tokens AND clear from settings
             let provider: String = get_arg(&payload, "provider")?;
-            let profile_settings = get_active_profile_settings(&state)
+            let profile_settings = get_active_profile_settings(state)
                 .await
                 .ok_or_else(|| "No active profile loaded".to_string())?;
 
@@ -2824,7 +2824,7 @@ async fn invoke_command(
             }
 
             // Clear from settings (same as disconnect + clear channel config)
-            clear_profile_oauth_account(&state, &provider).await?;
+            clear_profile_oauth_account(state, &provider).await?;
             Ok(Value::Null)
         }
         "oauth_refresh_token" => {

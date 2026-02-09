@@ -193,9 +193,9 @@ impl ChatPlatform for TwitchConnector {
         let (channel, oauth_token) = match credentials {
             ChatCredentials::Twitch { channel, auth } => {
                 // Extract OAuth token from auth method if provided
-                let token = auth.and_then(|a| match a {
-                    TwitchAuth::UserToken { oauth_token } => Some(oauth_token),
-                    TwitchAuth::AppOAuth { access_token, .. } => Some(access_token),
+                let token = auth.map(|a| match a {
+                    TwitchAuth::UserToken { oauth_token } => oauth_token,
+                    TwitchAuth::AppOAuth { access_token, .. } => access_token,
                 });
                 (channel, token)
             }
@@ -327,11 +327,9 @@ impl ChatPlatform for TwitchConnector {
                                 warn!("Failed to send Twitch message: receiver dropped");
                                 break;
                             }
-                        } else {
-                            if message_tx.send(chat_message).is_err() {
-                                warn!("Failed to send Twitch message: receiver dropped");
-                                break;
-                            }
+                        } else if message_tx.send(chat_message).is_err() {
+                            warn!("Failed to send Twitch message: receiver dropped");
+                            break;
                         }
 
                         // Increment message count

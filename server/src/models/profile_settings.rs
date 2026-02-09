@@ -279,7 +279,7 @@ impl Default for ChatSettings {
 // ============================================================================
 
 /// OAuth account + token data for a provider
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct OAuthAccount {
     /// Access token for API calls
@@ -307,36 +307,14 @@ pub struct OAuthAccount {
     pub display_name: String,
 }
 
-impl Default for OAuthAccount {
-    fn default() -> Self {
-        Self {
-            access_token: String::new(),
-            refresh_token: String::new(),
-            expires_at: 0,
-            user_id: String::new(),
-            username: String::new(),
-            display_name: String::new(),
-        }
-    }
-}
-
 /// OAuth configuration per profile
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct OAuthSettings {
     #[serde(default)]
     pub twitch: OAuthAccount,
     #[serde(default)]
     pub youtube: OAuthAccount,
-}
-
-impl Default for OAuthSettings {
-    fn default() -> Self {
-        Self {
-            twitch: OAuthAccount::default(),
-            youtube: OAuthAccount::default(),
-        }
-    }
 }
 
 // ============================================================================

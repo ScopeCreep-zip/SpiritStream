@@ -118,17 +118,12 @@ impl ChatMessage {
 }
 
 /// Direction for chat messages
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ChatMessageDirection {
+    #[default]
     Inbound,
     Outbound,
-}
-
-impl Default for ChatMessageDirection {
-    fn default() -> Self {
-        ChatMessageDirection::Inbound
-    }
 }
 
 /// Configuration for a chat platform connection
