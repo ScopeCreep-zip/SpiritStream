@@ -921,6 +921,38 @@ fn start_libs_pipeline(
 }
 
 #[cfg(feature = "ffmpeg-libs")]
+fn start_libs_pipeline_multi(
+    state: &AppState,
+    groups: Vec<OutputGroup>,
+    incoming_url: &str,
+    expected_stream_key: Option<&str>,
+) -> Result<Vec<u32>, String> {
+    let pipeline_id = "passthrough-multi".to_string();
+
+    let mut guard = state.ffmpeg_libs_pipelines
+        .lock()
+        .map_err(|_| "ffmpeg libs pipelines lock poisoned".to_string())?;
+    if guard.contains_key(&pipeline_id) {
+        return Err("ffmpeg libs pipeline already running".to_string());
+    }
+
+    let mut pipeline = InputPipeline::new(InputPipelineConfig {
+        input_id: pipeline_id.clone(),
+        input_url: incoming_url.to_string(),
+        expected_stream_key: expected_stream_key.map(String::from),
+    });
+    pipeline.set_event_sink(Arc::new(state.event_bus.clone()));
+    for group in &groups {
+        let targets = build_libs_targets(state, group)?;
+        pipeline.add_group(group.clone(), targets)?;
+    }
+    pipeline.start()?;
+    guard.insert(pipeline_id, pipeline);
+
+    Ok(vec![0; groups.len()])
+}
+
+#[cfg(feature = "ffmpeg-libs")]
 fn stop_libs_pipeline(state: &AppState, group_id: &str) -> Result<(), String> {
     let mut pipeline_to_join: Option<InputPipeline> = None;
     {
@@ -1130,14 +1162,24 @@ async fn invoke_command(
                 }
 
                 let all_passthrough = start_groups.iter().all(is_passthrough_group);
-                if all_passthrough && start_groups.len() == 1 {
-                    let pid = start_libs_pipeline(
-                        state,
-                        start_groups.into_iter().next().unwrap(),
-                        &incoming_url,
-                        expected_stream_key.as_deref(),
-                    )?;
-                    Ok(json!(vec![pid]))
+                if all_passthrough {
+                    if start_groups.len() == 1 {
+                        let pid = start_libs_pipeline(
+                            state,
+                            start_groups.into_iter().next().unwrap(),
+                            &incoming_url,
+                            expected_stream_key.as_deref(),
+                        )?;
+                        Ok(json!(vec![pid]))
+                    } else {
+                        let pids = start_libs_pipeline_multi(
+                            state,
+                            start_groups,
+                            &incoming_url,
+                            expected_stream_key.as_deref(),
+                        )?;
+                        Ok(json!(pids))
+                    }
                 } else {
                     let _ = expected_stream_key; // Not used in CLI mode
                     let event_sink: Arc<dyn EventSink> = Arc::new(state.event_bus.clone());

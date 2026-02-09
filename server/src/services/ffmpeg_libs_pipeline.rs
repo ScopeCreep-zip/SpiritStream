@@ -739,8 +739,17 @@ struct TranscodeGroup {
     using_hw_decode: bool,
     /// True if we can pass decoded HW frames directly to encoder
     zero_copy: bool,
+    /// Hardware scaling filtergraph (GPU scale path)
+    hw_scale: Option<HwScaleContext>,
     /// Track if this group has been cleaned up
     cleaned_up: bool,
+}
+
+struct HwScaleContext {
+    graph: *mut ffi::AVFilterGraph,
+    src_ctx: *mut ffi::AVFilterContext,
+    sink_ctx: *mut ffi::AVFilterContext,
+    frame: *mut ffi::AVFrame,
 }
 
 struct TranscodeOutput {
@@ -1721,6 +1730,7 @@ fn create_transcode_group(
     let mut using_hw_decode = false;
     let mut video_dec_hw_frames_ctx: Option<*mut ffi::AVBufferRef> = None;
     let mut zero_copy = false;
+    let mut hw_scale: Option<HwScaleContext> = None;
     if prefer_hw {
         if let Some(device_ref) = video_hw_device {
             match unsafe { try_init_hw_decoder(&group.video.codec, video_codecpar, device_ref) } {
@@ -1832,13 +1842,36 @@ fn create_transcode_group(
             && encoder_supports_pix_fmt(video_encoder, hw_fmt)
         {
             if let Some(dec_frames_ref) = video_dec_hw_frames_ctx {
-                unsafe {
-                    (*video_enc_ctx).pix_fmt = hw_fmt;
-                    let enc_ref = ffi::av_buffer_ref(dec_frames_ref);
-                    if !enc_ref.is_null() {
-                        (*video_enc_ctx).hw_frames_ctx = enc_ref;
-                        video_hw_frames_ctx = Some(enc_ref);
-                        zero_copy = true;
+                if input_width != output_width || input_height != output_height {
+                    match unsafe {
+                        init_hw_scale_context(
+                            &group.video.codec,
+                            video_dec_ctx,
+                            dec_frames_ref,
+                            output_width,
+                            output_height,
+                        )
+                    } {
+                        Ok(scale_ctx) => {
+                            unsafe {
+                                (*video_enc_ctx).pix_fmt = hw_fmt;
+                            }
+                            hw_scale = Some(scale_ctx);
+                            zero_copy = true;
+                        }
+                        Err(err) => {
+                            log::warn!("Hardware scaling init failed, falling back to upload path: {}", err);
+                        }
+                    }
+                } else {
+                    unsafe {
+                        (*video_enc_ctx).pix_fmt = hw_fmt;
+                        let enc_ref = ffi::av_buffer_ref(dec_frames_ref);
+                        if !enc_ref.is_null() {
+                            (*video_enc_ctx).hw_frames_ctx = enc_ref;
+                            video_hw_frames_ctx = Some(enc_ref);
+                            zero_copy = true;
+                        }
                     }
                 }
             }
@@ -1870,14 +1903,14 @@ fn create_transcode_group(
                         unsafe {
                             (*video_enc_ctx).hw_frames_ctx = frames_ref;
                         }
-                        video_hw_frames_ctx = Some(frames_ctx);
-                        let hw_frame = unsafe { ffi::av_frame_alloc() };
-                        if !hw_frame.is_null() {
-                            video_hw_frame = Some(hw_frame);
-                        }
+                    video_hw_frames_ctx = Some(frames_ctx);
+                    let hw_frame = unsafe { ffi::av_frame_alloc() };
+                    if !hw_frame.is_null() {
+                        video_hw_frame = Some(hw_frame);
                     }
                 }
-                Err(err) => {
+            }
+            Err(err) => {
                     // AMF and some other encoders may fail to create frames context but still work
                     // with device context only - the encoder will handle frame upload internally
                     log::warn!("Hardware frames context creation failed: {}. Continuing with device-only mode.", err);
@@ -2033,8 +2066,8 @@ fn create_transcode_group(
         }
     }
 
-    if using_hw_decode && !zero_copy {
-        let hw_sw_frame = unsafe { ffi::av_frame_alloc() };
+        if using_hw_decode && !zero_copy {
+            let hw_sw_frame = unsafe { ffi::av_frame_alloc() };
         if hw_sw_frame.is_null() {
             unsafe {
                 ffi::av_frame_free(&mut (video_sw_frame as *mut _));
@@ -2241,6 +2274,7 @@ fn create_transcode_group(
         outputs,
         using_hw_decode,
         zero_copy,
+        hw_scale,
         cleaned_up: false,
     })
 }
@@ -2421,6 +2455,52 @@ fn transcode_video_packet(
                 (*group.video_enc_ctx).time_base,
             )
         };
+
+        if let Some(ref mut scale_ctx) = group.hw_scale {
+            unsafe {
+                let add_ret = ffi::av_buffersrc_add_frame_flags(
+                    scale_ctx.src_ctx,
+                    group.video_dec_frame,
+                    ffi::AV_BUFFERSRC_FLAG_KEEP_REF,
+                );
+                if add_ret < 0 {
+                    return Err(format!("HW scale buffersrc add failed: {}", ffmpeg_err(add_ret)));
+                }
+            }
+
+            loop {
+                let ret = unsafe { ffi::av_buffersink_get_frame(scale_ctx.sink_ctx, scale_ctx.frame) };
+                if ret < 0 {
+                    break;
+                }
+                let send_enc_ret = unsafe { ffi::avcodec_send_frame(group.video_enc_ctx, scale_ctx.frame) };
+                if send_enc_ret < 0 {
+                    unsafe { ffi::av_frame_unref(scale_ctx.frame) };
+                    return Err(format!("Video encoder send failed: {}", ffmpeg_err(send_enc_ret)));
+                }
+
+                let mut enc_pkt = unsafe { ffi::av_packet_alloc() };
+                if enc_pkt.is_null() {
+                    unsafe { ffi::av_frame_unref(scale_ctx.frame) };
+                    return Err("Failed to allocate video packet".to_string());
+                }
+                loop {
+                    let recv_ret = unsafe { ffi::avcodec_receive_packet(group.video_enc_ctx, enc_pkt) };
+                    if recv_ret < 0 {
+                        break;
+                    }
+                    write_encoded_packet(enc_pkt, group, true)?;
+                    unsafe { ffi::av_packet_unref(enc_pkt) };
+                }
+                unsafe {
+                    ffi::av_packet_free(&mut enc_pkt);
+                    ffi::av_frame_unref(scale_ctx.frame);
+                }
+            }
+
+            unsafe { ffi::av_frame_unref(group.video_dec_frame) };
+            continue;
+        }
 
         let mut source_frame = group.video_dec_frame;
         if has_hw_input && !can_zero_copy {
@@ -2888,6 +2968,14 @@ fn cleanup_transcode_group(group: TranscodeGroup) {
             if let Some(mut device_ref) = group.video_hw_device {
                 ffi::av_buffer_unref(&mut device_ref);
             }
+            if let Some(mut scale) = group.hw_scale {
+                if !scale.frame.is_null() {
+                    ffi::av_frame_free(&mut scale.frame);
+                }
+                if !scale.graph.is_null() {
+                    ffi::avfilter_graph_free(&mut scale.graph);
+                }
+            }
             ffi::avcodec_free_context(&mut (group.video_enc_ctx as *mut _));
             ffi::avcodec_free_context(&mut (group.video_dec_ctx as *mut _));
         }
@@ -2936,6 +3024,14 @@ fn cleanup_transcode_group(group: TranscodeGroup) {
         }
         if let Some(mut device_ref) = group.video_hw_device {
             ffi::av_buffer_unref(&mut device_ref);
+        }
+        if let Some(mut scale) = group.hw_scale {
+            if !scale.frame.is_null() {
+                ffi::av_frame_free(&mut scale.frame);
+            }
+            if !scale.graph.is_null() {
+                ffi::avfilter_graph_free(&mut scale.graph);
+            }
         }
         ffi::avcodec_free_context(&mut (group.video_enc_ctx as *mut _));
         ffi::avcodec_free_context(&mut (group.video_dec_ctx as *mut _));
@@ -3439,27 +3535,171 @@ fn can_use_zero_copy(
 ) -> bool {
     let name = encoder_name.to_ascii_lowercase();
 
-    // Currently we don't have GPU scaling in the libs pipeline,
-    // so only allow zero-copy when resolution matches.
-    if name.contains("nvenc") {
-        return input_width == output_width && input_height == output_height;
+    if input_width == output_width && input_height == output_height {
+        return true;
     }
 
-    // Intel QSV: Zero-copy requires same resolution or vpp_qsv filter
-    if name.contains("qsv") {
-        // QSV can do GPU scaling via vpp_qsv filter
-        // For now, only enable zero-copy for same resolution
-        // TODO: Add vpp_qsv filter support for GPU scaling
-        return input_width == output_width && input_height == output_height;
+    if resolve_hw_scale_filter(&name).is_none() {
+        return false;
     }
 
-    // VideoToolbox: Zero-copy supported, system handles scaling
-    if name.contains("videotoolbox") {
-        return input_width == output_width && input_height == output_height;
+    name.contains("nvenc") || name.contains("qsv") || name.contains("videotoolbox")
+}
+
+fn resolve_hw_scale_filter(encoder_name: &str) -> Option<&'static str> {
+    let name = encoder_name.to_ascii_lowercase();
+    let candidates: &[&str] = if name.contains("nvenc") {
+        &["scale_cuda", "scale_npp"]
+    } else if name.contains("qsv") {
+        &["vpp_qsv", "scale_qsv"]
+    } else if name.contains("videotoolbox") {
+        &["scale_videotoolbox"]
+    } else {
+        &[]
+    };
+
+    for candidate in candidates {
+        let filter = unsafe {
+            ffi::avfilter_get_by_name(CString::new(*candidate).unwrap().as_ptr())
+        };
+        if !filter.is_null() {
+            return Some(*candidate);
+        }
+    }
+    None
+}
+
+/// Initialize a hardware scaling filtergraph (GPU scaling).
+unsafe fn init_hw_scale_context(
+    encoder_name: &str,
+    dec_ctx: *mut ffi::AVCodecContext,
+    dec_hw_frames_ctx: *mut ffi::AVBufferRef,
+    output_width: i32,
+    output_height: i32,
+) -> Result<HwScaleContext, String> {
+    let filter_name = resolve_hw_scale_filter(encoder_name)
+        .ok_or_else(|| "No hardware scaling filter available".to_string())?;
+
+    let graph = ffi::avfilter_graph_alloc();
+    if graph.is_null() {
+        return Err("Failed to allocate filter graph".to_string());
     }
 
-    // AMF: No hardware decoder, can't do zero-copy
-    false
+    let buffersrc = ffi::avfilter_get_by_name(CString::new("buffer").unwrap().as_ptr());
+    let buffersink = ffi::avfilter_get_by_name(CString::new("buffersink").unwrap().as_ptr());
+    let scale_filter = ffi::avfilter_get_by_name(CString::new(filter_name).unwrap().as_ptr());
+    if buffersrc.is_null() || buffersink.is_null() || scale_filter.is_null() {
+        ffi::avfilter_graph_free(&mut (graph as *mut _));
+        return Err("Required filters not available".to_string());
+    }
+
+    let time_base = if (*dec_ctx).time_base.den > 0 {
+        (*dec_ctx).time_base
+    } else {
+        ffi::AVRational { num: 1, den: 30 }
+    };
+    let sar = if (*dec_ctx).sample_aspect_ratio.num > 0 && (*dec_ctx).sample_aspect_ratio.den > 0 {
+        (*dec_ctx).sample_aspect_ratio
+    } else {
+        ffi::AVRational { num: 1, den: 1 }
+    };
+    let input_width = (*dec_ctx).width;
+    let input_height = (*dec_ctx).height;
+    let input_fmt = (*dec_ctx).pix_fmt;
+
+    let args = format!(
+        "video_size={}x{}:pix_fmt={}:time_base={}/{}:pixel_aspect={}/{}",
+        input_width, input_height, input_fmt as i32, time_base.num, time_base.den, sar.num, sar.den
+    );
+    let args_c = CString::new(args).unwrap_or_default();
+
+    let mut src_ctx: *mut ffi::AVFilterContext = ptr::null_mut();
+    let mut sink_ctx: *mut ffi::AVFilterContext = ptr::null_mut();
+    let mut scale_ctx: *mut ffi::AVFilterContext = ptr::null_mut();
+
+    let create_src = ffi::avfilter_graph_create_filter(
+        &mut src_ctx,
+        buffersrc,
+        CString::new("in").unwrap().as_ptr(),
+        args_c.as_ptr(),
+        ptr::null_mut(),
+        graph,
+    );
+    if create_src < 0 {
+        ffi::avfilter_graph_free(&mut (graph as *mut _));
+        return Err(format!("Failed to create buffersrc: {}", ffmpeg_err(create_src)));
+    }
+
+    let create_sink = ffi::avfilter_graph_create_filter(
+        &mut sink_ctx,
+        buffersink,
+        CString::new("out").unwrap().as_ptr(),
+        ptr::null(),
+        ptr::null_mut(),
+        graph,
+    );
+    if create_sink < 0 {
+        ffi::avfilter_graph_free(&mut (graph as *mut _));
+        return Err(format!("Failed to create buffersink: {}", ffmpeg_err(create_sink)));
+    }
+
+    let scale_args = format!("w={}:h={}", output_width, output_height);
+    let scale_args_c = CString::new(scale_args).unwrap_or_default();
+    let create_scale = ffi::avfilter_graph_create_filter(
+        &mut scale_ctx,
+        scale_filter,
+        CString::new("scale").unwrap().as_ptr(),
+        scale_args_c.as_ptr(),
+        ptr::null_mut(),
+        graph,
+    );
+    if create_scale < 0 {
+        ffi::avfilter_graph_free(&mut (graph as *mut _));
+        return Err(format!("Failed to create scale filter: {}", ffmpeg_err(create_scale)));
+    }
+
+    let link_ret = ffi::avfilter_link(src_ctx, 0, scale_ctx, 0);
+    if link_ret < 0 {
+        ffi::avfilter_graph_free(&mut (graph as *mut _));
+        return Err(format!("Failed to link buffersrc->scale: {}", ffmpeg_err(link_ret)));
+    }
+    let link_ret = ffi::avfilter_link(scale_ctx, 0, sink_ctx, 0);
+    if link_ret < 0 {
+        ffi::avfilter_graph_free(&mut (graph as *mut _));
+        return Err(format!("Failed to link scale->buffersink: {}", ffmpeg_err(link_ret)));
+    }
+
+    let params = ffi::av_buffersrc_parameters_alloc();
+    if params.is_null() {
+        ffi::avfilter_graph_free(&mut (graph as *mut _));
+        return Err("Failed to alloc buffersrc parameters".to_string());
+    }
+    (*params).hw_frames_ctx = ffi::av_buffer_ref(dec_hw_frames_ctx);
+    let param_ret = ffi::av_buffersrc_parameters_set(src_ctx, params);
+    ffi::av_free(params.cast());
+    if param_ret < 0 {
+        ffi::avfilter_graph_free(&mut (graph as *mut _));
+        return Err(format!("Failed to set buffersrc params: {}", ffmpeg_err(param_ret)));
+    }
+
+    let config_ret = ffi::avfilter_graph_config(graph, ptr::null_mut());
+    if config_ret < 0 {
+        ffi::avfilter_graph_free(&mut (graph as *mut _));
+        return Err(format!("Failed to configure filter graph: {}", ffmpeg_err(config_ret)));
+    }
+
+    let frame = ffi::av_frame_alloc();
+    if frame.is_null() {
+        ffi::avfilter_graph_free(&mut (graph as *mut _));
+        return Err("Failed to allocate hw scale frame".to_string());
+    }
+
+    Ok(HwScaleContext {
+        graph,
+        src_ctx,
+        sink_ctx,
+        frame,
+    })
 }
 
 /// Attempt to initialize hardware decoder for zero-copy path.
