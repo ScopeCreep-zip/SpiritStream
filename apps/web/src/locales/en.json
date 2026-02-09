@@ -19,7 +19,13 @@
       "aac": "AAC",
       "libmp3lame": "MP3",
       "libopus": "Opus"
-    }
+    },
+    "channels": {
+      "mono": "Mono",
+      "stereo": "Stereo",
+      "multiple": "{{count}} channels"
+    },
+    "sampleRateKHz": "{{value}} kHz"
   },
   "common": {
     "add": "Add",
@@ -44,6 +50,7 @@
     "hidePassword": "Hide password",
     "hideStreamKey": "Hide stream key",
     "info": "Info",
+    "loadProfileFirst": "Please load a profile first",
     "loading": "Loading...",
     "manage": "Manage",
     "next": "Next",
@@ -57,6 +64,7 @@
     "saveChanges": "Save Changes",
     "saving": "Saving...",
     "search": "Search",
+    "select": "Select",
     "selectProfile": "Please select a profile first.",
     "show": "Show",
     "showPassword": "Show password",
@@ -148,9 +156,13 @@
     }
   },
   "connection": {
+    "attemptingConnection": "Attempting to connect to:",
     "connected": "Connected",
     "connecting": "Connecting...",
     "disconnected": "Disconnected",
+    "errorDescription": "The backend server is not responding. Please ensure it is running and try again.",
+    "errorTitle": "Cannot connect to server",
+    "helpText": "If the problem persists, check that the server is running and the URL is correct.",
     "lost": "Connection to backend lost. Attempting to reconnect...",
     "lostBody": "Lost connection to the backend server.",
     "lostTitle": "Connection Lost",
@@ -158,7 +170,9 @@
     "reconnected": "Reconnected to backend",
     "reconnectedBody": "Reconnected to the backend server.",
     "reconnectedTitle": "Connection Restored",
-    "reconnecting": "Reconnecting..."
+    "reconnecting": "Reconnecting...",
+    "retry": "Retry",
+    "retrying": "Retrying..."
   },
   "discord": {
     "attachImage": "Attach Image",
@@ -190,7 +204,14 @@
     "title": "Discord Webhook",
     "webhookSettings": "Webhook Settings",
     "webhookSettingsDescription": "Configure your Discord webhook for go-live notifications",
-    "webhookUrl": "Webhook URL"
+    "webhookUrl": "Webhook URL",
+    "emojiCategories": {
+      "streaming": "Streaming",
+      "reactions": "Reactions",
+      "fun": "Fun"
+    },
+    "markdownExample": "**bold** *italic* __underline__ ~~strikethrough~~ `code` [link](url)",
+    "webhookUrlPlaceholder": "https://discord.com/api/webhooks/..."
   },
   "dashboard": {
     "active": "Active",
@@ -232,6 +253,7 @@
     "targetsCount": "{{count}} targets",
     "testStream": "Test Stream",
     "testing": "Testing...",
+    "testingTarget": "Testing {{name}}...",
     "totalBitrate": "Total Bitrate",
     "uptime": "Uptime",
     "viewers": "Viewers"
@@ -429,6 +451,18 @@
       "title": "Stream Targets"
     }
   },
+  "login": {
+    "authenticating": "Authenticating...",
+    "connectionError": "Connection error. Please try again.",
+    "description": "This SpiritStream server requires authentication. Please enter your API token to continue.",
+    "invalidToken": "Invalid API token",
+    "submit": "Login",
+    "title": "Authentication Required",
+    "tokenHint": "The API token is configured on the server via the SPIRITSTREAM_API_TOKEN environment variable or in settings.",
+    "tokenLabel": "API Token",
+    "tokenPlaceholder": "Enter your API token",
+    "tokenRequired": "API token is required"
+  },
   "logs": {
     "allLevels": "All lvls",
     "allTime": "All",
@@ -560,7 +594,12 @@
     "targetNamePlaceholder": "e.g., YouTube Gaming",
     "thisProfile": "this profile",
     "unlock": "Unlock",
-    "videoSettings": "Video Settings"
+    "videoSettings": "Video Settings",
+    "applicationPlaceholder": "live",
+    "bindAddressPlaceholder": "0.0.0.0",
+    "keyframeIntervalPlaceholder": "2",
+    "portPlaceholder": "1935",
+    "videoBitratePlaceholder": "6000"
   },
   "nav": {
     "chat": "Chat",
@@ -700,6 +739,10 @@
   "settings": {
     "about": "About",
     "aboutDescription": "Application information",
+    "appBehavior": "App Behavior",
+    "appBehaviorDescription": "System-wide application settings.",
+    "appearance": "Appearance",
+    "appearanceDescription": "Theme and language for this profile.",
     "autoDownload": "Auto-Download FFmpeg",
     "autoDownloadDescription": "Automatically download FFmpeg if not found",
     "browse": "Browse",
@@ -707,6 +750,8 @@
     "clearAllData": "Clear All Data",
     "clearConfirm": "Are you sure you want to clear all data? This action cannot be undone.",
     "clearFailed": "Failed to clear data",
+    "dataManagement": "Data Management",
+    "dataManagementDescription": "Export and manage your application data.",
     "dataPrivacy": "Data & Privacy",
     "dataPrivacyDescription": "Manage your data and privacy settings",
     "deleteFFmpeg": "Delete",
@@ -732,11 +777,14 @@
     "ffmpegVersionUnavailable": "No version available for this build",
     "generalDescription": "Configure application preferences",
     "generalSettings": "General Settings",
+    "globalSettings": "Global Settings",
     "github": "GitHub",
     "installTheme": "Install Theme",
     "invalidFfmpegPath": "Invalid FFmpeg path",
     "language": "Language",
     "lastRotated": "Last rotated: {{timestamp}}",
+    "loadError": "Failed to load settings",
+    "loadProfileFirst": "Please load a profile to edit its settings.",
     "logRetention": "Log retention",
     "logRetention14Days": "14 days",
     "logRetention30Days": "30 days",
@@ -746,7 +794,21 @@
     "logRetentionDescription": "How long to keep application log files.",
     "machineKey": "Machine Key",
     "open": "Open",
+    "notificationsSecurity": "Notifications & Security",
+    "notificationsSecurityDescription": "Notification preferences and data security for this profile.",
+    "profileSettings": "Profile Settings",
     "profileStorage": "Profile Storage",
+    "remoteAccess": "Remote Access",
+    "remoteAccessDescription": "Enable the built-in HTTP API so you can manage SpiritStream from another device.",
+    "remoteAccessHost": "Bind host",
+    "remoteAccessHostHelper": "Use 0.0.0.0 to listen on all interfaces.",
+    "remoteAccessPort": "Port",
+    "remoteAccessToggle": "Allow remote web access",
+    "remoteAccessToggleDescription": "When off, the API binds to localhost only. Restart required after changes.",
+    "remoteAccessToken": "Access token (optional)",
+    "remoteAccessTokenHelper": "Clients must send this token as a Bearer auth header when enabled.",
+    "remoteAccessUiToggle": "Serve web GUI from the host",
+    "remoteAccessUiToggleDescription": "When off, the host will not serve the UI files. Restart required after changes.",
     "retryDownload": "Retry Download",
     "rotateMachineKey": "Rotate Machine Key",
     "rotateMachineKeyDescription": "Generate a new machine key and re-encrypt all stored stream keys.",
@@ -847,8 +909,11 @@
   },
   "toast": {
     "configTesting": "Testing configuration...",
+    "configValidNoTargets": "Configuration valid (no targets to test)",
     "dataCleared": "All data has been cleared",
     "dataExported": "Data exported successfully",
+    "allTestsFailed": "All {{count}} targets failed connectivity test",
+    "allTestsPassed": "All {{count}} targets passed connectivity test!",
     "groupDuplicated": "Output group \"{{name}}\" duplicated",
     "groupRemoved": "Output group removed",
     "groupStarted": "Output group started",
@@ -860,6 +925,7 @@
     "profileImported": "Profile imported successfully",
     "profileSaved": "Profile saved successfully",
     "settingsSaved": "Settings saved",
+    "someTestsFailed": "{{passed}} passed, {{failed}} failed",
     "startFailed": "Failed to start streaming: {{error}}",
     "stopFailed": "Failed to stop streaming: {{error}}",
     "streamKeyCopied": "Stream key copied to clipboard",
@@ -867,10 +933,14 @@
     "streamStopped": "Streaming stopped",
     "targetAdded": "Stream target added",
     "targetDeleted": "Stream target deleted",
+    "targetTestFailed": "✗ {{name}}: {{message}}",
+    "targetTestPassed": "✓ {{name}}: Connected ({{ms}}ms)",
     "targetUpdated": "Stream target updated",
     "testFailed": "Stream test failed",
     "testPassed": "All checks passed! Your streaming configuration is valid.",
-    "testingConfig": "Testing stream configuration..."
+    "testingConfig": "Testing stream configuration...",
+    "testingConnectivity": "Testing connectivity to {{count}} targets...",
+    "validatingConfig": "Validating configuration..."
   },
   "validation": {
     "applicationRequired": "Application name is required",

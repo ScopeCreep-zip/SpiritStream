@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 use std::sync::RwLock;
 use crate::models::{Settings, ProfileSettings, ObsIntegrationDirection};
-use crate::services::encryption::Encryption;
+use crate::services::Encryption;
 use serde_json::Value;
 
 /// Legacy fields in settings.json (camelCase) that contain sensitive data and should be decrypted
@@ -22,8 +22,8 @@ const SENSITIVE_FIELDS: &[&str] = &[
 
 /// Manages application settings storage and retrieval
 pub struct SettingsManager {
-    settings_path: PathBuf,
     app_data_dir: PathBuf,
+    settings_path: PathBuf,
     cache: RwLock<Option<Settings>>,
     legacy_profile_settings: RwLock<Option<ProfileSettings>>,
 }
@@ -33,8 +33,8 @@ impl SettingsManager {
     pub fn new(app_data_dir: PathBuf) -> Self {
         let settings_path = app_data_dir.join("settings.json");
         Self {
-            settings_path,
             app_data_dir,
+            settings_path,
             cache: RwLock::new(None),
             legacy_profile_settings: RwLock::new(None),
         }
@@ -50,7 +50,7 @@ impl SettingsManager {
         }
 
         // Try to read from disk
-        let settings = if self.settings_path.exists() {
+        let mut settings: Settings = if self.settings_path.exists() {
             let content = std::fs::read_to_string(&self.settings_path)
                 .map_err(|e| format!("Failed to read settings: {e}"))?;
 
@@ -93,6 +93,14 @@ impl SettingsManager {
             defaults
         };
 
+        // Decrypt sensitive fields
+        if !settings.discord_webhook_url.is_empty() {
+            settings.discord_webhook_url = Encryption::decrypt_stream_key(
+                &settings.discord_webhook_url,
+                &self.app_data_dir,
+            ).unwrap_or_else(|_| settings.discord_webhook_url.clone());
+        }
+
         // Update cache
         if let Ok(mut cache) = self.cache.write() {
             *cache = Some(settings.clone());
@@ -103,9 +111,22 @@ impl SettingsManager {
 
     /// Save settings to disk
     pub fn save(&self, settings: &Settings) -> Result<(), String> {
-        self.save_internal(settings)?;
+        // Clone settings for encryption
+        let mut settings_to_save = settings.clone();
 
-        // Update cache
+        // Encrypt sensitive fields before saving
+        if !settings_to_save.discord_webhook_url.is_empty()
+            && !Encryption::is_stream_key_encrypted(&settings_to_save.discord_webhook_url)
+        {
+            settings_to_save.discord_webhook_url = Encryption::encrypt_stream_key(
+                &settings_to_save.discord_webhook_url,
+                &self.app_data_dir,
+            )?;
+        }
+
+        self.save_internal(&settings_to_save)?;
+
+        // Update cache with decrypted version
         if let Ok(mut cache) = self.cache.write() {
             *cache = Some(settings.clone());
         }

@@ -317,7 +317,7 @@ impl ProfileManager {
         Ok(())
     }
 
-    /// Encrypt sensitive fields in profile settings (OBS password, Discord webhook, backend token, YouTube API key)
+    /// Encrypt sensitive fields in profile settings (OBS password, Discord webhook, backend token, YouTube API key, OAuth tokens)
     fn encrypt_profile_settings(&self, profile: &mut Profile) -> Result<(), String> {
         // Encrypt OBS password
         if !profile.settings.obs.password.is_empty()
@@ -380,7 +380,7 @@ impl ProfileManager {
         Ok(())
     }
 
-    /// Decrypt sensitive fields in profile settings (OBS password, Discord webhook, backend token, YouTube API key)
+    /// Decrypt sensitive fields in profile settings (OBS password, Discord webhook, backend token, YouTube API key, OAuth tokens)
     fn decrypt_profile_settings(&self, profile: &mut Profile) -> Result<(), String> {
         // Decrypt OBS password
         if Encryption::is_stream_key_encrypted(&profile.settings.obs.password) {
@@ -423,7 +423,6 @@ impl ProfileManager {
             profile.settings.oauth.youtube.refresh_token =
                 Encryption::decrypt_stream_key(&profile.settings.oauth.youtube.refresh_token, &self.app_data_dir)?;
         }
-
         Ok(())
     }
 
@@ -512,5 +511,64 @@ impl ProfileManager {
             profile.output_groups.iter().map(|g| g.stream_targets.len()).sum::<usize>()
         );
         Ok(profile)
+    }
+
+    /// Re-encrypt all profiles when encryption setting is toggled on
+    /// This loads each unencrypted JSON profile, encrypts stream keys, and saves it
+    pub async fn encrypt_all_profiles(&self) -> Result<usize, String> {
+        log::info!("Encrypting stream keys in all profiles");
+        let mut count = 0;
+
+        let entries = std::fs::read_dir(&self.profiles_dir)
+            .map_err(|e| format!("Failed to read profiles directory: {e}"))?;
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+
+            // Only process unencrypted JSON profiles
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+
+            let name = match path.file_stem().and_then(|n| n.to_str()) {
+                Some(n) => n.to_string(),
+                None => continue,
+            };
+
+            // Load the profile (will decrypt any already-encrypted keys)
+            let mut profile = match self.load(&name, None).await {
+                Ok(p) => p,
+                Err(e) => {
+                    log::warn!("Skipping profile {name}: {e}");
+                    continue;
+                }
+            };
+
+            // Check if any keys need encryption
+            let needs_encryption = profile.output_groups.iter().any(|g| {
+                g.stream_targets.iter().any(|t| {
+                    !t.stream_key.is_empty() && !Encryption::is_stream_key_encrypted(&t.stream_key)
+                })
+            });
+
+            if !needs_encryption {
+                continue;
+            }
+
+            // Encrypt stream keys
+            self.encrypt_stream_keys(&mut profile)?;
+
+            // Save the profile (no password for unencrypted profiles)
+            let content = serde_json::to_string_pretty(&profile)
+                .map_err(|e| format!("Failed to serialize profile: {e}"))?;
+            std::fs::write(&path, content)
+                .map_err(|e| format!("Failed to write profile: {e}"))?;
+
+            log::info!("Encrypted stream keys in profile: {name}");
+            count += 1;
+        }
+
+        log::info!("Encrypted stream keys in {count} profiles");
+        Ok(count)
     }
 }

@@ -11,6 +11,9 @@ import {
   Image as ImageIcon,
   X,
   Smile,
+  Eye,
+  EyeOff,
+  Copy,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -29,18 +32,18 @@ const AUTO_SAVE_DELAY = 500;
 // Common emojis for streaming
 const EMOJI_CATEGORIES = [
   {
-    name: 'Streaming',
+    nameKey: 'discord.emojiCategories.streaming',
     emojis: ['🎮', '🔴', '📺', '🎬', '🎥', '📡', '🎙️', '🎧', '🕹️', '💻'],
   },
   {
-    name: 'Reactions',
+    nameKey: 'discord.emojiCategories.reactions',
     emojis: ['🔥', '💯', '⭐', '✨', '💪', '🎉', '🚀', '👀', '❤️', '💜'],
   },
   {
-    name: 'Fun',
+    nameKey: 'discord.emojiCategories.fun',
     emojis: ['😎', '🤩', '😄', '🥳', '👋', '🙌', '👏', '💬', '📢', '🔔'],
   },
-];
+] as const;
 
 export function DiscordPanel() {
   const { t } = useTranslation();
@@ -62,6 +65,7 @@ export function DiscordPanel() {
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showWebhookUrl, setShowWebhookUrl] = useState(false);
 
   // Refs
   const saveTimeoutRef = useRef<number | null>(null);
@@ -275,6 +279,17 @@ export function DiscordPanel() {
     }
   }, [webhookUrl, t]);
 
+  // Copy webhook URL to clipboard
+  const handleCopyWebhookUrl = useCallback(async () => {
+    if (!webhookUrl) return;
+    try {
+      await navigator.clipboard.writeText(webhookUrl);
+      toast.success(t('common.copied'));
+    } catch {
+      toast.error(t('common.error'));
+    }
+  }, [webhookUrl, t]);
+
   // Validate webhook URL format
   const isValidWebhookUrl =
     webhookUrl.startsWith('https://discord.com/api/webhooks/') ||
@@ -323,14 +338,38 @@ export function DiscordPanel() {
 
             {/* Webhook URL */}
             <div className="space-y-2">
-              <Input
-                label={t('discord.webhookUrl')}
-                value={webhookUrl}
-                onChange={(e) => setWebhookUrl(e.target.value)}
-                onBlur={handleUrlBlur}
-                placeholder="https://discord.com/api/webhooks/..."
-                disabled={!webhookEnabled}
-              />
+              <div className="flex items-end gap-1">
+                <div className="flex-1">
+                  <Input
+                    label={t('discord.webhookUrl')}
+                    type={showWebhookUrl ? 'text' : 'password'}
+                    value={webhookUrl}
+                    onChange={(e) => setWebhookUrl(e.target.value)}
+                    onBlur={handleUrlBlur}
+                    placeholder={t('discord.webhookUrlPlaceholder')}
+                    disabled={!webhookEnabled}
+                    autoComplete="off"
+                  />
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowWebhookUrl(!showWebhookUrl)}
+                  aria-label={showWebhookUrl ? t('common.hide') : t('common.show')}
+                  disabled={!webhookEnabled}
+                >
+                  {showWebhookUrl ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleCopyWebhookUrl}
+                  aria-label={t('common.copy')}
+                  disabled={!webhookEnabled || !webhookUrl}
+                >
+                  <Copy className="w-4 h-4" />
+                </Button>
+              </div>
               {webhookUrl && !isValidWebhookUrl && (
                 <div className="flex items-center gap-2 text-xs text-[var(--status-error)]">
                   <AlertCircle className="w-3 h-3" />
@@ -466,9 +505,9 @@ export function DiscordPanel() {
                 {showEmojiPicker && (
                   <div className="absolute right-0 top-full mt-1 z-50 p-2 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-default)] shadow-lg w-64">
                     {EMOJI_CATEGORIES.map((category) => (
-                      <div key={category.name} className="mb-2 last:mb-0">
+                      <div key={category.nameKey} className="mb-2 last:mb-0">
                         <div className="text-xs text-[var(--text-tertiary)] mb-1 px-1">
-                          {category.name}
+                          {t(category.nameKey)}
                         </div>
                         <div className="flex flex-wrap gap-1">
                           {category.emojis.map((emoji) => (
@@ -496,7 +535,7 @@ export function DiscordPanel() {
             <div className="text-xs text-[var(--text-tertiary)] space-y-1">
               <p>{t('discord.markdownSupport')}</p>
               <p className="font-mono">
-                **bold** *italic* __underline__ ~~strikethrough~~ `code` [link](url)
+                {t('discord.markdownExample')}
               </p>
             </div>
           </div>

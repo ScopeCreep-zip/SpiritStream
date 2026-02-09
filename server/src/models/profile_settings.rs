@@ -1,4 +1,4 @@
-// Profile Settings Model
+﻿// Profile Settings Model
 // Per-profile configuration for theme, integrations, and security settings
 
 use serde::{Deserialize, Serialize};
@@ -41,7 +41,7 @@ fn default_obs_port() -> u16 {
 }
 
 fn default_discord_go_live_message() -> String {
-    "**Stream is now live!**\n\nCome join the stream!".to_string()
+    "**Stream is now live!** 🎮\n\nCome join the stream!".to_string()
 }
 
 fn default_discord_cooldown_enabled() -> bool {
@@ -55,7 +55,6 @@ fn default_discord_cooldown_seconds() -> u32 {
 fn default_chat_visibility_panel_collapsed() -> bool {
     true
 }
-
 // ============================================================================
 // Backend/Remote Access Settings
 // ============================================================================
@@ -378,7 +377,6 @@ pub struct ProfileSettings {
     /// Discord webhook integration settings
     #[serde(default)]
     pub discord: DiscordSettings,
-
     /// Chat integration settings
     #[serde(default)]
     pub chat: ChatSettings,
@@ -413,18 +411,18 @@ impl ProfileSettings {
             && self.language == default_language()
             && self.show_notifications == default_show_notifications()
             && self.encrypt_stream_keys == default_encrypt_stream_keys()
-            && self.backend.remote_enabled == false
-            && self.backend.ui_enabled == false
+            && !self.backend.remote_enabled
+            && !self.backend.ui_enabled
             && self.backend.host == default_backend_host()
             && self.backend.port == default_backend_port()
             && self.backend.token.is_empty()
             && self.obs.host == default_obs_host()
             && self.obs.port == default_obs_port()
             && self.obs.password.is_empty()
-            && self.obs.use_auth == false
+            && !self.obs.use_auth
             && self.obs.direction == ObsIntegrationDirection::default()
-            && self.obs.auto_connect == false
-            && self.discord.webhook_enabled == false
+            && !self.obs.auto_connect
+            && !self.discord.webhook_enabled
             && self.discord.webhook_url.is_empty()
             && self.discord.go_live_message == default_discord_go_live_message()
             && self.discord.cooldown_enabled == default_discord_cooldown_enabled()
@@ -435,13 +433,13 @@ impl ProfileSettings {
             && self.chat.trovo_channel_id.is_empty()
             && self.chat.stripchat_username.is_empty()
             && self.chat.youtube_api_key.is_empty()
-            && self.chat.twitch_send_enabled == false
-            && self.chat.youtube_send_enabled == false
-            && self.chat.trovo_send_enabled == false
-            && self.chat.stripchat_send_enabled == false
-            && self.chat.send_all_enabled == true
-            && self.chat.crosspost_enabled == false
-            && self.chat.youtube_use_api_key == false
+            && !self.chat.twitch_send_enabled
+            && !self.chat.youtube_send_enabled
+            && !self.chat.trovo_send_enabled
+            && !self.chat.stripchat_send_enabled
+            && self.chat.send_all_enabled
+            && !self.chat.crosspost_enabled
+            && !self.chat.youtube_use_api_key
             && self.chat.visible_platforms.is_empty()
             && self.chat.visibility_panel_collapsed == default_chat_visibility_panel_collapsed()
             && self.oauth.twitch.access_token.is_empty()
@@ -708,3 +706,4 @@ impl ProfileSettings {
         changed
     }
 }
+

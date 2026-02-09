@@ -1,7 +1,7 @@
 {
   "$schema": "../../../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "SpiritStream",
-  "version": "1.1.1",
+  "version": "1.2.1",
   "identifier": "com.spiritstream.desktop",
   "build": {
     "frontendDist": "../../web/dist",
@@ -27,7 +27,9 @@
     "security": {
       "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:8008 http://localhost:8008 ws://127.0.0.1:8008 ws://localhost:8008",
       "devCsp": "default-src 'self' http://localhost:1420 http://127.0.0.1:1420; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost http://localhost:1420 http://127.0.0.1:1420 ws://localhost:1420 ws://127.0.0.1:1420 http://localhost:8008 http://127.0.0.1:8008 ws://localhost:8008 ws://127.0.0.1:8008",
-      "dangerousDisableAssetCspModification": ["style-src"]
+      "dangerousDisableAssetCspModification": [
+        "style-src"
+      ]
     }
   },
   "bundle": {
@@ -42,14 +44,14 @@
     "resources": {
       "../../../themes/*.jsonc": "themes/"
     },
-      "icon": [
-        "icons/32x32.png",
-        "icons/128x128.png",
-        "icons/128x128@2x.png",
-        "icons/icon.png",
-        "icons/icon.icns",
-        "icons/icon.ico"
-      ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
     "windows": {
       "webviewInstallMode": {
         "type": "downloadBootstrapper"
@@ -71,10 +73,14 @@
         }
       },
       "deb": {
-        "depends": ["ffmpeg"]
+        "depends": [
+          "ffmpeg"
+        ]
       },
       "rpm": {
-        "depends": ["ffmpeg"]
+        "depends": [
+          "ffmpeg"
+        ]
       }
     },
     "shortDescription": "Multi-destination streaming application",

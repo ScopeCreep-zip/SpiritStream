@@ -25,6 +25,9 @@ const INITIAL_RETRY_DELAY = 2000; // 2 seconds
 const MAX_RETRY_DELAY = 30000; // 30 seconds
 const RETRY_BACKOFF_MULTIPLIER = 1.5;
 
+// Delay before triggering SpiritStream when OBS starts streaming (ms)
+const OBS_TO_SPIRITSTREAM_DELAY_MS = 2000;
+
 /**
  * Hook that listens for OBS WebSocket events and handles:
  * 1. Connection status updates to the OBS store
@@ -274,9 +277,12 @@ export function useObsEvents() {
           const { bindAddress, port, application } = currentProfile.input;
           const incomingUrl = `rtmp://${bindAddress}:${port}/${application}`;
 
-          startAllGroups(eligibleGroups, incomingUrl).catch((error) => {
-            console.error('[useObsEvents] Failed to start SpiritStream:', error);
-          });
+          // Add delay before starting SpiritStream to let OBS stabilize
+          setTimeout(() => {
+            startAllGroups(eligibleGroups, incomingUrl).catch((error) => {
+              console.error('[useObsEvents] Failed to start SpiritStream:', error);
+            });
+          }, OBS_TO_SPIRITSTREAM_DELAY_MS);
         }
 
         // OBS stopped streaming -> Stop SpiritStream

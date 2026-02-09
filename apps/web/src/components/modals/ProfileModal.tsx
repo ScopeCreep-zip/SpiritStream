@@ -261,7 +261,7 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 1fr', gap: '12px' }}>
             <Input
               label={t('modals.bindAddress')}
-              placeholder="0.0.0.0"
+              placeholder={t('modals.bindAddressPlaceholder')}
               value={formData.bindAddress}
               onChange={handleChange('bindAddress')}
               error={errors.bindAddress}
@@ -270,14 +270,14 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
             <Input
               label={t('modals.port')}
               type="number"
-              placeholder="1935"
+              placeholder={t('modals.portPlaceholder')}
               value={formData.port}
               onChange={handleChange('port')}
               error={errors.port}
             />
             <Input
               label={t('modals.application')}
-              placeholder="live"
+              placeholder={t('modals.applicationPlaceholder')}
               value={formData.application}
               onChange={handleChange('application')}
               error={errors.application}

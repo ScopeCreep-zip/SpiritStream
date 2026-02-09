@@ -287,7 +287,7 @@ export const createDefaultObsSettings = (): ObsSettings => ({
 export const createDefaultDiscordSettings = (): DiscordSettings => ({
   webhookEnabled: false,
   webhookUrl: '',
-  goLiveMessage: '**Stream is now live!**\n\nCome join the stream!',
+  goLiveMessage: '**Stream is now live!** 🎮\n\nCome join the stream!',
   cooldownEnabled: true,
   cooldownSeconds: 60,
   imagePath: '',
@@ -323,7 +323,6 @@ export const createDefaultOAuthSettings = (): OAuthSettings => ({
   twitch: createDefaultOAuthProfileAccount(),
   youtube: createDefaultOAuthProfileAccount(),
 });
-
 export const createDefaultProfileSettings = (): ProfileSettings => ({
   themeId: 'spirit-dark',
   language: 'en',

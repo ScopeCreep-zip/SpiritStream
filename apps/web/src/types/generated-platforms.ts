@@ -122,7 +122,7 @@ export const PLATFORMS: Record<Platform, {
     abbreviation: 'YT',
     color: '#FF0000',
     textColor: '#FFFFFF',
-    defaultServer: 'rtmps://a.rtmps.youtube.com:443/live2',
+    defaultServer: 'rtmps://a.rtmps.youtube.com/live2',
     streamKeyPlacement: 'append',
   },
   'Twitch': {

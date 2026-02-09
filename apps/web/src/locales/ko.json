@@ -19,7 +19,13 @@
       "aac": "AAC",
       "libmp3lame": "MP3",
       "libopus": "작"
-    }
+    },
+    "channels": {
+      "mono": "Mono",
+      "stereo": "Stereo",
+      "multiple": "{{count}} channels"
+    },
+    "sampleRateKHz": "{{value}} kHz"
   },
   "common": {
     "add": "추가하다",
@@ -66,7 +72,9 @@
     "switchToLightMode": "조명 모드로 전환",
     "unnamed": "이름 없음",
     "warning": "경고",
-    "yes": "예"
+    "yes": "예",
+    "loadProfileFirst": "Please load a profile first",
+    "select": "Select"
   },
   "connection": {
     "connected": "Connected",
@@ -79,7 +87,13 @@
     "reconnected": "Reconnected to backend",
     "reconnectedBody": "Reconnected to the backend server.",
     "reconnectedTitle": "Connection Restored",
-    "reconnecting": "Reconnecting..."
+    "reconnecting": "Reconnecting...",
+    "attemptingConnection": "Attempting to connect to:",
+    "errorTitle": "Cannot connect to server",
+    "errorDescription": "The backend server is not responding. Please ensure it is running and try again.",
+    "helpText": "If the problem persists, check that the server is running and the URL is correct.",
+    "retry": "Retry",
+    "retrying": "Retrying..."
   },
   "dashboard": {
     "active": "활성",
@@ -123,7 +137,8 @@
     "testing": "테스트 중...",
     "totalBitrate": "총 비트레이트",
     "uptime": "가동 시간",
-    "viewers": "시청자"
+    "viewers": "시청자",
+    "testingTarget": "Testing {{name}}..."
   },
   "encoder": {
     "addEncoder": "인코더 추가",
@@ -445,7 +460,12 @@
     "targetNamePlaceholder": "예: YouTube 게임",
     "thisProfile": "이 프로필",
     "unlock": "터놓다",
-    "videoSettings": "비디오 설정"
+    "videoSettings": "비디오 설정",
+    "applicationPlaceholder": "live",
+    "bindAddressPlaceholder": "0.0.0.0",
+    "keyframeIntervalPlaceholder": "2",
+    "portPlaceholder": "1935",
+    "videoBitratePlaceholder": "6000"
   },
   "nav": {
     "configuration": "구성",
@@ -660,7 +680,30 @@
     "updateAvailable": "업데이트 가능",
     "updateFFmpeg": "FFmpeg 업데이트",
     "updates": "업데이트",
-    "version": "버전"
+    "version": "버전",
+    "profileSettings": "Profile Settings",
+    "globalSettings": "Global Settings",
+    "appearance": "Appearance",
+    "appearanceDescription": "Theme and language for this profile.",
+    "notificationsSecurity": "Notifications & Security",
+    "notificationsSecurityDescription": "Notification preferences and data security for this profile.",
+    "remoteAccess": "Remote Access",
+    "remoteAccessDescription": "Enable the built-in HTTP API so you can manage SpiritStream from another device.",
+    "remoteAccessToggle": "Allow remote web access",
+    "remoteAccessToggleDescription": "When off, the API binds to localhost only. Restart required after changes.",
+    "remoteAccessUiToggle": "Serve web GUI from the host",
+    "remoteAccessUiToggleDescription": "When off, the host will not serve the UI files. Restart required after changes.",
+    "remoteAccessHost": "Bind host",
+    "remoteAccessHostHelper": "Use 0.0.0.0 to listen on all interfaces.",
+    "remoteAccessPort": "Port",
+    "remoteAccessToken": "Access token (optional)",
+    "remoteAccessTokenHelper": "Clients must send this token as a Bearer auth header when enabled.",
+    "appBehavior": "App Behavior",
+    "appBehaviorDescription": "System-wide application settings.",
+    "dataManagement": "Data Management",
+    "dataManagementDescription": "Export and manage your application data.",
+    "loadError": "Failed to load settings",
+    "loadProfileFirst": "Please load a profile to edit its settings."
   },
   "status": {
     "active": "활동적인",
@@ -754,7 +797,15 @@
     "testPassed": "모든 점검이 통과되었습니다! 스트리밍 구성이 유효합니다.",
     "testingConfig": "스트림 구성 테스트 중...",
     "groupStarted": "출력 그룹 시작됨",
-    "groupStopped": "출력 그룹 중지됨"
+    "groupStopped": "출력 그룹 중지됨",
+    "validatingConfig": "Validating configuration...",
+    "configValidNoTargets": "Configuration valid (no targets to test)",
+    "testingConnectivity": "Testing connectivity to {{count}} targets...",
+    "targetTestPassed": "✓ {{name}}: Connected ({{ms}}ms)",
+    "targetTestFailed": "✗ {{name}}: {{message}}",
+    "allTestsPassed": "All {{count}} targets passed connectivity test!",
+    "someTestsFailed": "{{passed}} passed, {{failed}} failed",
+    "allTestsFailed": "All {{count}} targets failed connectivity test"
   },
   "validation": {
     "applicationRequired": "애플리케이션 이름은 필수 항목입니다.",
@@ -807,6 +858,25 @@
     "title": "Discord 웹훅",
     "webhookSettings": "웹훅 설정",
     "webhookSettingsDescription": "라이브 시작 알림을 위한 Discord 웹훅을 설정하세요",
-    "webhookUrl": "웹훅 URL"
+    "webhookUrl": "웹훅 URL",
+    "emojiCategories": {
+      "streaming": "Streaming",
+      "reactions": "Reactions",
+      "fun": "Fun"
+    },
+    "markdownExample": "**bold** *italic* __underline__ ~~strikethrough~~ `code` [link](url)",
+    "webhookUrlPlaceholder": "https://discord.com/api/webhooks/..."
+  },
+  "login": {
+    "title": "Authentication Required",
+    "description": "This SpiritStream server requires authentication. Please enter your API token to continue.",
+    "tokenLabel": "API Token",
+    "tokenPlaceholder": "Enter your API token",
+    "tokenRequired": "API token is required",
+    "invalidToken": "Invalid API token",
+    "connectionError": "Connection error. Please try again.",
+    "tokenHint": "The API token is configured on the server via the SPIRITSTREAM_API_TOKEN environment variable or in settings.",
+    "authenticating": "Authenticating...",
+    "submit": "Login"
   }
 }
