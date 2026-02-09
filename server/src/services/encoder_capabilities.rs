@@ -198,11 +198,30 @@ impl EncoderCapabilities {
     /// Probe NVENC - native first, CLI fallback
     fn probe_nvenc(probe_errors: &mut Vec<String>) -> NvencCaps {
         log::debug!("  Attempting native NVENC probe...");
-        let native_caps = native_nvenc::probe();
+        let mut native_caps = native_nvenc::probe();
+
+        let ffmpeg_h264 = Self::encoder_available_for_probe("h264_nvenc");
+        let ffmpeg_hevc = Self::encoder_available_for_probe("hevc_nvenc");
+        let ffmpeg_av1 = Self::encoder_available_for_probe("av1_nvenc");
 
         if native_caps.available {
             log::debug!("  Native NVENC probe succeeded");
+
+            native_caps.h264 &= ffmpeg_h264;
+            native_caps.hevc &= ffmpeg_hevc;
+            native_caps.av1 &= ffmpeg_av1;
+            native_caps.available = native_caps.h264 || native_caps.hevc || native_caps.av1;
+
+            if !native_caps.available {
+                probe_errors.push("nvenc: ffmpeg build lacks nvenc encoders".to_string());
+            }
+
             return native_caps;
+        }
+
+        if !ffmpeg_h264 && !ffmpeg_hevc && !ffmpeg_av1 {
+            probe_errors.push("nvenc: not compiled into ffmpeg".to_string());
+            return NvencCaps::default();
         }
 
         log::debug!("  Native NVENC probe failed, falling back to CLI...");
@@ -212,11 +231,30 @@ impl EncoderCapabilities {
     /// Probe AMF - native first, CLI fallback
     fn probe_amf(probe_errors: &mut Vec<String>) -> AmfCaps {
         log::debug!("  Attempting native AMF probe...");
-        let native_caps = native_amf::probe();
+        let mut native_caps = native_amf::probe();
+
+        let ffmpeg_h264 = Self::encoder_available_for_probe("h264_amf");
+        let ffmpeg_hevc = Self::encoder_available_for_probe("hevc_amf");
+        let ffmpeg_av1 = Self::encoder_available_for_probe("av1_amf");
 
         if native_caps.available {
             log::debug!("  Native AMF probe succeeded");
+
+            native_caps.h264 &= ffmpeg_h264;
+            native_caps.hevc &= ffmpeg_hevc;
+            native_caps.av1 &= ffmpeg_av1;
+            native_caps.available = native_caps.h264 || native_caps.hevc || native_caps.av1;
+
+            if !native_caps.available {
+                probe_errors.push("amf: ffmpeg build lacks amf encoders".to_string());
+            }
+
             return native_caps;
+        }
+
+        if !ffmpeg_h264 && !ffmpeg_hevc && !ffmpeg_av1 {
+            probe_errors.push("amf: not compiled into ffmpeg".to_string());
+            return AmfCaps::default();
         }
 
         log::debug!("  Native AMF probe failed, falling back to CLI...");
@@ -226,11 +264,30 @@ impl EncoderCapabilities {
     /// Probe QSV - native first, CLI fallback
     fn probe_qsv(probe_errors: &mut Vec<String>) -> QsvCaps {
         log::debug!("  Attempting native QSV probe...");
-        let native_caps = native_qsv::probe();
+        let mut native_caps = native_qsv::probe();
+
+        let ffmpeg_h264 = Self::encoder_available_for_probe("h264_qsv");
+        let ffmpeg_hevc = Self::encoder_available_for_probe("hevc_qsv");
+        let ffmpeg_av1 = Self::encoder_available_for_probe("av1_qsv");
 
         if native_caps.available {
             log::debug!("  Native QSV probe succeeded");
+
+            native_caps.h264 &= ffmpeg_h264;
+            native_caps.hevc &= ffmpeg_hevc;
+            native_caps.av1 &= ffmpeg_av1;
+            native_caps.available = native_caps.h264 || native_caps.hevc || native_caps.av1;
+
+            if !native_caps.available {
+                probe_errors.push("qsv: ffmpeg build lacks qsv encoders".to_string());
+            }
+
             return native_caps;
+        }
+
+        if !ffmpeg_h264 && !ffmpeg_hevc && !ffmpeg_av1 {
+            probe_errors.push("qsv: not compiled into ffmpeg".to_string());
+            return QsvCaps::default();
         }
 
         log::debug!("  Native QSV probe failed, falling back to CLI...");
@@ -240,11 +297,28 @@ impl EncoderCapabilities {
     /// Probe VideoToolbox - native first, CLI fallback
     fn probe_videotoolbox(probe_errors: &mut Vec<String>) -> VideoToolboxCaps {
         log::debug!("  Attempting native VideoToolbox probe...");
-        let native_caps = native_videotoolbox::probe();
+        let mut native_caps = native_videotoolbox::probe();
+
+        let ffmpeg_h264 = Self::encoder_available_for_probe("h264_videotoolbox");
+        let ffmpeg_hevc = Self::encoder_available_for_probe("hevc_videotoolbox");
 
         if native_caps.available {
             log::debug!("  Native VideoToolbox probe succeeded");
+
+            native_caps.h264 &= ffmpeg_h264;
+            native_caps.hevc &= ffmpeg_hevc;
+            native_caps.available = native_caps.h264 || native_caps.hevc;
+
+            if !native_caps.available {
+                probe_errors.push("videotoolbox: ffmpeg build lacks videotoolbox encoders".to_string());
+            }
+
             return native_caps;
+        }
+
+        if !ffmpeg_h264 && !ffmpeg_hevc {
+            probe_errors.push("videotoolbox: not compiled into ffmpeg".to_string());
+            return VideoToolboxCaps::default();
         }
 
         log::debug!("  Native VideoToolbox probe failed, falling back to CLI...");
@@ -507,6 +581,17 @@ impl EncoderCapabilities {
         Self::run_ffmpeg(&["-encoders", "-hide_banner"])
             .map(|output| output.contains(encoder_name))
             .unwrap_or(false)
+    }
+
+    fn encoder_available_for_probe(encoder_name: &str) -> bool {
+        #[cfg(feature = "ffmpeg-libs")]
+        {
+            Self::encoder_available_via_libs(encoder_name)
+        }
+        #[cfg(not(feature = "ffmpeg-libs"))]
+        {
+            Self::encoder_available(encoder_name)
+        }
     }
 
     #[cfg(feature = "ffmpeg-libs")]
