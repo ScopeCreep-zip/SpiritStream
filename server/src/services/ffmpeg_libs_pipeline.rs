@@ -2745,6 +2745,20 @@ unsafe fn apply_encoder_options(
     is_twitch_target: bool,
 ) {
     let name_lower = encoder_name.to_ascii_lowercase();
+    let is_low_latency_preset = preset
+        .map(|value| {
+            let lower = value.trim().to_ascii_lowercase();
+            matches!(
+                lower.as_str(),
+                "low_latency"
+                    | "low-latency"
+                    | "lowlatency"
+                    | "ll"
+                    | "llhq"
+                    | "llhp"
+            )
+        })
+        .unwrap_or(false);
 
     // Apply preset if provided
     if let Some(preset_val) = preset {
@@ -2754,16 +2768,22 @@ unsafe fn apply_encoder_options(
         if name_lower.contains("nvenc") {
             let key = CString::new("preset").unwrap();
             // NVENC presets: p1-p7 or names like "fast", "medium", "slow"
-            let preset_lower = preset_val.to_lowercase();
+            let preset_lower = preset_val.trim().to_ascii_lowercase();
             let nvenc_preset = match preset_lower.as_str() {
-                "ultrafast" | "superfast" | "veryfast" => "p1",
-                "faster" | "fast" => "p2",
-                "medium" => "p4",
-                "slow" => "p5",
-                "slower" | "veryslow" => "p6",
-                "placebo" => "p7",
-                p if p.starts_with('p') => p, // Already p1-p7 format
-                _ => preset_val,
+                "p1" | "p2" | "p3" | "p4" | "p5" | "p6" | "p7" | "default" | "slow"
+                | "medium" | "fast" | "hp" | "hq" | "bd" | "ll" | "llhq" | "llhp"
+                | "lossless" | "losslesshp" => preset_lower.as_str(),
+                "ultrafast" => "p1",
+                "superfast" => "p2",
+                "veryfast" => "p3",
+                "faster" => "p4",
+                "slower" => "p6",
+                "veryslow" => "p7",
+                "quality" => "p7",
+                "balanced" => "p4",
+                "performance" => "p2",
+                "low_latency" | "low-latency" | "lowlatency" => "p1",
+                _ => "p4",
             };
             let val = CString::new(nvenc_preset).unwrap_or_default();
             ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
@@ -2794,6 +2814,12 @@ unsafe fn apply_encoder_options(
             };
             let val = CString::new(amf_quality).unwrap_or_default();
             ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
+
+            if is_low_latency_preset {
+                let key = CString::new("usage").unwrap();
+                let val = CString::new("lowlatency").unwrap();
+                ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
+            }
         } else if name_lower.contains("videotoolbox") {
             // VideoToolbox doesn't have presets, it uses realtime flag
             let preset_lower = preset_val.to_lowercase();
@@ -2933,10 +2959,12 @@ unsafe fn apply_encoder_options(
 
     // Apply common hardware encoder optimizations
     if name_lower.contains("nvenc") {
-        // NVENC tuning for streaming
-        let key = CString::new("tune").unwrap();
-        let val = CString::new("ll").unwrap(); // low latency
-        ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
+        if is_low_latency_preset {
+            // NVENC tuning for low-latency streaming
+            let key = CString::new("tune").unwrap();
+            let val = CString::new("ll").unwrap(); // low latency
+            ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
+        }
 
         // Use CBR rate control for streaming
         let key = CString::new("rc").unwrap();
@@ -2951,13 +2979,14 @@ unsafe fn apply_encoder_options(
         let val = CString::new("cbr").unwrap();
         ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
 
-        // Low latency mode
-        let key = CString::new("usage").unwrap();
-        let val = CString::new("lowlatency").unwrap();
-        ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
+        if is_low_latency_preset {
+            let key = CString::new("usage").unwrap();
+            let val = CString::new("lowlatency").unwrap();
+            ffi::av_opt_set(enc_ctx.cast(), key.as_ptr(), val.as_ptr(), 0);
 
-        // Disable B-frames for streaming (improves latency and compatibility)
-        (*enc_ctx).max_b_frames = 0;
+            // Disable B-frames for low-latency streaming
+            (*enc_ctx).max_b_frames = 0;
+        }
     }
 
     // Software encoder CBR enforcement (libx264, libx265)
