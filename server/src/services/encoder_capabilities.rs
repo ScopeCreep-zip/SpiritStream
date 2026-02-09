@@ -17,6 +17,9 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 use crate::services::FFmpegDownloader;
 
+#[cfg(feature = "ffmpeg-libs")]
+use ffmpeg_sys_next as ffi;
+
 /// NVENC (NVIDIA) encoder capabilities
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NvencCaps {
@@ -133,8 +136,10 @@ impl EncoderCapabilities {
 
     /// Probe without caching
     fn probe_uncached() -> EncoderCapabilities {
-        let mut caps = EncoderCapabilities::default();
-        caps.probed_at = Some(chrono::Utc::now().to_rfc3339());
+        let mut caps = EncoderCapabilities {
+            probed_at: Some(chrono::Utc::now().to_rfc3339()),
+            ..Default::default()
+        };
 
         log::info!("=== Starting encoder capability probe ===");
 
@@ -163,7 +168,14 @@ impl EncoderCapabilities {
             caps.videotoolbox.hardware_accelerated);
 
         log::info!("Probing software encoders...");
-        caps.software = Self::probe_software_via_cli(&mut caps.probe_errors);
+        #[cfg(feature = "ffmpeg-libs")]
+        {
+            caps.software = Self::probe_software_via_libs(&mut caps.probe_errors);
+        }
+        #[cfg(not(feature = "ffmpeg-libs"))]
+        {
+            caps.software = Self::probe_software_via_cli(&mut caps.probe_errors);
+        }
         log::info!("  Software: libx264={}, libx265={}, libsvtav1={}, aac={}, opus={}",
             caps.software.libx264, caps.software.libx265, caps.software.libsvtav1,
             caps.software.aac, caps.software.opus);
@@ -497,6 +509,37 @@ impl EncoderCapabilities {
             .unwrap_or(false)
     }
 
+    #[cfg(feature = "ffmpeg-libs")]
+    fn encoder_available_via_libs(encoder_name: &str) -> bool {
+        let name = std::ffi::CString::new(encoder_name).ok();
+        let Some(name) = name else {
+            return false;
+        };
+        unsafe { !ffi::avcodec_find_encoder_by_name(name.as_ptr()).is_null() }
+    }
+
+    #[cfg(feature = "ffmpeg-libs")]
+    fn probe_software_via_libs(_probe_errors: &mut Vec<String>) -> SoftwareCaps {
+        let caps = SoftwareCaps {
+            libx264: Self::encoder_available_via_libs("libx264"),
+            libx265: Self::encoder_available_via_libs("libx265"),
+            libsvtav1: Self::encoder_available_via_libs("libsvtav1"),
+            aac: Self::encoder_available_via_libs("aac"),
+            opus: Self::encoder_available_via_libs("libopus"),
+        };
+
+        log::debug!(
+            "  Software encoders (libs): x264={}, x265={}, svtav1={}, aac={}, opus={}",
+            caps.libx264,
+            caps.libx265,
+            caps.libsvtav1,
+            caps.aac,
+            caps.opus
+        );
+
+        caps
+    }
+
     /// Probe NVENC via CLI
     fn probe_nvenc_via_cli(probe_errors: &mut Vec<String>) -> NvencCaps {
         let mut caps = NvencCaps::default();
@@ -734,7 +777,7 @@ impl EncoderCapabilities {
         #[cfg(not(target_os = "macos"))]
         {
             probe_errors.push("videotoolbox: unsupported platform".to_string());
-            return VideoToolboxCaps::default();
+            VideoToolboxCaps::default()
         }
 
         #[cfg(target_os = "macos")]
@@ -981,8 +1024,10 @@ mod native_nvenc {
             };
 
         // Initialize the function list
-        let mut func_list = NvEncodeApiFunctionList::default();
-        func_list.version = NV_ENCODE_API_FUNCTION_LIST_VER;
+        let mut func_list = NvEncodeApiFunctionList {
+            version: NV_ENCODE_API_FUNCTION_LIST_VER,
+            ..Default::default()
+        };
 
         let ret = unsafe { create_instance(&mut func_list) };
         if ret != 0 {
@@ -1957,7 +2002,7 @@ mod native_videotoolbox {
     pub fn probe() -> VideoToolboxCaps {
         #[cfg(not(target_os = "macos"))]
         {
-            return VideoToolboxCaps::default();
+            VideoToolboxCaps::default()
         }
 
         #[cfg(target_os = "macos")]

@@ -1038,11 +1038,10 @@ exit /b %errorlevel%
             }
 
             // Strip the archive root prefix to get relative path
-            let relative_path = if file_path.starts_with(archive_root) {
-                &file_path[archive_root.len()..].trim_start_matches('/')
-            } else {
-                file_path
-            };
+            let relative_path = file_path
+                .strip_prefix(archive_root)
+                .unwrap_or(file_path)
+                .trim_start_matches('/');
 
             // Only extract files in bin/, lib/, include/
             let should_extract = relative_path.starts_with("bin/")
@@ -1093,11 +1092,10 @@ exit /b %errorlevel%
             let path_str = path.to_string_lossy();
 
             // Strip the archive root prefix
-            let relative_path = if path_str.starts_with(archive_root) {
-                path_str[archive_root.len()..].trim_start_matches('/')
-            } else {
-                &path_str
-            };
+            let relative_path = path_str
+                .strip_prefix(archive_root)
+                .unwrap_or(&path_str)
+                .trim_start_matches('/');
 
             // Only extract files in bin/, lib/, include/
             let should_extract = relative_path.starts_with("bin/")
