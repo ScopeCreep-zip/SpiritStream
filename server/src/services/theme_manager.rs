@@ -480,6 +480,7 @@ fn is_theme_file(path: &Path) -> bool {
 }
 
 fn strip_jsonc_comments(input: &str) -> String {
+    let input = input.strip_prefix('\u{FEFF}').unwrap_or(input);
     let mut output = String::with_capacity(input.len());
     let mut chars = input.chars().peekable();
     let mut in_string = false;

@@ -231,42 +231,44 @@ impl Settings {
 
     /// Extract legacy profile settings for migration to a profile
     pub fn to_legacy_profile_settings(&self) -> ProfileSettings {
-        ProfileSettings {
-            theme_id: if self.theme_id.is_empty() {
-                "spirit-dark".to_string()
-            } else {
-                self.theme_id.clone()
-            },
-            language: if self.language.is_empty() {
-                "en".to_string()
-            } else {
-                self.language.clone()
-            },
-            show_notifications: self.show_notifications,
-            encrypt_stream_keys: self.encrypt_stream_keys,
-            backend: BackendSettings {
-                remote_enabled: self.backend_remote_enabled,
-                ui_enabled: self.backend_ui_enabled,
-                host: self.backend_host.clone(),
-                port: self.backend_port,
-                token: self.backend_token.clone(),
-            },
-            obs: ObsSettings {
-                host: self.obs_host.clone(),
-                port: self.obs_port,
-                password: self.obs_password.clone(),
-                use_auth: self.obs_use_auth,
-                direction: self.obs_direction,
-                auto_connect: self.obs_auto_connect,
-            },
-            discord: DiscordSettings {
-                webhook_enabled: self.discord_webhook_enabled,
-                webhook_url: self.discord_webhook_url.clone(),
-                go_live_message: self.discord_go_live_message.clone(),
-                cooldown_enabled: self.discord_cooldown_enabled,
-                cooldown_seconds: self.discord_cooldown_seconds,
-                image_path: self.discord_image_path.clone(),
-            },
-        }
+        let mut settings = ProfileSettings::default();
+
+        settings.theme_id = if self.theme_id.is_empty() {
+            "spirit-dark".to_string()
+        } else {
+            self.theme_id.clone()
+        };
+        settings.language = if self.language.is_empty() {
+            "en".to_string()
+        } else {
+            self.language.clone()
+        };
+        settings.show_notifications = self.show_notifications;
+        settings.encrypt_stream_keys = self.encrypt_stream_keys;
+        settings.backend = BackendSettings {
+            remote_enabled: self.backend_remote_enabled,
+            ui_enabled: self.backend_ui_enabled,
+            host: self.backend_host.clone(),
+            port: self.backend_port,
+            token: self.backend_token.clone(),
+        };
+        settings.obs = ObsSettings {
+            host: self.obs_host.clone(),
+            port: self.obs_port,
+            password: self.obs_password.clone(),
+            use_auth: self.obs_use_auth,
+            direction: self.obs_direction,
+            auto_connect: self.obs_auto_connect,
+        };
+        settings.discord = DiscordSettings {
+            webhook_enabled: self.discord_webhook_enabled,
+            webhook_url: self.discord_webhook_url.clone(),
+            go_live_message: self.discord_go_live_message.clone(),
+            cooldown_enabled: self.discord_cooldown_enabled,
+            cooldown_seconds: self.discord_cooldown_seconds,
+            image_path: self.discord_image_path.clone(),
+        };
+
+        settings
     }
 }

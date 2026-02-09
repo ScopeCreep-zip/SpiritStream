@@ -434,22 +434,6 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     }
   },
 
-  updateProfileSettings: async (updates) => {
-    const current = get().current;
-    if (current && current.settings) {
-      const newSettings = { ...current.settings, ...updates };
-      set({
-        current: {
-          ...current,
-          settings: newSettings,
-        },
-      });
-      // Apply the UI-only settings (don't disconnect OBS for settings changes)
-      applyUiSettings(newSettings);
-      await get().saveProfile();
-    }
-  },
-
   reorderProfiles: async (fromIndex, toIndex) => {
     const { profiles } = get();
     if (fromIndex === toIndex) return;
