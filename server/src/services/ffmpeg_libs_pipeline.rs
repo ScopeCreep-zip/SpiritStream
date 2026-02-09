@@ -715,6 +715,7 @@ struct GroupOutputs {
 struct TranscodeGroup {
     group_id: String,
     control: GroupControl,
+    video_encoder_name: String,
     video_stream_index: usize,
     audio_stream_index: Option<usize>,
     video_dec_ctx: *mut ffi::AVCodecContext,
@@ -1800,6 +1801,7 @@ fn create_transcode_group(
     // Initialize decoder (hardware if possible, fallback to software)
     let mut video_dec_ctx: *mut ffi::AVCodecContext = ptr::null_mut();
     let mut using_hw_decode = false;
+    let mut video_dec_hw_frames_ctx: Option<*mut ffi::AVBufferRef> = None;
     if prefer_hw {
         if let Some(device_ref) = video_hw_device {
             match unsafe { try_init_hw_decoder(&group.video.codec, video_codecpar, device_ref) } {
@@ -1887,6 +1889,18 @@ fn create_transcode_group(
 
         video_dec_ctx = dec_ctx;
         using_hw_decode = false;
+    }
+
+    if using_hw_decode {
+        unsafe {
+            let frames_ctx = (*video_dec_ctx).hw_frames_ctx;
+            if !frames_ctx.is_null() {
+                let frames_ref = ffi::av_buffer_ref(frames_ctx);
+                if !frames_ref.is_null() {
+                    video_dec_hw_frames_ctx = Some(frames_ref);
+                }
+            }
+        }
     }
 
     let sws_input_fmt = if using_hw_decode {
@@ -2156,6 +2170,7 @@ fn create_transcode_group(
     Ok(TranscodeGroup {
         group_id: config.group_id.clone(),
         control,
+        video_encoder_name: group.video.codec.clone(),
         video_stream_index,
         audio_stream_index,
         video_dec_ctx,
@@ -2164,7 +2179,7 @@ fn create_transcode_group(
         audio_enc_ctx,
         video_hw_device,
         video_hw_frames_ctx,
-        video_dec_hw_frames_ctx: None, // TODO: Set when hw decode is enabled
+        video_dec_hw_frames_ctx,
         sws_ctx,
         swr_ctx,
         video_dec_frame,
@@ -2333,6 +2348,16 @@ fn transcode_video_packet(
     let output_width = unsafe { (*group.video_enc_ctx).width };
     let output_height = unsafe { (*group.video_enc_ctx).height };
     let needs_scale = input_width != output_width || input_height != output_height;
+    let has_hw_input = group.using_hw_decode && unsafe { !(*group.video_dec_frame).hw_frames_ctx.is_null() };
+    let can_zero_copy = has_hw_input
+        && group.video_hw_frames_ctx.is_some()
+        && can_use_zero_copy(
+            &group.video_encoder_name,
+            input_width,
+            input_height,
+            output_width,
+            output_height,
+        );
 
     let send_ret = unsafe { ffi::avcodec_send_packet(group.video_dec_ctx, packet) };
     if send_ret < 0 {
@@ -2354,7 +2379,7 @@ fn transcode_video_packet(
         };
 
         let mut source_frame = group.video_dec_frame;
-        if group.using_hw_decode && unsafe { !(*group.video_dec_frame).hw_frames_ctx.is_null() } {
+        if has_hw_input && !can_zero_copy {
             let hw_sw_frame = group.video_hw_sw_frame
                 .ok_or_else(|| "Missing hardware download frame".to_string())?;
             unsafe {
@@ -2372,7 +2397,7 @@ fn transcode_video_packet(
         }
 
         let mut frame_to_send = source_frame;
-        if needs_scale || source_frame == group.video_dec_frame {
+        if needs_scale || (!has_hw_input && source_frame == group.video_dec_frame) || (has_hw_input && !can_zero_copy) {
             unsafe {
                 let writable_ret = ffi::av_frame_make_writable(group.video_sw_frame);
                 if writable_ret < 0 {
@@ -3369,12 +3394,10 @@ fn can_use_zero_copy(
 ) -> bool {
     let name = encoder_name.to_ascii_lowercase();
 
-    // NVIDIA NVENC + NVDEC: Zero-copy supported with CUDA scaling
-    // GPU can handle resolution changes via CUDA NPP or scale_cuda filter
+    // Currently we don't have GPU scaling in the libs pipeline,
+    // so only allow zero-copy when resolution matches.
     if name.contains("nvenc") {
-        // NVENC/NVDEC support zero-copy even with resolution changes
-        // via scale_cuda filter or NPP scaling
-        return true;
+        return input_width == output_width && input_height == output_height;
     }
 
     // Intel QSV: Zero-copy requires same resolution or vpp_qsv filter
@@ -3387,7 +3410,7 @@ fn can_use_zero_copy(
 
     // VideoToolbox: Zero-copy supported, system handles scaling
     if name.contains("videotoolbox") {
-        return true;
+        return input_width == output_width && input_height == output_height;
     }
 
     // AMF: No hardware decoder, can't do zero-copy
