@@ -1108,28 +1108,15 @@ async fn invoke_command(
             let expected_stream_key: Option<String> = get_opt_arg(&payload, "expectedStreamKey")?;
             #[cfg(feature = "ffmpeg-libs")]
             {
-                let cli_active = state.ffmpeg_handler.active_count() > 0;
                 let libs_active = libs_active_group_count(state) > 0;
-                let passthrough = is_passthrough_group(&group);
                 let libs_has_group = libs_has_group(state, &group.id);
 
-                if libs_active {
-                    if libs_has_group {
-                        return Ok(json!(0));
-                    }
-                    return Err("FFmpeg libs passthrough is already running; stop the stream before starting another group".to_string());
+                if libs_active && libs_has_group {
+                    return Ok(json!(0));
                 }
 
-                if passthrough && !cli_active {
-                    let pid = start_libs_pipeline(state, group, &incoming_url, expected_stream_key.as_deref())?;
-                    Ok(json!(pid))
-                } else {
-                    let _ = expected_stream_key; // Unused in CLI mode
-                    let event_sink: Arc<dyn EventSink> = Arc::new(state.event_bus.clone());
-                    let pid = state.ffmpeg_handler.start(&group, &incoming_url, event_sink)?;
-                    state.ffmpeg_handler.reset_reconnection_state(&group.id);
-                    Ok(json!(pid))
-                }
+                let pid = start_libs_pipeline(state, group, &incoming_url, expected_stream_key.as_deref())?;
+                Ok(json!(pid))
             }
             #[cfg(not(feature = "ffmpeg-libs"))]
             {
@@ -1148,8 +1135,7 @@ async fn invoke_command(
             #[cfg(feature = "ffmpeg-libs")]
             {
                 let libs_active = libs_active_group_count(state) > 0;
-                let cli_active = state.ffmpeg_handler.active_count() > 0;
-                if libs_active || cli_active {
+                if libs_active {
                     return Err("Streams already running".to_string());
                 }
 
@@ -1161,29 +1147,21 @@ async fn invoke_command(
                     return Err("At least one stream target is required".to_string());
                 }
 
-                let all_passthrough = start_groups.iter().all(is_passthrough_group);
-                if all_passthrough {
-                    if start_groups.len() == 1 {
-                        let pid = start_libs_pipeline(
-                            state,
-                            start_groups.into_iter().next().unwrap(),
-                            &incoming_url,
-                            expected_stream_key.as_deref(),
-                        )?;
-                        Ok(json!(vec![pid]))
-                    } else {
-                        let pids = start_libs_pipeline_multi(
-                            state,
-                            start_groups,
-                            &incoming_url,
-                            expected_stream_key.as_deref(),
-                        )?;
-                        Ok(json!(pids))
-                    }
+                if start_groups.len() == 1 {
+                    let pid = start_libs_pipeline(
+                        state,
+                        start_groups.into_iter().next().unwrap(),
+                        &incoming_url,
+                        expected_stream_key.as_deref(),
+                    )?;
+                    Ok(json!(vec![pid]))
                 } else {
-                    let _ = expected_stream_key; // Not used in CLI mode
-                    let event_sink: Arc<dyn EventSink> = Arc::new(state.event_bus.clone());
-                    let pids = state.ffmpeg_handler.start_all(&start_groups, &incoming_url, event_sink)?;
+                    let pids = start_libs_pipeline_multi(
+                        state,
+                        start_groups,
+                        &incoming_url,
+                        expected_stream_key.as_deref(),
+                    )?;
                     Ok(json!(pids))
                 }
             }
