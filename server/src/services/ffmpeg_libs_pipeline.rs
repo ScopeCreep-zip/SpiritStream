@@ -737,6 +737,8 @@ struct TranscodeGroup {
     outputs: Vec<TranscodeOutput>,
     /// True if using hardware decoder (zero-copy path enabled)
     using_hw_decode: bool,
+    /// True if we can pass decoded HW frames directly to encoder
+    zero_copy: bool,
     /// Track if this group has been cleaned up
     cleaned_up: bool,
 }
@@ -1802,6 +1804,7 @@ fn create_transcode_group(
     let mut video_dec_ctx: *mut ffi::AVCodecContext = ptr::null_mut();
     let mut using_hw_decode = false;
     let mut video_dec_hw_frames_ctx: Option<*mut ffi::AVBufferRef> = None;
+    let mut zero_copy = false;
     if prefer_hw {
         if let Some(device_ref) = video_hw_device {
             match unsafe { try_init_hw_decoder(&group.video.codec, video_codecpar, device_ref) } {
@@ -1957,6 +1960,30 @@ fn create_transcode_group(
         return Err("Failed to allocate video frames".to_string());
     }
 
+    if using_hw_decode
+        && can_use_zero_copy(&group.video.codec, input_width, input_height, output_width, output_height)
+    {
+        if let Some(dec_frames_ref) = video_dec_hw_frames_ctx {
+            unsafe {
+                if !(*video_enc_ctx).hw_frames_ctx.is_null() {
+                    ffi::av_buffer_unref(&mut (*video_enc_ctx).hw_frames_ctx);
+                }
+                let enc_ref = ffi::av_buffer_ref(dec_frames_ref);
+                if !enc_ref.is_null() {
+                    (*video_enc_ctx).hw_frames_ctx = enc_ref;
+                    if let Some(mut frames_ref) = video_hw_frames_ctx.take() {
+                        ffi::av_buffer_unref(&mut frames_ref);
+                    }
+                    video_hw_frames_ctx = Some(enc_ref);
+                    if let Some(mut hw_frame) = video_hw_frame.take() {
+                        ffi::av_frame_free(&mut (hw_frame as *mut _));
+                    }
+                    zero_copy = true;
+                }
+            }
+        }
+    }
+
     let mut video_hw_sw_frame: Option<*mut ffi::AVFrame> = None;
     unsafe {
         (*video_sw_frame).format = sw_pix_fmt as i32;
@@ -1982,7 +2009,7 @@ fn create_transcode_group(
         }
     }
 
-    if using_hw_decode {
+    if using_hw_decode && !zero_copy {
         let hw_sw_frame = unsafe { ffi::av_frame_alloc() };
         if hw_sw_frame.is_null() {
             unsafe {
@@ -2189,6 +2216,7 @@ fn create_transcode_group(
         audio_dec_frame,
         outputs,
         using_hw_decode,
+        zero_copy,
         cleaned_up: false,
     })
 }
@@ -2349,15 +2377,7 @@ fn transcode_video_packet(
     let output_height = unsafe { (*group.video_enc_ctx).height };
     let needs_scale = input_width != output_width || input_height != output_height;
     let has_hw_input = group.using_hw_decode && unsafe { !(*group.video_dec_frame).hw_frames_ctx.is_null() };
-    let can_zero_copy = has_hw_input
-        && group.video_hw_frames_ctx.is_some()
-        && can_use_zero_copy(
-            &group.video_encoder_name,
-            input_width,
-            input_height,
-            output_width,
-            output_height,
-        );
+    let can_zero_copy = group.zero_copy;
 
     let send_ret = unsafe { ffi::avcodec_send_packet(group.video_dec_ctx, packet) };
     if send_ret < 0 {
@@ -2397,7 +2417,11 @@ fn transcode_video_packet(
         }
 
         let mut frame_to_send = source_frame;
-        if needs_scale || (!has_hw_input && source_frame == group.video_dec_frame) || (has_hw_input && !can_zero_copy) {
+        if can_zero_copy {
+            unsafe {
+                (*frame_to_send).pts = pts;
+            }
+        } else if needs_scale || (!has_hw_input && source_frame == group.video_dec_frame) || (has_hw_input && !can_zero_copy) {
             unsafe {
                 let writable_ret = ffi::av_frame_make_writable(group.video_sw_frame);
                 if writable_ret < 0 {
