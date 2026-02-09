@@ -1871,6 +1871,14 @@ fn create_transcode_group(
                             log::warn!("Hardware scaling init failed, falling back to upload path: {}", err);
                         }
                     }
+                } else if resolve_hw_scale_filter(&group.video.codec).is_none()
+                    && input_width != output_width
+                    && input_height != output_height
+                {
+                    log::warn!(
+                        "No hardware scaling filter available for {}; falling back to CPU scaling",
+                        group.video.codec
+                    );
                 } else {
                     unsafe {
                         (*video_enc_ctx).pix_fmt = hw_fmt;
@@ -3597,6 +3605,7 @@ unsafe fn init_hw_scale_context(
 ) -> Result<HwScaleContext, String> {
     let filter_name = resolve_hw_scale_filter(encoder_name)
         .ok_or_else(|| "No hardware scaling filter available".to_string())?;
+    log::info!("Using hardware scale filter '{}' for {}", filter_name, encoder_name);
 
     let graph = ffi::avfilter_graph_alloc();
     if graph.is_null() {
