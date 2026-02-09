@@ -1855,6 +1855,14 @@ fn create_transcode_group(
                         Ok(scale_ctx) => {
                             unsafe {
                                 (*video_enc_ctx).pix_fmt = hw_fmt;
+                                if !(*video_enc_ctx).hw_frames_ctx.is_null() {
+                                    ffi::av_buffer_unref(&mut (*video_enc_ctx).hw_frames_ctx);
+                                }
+                                let enc_ref = ffi::av_buffer_ref(dec_frames_ref);
+                                if !enc_ref.is_null() {
+                                    (*video_enc_ctx).hw_frames_ctx = enc_ref;
+                                    video_hw_frames_ctx = Some(enc_ref);
+                                }
                             }
                             hw_scale = Some(scale_ctx);
                             zero_copy = true;
@@ -3500,9 +3508,17 @@ fn hw_decoder_for_encoder(encoder_name: &str, input_codec_id: ffi::AVCodecID) ->
     }
 
     // AMD AMF doesn't have matching hardware decoders in FFmpeg
-    // (AMF is encode-only, decode uses D3D11VA which is different)
     if name.contains("amf") {
-        return None;
+        return match input_codec_id {
+            ffi::AVCodecID::AV_CODEC_ID_H264 => Some("h264_d3d11va"),
+            ffi::AVCodecID::AV_CODEC_ID_HEVC => Some("hevc_d3d11va"),
+            ffi::AVCodecID::AV_CODEC_ID_VP9 => Some("vp9_d3d11va"),
+            ffi::AVCodecID::AV_CODEC_ID_AV1 => Some("av1_d3d11va"),
+            ffi::AVCodecID::AV_CODEC_ID_MPEG2VIDEO => Some("mpeg2_d3d11va"),
+            ffi::AVCodecID::AV_CODEC_ID_MPEG4 => Some("mpeg4_d3d11va"),
+            ffi::AVCodecID::AV_CODEC_ID_VC1 => Some("vc1_d3d11va"),
+            _ => None,
+        };
     }
 
     // Apple VideoToolbox has unified decode/encode
@@ -3543,7 +3559,7 @@ fn can_use_zero_copy(
         return false;
     }
 
-    name.contains("nvenc") || name.contains("qsv") || name.contains("videotoolbox")
+    name.contains("nvenc") || name.contains("qsv") || name.contains("videotoolbox") || name.contains("amf")
 }
 
 fn resolve_hw_scale_filter(encoder_name: &str) -> Option<&'static str> {
@@ -3552,6 +3568,8 @@ fn resolve_hw_scale_filter(encoder_name: &str) -> Option<&'static str> {
         &["scale_cuda", "scale_npp"]
     } else if name.contains("qsv") {
         &["vpp_qsv", "scale_qsv"]
+    } else if name.contains("amf") {
+        &["scale_d3d11"]
     } else if name.contains("videotoolbox") {
         &["scale_videotoolbox"]
     } else {
