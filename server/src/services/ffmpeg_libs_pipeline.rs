@@ -1670,13 +1670,11 @@ fn create_transcode_group(
     };
     let mut video_hw_frames_ctx = None;
     let mut video_hw_frame = None;
-    let enc_pix_fmt = hw_pix_fmt.unwrap_or(sw_pix_fmt);
     unsafe {
         (*video_enc_ctx).width = output_width;
         (*video_enc_ctx).height = output_height;
         (*video_enc_ctx).time_base = ffi::AVRational { num: output_fps.den, den: output_fps.num };
         (*video_enc_ctx).framerate = output_fps;
-        (*video_enc_ctx).pix_fmt = enc_pix_fmt;
         if let Some(bit_rate) = parse_bitrate_to_bits(&group.video.bitrate) {
             (*video_enc_ctx).bit_rate = bit_rate;
             // CBR enforcement: set min/max rate equal to target bitrate
@@ -1716,88 +1714,6 @@ fn create_transcode_group(
             group.video.profile.as_deref(),
             is_twitch,
         );
-    }
-
-    // Try to create hardware frames context - some encoders (like AMF) may fail here
-    // but can still work with just the device context and software frames
-    if let (Some(device_ref), Some(hw_fmt)) = (video_hw_device, hw_pix_fmt) {
-        match create_hw_frames_ctx(
-            device_ref,
-            hw_fmt,
-            sw_pix_fmt,
-            output_width,
-            output_height,
-        ) {
-            Ok(mut frames_ctx) => {
-                let frames_ref = unsafe { ffi::av_buffer_ref(frames_ctx) };
-                if frames_ref.is_null() {
-                    log::warn!("Failed to reference hardware frames context, falling back to device-only mode");
-                    unsafe {
-                        ffi::av_buffer_unref(&mut frames_ctx);
-                        // Use software pixel format when falling back
-                        (*video_enc_ctx).pix_fmt = sw_pix_fmt;
-                    }
-                } else {
-                    unsafe {
-                        (*video_enc_ctx).hw_frames_ctx = frames_ref;
-                    }
-                    video_hw_frames_ctx = Some(frames_ctx);
-                    let hw_frame = unsafe { ffi::av_frame_alloc() };
-                    if !hw_frame.is_null() {
-                        video_hw_frame = Some(hw_frame);
-                    }
-                }
-            }
-            Err(err) => {
-                // AMF and some other encoders may fail to create frames context but still work
-                // with device context only - the encoder will handle frame upload internally
-                log::warn!("Hardware frames context creation failed: {}. Continuing with device-only mode.", err);
-                // Use software pixel format when falling back
-                unsafe {
-                    (*video_enc_ctx).pix_fmt = sw_pix_fmt;
-                }
-            }
-        };
-    }
-
-    let mut open_enc_ret = unsafe { ffi::avcodec_open2(video_enc_ctx, video_encoder, ptr::null_mut()) };
-    if open_enc_ret < 0 && video_hw_device.is_some() {
-        unsafe {
-            if let Some(mut device_ref) = video_hw_device.take() {
-                ffi::av_buffer_unref(&mut device_ref);
-            }
-            if let Some(mut frames_ref) = video_hw_frames_ctx.take() {
-                ffi::av_buffer_unref(&mut frames_ref);
-            }
-            if let Some(mut hw_frame) = video_hw_frame.take() {
-                ffi::av_frame_free(&mut (hw_frame as *mut _));
-            }
-            if !(*video_enc_ctx).hw_device_ctx.is_null() {
-                ffi::av_buffer_unref(&mut (*video_enc_ctx).hw_device_ctx);
-            }
-            if !(*video_enc_ctx).hw_frames_ctx.is_null() {
-                ffi::av_buffer_unref(&mut (*video_enc_ctx).hw_frames_ctx);
-            }
-            (*video_enc_ctx).hw_device_ctx = ptr::null_mut();
-            (*video_enc_ctx).hw_frames_ctx = ptr::null_mut();
-            (*video_enc_ctx).pix_fmt = sw_pix_fmt;
-        }
-        open_enc_ret = unsafe { ffi::avcodec_open2(video_enc_ctx, video_encoder, ptr::null_mut()) };
-    }
-    if open_enc_ret < 0 {
-        unsafe {
-            if let Some(mut hw_frame) = video_hw_frame {
-                ffi::av_frame_free(&mut (hw_frame as *mut _));
-            }
-            if let Some(mut frames_ref) = video_hw_frames_ctx {
-                ffi::av_buffer_unref(&mut frames_ref);
-            }
-            if let Some(mut device_ref) = video_hw_device {
-                ffi::av_buffer_unref(&mut device_ref);
-            }
-            ffi::avcodec_free_context(&mut (video_enc_ctx as *mut _));
-        }
-        return Err(format!("Failed to open video encoder: {}", ffmpeg_err(open_enc_ret)));
     }
 
     // Initialize decoder (hardware if possible, fallback to software)
@@ -1904,6 +1820,114 @@ fn create_transcode_group(
                 }
             }
         }
+    }
+
+    unsafe {
+        (*video_enc_ctx).pix_fmt = sw_pix_fmt;
+    }
+
+    if let (Some(device_ref), Some(hw_fmt)) = (video_hw_device, hw_pix_fmt) {
+        if using_hw_decode
+            && can_use_zero_copy(&group.video.codec, input_width, input_height, output_width, output_height)
+            && encoder_supports_pix_fmt(video_encoder, hw_fmt)
+        {
+            if let Some(dec_frames_ref) = video_dec_hw_frames_ctx {
+                unsafe {
+                    (*video_enc_ctx).pix_fmt = hw_fmt;
+                    let enc_ref = ffi::av_buffer_ref(dec_frames_ref);
+                    if !enc_ref.is_null() {
+                        (*video_enc_ctx).hw_frames_ctx = enc_ref;
+                        video_hw_frames_ctx = Some(enc_ref);
+                        zero_copy = true;
+                    }
+                }
+            }
+        }
+
+        if !zero_copy {
+            unsafe {
+                (*video_enc_ctx).pix_fmt = hw_fmt;
+            }
+            // Try to create hardware frames context - some encoders (like AMF) may fail here
+            // but can still work with just the device context and software frames
+            match create_hw_frames_ctx(
+                device_ref,
+                hw_fmt,
+                sw_pix_fmt,
+                output_width,
+                output_height,
+            ) {
+                Ok(mut frames_ctx) => {
+                    let frames_ref = unsafe { ffi::av_buffer_ref(frames_ctx) };
+                    if frames_ref.is_null() {
+                        log::warn!("Failed to reference hardware frames context, falling back to device-only mode");
+                        unsafe {
+                            ffi::av_buffer_unref(&mut frames_ctx);
+                            // Use software pixel format when falling back
+                            (*video_enc_ctx).pix_fmt = sw_pix_fmt;
+                        }
+                    } else {
+                        unsafe {
+                            (*video_enc_ctx).hw_frames_ctx = frames_ref;
+                        }
+                        video_hw_frames_ctx = Some(frames_ctx);
+                        let hw_frame = unsafe { ffi::av_frame_alloc() };
+                        if !hw_frame.is_null() {
+                            video_hw_frame = Some(hw_frame);
+                        }
+                    }
+                }
+                Err(err) => {
+                    // AMF and some other encoders may fail to create frames context but still work
+                    // with device context only - the encoder will handle frame upload internally
+                    log::warn!("Hardware frames context creation failed: {}. Continuing with device-only mode.", err);
+                    // Use software pixel format when falling back
+                    unsafe {
+                        (*video_enc_ctx).pix_fmt = sw_pix_fmt;
+                    }
+                }
+            };
+        }
+    }
+
+    let mut open_enc_ret = unsafe { ffi::avcodec_open2(video_enc_ctx, video_encoder, ptr::null_mut()) };
+    if open_enc_ret < 0 && video_hw_device.is_some() {
+        unsafe {
+            if let Some(mut device_ref) = video_hw_device.take() {
+                ffi::av_buffer_unref(&mut device_ref);
+            }
+            if let Some(mut frames_ref) = video_hw_frames_ctx.take() {
+                ffi::av_buffer_unref(&mut frames_ref);
+            }
+            if let Some(mut hw_frame) = video_hw_frame.take() {
+                ffi::av_frame_free(&mut (hw_frame as *mut _));
+            }
+            if !(*video_enc_ctx).hw_device_ctx.is_null() {
+                ffi::av_buffer_unref(&mut (*video_enc_ctx).hw_device_ctx);
+            }
+            if !(*video_enc_ctx).hw_frames_ctx.is_null() {
+                ffi::av_buffer_unref(&mut (*video_enc_ctx).hw_frames_ctx);
+            }
+            (*video_enc_ctx).hw_device_ctx = ptr::null_mut();
+            (*video_enc_ctx).hw_frames_ctx = ptr::null_mut();
+            (*video_enc_ctx).pix_fmt = sw_pix_fmt;
+        }
+        open_enc_ret = unsafe { ffi::avcodec_open2(video_enc_ctx, video_encoder, ptr::null_mut()) };
+    }
+    if open_enc_ret < 0 {
+        unsafe {
+            if let Some(mut hw_frame) = video_hw_frame {
+                ffi::av_frame_free(&mut (hw_frame as *mut _));
+            }
+            if let Some(mut frames_ref) = video_hw_frames_ctx {
+                ffi::av_buffer_unref(&mut frames_ref);
+            }
+            if let Some(mut device_ref) = video_hw_device {
+                ffi::av_buffer_unref(&mut device_ref);
+            }
+            ffi::avcodec_free_context(&mut (video_enc_ctx as *mut _));
+        }
+        return Err(format!("Failed to open video encoder: {}", ffmpeg_err(open_enc_ret)));
     }
 
     let sws_input_fmt = if using_hw_decode {
@@ -3250,10 +3274,7 @@ fn hw_pix_fmt_for_encoder(encoder_name: &str) -> Option<ffi::AVPixelFormat> {
     } else if name.contains("amf") {
         Some(ffi::AVPixelFormat::AV_PIX_FMT_D3D11)
     } else if name.contains("videotoolbox") {
-        // VideoToolbox can accept software frames directly (NV12/YUV420P)
-        // or hardware surfaces (AV_PIX_FMT_VIDEOTOOLBOX).
-        // For simplicity, we use software frames with device context attached.
-        None
+        Some(ffi::AVPixelFormat::AV_PIX_FMT_VIDEOTOOLBOX)
     } else {
         None
     }
@@ -3565,6 +3586,25 @@ fn select_pix_fmt(encoder: *const ffi::AVCodec, prefer_nv12: bool) -> ffi::AVPix
         }
         fallback
     }
+}
+
+fn encoder_supports_pix_fmt(encoder: *const ffi::AVCodec, pix_fmt: ffi::AVPixelFormat) -> bool {
+    if encoder.is_null() {
+        return false;
+    }
+    unsafe {
+        let mut formats = (*encoder).pix_fmts;
+        if formats.is_null() {
+            return false;
+        }
+        while *formats != ffi::AVPixelFormat::AV_PIX_FMT_NONE {
+            if *formats == pix_fmt {
+                return true;
+            }
+            formats = formats.add(1);
+        }
+    }
+    false
 }
 
 fn select_sample_fmt(encoder: *const ffi::AVCodec, fallback: ffi::AVSampleFormat) -> ffi::AVSampleFormat {
