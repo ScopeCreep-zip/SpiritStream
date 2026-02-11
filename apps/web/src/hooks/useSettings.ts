@@ -90,7 +90,6 @@ export function useUpdateSetting() {
       // Build global settings object (only non-legacy fields)
       const updated: AppSettings = {
         startMinimized: current.startMinimized,
-        ffmpegPath: current.ffmpegPath,
         autoDownloadFfmpeg: current.autoDownloadFfmpeg,
         logRetentionDays: current.logRetentionDays,
         lastProfile: current.lastProfile,
@@ -145,7 +144,6 @@ export function useSaveSettings() {
       // Build global settings object (only non-legacy fields)
       const updated: AppSettings = {
         startMinimized: current.startMinimized,
-        ffmpegPath: current.ffmpegPath,
         autoDownloadFfmpeg: current.autoDownloadFfmpeg,
         logRetentionDays: current.logRetentionDays,
         lastProfile: current.lastProfile,

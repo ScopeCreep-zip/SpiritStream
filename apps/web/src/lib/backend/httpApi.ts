@@ -122,7 +122,6 @@ export const api = {
     getFfmpegPath: () => invokeHttp<string | null>('get_bundled_ffmpeg_path'),
     checkFfmpegUpdate: (installedVersion?: string) =>
       invokeHttp<FFmpegVersionInfo>('check_ffmpeg_update', { installedVersion }),
-    validateFfmpegPath: (path: string) => invokeHttp<string>('validate_ffmpeg_path', { path }),
     testRtmpTarget: (url: string, streamKey: string) =>
       invokeHttp<RtmpTestResult>('test_rtmp_target', { url, streamKey }),
     getRecentLogs: (maxLines?: number) =>

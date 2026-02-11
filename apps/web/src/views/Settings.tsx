@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FolderOpen, Download, Trash2, Github, BookOpen, RefreshCw, Globe, User } from 'lucide-react';
+import { Download, Trash2, Github, BookOpen, RefreshCw, Globe, User } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
@@ -100,33 +100,6 @@ export function Settings() {
     },
     [profileSettings, updateProfileSettings]
   );
-
-  const handleBrowseFfmpeg = async () => {
-    try {
-      const selected =
-        backendMode === 'http'
-          ? await browserOpenFile({
-              filters: [{ name: 'FFmpeg', extensions: ['*'] }],
-              initialPath: settings?.ffmpegPath || undefined,
-            })
-          : await dialogs.openFilePath({
-              multiple: false,
-              filters: [{ name: 'FFmpeg', extensions: ['*'] }],
-            });
-      if (!selected) return;
-      if (typeof selected === 'string') {
-        try {
-          await api.system.validateFfmpegPath(selected);
-          saveSettingsMutation.mutate({ ffmpegPath: selected });
-          refreshFfmpegVersion();
-        } catch (validationError) {
-          alert(`${t('settings.invalidFfmpegPath')}: ${validationError}`);
-        }
-      }
-    } catch (error) {
-      console.error('Failed to open file dialog:', error);
-    }
-  };
 
   const handleOpenProfileStorage = async () => {
     try {
@@ -263,7 +236,6 @@ export function Settings() {
 
   const isSaving = updateSettingMutation.isPending || saveSettingsMutation.isPending;
   const ffmpegVersion = ffmpegData?.version || '';
-  const ffmpegPath = settings?.ffmpegPath || ffmpegData?.path || '';
 
   // Loading state
   if (isLoading) {
@@ -510,24 +482,6 @@ export function Settings() {
               </div>
             </CardHeader>
             <CardBody style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div className="flex flex-col" style={{ gap: '6px' }}>
-                <label className="block text-sm font-medium text-[var(--text-primary)]">
-                  {t('settings.ffmpegPath')}
-                </label>
-                <div className="flex" style={{ gap: '8px' }}>
-                  <Input
-                    value={ffmpegPath}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                      updateGlobalSetting('ffmpegPath', e.target.value)
-                    }
-                    className="flex-1"
-                  />
-                  <Button variant="outline" onClick={handleBrowseFfmpeg}>
-                    <FolderOpen className="w-4 h-4" />
-                    {t('settings.browse')}
-                  </Button>
-                </div>
-              </div>
               <Input
                 label={t('settings.ffmpegVersion')}
                 value={
@@ -542,8 +496,7 @@ export function Settings() {
                 <FFmpegDownloadProgress
                   installedVersion={ffmpegVersion || undefined}
                   autoDownload={settings.autoDownloadFfmpeg}
-                  onComplete={(path: string) => {
-                    saveSettingsMutation.mutate({ ffmpegPath: path });
+                  onComplete={(_path: string) => {
                     refreshFfmpegVersion();
                   }}
                 />

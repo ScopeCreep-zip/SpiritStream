@@ -14,7 +14,6 @@ export interface AppSettings {
   startMinimized: boolean;
 
   // System-wide FFmpeg configuration
-  ffmpegPath: string;
   autoDownloadFfmpeg: boolean;
 
   // App-wide log management

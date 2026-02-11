@@ -19,6 +19,7 @@ use serde_json::{json, Value};
 use log::{Level, LevelFilter, Log, Metadata, Record};
 use chrono::Local;
 use std::{
+    collections::{HashMap, HashSet},
     env,
     fs::OpenOptions,
     io::Write,
@@ -37,14 +38,14 @@ use tower_http::{
 };
 
 use spiritstream_server::commands::{
-    get_encoders, test_ffmpeg, test_rtmp_target, validate_ffmpeg_path,
+    get_encoders, test_ffmpeg, test_rtmp_target,
     probe_encoder_capabilities, get_encoder_capabilities, get_all_video_encoders,
 };
 use spiritstream_server::models::{OutputGroup, Profile, RtmpInput, Settings, ObsIntegrationDirection};
 use spiritstream_server::services::{
     prune_logs, read_recent_logs, validate_extension, validate_path_within_any,
-    DiscordWebhookService, Encryption, EventSink, FFmpegDownloader, FFmpegHandler,
-    ObsWebSocketHandler, ProfileManager, SettingsManager, ThemeManager, ObsConfig,
+    DiscordWebhookService, Encryption, EventSink, FFmpegDownloader, ObsWebSocketHandler,
+    PlatformRegistry, ProfileManager, SettingsManager, ThemeManager, ObsConfig,
 };
 #[cfg(feature = "ffmpeg-libs")]
 use spiritstream_server::services::{InputPipeline, InputPipelineConfig, OutputGroupConfig, OutputGroupMode};
@@ -100,10 +101,12 @@ impl EventSink for EventBus {
 struct AppState {
     profile_manager: Arc<ProfileManager>,
     settings_manager: Arc<SettingsManager>,
-    ffmpeg_handler: Arc<FFmpegHandler>,
     #[cfg(feature = "ffmpeg-libs")]
     ffmpeg_libs_pipelines: Arc<Mutex<std::collections::HashMap<String, InputPipeline>>>,
     ffmpeg_downloader: Arc<AsyncMutex<FFmpegDownloader>>,
+    platform_registry: Arc<PlatformRegistry>,
+    disabled_targets: Arc<Mutex<HashSet<String>>>,
+    stream_sessions: Arc<Mutex<HashMap<String, StreamSession>>>,
     theme_manager: Arc<ThemeManager>,
     obs_handler: Arc<ObsWebSocketHandler>,
     discord_service: Arc<DiscordWebhookService>,
@@ -121,6 +124,13 @@ struct InvokeResponse {
     ok: bool,
     data: Option<Value>,
     error: Option<String>,
+}
+
+#[derive(Clone)]
+struct StreamSession {
+    group: OutputGroup,
+    incoming_url: String,
+    expected_stream_key: Option<String>,
 }
 
 // ============================================================================
@@ -827,19 +837,140 @@ async fn invoke(
     }
 }
 
+fn normalize_rtmp_url(url: &str) -> String {
+    let mut url = url.trim().to_string();
+
+    while url.ends_with('/') {
+        url.pop();
+    }
+
+    if !url.starts_with("rtmp://") && !url.starts_with("rtmps://") {
+        if url.contains(":443") || url.contains("facebook.com") {
+            url = format!("rtmps://{url}");
+        } else {
+            url = format!("rtmp://{url}");
+        }
+    }
+
+    url
+}
+
+fn resolve_stream_key(key: &str) -> String {
+    if key.starts_with("${") && key.ends_with('}') && key.len() > 3 {
+        let var_name = &key[2..key.len() - 1];
+        match std::env::var(var_name) {
+            Ok(value) => {
+                log::debug!("Resolved stream key from environment variable");
+                value
+            }
+            Err(_) => {
+                log::warn!("Environment variable not found for stream key, check your configuration");
+                key.to_string()
+            }
+        }
+    } else {
+        key.to_string()
+    }
+}
+
+fn build_target_urls(state: &AppState, group: &OutputGroup) -> Vec<String> {
+    let disabled = state.disabled_targets.lock().unwrap_or_else(|e| {
+        log::warn!("Disabled targets mutex poisoned (build_target_urls), recovering: {e}");
+        e.into_inner()
+    });
+    let mut target_outputs: Vec<String> = Vec::new();
+    for target in &group.stream_targets {
+        if disabled.contains(&target.id) {
+            continue;
+        }
+
+        let mut resolved_key = resolve_stream_key(&target.stream_key);
+        if resolved_key.is_empty() {
+            log::info!(
+                "Target '{}' ({:?}) has empty stream key, using default 'stream'",
+                target.name, target.service
+            );
+            resolved_key = "stream".to_string();
+        }
+
+        let normalized_url = normalize_rtmp_url(&target.url);
+        let normalized_url = state.platform_registry.normalize_url(&target.service, &normalized_url);
+        let full_url = state
+            .platform_registry
+            .build_url_with_key(&target.service, &normalized_url, &resolved_key);
+        target_outputs.push(full_url);
+    }
+
+    target_outputs
+}
+
+fn enable_target(state: &AppState, target_id: &str) {
+    let mut disabled = state.disabled_targets.lock().unwrap_or_else(|e| {
+        log::warn!("Disabled targets mutex poisoned (enable_target), recovering: {e}");
+        e.into_inner()
+    });
+    disabled.remove(target_id);
+}
+
+fn disable_target(state: &AppState, target_id: &str) {
+    let mut disabled = state.disabled_targets.lock().unwrap_or_else(|e| {
+        log::warn!("Disabled targets mutex poisoned (disable_target), recovering: {e}");
+        e.into_inner()
+    });
+    disabled.insert(target_id.to_string());
+}
+
+fn is_target_disabled(state: &AppState, target_id: &str) -> bool {
+    let disabled = state.disabled_targets.lock().unwrap_or_else(|e| {
+        log::warn!("Disabled targets mutex poisoned (is_target_disabled), recovering: {e}");
+        e.into_inner()
+    });
+    disabled.contains(target_id)
+}
+
+fn store_stream_session(
+    state: &AppState,
+    group: OutputGroup,
+    incoming_url: &str,
+    expected_stream_key: Option<&str>,
+) {
+    let mut sessions = state.stream_sessions.lock().unwrap_or_else(|e| {
+        log::warn!("Stream sessions mutex poisoned (store), recovering: {e}");
+        e.into_inner()
+    });
+    sessions.insert(
+        group.id.clone(),
+        StreamSession {
+            group,
+            incoming_url: incoming_url.to_string(),
+            expected_stream_key: expected_stream_key.map(str::to_string),
+        },
+    );
+}
+
+fn remove_stream_session(state: &AppState, group_id: &str) {
+    let mut sessions = state.stream_sessions.lock().unwrap_or_else(|e| {
+        log::warn!("Stream sessions mutex poisoned (remove), recovering: {e}");
+        e.into_inner()
+    });
+    sessions.remove(group_id);
+}
+
+fn clear_stream_sessions(state: &AppState) {
+    let mut sessions = state.stream_sessions.lock().unwrap_or_else(|e| {
+        log::warn!("Stream sessions mutex poisoned (clear), recovering: {e}");
+        e.into_inner()
+    });
+    sessions.clear();
+}
+
 #[cfg(feature = "ffmpeg-libs")]
 fn build_libs_targets(state: &AppState, group: &OutputGroup) -> Result<Vec<String>, String> {
-    let targets = state.ffmpeg_handler.build_target_urls(group);
+    let targets = build_target_urls(state, group);
     if targets.is_empty() {
         return Err("At least one enabled stream target is required".to_string());
     }
     Ok(targets)
-}
-
-#[cfg(feature = "ffmpeg-libs")]
-fn is_passthrough_group(group: &OutputGroup) -> bool {
-    group.video.codec.eq_ignore_ascii_case("copy")
-        && group.audio.codec.eq_ignore_ascii_case("copy")
 }
 
 #[cfg(feature = "ffmpeg-libs")]
@@ -889,6 +1020,84 @@ fn libs_has_group(state: &AppState, group_id: &str) -> bool {
     guard
         .values()
         .any(|pipeline| pipeline.get_group_handle(group_id).is_some())
+}
+
+#[cfg(feature = "ffmpeg-libs")]
+fn libs_pipeline_group_ids(state: &AppState, group_id: &str) -> Option<Vec<String>> {
+    let guard = state.ffmpeg_libs_pipelines.lock().ok()?;
+    for pipeline in guard.values() {
+        if pipeline.get_group_handle(group_id).is_some() {
+            let ids = pipeline
+                .get_all_group_handles()
+                .into_iter()
+                .map(|handle| handle.group_id)
+                .collect::<Vec<_>>();
+            return Some(ids);
+        }
+    }
+    None
+}
+
+#[cfg(feature = "ffmpeg-libs")]
+fn sessions_for_groups(
+    state: &AppState,
+    group_ids: &[String],
+) -> Result<(Vec<OutputGroup>, String, Option<String>), String> {
+    let sessions = state.stream_sessions.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
+    let mut groups = Vec::new();
+    let mut incoming_url: Option<String> = None;
+    let mut expected_key: Option<Option<String>> = None;
+
+    for group_id in group_ids {
+        let session = sessions
+            .get(group_id)
+            .ok_or_else(|| format!("No stream session data for group {group_id}"))?;
+        groups.push(session.group.clone());
+
+        if let Some(ref existing_url) = incoming_url {
+            if existing_url != &session.incoming_url {
+                return Err("Stream inputs differ across groups; cannot restart together".to_string());
+            }
+        } else {
+            incoming_url = Some(session.incoming_url.clone());
+        }
+
+        if let Some(ref existing_key) = expected_key {
+            if *existing_key != session.expected_stream_key {
+                return Err("Stream keys differ across groups; cannot restart together".to_string());
+            }
+        } else {
+            expected_key = Some(session.expected_stream_key.clone());
+        }
+    }
+
+    Ok((
+        groups,
+        incoming_url.unwrap_or_default(),
+        expected_key.unwrap_or(None),
+    ))
+}
+
+#[cfg(feature = "ffmpeg-libs")]
+fn restart_libs_groups(state: &AppState, group_ids: Vec<String>) -> Result<(), String> {
+    if group_ids.is_empty() {
+        return Ok(());
+    }
+
+    let (groups, incoming_url, expected_key) = sessions_for_groups(state, &group_ids)?;
+
+    for group_id in &group_ids {
+        stop_libs_pipeline(state, group_id)?;
+    }
+
+    if groups.len() == 1 {
+        let group = groups.into_iter().next().unwrap();
+        start_libs_pipeline(state, group, &incoming_url, expected_key.as_deref())?;
+    } else {
+        start_libs_pipeline_multi(state, groups, &incoming_url, expected_key.as_deref())?;
+    }
+
+    Ok(())
 }
 
 #[cfg(feature = "ffmpeg-libs")]
@@ -1112,20 +1321,20 @@ async fn invoke_command(
                 let libs_has_group = libs_has_group(state, &group.id);
 
                 if libs_active && libs_has_group {
+                    store_stream_session(state, group.clone(), &incoming_url, expected_stream_key.as_deref());
                     return Ok(json!(0));
                 }
 
+                store_stream_session(state, group.clone(), &incoming_url, expected_stream_key.as_deref());
                 let pid = start_libs_pipeline(state, group, &incoming_url, expected_stream_key.as_deref())?;
                 Ok(json!(pid))
             }
             #[cfg(not(feature = "ffmpeg-libs"))]
             {
-                let _ = expected_stream_key; // Unused in CLI mode
-                let event_sink: Arc<dyn EventSink> = Arc::new(state.event_bus.clone());
-                let pid = state.ffmpeg_handler.start(&group, &incoming_url, event_sink)?;
-                // Reset reconnection state on successful manual start
-                state.ffmpeg_handler.reset_reconnection_state(&group.id);
-                Ok(json!(pid))
+                let _ = group;
+                let _ = incoming_url;
+                let _ = expected_stream_key;
+                Err("ffmpeg-libs feature not enabled".to_string())
             }
         }
         "start_all_streams" => {
@@ -1145,6 +1354,10 @@ async fn invoke_command(
                     .collect();
                 if start_groups.is_empty() {
                     return Err("At least one stream target is required".to_string());
+                }
+
+                for group in &start_groups {
+                    store_stream_session(state, group.clone(), &incoming_url, expected_stream_key.as_deref());
                 }
 
                 if start_groups.len() == 1 {
@@ -1167,10 +1380,10 @@ async fn invoke_command(
             }
             #[cfg(not(feature = "ffmpeg-libs"))]
             {
-                let _ = expected_stream_key; // Not used in CLI mode
-                let event_sink: Arc<dyn EventSink> = Arc::new(state.event_bus.clone());
-                let pids = state.ffmpeg_handler.start_all(&groups, &incoming_url, event_sink)?;
-                Ok(json!(pids))
+                let _ = groups;
+                let _ = incoming_url;
+                let _ = expected_stream_key;
+                Err("ffmpeg-libs feature not enabled".to_string())
             }
         }
         "stop_stream" => {
@@ -1186,28 +1399,26 @@ async fn invoke_command(
 
                 if libs_running {
                     stop_libs_pipeline(state, &group_id)?;
-                } else {
-                    state.ffmpeg_handler.stop(&group_id)?;
                 }
+                remove_stream_session(state, &group_id);
                 Ok(Value::Null)
             }
             #[cfg(not(feature = "ffmpeg-libs"))]
             {
-                state.ffmpeg_handler.stop(&group_id)?;
-                Ok(Value::Null)
+                let _ = group_id;
+                Err("ffmpeg-libs feature not enabled".to_string())
             }
         }
         "stop_all_streams" => {
             #[cfg(feature = "ffmpeg-libs")]
             {
                 stop_all_libs_pipelines(state)?;
-                state.ffmpeg_handler.stop_all()?;
+                clear_stream_sessions(state);
                 Ok(Value::Null)
             }
             #[cfg(not(feature = "ffmpeg-libs"))]
             {
-                state.ffmpeg_handler.stop_all()?;
-                Ok(Value::Null)
+                Err("ffmpeg-libs feature not enabled".to_string())
             }
         }
         #[cfg(feature = "ffmpeg-libs")]
@@ -1306,29 +1517,31 @@ async fn invoke_command(
         "stop_ffmpeg_libs_passthrough" => Err("ffmpeg-libs feature not enabled".to_string()),
         "retry_stream" => {
             let group_id: String = get_arg(&payload, "groupId")?;
-            let event_sink: Arc<dyn EventSink> = Arc::new(state.event_bus.clone());
-            let ffmpeg_handler = state.ffmpeg_handler.clone();
-            // Use spawn_blocking to avoid blocking the async runtime during backoff sleep
-            let (pid, next_delay) = tokio::task::spawn_blocking(move || {
-                ffmpeg_handler.retry_group(&group_id, event_sink)
-            })
-            .await
-            .map_err(|e| format!("Task join error: {e}"))??;
-            Ok(json!({
-                "pid": pid,
-                "nextDelaySecs": next_delay.map(|d| d.as_secs())
-            }))
+            #[cfg(feature = "ffmpeg-libs")]
+            {
+                let group_ids = libs_pipeline_group_ids(state, &group_id)
+                    .unwrap_or_else(|| vec![group_id.clone()]);
+                restart_libs_groups(state, group_ids)?;
+                Ok(json!({
+                    "pid": 0,
+                    "nextDelaySecs": Option::<u64>::None
+                }))
+            }
+            #[cfg(not(feature = "ffmpeg-libs"))]
+            {
+                let _ = group_id;
+                Err("ffmpeg-libs feature not enabled".to_string())
+            }
         }
         "get_active_stream_count" => {
             #[cfg(feature = "ffmpeg-libs")]
             {
                 let libs_count = libs_active_group_count(state);
-                let cli_count = state.ffmpeg_handler.active_count();
-                Ok(json!(libs_count + cli_count))
+                Ok(json!(libs_count))
             }
             #[cfg(not(feature = "ffmpeg-libs"))]
             {
-                Ok(json!(state.ffmpeg_handler.active_count()))
+                Err("ffmpeg-libs feature not enabled".to_string())
             }
         }
         "is_group_streaming" => {
@@ -1341,26 +1554,22 @@ async fn invoke_command(
                         .map_err(|_| "ffmpeg libs pipelines lock poisoned".to_string())?;
                     guard.values().any(|pipeline| pipeline.is_group_running(&group_id))
                 };
-                let cli_running = state.ffmpeg_handler.is_streaming(&group_id);
-                Ok(json!(libs_running || cli_running))
+                Ok(json!(libs_running))
             }
             #[cfg(not(feature = "ffmpeg-libs"))]
             {
-                Ok(json!(state.ffmpeg_handler.is_streaming(&group_id)))
+                let _ = group_id;
+                Err("ffmpeg-libs feature not enabled".to_string())
             }
         }
         "get_active_group_ids" => {
             #[cfg(feature = "ffmpeg-libs")]
             {
-                let mut ids = libs_group_ids(state);
-                ids.extend(state.ffmpeg_handler.get_active_group_ids());
-                ids.sort();
-                ids.dedup();
-                Ok(json!(ids))
+                Ok(json!(libs_group_ids(state)))
             }
             #[cfg(not(feature = "ffmpeg-libs"))]
             {
-                Ok(json!(state.ffmpeg_handler.get_active_group_ids()))
+                Err("ffmpeg-libs feature not enabled".to_string())
             }
         }
         "toggle_stream_target" => {
@@ -1371,55 +1580,42 @@ async fn invoke_command(
             let expected_stream_key: Option<String> = get_opt_arg(&payload, "expectedStreamKey")?;
             #[cfg(feature = "ffmpeg-libs")]
             {
-                let passthrough = is_passthrough_group(&group);
+                if enabled {
+                    enable_target(state, &target_id);
+                } else {
+                    disable_target(state, &target_id);
+                }
+
+                store_stream_session(state, group.clone(), &incoming_url, expected_stream_key.as_deref());
+
                 let libs_running = libs_active_group_count(state) > 0;
-                let cli_running = state.ffmpeg_handler.active_count() > 0;
                 let libs_has_group = libs_has_group(state, &group.id);
 
-                if enabled {
-                    state.ffmpeg_handler.enable_target(&target_id);
-                } else {
-                    state.ffmpeg_handler.disable_target(&target_id);
-                }
-
-                if passthrough && libs_running && !libs_has_group {
-                    return Err("FFmpeg libs passthrough is already running; stop the stream before toggling another group".to_string());
-                }
-
-                if passthrough && !cli_running && !libs_running {
-                    let pid = start_libs_pipeline(state, group, &incoming_url, expected_stream_key.as_deref())?;
-                    Ok(json!(pid))
-                } else if passthrough && libs_running {
-                    stop_libs_pipeline(state, &group.id)?;
+                if libs_running && libs_has_group {
+                    let group_ids = libs_pipeline_group_ids(state, &group.id)
+                        .unwrap_or_else(|| vec![group.id.clone()]);
+                    restart_libs_groups(state, group_ids)?;
+                    Ok(json!(0))
+                } else if !libs_running {
                     let pid = start_libs_pipeline(state, group, &incoming_url, expected_stream_key.as_deref())?;
                     Ok(json!(pid))
                 } else {
-                    let _ = expected_stream_key; // Unused in CLI mode
-                    let event_sink: Arc<dyn EventSink> = Arc::new(state.event_bus.clone());
-                    let pid = state
-                        .ffmpeg_handler
-                        .restart_group(&group.id, &group, &incoming_url, event_sink)?;
-                    Ok(json!(pid))
+                    Ok(json!(0))
                 }
             }
             #[cfg(not(feature = "ffmpeg-libs"))]
             {
-                let _ = expected_stream_key; // Not used in CLI mode
-                if enabled {
-                    state.ffmpeg_handler.enable_target(&target_id);
-                } else {
-                    state.ffmpeg_handler.disable_target(&target_id);
-                }
-                let event_sink: Arc<dyn EventSink> = Arc::new(state.event_bus.clone());
-                let pid = state
-                    .ffmpeg_handler
-                    .restart_group(&group.id, &group, &incoming_url, event_sink)?;
-                Ok(json!(pid))
+                let _ = target_id;
+                let _ = enabled;
+                let _ = group;
+                let _ = incoming_url;
+                let _ = expected_stream_key;
+                Err("ffmpeg-libs feature not enabled".to_string())
             }
         }
         "is_target_disabled" => {
             let target_id: String = get_arg(&payload, "targetId")?;
-            Ok(json!(state.ffmpeg_handler.is_target_disabled(&target_id)))
+            Ok(json!(is_target_disabled(state, &target_id)))
         }
         "get_encoders" => Ok(json!(get_encoders()?)),
         // New OBS-style encoder probing commands
@@ -1427,10 +1623,6 @@ async fn invoke_command(
         "get_encoder_capabilities" => Ok(json!(get_encoder_capabilities())),
         "get_video_encoders" => Ok(json!(get_all_video_encoders())),
         "test_ffmpeg" => Ok(json!(test_ffmpeg()?)),
-        "validate_ffmpeg_path" => {
-            let path: String = get_arg(&payload, "path")?;
-            Ok(json!(validate_ffmpeg_path(path)?))
-        }
         "test_rtmp_target" => {
             let url: String = get_arg(&payload, "url")?;
             let stream_key: String = get_arg(&payload, "streamKey")?;
@@ -1965,22 +2157,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     log::info!("Server will bind to {host}:{port}");
 
-    let custom_ffmpeg_path = settings.as_ref().and_then(|s| {
-        if s.ffmpeg_path.is_empty() {
-            None
-        } else {
-            Some(s.ffmpeg_path.clone())
-        }
-    });
-
     if let Some(settings) = settings.as_ref() {
         let _ = prune_logs(&log_dir_path, settings.log_retention_days);
     }
-
-    let ffmpeg_handler = Arc::new(FFmpegHandler::new_with_custom_path(
-        app_data_dir.clone(),
-        custom_ffmpeg_path,
-    ));
 
     let event_bus = EventBus::new();
     init_logger(&log_dir_path, event_bus.clone())?;
@@ -2061,10 +2240,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let state = AppState {
         profile_manager,
         settings_manager,
-        ffmpeg_handler,
         #[cfg(feature = "ffmpeg-libs")]
         ffmpeg_libs_pipelines: Arc::new(Mutex::new(std::collections::HashMap::new())),
         ffmpeg_downloader: Arc::new(AsyncMutex::new(FFmpegDownloader::new())),
+        platform_registry: Arc::new(PlatformRegistry::new()),
+        disabled_targets: Arc::new(Mutex::new(HashSet::new())),
+        stream_sessions: Arc::new(Mutex::new(HashMap::new())),
         theme_manager,
         obs_handler,
         discord_service,

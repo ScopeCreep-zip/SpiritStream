@@ -73,14 +73,10 @@
         }
       },
       "deb": {
-        "depends": [
-          "ffmpeg"
-        ]
+        "depends": []
       },
       "rpm": {
-        "depends": [
-          "ffmpeg"
-        ]
+        "depends": []
       }
     },
     "shortDescription": "Multi-destination streaming application",

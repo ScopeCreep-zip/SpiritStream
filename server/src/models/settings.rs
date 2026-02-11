@@ -68,10 +68,6 @@ pub struct Settings {
     #[serde(default)]
     pub start_minimized: bool,
 
-    /// System-wide FFmpeg location
-    #[serde(default)]
-    pub ffmpeg_path: String,
-
     /// System-wide behavior: auto-download FFmpeg if missing
     #[serde(default = "default_true")]
     pub auto_download_ffmpeg: bool,
@@ -166,7 +162,6 @@ impl Default for Settings {
         Self {
             // Global settings
             start_minimized: false,
-            ffmpeg_path: String::new(),
             auto_download_ffmpeg: true,
             log_retention_days: default_log_retention_days(),
             last_profile: None,

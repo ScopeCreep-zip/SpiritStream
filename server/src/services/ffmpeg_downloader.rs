@@ -3,12 +3,9 @@
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
 
 // Windows: Hide console windows for spawned processes
 #[cfg(windows)]
@@ -92,13 +89,6 @@ pub enum DownloadError {
     UnsupportedBuild(String),
 }
 
-/// Platform-specific download information
-struct PlatformDownload {
-    url: &'static str,
-    archive_type: ArchiveType,
-    binary_path: &'static str,
-}
-
 /// Platform-specific shared libs download information
 /// Used for FFmpeg libs integration (Phase 0 of FFmpeg libs migration)
 struct SharedLibsDownload {
@@ -112,7 +102,6 @@ struct SharedLibsDownload {
 enum ArchiveType {
     Zip,
     TarXz,
-    TarGz,
 }
 
 /// FFmpeg Downloader Service
@@ -144,70 +133,6 @@ impl FFmpegDownloader {
         self.cancel_token.load(Ordering::SeqCst)
     }
 
-    fn required_hardware_encoders() -> &'static [&'static str] {
-        #[cfg(target_os = "windows")]
-        {
-            &["h264_nvenc", "h264_qsv", "h264_amf"]
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            &["h264_nvenc", "h264_qsv", "h264_vaapi"]
-        }
-
-        #[cfg(target_os = "macos")]
-        {
-            &["h264_videotoolbox"]
-        }
-
-        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
-        {
-            &[]
-        }
-    }
-
-    fn validate_hardware_support(ffmpeg_path: &Path) -> Result<(), DownloadError> {
-        let required = Self::required_hardware_encoders();
-        if required.is_empty() {
-            return Ok(());
-        }
-
-        #[cfg(unix)]
-        {
-            if let Ok(metadata) = std::fs::metadata(ffmpeg_path) {
-                let mut perms = metadata.permissions();
-                // 0o111 => any execute bit (owner/group/other); if none are set, make it user/group/world executable.
-                if (perms.mode() & 0o111) == 0 {
-                    perms.set_mode(0o755);
-                    let _ = std::fs::set_permissions(ffmpeg_path, perms);
-                }
-            }
-        }
-
-        let output = Command::new(ffmpeg_path)
-            .args(["-encoders", "-hide_banner"])
-            .output()
-            .map_err(|e| DownloadError::InstallationFailed(format!("Failed to run downloaded FFmpeg: {e}")))?;
-
-        if !output.status.success() {
-            return Err(DownloadError::InstallationFailed(
-                "Downloaded FFmpeg returned an error while listing encoders".to_string(),
-            ));
-        }
-
-        let encoder_list = String::from_utf8_lossy(&output.stdout);
-        let missing: Vec<&str> = required
-            .iter()
-            .copied()
-            .filter(|encoder| !encoder_list.contains(encoder))
-            .collect();
-
-        if !missing.is_empty() {
-            return Err(DownloadError::UnsupportedBuild(missing.join(", ")));
-        }
-
-        Ok(())
-    }
 
     fn supports_version_check() -> bool {
         #[cfg(target_os = "macos")]
@@ -223,54 +148,6 @@ impl FFmpegDownloader {
         #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
         {
             false
-        }
-    }
-
-    /// Get platform-specific download information
-    fn get_platform_download() -> Result<PlatformDownload, DownloadError> {
-        #[cfg(target_os = "windows")]
-        {
-            Ok(PlatformDownload {
-                // Windows: hardware-enabled build (NVENC/QSV/AMF)
-                // BtbN Windows ZIPs currently expose `ffmpeg.exe` at the archive
-                // root (no additional subdirectory), so we only need the bare
-                // filename here. If the upstream archive layout changes (e.g. a
-                // top-level directory is added), this binary_path will need to be
-                // updated to match the new internal path.
-                url: "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip",
-                archive_type: ArchiveType::Zip,
-                binary_path: "ffmpeg.exe",
-            })
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            Ok(PlatformDownload {
-                // Linux: hardware-enabled static build (NVENC/QSV/VAAPI)
-                url: "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-linux64-gpl.tar.xz",
-                archive_type: ArchiveType::TarXz,
-                binary_path: "ffmpeg",
-            })
-        }
-
-        #[cfg(target_os = "macos")]
-        {
-            // macOS: evermeet.cx is the official FFmpeg-recommended source
-            // Provides Intel builds that run on ARM Macs via Rosetta 2
-            Ok(PlatformDownload {
-                url: "https://evermeet.cx/ffmpeg/getrelease/zip",
-                archive_type: ArchiveType::Zip,
-                binary_path: "ffmpeg", // ZIP contains just the binary
-            })
-        }
-
-        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
-        {
-            Err(DownloadError::UnsupportedPlatform(format!(
-                "{} {}",
-                std::env::consts::OS,
-                std::env::consts::ARCH
-            )))
         }
     }
 
@@ -323,36 +200,6 @@ impl FFmpegDownloader {
                 std::env::consts::OS,
                 std::env::consts::ARCH
             )))
-        }
-    }
-
-    /// Get the system installation path for FFmpeg
-    pub fn get_system_install_path() -> PathBuf {
-        #[cfg(target_os = "windows")]
-        {
-            PathBuf::from(r"C:\Program Files\ffmpeg\bin\ffmpeg.exe")
-        }
-
-        #[cfg(target_os = "macos")]
-        {
-            #[cfg(target_arch = "aarch64")]
-            {
-                PathBuf::from("/opt/homebrew/bin/ffmpeg")
-            }
-            #[cfg(not(target_arch = "aarch64"))]
-            {
-                PathBuf::from("/usr/local/bin/ffmpeg")
-            }
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            PathBuf::from("/usr/local/bin/ffmpeg")
-        }
-
-        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
-        {
-            PathBuf::from("ffmpeg")
         }
     }
 
@@ -629,96 +476,7 @@ exit /b %errorlevel%
 
     /// Download and extract FFmpeg to system location with elevation
     pub async fn download(&self, event_sink: &dyn EventSink) -> Result<PathBuf, DownloadError> {
-        self.reset_cancel();
-
-        // Get system install path
-        let target_path = Self::get_system_install_path();
-
-        // Check if already installed at system location
-        if target_path.exists() {
-            log::info!("FFmpeg already installed at: {target_path:?}");
-            self.emit_progress(event_sink, 100, 100, 100.0, "complete", Some("FFmpeg is already installed"));
-            return Ok(target_path);
-        }
-
-        // Get platform-specific download info
-        let platform = Self::get_platform_download()?;
-
-        // Create temp directory for download and extraction
-        let temp_dir = tempfile::tempdir()?;
-        let archive_path = temp_dir.path().join("ffmpeg_archive");
-        let temp_binary = temp_dir.path().join(
-            if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" }
-        );
-
-        // Emit starting phase
-        self.emit_progress(event_sink, 0, 0, 0.0, "starting", None);
-
-        // Download the file
-        self.download_file(platform.url, &archive_path, event_sink).await?;
-
-        if self.is_cancelled() {
-            return Err(DownloadError::Cancelled);
-        }
-
-        // Extract the archive to temp location
-        self.emit_progress(event_sink, 0, 0, 0.0, "extracting", None);
-
-        self.extract_archive(
-            &archive_path,
-            temp_dir.path(),
-            &platform.archive_type,
-            platform.binary_path,
-        )?;
-
-        // Verify extracted binary
-        self.emit_progress(event_sink, 0, 0, 0.0, "verifying", None);
-
-        if !temp_binary.exists() {
-            return Err(DownloadError::BinaryNotFound);
-        }
-
-        Self::validate_hardware_support(&temp_binary)?;
-
-        // Request elevation and install to system location
-        self.emit_progress(
-            event_sink,
-            0, 0, 0.0,
-            "requesting_permission",
-            Some("Administrator permission required to install FFmpeg")
-        );
-
-        match Self::install_with_elevation(&temp_binary, &target_path) {
-            Ok(()) => {
-                self.emit_progress(
-                    event_sink,
-                    100, 100, 100.0,
-                    "complete",
-                    Some("FFmpeg installed successfully")
-                );
-                log::info!("FFmpeg installed successfully to: {target_path:?}");
-                Ok(target_path)
-            }
-            Err(DownloadError::ElevationDenied) => {
-                self.emit_progress(
-                    event_sink,
-                    0, 0, 0.0,
-                    "elevation_denied",
-                    Some("Permission denied - FFmpeg was not installed")
-                );
-                Err(DownloadError::ElevationDenied)
-            }
-            Err(e) => {
-                self.emit_progress(
-                    event_sink,
-                    0, 0, 0.0,
-                    "error",
-                    Some(&format!("Installation failed: {e}"))
-                );
-                Err(e)
-            }
-        }
-        // temp_dir is automatically cleaned up when dropped
+        self.download_shared_libs(event_sink).await
     }
 
     /// Download and extract FFmpeg shared libs for linking/embedding
@@ -1144,26 +902,9 @@ exit /b %errorlevel%
     /// Get the path where FFmpeg is installed
     /// Checks in order: 1) Custom path from settings, 2) System install location
     pub fn get_ffmpeg_path(settings_manager: Option<&SettingsManager>) -> Option<PathBuf> {
-        // First, check for custom path in settings (set via browse functionality)
-        if let Some(settings_manager) = settings_manager {
-            if let Ok(settings) = settings_manager.load() {
-                if !settings.ffmpeg_path.is_empty() {
-                    let custom_path = PathBuf::from(&settings.ffmpeg_path);
-                    if custom_path.exists() {
-                        log::debug!("Using custom FFmpeg path from settings: {custom_path:?}");
-                        return Some(custom_path);
-                    } else {
-                        log::warn!("Custom FFmpeg path in settings does not exist: {custom_path:?}");
-                    }
-                }
-            }
-        }
-
-        // Fall back to system install location
-        let system_path = Self::get_system_install_path();
-        if system_path.exists() {
-            log::debug!("Using system FFmpeg path: {system_path:?}");
-            Some(system_path)
+        let _ = settings_manager;
+        if Self::are_shared_libs_installed() {
+            Some(Self::get_ffmpeg_libs_dir())
         } else {
             None
         }
@@ -1171,41 +912,18 @@ exit /b %errorlevel%
 
     /// Delete FFmpeg from the system with privilege elevation
     pub fn delete_ffmpeg(settings_manager: Option<&SettingsManager>) -> Result<(), DownloadError> {
-        // Get the current FFmpeg path
-        let ffmpeg_path = match Self::get_ffmpeg_path(settings_manager) {
-            Some(path) => path,
-            None => {
-                log::info!("FFmpeg not found, nothing to delete");
-                return Ok(());
-            }
-        };
+        let _ = settings_manager;
+        let libs_dir = Self::get_ffmpeg_libs_dir();
 
-        log::info!("Deleting FFmpeg from: {ffmpeg_path:?}");
-
-        // Check if it's a system path that requires elevation
-        let system_path = Self::get_system_install_path();
-        let needs_elevation = ffmpeg_path == system_path || Self::path_needs_elevation(&ffmpeg_path);
-
-        if needs_elevation {
-            Self::delete_with_elevation(&ffmpeg_path)?;
-        } else {
-            // Custom path in user-writable location
-            std::fs::remove_file(&ffmpeg_path)
-                .map_err(|e| DownloadError::InstallationFailed(format!("Failed to delete FFmpeg: {e}")))?;
+        if !libs_dir.exists() {
+            log::info!("FFmpeg shared libs not found, nothing to delete");
+            return Ok(());
         }
 
-        // Clear custom path from settings if it was set
-        if let Some(settings_manager) = settings_manager {
-            if let Ok(mut settings) = settings_manager.load() {
-                if !settings.ffmpeg_path.is_empty() {
-                    settings.ffmpeg_path = String::new();
-                    let _ = settings_manager.save(&settings);
-                    log::info!("Cleared custom FFmpeg path from settings");
-                }
-            }
-        }
-
-        log::info!("FFmpeg deleted successfully");
+        log::info!("Deleting FFmpeg shared libs from: {libs_dir:?}");
+        std::fs::remove_dir_all(&libs_dir)
+            .map_err(|e| DownloadError::InstallationFailed(format!("Failed to delete FFmpeg shared libs: {e}")))?;
+        log::info!("FFmpeg shared libs deleted successfully");
         Ok(())
     }
 

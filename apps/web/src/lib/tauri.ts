@@ -56,8 +56,6 @@ export const api = {
     getFfmpegPath: () => invoke<string | null>('get_bundled_ffmpeg_path'),
     checkFfmpegUpdate: (installedVersion?: string) =>
       invoke<FFmpegVersionInfo>('check_ffmpeg_update', { installedVersion }),
-    /** Validate a custom FFmpeg path before saving */
-    validateFfmpegPath: (path: string) => invoke<string>('validate_ffmpeg_path', { path }),
     /** Test RTMP target connectivity with actual connection attempt */
     testRtmpTarget: (url: string, streamKey: string) =>
       invoke<RtmpTestResult>('test_rtmp_target', { url, streamKey }),
