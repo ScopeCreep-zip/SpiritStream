@@ -19,7 +19,7 @@ use serde_json::{json, Value};
 use log::{Level, LevelFilter, Log, Metadata, Record};
 use chrono::Local;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     env,
     fs::OpenOptions,
     io::Write,
@@ -45,10 +45,14 @@ use spiritstream_server::models::{OutputGroup, Profile, RtmpInput, Settings, Obs
 use spiritstream_server::services::{
     prune_logs, read_recent_logs, validate_extension, validate_path_within_any,
     DiscordWebhookService, Encryption, EventSink, FFmpegDownloader, ObsWebSocketHandler,
-    PlatformRegistry, ProfileManager, SettingsManager, ThemeManager, ObsConfig,
+    ProfileManager, SettingsManager, ThemeManager, ObsConfig,
 };
 #[cfg(feature = "ffmpeg-libs")]
 use spiritstream_server::services::{InputPipeline, InputPipelineConfig, OutputGroupConfig, OutputGroupMode};
+#[cfg(feature = "ffmpeg-libs")]
+use spiritstream_server::services::PlatformRegistry;
+#[cfg(feature = "ffmpeg-libs")]
+use std::collections::HashMap;
 
 // ============================================================================
 // Constants
@@ -104,8 +108,10 @@ struct AppState {
     #[cfg(feature = "ffmpeg-libs")]
     ffmpeg_libs_pipelines: Arc<Mutex<std::collections::HashMap<String, InputPipeline>>>,
     ffmpeg_downloader: Arc<AsyncMutex<FFmpegDownloader>>,
+    #[cfg(feature = "ffmpeg-libs")]
     platform_registry: Arc<PlatformRegistry>,
     disabled_targets: Arc<Mutex<HashSet<String>>>,
+    #[cfg(feature = "ffmpeg-libs")]
     stream_sessions: Arc<Mutex<HashMap<String, StreamSession>>>,
     theme_manager: Arc<ThemeManager>,
     obs_handler: Arc<ObsWebSocketHandler>,
@@ -126,6 +132,7 @@ struct InvokeResponse {
     error: Option<String>,
 }
 
+#[cfg(feature = "ffmpeg-libs")]
 #[derive(Clone)]
 struct StreamSession {
     group: OutputGroup,
@@ -837,6 +844,7 @@ async fn invoke(
     }
 }
 
+#[cfg(feature = "ffmpeg-libs")]
 fn normalize_rtmp_url(url: &str) -> String {
     let mut url = url.trim().to_string();
 
@@ -855,6 +863,7 @@ fn normalize_rtmp_url(url: &str) -> String {
     url
 }
 
+#[cfg(feature = "ffmpeg-libs")]
 fn resolve_stream_key(key: &str) -> String {
     if key.starts_with("${") && key.ends_with('}') && key.len() > 3 {
         let var_name = &key[2..key.len() - 1];
@@ -873,6 +882,7 @@ fn resolve_stream_key(key: &str) -> String {
     }
 }
 
+#[cfg(feature = "ffmpeg-libs")]
 fn build_target_urls(state: &AppState, group: &OutputGroup) -> Vec<String> {
     let disabled = state.disabled_targets.lock().unwrap_or_else(|e| {
         log::warn!("Disabled targets mutex poisoned (build_target_urls), recovering: {e}");
@@ -904,6 +914,7 @@ fn build_target_urls(state: &AppState, group: &OutputGroup) -> Vec<String> {
     target_outputs
 }
 
+#[cfg(feature = "ffmpeg-libs")]
 fn enable_target(state: &AppState, target_id: &str) {
     let mut disabled = state.disabled_targets.lock().unwrap_or_else(|e| {
         log::warn!("Disabled targets mutex poisoned (enable_target), recovering: {e}");
@@ -912,6 +923,7 @@ fn enable_target(state: &AppState, target_id: &str) {
     disabled.remove(target_id);
 }
 
+#[cfg(feature = "ffmpeg-libs")]
 fn disable_target(state: &AppState, target_id: &str) {
     let mut disabled = state.disabled_targets.lock().unwrap_or_else(|e| {
         log::warn!("Disabled targets mutex poisoned (disable_target), recovering: {e}");
@@ -928,6 +940,7 @@ fn is_target_disabled(state: &AppState, target_id: &str) -> bool {
     disabled.contains(target_id)
 }
 
+#[cfg(feature = "ffmpeg-libs")]
 fn store_stream_session(
     state: &AppState,
     group: OutputGroup,
@@ -948,6 +961,7 @@ fn store_stream_session(
     );
 }
 
+#[cfg(feature = "ffmpeg-libs")]
 fn remove_stream_session(state: &AppState, group_id: &str) {
     let mut sessions = state.stream_sessions.lock().unwrap_or_else(|e| {
         log::warn!("Stream sessions mutex poisoned (remove), recovering: {e}");
@@ -956,6 +970,7 @@ fn remove_stream_session(state: &AppState, group_id: &str) {
     sessions.remove(group_id);
 }
 
+#[cfg(feature = "ffmpeg-libs")]
 fn clear_stream_sessions(state: &AppState) {
     let mut sessions = state.stream_sessions.lock().unwrap_or_else(|e| {
         log::warn!("Stream sessions mutex poisoned (clear), recovering: {e}");
@@ -2243,8 +2258,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(feature = "ffmpeg-libs")]
         ffmpeg_libs_pipelines: Arc::new(Mutex::new(std::collections::HashMap::new())),
         ffmpeg_downloader: Arc::new(AsyncMutex::new(FFmpegDownloader::new())),
+        #[cfg(feature = "ffmpeg-libs")]
         platform_registry: Arc::new(PlatformRegistry::new()),
         disabled_targets: Arc::new(Mutex::new(HashSet::new())),
+        #[cfg(feature = "ffmpeg-libs")]
         stream_sessions: Arc::new(Mutex::new(HashMap::new())),
         theme_manager,
         obs_handler,
