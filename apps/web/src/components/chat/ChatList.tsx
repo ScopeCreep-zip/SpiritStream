@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
 import type { ChatMessage, ChatPlatform } from '@/types/chat';
 
@@ -57,6 +58,7 @@ export function ChatList({
   className,
   ...props
 }: ChatListProps) {
+  const { t } = useTranslation();
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -110,7 +112,7 @@ export function ChatList({
                 </div>
                 <div className={cn('flex flex-wrap items-baseline gap-x-2 gap-y-1', densityConfig.text)}>
                   <span className="font-semibold text-[var(--text-primary)]">
-                    {isOutbound ? 'You' : message.username}
+                    {isOutbound ? t('chat.you') : message.username}
                   </span>
                   {timestamp && (
                     <span className="text-[0.7rem] text-[var(--text-tertiary)]">

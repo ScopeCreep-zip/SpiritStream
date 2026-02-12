@@ -106,9 +106,9 @@ export function Chat() {
     if (sendTargets.length === 0) return '';
     return sendTargets
       .map((target) => {
-        if (target.platform === 'twitch') return 'Twitch';
-        if (target.platform === 'youtube') return 'YouTube';
-        if (target.platform === 'trovo') return 'Trovo';
+        if (target.platform === 'twitch') return t('chat.platforms.twitch');
+        if (target.platform === 'youtube') return t('chat.platforms.youtube');
+        if (target.platform === 'trovo') return t('chat.platforms.trovo');
         return target.platform;
       })
       .join(', ');
@@ -232,21 +232,21 @@ export function Chat() {
     return [
       {
         id: 'twitch',
-        label: 'Twitch',
+        label: t('chat.platforms.twitch'),
         configured: chatSettings.twitchChannel.trim().length > 0,
         sendEnabled: chatSettings.twitchSendEnabled,
         status: getStatus('twitch'),
       },
       {
         id: 'youtube',
-        label: 'YouTube',
+        label: t('chat.platforms.youtube'),
         configured: chatSettings.youtubeChannelId.trim().length > 0,
         sendEnabled: chatSettings.youtubeSendEnabled && !chatSettings.youtubeUseApiKey,
         status: getStatus('youtube'),
       },
       {
         id: 'trovo',
-        label: 'Trovo',
+        label: t('chat.platforms.trovo'),
         configured: chatSettings.trovoChannelId.trim().length > 0,
         sendEnabled: chatSettings.trovoSendEnabled,
         status: getStatus('trovo'),
@@ -294,7 +294,7 @@ export function Chat() {
 
     if (sendEnabledPlatforms.length === 0) {
       if (chatSettings.youtubeUseApiKey && !chatSettings.twitchSendEnabled) {
-        return t('chat.sendRequiresLogin', {
+        return t('chat.sendApiKeyReadOnly', {
           defaultValue: 'YouTube API key mode is read-only. Sign in or enable another platform to send.',
         });
       }
@@ -351,9 +351,9 @@ export function Chat() {
     <Card>
       <CardHeader>
         <div>
-          <CardTitle>{t('chat.title', { defaultValue: 'Unified Chat' })}</CardTitle>
+          <CardTitle>{t('chat.viewTitle', { defaultValue: 'Unified Chat' })}</CardTitle>
           <CardDescription>
-            {t('chat.description', {
+            {t('chat.viewDescription', {
               defaultValue: 'Unified chat from your connected platforms. Sending uses your enabled accounts.',
             })}
           </CardDescription>

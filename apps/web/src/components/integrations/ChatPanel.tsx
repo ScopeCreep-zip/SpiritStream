@@ -110,7 +110,7 @@ function TwitchCard({
     try {
       await onLogin();
     } catch (error) {
-      toast.error(formatError(error));
+      toast.error(formatError(error, t));
     } finally {
       setIsLoggingIn(false);
     }
@@ -121,7 +121,7 @@ function TwitchCard({
     try {
       await onLogout();
     } catch (error) {
-      toast.error(formatError(error));
+      toast.error(formatError(error, t));
     } finally {
       setIsLoggingOut(false);
     }
@@ -133,7 +133,7 @@ function TwitchCard({
       await onForget();
       toast.success(t('chat.accountForgotten', 'Account forgotten'));
     } catch (error) {
-      toast.error(formatError(error));
+      toast.error(formatError(error, t));
     } finally {
       setIsLoggingOut(false);
     }
@@ -365,7 +365,7 @@ function YouTubeCard({
     try {
       await onLogin();
     } catch (error) {
-      toast.error(formatError(error));
+      toast.error(formatError(error, t));
     } finally {
       setIsLoggingIn(false);
     }
@@ -376,7 +376,7 @@ function YouTubeCard({
     try {
       await onLogout();
     } catch (error) {
-      toast.error(formatError(error));
+      toast.error(formatError(error, t));
     } finally {
       setIsLoggingOut(false);
     }
@@ -388,7 +388,7 @@ function YouTubeCard({
       await onForget();
       toast.success(t('chat.accountForgotten', 'Account forgotten'));
     } catch (error) {
-      toast.error(formatError(error));
+      toast.error(formatError(error, t));
     } finally {
       setIsLoggingOut(false);
     }
@@ -645,23 +645,24 @@ function YouTubeCard({
 // ============================================================================
 
 /** Extract a short, user-friendly error message */
-function formatError(error: unknown): string {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function formatError(error: unknown, t: (...args: any[]) => string): string {
   const message = error instanceof Error ? error.message : String(error);
 
   // Channel not found on Twitch
   const twitchMatch = message.match(/Channel '([^']+)' does not exist on Twitch/i);
   if (twitchMatch) {
-    return `Channel '${twitchMatch[1]}' not found`;
+    return t('chat.formatError.channelNotFoundNamed', { channel: twitchMatch[1] });
   }
 
   // Generic "does not exist" patterns
   if (message.toLowerCase().includes('does not exist')) {
-    return 'Channel not found';
+    return t('chat.formatError.channelNotFound');
   }
 
   // Connection errors
   if (message.toLowerCase().includes('connection')) {
-    return 'Connection failed';
+    return t('chat.formatError.connectionFailed');
   }
 
   // Return as-is if short enough, otherwise truncate
@@ -825,14 +826,14 @@ export function ChatPanel() {
               setTwitchChannel(username);
               saveChatSettings({ twitchChannel: username });
             }
-            toast.success(t('chat.oauth.loginSuccess', 'Signed in to Twitch'));
+            toast.success(t('chat.oauth.loginSuccess', { platform: 'Twitch', defaultValue: 'Signed in to {{platform}}' }));
           } else if (provider === 'youtube') {
             setYoutubeAccount({ loggedIn: true, userId, username, displayName });
             if (!youtubeChannelId && userId) {
               setYoutubeChannelId(userId);
               saveChatSettings({ youtubeChannelId: userId });
             }
-            toast.success(t('chat.oauth.loginSuccess', 'Signed in to YouTube'));
+            toast.success(t('chat.oauth.loginSuccess', { platform: 'YouTube', defaultValue: 'Signed in to {{platform}}' }));
           }
         }
       );
@@ -920,7 +921,7 @@ export function ChatPanel() {
       setPlatformStatuses(statuses);
       toast.success(t('chat.retrySuccess', { platform: 'Twitch', defaultValue: 'Retrying Twitch chat' }));
     } catch (error) {
-      toast.error(formatError(error));
+      toast.error(formatError(error, t));
     }
   }, [t]);
 
@@ -974,7 +975,7 @@ export function ChatPanel() {
       setPlatformStatuses(statuses);
       toast.success(t('chat.retrySuccess', { platform: 'YouTube', defaultValue: 'Retrying YouTube chat' }));
     } catch (error) {
-      toast.error(formatError(error));
+      toast.error(formatError(error, t));
     }
   }, [t]);
 
@@ -1048,7 +1049,7 @@ export function ChatPanel() {
       setPlatformStatuses(statuses);
       toast.success(t('chat.retrySuccess', { platform: 'Trovo', defaultValue: 'Retrying Trovo chat' }));
     } catch (error) {
-      toast.error(formatError(error));
+      toast.error(formatError(error, t));
     }
   }, [t]);
 
