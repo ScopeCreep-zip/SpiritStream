@@ -466,11 +466,23 @@ fn load_settings<R: Runtime>(app: &AppHandle<R>) -> Option<Settings> {
     serde_json::from_str(&content).ok()
 }
 
-/// Kill any existing SpiritStream processes to avoid conflicts
+/// Kill any existing SpiritStream processes to avoid conflicts.
+/// This is a safety net for ungraceful prior shutdowns — ideally never needed.
 fn kill_existing_processes() {
     #[cfg(unix)]
     {
         use std::process::Command;
+
+        // Check if any zombie processes exist before killing (for diagnostics)
+        let had_zombies = Command::new("pgrep")
+            .args(["-f", "spiritstream-server"])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
+        if had_zombies {
+            log::warn!("Found orphaned spiritstream-server processes — killing (previous shutdown was ungraceful)");
+        }
 
         // Kill any existing spiritstream-server processes
         let _ = Command::new("pkill")
@@ -478,7 +490,6 @@ fn kill_existing_processes() {
             .output();
 
         // Kill any existing desktop app instances (but not ourselves)
-        // Use pattern that matches the binary name
         let _ = Command::new("pkill")
             .args(["-9", "-f", "spiritstream-desktop"])
             .output();

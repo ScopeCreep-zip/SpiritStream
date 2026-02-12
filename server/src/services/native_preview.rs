@@ -75,8 +75,9 @@ impl NativePreviewService {
         let preview_id_clone = preview_id.clone();
         let tx_clone = frame_tx.clone();
 
-        // Spawn encoding thread
+        // Spawn encoding thread — visible preview, schedule as user-initiated
         std::thread::spawn(move || {
+            crate::services::thread_config::set_thread_qos(crate::services::thread_config::QosClass::UserInitiated);
             let frame_interval_ms = 1000 / config.fps.max(1);
             let mut last_frame_time = Instant::now();
 
@@ -166,8 +167,9 @@ impl NativePreviewService {
         let preview_id_clone = preview_id.clone();
         let tx_clone = frame_tx.clone();
 
-        // Spawn encoding thread
+        // Spawn encoding thread — visible preview, schedule as user-initiated
         std::thread::spawn(move || {
+            crate::services::thread_config::set_thread_qos(crate::services::thread_config::QosClass::UserInitiated);
             let frame_interval_ms = 1000 / config.fps.max(1);
             let mut last_frame_time = Instant::now();
 

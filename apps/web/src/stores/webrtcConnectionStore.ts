@@ -15,7 +15,7 @@
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import { api } from '@/lib/backend';
-import { isGo2rtcAvailable } from '@/lib/go2rtcStatus';
+import { events } from '@/lib/backend/httpEvents';
 
 export type WebRTCStatus = 'idle' | 'loading' | 'connecting' | 'playing' | 'error' | 'unavailable';
 
@@ -181,29 +181,7 @@ export const useWebRTCConnectionStore = create<WebRTCConnectionState>()(
       set({ connections: { ...connections, [sourceId]: conn } });
 
       try {
-        // Use cached go2rtc availability check for faster startup
-        // The cache is pre-warmed by useBackendConnection hook
         if (conn.abortController?.signal.aborted) return;
-
-        const available = await isGo2rtcAvailable();
-
-        if (conn.abortController?.signal.aborted) return;
-
-        if (!available) {
-          console.log('[WebRTCStore] go2rtc not available for:', sourceId);
-          set({
-            connections: {
-              ...get().connections,
-              [sourceId]: {
-                ...conn,
-                status: 'unavailable',
-                error: 'go2rtc WebRTC server is not running',
-                isConnecting: false,
-              },
-            },
-          });
-          return;
-        }
 
         // Update status to connecting
         {
@@ -374,6 +352,29 @@ export const useWebRTCConnectionStore = create<WebRTCConnectionState>()(
     },
   }))
 );
+
+// Auto-retry connections stuck in 'unavailable' when go2rtc becomes available.
+// This handles the race condition where connections are attempted before go2rtc
+// has lazy-started. The server emits 'go2rtc_status' after first successful start.
+if (typeof window !== 'undefined') {
+  events.on<{ available?: boolean }>('go2rtc_status', (payload) => {
+    if (!payload?.available) return;
+
+    const { connections, retryConnection } = useWebRTCConnectionStore.getState();
+    const unavailable = Object.entries(connections)
+      .filter(([, conn]) => conn.status === 'unavailable')
+      .map(([sourceId]) => sourceId);
+
+    if (unavailable.length > 0) {
+      console.log('[WebRTCStore] go2rtc now available, retrying', unavailable.length, 'connections');
+      for (const sourceId of unavailable) {
+        retryConnection(sourceId);
+      }
+    }
+  }).catch(() => {
+    // WebSocket not ready yet — fine, no connections to retry anyway
+  });
+}
 
 /**
  * Get the current number of active connections (for debugging)

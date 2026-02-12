@@ -28,6 +28,7 @@ mod go2rtc_manager;
 mod h264_capture;
 mod audio_levels;
 mod audio_level_extractor;
+pub mod thread_config;
 
 // macOS-specific ScreenCaptureKit audio capture
 #[cfg(target_os = "macos")]

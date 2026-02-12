@@ -510,6 +510,8 @@ fn run_capture_encoding_loop(
     capture_audio: bool,
     rtsp_output_url: String,
 ) {
+    // H264 encoding is latency-sensitive — schedule on P-cores
+    crate::services::thread_config::set_thread_qos(crate::services::thread_config::QosClass::UserInitiated);
     let encoding_start = Instant::now();
 
     // Wait for the first frame to get actual dimensions
@@ -737,6 +739,8 @@ fn run_capture_encoding_loop_http(
     source_id: String,
     capture_audio: bool,
 ) {
+    // H264 encoding is latency-sensitive — schedule on P-cores
+    crate::services::thread_config::set_thread_qos(crate::services::thread_config::QosClass::UserInitiated);
     let encoding_start = Instant::now();
 
     // Wait for the first frame to get actual dimensions
@@ -862,6 +866,7 @@ fn run_capture_encoding_loop_http(
     let stop_flag_clone = stop_flag.clone();
     let source_id_clone = source_id.clone();
     let output_thread = std::thread::spawn(move || {
+        crate::services::thread_config::set_thread_qos(crate::services::thread_config::QosClass::Utility);
         read_mpegts_output(stdout, output_tx, stop_flag_clone, source_id_clone);
     });
 

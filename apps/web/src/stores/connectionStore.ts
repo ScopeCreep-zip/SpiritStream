@@ -4,8 +4,11 @@ import { api } from '@/lib/backend';
 
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected';
 
-// Health check interval for Tauri mode (10 seconds)
-const TAURI_HEALTH_CHECK_INTERVAL = 10000;
+// Health check interval once connected (30 seconds — server is local, no need to poll frequently)
+const CONNECTED_HEALTH_CHECK_INTERVAL = 30000;
+// Initial retry interval on failure (exponential backoff: 1s → 2s → 4s → 8s → 10s cap)
+const INITIAL_RETRY_INTERVAL = 1000;
+const MAX_RETRY_INTERVAL = 10000;
 // Maximum consecutive failures before marking as disconnected
 const MAX_FAILURES_BEFORE_DISCONNECT = 3;
 
@@ -110,15 +113,28 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
       clearInterval(existingInterval);
     }
 
-    // Do an immediate check
+    // Do an immediate check (no initial delay)
     get().checkHealth();
 
-    // Set up recurring check
-    const intervalId = setInterval(() => {
-      get().checkHealth();
-    }, TAURI_HEALTH_CHECK_INTERVAL);
+    // Adaptive interval: 30s when connected, exponential backoff on failure
+    const scheduleNext = (): void => {
+      const state = get();
+      const isConnected = state.status === 'connected';
+      const failures = state.tauriHealthCheckFailures;
 
-    set({ healthCheckIntervalId: intervalId });
+      const interval = isConnected
+        ? CONNECTED_HEALTH_CHECK_INTERVAL
+        : Math.min(INITIAL_RETRY_INTERVAL * Math.pow(2, failures), MAX_RETRY_INTERVAL);
+
+      const intervalId = setTimeout(async () => {
+        await get().checkHealth();
+        scheduleNext();
+      }, interval);
+
+      set({ healthCheckIntervalId: intervalId as unknown as ReturnType<typeof setInterval> });
+    };
+
+    scheduleNext();
   },
 
   stopTauriHealthCheck: () => {
@@ -130,10 +146,7 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
   },
 }));
 
-// Auto-start health check in Tauri mode when the module loads
+// Auto-start health check in Tauri mode when the module loads (immediate, no delay)
 if (typeof window !== 'undefined' && backendMode === 'tauri') {
-  // Wait a moment for the app to initialize
-  setTimeout(() => {
-    useConnectionStore.getState().startTauriHealthCheck();
-  }, 1000);
+  useConnectionStore.getState().startTauriHealthCheck();
 }

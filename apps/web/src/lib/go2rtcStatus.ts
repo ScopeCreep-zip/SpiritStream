@@ -1,16 +1,15 @@
 /**
  * go2rtc Availability Cache
  *
- * Provides a cached check for go2rtc availability to avoid repeated
- * startup delays in WebRTC connection code. The availability status
- * is cached after the first successful check.
- *
- * Usage:
- * - Call preWarmGo2rtc() early during app initialization
- * - Use isGo2rtcAvailable() when starting WebRTC connections
+ * With lazy go2rtc startup, go2rtc is not available at app start.
+ * It starts on first WebRTC request. This module:
+ * - Listens for the server's `go2rtc_status` WebSocket event
+ * - Falls back to a single API check (no retry loop)
+ * - Caches the result once known
  */
 
 import { api } from '@/lib/backend';
+import { events } from '@/lib/backend/httpEvents';
 
 /** Cached availability state: null = not checked, true/false = result */
 let go2rtcAvailable: boolean | null = null;
@@ -18,17 +17,24 @@ let go2rtcAvailable: boolean | null = null;
 /** Promise for in-flight availability check to prevent duplicate requests */
 let checkPromise: Promise<boolean> | null = null;
 
-/** Maximum retry attempts for availability check */
-const MAX_RETRIES = 10;
-
-/** Delay between retries in milliseconds */
-const RETRY_DELAY_MS = 500;
+// Listen for server-pushed go2rtc_status event (fires after lazy start)
+if (typeof window !== 'undefined') {
+  events.on<{ available?: boolean }>('go2rtc_status', (payload) => {
+    if (payload?.available) {
+      go2rtcAvailable = true;
+      checkPromise = null;
+    }
+  }).catch(() => {
+    // WebSocket not ready yet — will get event when it connects
+  });
+}
 
 /**
  * Check if go2rtc is available, with caching.
  *
- * On first call, performs retries with 500ms delays until go2rtc responds
- * or max retries are exhausted. Subsequent calls return cached result immediately.
+ * With lazy startup, go2rtc won't be available until the first WebRTC
+ * stream is requested. This does a single check (no retries) and
+ * relies on the `go2rtc_status` event for lazy-start notification.
  *
  * @returns Promise that resolves to true if go2rtc is available, false otherwise
  */
@@ -43,25 +49,19 @@ export async function isGo2rtcAvailable(): Promise<boolean> {
     return checkPromise;
   }
 
-  // Start new availability check with retries
+  // Single check — no retry loop. go2rtc starts lazily on first use.
   checkPromise = (async () => {
-    for (let i = 0; i < MAX_RETRIES; i++) {
-      try {
-        const available = await api.webrtc.isAvailable();
-        if (available) {
-          go2rtcAvailable = true;
-          return true;
-        }
-      } catch {
-        // Ignore errors during startup check
+    try {
+      const available = await api.webrtc.isAvailable();
+      if (available) {
+        go2rtcAvailable = true;
+        return true;
       }
-
-      // Wait before retry (skip wait on last attempt)
-      if (i < MAX_RETRIES - 1) {
-        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
-      }
+    } catch {
+      // go2rtc not started yet — expected with lazy startup
     }
 
+    // Not available yet — will be updated by go2rtc_status event
     go2rtcAvailable = false;
     return false;
   })();
@@ -72,11 +72,8 @@ export async function isGo2rtcAvailable(): Promise<boolean> {
 /**
  * Pre-warm the go2rtc availability cache.
  *
- * Call this early during app initialization (e.g., after WebSocket connects)
- * to start the availability check in background. This reduces latency when
- * WebRTC connections are started later.
- *
- * Fire-and-forget: does not wait for result or throw errors.
+ * With lazy startup this is essentially a quick status check.
+ * The real availability notification comes via WebSocket event.
  */
 export function preWarmGo2rtc(): void {
   isGo2rtcAvailable().catch(() => {

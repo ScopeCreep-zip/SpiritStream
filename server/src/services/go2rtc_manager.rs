@@ -6,7 +6,7 @@ use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::process::{Child, Command};
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex as AsyncMutex, RwLock};
 use std::io::Write;
 
 use super::go2rtc_client::Go2RtcClient;
@@ -22,6 +22,9 @@ pub struct Go2RtcManager {
     port: u16,
     is_available: AtomicBool,
     binary_path: Option<PathBuf>,
+    /// Serializes concurrent `ensure_started()` calls to prevent double-spawn.
+    /// Unlike OnceCell, failures are NOT cached — next call will retry.
+    startup_lock: AsyncMutex<()>,
 }
 
 impl Go2RtcManager {
@@ -39,6 +42,7 @@ impl Go2RtcManager {
             port,
             is_available: AtomicBool::new(false),
             binary_path: None,
+            startup_lock: AsyncMutex::new(()),
         }
     }
 
@@ -206,6 +210,32 @@ log:
         }
     }
 
+    /// Ensure go2rtc is started (lazy, idempotent, retryable).
+    ///
+    /// Uses double-checked locking:
+    /// - Fast path: `is_available()` check without lock (atomic load)
+    /// - Slow path: acquire mutex, re-check, start if needed
+    ///
+    /// Unlike OnceCell, failures are NOT cached — if go2rtc fails to start
+    /// (e.g., binary not found, port conflict), the next call will retry.
+    pub async fn ensure_started(&self) -> Result<(), String> {
+        // Fast path: already running
+        if self.is_available() {
+            return Ok(());
+        }
+
+        // Slow path: serialize concurrent startup attempts
+        let _guard = self.startup_lock.lock().await;
+
+        // Re-check after acquiring lock (another caller may have started it)
+        if self.is_available() {
+            return Ok(());
+        }
+
+        log::info!("go2rtc lazy-starting on first use...");
+        self.start().await
+    }
+
     /// Stop the go2rtc process
     pub async fn stop(&self) {
         self.is_available.store(false, Ordering::SeqCst);
@@ -237,20 +267,17 @@ log:
         self.port + 1
     }
 
-    /// Register a source for WebRTC streaming using go2rtc's native source format
+    /// Register a source for WebRTC streaming using go2rtc's native source format.
+    /// Lazily starts go2rtc on first registration if not already running.
     pub async fn register_source(&self, source_id: &str, go2rtc_source: &str) -> Result<String, String> {
-        if !self.is_available() {
-            return Err("go2rtc is not available".to_string());
-        }
+        // Lazy start: ensure go2rtc is running before registering
+        self.ensure_started().await?;
 
         self.client.register_stream(source_id, go2rtc_source).await
     }
 
     /// Register a camera source using go2rtc's native ffmpeg:device source
     pub async fn register_camera(&self, source_id: &str, device_index: u32) -> Result<String, String> {
-        if !self.is_available() {
-            return Err("go2rtc is not available".to_string());
-        }
 
         // Use go2rtc's native ffmpeg:device source type
         // Format: ffmpeg:device?video={index}&video_size={WxH}&framerate={fps}#video={codec}
@@ -270,9 +297,6 @@ log:
 
     /// Register a screen capture source
     pub async fn register_screen(&self, source_id: &str, display_id: u32) -> Result<String, String> {
-        if !self.is_available() {
-            return Err("go2rtc is not available".to_string());
-        }
 
         // Screen capture requires different handling per platform
         // On macOS, AVFoundation can capture screens - the display index comes after camera indices

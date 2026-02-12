@@ -331,6 +331,7 @@ impl CameraCaptureService {
         let height = config.height;
 
         std::thread::spawn(move || {
+            crate::services::thread_config::set_thread_qos(crate::services::thread_config::QosClass::UserInteractive);
             let frame_size = (width * height * 3) as usize; // RGB24
             let mut reader = BufReader::new(stdout);
             let mut buffer = vec![0u8; frame_size];

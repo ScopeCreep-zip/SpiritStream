@@ -300,8 +300,9 @@ impl ScreenCaptureService {
         let stop_flag = Arc::new(AtomicBool::new(false));
         let stop_flag_clone = stop_flag.clone();
 
-        // Start capture in background thread
+        // Start capture in background thread — real-time video, needs P-cores
         let handle = std::thread::spawn(move || {
+            crate::services::thread_config::set_thread_qos(crate::services::thread_config::QosClass::UserInteractive);
             capturer.start_capture();
 
             while !stop_flag_clone.load(Ordering::Relaxed) {
@@ -386,8 +387,9 @@ impl ScreenCaptureService {
         let stop_flag = Arc::new(AtomicBool::new(false));
         let stop_flag_clone = stop_flag.clone();
 
-        // Start capture in background thread
+        // Start capture in background thread — real-time video, needs P-cores
         let handle = std::thread::spawn(move || {
+            crate::services::thread_config::set_thread_qos(crate::services::thread_config::QosClass::UserInteractive);
             capturer.start_capture();
 
             while !stop_flag_clone.load(Ordering::Relaxed) {

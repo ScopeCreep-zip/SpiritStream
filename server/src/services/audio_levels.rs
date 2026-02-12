@@ -225,17 +225,14 @@ impl AudioLevelService {
                 ticker.tick().await;
 
                 let sources = tracked_sources.lock().await;
-                let mut states = track_states.lock().await;
 
                 if sources.is_empty() {
-                    // No sources to monitor, emit empty data
-                    let data = AudioLevelsData {
-                        tracks: HashMap::new(),
-                        master: AudioLevel::default(),
-                    };
-                    emit_event(event_sink.as_ref(), "audio_levels", &data);
+                    // No sources to monitor — skip all work (near-zero CPU when idle)
+                    drop(sources);
                     continue;
                 }
+
+                let mut states = track_states.lock().await;
 
                 let mut tracks = HashMap::new();
                 let mut master_rms_sum = 0.0;

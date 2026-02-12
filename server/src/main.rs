@@ -1416,9 +1416,12 @@ async fn webrtc_start_handler(
         }
     }
 
-    if !state.go2rtc_manager.is_available() {
-        return Json(json!({ "ok": false, "error": "go2rtc is not available" }));
+    // Lazy-start go2rtc on first WebRTC request
+    if let Err(e) = state.go2rtc_manager.ensure_started().await {
+        return Json(json!({ "ok": false, "error": format!("go2rtc not available: {}", e) }));
     }
+    // Notify frontend that go2rtc is now available
+    state.event_bus.emit("go2rtc_status", json!({ "available": true }));
 
     // Find source from active profile
     let source = {
@@ -4495,40 +4498,49 @@ async fn shutdown_signal(state: AppState) {
 
     log::info!("Shutdown signal received, stopping services...");
 
-    // Stop services in dependency order (most critical first)
+    // Stop services in dependency order with per-service timeout (5s max each)
+    let svc_timeout = std::time::Duration::from_secs(5);
 
     // 1. Stop active streams (FFmpeg processes)
+    log::info!("Stopping FFmpeg streams...");
     if let Err(e) = state.ffmpeg_handler.stop_all() {
         log::warn!("Error stopping FFmpeg streams: {}", e);
     }
 
     // 2. Stop recording and replay buffer
+    log::info!("Stopping recording and replay buffer...");
     let _ = state.recording_service.stop_all();
     if let Err(e) = state.replay_buffer.stop() {
         log::warn!("Error stopping replay buffer: {}", e);
     }
 
-    // 3. Stop WebRTC/go2rtc
-    state.go2rtc_manager.stop().await;
+    // 3. Stop WebRTC/go2rtc (with timeout in case health check is hanging)
+    log::info!("Stopping go2rtc...");
+    if tokio::time::timeout(svc_timeout, state.go2rtc_manager.stop()).await.is_err() {
+        log::warn!("go2rtc stop timed out after {:?}, forcing kill", svc_timeout);
+    }
 
     // 4. Stop all preview handlers
+    log::info!("Stopping preview handlers...");
     state.preview_handler.stop_all_previews();
     state.native_preview.stop_all();
 
     // 5. Stop capture services
+    log::info!("Stopping capture services...");
     state.screen_capture.stop_all();
     state.camera_capture.stop_all();
     state.audio_capture.stop_all();
     state.h264_capture.stop_all();
 
     // 6. Stop audio level monitoring
+    log::info!("Stopping audio level monitoring...");
     state.audio_level_service.stop();
     state.audio_level_extractor.stop_all();
 
     log::info!("All services stopped, server shutting down");
 }
 
-#[tokio::main]
+#[tokio::main(worker_threads = 4)]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load configuration from environment
     let data_dir = env::var("SPIRITSTREAM_DATA_DIR").unwrap_or_else(|_| "data".to_string());
@@ -4735,28 +4747,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize native capture services
     let screen_capture = Arc::new(ScreenCaptureService::new());
     let audio_capture = Arc::new(AudioCaptureService::new());
-    // Pre-warm audio device cache in background for faster first capture
-    {
-        let audio_capture_warmup = audio_capture.clone();
-        tokio::task::spawn_blocking(move || {
-            audio_capture_warmup.warm_cache();
-        });
-    }
-    // Pre-warm device discovery cache in background for faster first enumeration
-    // Device discovery via FFmpeg can take 5-10 seconds, so caching helps startup
-    {
-        let discovery = DeviceDiscovery::new(preview_ffmpeg_path.clone());
-        tokio::spawn(async move {
-            match discovery.refresh_devices_async().await {
-                Ok(devices) => log::info!(
-                    "Device discovery pre-warm complete: {} cameras, {} displays, {} audio, {} capture cards",
-                    devices.cameras.len(), devices.displays.len(),
-                    devices.audio_devices.len(), devices.capture_cards.len()
-                ),
-                Err(e) => log::warn!("Device discovery pre-warm failed (will retry on demand): {}", e),
-            }
-        });
-    }
+    // Audio device cache and device discovery are deferred until first use
+    // (Add Source modal) to avoid 4-15s CPU spike at cold start
     let camera_capture = Arc::new(CameraCaptureService::new(preview_ffmpeg_path.clone()));
     let native_preview = Arc::new(NativePreviewService::new());
     let recording_service = Arc::new(
@@ -4769,18 +4761,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let capture_indicator = Arc::new(CaptureIndicatorService::new());
 
-    // Initialize go2rtc manager for WebRTC preview streaming
+    // Initialize go2rtc manager for WebRTC preview streaming (lazy — started on first use)
     let go2rtc_manager = Arc::new(Go2RtcManager::new());
-    // Try to start go2rtc in background (non-blocking, will set is_available when ready)
-    {
-        let manager = go2rtc_manager.clone();
-        tokio::spawn(async move {
-            match manager.start().await {
-                Ok(()) => log::info!("go2rtc WebRTC server started successfully"),
-                Err(e) => log::warn!("go2rtc not available (WebRTC preview disabled): {}", e),
-            }
-        });
-    }
 
     // Initialize H264 capture service for native screen capture → WebRTC
     let h264_capture = Arc::new(H264CaptureService::new(

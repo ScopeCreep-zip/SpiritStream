@@ -71,10 +71,6 @@ export function useInitialize() {
         }),
         initRecordingPath(),
         initReplayBufferPath(),
-        // Pre-warm device discovery cache in background (don't await result)
-        api.device.refreshAll().catch(() => {
-          // Ignore errors - this is just pre-warming
-        }),
       ]).catch(() => {
         // Initialization errors handled elsewhere
       });
