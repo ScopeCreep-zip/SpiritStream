@@ -1,4 +1,4 @@
-// Settings Model
+﻿// Settings Model
 // Application-wide configuration (global settings only)
 // Profile-specific settings are now in ProfileSettings
 
@@ -55,7 +55,7 @@ pub enum ObsIntegrationDirection {
 
 /// Application settings (global, app-wide settings)
 ///
-/// Profile-specific settings (theme, language, integrations) have been moved to ProfileSettings.
+/// Profile-specific settings (theme, language, integrations) are stored in ProfileSettings.
 /// Legacy fields are kept for migration but not serialized when saving.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -267,6 +267,7 @@ impl Settings {
                 cooldown_seconds: self.discord_cooldown_seconds,
                 image_path: self.discord_image_path.clone(),
             },
+            ..ProfileSettings::default()
         }
     }
 }

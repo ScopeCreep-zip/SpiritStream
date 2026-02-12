@@ -39,9 +39,17 @@ regex = "1.10"
 notify = "6"
 dirs-next = "2.0"
 opener = "0.7"
+urlencoding = "2.1"
+dotenvy = "0.15"
 
 # OBS WebSocket
 obws = { version = "0.14", features = ["events"] }
+
+# Chat platforms
+twitch-irc = "5.0"
+tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
+url = "2.5"
+async-trait = "0.1"
 
 # FFmpeg Download
 reqwest = { version = "0.11", features = ["stream", "json", "multipart"] }

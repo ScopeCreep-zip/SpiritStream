@@ -117,7 +117,7 @@ The ProfileManager handles:
 - Profile name validation and path traversal prevention
 - Profile summary generation for UI display
 
-**File:** [`src-tauri/src/services/profile_manager.rs`](../../src-tauri/src/services/profile_manager.rs)
+**File:** [`apps/desktop/src-tauri/src/services/profile_manager.rs`](../../apps/desktop/src-tauri/src/services/profile_manager.rs)
 
 ### Interface
 
@@ -187,7 +187,7 @@ The FFmpegHandler manages:
 - Stream target enable/disable state
 - Stream key and URL redaction in logs
 
-**File:** [`src-tauri/src/services/ffmpeg_handler.rs`](../../src-tauri/src/services/ffmpeg_handler.rs)
+**File:** [`apps/desktop/src-tauri/src/services/ffmpeg_handler.rs`](../../apps/desktop/src-tauri/src/services/ffmpeg_handler.rs)
 
 ### Architecture Overview
 
@@ -364,7 +364,7 @@ The Encryption service provides:
 - Secure key derivation via Argon2id
 - Random salt and nonce generation
 
-**File:** [`src-tauri/src/services/encryption.rs`](../../src-tauri/src/services/encryption.rs)
+**File:** [`apps/desktop/src-tauri/src/services/encryption.rs`](../../apps/desktop/src-tauri/src/services/encryption.rs)
 
 ### Cryptographic Scheme
 
@@ -470,7 +470,7 @@ The SettingsManager handles:
 - Settings caching for performance
 - Data export and destruction
 
-**File:** [`src-tauri/src/services/settings_manager.rs`](../../src-tauri/src/services/settings_manager.rs)
+**File:** [`apps/desktop/src-tauri/src/services/settings_manager.rs`](../../apps/desktop/src-tauri/src/services/settings_manager.rs)
 
 ### Interface
 
@@ -518,7 +518,7 @@ The ThemeManager handles:
 - File system watcher for hot-reload
 - Project theme synchronization
 
-**File:** [`src-tauri/src/services/theme_manager.rs`](../../src-tauri/src/services/theme_manager.rs)
+**File:** [`apps/desktop/src-tauri/src/services/theme_manager.rs`](../../apps/desktop/src-tauri/src/services/theme_manager.rs)
 
 ### Interface
 

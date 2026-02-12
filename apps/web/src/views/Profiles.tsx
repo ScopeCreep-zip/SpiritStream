@@ -105,7 +105,7 @@ export function Profiles() {
 
     try {
       // Load the profile first (it should already be loaded if user clicked on it)
-      const profile = await api.profile.load(encryptingProfileName);
+      const profile = await api.profile.load(encryptingProfileName, undefined, false);
       // Save with password to encrypt it
       await api.profile.save(profile, password);
       // Reload profiles to update the list with encryption status

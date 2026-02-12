@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useProfileStore } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
-import { useThemeStore } from '@/stores/themeStore';
 import { api } from '@/lib/backend';
 
 /**
@@ -14,7 +13,6 @@ export function useInitialize() {
   const loadProfiles = useProfileStore((state) => state.loadProfiles);
   const loadProfile = useProfileStore((state) => state.loadProfile);
   const syncWithBackend = useStreamStore((state) => state.syncWithBackend);
-  const setTheme = useThemeStore((state) => state.setTheme);
 
   useEffect(() => {
     if (!initialized.current) {
@@ -26,13 +24,6 @@ export function useInitialize() {
           // After profiles are loaded, try to restore last used profile
           try {
             const settings = await api.settings.get();
-            const storedThemeId = settings.themeId || useThemeStore.getState().currentThemeId;
-            if (storedThemeId) {
-              await setTheme(storedThemeId);
-              if (!settings.themeId) {
-                await api.settings.save({ ...settings, themeId: storedThemeId });
-              }
-            }
             if (settings.lastProfile) {
               const profiles = useProfileStore.getState().profiles;
               const exists = profiles.some((p) => p.name === settings.lastProfile);

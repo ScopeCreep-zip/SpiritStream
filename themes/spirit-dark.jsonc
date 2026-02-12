@@ -1,4 +1,4 @@
-{
+﻿{
   "id": "spirit-dark",
   "name": "Spirit Dark",
   "mode": "dark",
@@ -28,6 +28,7 @@
     "--border-interactive": "#A78BFA",
     "--border-interactive-hover": "#C4B5FD",
     "--border-muted": "#2D2838",
+    "--border-subtle": "#2D2838",
     "--border-strong": "#5E5472",
     "--border-stronger": "#756A8A",
     "--error": "#F87171",

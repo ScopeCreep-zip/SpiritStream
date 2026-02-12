@@ -317,7 +317,7 @@ impl ProfileManager {
         Ok(())
     }
 
-    /// Encrypt sensitive fields in profile settings (OBS password, Discord webhook, backend token)
+    /// Encrypt sensitive fields in profile settings (OBS password, Discord webhook, backend token, YouTube API key, OAuth tokens)
     fn encrypt_profile_settings(&self, profile: &mut Profile) -> Result<(), String> {
         // Encrypt OBS password
         if !profile.settings.obs.password.is_empty()
@@ -343,10 +343,44 @@ impl ProfileManager {
                 Encryption::encrypt_stream_key(&profile.settings.backend.token, &self.app_data_dir)?;
         }
 
+        // Encrypt YouTube API key (chat settings)
+        if !profile.settings.chat.youtube_api_key.is_empty()
+            && !Encryption::is_stream_key_encrypted(&profile.settings.chat.youtube_api_key)
+        {
+            profile.settings.chat.youtube_api_key =
+                Encryption::encrypt_stream_key(&profile.settings.chat.youtube_api_key, &self.app_data_dir)?;
+        }
+
+        // Encrypt OAuth tokens (per profile)
+        if !profile.settings.oauth.twitch.access_token.is_empty()
+            && !Encryption::is_stream_key_encrypted(&profile.settings.oauth.twitch.access_token)
+        {
+            profile.settings.oauth.twitch.access_token =
+                Encryption::encrypt_stream_key(&profile.settings.oauth.twitch.access_token, &self.app_data_dir)?;
+        }
+        if !profile.settings.oauth.twitch.refresh_token.is_empty()
+            && !Encryption::is_stream_key_encrypted(&profile.settings.oauth.twitch.refresh_token)
+        {
+            profile.settings.oauth.twitch.refresh_token =
+                Encryption::encrypt_stream_key(&profile.settings.oauth.twitch.refresh_token, &self.app_data_dir)?;
+        }
+        if !profile.settings.oauth.youtube.access_token.is_empty()
+            && !Encryption::is_stream_key_encrypted(&profile.settings.oauth.youtube.access_token)
+        {
+            profile.settings.oauth.youtube.access_token =
+                Encryption::encrypt_stream_key(&profile.settings.oauth.youtube.access_token, &self.app_data_dir)?;
+        }
+        if !profile.settings.oauth.youtube.refresh_token.is_empty()
+            && !Encryption::is_stream_key_encrypted(&profile.settings.oauth.youtube.refresh_token)
+        {
+            profile.settings.oauth.youtube.refresh_token =
+                Encryption::encrypt_stream_key(&profile.settings.oauth.youtube.refresh_token, &self.app_data_dir)?;
+        }
+
         Ok(())
     }
 
-    /// Decrypt sensitive fields in profile settings (OBS password, Discord webhook, backend token)
+    /// Decrypt sensitive fields in profile settings (OBS password, Discord webhook, backend token, YouTube API key, OAuth tokens)
     fn decrypt_profile_settings(&self, profile: &mut Profile) -> Result<(), String> {
         // Decrypt OBS password
         if Encryption::is_stream_key_encrypted(&profile.settings.obs.password) {
@@ -366,6 +400,29 @@ impl ProfileManager {
                 Encryption::decrypt_stream_key(&profile.settings.backend.token, &self.app_data_dir)?;
         }
 
+        // Decrypt YouTube API key (chat settings)
+        if Encryption::is_stream_key_encrypted(&profile.settings.chat.youtube_api_key) {
+            profile.settings.chat.youtube_api_key =
+                Encryption::decrypt_stream_key(&profile.settings.chat.youtube_api_key, &self.app_data_dir)?;
+        }
+
+        // Decrypt OAuth tokens (per profile)
+        if Encryption::is_stream_key_encrypted(&profile.settings.oauth.twitch.access_token) {
+            profile.settings.oauth.twitch.access_token =
+                Encryption::decrypt_stream_key(&profile.settings.oauth.twitch.access_token, &self.app_data_dir)?;
+        }
+        if Encryption::is_stream_key_encrypted(&profile.settings.oauth.twitch.refresh_token) {
+            profile.settings.oauth.twitch.refresh_token =
+                Encryption::decrypt_stream_key(&profile.settings.oauth.twitch.refresh_token, &self.app_data_dir)?;
+        }
+        if Encryption::is_stream_key_encrypted(&profile.settings.oauth.youtube.access_token) {
+            profile.settings.oauth.youtube.access_token =
+                Encryption::decrypt_stream_key(&profile.settings.oauth.youtube.access_token, &self.app_data_dir)?;
+        }
+        if Encryption::is_stream_key_encrypted(&profile.settings.oauth.youtube.refresh_token) {
+            profile.settings.oauth.youtube.refresh_token =
+                Encryption::decrypt_stream_key(&profile.settings.oauth.youtube.refresh_token, &self.app_data_dir)?;
+        }
         Ok(())
     }
 

@@ -192,15 +192,15 @@ Before opening a PR, verify:
 pnpm run typecheck
 
 # Rust checks
-cargo check --manifest-path src-tauri/Cargo.toml
-cargo clippy --manifest-path src-tauri/Cargo.toml
+cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
+cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml
 
 # Linting
 pnpm run lint
 
 # Format check
 pnpm run format:check
-cargo fmt --check --manifest-path src-tauri/Cargo.toml
+cargo fmt --check --manifest-path apps/desktop/src-tauri/Cargo.toml
 
 # Build (catches integration issues)
 pnpm run build

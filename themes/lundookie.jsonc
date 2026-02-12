@@ -1,4 +1,4 @@
-{
+﻿{
     "id":  "lundookie",
     "name":  "Lundookie",
     "mode":  "dark",
@@ -159,7 +159,8 @@
                    "--info-foreground":  "#f1e6d2",
                    "--success-muted":  "#3c280d",
                    "--error-subtle":  "#231709",
-                   "--border-muted":  "#2b1f1a",
+                   "--border-muted": "#2b1f1a",
+                   "--border-subtle": "#2b1f1a",
                    "--secondary-foreground":  "#f1e6d2",
                    "--text-tertiary":  "#bfa989",
                    "--status-live-text":  "#4a3728",
@@ -182,3 +183,4 @@
                    "--primary-active":  "#65350f"
                }
 }
+

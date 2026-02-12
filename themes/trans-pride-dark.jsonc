@@ -1,4 +1,4 @@
-{
+﻿{
   "id": "trans-pride-dark",
   "name": "Trans Pride Dark",
   "mode": "dark",
@@ -55,6 +55,7 @@
     "--text-on-brand": "#0A1821",
     "--border-default": "#223142",
     "--border-muted": "#1A2533",
+    "--border-subtle": "#1A2533",
     "--border-strong": "#314358",
     "--border-stronger": "#46607B",
     "--border-interactive": "#5BCEFA",
@@ -122,3 +123,4 @@
     "--font-mono": "'Fira Code', monospace"
   }
 }
+

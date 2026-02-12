@@ -97,6 +97,22 @@ body {
   min-height: 100vh;
 }
 
+/* Chat overlay window styles */
+html[data-window='chat-overlay'],
+body[data-window='chat-overlay'] {
+  background: var(--bg-base);
+}
+
+html[data-window='chat-overlay'][data-overlay-transparent='true'],
+body[data-window='chat-overlay'][data-overlay-transparent='true'] {
+  background: transparent !important;
+}
+
+body[data-window='chat-overlay'] #root {
+  min-height: 100vh;
+  background: transparent;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
@@ -120,6 +136,10 @@ body {
 :focus-visible {
   outline: var(--ring-width) solid var(--ring-default);
   outline-offset: var(--ring-offset-width);
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
 }
 
 /* Links */

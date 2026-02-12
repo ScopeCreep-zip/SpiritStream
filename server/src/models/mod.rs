@@ -9,6 +9,7 @@ mod stream_target;
 mod encoders;
 mod stream_stats;
 mod theme;
+mod chat;
 
 pub use settings::*;
 pub use profile_settings::*;
@@ -18,3 +19,4 @@ pub use stream_target::*;
 pub use encoders::*;
 pub use stream_stats::*;
 pub use theme::*;
+pub use chat::*;

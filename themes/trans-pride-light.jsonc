@@ -1,4 +1,4 @@
-{
+﻿{
   "id": "trans-pride-light",
   "name": "Trans Pride Light",
   "mode": "light",
@@ -55,6 +55,7 @@
     "--text-on-brand": "#0A3D4F",
     "--border-default": "#F3DCE6",
     "--border-muted": "#F9EEF3",
+    "--border-subtle": "#F9EEF3",
     "--border-strong": "#EBC8D6",
     "--border-stronger": "#D8A6BB",
     "--border-interactive": "#F5A9B8",
@@ -122,3 +123,4 @@
     "--font-mono": "'Fira Code', monospace"
   }
 }
+

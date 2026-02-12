@@ -284,6 +284,28 @@ impl Encryption {
     }
 
     // =========================================================================
+    // Token Encryption (for OAuth tokens, API keys, and other sensitive settings)
+    // Same AES-256-GCM + machine key scheme as stream keys
+    // =========================================================================
+
+    /// Encrypt a sensitive token for storage (OAuth tokens, API keys, etc.)
+    /// Returns base64-encoded encrypted value with ENC:: prefix
+    pub fn encrypt_token(token: &str, app_data_dir: &Path) -> Result<String, String> {
+        Self::encrypt_stream_key(token, app_data_dir)
+    }
+
+    /// Decrypt a sensitive token from storage
+    /// Returns the original plaintext token
+    pub fn decrypt_token(encrypted: &str, app_data_dir: &Path) -> Result<String, String> {
+        Self::decrypt_stream_key(encrypted, app_data_dir)
+    }
+
+    /// Check if a value is encrypted (has ENC:: prefix)
+    pub fn is_encrypted(value: &str) -> bool {
+        value.starts_with(STREAM_KEY_PREFIX)
+    }
+
+    // =========================================================================
     // Machine Key Rotation
     // Allows rotating the machine encryption key and re-encrypting all stream keys
     // =========================================================================

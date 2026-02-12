@@ -136,7 +136,7 @@ SpiritStream/
 │   │
 │   └── desktop/                   # Tauri wrapper (minimal)
 │       ├── package.json          # @spiritstream/desktop
-│       └── src-tauri/
+│       └── apps/desktop/src-tauri/
 │           ├── src/main.rs       # Launcher (spawns server)
 │           ├── Cargo.toml        # Minimal deps (launcher only)
 │           └── tauri.conf.json   # Sidecar configuration
@@ -405,7 +405,7 @@ flowchart TD
    cargo clippy --manifest-path server/Cargo.toml  # Backend linting
    pnpm run tauri dev    # Manual testing
    pnpm run lint         # Frontend linting
-   cd src-tauri && cargo clippy  # Backend linting
+   cd apps/desktop/src-tauri && cargo clippy  # Backend linting
 >>>>>>> origin/main
    ```
 

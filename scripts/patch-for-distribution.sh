@@ -9,8 +9,8 @@
 set -euo pipefail
 
 # Get product name from tauri.conf.json (lowercase)
-PRODUCT_NAME=$(grep -o '"productName": *"[^"]*"' src-tauri/tauri.conf.json | cut -d'"' -f4 | tr '[:upper:]' '[:lower:]')
-BINARY="src-tauri/target/release/${PRODUCT_NAME:-spiritstream}"
+PRODUCT_NAME=$(grep -o '"productName": *"[^"]*"' apps/desktop/src-tauri/tauri.conf.json | cut -d'"' -f4 | tr '[:upper:]' '[:lower:]')
+BINARY="apps/desktop/src-tauri/target/release/${PRODUCT_NAME:-spiritstream}"
 
 # Only patch on Linux
 if [[ "$(uname -s)" != "Linux" ]]; then

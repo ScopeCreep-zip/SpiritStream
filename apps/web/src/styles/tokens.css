@@ -127,6 +127,7 @@
   /* === BORDERS === */
   --border-default: #E8E4DD;         /* Warm default border */
   --border-muted: #F3F0EA;           /* Warm subtle border */
+  --border-subtle: #F3F0EA;          /* Alias for subtle borders */
   --border-strong: #D8D1E2;
   --border-stronger: #B8AECA;
   --border-interactive: #7C3AED;
@@ -305,6 +306,7 @@
   /* === BORDERS === */
   --border-default: #3D3649;
   --border-muted: #2D2838;
+  --border-subtle: #2D2838;
   --border-strong: #5E5472;
   --border-stronger: #756A8A;
   --border-interactive: #A78BFA;

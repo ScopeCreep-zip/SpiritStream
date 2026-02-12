@@ -218,6 +218,10 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       }
 
       const profile = await api.profile.load(name, password);
+      console.log('[ProfileStore] Profile loaded from backend:', {
+        profileId: profile.id,
+        profileName: profile.name,
+      });
       set({
         current: profile,
         loading: false,
@@ -314,11 +318,18 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     const current = get().current;
     if (!current) return;
 
+    console.log('[ProfileStore] saveProfile called:', {
+      profileId: current.id,
+      profileName: current.name,
+      hasPassword: !!password,
+    });
+
     // Don't set loading: true - this causes UI to flash "Loading..."
     // The caller should have already updated the state optimistically
     set({ error: null });
     try {
       await api.profile.save(current, password);
+      console.log('[ProfileStore] saveProfile completed (backend save successful)');
       // Update the summary in the list
       const summaries = get().profiles.map((s) =>
         s.name === current.name ? createSummary(current) : s
@@ -329,6 +340,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       }
       set({ profiles: summaries });
     } catch (error) {
+      console.error('[ProfileStore] saveProfile failed:', error);
       set({ error: String(error) });
     }
   },
@@ -377,7 +389,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   // Duplicate a profile
   duplicateProfile: async (name) => {
     try {
-      const profile = await api.profile.load(name);
+      const profile = await api.profile.load(name, undefined, false);
       const newProfile: Profile = {
         ...profile,
         id: crypto.randomUUID(),
@@ -394,8 +406,15 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   updateProfile: async (updates) => {
     const current = get().current;
     if (current) {
-      set({ current: { ...current, ...updates } });
+      const updatedProfile = { ...current, ...updates };
+      console.log('[ProfileStore] updateProfile called:', {
+        profileId: current.id,
+        profileName: current.name,
+        updateKeys: Object.keys(updates),
+      });
+      set({ current: updatedProfile });
       await get().saveProfile();
+      console.log('[ProfileStore] updateProfile completed (saveProfile called)');
     }
   },
 

@@ -321,27 +321,59 @@ export async function checkServerHealth(retries = 10, delayMs = 500): Promise<bo
  * Check if the backend server is fully ready to serve requests.
  * Uses a timeout-protected fetch to avoid hangs.
  */
-export async function checkServerReady(retries = 15, delayMs = 300): Promise<boolean> {
+export interface ServerReadyError {
+  check: string;
+  error: string;
+}
+
+export interface ServerReadyStatus {
+  ready: boolean;
+  status?: number;
+  failed?: string[];
+  errors?: ServerReadyError[];
+  lastError?: string;
+}
+
+/**
+ * Check if the backend server is fully ready to serve requests.
+ * Returns structured details when readiness fails.
+ */
+export async function checkServerReadyDetailed(
+  retries = 15,
+  delayMs = 300
+): Promise<ServerReadyStatus> {
   const baseUrl = getBackendBaseUrl();
+  let lastStatus: ServerReadyStatus | null = null;
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const response = await fetchWithTimeout(`${baseUrl}/ready`, 3000);
+      const status = response.status;
 
-      if (response.ok) {
-        // Parse JSON with a try-catch to handle malformed responses
-        try {
-          const text = await response.text();
-          const data = JSON.parse(text);
-          if (data.ready === true) {
-            return true;
-          }
-        } catch {
-          // JSON parse error - server might not be fully ready
-        }
+      // Try to parse JSON even on non-2xx responses to extract failure details
+      let parsed: any = null;
+      try {
+        const text = await response.text();
+        parsed = text ? JSON.parse(text) : null;
+      } catch {
+        parsed = null;
       }
-    } catch {
-      // Network error or timeout - will retry
+
+      if (parsed?.ready === true) {
+        return { ready: true, status };
+      }
+
+      lastStatus = {
+        ready: false,
+        status,
+        failed: Array.isArray(parsed?.failed) ? parsed.failed : undefined,
+        errors: Array.isArray(parsed?.errors) ? parsed.errors : undefined,
+      };
+    } catch (error) {
+      lastStatus = {
+        ready: false,
+        lastError: error instanceof Error ? error.message : String(error),
+      };
     }
 
     if (attempt < retries) {
@@ -349,6 +381,10 @@ export async function checkServerReady(retries = 15, delayMs = 300): Promise<boo
     }
   }
 
-  return false;
+  return lastStatus ?? { ready: false };
 }
 
+export async function checkServerReady(retries = 15, delayMs = 300): Promise<boolean> {
+  const status = await checkServerReadyDetailed(retries, delayMs);
+  return status.ready;
+}

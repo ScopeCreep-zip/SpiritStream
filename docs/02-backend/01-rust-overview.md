@@ -24,7 +24,7 @@ This document provides an overview of SpiritStream's Rust backend, covering proj
 ## Project Structure
 
 ```
-src-tauri/
+apps/desktop/src-tauri/
 ├── src/
 │   ├── main.rs              # Application entry point
 │   ├── lib.rs               # Library exports
@@ -124,7 +124,7 @@ flowchart TB
 ## Entry Point
 
 ```rust
-// src-tauri/src/main.rs
+// apps/desktop/src-tauri/src/main.rs
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
@@ -190,7 +190,7 @@ Commands are the interface between frontend and backend.
 ### Basic Command
 
 ```rust
-// src-tauri/src/commands/profile.rs
+// apps/desktop/src-tauri/src/commands/profile.rs
 use tauri::State;
 use crate::services::ProfileManager;
 
@@ -246,7 +246,7 @@ Services contain business logic and are registered with Tauri's state management
 ### Service Structure
 
 ```rust
-// src-tauri/src/services/profile_manager.rs
+// apps/desktop/src-tauri/src/services/profile_manager.rs
 use std::path::PathBuf;
 use tokio::fs;
 use crate::models::Profile;
@@ -346,7 +346,7 @@ impl ProfileManager {
 Models are data structures that serialize to/from JSON.
 
 ```rust
-// src-tauri/src/models/profile.rs
+// apps/desktop/src-tauri/src/models/profile.rs
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

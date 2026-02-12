@@ -1,4 +1,4 @@
-// SpiritStream theme template (JSONC).
+﻿// SpiritStream theme template (JSONC).
 // 1) Copy this file and set id/name/mode.
 // 2) If you want both variants, create two separate themes (naming is up to you).
 // 3) Replace every REPLACE_ME with a valid CSS value (e.g., #RRGGBB, rgba(), hsl(), linear-gradient()).
@@ -51,6 +51,7 @@
     "--text-on-brand": "REPLACE_ME",
     "--border-default": "REPLACE_ME",
     "--border-muted": "REPLACE_ME",
+    "--border-subtle": "REPLACE_ME",
     "--border-strong": "REPLACE_ME",
     "--border-stronger": "REPLACE_ME",
     "--border-interactive": "REPLACE_ME",
@@ -116,3 +117,4 @@
     "--scrollbar-thumb-hover": "REPLACE_ME"
   }
 }
+

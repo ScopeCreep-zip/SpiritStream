@@ -4,6 +4,7 @@
  */
 import type { Platform } from './generated-platforms';
 import type { ObsIntegrationDirection } from './api';
+import type { ChatPlatform } from './chat';
 export type { Platform };
 
 // ============================================================================
@@ -46,6 +47,46 @@ export interface DiscordSettings {
 }
 
 /**
+ * Chat integration settings for a profile
+ */
+export interface ChatSettings {
+  twitchChannel: string;
+  youtubeChannelId: string;
+  trovoChannelId: string;
+  stripchatUsername: string;
+  youtubeApiKey: string;
+  twitchSendEnabled: boolean;
+  youtubeSendEnabled: boolean;
+  trovoSendEnabled: boolean;
+  stripchatSendEnabled: boolean;
+  sendAllEnabled: boolean;
+  crosspostEnabled: boolean;
+  youtubeUseApiKey: boolean;
+  visiblePlatforms: ChatPlatform[];
+  visibilityPanelCollapsed: boolean;
+}
+
+/**
+ * OAuth account + token details
+ */
+export interface OAuthProfileAccount {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+  userId: string;
+  username: string;
+  displayName: string;
+}
+
+/**
+ * OAuth settings for a profile
+ */
+export interface OAuthSettings {
+  twitch: OAuthProfileAccount;
+  youtube: OAuthProfileAccount;
+}
+
+/**
  * Per-profile settings (theme, language, integrations, security)
  */
 export interface ProfileSettings {
@@ -61,6 +102,8 @@ export interface ProfileSettings {
   backend: BackendSettings;
   obs: ObsSettings;
   discord: DiscordSettings;
+  chat: ChatSettings;
+  oauth: OAuthSettings;
 }
 
 /**
@@ -250,6 +293,36 @@ export const createDefaultDiscordSettings = (): DiscordSettings => ({
   imagePath: '',
 });
 
+export const createDefaultChatSettings = (): ChatSettings => ({
+  twitchChannel: '',
+  youtubeChannelId: '',
+  trovoChannelId: '',
+  stripchatUsername: '',
+  youtubeApiKey: '',
+  twitchSendEnabled: false,
+  youtubeSendEnabled: false,
+  trovoSendEnabled: false,
+  stripchatSendEnabled: false,
+  sendAllEnabled: true,
+  crosspostEnabled: false,
+  youtubeUseApiKey: false,
+  visiblePlatforms: [],
+  visibilityPanelCollapsed: true,
+});
+
+export const createDefaultOAuthProfileAccount = (): OAuthProfileAccount => ({
+  accessToken: '',
+  refreshToken: '',
+  expiresAt: 0,
+  userId: '',
+  username: '',
+  displayName: '',
+});
+
+export const createDefaultOAuthSettings = (): OAuthSettings => ({
+  twitch: createDefaultOAuthProfileAccount(),
+  youtube: createDefaultOAuthProfileAccount(),
+});
 export const createDefaultProfileSettings = (): ProfileSettings => ({
   themeId: 'spirit-dark',
   language: 'en',
@@ -258,6 +331,8 @@ export const createDefaultProfileSettings = (): ProfileSettings => ({
   backend: createDefaultBackendSettings(),
   obs: createDefaultObsSettings(),
   discord: createDefaultDiscordSettings(),
+  chat: createDefaultChatSettings(),
+  oauth: createDefaultOAuthSettings(),
 });
 
 export const createDefaultProfile = (name: string = 'New Profile'): Profile => ({

@@ -11,6 +11,14 @@ import type {
   RtmpTestResult,
 } from '@/types/api';
 import type { ThemeSummary } from '@/types/theme';
+import type {
+  ChatConfig,
+  ChatLogStatus,
+  ChatPlatform,
+  ChatPlatformStatus,
+  ChatSendResult,
+  ChatMessage,
+} from '@/types/chat';
 
 /**
  * Type-safe Tauri API wrapper
@@ -20,7 +28,8 @@ export const api = {
     getAll: () => invoke<string[]>('get_all_profiles'),
     /** Get profile summaries with services list for displaying platform icons (Story 1.1, 4.1, 4.2) */
     getSummaries: () => invoke<ProfileSummary[]>('get_profile_summaries'),
-    load: (name: string, password?: string) => invoke<Profile>('load_profile', { name, password }),
+    load: (name: string, password?: string, setActive: boolean = true) =>
+      invoke<Profile>('load_profile', { name, password, setActive }),
     save: (profile: Profile, password?: string) =>
       invoke<void>('save_profile', { profile, password }),
     delete: (name: string) => invoke<void>('delete_profile', { name }),
@@ -111,5 +120,66 @@ export const api = {
         'discord_send_notification'
       ),
     resetCooldown: () => invoke<void>('discord_reset_cooldown'),
+  },
+  chat: {
+    connect: (config: ChatConfig) => invoke<void>('connect_chat', { config }),
+    sendMessage: (message: string) => invoke<ChatSendResult[]>('send_chat_message', { message }),
+    disconnect: (platform: ChatPlatform) => invoke<void>('disconnect_chat', { platform }),
+    retryConnection: (platform: ChatPlatform) => invoke<void>('retry_chat_connection', { platform }),
+    disconnectAll: () => invoke<void>('disconnect_all_chat'),
+    getStatus: () => invoke<ChatPlatformStatus[]>('get_chat_status'),
+    getLogStatus: () => invoke<ChatLogStatus>('chat_get_log_status'),
+    exportLog: (path: string) => invoke<void>('chat_export_log', { path }),
+    searchSession: (query: string, limit?: number) =>
+      invoke<ChatMessage[]>('chat_search_session', { query, limit }),
+    getPlatformStatus: (platform: ChatPlatform) =>
+      invoke<ChatPlatformStatus | null>('get_platform_chat_status', { platform }),
+    isConnected: () => invoke<boolean>('is_chat_connected'),
+  },
+  oauth: {
+    /** Check if a provider is configured (always true with embedded client IDs) */
+    isConfigured: (provider: string) => invoke<boolean>('oauth_is_configured', { provider }),
+    /** Start the OAuth flow for a provider - opens browser */
+    startFlow: (provider: string) =>
+      invoke<{ authUrl: string; callbackPort: number; state: string }>('oauth_start_flow', {
+        provider,
+      }),
+    /** Complete the OAuth flow: exchange code, fetch user info, store tokens */
+    completeFlow: (provider: string, code: string, state: string) =>
+      invoke<{
+        provider: string;
+        userId: string;
+        username: string;
+        displayName: string;
+      }>('oauth_complete_flow', { provider, code, state }),
+    /** Get stored OAuth account info for a provider */
+    getAccount: (provider: string) =>
+      invoke<{
+        loggedIn: boolean;
+        userId?: string;
+        username?: string;
+        displayName?: string;
+      }>('oauth_get_account', { provider }),
+    /** Disconnect from a provider (clears tokens but doesn't revoke) */
+    disconnect: (provider: string) => invoke<void>('oauth_disconnect', { provider }),
+    /** Forget account (revokes tokens and clears from settings) */
+    forget: (provider: string) => invoke<void>('oauth_forget', { provider }),
+    /** Refresh an access token */
+    refreshToken: (provider: string, refreshToken: string) =>
+      invoke<{
+        accessToken: string;
+        refreshToken?: string;
+        expiresIn?: number;
+      }>('oauth_refresh_token', { provider, refreshToken }),
+    /** Get OAuth configuration status (always configured with embedded IDs) */
+    getConfig: () =>
+      invoke<{ twitchConfigured: boolean; youtubeConfigured: boolean }>('oauth_get_config'),
+    /** Set OAuth configuration (for users who want to use their own credentials) */
+    setConfig: (config: {
+      twitchClientId?: string;
+      twitchClientSecret?: string;
+      youtubeClientId?: string;
+      youtubeClientSecret?: string;
+    }) => invoke<void>('oauth_set_config', { config }),
   },
 };

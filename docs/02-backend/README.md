@@ -33,7 +33,7 @@ This section documents SpiritStream's Rust backend, including the service layer,
 ## Source Structure
 
 ```
-src-tauri/src/
+apps/desktop/src-tauri/src/
 ├── main.rs                 # Entry point
 ├── lib.rs                  # Tauri app initialization
 ├── commands/               # Tauri command handlers

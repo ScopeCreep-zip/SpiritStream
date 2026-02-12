@@ -11,8 +11,11 @@ import {
   Cog,
   Play,
   Square,
+  MessageSquare,
   Plug,
 } from 'lucide-react';
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { emit, listen } from '@tauri-apps/api/event';
 
 import { AppShell } from '@/components/layout/AppShell';
 import { Sidebar, SidebarHeader, SidebarNav, SidebarFooter } from '@/components/layout/Sidebar';
@@ -29,9 +32,11 @@ import { ProfileModal, TargetModal, OutputGroupModal, LoginModal } from '@/compo
 import { PasswordModal } from '@/components/modals/PasswordModal';
 import { useProfileStore } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
+import { useLanguageStore } from '@/stores/languageStore';
 import { useInitialize } from '@/hooks/useInitialize';
 import { useStreamStats } from '@/hooks/useStreamStats';
 import { useLogListener } from '@/hooks/useLogListener';
+import { useChatListener } from '@/hooks/useChatListener';
 import { useConnectionStatus } from '@/hooks/useConnectionStatus';
 import { useBackendConnection } from '@/hooks/useBackendConnection';
 import { useDataSync } from '@/hooks/useDataSync';
@@ -39,8 +44,12 @@ import { useObsEvents } from '@/hooks/useObsEvents';
 import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValidation';
 import { toast } from '@/hooks/useToast';
 import { useThemeStore } from '@/stores/themeStore';
-import { checkAuth, checkServerHealth, checkServerReady } from '@/lib/backend/env';
+import { ChatOverlay } from '@/views/ChatOverlay';
+import { checkAuth, checkServerHealth, checkServerReadyDetailed, ServerReadyStatus, isTauri } from '@/lib/backend/env';
 import { initConnection } from '@/lib/backend/httpEvents';
+import { setupMainWindowCloseHandler } from '@/lib/chatWindow';
+import { CHAT_OVERLAY_SYNC_EVENT, CHAT_OVERLAY_SYNC_REQUEST_EVENT } from '@/lib/chatEvents';
+import { useChatStore } from '@/stores/chatStore';
 
 // Import all views
 import {
@@ -52,6 +61,7 @@ import {
   StreamTargets,
   Logs,
   Settings,
+  Chat,
   Integrations,
 } from '@/views';
 
@@ -62,22 +72,111 @@ export type View =
   | 'encoder'
   | 'outputs'
   | 'targets'
+  | 'chat'
   | 'logs'
   | 'settings'
   | 'integrations';
 
 // View meta is now handled via translations using keys like header.dashboard.title
+const getWindowLabel = () => {
+  // Check URL query parameter first (for browser popup mode)
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('overlay') === 'chat') {
+      return 'chat-overlay';
+    }
+  }
+
+  // Check Tauri window label (for desktop mode)
+  try {
+    return WebviewWindow.getCurrent().label;
+  } catch {
+    return 'main';
+  }
+};
 
 /**
  * Main App component - handles server health checking before rendering main content.
  * This separation ensures that backend-dependent hooks only run after server is ready.
  */
 function App() {
+  const [windowLabel] = useState(getWindowLabel);
+
+  if (windowLabel === 'chat-overlay') {
+    return <ChatOverlayApp />;
+  }
+
+  return <MainApp />;
+}
+
+function ChatOverlayApp() {
+  useChatListener();
+  useThemeStore((state) => state.currentThemeId);
+
+  return <ChatOverlay />;
+}
+
+function MainApp() {
   const { t } = useTranslation();
 
+  type ServerStatus = 'checking' | 'unreachable' | 'not-ready' | 'ready';
+
   // Server health check state
-  const [serverHealthy, setServerHealthy] = useState<boolean | null>(null);
+  const [serverStatus, setServerStatus] = useState<ServerStatus>('checking');
+  const [readyDetails, setReadyDetails] = useState<ServerReadyStatus | null>(null);
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (!event.data || event.data.type !== 'chat-overlay-sync-request') return;
+      const messages = useChatStore.getState().messages;
+      const target = event.source as Window | null;
+      target?.postMessage({ type: 'chat-overlay-sync', messages }, { targetOrigin: '*' });
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+
+    let unlisten: (() => void) | null = null;
+    listen(CHAT_OVERLAY_SYNC_REQUEST_EVENT, () => {
+      const messages = useChatStore.getState().messages;
+      emit(CHAT_OVERLAY_SYNC_EVENT, { messages }).catch((error) => {
+        console.error('Failed to sync chat overlay:', error);
+      });
+    }).then((unsubscribe) => {
+      unlisten = unsubscribe;
+    });
+
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, []);
+
+  const formatReadyDetails = (details: ServerReadyStatus | null): string[] => {
+    if (!details) return [];
+
+    if (details.errors?.length) {
+      return details.errors.map((item) => `${item.check}: ${item.error}`);
+    }
+
+    if (details.failed?.length) {
+      return details.failed.map((item) => `${item} check failed`);
+    }
+
+    if (typeof details.status === 'number') {
+      return [`HTTP ${details.status} from /ready`];
+    }
+
+    if (details.lastError) {
+      return [details.lastError];
+    }
+
+    return [];
+  };
 
   // Check server health on mount
   useEffect(() => {
@@ -85,21 +184,29 @@ function App() {
 
     const checkHealth = async () => {
       setIsCheckingHealth(true);
+      setServerStatus('checking');
+      setReadyDetails(null);
 
       // Give the server time to start (especially in Tauri where launcher is spawning it)
       const healthy = await checkServerHealth(10, 500);
       if (cancelled) return;
 
       if (!healthy) {
-        setServerHealthy(false);
+        setServerStatus('unreachable');
         setIsCheckingHealth(false);
         return;
       }
 
-      const ready = await checkServerReady(15, 400);
+      const ready = await checkServerReadyDetailed(15, 400);
       if (cancelled) return;
 
-      setServerHealthy(ready);
+      if (ready.ready) {
+        setServerStatus('ready');
+        setReadyDetails(null);
+      } else {
+        setServerStatus('not-ready');
+        setReadyDetails(ready);
+      }
       setIsCheckingHealth(false);
     };
 
@@ -113,25 +220,59 @@ function App() {
   // Retry handler for connection error
   const handleRetryConnection = async () => {
     setIsCheckingHealth(true);
-    setServerHealthy(null); // Reset to loading state
+    setServerStatus('checking');
+    setReadyDetails(null);
 
     const healthy = await checkServerHealth(15, 500);
     if (healthy) {
-      const ready = await checkServerReady(15, 400);
-      setServerHealthy(ready);
+      const ready = await checkServerReadyDetailed(15, 400);
+      if (ready.ready) {
+        setServerStatus('ready');
+        setReadyDetails(null);
+      } else {
+        setServerStatus('not-ready');
+        setReadyDetails(ready);
+      }
     } else {
-      setServerHealthy(false);
+      setServerStatus('unreachable');
     }
     setIsCheckingHealth(false);
   };
 
   // Show connection error overlay if server is unreachable
-  if (serverHealthy === false) {
-    return <ConnectionError onRetry={handleRetryConnection} isRetrying={isCheckingHealth} />;
+  if (serverStatus === 'unreachable' || serverStatus === 'not-ready') {
+    const details = serverStatus === 'not-ready' ? formatReadyDetails(readyDetails) : undefined;
+    const title =
+      serverStatus === 'not-ready'
+        ? t('connection.notReadyTitle', { defaultValue: 'Backend not ready' })
+        : undefined;
+    const description =
+      serverStatus === 'not-ready'
+        ? t('connection.notReadyDescription', {
+            defaultValue: 'The backend is running but failed its readiness checks.',
+          })
+        : undefined;
+    const helpText =
+      serverStatus === 'not-ready'
+        ? t('connection.notReadyHelp', {
+            defaultValue: 'Fix the issue(s) above or check the server logs, then retry.',
+          })
+        : undefined;
+
+    return (
+      <ConnectionError
+        onRetry={handleRetryConnection}
+        isRetrying={isCheckingHealth}
+        title={title}
+        description={description}
+        helpText={helpText}
+        details={details}
+      />
+    );
   }
 
   // Show loading state while checking server health
-  if (serverHealthy === null) {
+  if (serverStatus === 'checking') {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-[var(--bg-base)]">
         <div className="text-[var(--text-secondary)]">{t('common.loading', { defaultValue: 'Loading...' })}</div>
@@ -164,6 +305,9 @@ function AppContent() {
   // Capture logs throughout the app lifecycle
   useLogListener();
 
+  // Listen to unified chat messages
+  useChatListener();
+
   // Listen for backend connection status changes (HTTP mode only)
   useConnectionStatus();
 
@@ -173,8 +317,14 @@ function AppContent() {
   // Listen for OBS WebSocket events and handle OBS -> SpiritStream triggering
   useObsEvents();
 
-  // Initialize theme store on app startup
-  useThemeStore((state) => state.currentThemeId);
+  // Set up handler to close chat overlay when main window closes
+  useEffect(() => {
+    setupMainWindowCloseHandler();
+  }, []);
+
+  // Store hooks
+  const { setLanguage } = useLanguageStore();
+  const { currentThemeId, setTheme } = useThemeStore();
 
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const {
@@ -186,6 +336,30 @@ function AppContent() {
     cancelPasswordPrompt,
   } = useProfileStore();
   const { isStreaming, startAllGroups, stopAllGroups } = useStreamStore();
+
+  // Apply profile-specific theme and language when profile changes
+  useEffect(() => {
+    const applyProfileSettings = async () => {
+      if (!current?.settings) return;
+
+      try {
+        // Apply theme (profile-specific)
+        const themeId = current.settings.themeId;
+        if (themeId && themeId !== currentThemeId) {
+          await setTheme(themeId);
+        }
+
+        // Apply language (profile-specific)
+        if (current.settings.language) {
+          setLanguage(current.settings.language as any);
+        }
+      } catch (error) {
+        console.error('Failed to apply profile settings:', error);
+      }
+    };
+
+    applyProfileSettings();
+  }, [current, currentThemeId, setTheme, setLanguage]);
 
   // Modal state
   const [profileModalOpen, setProfileModalOpen] = useState(false);
@@ -302,6 +476,8 @@ function AppContent() {
         return <OutputGroups />;
       case 'targets':
         return <StreamTargets />;
+      case 'chat':
+        return <Chat />;
       case 'logs':
         return <Logs />;
       case 'settings':
@@ -385,6 +561,12 @@ function AppContent() {
               label={t('nav.streamManager')}
               active={currentView === 'streams'}
               onClick={() => setCurrentView('streams')}
+            />
+            <NavItem
+              icon={<MessageSquare className="w-5 h-5" />}
+              label={t('nav.chat', { defaultValue: 'Chat' })}
+              active={currentView === 'chat'}
+              onClick={() => setCurrentView('chat')}
             />
           </NavSection>
           <NavSection title={t('nav.configuration')}>

@@ -10,6 +10,14 @@ import type {
   ObsIntegrationDirection,
 } from '@/types/api';
 import type { ThemeSummary } from '@/types/theme';
+import type {
+  ChatConfig,
+  ChatLogStatus,
+  ChatPlatform,
+  ChatPlatformStatus,
+  ChatSendResult,
+  ChatMessage,
+} from '@/types/chat';
 import { getBackendBaseUrl, safeFetch } from './env';
 
 interface InvokeOk<T> {
@@ -77,8 +85,8 @@ export const api = {
   profile: {
     getAll: () => invokeHttp<string[]>('get_all_profiles'),
     getSummaries: () => invokeHttp<ProfileSummary[]>('get_profile_summaries'),
-    load: (name: string, password?: string) =>
-      invokeHttp<Profile>('load_profile', { name, password }),
+    load: (name: string, password?: string, setActive: boolean = true) =>
+      invokeHttp<Profile>('load_profile', { name, password, setActive }),
     save: (profile: Profile, password?: string) =>
       invokeHttp<void>('save_profile', { profile, password }),
     delete: (name: string) => invokeHttp<void>('delete_profile', { name }),
@@ -187,5 +195,77 @@ export const api = {
       ),
     /** Reset the cooldown timer */
     resetCooldown: () => invokeHttp<void>('discord_reset_cooldown'),
+  },
+  chat: {
+    /** Connect to a chat platform */
+    connect: (config: ChatConfig) => invokeHttp<void>('connect_chat', { config }),
+    /** Send a chat message to all enabled platforms */
+    sendMessage: (message: string) => invokeHttp<ChatSendResult[]>('send_chat_message', { message }),
+    /** Disconnect from a chat platform */
+    disconnect: (platform: ChatPlatform) => invokeHttp<void>('disconnect_chat', { platform }),
+    /** Retry a chat platform connection */
+    retryConnection: (platform: ChatPlatform) => invokeHttp<void>('retry_chat_connection', { platform }),
+    /** Disconnect from all chat platforms */
+    disconnectAll: () => invokeHttp<void>('disconnect_all_chat'),
+    /** Get status of all connected chat platforms */
+    getStatus: () => invokeHttp<ChatPlatformStatus[]>('get_chat_status'),
+    /** Get current chat log session status */
+    getLogStatus: () => invokeHttp<ChatLogStatus>('chat_get_log_status'),
+    /** Export the current chat log session to a file path */
+    exportLog: (path: string) => invokeHttp<void>('chat_export_log', { path }),
+    /** Search current chat session logs */
+    searchSession: (query: string, limit?: number) =>
+      invokeHttp<ChatMessage[]>('chat_search_session', { query, limit }),
+    /** Get status of a specific chat platform */
+    getPlatformStatus: (platform: ChatPlatform) =>
+      invokeHttp<ChatPlatformStatus | null>('get_platform_chat_status', { platform }),
+    /** Check if any chat platform is connected */
+    isConnected: () => invokeHttp<boolean>('is_chat_connected'),
+  },
+  oauth: {
+    /** Check if a provider is configured (always true with embedded client IDs) */
+    isConfigured: (provider: string) => invokeHttp<boolean>('oauth_is_configured', { provider }),
+    /** Start the OAuth flow for a provider - opens browser */
+    startFlow: (provider: string) =>
+      invokeHttp<{ authUrl: string; callbackPort: number; state: string }>('oauth_start_flow', {
+        provider,
+      }),
+    /** Complete the OAuth flow: exchange code, fetch user info, store tokens */
+    completeFlow: (provider: string, code: string, state: string) =>
+      invokeHttp<{
+        provider: string;
+        userId: string;
+        username: string;
+        displayName: string;
+      }>('oauth_complete_flow', { provider, code, state }),
+    /** Get stored OAuth account info for a provider */
+    getAccount: (provider: string) =>
+      invokeHttp<{
+        loggedIn: boolean;
+        userId?: string;
+        username?: string;
+        displayName?: string;
+      }>('oauth_get_account', { provider }),
+    /** Disconnect from a provider (clears tokens but doesn't revoke) */
+    disconnect: (provider: string) => invokeHttp<void>('oauth_disconnect', { provider }),
+    /** Forget account (revokes tokens and clears from settings) */
+    forget: (provider: string) => invokeHttp<void>('oauth_forget', { provider }),
+    /** Refresh an access token */
+    refreshToken: (provider: string, refreshToken: string) =>
+      invokeHttp<{
+        accessToken: string;
+        refreshToken?: string;
+        expiresIn?: number;
+      }>('oauth_refresh_token', { provider, refreshToken }),
+    /** Get OAuth configuration status (always configured with embedded IDs) */
+    getConfig: () =>
+      invokeHttp<{ twitchConfigured: boolean; youtubeConfigured: boolean }>('oauth_get_config'),
+    /** Set OAuth configuration (for users who want to use their own credentials) */
+    setConfig: (config: {
+      twitchClientId?: string;
+      twitchClientSecret?: string;
+      youtubeClientId?: string;
+      youtubeClientSecret?: string;
+    }) => invokeHttp<void>('oauth_set_config', { config }),
   },
 };

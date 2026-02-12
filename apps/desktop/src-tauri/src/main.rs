@@ -673,16 +673,47 @@ async fn wait_for_health(host: &str, port: &str) {
     }
 
     // Phase 2: Wait for server to be ready (services initialized)
+    let mut last_ready_details: Option<String> = None;
     for attempt in 1..=15 {
         if let Ok(response) = reqwest::get(&ready_url).await {
-            if response.status().is_success() {
-                if let Ok(data) = response.json::<serde_json::Value>().await {
-                    if data.get("ready").and_then(|v| v.as_bool()).unwrap_or(false) {
-                        log::info!("Backend server is ready");
-                        return;
-                    }
+            let status = response.status();
+            let data = response.json::<serde_json::Value>().await.ok();
+
+            if let Some(data) = data {
+                if data.get("ready").and_then(|v| v.as_bool()).unwrap_or(false) {
+                    log::info!("Backend server is ready");
+                    return;
                 }
+
+                let failed = data.get("failed").and_then(|v| v.as_array()).map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| item.as_str())
+                        .collect::<Vec<_>>()
+                });
+                let errors = data.get("errors").and_then(|v| v.as_array()).map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| {
+                            let check = item.get("check")?.as_str()?;
+                            let error = item.get("error")?.as_str()?;
+                            Some(format!("{check}: {error}"))
+                        })
+                        .collect::<Vec<_>>()
+                });
+
+                if let Some(errors) = errors {
+                    last_ready_details = Some(format!("status={status}, errors={errors:?}"));
+                } else if let Some(failed) = failed {
+                    last_ready_details = Some(format!("status={status}, failed={failed:?}"));
+                } else {
+                    last_ready_details = Some(format!("status={status}, ready=false"));
+                }
+            } else {
+                last_ready_details = Some(format!("status={status}, non-json response"));
             }
+        } else {
+            last_ready_details = Some("request failed".to_string());
         }
 
         if attempt % 5 == 0 {
@@ -691,5 +722,9 @@ async fn wait_for_health(host: &str, port: &str) {
         tokio::time::sleep(Duration::from_millis(300)).await;
     }
 
-    log::warn!("Could not confirm backend readiness at {ready_url}");
+    if let Some(details) = last_ready_details {
+        log::warn!("Could not confirm backend readiness at {ready_url}. Last response: {details}");
+    } else {
+        log::warn!("Could not confirm backend readiness at {ready_url}");
+    }
 }

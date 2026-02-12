@@ -449,8 +449,8 @@ pnpm install
 pnpm run typecheck
 
 # Rust
-cargo check --manifest-path src-tauri/Cargo.toml
-cargo clippy --manifest-path src-tauri/Cargo.toml
+cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
+cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml
 
 # Rust (with OpenSSL workaround for nix/direnv environments)
 DIRENV_DIR= \
@@ -458,7 +458,7 @@ OPENSSL_DIR=/usr \
 OPENSSL_LIB_DIR=/usr/lib/x86_64-linux-gnu \
 OPENSSL_INCLUDE_DIR=/usr/include \
 PATH=$HOME/.cargo/bin:/usr/local/bin:/usr/bin:/bin \
-cargo check --manifest-path src-tauri/Cargo.toml
+cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 
 # Full build
 pnpm run build

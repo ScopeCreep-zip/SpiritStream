@@ -74,7 +74,7 @@ Commands are organized by domain rather than by operation type. This means all p
 ### File Organization
 
 ```
-src-tauri/src/commands/
+apps/desktop/src-tauri/src/commands/
 ├── mod.rs          # Module exports
 ├── profile.rs      # Profile CRUD commands
 ├── stream.rs       # Stream control commands

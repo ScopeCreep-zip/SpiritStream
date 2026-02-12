@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Toggle } from '@/components/ui/Toggle';
 import { useObsStore } from '@/stores/obsStore';
+import { useProfileStore } from '@/stores/profileStore';
 import { toast } from '@/hooks/useToast';
 import { cn } from '@/lib/cn';
 import type { ObsIntegrationDirection } from '@/types/api';
@@ -49,6 +50,7 @@ const directionOptions: { value: ObsIntegrationDirection; labelKey: string; desc
 
 export function ObsPanel() {
   const { t } = useTranslation();
+  const currentProfile = useProfileStore((state) => state.current);
   const {
     connectionStatus,
     streamStatus,
@@ -241,6 +243,14 @@ export function ObsPanel() {
         return t('obs.disconnected');
     }
   };
+
+  if (!currentProfile) {
+    return (
+      <div className="flex items-center justify-center p-8 text-[var(--text-tertiary)]">
+        {t('common.loadProfileFirst', 'Please load a profile first')}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

@@ -50,7 +50,6 @@ export interface AppSettings {
   discordCooldownSeconds?: number;
   discordImagePath?: string;
 }
-
 /**
  * Report returned after successful key rotation
  */
