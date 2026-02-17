@@ -65,7 +65,7 @@ pub struct RtmpTestResult {
 ///
 /// This performs:
 /// 1. TCP connectivity test to the RTMP host:port
-/// 2. Brief FFmpeg publish attempt to verify the endpoint accepts streams
+/// 2. (Publish probe is currently skipped; this validates transport reachability only)
 pub fn test_rtmp_target(url: String, stream_key: String) -> Result<RtmpTestResult, String> {
     use std::net::TcpStream;
     use std::time::{Duration, Instant};
@@ -99,7 +99,7 @@ pub fn test_rtmp_target(url: String, stream_key: String) -> Result<RtmpTestResul
     let elapsed = start.elapsed().as_millis() as u64;
     Ok(RtmpTestResult {
         success: true,
-        message: "TCP connection successful (publish test skipped)".to_string(),
+        message: "TCP connection successful (RTMP publish probe not yet implemented)".to_string(),
         latency_ms: Some(elapsed),
     })
 }

@@ -135,8 +135,8 @@ impl EncoderCapabilities {
 
         log::info!("=== Starting encoder capability probe ===");
 
-        // Use native probing (OBS-style) by default, with CLI fallback
-        // Native probing directly queries vendor APIs for accurate hardware detection
+        // Use native probing (OBS-style) plus FFmpeg libs encoder-availability checks.
+        // Native probing directly queries vendor APIs for accurate hardware detection.
 
         log::info!("Probing NVENC (NVIDIA)...");
         caps.nvenc = Self::probe_nvenc(&mut caps.probe_errors);
@@ -184,10 +184,10 @@ impl EncoderCapabilities {
     }
 
     // =========================================================================
-    // Combined probing (native with CLI fallback)
+    // Combined probing (native hardware API + FFmpeg libs availability checks)
     // =========================================================================
 
-    /// Probe NVENC - native first, CLI fallback
+    /// Probe NVENC using native detection plus FFmpeg libs availability checks.
     fn probe_nvenc(probe_errors: &mut Vec<String>) -> NvencCaps {
         log::debug!("  Attempting native NVENC probe...");
         let mut native_caps = native_nvenc::probe();
@@ -216,7 +216,7 @@ impl EncoderCapabilities {
             return NvencCaps::default();
         }
 
-        log::debug!("  Native NVENC probe failed (CLI disabled)");
+        log::debug!("  Native NVENC probe failed");
         probe_errors.push("nvenc: native probe failed".to_string());
         NvencCaps::default()
     }

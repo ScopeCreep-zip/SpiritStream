@@ -128,14 +128,9 @@ impl FFmpegDownloader {
 
 
     fn supports_version_check() -> bool {
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
         {
             true
-        }
-
-        #[cfg(any(target_os = "windows", target_os = "linux"))]
-        {
-            false
         }
 
         #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
@@ -572,6 +567,13 @@ impl FFmpegDownloader {
 
     /// Get the latest available FFmpeg version from the download source
     pub async fn get_latest_version(&self) -> Result<String, DownloadError> {
+        #[cfg(any(target_os = "windows", target_os = "linux"))]
+        {
+            // For BtbN shared-libs builds we intentionally pin to a known-good version.
+            // Treat that pinned value as the "latest" for deterministic update checks.
+            Ok(FFMPEG_LIBS_SHORT_VERSION.to_string())
+        }
+
         #[cfg(target_os = "macos")]
         {
             // evermeet.cx provides a JSON API for version info
@@ -588,20 +590,6 @@ impl FFmpegDownloader {
 
             let release: EvermeetRelease = response.json().await?;
             Ok(release.version)
-        }
-
-        #[cfg(target_os = "windows")]
-        {
-            Err(DownloadError::ExtractionFailed(
-                "Version check not supported for hardware-enabled Windows builds".to_string(),
-            ))
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            Err(DownloadError::ExtractionFailed(
-                "Version check not supported for hardware-enabled Linux builds".to_string(),
-            ))
         }
 
         #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
@@ -632,7 +620,8 @@ impl FFmpegDownloader {
 
     /// Parse version string to comparable tuple
     fn parse_version(version: &str) -> Option<(u32, u32, u32)> {
-        let parts: Vec<&str> = version.split('.').collect();
+        let normalized = version.trim().trim_start_matches(|c: char| !c.is_ascii_digit());
+        let parts: Vec<&str> = normalized.split('.').collect();
         if parts.is_empty() {
             return None;
         }
@@ -714,5 +703,11 @@ mod tests {
 
         #[cfg(target_os = "macos")]
         assert!(result.is_err(), "shared libs download is intentionally unsupported on macOS");
+    }
+
+    #[test]
+    fn test_is_newer_version_handles_prefixed_versions() {
+        assert!(!FFmpegDownloader::is_newer_version("n8.0", "8.0"));
+        assert!(FFmpegDownloader::is_newer_version("n7.1", "8.0"));
     }
 }
