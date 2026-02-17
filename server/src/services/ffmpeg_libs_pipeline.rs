@@ -11,7 +11,7 @@ use std::os::raw::c_int;
 use std::ptr;
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicBool, AtomicU64, Ordering},
+    atomic::{AtomicBool, Ordering},
     mpsc::{self, Sender, Receiver},
 };
 use std::thread::{self, JoinHandle};
@@ -685,8 +685,8 @@ struct TargetOutput {
     out_streams: Vec<*mut ffi::AVStream>,
     /// Error tracking and reconnection state
     state: TargetState,
-    /// Bitstream filter for AAC ADTS to ASC conversion (required for FLV/RTMP)
-    audio_bsf_ctx: Option<*mut ffi::AVBSFContext>,
+    /// Whether audio BSF should be applied (disabled when BSF API is unavailable)
+    audio_bsf_enabled: bool,
     /// Index of audio stream in out_streams (for BSF application)
     audio_stream_index: Option<usize>,
 }
@@ -749,8 +749,8 @@ struct TranscodeOutput {
     ctx: *mut ffi::AVFormatContext,
     video_out_index: i32,
     audio_out_index: Option<i32>,
-    /// Bitstream filter for extradata (dump_extra for QSV encoders to FLV)
-    video_bsf_ctx: Option<*mut ffi::AVBSFContext>,
+    /// Whether video BSF should be applied (disabled when BSF API is unavailable)
+    video_bsf_enabled: bool,
 }
 
 fn parse_rtmp_listen_url(url: &str) -> (String, Option<String>, Option<String>) {
@@ -1362,21 +1362,21 @@ fn create_flv_output(
     }
 
     // Create aac_adtstoasc bitstream filter for AAC audio (converts ADTS to ASC for FLV)
-    let audio_bsf_ctx = if is_aac_audio {
+    let audio_bsf_enabled = if is_aac_audio {
         if let Some(audio_idx) = audio_stream_index {
             let in_stream = unsafe { *(*input_ctx).streams.add(audio_idx) };
             match create_aac_bsf(unsafe { (*in_stream).codecpar }) {
-                Ok(bsf) => Some(bsf),
+                Ok(enabled) => enabled,
                 Err(e) => {
                     log::warn!("Failed to create aac_adtstoasc BSF, continuing without it: {}", e);
-                    None
+                    false
                 }
             }
         } else {
-            None
+            false
         }
     } else {
-        None
+        false
     };
 
     let mut opts: *mut ffi::AVDictionary = ptr::null_mut();
@@ -1414,70 +1414,24 @@ fn create_flv_output(
         ctx: output_ctx,
         out_streams,
         state: TargetState::new(url.to_string()),
-        audio_bsf_ctx,
+        audio_bsf_enabled,
         audio_stream_index,
     })
 }
 
 /// Create an aac_adtstoasc bitstream filter for converting ADTS-wrapped AAC to ASC format
-unsafe fn create_aac_bsf(codecpar: *const ffi::AVCodecParameters) -> Result<*mut ffi::AVBSFContext, String> {
-    let filter_name = CString::new("aac_adtstoasc").unwrap();
-    let filter = ffi::av_bsf_get_by_name(filter_name.as_ptr());
-    if filter.is_null() {
-        return Err("aac_adtstoasc filter not found".to_string());
-    }
-
-    let mut bsf_ctx: *mut ffi::AVBSFContext = ptr::null_mut();
-    let alloc_ret = ffi::av_bsf_alloc(filter, &mut bsf_ctx);
-    if alloc_ret < 0 {
-        return Err(format!("Failed to allocate BSF context: {}", ffmpeg_err(alloc_ret)));
-    }
-
-    let copy_ret = ffi::avcodec_parameters_copy((*bsf_ctx).par_in, codecpar);
-    if copy_ret < 0 {
-        ffi::av_bsf_free(&mut bsf_ctx);
-        return Err(format!("Failed to copy BSF input params: {}", ffmpeg_err(copy_ret)));
-    }
-
-    let init_ret = ffi::av_bsf_init(bsf_ctx);
-    if init_ret < 0 {
-        ffi::av_bsf_free(&mut bsf_ctx);
-        return Err(format!("Failed to init BSF: {}", ffmpeg_err(init_ret)));
-    }
-
-    log::debug!("Created aac_adtstoasc bitstream filter for AAC passthrough");
-    Ok(bsf_ctx)
+fn create_aac_bsf(_codecpar: *const ffi::AVCodecParameters) -> Result<bool, String> {
+    // ffmpeg-sys-next bindings currently do not expose AVBSFContext/av_bsf_* symbols.
+    // Keep stream path functional by disabling BSF until bindings are expanded.
+    Err("BSF API unavailable in current ffmpeg-sys-next bindings".to_string())
 }
 
 /// Create a dump_extra bitstream filter for ensuring SPS/PPS NAL units in each packet
 /// Required for QSV encoders outputting to FLV/RTMP to allow mid-stream joins
-unsafe fn create_dump_extra_bsf(codecpar: *const ffi::AVCodecParameters) -> Result<*mut ffi::AVBSFContext, String> {
-    let filter_name = CString::new("dump_extra").unwrap();
-    let filter = ffi::av_bsf_get_by_name(filter_name.as_ptr());
-    if filter.is_null() {
-        return Err("dump_extra filter not found".to_string());
-    }
-
-    let mut bsf_ctx: *mut ffi::AVBSFContext = ptr::null_mut();
-    let alloc_ret = ffi::av_bsf_alloc(filter, &mut bsf_ctx);
-    if alloc_ret < 0 {
-        return Err(format!("Failed to allocate BSF context: {}", ffmpeg_err(alloc_ret)));
-    }
-
-    let copy_ret = ffi::avcodec_parameters_copy((*bsf_ctx).par_in, codecpar);
-    if copy_ret < 0 {
-        ffi::av_bsf_free(&mut bsf_ctx);
-        return Err(format!("Failed to copy BSF input params: {}", ffmpeg_err(copy_ret)));
-    }
-
-    let init_ret = ffi::av_bsf_init(bsf_ctx);
-    if init_ret < 0 {
-        ffi::av_bsf_free(&mut bsf_ctx);
-        return Err(format!("Failed to init BSF: {}", ffmpeg_err(init_ret)));
-    }
-
-    log::debug!("Created dump_extra bitstream filter for QSV video");
-    Ok(bsf_ctx)
+fn create_dump_extra_bsf(_codecpar: *const ffi::AVCodecParameters) -> Result<bool, String> {
+    // ffmpeg-sys-next bindings currently do not expose AVBSFContext/av_bsf_* symbols.
+    // Keep stream path functional by disabling BSF until bindings are expanded.
+    Err("BSF API unavailable in current ffmpeg-sys-next bindings".to_string())
 }
 
 /// Attempt to reconnect a failed target by creating a new output context
@@ -1533,82 +1487,38 @@ fn write_passthrough_packet(
                 continue;
             }
 
-            // Check if this is an audio packet that needs BSF filtering
+            // Check if this is an audio packet that would need BSF filtering
             let is_audio_packet = target.audio_stream_index == Some(stream_index);
-            let needs_bsf = is_audio_packet && target.audio_bsf_ctx.is_some();
+            let needs_bsf = is_audio_packet && target.audio_bsf_enabled;
 
             unsafe {
                 if needs_bsf {
-                    // Apply aac_adtstoasc bitstream filter
-                    let bsf_ctx = target.audio_bsf_ctx.unwrap();
-                    let send_ret = ffi::av_bsf_send_packet(bsf_ctx, pkt_clone);
-                    if send_ret < 0 {
-                        log::warn!("BSF send failed: {}", ffmpeg_err(send_ret));
-                        ffi::av_packet_free(&mut pkt_clone);
-                        continue;
-                    }
-
-                    // Receive and write filtered packets
-                    loop {
-                        let mut filtered_pkt = ffi::av_packet_alloc();
-                        if filtered_pkt.is_null() {
-                            break;
-                        }
-                        let recv_ret = ffi::av_bsf_receive_packet(bsf_ctx, filtered_pkt);
-                        if recv_ret < 0 {
-                            ffi::av_packet_free(&mut filtered_pkt);
-                            break;
-                        }
-
-                        ffi::av_packet_rescale_ts(filtered_pkt, (*in_stream).time_base, (*out_stream).time_base);
-                        (*filtered_pkt).stream_index = (*out_stream).index;
-                        let write_ret = ffi::av_interleaved_write_frame(target.ctx, filtered_pkt);
-                        if write_ret < 0 {
-                            let error = ffmpeg_err(write_ret);
-                            log::warn!(
-                                "FFmpeg libs write failed for group {}: {}",
-                                group.group_id,
-                                error
-                            );
-                            if target.state.record_failure(threshold) {
-                                failures.push(TargetFailure {
-                                    group_id: group.group_id.clone(),
-                                    target_url: target.state.url.clone(),
-                                    error,
-                                });
-                            }
-                        } else {
-                            target.state.record_success();
-                        }
-                        ffi::av_packet_free(&mut filtered_pkt);
-                    }
-                    ffi::av_packet_free(&mut pkt_clone);
-                } else {
-                    // No BSF needed, write directly
-                    ffi::av_packet_rescale_ts(pkt_clone, (*in_stream).time_base, (*out_stream).time_base);
-                    (*pkt_clone).stream_index = (*out_stream).index;
-                    let write_ret = ffi::av_interleaved_write_frame(target.ctx, pkt_clone);
-                    if write_ret < 0 {
-                        let error = ffmpeg_err(write_ret);
-                        log::warn!(
-                            "FFmpeg libs write failed for group {}: {}",
-                            group.group_id,
-                            error
-                        );
-                        // Track failure and check if target should be marked as failed
-                        if target.state.record_failure(threshold) {
-                            failures.push(TargetFailure {
-                                group_id: group.group_id.clone(),
-                                target_url: target.state.url.clone(),
-                                error,
-                            });
-                        }
-                    } else {
-                        // Successful write - reset failure counter
-                        target.state.record_success();
-                    }
-                    ffi::av_packet_free(&mut pkt_clone);
+                    log::trace!("Audio BSF requested but unavailable in current bindings; writing unfiltered packet");
                 }
+
+                ffi::av_packet_rescale_ts(pkt_clone, (*in_stream).time_base, (*out_stream).time_base);
+                (*pkt_clone).stream_index = (*out_stream).index;
+                let write_ret = ffi::av_interleaved_write_frame(target.ctx, pkt_clone);
+                if write_ret < 0 {
+                    let error = ffmpeg_err(write_ret);
+                    log::warn!(
+                        "FFmpeg libs write failed for group {}: {}",
+                        group.group_id,
+                        error
+                    );
+                    // Track failure and check if target should be marked as failed
+                    if target.state.record_failure(threshold) {
+                        failures.push(TargetFailure {
+                            group_id: group.group_id.clone(),
+                            target_url: target.state.url.clone(),
+                            error,
+                        });
+                    }
+                } else {
+                    // Successful write - reset failure counter
+                    target.state.record_success();
+                }
+                ffi::av_packet_free(&mut pkt_clone);
             }
         }
     }
@@ -2405,25 +2315,25 @@ fn create_transcode_outputs(
         }
 
         // Create dump_extra BSF for QSV encoders (writes SPS/PPS to each IDR frame)
-        let video_bsf_ctx = if is_qsv {
+        let video_bsf_enabled = if is_qsv {
             unsafe {
                 match create_dump_extra_bsf((*video_stream).codecpar) {
-                    Ok(bsf) => Some(bsf),
+                    Ok(enabled) => enabled,
                     Err(e) => {
                         log::warn!("Failed to create dump_extra BSF for QSV, continuing without it: {}", e);
-                        None
+                        false
                     }
                 }
             }
         } else {
-            None
+            false
         };
 
         outputs.push(TranscodeOutput {
             ctx: output_ctx,
             video_out_index: unsafe { (*video_stream).index },
             audio_out_index,
-            video_bsf_ctx,
+            video_bsf_enabled,
         });
     }
 
@@ -2462,12 +2372,16 @@ fn transcode_video_packet(
             )
         };
 
-        if let Some(ref mut scale_ctx) = group.hw_scale {
+        if group.hw_scale.is_some() {
+            let (src_ctx, sink_ctx, scale_frame) = {
+                let scale_ctx = group.hw_scale.as_ref().ok_or_else(|| "Missing HW scale context".to_string())?;
+                (scale_ctx.src_ctx, scale_ctx.sink_ctx, scale_ctx.frame)
+            };
             unsafe {
                 let add_ret = ffi::av_buffersrc_add_frame_flags(
-                    scale_ctx.src_ctx,
+                    src_ctx,
                     group.video_dec_frame,
-                    ffi::AV_BUFFERSRC_FLAG_KEEP_REF,
+                    ffi::AV_BUFFERSRC_FLAG_KEEP_REF as c_int,
                 );
                 if add_ret < 0 {
                     return Err(format!("HW scale buffersrc add failed: {}", ffmpeg_err(add_ret)));
@@ -2475,19 +2389,19 @@ fn transcode_video_packet(
             }
 
             loop {
-                let ret = unsafe { ffi::av_buffersink_get_frame(scale_ctx.sink_ctx, scale_ctx.frame) };
+                let ret = unsafe { ffi::av_buffersink_get_frame(sink_ctx, scale_frame) };
                 if ret < 0 {
                     break;
                 }
-                let send_enc_ret = unsafe { ffi::avcodec_send_frame(group.video_enc_ctx, scale_ctx.frame) };
+                let send_enc_ret = unsafe { ffi::avcodec_send_frame(group.video_enc_ctx, scale_frame) };
                 if send_enc_ret < 0 {
-                    unsafe { ffi::av_frame_unref(scale_ctx.frame) };
+                    unsafe { ffi::av_frame_unref(scale_frame) };
                     return Err(format!("Video encoder send failed: {}", ffmpeg_err(send_enc_ret)));
                 }
 
                 let mut enc_pkt = unsafe { ffi::av_packet_alloc() };
                 if enc_pkt.is_null() {
-                    unsafe { ffi::av_frame_unref(scale_ctx.frame) };
+                    unsafe { ffi::av_frame_unref(scale_frame) };
                     return Err("Failed to allocate video packet".to_string());
                 }
                 loop {
@@ -2500,7 +2414,7 @@ fn transcode_video_packet(
                 }
                 unsafe {
                     ffi::av_packet_free(&mut enc_pkt);
-                    ffi::av_frame_unref(scale_ctx.frame);
+                    ffi::av_frame_unref(scale_frame);
                 }
             }
 
@@ -2633,8 +2547,8 @@ fn write_encoded_packet(
         };
         let mut pkt_clone = pkt_to_write;
 
-        // Check if we need to apply video BSF (dump_extra for QSV)
-        let needs_video_bsf = is_video && output.video_bsf_ctx.is_some();
+        // Check if we would apply video BSF (currently disabled when BSF API is unavailable)
+        let needs_video_bsf = is_video && output.video_bsf_enabled;
 
         unsafe {
             let out_stream = *(*output.ctx).streams.add(out_index as usize);
@@ -2645,59 +2559,21 @@ fn write_encoded_packet(
             };
 
             if needs_video_bsf {
-                // Apply dump_extra bitstream filter
-                let bsf_ctx = output.video_bsf_ctx.unwrap();
-                let send_ret = ffi::av_bsf_send_packet(bsf_ctx, pkt_clone);
-                if send_ret < 0 {
-                    log::warn!("Video BSF send failed: {}", ffmpeg_err(send_ret));
-                    if needs_free {
-                        ffi::av_packet_free(&mut pkt_clone);
-                    }
-                    continue;
-                }
+                log::trace!("Video BSF requested but unavailable in current bindings; writing unfiltered packet");
+            }
 
-                // Receive and write filtered packets
-                loop {
-                    let mut filtered_pkt = ffi::av_packet_alloc();
-                    if filtered_pkt.is_null() {
-                        break;
-                    }
-                    let recv_ret = ffi::av_bsf_receive_packet(bsf_ctx, filtered_pkt);
-                    if recv_ret < 0 {
-                        ffi::av_packet_free(&mut filtered_pkt);
-                        break;
-                    }
-
-                    ffi::av_packet_rescale_ts(filtered_pkt, time_base, (*out_stream).time_base);
-                    (*filtered_pkt).stream_index = out_index;
-                    let write_ret = ffi::av_interleaved_write_frame(output.ctx, filtered_pkt);
-                    if write_ret < 0 {
-                        log::warn!(
-                            "FFmpeg libs transcode write failed for group {}: {}",
-                            group.group_id,
-                            ffmpeg_err(write_ret)
-                        );
-                    }
-                    ffi::av_packet_free(&mut filtered_pkt);
-                }
-                if needs_free {
-                    ffi::av_packet_free(&mut pkt_clone);
-                }
-            } else {
-                // No BSF needed, write directly
-                ffi::av_packet_rescale_ts(pkt_clone, time_base, (*out_stream).time_base);
-                (*pkt_clone).stream_index = out_index;
-                let write_ret = ffi::av_interleaved_write_frame(output.ctx, pkt_clone);
-                if write_ret < 0 {
-                    log::warn!(
-                        "FFmpeg libs transcode write failed for group {}: {}",
-                        group.group_id,
-                        ffmpeg_err(write_ret)
-                    );
-                }
-                if needs_free {
-                    ffi::av_packet_free(&mut pkt_clone);
-                }
+            ffi::av_packet_rescale_ts(pkt_clone, time_base, (*out_stream).time_base);
+            (*pkt_clone).stream_index = out_index;
+            let write_ret = ffi::av_interleaved_write_frame(output.ctx, pkt_clone);
+            if write_ret < 0 {
+                log::warn!(
+                    "FFmpeg libs transcode write failed for group {}: {}",
+                    group.group_id,
+                    ffmpeg_err(write_ret)
+                );
+            }
+            if needs_free {
+                ffi::av_packet_free(&mut pkt_clone);
             }
         }
     }
@@ -2896,11 +2772,6 @@ fn cleanup_single_passthrough_group(group: &mut GroupOutputs) {
 
     for target in &mut group.targets {
         unsafe {
-            // Free BSF context if present
-            if let Some(mut bsf_ctx) = target.audio_bsf_ctx.take() {
-                ffi::av_bsf_free(&mut bsf_ctx);
-            }
-
             if !target.ctx.is_null() {
                 let _ = ffi::av_write_trailer(target.ctx);
                 if (*(*target.ctx).oformat).flags & ffi::AVFMT_NOFILE == 0 {
@@ -2922,11 +2793,6 @@ fn cleanup_transcode_group_outputs(group: &mut TranscodeGroup) {
 
     for output in &mut group.outputs {
         unsafe {
-            // Free video BSF context if present
-            if let Some(mut bsf_ctx) = output.video_bsf_ctx.take() {
-                ffi::av_bsf_free(&mut bsf_ctx);
-            }
-
             if !output.ctx.is_null() {
                 let _ = ffi::av_write_trailer(output.ctx);
                 if (*(*output.ctx).oformat).flags & ffi::AVFMT_NOFILE == 0 {
@@ -2990,11 +2856,6 @@ fn cleanup_transcode_group(group: TranscodeGroup) {
 
     unsafe {
         for mut output in group.outputs {
-            // Free video BSF context if present
-            if let Some(mut bsf_ctx) = output.video_bsf_ctx.take() {
-                ffi::av_bsf_free(&mut bsf_ctx);
-            }
-
             let _ = ffi::av_write_trailer(output.ctx);
             if (*(*output.ctx).oformat).flags & ffi::AVFMT_NOFILE == 0 {
                 let _ = ffi::avio_closep(&mut (*output.ctx).pb);
