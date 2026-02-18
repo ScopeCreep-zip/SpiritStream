@@ -2,8 +2,6 @@
 // This module is feature-gated so we can build the new pipeline without
 // touching the existing FFmpeg CLI flow.
 
-#![cfg(feature = "ffmpeg-libs")]
-
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::ffi::c_void;
@@ -19,7 +17,7 @@ use std::time::{Duration, Instant};
 
 use ffmpeg_sys_next as ffi;
 
-use crate::models::{OutputGroup, StreamStats, StreamTarget};
+use crate::models::{OutputGroup, StreamStats};
 use crate::services::{emit_event, EventSink};
 
 // ============================================================================
@@ -120,7 +118,7 @@ pub enum PipelineCommand {
     /// Stop a specific group by ID
     StopGroup(String),
     /// Add a new group to the running pipeline
-    AddGroup(OutputGroupConfig),
+    AddGroup(Box<OutputGroupConfig>),
 }
 
 // ============================================================================
@@ -224,120 +222,6 @@ impl GroupStatsTracker {
             dropped_frames,
             dup_frames: 0,
         }
-    }
-}
-
-// ============================================================================
-// Bounded Packet Queue
-// ============================================================================
-
-/// Configuration for packet queue buffering
-#[derive(Debug, Clone)]
-pub struct QueueConfig {
-    /// Maximum number of packets to buffer per target
-    pub max_packets: usize,
-    /// Strategy for handling queue overflow
-    pub drop_strategy: DropStrategy,
-}
-
-impl Default for QueueConfig {
-    fn default() -> Self {
-        Self {
-            max_packets: 300, // ~10 seconds at 30fps
-            drop_strategy: DropStrategy::DropOldest,
-        }
-    }
-}
-
-/// Strategy for dropping packets when queue is full
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DropStrategy {
-    /// Drop oldest packets first (better for live streaming - keeps up with real-time)
-    DropOldest,
-    /// Drop newest packets (preserves continuity but falls behind)
-    DropNewest,
-}
-
-/// A bounded packet queue that prevents unbounded memory growth
-struct PacketQueue {
-    /// Buffered packets (each is a cloned AVPacket pointer)
-    packets: std::collections::VecDeque<*mut ffi::AVPacket>,
-    /// Maximum queue size
-    max_size: usize,
-    /// Drop strategy when full
-    drop_strategy: DropStrategy,
-    /// Total packets dropped due to overflow
-    dropped_count: u64,
-}
-
-impl PacketQueue {
-    fn new(config: &QueueConfig) -> Self {
-        Self {
-            packets: std::collections::VecDeque::with_capacity(config.max_packets),
-            max_size: config.max_packets,
-            drop_strategy: config.drop_strategy,
-            dropped_count: 0,
-        }
-    }
-
-    /// Push a packet to the queue, dropping if necessary
-    /// Returns the number of packets dropped (0 or 1)
-    fn push(&mut self, packet: *mut ffi::AVPacket) -> u64 {
-        if self.packets.len() >= self.max_size {
-            match self.drop_strategy {
-                DropStrategy::DropOldest => {
-                    // Drop oldest packet
-                    if let Some(old) = self.packets.pop_front() {
-                        unsafe { ffi::av_packet_free(&mut (old as *mut _)) };
-                    }
-                    self.packets.push_back(packet);
-                    self.dropped_count += 1;
-                    1
-                }
-                DropStrategy::DropNewest => {
-                    // Drop the incoming packet
-                    unsafe { ffi::av_packet_free(&mut (packet as *mut _)) };
-                    self.dropped_count += 1;
-                    1
-                }
-            }
-        } else {
-            self.packets.push_back(packet);
-            0
-        }
-    }
-
-    /// Pop the next packet from the queue
-    fn pop(&mut self) -> Option<*mut ffi::AVPacket> {
-        self.packets.pop_front()
-    }
-
-    /// Get the current queue length
-    fn len(&self) -> usize {
-        self.packets.len()
-    }
-
-    /// Check if queue is empty
-    fn is_empty(&self) -> bool {
-        self.packets.is_empty()
-    }
-
-    /// Get total dropped packet count
-    fn dropped(&self) -> u64 {
-        self.dropped_count
-    }
-
-    /// Clear the queue, freeing all packets
-    fn clear(&mut self) {
-        while let Some(pkt) = self.packets.pop_front() {
-            unsafe { ffi::av_packet_free(&mut (pkt as *mut _)) };
-        }
-    }
-}
-
-impl Drop for PacketQueue {
-    fn drop(&mut self) {
-        self.clear();
     }
 }
 
@@ -697,8 +581,6 @@ struct GroupOutputs {
     targets: Vec<TargetOutput>,
     /// Reconnection configuration for this group
     reconnect_config: ReconnectionConfig,
-    /// Queue configuration for this group
-    queue_config: QueueConfig,
     /// Total dropped frames across all targets (for stats)
     dropped_frames: u64,
     /// Track if this group has been cleaned up
@@ -708,8 +590,6 @@ struct GroupOutputs {
 struct TranscodeGroup {
     group_id: String,
     control: GroupControl,
-    video_encoder_name: String,
-    video_stream_index: usize,
     audio_stream_index: Option<usize>,
     video_dec_ctx: *mut ffi::AVCodecContext,
     audio_dec_ctx: Option<*mut ffi::AVCodecContext>,
@@ -1236,7 +1116,6 @@ fn create_group_outputs(
             control,
             targets,
             reconnect_config: ReconnectionConfig::default(),
-            queue_config: QueueConfig::default(),
             dropped_frames: 0,
             cleaned_up: false,
         });
@@ -1319,7 +1198,7 @@ fn create_flv_output(
     let mut audio_stream_index: Option<usize> = None;
     let mut is_aac_audio = false;
 
-    for idx in 0..stream_count {
+    for (idx, out_slot) in out_streams.iter_mut().enumerate().take(stream_count) {
         let in_stream = unsafe { *(*input_ctx).streams.add(idx) };
         let codecpar = unsafe { (*in_stream).codecpar };
         let codec_type = unsafe { (*codecpar).codec_type };
@@ -1358,7 +1237,7 @@ fn create_flv_output(
             }
             (*out_stream).time_base = (*in_stream).time_base;
         }
-        out_streams[idx] = out_stream;
+        *out_slot = out_stream;
     }
 
     // Create aac_adtstoasc bitstream filter for AAC audio (converts ADTS to ASC for FLV)
@@ -1594,7 +1473,7 @@ fn create_transcode_group(
         }
         if let Some(interval) = group.video.keyframe_interval_seconds {
             if output_fps.num > 0 {
-                let gop_size = (output_fps.num as i32).saturating_mul(interval as i32);
+                let gop_size = output_fps.num.saturating_mul(interval as i32);
                 (*video_enc_ctx).gop_size = gop_size;
 
                 // For software encoders (libx264/libx265), set additional keyframe options
@@ -1649,7 +1528,7 @@ fn create_transcode_group(
         let video_decoder = unsafe { ffi::avcodec_find_decoder((*video_codecpar).codec_id) };
         if video_decoder.is_null() {
             unsafe {
-                if let Some(mut hw_frame) = video_hw_frame {
+                if let Some(hw_frame) = video_hw_frame {
                     ffi::av_frame_free(&mut (hw_frame as *mut _));
                 }
                 if let Some(mut frames_ref) = video_hw_frames_ctx {
@@ -1666,7 +1545,7 @@ fn create_transcode_group(
         let dec_ctx = unsafe { ffi::avcodec_alloc_context3(video_decoder) };
         if dec_ctx.is_null() {
             unsafe {
-                if let Some(mut hw_frame) = video_hw_frame {
+                if let Some(hw_frame) = video_hw_frame {
                     ffi::av_frame_free(&mut (hw_frame as *mut _));
                 }
                 if let Some(mut frames_ref) = video_hw_frames_ctx {
@@ -1684,7 +1563,7 @@ fn create_transcode_group(
         if dec_ret < 0 {
             unsafe {
                 ffi::avcodec_free_context(&mut (dec_ctx as *mut _));
-                if let Some(mut hw_frame) = video_hw_frame {
+                if let Some(hw_frame) = video_hw_frame {
                     ffi::av_frame_free(&mut (hw_frame as *mut _));
                 }
                 if let Some(mut frames_ref) = video_hw_frames_ctx {
@@ -1702,7 +1581,7 @@ fn create_transcode_group(
         if open_dec_ret < 0 {
             unsafe {
                 ffi::avcodec_free_context(&mut (dec_ctx as *mut _));
-                if let Some(mut hw_frame) = video_hw_frame {
+                if let Some(hw_frame) = video_hw_frame {
                     ffi::av_frame_free(&mut (hw_frame as *mut _));
                 }
                 if let Some(mut frames_ref) = video_hw_frames_ctx {
@@ -1848,7 +1727,7 @@ fn create_transcode_group(
             if let Some(mut frames_ref) = video_hw_frames_ctx.take() {
                 ffi::av_buffer_unref(&mut frames_ref);
             }
-            if let Some(mut hw_frame) = video_hw_frame.take() {
+            if let Some(hw_frame) = video_hw_frame.take() {
                 ffi::av_frame_free(&mut (hw_frame as *mut _));
             }
             if !(*video_enc_ctx).hw_device_ctx.is_null() {
@@ -1865,7 +1744,7 @@ fn create_transcode_group(
     }
     if open_enc_ret < 0 {
         unsafe {
-            if let Some(mut hw_frame) = video_hw_frame {
+            if let Some(hw_frame) = video_hw_frame {
                 ffi::av_frame_free(&mut (hw_frame as *mut _));
             }
             if let Some(mut frames_ref) = video_hw_frames_ctx {
@@ -1917,7 +1796,7 @@ fn create_transcode_group(
             if !video_sw_frame.is_null() {
                 ffi::av_frame_free(&mut (video_sw_frame as *mut _));
             }
-            if let Some(mut hw_frame) = video_hw_frame {
+            if let Some(hw_frame) = video_hw_frame {
                 ffi::av_frame_free(&mut (hw_frame as *mut _));
             }
             if let Some(mut frames_ref) = video_hw_frames_ctx {
@@ -1948,7 +1827,7 @@ fn create_transcode_group(
                         ffi::av_buffer_unref(&mut frames_ref);
                     }
                     video_hw_frames_ctx = Some(enc_ref);
-                    if let Some(mut hw_frame) = video_hw_frame.take() {
+                    if let Some(hw_frame) = video_hw_frame.take() {
                         ffi::av_frame_free(&mut (hw_frame as *mut _));
                     }
                     zero_copy = true;
@@ -1966,7 +1845,7 @@ fn create_transcode_group(
         if buffer_ret < 0 {
             ffi::av_frame_free(&mut (video_sw_frame as *mut _));
             ffi::av_frame_free(&mut (video_dec_frame as *mut _));
-            if let Some(mut hw_frame) = video_hw_frame {
+            if let Some(hw_frame) = video_hw_frame {
                 ffi::av_frame_free(&mut (hw_frame as *mut _));
             }
             if let Some(mut frames_ref) = video_hw_frames_ctx {
@@ -1988,7 +1867,7 @@ fn create_transcode_group(
             unsafe {
                 ffi::av_frame_free(&mut (video_sw_frame as *mut _));
                 ffi::av_frame_free(&mut (video_dec_frame as *mut _));
-                if let Some(mut hw_frame) = video_hw_frame {
+                if let Some(hw_frame) = video_hw_frame {
                     ffi::av_frame_free(&mut (hw_frame as *mut _));
                 }
                 if let Some(mut frames_ref) = video_hw_frames_ctx {
@@ -2012,7 +1891,7 @@ fn create_transcode_group(
                 ffi::av_frame_free(&mut (hw_sw_frame as *mut _));
                 ffi::av_frame_free(&mut (video_sw_frame as *mut _));
                 ffi::av_frame_free(&mut (video_dec_frame as *mut _));
-                if let Some(mut hw_frame) = video_hw_frame {
+                if let Some(hw_frame) = video_hw_frame {
                     ffi::av_frame_free(&mut (hw_frame as *mut _));
                 }
                 if let Some(mut frames_ref) = video_hw_frames_ctx {
@@ -2170,8 +2049,6 @@ fn create_transcode_group(
     Ok(TranscodeGroup {
         group_id: config.group_id.clone(),
         control,
-        video_encoder_name: group.video.codec.clone(),
-        video_stream_index,
         audio_stream_index,
         video_dec_ctx,
         audio_dec_ctx,
@@ -2812,10 +2689,10 @@ fn cleanup_transcode_group(group: TranscodeGroup) {
         unsafe {
             ffi::av_frame_free(&mut (group.video_dec_frame as *mut _));
             ffi::av_frame_free(&mut (group.video_sw_frame as *mut _));
-            if let Some(mut hw_sw_frame) = group.video_hw_sw_frame {
+            if let Some(hw_sw_frame) = group.video_hw_sw_frame {
                 ffi::av_frame_free(&mut (hw_sw_frame as *mut _));
             }
-            if let Some(mut hw_frame) = group.video_hw_frame {
+            if let Some(hw_frame) = group.video_hw_frame {
                 ffi::av_frame_free(&mut (hw_frame as *mut _));
             }
             if !group.audio_dec_frame.is_null() {
@@ -2855,7 +2732,7 @@ fn cleanup_transcode_group(group: TranscodeGroup) {
     }
 
     unsafe {
-        for mut output in group.outputs {
+        for output in group.outputs {
             let _ = ffi::av_write_trailer(output.ctx);
             if (*(*output.ctx).oformat).flags & ffi::AVFMT_NOFILE == 0 {
                 let _ = ffi::avio_closep(&mut (*output.ctx).pb);
@@ -2864,10 +2741,10 @@ fn cleanup_transcode_group(group: TranscodeGroup) {
         }
         ffi::av_frame_free(&mut (group.video_dec_frame as *mut _));
         ffi::av_frame_free(&mut (group.video_sw_frame as *mut _));
-        if let Some(mut hw_sw_frame) = group.video_hw_sw_frame {
+        if let Some(hw_sw_frame) = group.video_hw_sw_frame {
             ffi::av_frame_free(&mut (hw_sw_frame as *mut _));
         }
-        if let Some(mut hw_frame) = group.video_hw_frame {
+        if let Some(hw_frame) = group.video_hw_frame {
             ffi::av_frame_free(&mut (hw_frame as *mut _));
         }
         if !group.audio_dec_frame.is_null() {
@@ -2906,7 +2783,7 @@ fn cleanup_transcode_group(group: TranscodeGroup) {
 }
 
 /// Clean up all passthrough groups
-fn cleanup_outputs(groups: &mut Vec<GroupOutputs>) {
+fn cleanup_outputs(groups: &mut [GroupOutputs]) {
     for group in groups.iter_mut() {
         cleanup_single_passthrough_group(group);
     }
@@ -2921,20 +2798,6 @@ fn is_hw_encoder(encoder_name: &str) -> bool {
 fn targets_contain_twitch(targets: &[String]) -> bool {
     targets.iter().any(|url| {
         let lower = url.to_ascii_lowercase();
-        lower.contains("twitch.tv") || lower.contains("live-video.net")
-    })
-}
-
-/// Check if any stream target is Twitch based on service field or URL
-fn stream_targets_contain_twitch(targets: &[StreamTarget]) -> bool {
-    targets.iter().any(|t| {
-        // Check service name (Platform enum serializes to string like "Twitch")
-        let service_str = format!("{:?}", t.service);
-        if service_str.to_ascii_lowercase().contains("twitch") {
-            return true;
-        }
-        // Fallback: check URL
-        let lower = t.url.to_ascii_lowercase();
         lower.contains("twitch.tv") || lower.contains("live-video.net")
     })
 }
@@ -3657,7 +3520,7 @@ unsafe fn try_init_hw_decoder(
 }
 
 fn ffmpeg_err(code: i32) -> String {
-    let mut buf = [0i8; ffi::AV_ERROR_MAX_STRING_SIZE as usize];
+    let mut buf = [0i8; ffi::AV_ERROR_MAX_STRING_SIZE];
     unsafe {
         ffi::av_strerror(code, buf.as_mut_ptr(), buf.len());
         CStr::from_ptr(buf.as_ptr()).to_string_lossy().into_owned()
