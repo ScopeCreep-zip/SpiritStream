@@ -24,12 +24,12 @@ export function StreamCard({ platform, name, status, stats, onClick, className }
       onClick={onClick}
       className={cn(
         'bg-[var(--bg-surface)] border border-[var(--border-default)]',
-        'rounded-xl transition-all duration-150',
+        'rounded-xl transition-shadow duration-150',
         'hover:border-[var(--border-interactive)] hover:shadow-[var(--shadow-md)]',
+        'p-4',
         onClick && 'cursor-pointer',
         className
       )}
-      style={{ padding: '16px' }}
     >
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">

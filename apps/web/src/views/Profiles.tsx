@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus, Monitor, Gauge, Target, Lock, Unlock, Trash2 } from 'lucide-react';
 import { Grid } from '@/components/ui/Grid';
@@ -15,7 +15,7 @@ import {SortableContext, rectSortingStrategy} from "@dnd-kit/sortable";
 import SortableCardShell from "../components/ui/SortableCardShell.tsx";
 
 
-export function Profiles() {
+export default function Profiles() {
   const { t } = useTranslation();
   const { profiles, reorderProfiles,  current, loading, error, selectProfile, duplicateProfile, deleteProfile, loadProfiles, unlockProfile } = useProfileStore();
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -67,14 +67,14 @@ export function Profiles() {
   }, [pendingDeleteProfileName]);
 
   // Clear unlocked state when clicking outside profile cards
-  const handleClickAway = (e: React.MouseEvent) => {
+  const handleClickAway = useCallback((e: React.MouseEvent) => {
     if (e.target === e.currentTarget && unlockedProfiles.size > 0) {
       setUnlockedProfiles(new Set());
     }
-  };
+  }, [unlockedProfiles]);
 
   // Clear unlocked state for other profiles when selecting a different one
-  const handleProfileClick = (profileName: string) => {
+  const handleProfileClick = useCallback((profileName: string) => {
     // Keep only the newly selected profile in unlocked set (if it was unlocked)
     if (unlockedProfiles.has(profileName)) {
       setUnlockedProfiles(new Set([profileName]));
@@ -82,7 +82,7 @@ export function Profiles() {
       setUnlockedProfiles(new Set());
     }
     selectProfile(profileName);
-  };
+  }, [unlockedProfiles, selectProfile]);
 
   // Handle locking a profile with password
   const handleLockProfile = (profileName: string) => {
@@ -98,7 +98,7 @@ export function Profiles() {
   };
 
   // Handle password submission for encrypting
-  const handleEncryptSubmit = async (password: string) => {
+  const handleEncryptSubmit = useCallback(async (password: string) => {
     if (!encryptingProfileName) return;
 
     setEncryptError(undefined);
@@ -115,7 +115,7 @@ export function Profiles() {
     } catch (err) {
       setEncryptError(String(err));
     }
-  };
+  }, [encryptingProfileName, loadProfiles]);
 
   // Handle removing password protection
   const handleUnlockProfile = (profileName: string) => {
@@ -187,23 +187,14 @@ export function Profiles() {
       <>
         <Card>
           <CardBody>
-            <div className="text-center" style={{ padding: '48px 0' }}>
-              <div
-                className="w-16 h-16 mx-auto rounded-full bg-[var(--primary-subtle)] flex items-center justify-center"
-                style={{ marginBottom: '16px' }}
-              >
+            <div className="text-center py-12">
+              <div className="w-16 h-16 mx-auto rounded-full bg-[var(--primary-subtle)] flex items-center justify-center mb-4">
                 <Plus className="w-8 h-8 text-[var(--primary)]" />
               </div>
-              <h3
-                className="text-lg font-semibold text-[var(--text-primary)]"
-                style={{ marginBottom: '8px' }}
-              >
+              <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">
                 {t('profiles.noProfilesYet')}
               </h3>
-              <p
-                className="text-[var(--text-secondary)] max-w-md mx-auto"
-                style={{ marginBottom: '24px' }}
-              >
+              <p className="text-[var(--text-secondary)] max-w-md mx-auto mb-6">
                 {t('profiles.noProfilesDescription')}
               </p>
               <Button onClick={() => setCreateModalOpen(true)}>
@@ -264,7 +255,7 @@ export function Profiles() {
                   active={current?.id === profile.id}
                   onClick={() => handleProfileClick(profile.name)}
                   actions={
-                    <div className="flex" style={{ gap: '4px' }}>
+                    <div className="flex gap-1">
                       <Button
                         variant="ghost"
                         size="sm"
@@ -335,7 +326,7 @@ export function Profiles() {
                           >
                             <Unlock
                               className={cn(
-                                "w-4 h-4 transition-all duration-300",
+                                "w-4 h-4 transition-transform duration-300",
                                 isUnlocked && "text-[var(--success)] scale-110"
                               )}
                             />
@@ -353,14 +344,8 @@ export function Profiles() {
               className="border-2 border-dashed border-[var(--border-default)] hover:border-[var(--primary)] transition-colors cursor-pointer h-full"
               onClick={() => setCreateModalOpen(true)}
             >
-              <CardBody
-                className="flex flex-col items-center justify-center h-full"
-                style={{ padding: '20px' }}
-              >
-                <div
-                  className="w-14 h-14 rounded-full bg-[var(--primary-subtle)] flex items-center justify-center"
-                  style={{ marginBottom: '16px' }}
-                >
+              <CardBody className="flex flex-col items-center justify-center h-full p-5">
+                <div className="w-14 h-14 rounded-full bg-[var(--primary-subtle)] flex items-center justify-center mb-4">
                   <Plus className="w-7 h-7 text-[var(--primary)]" />
                 </div>
                 <span className="text-base font-medium text-[var(--text-secondary)]">

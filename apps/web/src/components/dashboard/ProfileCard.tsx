@@ -36,14 +36,14 @@ export function ProfileCard({
       onClick={onClick}
       className={cn(
         'bg-[var(--bg-surface)] border-2 rounded-xl h-full',
-        'transition-all duration-150',
+        'transition-[transform,box-shadow,border-color] duration-150',
+        'p-5',
         onClick && 'cursor-pointer',
         active
           ? 'border-[var(--primary)] bg-[var(--primary-muted)]'
           : 'border-[var(--border-default)] hover:border-[var(--border-interactive)] hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)]',
         className
       )}
-      style={{ padding: '20px' }}
     >
       <div className="flex items-center justify-between mb-3">
         <span className="font-semibold text-[var(--text-primary)]">{name}</span>

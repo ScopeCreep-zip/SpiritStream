@@ -296,7 +296,7 @@ RTMP destination:
 ### Backend (Capture Services)
 
 - `server/src/models/source.rs` - Source models
-- `server/src/services/device_discovery.rs` - Device enumeration
+- `server/src/services/device_discovery/` - Device enumeration (module)
 - `server/src/services/audio_capture.rs` - Audio input
 - `server/src/services/audio_levels.rs` - Level metering
 - `server/src/services/screen_capture.rs` - Display capture

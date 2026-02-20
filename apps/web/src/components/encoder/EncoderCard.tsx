@@ -133,11 +133,11 @@ export function EncoderCard({
       });
 
   return (
-    <Card className={cn('transition-all duration-150', className)}>
+    <Card className={cn('transition-shadow duration-150', className)}>
       <CardBody>
         {/* Header Row */}
-        <div className="flex items-start justify-between" style={{ marginBottom: '16px' }}>
-          <div className="flex items-center" style={{ gap: '12px' }}>
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex items-center gap-3">
             {/* Encoder Icon */}
             <div
               className={cn(
@@ -173,39 +173,36 @@ export function EncoderCard({
               </p>
             </div>
           </div>
-          <div className="flex items-center" style={{ gap: '8px' }}>
+          <div className="flex items-center gap-2">
             <StreamStatus status={status} />
           </div>
         </div>
 
         {/* Video Settings Grid */}
-        <div
-          className="grid gap-4 py-4 border-t border-b border-[var(--border-muted)]"
-          style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}
-        >
+        <div className="grid grid-cols-4 gap-4 py-4 border-t border-b border-[var(--border-muted)]">
           <div className="flex flex-col items-center text-center">
-            <Monitor className="w-4 h-4 text-[var(--text-tertiary)]" style={{ marginBottom: '4px' }} />
+            <Monitor className="w-4 h-4 text-[var(--text-tertiary)] mb-1" />
             <span className="text-xs text-[var(--text-tertiary)] uppercase">
               {tDynamic('encoder.resolution', { defaultValue: 'Resolution' })}
             </span>
             <span className="text-sm font-medium text-[var(--text-primary)]">{resolution}</span>
           </div>
           <div className="flex flex-col items-center text-center">
-            <Gauge className="w-4 h-4 text-[var(--text-tertiary)]" style={{ marginBottom: '4px' }} />
+            <Gauge className="w-4 h-4 text-[var(--text-tertiary)] mb-1" />
             <span className="text-xs text-[var(--text-tertiary)] uppercase">
               {tDynamic('encoder.bitrate', { defaultValue: 'Bitrate' })}
             </span>
             <span className="text-sm font-medium text-[var(--text-primary)]">{bitrate}</span>
           </div>
           <div className="flex flex-col items-center text-center">
-            <Film className="w-4 h-4 text-[var(--text-tertiary)]" style={{ marginBottom: '4px' }} />
+            <Film className="w-4 h-4 text-[var(--text-tertiary)] mb-1" />
             <span className="text-xs text-[var(--text-tertiary)] uppercase">
               {tDynamic('encoder.fps', { defaultValue: 'FPS' })}
             </span>
             <span className="text-sm font-medium text-[var(--text-primary)]">{fps}</span>
           </div>
           <div className="flex flex-col items-center text-center">
-            <Settings2 className="w-4 h-4 text-[var(--text-tertiary)]" style={{ marginBottom: '4px' }} />
+            <Settings2 className="w-4 h-4 text-[var(--text-tertiary)] mb-1" />
             <span className="text-xs text-[var(--text-tertiary)] uppercase">
               {tDynamic('encoder.preset', { defaultValue: 'Preset' })}
             </span>
@@ -214,8 +211,8 @@ export function EncoderCard({
         </div>
 
         {/* Footer: Audio + Actions */}
-        <div className="flex items-center justify-between" style={{ marginTop: '12px' }}>
-          <div className="flex items-center text-sm" style={{ gap: '8px' }}>
+        <div className="flex items-center justify-between mt-3">
+          <div className="flex items-center text-sm gap-2">
             <Volume2 className="w-4 h-4 text-[var(--secondary)]" />
             <span className="text-[var(--text-secondary)]">
               {tDynamic('encoder.audio', { defaultValue: 'Audio' })}:
@@ -231,7 +228,7 @@ export function EncoderCard({
               </>
             )}
           </div>
-          <div className="flex items-center" style={{ gap: '4px' }}>
+          <div className="flex items-center gap-1">
             {!isDefaultGroup && onEdit && (
               <>
                 <Button

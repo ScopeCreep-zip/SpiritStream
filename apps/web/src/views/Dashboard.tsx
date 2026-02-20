@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Radio,
@@ -33,13 +33,16 @@ import {
 import type { View } from '@/App';
 import type { Profile, OutputGroup } from '@/types/profile';
 
+// Stable no-op callback to avoid re-renders in read-only OutputGroupCard usage
+const noop = () => {};
+
 interface DashboardProps {
   onNavigate: (view: View) => void;
   onOpenProfileModal: () => void;
   onOpenTargetModal: () => void;
 }
 
-export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }: DashboardProps) {
+export default function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }: DashboardProps) {
   const { t } = useTranslation();
   const {
     current: currentProfile,
@@ -58,7 +61,7 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
   const outputGroups = currentProfile?.outputGroups ?? [];
 
   // Handle duplicating an output group
-  const handleDuplicateGroup = async (group: OutputGroup) => {
+  const handleDuplicateGroup = useCallback(async (group: OutputGroup) => {
     const duplicatedGroup: OutputGroup = {
       ...group,
       id: crypto.randomUUID(),
@@ -70,13 +73,13 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
     };
     await addOutputGroup(duplicatedGroup);
     toast.success(t('toast.groupDuplicated', { name: group.name }));
-  };
+  }, [addOutputGroup, t]);
 
   // Handle removing an output group
-  const handleRemoveGroup = async (groupId: string) => {
+  const handleRemoveGroup = useCallback(async (groupId: string) => {
     await removeOutputGroup(groupId);
     toast.success(t('toast.groupRemoved'));
-  };
+  }, [removeOutputGroup, t]);
 
   // Import profile from JSON file
   const handleImportProfile = async () => {
@@ -199,7 +202,7 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
   };
 
   // Get all stream targets from current profile
-  const getAllTargets = () => {
+  const targets = useMemo(() => {
     if (!currentProfile) return [];
     return currentProfile.outputGroups.flatMap((group) =>
       group.streamTargets.map((target) => ({
@@ -211,9 +214,13 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
         groupId: group.id,
       }))
     );
-  };
+  }, [currentProfile]);
 
-  const targets = getAllTargets();
+  // Get unique service names for profile card
+  const serviceNames = useMemo(
+    () => [...new Set(targets.map((t) => t.service))],
+    [targets]
+  );
 
   const activeTargetCount = useMemo(() => {
     if (!currentProfile) return 0;
@@ -286,7 +293,7 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
         />
       </StatsRow>
 
-      <Grid cols={2} style={{ marginBottom: '24px' }}>
+      <Grid cols={2} className="mb-6">
         <Card>
           <CardHeader>
             <div>
@@ -317,7 +324,7 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
                     label: t('dashboard.targetsCount', { count: targets.length }),
                   },
                 ]}
-                services={[...new Set(targets.map((t) => t.service))]}
+                services={serviceNames}
                 active
               />
             ) : (
@@ -423,7 +430,7 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
       </Card>
 
       {/* Output Groups Section */}
-      <Card style={{ marginTop: '24px' }}>
+      <Card className="mt-6">
         <CardHeader>
           <div>
             <CardTitle>{t('dashboard.outputGroups')}</CardTitle>
@@ -443,7 +450,7 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
                   index={index}
                   encoders={{ video: [], audio: [] }}
                   status={globalStatus === 'live' ? 'live' : 'offline'}
-                  onUpdate={() => {}}
+                  onUpdate={noop}
                   onEdit={() => onNavigate('outputs')}
                   onDuplicate={() => handleDuplicateGroup(group)}
                   onRemove={() => handleRemoveGroup(group.id)}
@@ -467,7 +474,7 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
       </Card>
 
       {/* Encoder Settings Section */}
-      <Card style={{ marginTop: '24px' }}>
+      <Card className="mt-6">
         <CardHeader>
           <div>
             <CardTitle>{t('dashboard.encoderSettings')}</CardTitle>

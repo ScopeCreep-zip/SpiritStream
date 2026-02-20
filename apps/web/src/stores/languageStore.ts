@@ -1,12 +1,13 @@
 import { create } from 'zustand';
-import i18n from '@/lib/i18n';
+import { changeLanguage } from '@/lib/i18n';
 
 export type Language = 'en' | 'es' | 'fr' | 'de' | 'ja' | 'ar' | 'zh-CN' | 'ko' | 'uk' | 'ru' | 'af';
 
 const rtlLanguages = new Set<Language>(['ar']);
 
 const applyLanguage = (lang: Language) => {
-  i18n.changeLanguage(lang);
+  // Lazy-loads the locale bundle if needed, then switches
+  changeLanguage(lang);
   if (typeof document !== 'undefined') {
     document.documentElement.lang = lang;
     document.documentElement.dir = rtlLanguages.has(lang) ? 'rtl' : 'ltr';

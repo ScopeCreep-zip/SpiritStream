@@ -3,12 +3,7 @@
 
 use std::process::Command;
 use crate::models::Encoders;
-
-// Windows: Hide console windows for spawned processes
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
-#[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x08000000;
+use crate::services::process_util::configure_hidden_window;
 
 /// Find FFmpeg path
 fn find_ffmpeg() -> String {
@@ -26,7 +21,7 @@ fn find_ffmpeg() -> String {
     {
         let mut cmd = Command::new("where");
         cmd.arg("ffmpeg");
-        cmd.creation_flags(CREATE_NO_WINDOW);
+        configure_hidden_window(&mut cmd);
         if let Ok(output) = cmd.output() {
             if output.status.success() {
                 if let Ok(path) = String::from_utf8(output.stdout) {
@@ -98,8 +93,7 @@ pub fn get_encoders() -> Result<Encoders, String> {
     let ffmpeg_path = find_ffmpeg();
     let mut cmd = Command::new(&ffmpeg_path);
     cmd.args(["-encoders", "-hide_banner"]);
-    #[cfg(windows)]
-    cmd.creation_flags(CREATE_NO_WINDOW);
+    configure_hidden_window(&mut cmd);
     let output = cmd.output()
         .map_err(|e| format!("Failed to run FFmpeg: {e}"))?;
     if !output.status.success() {
@@ -124,7 +118,7 @@ pub fn get_encoders() -> Result<Encoders, String> {
             "-Command",
             "Get-CimInstance -ClassName Win32_VideoController | Select-Object -ExpandProperty Name"
         ]);
-        ps_cmd.creation_flags(CREATE_NO_WINDOW);
+        configure_hidden_window(&mut ps_cmd);
         let ps_result = ps_cmd.output();
 
         // Fall back to WMIC if PowerShell fails
@@ -133,7 +127,7 @@ pub fn get_encoders() -> Result<Encoders, String> {
             _ => {
                 let mut wmic_cmd = Command::new("wmic");
                 wmic_cmd.args(["path", "win32_VideoController", "get", "name"]);
-                wmic_cmd.creation_flags(CREATE_NO_WINDOW);
+                configure_hidden_window(&mut wmic_cmd);
                 wmic_cmd.output().ok().map(|o| o.stdout)
             }
         };
@@ -266,8 +260,7 @@ pub fn test_ffmpeg() -> Result<String, String> {
 
     let mut cmd = Command::new(&ffmpeg_path);
     cmd.args(["-version"]);
-    #[cfg(windows)]
-    cmd.creation_flags(CREATE_NO_WINDOW);
+    configure_hidden_window(&mut cmd);
     let output = cmd.output()
         .map_err(|e| format!("Failed to run FFmpeg: {e}"))?;
 
@@ -372,8 +365,7 @@ pub fn test_rtmp_target(url: String, stream_key: String) -> Result<RtmpTestResul
         &full_url,
     ]);
 
-    #[cfg(windows)]
-    cmd.creation_flags(CREATE_NO_WINDOW);
+    configure_hidden_window(&mut cmd);
 
     // Set a timeout for the FFmpeg process
     let output = cmd.output()
@@ -473,8 +465,7 @@ pub fn validate_ffmpeg_path(path: String) -> Result<String, String> {
     // Try to run it with -version to verify it's actually FFmpeg
     let mut cmd = Command::new(&path);
     cmd.args(["-version"]);
-    #[cfg(windows)]
-    cmd.creation_flags(CREATE_NO_WINDOW);
+    configure_hidden_window(&mut cmd);
     let output = cmd.output()
         .map_err(|e| format!("Failed to execute: {e}"))?;
 

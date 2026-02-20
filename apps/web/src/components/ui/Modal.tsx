@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, memo } from 'react';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
@@ -128,11 +128,10 @@ interface ModalHeaderProps {
   onClose: () => void;
 }
 
-export function ModalHeader({ title, onClose }: ModalHeaderProps) {
+export const ModalHeader = memo(function ModalHeader({ title, onClose }: ModalHeaderProps) {
   return (
     <div
-      className="flex-shrink-0 border-b border-[var(--border-muted)] flex items-center justify-between"
-      style={{ padding: '20px 24px' }}
+      className="flex-shrink-0 border-b border-[var(--border-muted)] flex items-center justify-between px-6 py-5"
     >
       <h3 id="modal-title" className="text-lg font-semibold text-[var(--text-primary)]">
         {title}
@@ -144,7 +143,7 @@ export function ModalHeader({ title, onClose }: ModalHeaderProps) {
           'text-[var(--text-tertiary)] bg-transparent border-none cursor-pointer',
           'hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]',
           'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ring-default)]',
-          'transition-all duration-150'
+          'transition-colors duration-150'
         )}
         aria-label="Close modal"
       >
@@ -152,33 +151,32 @@ export function ModalHeader({ title, onClose }: ModalHeaderProps) {
       </button>
     </div>
   );
-}
+});
 
 interface ModalBodyProps {
   children: React.ReactNode;
   className?: string;
 }
 
-export function ModalBody({ children, className }: ModalBodyProps) {
+export const ModalBody = memo(function ModalBody({ children, className }: ModalBodyProps) {
   return (
-    <div className={cn('flex-1 min-h-0 overflow-y-auto', className)} style={{ padding: '24px' }}>
+    <div className={cn('flex-1 min-h-0 overflow-y-auto p-6', className)}>
       {children}
     </div>
   );
-}
+});
 
 interface ModalFooterProps {
   children: React.ReactNode;
   className?: string;
 }
 
-export function ModalFooter({ children, className }: ModalFooterProps) {
+export const ModalFooter = memo(function ModalFooter({ children, className }: ModalFooterProps) {
   return (
     <div
-      className={cn('flex-shrink-0 border-t border-[var(--border-muted)] flex justify-end gap-3', className)}
-      style={{ padding: '16px 24px' }}
+      className={cn('flex-shrink-0 border-t border-[var(--border-muted)] flex justify-end gap-3 px-6 py-4', className)}
     >
       {children}
     </div>
   );
-}
+});

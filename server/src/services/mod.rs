@@ -27,8 +27,15 @@ mod go2rtc_client;
 mod go2rtc_manager;
 mod h264_capture;
 mod audio_levels;
-mod audio_level_extractor;
+mod media_audio_decoder;
+mod stream_audio_decoder;
+mod frame_processing;
+pub mod ffmpeg_args;
+pub mod ffmpeg_source_args;
+pub mod process_util;
 pub mod thread_config;
+mod power_management;
+mod source_lifecycle;
 
 // macOS-specific ScreenCaptureKit audio capture
 #[cfg(target_os = "macos")]
@@ -62,4 +69,8 @@ pub use go2rtc_client::*;
 pub use go2rtc_manager::*;
 pub use h264_capture::*;
 pub use audio_levels::*;
-pub use audio_level_extractor::*;
+pub use media_audio_decoder::*;
+pub use stream_audio_decoder::*;
+pub use frame_processing::*;
+pub use power_management::*;
+pub use source_lifecycle::*;

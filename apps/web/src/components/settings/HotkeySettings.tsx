@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { Toggle } from '@/components/ui/Toggle';
 import { useHotkeyStore } from '@/stores/hotkeyStore';
 import { getActionLabel, formatHotkeyBinding } from '@/types/hotkeys';
+import { cn } from '@/lib/cn';
 
 export function HotkeySettings() {
   const { t } = useTranslation();
@@ -61,9 +62,9 @@ export function HotkeySettings() {
           </CardDescription>
         </div>
       </CardHeader>
-      <CardBody style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <CardBody className="p-6 flex flex-col gap-4">
         {/* Global enable toggle */}
-        <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
+        <div className="flex items-center justify-between py-2">
           <div>
             <div className="text-sm font-medium text-[var(--text-primary)]">
               {t('settings.enableHotkeys', { defaultValue: 'Enable Hotkeys' })}
@@ -79,7 +80,7 @@ export function HotkeySettings() {
 
         {/* Hotkey bindings table */}
         <div
-          className={`border border-[var(--border-default)] rounded-lg overflow-hidden ${!enabled ? 'opacity-50 pointer-events-none' : ''}`}
+          className={cn('border border-[var(--border-default)] rounded-lg overflow-hidden', !enabled && 'opacity-50 pointer-events-none')}
         >
           <table className="w-full text-sm">
             <thead>

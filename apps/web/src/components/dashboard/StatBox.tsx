@@ -22,9 +22,9 @@ export function StatBox({
       className={cn(
         'bg-[var(--bg-surface)] border border-[var(--border-default)]',
         'rounded-xl',
+        'p-5',
         className
       )}
-      style={{ padding: '20px' }}
     >
       <div className="flex items-center justify-between mb-2">
         <span className="text-small text-[var(--text-secondary)]">{label}</span>

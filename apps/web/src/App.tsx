@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   LayoutDashboard,
@@ -37,24 +37,46 @@ import { useConnectionStatus } from '@/hooks/useConnectionStatus';
 import { useBackendConnection } from '@/hooks/useBackendConnection';
 import { useDataSync } from '@/hooks/useDataSync';
 import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValidation';
+import { terminateAudioMeterWorker } from '@/lib/audio/audioMeterWorkerBridge';
 import { getIncomingUrl } from '@/types/profile';
 import { toast } from '@/hooks/useToast';
 import { useThemeStore } from '@/stores/themeStore';
 import { isTauri, checkAuth, checkServerHealth, checkServerReady } from '@/lib/backend/env';
 import { initConnection } from '@/lib/backend/httpEvents';
+import { useShallow } from 'zustand/shallow';
 
-// Import all views
-import {
-  Dashboard,
-  Profiles,
-  StreamManager,
-  EncoderSettings,
-  OutputGroups,
-  StreamTargets,
-  Logs,
-  Settings,
-} from '@/views';
-import { Stream } from '@/views/Stream';
+// Lazy-loaded views for code splitting
+const Dashboard = lazy(() => import('@/views/Dashboard'));
+const Stream = lazy(() => import('@/views/Stream'));
+const StreamManager = lazy(() => import('@/views/StreamManager'));
+const Profiles = lazy(() => import('@/views/Profiles'));
+const EncoderSettings = lazy(() => import('@/views/EncoderSettings'));
+const OutputGroups = lazy(() => import('@/views/OutputGroups'));
+const StreamTargets = lazy(() => import('@/views/StreamTargets'));
+const Settings = lazy(() => import('@/views/Settings'));
+const Logs = lazy(() => import('@/views/Logs'));
+
+/** Skeleton placeholder shown while a lazy view chunk is loading */
+function ViewSkeleton() {
+  return (
+    <div className="flex flex-col gap-6 p-6 animate-pulse">
+      {/* Title bar skeleton */}
+      <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-2">
+          <div className="h-5 w-48 rounded bg-neutral-800" />
+          <div className="h-3 w-72 rounded bg-neutral-800" />
+        </div>
+        <div className="h-9 w-32 rounded bg-neutral-800" />
+      </div>
+      {/* Content area skeleton */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="h-40 rounded-lg bg-neutral-800" />
+        <div className="h-40 rounded-lg bg-neutral-800" />
+      </div>
+      <div className="h-64 rounded-lg bg-neutral-800" />
+    </div>
+  );
+}
 
 export type View =
   | 'dashboard'
@@ -119,23 +141,28 @@ function App() {
           await listen('server-error', (event) => markFailed(event.payload as string));
 
           // Race condition fix: The server-ready event might have been emitted
-          // before our listener was set up. Wait a bit longer then check.
-          // Use 500ms delay to give server time to start, avoiding console errors.
-          setTimeout(async () => {
-            if (resolved || cancelled) return;
-            try {
-              const healthy = await checkServerHealth(1, 0);
-              if (healthy && !resolved && !cancelled) {
-                const ready = await checkServerReady(1, 0);
-                if (ready && !resolved && !cancelled) {
-                  console.log('[App] Server already ready (caught race condition)');
-                  markReady();
+          // before our listener was set up. Poll immediately with exponential backoff
+          // instead of waiting a fixed 500ms delay.
+          const checkRaceCondition = async () => {
+            for (let i = 0; i < 5; i++) {
+              if (resolved || cancelled) return;
+              try {
+                const healthy = await checkServerHealth(1, 0);
+                if (healthy && !resolved && !cancelled) {
+                  const ready = await checkServerReady(1, 0);
+                  if (ready && !resolved && !cancelled) {
+                    console.log('[App] Server already ready (caught race condition)');
+                    markReady();
+                    return;
+                  }
                 }
+              } catch {
+                // Ignore errors - back off and retry
               }
-            } catch {
-              // Ignore errors - we still have the event listener as backup
+              await new Promise(r => setTimeout(r, 100 * (i + 1))); // 100, 200, 300, 400, 500ms
             }
-          }, 500); // Wait 500ms to avoid console errors from early failed requests
+          };
+          checkRaceCondition();
 
           // Fallback: If event doesn't arrive within 20 seconds, something is wrong.
           // This handles edge cases where event system fails entirely.
@@ -244,6 +271,13 @@ function AppContent() {
   // Initialize theme store on app startup
   useThemeStore((state) => state.currentThemeId);
 
+  // Terminate audio meter worker on app unmount
+  useEffect(() => {
+    return () => {
+      terminateAudioMeterWorker();
+    };
+  }, []);
+
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const {
     current,
@@ -252,8 +286,23 @@ function AppContent() {
     passwordError,
     submitPassword,
     cancelPasswordPrompt,
-  } = useProfileStore();
-  const { isStreaming, startAllGroups, stopAllGroups } = useStreamStore();
+  } = useProfileStore(
+    useShallow(s => ({
+      current: s.current,
+      profiles: s.profiles,
+      pendingPasswordProfile: s.pendingPasswordProfile,
+      passwordError: s.passwordError,
+      submitPassword: s.submitPassword,
+      cancelPasswordPrompt: s.cancelPasswordPrompt
+    }))
+  );
+  const { isStreaming, startAllGroups, stopAllGroups } = useStreamStore(
+    useShallow(s => ({
+      isStreaming: s.isStreaming,
+      startAllGroups: s.startAllGroups,
+      stopAllGroups: s.stopAllGroups
+    }))
+  );
 
   // Modal state
   const [profileModalOpen, setProfileModalOpen] = useState(false);
@@ -513,7 +562,11 @@ function AppContent() {
           {renderHeaderActions()}
         </Header>
 
-        <ContentArea>{renderView()}</ContentArea>
+        <ContentArea>
+          <Suspense fallback={<ViewSkeleton />}>
+            {renderView()}
+          </Suspense>
+        </ContentArea>
       </MainContent>
 
       {/* Modals */}

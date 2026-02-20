@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useShallow } from 'zustand/shallow';
 import { Play, Square, Settings2, Activity, Gauge, Clock, Upload, Radio, AlertTriangle } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -22,9 +23,13 @@ interface StreamManagerProps {
   onNavigate: (view: View) => void;
 }
 
-export function StreamManager({ onNavigate }: StreamManagerProps) {
+export default function StreamManager({ onNavigate }: StreamManagerProps) {
   const { t } = useTranslation();
-  const { current, loading, error } = useProfileStore();
+  const { current, loading, error } = useProfileStore(useShallow((state) => ({
+    current: state.current,
+    loading: state.loading,
+    error: state.error,
+  })));
   const {
     isStreaming,
     activeGroups,
@@ -38,7 +43,20 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
     startAllGroups,
     stopAllGroups,
     setTargetEnabled,
-  } = useStreamStore();
+  } = useStreamStore(useShallow((state) => ({
+    isStreaming: state.isStreaming,
+    activeGroups: state.activeGroups,
+    enabledTargets: state.enabledTargets,
+    globalStatus: state.globalStatus,
+    groupStats: state.groupStats,
+    error: state.error,
+    stats: state.stats,
+    uptime: state.uptime,
+    activeStreamCount: state.activeStreamCount,
+    startAllGroups: state.startAllGroups,
+    stopAllGroups: state.stopAllGroups,
+    setTargetEnabled: state.setTargetEnabled,
+  })));
 
   const [isValidating, setIsValidating] = useState(false);
 
@@ -212,7 +230,7 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
   };
 
   return (
-    <div className="flex flex-col" style={{ gap: '24px' }}>
+    <div className="flex flex-col gap-6">
       {streamError && (
         <Alert variant="error" title={t('streams.streamError')}>
           {streamError}
@@ -272,7 +290,7 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
             </div>
           )}
         </CardHeader>
-        <CardBody style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <CardBody className="flex flex-col gap-4">
           {outputGroups.map((group: OutputGroupType) => {
             const stats = groupStats[group.id];
             const isGroupActive = activeGroups.has(group.id);
@@ -326,17 +344,13 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
                   </div>
                 )}
 
-                <div
-                  className="flex flex-col border-t border-[var(--border-muted)]"
-                  style={{ gap: '12px', paddingTop: '12px' }}
-                >
+                <div className="flex flex-col border-t border-[var(--border-muted)] gap-3 pt-3">
                   {group.streamTargets.map((target: StreamTarget) => (
                     <div
                       key={target.id}
-                      className="flex items-center justify-between rounded-lg bg-[var(--bg-surface)] border border-[var(--border-default)]"
-                      style={{ padding: '12px' }}
+                      className="flex items-center justify-between rounded-lg bg-[var(--bg-surface)] border border-[var(--border-default)] p-3"
                     >
-                      <div className="flex items-center" style={{ gap: '12px' }}>
+                      <div className="flex items-center gap-3">
                         <PlatformIcon platform={target.service} size="sm" />
                         <div>
                           <div className="font-medium text-sm text-[var(--text-primary)]">
@@ -363,10 +377,7 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
             );
           })}
 
-          <div
-            className="flex justify-end border-t border-[var(--border-muted)]"
-            style={{ gap: '12px', paddingTop: '16px' }}
-          >
+          <div className="flex justify-end border-t border-[var(--border-muted)] gap-3 pt-4">
             <Button variant="outline" onClick={() => onNavigate('encoder')}>
               <Settings2 className="w-4 h-4" />
               {t('streams.configure')}

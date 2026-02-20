@@ -27,7 +27,7 @@ export function ColorSourceForm({ data, onChange }: SourceFormProps<ColorSource>
             type="color"
             value={data.color}
             onChange={(e) => onChange({ ...data, color: e.target.value })}
-            className="w-12 h-10 rounded border border-[var(--border)] cursor-pointer"
+            className="w-12 h-10 rounded border border-[var(--border-default)] cursor-pointer"
           />
           <Input
             value={data.color}

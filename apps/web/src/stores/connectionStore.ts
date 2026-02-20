@@ -107,10 +107,11 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
     // Only run in Tauri mode
     if (backendMode !== 'tauri') return;
 
-    // Clear any existing interval
-    const existingInterval = get().healthCheckIntervalId;
-    if (existingInterval) {
-      clearInterval(existingInterval);
+    // Clear any existing timeout before starting a new one
+    const existingId = get().healthCheckIntervalId;
+    if (existingId) {
+      clearTimeout(existingId);
+      set({ healthCheckIntervalId: null });
     }
 
     // Do an immediate check (no initial delay)
@@ -140,9 +141,11 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
   stopTauriHealthCheck: () => {
     const intervalId = get().healthCheckIntervalId;
     if (intervalId) {
-      clearInterval(intervalId);
-      set({ healthCheckIntervalId: null });
+      // Use clearTimeout since scheduleNext uses setTimeout
+      clearTimeout(intervalId);
     }
+    // Always null the reference, even if it was already null
+    set({ healthCheckIntervalId: null });
   },
 }));
 

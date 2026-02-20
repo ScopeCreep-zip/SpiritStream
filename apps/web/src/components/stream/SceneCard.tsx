@@ -38,7 +38,7 @@ export function SceneCard({
       type="button"
       onClick={onClick}
       className={cn(
-        'relative w-full rounded-lg overflow-hidden border-2 transition-all group',
+        'relative w-full rounded-lg overflow-hidden border-2 transition-shadow group',
         sizeClasses[size],
         isProgram && 'border-red-500 shadow-lg shadow-red-500/30',
         isPreview && !isProgram && 'border-green-500 shadow-lg shadow-green-500/30',

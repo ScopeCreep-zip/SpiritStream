@@ -94,7 +94,7 @@ export function SourceTypeSelector({ onSelect, excludeTypes = [] }: SourceTypeSe
       {filteredTypes.map(({ type, icon }) => (
         <button
           key={type}
-          className="flex items-start gap-3 p-3 rounded-lg border border-[var(--border)] hover:border-[var(--primary)] hover:bg-[var(--bg-hover)] transition-colors text-left"
+          className="flex items-start gap-3 p-3 rounded-lg border border-[var(--border-default)] hover:border-[var(--primary)] hover:bg-[var(--bg-hover)] transition-colors text-left"
           onClick={() => onSelect(type)}
         >
           <div className="flex-shrink-0 p-2 rounded-md bg-[var(--bg-elevated)] text-[var(--primary)]">

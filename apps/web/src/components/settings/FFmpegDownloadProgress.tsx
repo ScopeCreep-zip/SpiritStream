@@ -261,7 +261,7 @@ function ProgressBar({ percent, downloaded, total, phase }: ProgressBarProps) {
       {/* Progress bar */}
       <div className="h-2 bg-[var(--bg-sunken)] rounded-full overflow-hidden">
         <div
-          className="h-full bg-[var(--primary)] rounded-full transition-all duration-300"
+          className="h-full bg-[var(--primary)] rounded-full transition-[width] duration-300"
           style={{ width: `${Math.min(percent, 100)}%` }}
         />
       </div>

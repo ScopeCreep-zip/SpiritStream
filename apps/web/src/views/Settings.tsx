@@ -28,7 +28,7 @@ import { useThemeStore } from '@/stores/themeStore';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AppSettings } from '@/types/api';
 
-export function Settings() {
+export default function Settings() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
 
@@ -279,9 +279,7 @@ export function Settings() {
             <CardDescription>{t('settings.generalDescription')}</CardDescription>
           </div>
         </CardHeader>
-        <CardBody
-          style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}
-        >
+        <CardBody className="p-6 flex flex-col gap-4">
           <Select
             label={t('settings.language')}
             value={settings.language}
@@ -290,7 +288,7 @@ export function Settings() {
             }
             options={languageOptions}
           />
-          <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
+          <div className="flex items-center justify-between py-2">
             <div>
               <div className="text-sm font-medium text-[var(--text-primary)]">
                 {t('settings.startMinimized')}
@@ -304,7 +302,7 @@ export function Settings() {
               onChange={(checked: boolean) => updateSetting('startMinimized', checked)}
             />
           </div>
-          <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
+          <div className="flex items-center justify-between py-2">
             <div>
               <div className="text-sm font-medium text-[var(--text-primary)]">
                 {t('settings.showNotifications')}
@@ -329,14 +327,12 @@ export function Settings() {
             <CardDescription>{t('settings.ffmpegDescription')}</CardDescription>
           </div>
         </CardHeader>
-        <CardBody
-          style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}
-        >
-          <div className="flex flex-col" style={{ gap: '6px' }}>
+        <CardBody className="p-6 flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
             <label className="block text-sm font-medium text-[var(--text-primary)]">
               {t('settings.ffmpegPath')}
             </label>
-            <div className="flex" style={{ gap: '8px' }}>
+            <div className="flex gap-2">
               <Input
                 value={ffmpegPath}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
@@ -362,7 +358,7 @@ export function Settings() {
           />
 
           {/* FFmpeg Status Section */}
-          <div className="border-t border-[var(--border-muted)]" style={{ paddingTop: '16px' }}>
+          <div className="border-t border-[var(--border-muted)] pt-4">
             <FFmpegDownloadProgress
               installedVersion={ffmpegVersion || undefined}
               autoDownload={settings.autoDownloadFfmpeg}
@@ -389,9 +385,7 @@ export function Settings() {
             </CardDescription>
           </div>
         </CardHeader>
-        <CardBody
-          style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}
-        >
+        <CardBody className="p-6 flex flex-col gap-4">
           <Select
             label={t('settings.theme', { defaultValue: 'Theme' })}
             value={currentThemeId}
@@ -401,7 +395,7 @@ export function Settings() {
               defaultValue: 'Choose your preferred theme appearance.',
             })}
           />
-          <div className="flex items-center" style={{ gap: '12px' }}>
+          <div className="flex items-center gap-3">
             <Button variant="outline" onClick={handleInstallTheme} disabled={themeInstalling}>
               {themeInstalling
                 ? t('common.loading')
@@ -424,14 +418,12 @@ export function Settings() {
             <CardDescription>{t('settings.dataPrivacyDescription')}</CardDescription>
           </div>
         </CardHeader>
-        <CardBody
-          style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}
-        >
-          <div className="flex flex-col" style={{ gap: '6px' }}>
+        <CardBody className="p-6 flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
             <label className="block text-sm font-medium text-[var(--text-primary)]">
               {t('settings.profileStorage')}
             </label>
-            <div className="flex" style={{ gap: '8px' }}>
+            <div className="flex gap-2">
               <Input
                 value={settings.profileStoragePath}
                 disabled
@@ -443,7 +435,7 @@ export function Settings() {
               </Button>
             </div>
           </div>
-          <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
+          <div className="flex items-center justify-between py-2">
             <div>
               <div className="text-sm font-medium text-[var(--text-primary)]">
                 {t('settings.encryptStreamKeys')}
@@ -473,10 +465,7 @@ export function Settings() {
               defaultValue: 'How long to keep application log files.',
             })}
           />
-          <div
-            className="border-t border-[var(--border-muted)] flex"
-            style={{ paddingTop: '16px', gap: '12px' }}
-          >
+          <div className="border-t border-[var(--border-muted)] flex pt-4 gap-3">
             <Button variant="outline" onClick={handleExportData}>
               <Download className="w-4 h-4" />
               {t('settings.exportData')}
@@ -502,10 +491,8 @@ export function Settings() {
             </CardDescription>
           </div>
         </CardHeader>
-        <CardBody
-          style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}
-        >
-          <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
+        <CardBody className="p-6 flex flex-col gap-4">
+          <div className="flex items-center justify-between py-2">
             <div>
               <div className="text-sm font-medium text-[var(--text-primary)]">
                 {t('settings.remoteAccessToggle', {
@@ -524,7 +511,7 @@ export function Settings() {
               onChange={(checked: boolean) => updateSetting('backendRemoteEnabled', checked)}
             />
           </div>
-          <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
+          <div className="flex items-center justify-between py-2">
             <div>
               <div className="text-sm font-medium text-[var(--text-primary)]">
                 {t('settings.remoteAccessUiToggle', {
@@ -592,17 +579,17 @@ export function Settings() {
           </div>
         </CardHeader>
         <CardBody>
-          <div className="text-center" style={{ padding: '16px 0' }}>
-            <div className="flex justify-center" style={{ marginBottom: '16px' }}>
+          <div className="text-center py-4">
+            <div className="flex justify-center mb-4">
               <Logo size="lg" />
             </div>
-            <div className="text-sm text-[var(--text-secondary)]" style={{ marginBottom: '4px' }}>
+            <div className="text-sm text-[var(--text-secondary)] mb-1">
               {t('settings.version')} 0.1.0
             </div>
-            <div className="text-xs text-[var(--text-tertiary)]" style={{ marginBottom: '24px' }}>
+            <div className="text-xs text-[var(--text-tertiary)] mb-6">
               {t('settings.tagline')}
             </div>
-            <div className="flex justify-center" style={{ gap: '12px' }}>
+            <div className="flex justify-center gap-3">
               <Button
                 variant="ghost"
                 size="sm"

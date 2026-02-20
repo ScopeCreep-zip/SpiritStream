@@ -102,10 +102,28 @@ fn main() {
                     // First try to get the PID and kill via system command (more reliable)
                     let pid = server_state.pid.lock().ok().and_then(|g| *g);
                     if let Some(pid) = pid {
-                        log::info!("Killing server process (PID: {})", pid);
+                        log::info!("Stopping server process (PID: {})", pid);
                         #[cfg(unix)]
                         {
                             use std::process::Command;
+                            // Phase 1: SIGTERM — lets server run shutdown_signal() handler
+                            let _ = Command::new("kill")
+                                .args(["-15", &pid.to_string()])
+                                .output();
+                            // Phase 2: Wait up to 5s for graceful exit
+                            for _ in 0..10 {
+                                std::thread::sleep(Duration::from_millis(500));
+                                let alive = Command::new("kill")
+                                    .args(["-0", &pid.to_string()])
+                                    .output()
+                                    .map(|o| o.status.success())
+                                    .unwrap_or(false);
+                                if !alive {
+                                    log::info!("Server process exited gracefully");
+                                    break;
+                                }
+                            }
+                            // Phase 3: SIGKILL if still running
                             let _ = Command::new("kill")
                                 .args(["-9", &pid.to_string()])
                                 .output();
@@ -113,6 +131,27 @@ fn main() {
                         #[cfg(windows)]
                         {
                             use std::process::Command;
+                            // Phase 1: Graceful termination
+                            let _ = Command::new("taskkill")
+                                .args(["/PID", &pid.to_string()])
+                                .output();
+                            // Phase 2: Wait up to 5s
+                            for _ in 0..10 {
+                                std::thread::sleep(Duration::from_millis(500));
+                                let alive = Command::new("tasklist")
+                                    .args(["/FI", &format!("PID eq {}", pid), "/NH"])
+                                    .output()
+                                    .map(|o| {
+                                        String::from_utf8_lossy(&o.stdout)
+                                            .contains(&pid.to_string())
+                                    })
+                                    .unwrap_or(false);
+                                if !alive {
+                                    log::info!("Server process exited gracefully");
+                                    break;
+                                }
+                            }
+                            // Phase 3: Force kill if still running
                             let _ = Command::new("taskkill")
                                 .args(["/F", "/PID", &pid.to_string()])
                                 .output();
@@ -499,17 +538,22 @@ fn kill_existing_processes() {
             .args(["-9", "-f", "go2rtc"])
             .output();
 
-        // Give processes time to terminate and release ports
-        std::thread::sleep(Duration::from_millis(500));
-
-        // Verify port 8008 is free
-        for attempt in 1..=5 {
-            if is_port_available(8008) {
-                log::info!("Port 8008 is available after {} attempt(s)", attempt);
-                break;
+        // Check port immediately — skip sleeping if already free
+        if !is_port_available(8008) {
+            // Exponential backoff: 50, 100, 150, 200, 250ms (max ~750ms total)
+            for attempt in 1..=5 {
+                let delay = 50 * attempt as u64;
+                std::thread::sleep(Duration::from_millis(delay));
+                if is_port_available(8008) {
+                    log::info!("Port 8008 is available after {} attempt(s)", attempt);
+                    break;
+                }
+                if attempt < 5 {
+                    log::warn!("Port 8008 still in use, waiting {}ms... (attempt {})", delay, attempt);
+                }
             }
-            log::warn!("Port 8008 still in use, waiting... (attempt {})", attempt);
-            std::thread::sleep(Duration::from_millis(500));
+        } else {
+            log::info!("Port 8008 is available immediately");
         }
 
         log::info!("Cleaned up any existing SpiritStream processes");
@@ -533,17 +577,22 @@ fn kill_existing_processes() {
             .args(["/F", "/IM", "go2rtc.exe"])
             .output();
 
-        // Wait for processes to fully terminate and release ports
-        std::thread::sleep(Duration::from_millis(1000));
-
-        // Verify port 8008 is free
-        for attempt in 1..=5 {
-            if is_port_available(8008) {
-                log::info!("Port 8008 is available after {} attempt(s)", attempt);
-                break;
+        // Check port immediately — skip sleeping if already free
+        if !is_port_available(8008) {
+            // Exponential backoff: 50, 100, 150, 200, 250ms (max ~750ms total)
+            for attempt in 1..=5 {
+                let delay = 50 * attempt as u64;
+                std::thread::sleep(Duration::from_millis(delay));
+                if is_port_available(8008) {
+                    log::info!("Port 8008 is available after {} attempt(s)", attempt);
+                    break;
+                }
+                if attempt < 5 {
+                    log::warn!("Port 8008 still in use, waiting {}ms... (attempt {})", delay, attempt);
+                }
             }
-            log::warn!("Port 8008 still in use, waiting... (attempt {})", attempt);
-            std::thread::sleep(Duration::from_millis(500));
+        } else {
+            log::info!("Port 8008 is available immediately");
         }
 
         log::info!("Cleaned up any existing SpiritStream processes");
@@ -561,24 +610,24 @@ async fn wait_for_health(host: &str, port: &str) {
     let health_url = format!("http://{host}:{port}/health");
     let ready_url = format!("http://{host}:{port}/ready");
 
-    // Phase 1: Wait for server to be alive (health check)
-    for _ in 0..25 {
+    // Phase 1: Wait for server to be alive (health check) — 10×100ms = 1s max
+    for attempt in 1..=10 {
         if let Ok(response) = reqwest::get(&health_url).await {
             if response.status().is_success() {
-                log::info!("Backend server is alive at {health_url}");
+                log::info!("Backend server is alive at {health_url} (attempt {attempt})");
                 break;
             }
         }
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
 
-    // Phase 2: Wait for server to be ready (services initialized)
-    for attempt in 1..=15 {
+    // Phase 2: Wait for server to be ready (services initialized) — 10×200ms = 2s max
+    for attempt in 1..=10 {
         if let Ok(response) = reqwest::get(&ready_url).await {
             if response.status().is_success() {
                 if let Ok(data) = response.json::<serde_json::Value>().await {
                     if data.get("ready").and_then(|v| v.as_bool()).unwrap_or(false) {
-                        log::info!("Backend server is ready");
+                        log::info!("Backend server is ready (attempt {attempt})");
                         return;
                     }
                 }
@@ -586,9 +635,9 @@ async fn wait_for_health(host: &str, port: &str) {
         }
 
         if attempt % 5 == 0 {
-            log::info!("Waiting for backend readiness ({attempt}/15)...");
+            log::info!("Waiting for backend readiness ({attempt}/10)...");
         }
-        tokio::time::sleep(Duration::from_millis(300)).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
     }
 
     log::warn!("Could not confirm backend readiness at {ready_url}");

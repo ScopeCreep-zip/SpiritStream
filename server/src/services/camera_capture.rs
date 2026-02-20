@@ -48,10 +48,10 @@ impl Default for CameraCaptureConfig {
 /// Video frame from camera
 #[derive(Debug, Clone)]
 pub struct VideoFrame {
-    pub data: Vec<u8>,
+    pub data: Arc<Vec<u8>>,
     pub width: u32,
     pub height: u32,
-    pub pixel_format: String,
+    pub pixel_format: &'static str,
     pub timestamp_ms: u64,
 }
 
@@ -61,6 +61,8 @@ struct ActiveCapture {
     camera_name: String,
     frame_tx: broadcast::Sender<Arc<VideoFrame>>,
     stop_flag: Arc<std::sync::atomic::AtomicBool>,
+    /// Thread handle for frame reader (joined on stop for clean shutdown)
+    capture_handle: Option<std::thread::JoinHandle<()>>,
 }
 
 /// Service for managing camera capture via FFmpeg
@@ -305,10 +307,10 @@ impl CameraCaptureService {
             ]);
         }
 
-        // Output raw video frames to stdout
+        // Output raw video frames to stdout (BGRA for consistency with screen capture)
         args.extend([
             "-f", "rawvideo",
-            "-pix_fmt", "rgb24",
+            "-pix_fmt", "bgra",
             "-",
         ]);
 
@@ -330,21 +332,28 @@ impl CameraCaptureService {
         let width = config.width;
         let height = config.height;
 
-        std::thread::spawn(move || {
+        let capture_handle = std::thread::spawn(move || {
             crate::services::thread_config::set_thread_qos(crate::services::thread_config::QosClass::UserInteractive);
-            let frame_size = (width * height * 3) as usize; // RGB24
+            let frame_size = (width * height * 4) as usize; // BGRA
             let mut reader = BufReader::new(stdout);
             let mut buffer = vec![0u8; frame_size];
             let start_time = std::time::Instant::now();
 
             while !stop_flag_clone.load(std::sync::atomic::Ordering::Relaxed) {
+                // Skip frame reading when no consumers are connected
+                if tx_clone.receiver_count() == 0 {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    continue;
+                }
                 match reader.read_exact(&mut buffer) {
                     Ok(_) => {
+                        // Wrap in Arc for zero-copy sharing across broadcast subscribers
+                        let data = Arc::new(buffer.clone());
                         let frame = VideoFrame {
-                            data: buffer.clone(),
+                            data,
                             width,
                             height,
-                            pixel_format: "rgb24".to_string(),
+                            pixel_format: "bgra",
                             timestamp_ms: start_time.elapsed().as_millis() as u64,
                         };
                         let _ = tx_clone.send(Arc::new(frame));
@@ -364,6 +373,7 @@ impl CameraCaptureService {
                     camera_name: camera.name.clone(),
                     frame_tx,
                     stop_flag,
+                    capture_handle: Some(capture_handle),
                 },
             );
         }
@@ -374,26 +384,38 @@ impl CameraCaptureService {
 
     /// Stop capturing from a camera
     pub fn stop_capture(&self, camera_id: &str) -> Result<(), String> {
-        let mut captures = self.active_captures.lock().unwrap();
-
-        if let Some(mut capture) = captures.remove(camera_id) {
-            capture.stop_flag.store(true, std::sync::atomic::Ordering::Relaxed);
-            let _ = capture.process.kill();
-            log::info!("Stopped camera capture for {}", camera_id);
-            Ok(())
-        } else {
-            Err(format!("No active capture for camera {}", camera_id))
+        let handle = {
+            let mut captures = self.active_captures.lock().unwrap();
+            if let Some(mut capture) = captures.remove(camera_id) {
+                capture.stop_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+                let _ = capture.process.kill();
+                log::info!("Stopped camera capture for {}", camera_id);
+                capture.capture_handle.take()
+            } else {
+                return Err(format!("No active capture for camera {}", camera_id));
+            }
+        };
+        // Join thread outside the lock to avoid deadlock
+        if let Some(handle) = handle {
+            let _ = handle.join();
         }
+        Ok(())
     }
 
     /// Stop all active captures
     pub fn stop_all(&self) {
-        let mut captures = self.active_captures.lock().unwrap();
-
-        for (id, mut capture) in captures.drain() {
-            capture.stop_flag.store(true, std::sync::atomic::Ordering::Relaxed);
-            let _ = capture.process.kill();
-            log::info!("Stopped camera capture for {}", id);
+        let handles: Vec<_> = {
+            let mut captures = self.active_captures.lock().unwrap();
+            captures.drain().map(|(id, mut capture)| {
+                capture.stop_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+                let _ = capture.process.kill();
+                log::info!("Stopped camera capture for {}", id);
+                capture.capture_handle.take()
+            }).collect()
+        };
+        // Join all threads outside the lock
+        for handle in handles.into_iter().flatten() {
+            let _ = handle.join();
         }
     }
 

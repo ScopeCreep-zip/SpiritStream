@@ -123,7 +123,7 @@ export function AudioFilterButton({
       <button
         ref={buttonRef}
         onClick={() => setIsOpen(!isOpen)}
-        className={`${compact ? 'w-5 h-5 rounded' : 'w-7 h-7 rounded-md'} flex items-center justify-center transition-all border ${
+        className={`${compact ? 'w-5 h-5 rounded' : 'w-7 h-7 rounded-md'} flex items-center justify-center transition-colors border ${
           hasActiveFilters
             ? 'bg-primary/20 border-primary text-primary'
             : 'bg-[var(--bg-sunken)] border-transparent text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-secondary)]'

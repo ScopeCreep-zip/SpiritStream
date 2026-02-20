@@ -16,7 +16,7 @@ export function TakeButton({ onClick, disabled, className }: TakeButtonProps) {
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        'w-16 h-16 rounded-lg font-bold text-sm transition-all',
+        'w-16 h-16 rounded-lg font-bold text-sm transition-colors',
         'bg-red-600 hover:bg-red-500 active:bg-red-700',
         'text-white shadow-lg',
         'disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-red-600',

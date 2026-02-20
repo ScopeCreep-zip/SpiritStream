@@ -100,6 +100,14 @@ export function initAudioMeterWorker(): void {
     worker.onerror = (err) => {
       console.error('[AudioMeterWorker] Worker error:', err);
     };
+    // Warn if worker takes too long to initialize
+    setTimeout(() => {
+      if (!isReady) {
+        console.warn(
+          '[AudioMeterWorker] Worker not ready after 5s. Audio meters may not render. Check browser console for module loading errors.'
+        );
+      }
+    }, 5000);
   } catch (err) {
     console.error('[AudioMeterWorker] Failed to create worker:', err);
   }
@@ -302,6 +310,25 @@ export function updateMeterConfig(
 export function forwardAudioData(rawMessage: string): void {
   if (isReady && worker) {
     worker.postMessage({ type: 'audioData', data: rawMessage });
+  }
+}
+
+/**
+ * Pause the render loop in the worker (e.g., when tab is hidden).
+ * Audio data continues to be received but canvases stop rendering.
+ */
+export function pauseAudioMeterWorker(): void {
+  if (isReady && worker) {
+    worker.postMessage({ type: 'pause' });
+  }
+}
+
+/**
+ * Resume the render loop in the worker (e.g., when tab becomes visible).
+ */
+export function resumeAudioMeterWorker(): void {
+  if (isReady && worker) {
+    worker.postMessage({ type: 'resume' });
   }
 }
 

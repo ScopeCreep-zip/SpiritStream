@@ -44,15 +44,15 @@ export function OutputGroupCard({
   const containerSummary = group.container.format.toUpperCase();
 
   return (
-    <Card className={cn('transition-all duration-150', className)}>
+    <Card className={cn('transition-shadow duration-150', className)}>
       <CardHeader>
-        <div className="flex items-center" style={{ gap: '12px' }}>
+        <div className="flex items-center gap-3">
           <h3 className={cn('font-semibold text-[var(--text-primary)]')}>
             {group.name || t('outputs.defaultGroupName', { number: index + 1 })}
           </h3>
           <StreamStatus status={status} />
         </div>
-        <div className="flex items-center" style={{ gap: '8px' }}>
+        <div className="flex items-center gap-2">
           {onEdit && (
             <Button
               variant="ghost"
@@ -85,23 +85,23 @@ export function OutputGroupCard({
       </CardHeader>
       <CardBody>
         {/* Read-only display of nested settings - use Edit modal to change */}
-        <div className="flex flex-col" style={{ gap: '12px' }}>
+        <div className="flex flex-col gap-3">
           {/* Video Settings Summary */}
-          <div className="flex items-center text-sm" style={{ gap: '8px' }}>
+          <div className="flex items-center text-sm gap-2">
             <Video className="w-4 h-4 text-[var(--primary)]" />
             <span className="text-[var(--text-secondary)]">{t('outputs.video')}:</span>
             <span className="text-[var(--text-primary)]">{videoSummary}</span>
           </div>
 
           {/* Audio Settings Summary */}
-          <div className="flex items-center text-sm" style={{ gap: '8px' }}>
+          <div className="flex items-center text-sm gap-2">
             <Volume2 className="w-4 h-4 text-[var(--secondary)]" />
             <span className="text-[var(--text-secondary)]">{t('outputs.audio')}:</span>
             <span className="text-[var(--text-primary)]">{audioSummary}</span>
           </div>
 
           {/* Container Settings Summary */}
-          <div className="flex items-center text-sm" style={{ gap: '8px' }}>
+          <div className="flex items-center text-sm gap-2">
             <Box className="w-4 h-4 text-[var(--accent)]" />
             <span className="text-[var(--text-secondary)]">{t('outputs.container')}:</span>
             <span className="text-[var(--text-primary)]">{containerSummary}</span>
@@ -124,7 +124,7 @@ export function OutputGroupCard({
                 onClick={onAddTarget}
                 aria-label={tDynamic('outputs.addTarget', { defaultValue: 'Add Target' })}
               >
-                <Plus className="w-3 h-3" style={{ marginRight: '4px' }} />
+                <Plus className="w-3 h-3 mr-1" />
                 {tDynamic('outputs.addTarget', { defaultValue: 'Add Target' })}
               </Button>
             )}

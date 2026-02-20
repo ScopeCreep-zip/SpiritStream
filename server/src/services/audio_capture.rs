@@ -618,24 +618,31 @@ impl AudioCaptureService {
         let channels = stream_config.channels;
 
         // Create broadcast channel
-        let (tx, rx) = broadcast::channel::<AudioBuffer>(64);
+        let (tx, rx) = broadcast::channel::<AudioBuffer>(16);
         let stop_flag = Arc::new(AtomicBool::new(false));
         let stop_flag_clone = stop_flag.clone();
 
         let start_time = std::time::Instant::now();
 
-        // Build the stream based on sample format
+        // Build the stream based on sample format.
+        // All callbacks use a pre-allocated buffer to avoid heap allocation on the
+        // real-time audio thread. The buffer is sized for the worst-case callback
+        // size (typically 512-4096 samples * channels) and reused across invocations.
         let stream = match sample_format {
             SampleFormat::F32 => {
                 let tx = tx.clone();
+                let mut pre_alloc = Vec::<f32>::with_capacity(4096);
                 device.build_input_stream(
                     &stream_config,
                     move |data: &[f32], _: &cpal::InputCallbackInfo| {
                         if stop_flag_clone.load(Ordering::Relaxed) {
                             return;
                         }
+                        // Reuse pre-allocated buffer to avoid per-callback heap allocation
+                        pre_alloc.clear();
+                        pre_alloc.extend_from_slice(data);
                         let buffer = AudioBuffer {
-                            samples: data.to_vec(),
+                            samples: std::mem::replace(&mut pre_alloc, Vec::with_capacity(data.len())),
                             sample_rate,
                             channels,
                             timestamp_ms: start_time.elapsed().as_millis() as u64,
@@ -648,18 +655,17 @@ impl AudioCaptureService {
             }
             SampleFormat::I16 => {
                 let tx = tx.clone();
+                let mut pre_alloc = Vec::<f32>::with_capacity(4096);
                 device.build_input_stream(
                     &stream_config,
                     move |data: &[i16], _: &cpal::InputCallbackInfo| {
                         if stop_flag_clone.load(Ordering::Relaxed) {
                             return;
                         }
-                        // Convert i16 to f32
-                        let samples: Vec<f32> = data.iter()
-                            .map(|&s| s as f32 / i16::MAX as f32)
-                            .collect();
+                        pre_alloc.clear();
+                        pre_alloc.extend(data.iter().map(|&s| s as f32 / i16::MAX as f32));
                         let buffer = AudioBuffer {
-                            samples,
+                            samples: std::mem::replace(&mut pre_alloc, Vec::with_capacity(data.len())),
                             sample_rate,
                             channels,
                             timestamp_ms: start_time.elapsed().as_millis() as u64,
@@ -672,18 +678,17 @@ impl AudioCaptureService {
             }
             SampleFormat::U16 => {
                 let tx = tx.clone();
+                let mut pre_alloc = Vec::<f32>::with_capacity(4096);
                 device.build_input_stream(
                     &stream_config,
                     move |data: &[u16], _: &cpal::InputCallbackInfo| {
                         if stop_flag_clone.load(Ordering::Relaxed) {
                             return;
                         }
-                        // Convert u16 to f32
-                        let samples: Vec<f32> = data.iter()
-                            .map(|&s| (s as f32 / u16::MAX as f32) * 2.0 - 1.0)
-                            .collect();
+                        pre_alloc.clear();
+                        pre_alloc.extend(data.iter().map(|&s| (s as f32 / u16::MAX as f32) * 2.0 - 1.0));
                         let buffer = AudioBuffer {
-                            samples,
+                            samples: std::mem::replace(&mut pre_alloc, Vec::with_capacity(data.len())),
                             sample_rate,
                             channels,
                             timestamp_ms: start_time.elapsed().as_millis() as u64,

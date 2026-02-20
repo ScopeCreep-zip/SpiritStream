@@ -14,9 +14,9 @@ export function Header({ title, description, children, className }: HeaderProps)
         'bg-[var(--bg-surface)] border-b border-[var(--border-default)]',
         'flex items-center justify-between',
         'sticky top-0 z-50',
+        'py-4 px-6',
         className
       )}
-      style={{ padding: '16px 24px' }}
     >
       <div className="flex flex-col">
         <h1 className="text-xl font-semibold text-[var(--text-primary)]">{title}</h1>

@@ -2,7 +2,7 @@
  * Properties Panel
  * Right sidebar showing selected layer properties
  */
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { Eye, EyeOff, Lock, Unlock, Trash2, Maximize, Move, RefreshCw, RefreshCcw, Monitor, ListVideo } from 'lucide-react';
@@ -19,6 +19,7 @@ import { useSourceStore } from '@/stores/sourceStore';
 import { api } from '@/lib/backend';
 import { toast, createErrorHandler, formatError } from '@/hooks/useToast';
 import { VideoFilterSection } from './VideoFilterSection';
+import { useShallow } from 'zustand/shallow';
 
 interface PropertiesPanelProps {
   profile: Profile;
@@ -27,12 +28,29 @@ interface PropertiesPanelProps {
   source?: Source;
 }
 
-export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPanelProps) {
+export const PropertiesPanel = React.memo(function PropertiesPanel({ profile, scene, layer, source }: PropertiesPanelProps) {
   const { t } = useTranslation();
-  const { updateLayer, removeLayer, selectLayer } = useSceneStore();
-  const { updateCurrentLayer, removeCurrentLayer } = useProfileStore();
-  const { devices, discoverDevices, updateSource } = useSourceStore();
-  const { updateCurrentSource } = useProfileStore();
+  const { updateLayer, removeLayer, selectLayer } = useSceneStore(
+    useShallow(s => ({
+      updateLayer: s.updateLayer,
+      removeLayer: s.removeLayer,
+      selectLayer: s.selectLayer
+    }))
+  );
+  const { updateCurrentLayer, removeCurrentLayer, updateCurrentSource } = useProfileStore(
+    useShallow(s => ({
+      updateCurrentLayer: s.updateCurrentLayer,
+      removeCurrentLayer: s.removeCurrentLayer,
+      updateCurrentSource: s.updateCurrentSource
+    }))
+  );
+  const { devices, discoverDevices, updateSource } = useSourceStore(
+    useShallow(s => ({
+      devices: s.devices,
+      discoverDevices: s.discoverDevices,
+      updateSource: s.updateSource
+    }))
+  );
 
   // Local state for editing
   const [x, setX] = useState(0);
@@ -125,10 +143,10 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
     // Show scene properties when no layer is selected
     return (
       <Card className="h-full flex flex-col">
-        <CardHeader className="flex-shrink-0" style={{ padding: '12px 16px' }}>
+        <CardHeader className="flex-shrink-0 py-3 px-4">
           <CardTitle className="text-sm">{t('stream.sceneProperties', { defaultValue: 'Scene Properties' })}</CardTitle>
         </CardHeader>
-        <CardBody className="flex-1 overflow-y-auto" style={{ padding: '12px 16px' }}>
+        <CardBody className="flex-1 overflow-y-auto py-3 px-4">
           <ScenePropertiesSection
             profile={profile}
             scene={scene}
@@ -275,7 +293,7 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
 
   return (
     <Card className="h-full flex flex-col">
-      <CardHeader className="flex-shrink-0" style={{ padding: '12px 16px' }}>
+      <CardHeader className="flex-shrink-0 py-3 px-4">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm">{t('stream.properties', { defaultValue: 'Properties' })}</CardTitle>
           <div className="flex items-center gap-0.5">
@@ -307,7 +325,7 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
         </div>
       </CardHeader>
 
-      <CardBody className="flex-1 overflow-y-auto" style={{ padding: '12px 16px' }}>
+      <CardBody className="flex-1 overflow-y-auto py-3 px-4">
         <div className="space-y-5">
           {/* Lock indicator banner */}
           {layer.locked && (
@@ -502,7 +520,7 @@ export function PropertiesPanel({ profile, scene, layer, source }: PropertiesPan
       </CardBody>
     </Card>
   );
-}
+});
 
 /**
  * Color Source Editor

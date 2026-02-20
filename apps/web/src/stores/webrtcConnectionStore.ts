@@ -54,6 +54,36 @@ interface WebRTCConnectionState {
 
   /** Get error for a source */
   getError: (sourceId: string) => string | undefined;
+
+  /** Pause all video tracks (when app is hidden) — stops video decoding without closing connections */
+  pauseAllVideo: () => void;
+
+  /** Resume all video tracks (when app becomes visible) */
+  resumeAllVideo: () => void;
+}
+
+/** Localhost connections don't need STUN — host candidates suffice */
+function getIceConfig(whepUrl: string): RTCConfiguration {
+  try {
+    const url = new URL(whepUrl);
+    const isLocal = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '::1';
+    return isLocal
+      ? { iceServers: [] }
+      : { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+  } catch {
+    return { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+  }
+}
+
+/** ICE gathering timeout — localhost is near-instant, remote needs more time */
+function getIceGatheringTimeout(whepUrl: string): number {
+  try {
+    const url = new URL(whepUrl);
+    const isLocal = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '::1';
+    return isLocal ? 50 : 2000;
+  } catch {
+    return 2000;
+  }
 }
 
 /**
@@ -63,9 +93,8 @@ async function connectWHEP(
   whepUrl: string,
   signal: AbortSignal
 ): Promise<{ pc: RTCPeerConnection; stream: MediaStream }> {
-  const pc = new RTCPeerConnection({
-    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-  });
+  const t0 = performance.now();
+  const pc = new RTCPeerConnection(getIceConfig(whepUrl));
 
   // Clean up on abort
   signal.addEventListener('abort', () => {
@@ -89,7 +118,6 @@ async function connectWHEP(
   await pc.setLocalDescription(offer);
 
   // Wait for ICE gathering to complete (or timeout)
-  // 200ms is sufficient for local STUN - faster than default 500ms
   if (pc.iceGatheringState !== 'complete') {
     await new Promise<void>((resolve) => {
       const checkState = () => {
@@ -99,9 +127,11 @@ async function connectWHEP(
         }
       };
       pc.addEventListener('icegatheringstatechange', checkState);
-      setTimeout(resolve, 200);
+      setTimeout(resolve, getIceGatheringTimeout(whepUrl));
     });
   }
+
+  console.log(`[WHEP] ICE gathered in ${(performance.now() - t0).toFixed(0)}ms`);
 
   if (signal.aborted) {
     pc.close();
@@ -124,6 +154,8 @@ async function connectWHEP(
   const answerSdp = await response.text();
   await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
 
+  console.log(`[WHEP] SDP exchange in ${(performance.now() - t0).toFixed(0)}ms`);
+
   // Wait for stream with timeout
   const stream = await Promise.race([
     streamPromise,
@@ -131,6 +163,8 @@ async function connectWHEP(
       setTimeout(() => reject(new Error('Stream timeout')), 10000)
     ),
   ]);
+
+  console.log(`[WHEP] Stream ready in ${(performance.now() - t0).toFixed(0)}ms`);
 
   return { pc, stream };
 }
@@ -349,6 +383,42 @@ export const useWebRTCConnectionStore = create<WebRTCConnectionState>()(
 
     getError: (sourceId: string) => {
       return get().connections[sourceId]?.error;
+    },
+
+    pauseAllVideo: () => {
+      const { connections } = get();
+      let paused = 0;
+      for (const [, conn] of Object.entries(connections)) {
+        if (conn.pc) {
+          for (const receiver of conn.pc.getReceivers()) {
+            if (receiver.track && receiver.track.kind === 'video') {
+              receiver.track.enabled = false;
+              paused++;
+            }
+          }
+        }
+      }
+      if (paused > 0) {
+        console.log(`[WebRTCStore] Paused ${paused} video tracks (app hidden)`);
+      }
+    },
+
+    resumeAllVideo: () => {
+      const { connections } = get();
+      let resumed = 0;
+      for (const [, conn] of Object.entries(connections)) {
+        if (conn.pc) {
+          for (const receiver of conn.pc.getReceivers()) {
+            if (receiver.track && receiver.track.kind === 'video') {
+              receiver.track.enabled = true;
+              resumed++;
+            }
+          }
+        }
+      }
+      if (resumed > 0) {
+        console.log(`[WebRTCStore] Resumed ${resumed} video tracks (app visible)`);
+      }
     },
   }))
 );

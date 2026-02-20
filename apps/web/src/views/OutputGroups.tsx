@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useShallow } from 'zustand/shallow';
 import { Plus } from 'lucide-react';
 import { Card, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -11,11 +12,20 @@ import { api } from '@/lib/backend';
 import type { OutputGroup } from '@/types/profile';
 import type { Encoders } from '@/types/stream';
 
-export function OutputGroups() {
+export default function OutputGroups() {
   const { t } = useTranslation();
   const { current, loading, error, updateOutputGroup, removeOutputGroup, addOutputGroup } =
-    useProfileStore();
-  const { activeGroups } = useStreamStore();
+    useProfileStore(useShallow((state) => ({
+      current: state.current,
+      loading: state.loading,
+      error: state.error,
+      updateOutputGroup: state.updateOutputGroup,
+      removeOutputGroup: state.removeOutputGroup,
+      addOutputGroup: state.addOutputGroup,
+    })));
+  const { activeGroups } = useStreamStore(useShallow((state) => ({
+    activeGroups: state.activeGroups,
+  })));
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState<OutputGroup | null>(null);
@@ -51,6 +61,33 @@ export function OutputGroups() {
     setAddTargetModalOpen(false);
   };
 
+  const outputGroups = current?.outputGroups ?? [];
+
+  // Get status for each group
+  const getGroupStatus = useCallback(
+    (groupId: string): 'live' | 'connecting' | 'offline' | 'error' => {
+      if (activeGroups.has(groupId)) return 'live';
+      return 'offline';
+    },
+    [activeGroups]
+  );
+
+  const duplicateGroup = useCallback(
+    (groupId: string) => {
+      const group = outputGroups.find((g) => g.id === groupId);
+      if (group) {
+        const newGroup = {
+          ...group,
+          id: crypto.randomUUID(),
+          name: `${group.name} ${t('common.copySuffix')}`,
+          isDefault: false, // Duplicates are never default groups
+        };
+        addOutputGroup(newGroup);
+      }
+    },
+    [outputGroups, t, addOutputGroup]
+  );
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -81,30 +118,19 @@ export function OutputGroups() {
     );
   }
 
-  const outputGroups = current.outputGroups;
-
   if (outputGroups.length === 0) {
     return (
       <>
         <Card>
           <CardBody>
-            <div className="text-center" style={{ padding: '48px 0' }}>
-              <div
-                className="w-16 h-16 mx-auto rounded-full bg-[var(--primary-subtle)] flex items-center justify-center"
-                style={{ marginBottom: '16px' }}
-              >
+            <div className="text-center py-12">
+              <div className="w-16 h-16 mx-auto rounded-full bg-[var(--primary-subtle)] flex items-center justify-center mb-4">
                 <Plus className="w-8 h-8 text-[var(--primary)]" />
               </div>
-              <h3
-                className="text-lg font-semibold text-[var(--text-primary)]"
-                style={{ marginBottom: '8px' }}
-              >
+              <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">
                 {t('outputs.noOutputGroups')}
               </h3>
-              <p
-                className="text-[var(--text-secondary)] max-w-md mx-auto"
-                style={{ marginBottom: '24px' }}
-              >
+              <p className="text-[var(--text-secondary)] max-w-md mx-auto mb-6">
                 {t('outputs.noOutputGroupsDescription')}
               </p>
               <Button onClick={() => setCreateModalOpen(true)}>
@@ -125,27 +151,8 @@ export function OutputGroups() {
     );
   }
 
-  // Get status for each group
-  const getGroupStatus = (groupId: string): 'live' | 'connecting' | 'offline' | 'error' => {
-    if (activeGroups.has(groupId)) return 'live';
-    return 'offline';
-  };
-
-  const duplicateGroup = (groupId: string) => {
-    const group = outputGroups.find((g) => g.id === groupId);
-    if (group) {
-      const newGroup = {
-        ...group,
-        id: crypto.randomUUID(),
-        name: `${group.name} ${t('common.copySuffix')}`,
-        isDefault: false, // Duplicates are never default groups
-      };
-      addOutputGroup(newGroup);
-    }
-  };
-
   return (
-    <div className="flex flex-col" style={{ gap: '16px' }}>
+    <div className="flex flex-col gap-4">
       {outputGroups.map((group, index) => (
         <OutputGroupCard
           key={group.id}
@@ -166,9 +173,9 @@ export function OutputGroups() {
         className="border-2 border-dashed border-[var(--border-default)] hover:border-[var(--primary)] transition-colors cursor-pointer"
         onClick={() => setCreateModalOpen(true)}
       >
-        <CardBody className="flex items-center justify-center" style={{ padding: '32px 24px' }}>
+        <CardBody className="flex items-center justify-center py-8 px-6">
           <Button variant="ghost">
-            <Plus className="w-5 h-5" style={{ marginRight: '8px' }} />
+            <Plus className="w-5 h-5 mr-2" />
             {t('outputs.addOutputGroup')}
           </Button>
         </CardBody>

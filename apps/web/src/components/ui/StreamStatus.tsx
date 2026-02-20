@@ -53,11 +53,11 @@ export function StreamStatus({ status, label, showPulse = true, className }: Str
     <span
       className={cn(
         'inline-flex items-center gap-1.5 rounded-full text-xs font-medium',
+        'py-1 px-2.5',
         styles.bg,
         styles.text,
         className
       )}
-      style={{ padding: '4px 10px' }}
     >
       <span
         className={cn('w-1.5 h-1.5 rounded-full', styles.dot, shouldPulse && 'animate-pulse')}

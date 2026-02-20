@@ -93,12 +93,10 @@
         padding: 0;
       }
     </style>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
+    <!-- Preload critical fonts for faster LCP -->
+    <link rel="preload" as="font" href="/fonts/space-grotesk-400-latin.woff2" type="font/woff2" crossorigin>
+    <link rel="preload" as="font" href="/fonts/space-grotesk-500-latin.woff2" type="font/woff2" crossorigin>
+    <!-- Fonts are bundled locally in /fonts/ and loaded via @font-face in globals.css -->
     <title>SpiritStream</title>
   </head>
   <body>

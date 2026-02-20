@@ -33,19 +33,20 @@ export function useInitialize() {
       // Initialize theme event listener for live theme updates
       initThemeEventListener();
 
+      // Single settings fetch shared by profile restore and theme setup
+      // Previously these were two separate api.settings.get() calls
+      const settingsPromise = api.settings.get().catch(() => null);
+
       // Run all initialization tasks in parallel for faster startup
-      // Profile restore and theme setting are nested inside their respective
-      // tasks to avoid sequential awaits after Promise.all
       Promise.all([
-        // Load profiles, then restore last used profile
+        // Load profiles, then restore last used profile using shared settings
         loadProfiles().then(async () => {
           try {
-            const settings = await api.settings.get();
-            if (settings.lastProfile) {
+            const settings = await settingsPromise;
+            if (settings?.lastProfile) {
               const profiles = useProfileStore.getState().profiles;
               const exists = profiles.some((p) => p.name === settings.lastProfile);
               if (exists) {
-                // Load the last used profile (will trigger password modal if encrypted)
                 await loadProfile(settings.lastProfile);
               }
             }
@@ -54,14 +55,14 @@ export function useInitialize() {
           }
         }),
         syncWithBackend(),
-        // Refresh themes, then apply stored theme
+        // Refresh themes, then apply stored theme using shared settings
         refreshThemes().then(async () => {
           try {
-            const settings = await api.settings.get();
-            const storedThemeId = settings.themeId || useThemeStore.getState().currentThemeId;
+            const settings = await settingsPromise;
+            const storedThemeId = settings?.themeId || useThemeStore.getState().currentThemeId;
             if (storedThemeId) {
               await setTheme(storedThemeId);
-              if (!settings.themeId) {
+              if (settings && !settings.themeId) {
                 await api.settings.save({ ...settings, themeId: storedThemeId });
               }
             }

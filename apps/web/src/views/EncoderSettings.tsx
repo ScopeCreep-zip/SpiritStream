@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useShallow } from 'zustand/shallow';
 import { Plus, Cpu } from 'lucide-react';
 import { Card, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -9,12 +10,20 @@ import { useProfileStore } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
 import type { OutputGroup } from '@/types/profile';
 
-export function EncoderSettings() {
+export default function EncoderSettings() {
   const { t } = useTranslation();
   const tDynamic = t as (key: string, options?: { defaultValue?: string }) => string;
 
-  const { current, loading, error, addOutputGroup, removeOutputGroup } = useProfileStore();
-  const { activeGroups } = useStreamStore();
+  const { current, loading, error, addOutputGroup, removeOutputGroup } = useProfileStore(useShallow((state) => ({
+    current: state.current,
+    loading: state.loading,
+    error: state.error,
+    addOutputGroup: state.addOutputGroup,
+    removeOutputGroup: state.removeOutputGroup,
+  })));
+  const { activeGroups } = useStreamStore(useShallow((state) => ({
+    activeGroups: state.activeGroups,
+  })));
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -97,23 +106,14 @@ export function EncoderSettings() {
       <>
         <Card>
           <CardBody>
-            <div className="text-center" style={{ padding: '48px 0' }}>
-              <div
-                className="w-16 h-16 mx-auto rounded-full bg-[var(--primary-subtle)] flex items-center justify-center"
-                style={{ marginBottom: '16px' }}
-              >
+            <div className="text-center py-12">
+              <div className="w-16 h-16 mx-auto rounded-full bg-[var(--primary-subtle)] flex items-center justify-center mb-4">
                 <Cpu className="w-8 h-8 text-[var(--primary)]" />
               </div>
-              <h3
-                className="text-lg font-semibold text-[var(--text-primary)]"
-                style={{ marginBottom: '8px' }}
-              >
+              <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">
                 {tDynamic('encoder.noEncoders', { defaultValue: 'No Encoder Configurations' })}
               </h3>
-              <p
-                className="text-[var(--text-secondary)] max-w-md mx-auto"
-                style={{ marginBottom: '24px' }}
-              >
+              <p className="text-[var(--text-secondary)] max-w-md mx-auto mb-6">
                 {tDynamic('encoder.noEncodersDescription', {
                   defaultValue:
                     'Create your first encoder configuration to define video and audio encoding settings for your streams.',
@@ -138,7 +138,7 @@ export function EncoderSettings() {
   }
 
   return (
-    <div className="flex flex-col" style={{ gap: '16px' }}>
+    <div className="flex flex-col gap-4">
       {/* Encoder Cards */}
       {outputGroups.map((group) => (
         <EncoderCard
@@ -156,9 +156,9 @@ export function EncoderSettings() {
         className="border-2 border-dashed border-[var(--border-default)] hover:border-[var(--primary)] transition-colors cursor-pointer"
         onClick={() => setCreateModalOpen(true)}
       >
-        <CardBody className="flex items-center justify-center" style={{ padding: '32px 24px' }}>
+        <CardBody className="flex items-center justify-center py-8 px-6">
           <Button variant="ghost">
-            <Plus className="w-5 h-5" style={{ marginRight: '8px' }} />
+            <Plus className="w-5 h-5 mr-2" />
             {tDynamic('encoder.addEncoder', { defaultValue: 'Add Encoder' })}
           </Button>
         </CardBody>

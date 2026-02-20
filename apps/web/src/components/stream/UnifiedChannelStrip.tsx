@@ -41,6 +41,13 @@ import {
 const supportsOffscreenCanvas = typeof OffscreenCanvas !== 'undefined' &&
   typeof HTMLCanvasElement.prototype.transferControlToOffscreen === 'function';
 
+// Pre-computed layout values from meter constants (avoids repeated arithmetic in JSX)
+const METER_LAYOUT = {
+  labelOffset: LABEL_WIDTH + 8,
+  stripWidth: TOTAL_WIDTH + 16,
+  maxControlWidth: BAR_WIDTH + ARROW_WIDTH,
+} as const;
+
 export interface UnifiedChannelStripProps {
   trackId?: string;
   label: string;
@@ -78,8 +85,8 @@ export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
 
   const [localVolume, setLocalVolume] = useState(volume);
   const [isDragging, setIsDragging] = useState(false);
-  const [showClip, setShowClip] = useState(false);
   const [isRegistered, setIsRegistered] = useState(false);
+  const clipIndicatorRef = useRef<HTMLDivElement>(null);
 
   const workerCanvasIdRef = useRef<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -194,13 +201,21 @@ export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
         }`;
       }
 
+      // Clip indicator — direct DOM mutation instead of setState to avoid
+      // triggering a React re-render from the high-frequency RAF loop
       if (level.clipping && !lastClipRef.current) {
         lastClipRef.current = true;
-        setShowClip(true);
+        const clip = clipIndicatorRef.current;
+        if (clip) {
+          clip.className = 'absolute rounded-t bg-red-500 animate-pulse';
+        }
         if (clipTimeoutRef.current) clearTimeout(clipTimeoutRef.current);
         clipTimeoutRef.current = setTimeout(() => {
-          setShowClip(false);
           lastClipRef.current = false;
+          const c = clipIndicatorRef.current;
+          if (c) {
+            c.className = 'absolute rounded-t bg-transparent';
+          }
         }, 1000);
       }
     };
@@ -349,17 +364,17 @@ export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
     return db.toFixed(1);
   };
 
-  const STRIP_WIDTH = TOTAL_WIDTH + 16;
+  const STRIP_WIDTH = METER_LAYOUT.stripWidth;
 
   return (
-    <div className="flex flex-col gap-1.5" style={{ width: STRIP_WIDTH }}>
+    <div className="flex flex-col gap-1.5" style={{ width: STRIP_WIDTH, contain: 'layout style' }}>
       {/* Control buttons */}
       {!isMaster ? (
-        <div className="flex justify-center" style={{ marginLeft: LABEL_WIDTH + 8, width: BAR_WIDTH }}>
+        <div className="flex justify-center" style={{ marginLeft: METER_LAYOUT.labelOffset, width: BAR_WIDTH }}>
           <div className="flex gap-0.5 p-0.5 bg-[var(--bg-sunken)] border border-[var(--border-default)] rounded-md">
             <button
               type="button"
-              className={`w-5 h-5 rounded flex items-center justify-center transition-all text-[9px] font-bold ${
+              className={`w-5 h-5 rounded flex items-center justify-center transition-colors text-[9px] font-bold ${
                 muted
                   ? 'bg-red-500/20 text-red-400 border border-red-500/50'
                   : 'bg-[var(--bg-sunken)] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-secondary)]'
@@ -371,7 +386,7 @@ export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
             </button>
             <button
               type="button"
-              className={`w-5 h-5 rounded flex items-center justify-center transition-all text-[9px] font-bold ${
+              className={`w-5 h-5 rounded flex items-center justify-center transition-colors text-[9px] font-bold ${
                 solo
                   ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/50'
                   : 'bg-[var(--bg-sunken)] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-secondary)]'
@@ -394,11 +409,11 @@ export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
           </div>
         </div>
       ) : (
-        <div className="flex justify-center" style={{ marginLeft: LABEL_WIDTH + 8, width: BAR_WIDTH }}>
+        <div className="flex justify-center" style={{ marginLeft: METER_LAYOUT.labelOffset, width: BAR_WIDTH }}>
           <div className="flex gap-0.5 p-0.5 bg-[var(--bg-sunken)] border border-[var(--border-default)] rounded-md">
             <button
               type="button"
-              className={`w-5 h-5 rounded flex items-center justify-center transition-all text-[9px] font-bold ${
+              className={`w-5 h-5 rounded flex items-center justify-center transition-colors text-[9px] font-bold ${
                 muted
                   ? 'bg-red-500/20 text-red-400 border border-red-500/50'
                   : 'bg-[var(--bg-sunken)] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-secondary)]'
@@ -415,10 +430,10 @@ export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
       {/* Meter/fader */}
       <div
         ref={containerRef}
-        className={`relative cursor-ns-resize select-none focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:ring-offset-1 rounded transition-opacity ${
+        className={`relative cursor-ns-resize select-none focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:ring-offset-1 rounded ${
           captureError ? 'opacity-60' : ''
         }`}
-        style={{ width: TOTAL_WIDTH, height: TOTAL_HEIGHT, marginLeft: 8 }}
+        style={{ width: TOTAL_WIDTH, height: TOTAL_HEIGHT, marginLeft: 8, contain: 'strict' }}
         tabIndex={0}
         role="slider"
         aria-label={`${label} volume`}
@@ -432,18 +447,17 @@ export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
         onKeyDown={handleKeyDown}
         title={`${volumePercent}% (${formatDb(linearToDb(localVolume))} dB)`}
       >
-        {/* Clip indicator */}
+        {/* Clip indicator — className managed by RAF loop via ref (no React re-render) */}
         <div
-          className={`absolute rounded-t transition-colors ${
-            showClip ? 'bg-red-500 animate-pulse' : 'bg-transparent'
-          }`}
+          ref={clipIndicatorRef}
+          className="absolute rounded-t bg-transparent"
           style={{ left: LABEL_WIDTH, top: PADDING_Y - 4, width: BAR_WIDTH, height: 4 }}
         />
 
-        {/* Canvas - rendered by worker */}
+        {/* Canvas - rendered by worker via OffscreenCanvas */}
         <canvas
           ref={canvasRef}
-          style={{ width: TOTAL_WIDTH, height: TOTAL_HEIGHT }}
+          style={{ width: TOTAL_WIDTH, height: TOTAL_HEIGHT, willChange: 'transform' }}
         />
 
         {/* Loading shimmer while worker initializes */}
@@ -470,7 +484,7 @@ export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
       </div>
 
       {/* Labels */}
-      <div className="flex flex-col items-center gap-1" style={{ marginLeft: LABEL_WIDTH + 8, width: BAR_WIDTH }}>
+      <div className="flex flex-col items-center gap-1" style={{ marginLeft: METER_LAYOUT.labelOffset, width: BAR_WIDTH }}>
         <div className="flex items-center gap-1.5 text-[10px] tabular-nums font-medium">
           <span ref={peakDbRef} className="px-1 py-0.5 rounded text-[var(--text-muted)]">-∞</span>
           <span className="text-[var(--text-muted)]">{volumePercent}%</span>
@@ -479,7 +493,7 @@ export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
           className={`text-[10px] text-center truncate ${
             isMaster ? 'font-semibold text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'
           }`}
-          style={{ maxWidth: BAR_WIDTH + ARROW_WIDTH }}
+          style={{ maxWidth: METER_LAYOUT.maxControlWidth }}
           title={label}
         >
           {label}
@@ -488,7 +502,7 @@ export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
           className={`text-[9px] text-center truncate h-[14px] ${
             captureError ? 'text-amber-500' : 'text-transparent'
           }`}
-          style={{ maxWidth: BAR_WIDTH + ARROW_WIDTH }}
+          style={{ maxWidth: METER_LAYOUT.maxControlWidth }}
           title={captureError || undefined}
         >
           {captureError ? `⚠ ${t('audio.captureError', { defaultValue: 'No signal' })}` : '\u00A0'}

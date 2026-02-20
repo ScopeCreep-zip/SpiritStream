@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useShallow } from 'zustand/shallow';
 import { Plus, Eye, EyeOff, Copy, Pencil, Trash2 } from 'lucide-react';
 import { Grid } from '@/components/ui/Grid';
 import { Card, CardBody } from '@/components/ui/Card';
@@ -11,9 +12,14 @@ import { useProfileStore } from '@/stores/profileStore';
 import { toast } from '@/hooks/useToast';
 import type { StreamTarget } from '@/types/profile';
 
-export function StreamTargets() {
+export default function StreamTargets() {
   const { t } = useTranslation();
-  const { current, loading, error, removeStreamTarget } = useProfileStore();
+  const { current, loading, error, removeStreamTarget } = useProfileStore(useShallow((state) => ({
+    current: state.current,
+    loading: state.loading,
+    error: state.error,
+    removeStreamTarget: state.removeStreamTarget,
+  })));
   const [revealedKeys, setRevealedKeys] = useState<Set<string>>(new Set());
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -60,10 +66,10 @@ export function StreamTargets() {
     toast.success(t('toast.streamKeyCopied'));
   };
 
-  const handleRemoveTarget = async (groupId: string, targetId: string) => {
+  const handleRemoveTarget = useCallback(async (groupId: string, targetId: string) => {
     await removeStreamTarget(groupId, targetId);
     // Note: saveProfile() is called internally by removeStreamTarget
-  };
+  }, [removeStreamTarget]);
 
   const maskKey = (key: string): string => {
     if (key.length <= 8) return '••••••••';
@@ -109,29 +115,14 @@ export function StreamTargets() {
       <>
         <Card>
           <CardBody>
-            <div className="text-center" style={{ padding: '48px 0' }}>
-              <div
-                className="w-16 h-16 mx-auto rounded-full bg-[var(--primary-subtle)] flex items-center justify-center"
-                style={{ marginBottom: '16px' }}
-              >
+            <div className="text-center py-12">
+              <div className="w-16 h-16 mx-auto rounded-full bg-[var(--primary-subtle)] flex items-center justify-center mb-4">
                 <Plus className="w-8 h-8 text-[var(--primary)]" />
               </div>
-              <h3
-                className="text-lg font-semibold text-[var(--text-primary)]"
-                style={{ marginBottom: '8px' }}
-              >
+              <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">
                 {t('targets.noStreamTargets')}
               </h3>
-              <p
-                className="text-[var(--text-secondary)]"
-                style={{
-                  marginBottom: '24px',
-                  maxWidth: '28rem',
-                  marginLeft: 'auto',
-                  marginRight: 'auto',
-                  textAlign: 'center',
-                }}
-              >
+              <p className="text-[var(--text-secondary)] mb-6 max-w-md mx-auto text-center">
                 {hasOutputGroups
                   ? t('targets.noStreamTargetsDescription')
                   : t('targets.createOutputGroupFirst')}
@@ -160,15 +151,15 @@ export function StreamTargets() {
       {targets.map((target) => (
         <Card key={target.id}>
           <CardBody>
-            <div className="flex items-start justify-between" style={{ marginBottom: '16px' }}>
-              <div className="flex items-center" style={{ gap: '12px' }}>
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center gap-3">
                 <PlatformIcon platform={target.service} size="lg" />
                 <div>
                   <h3 className="font-semibold text-[var(--text-primary)]">{target.name}</h3>
                   <p className="text-sm text-[var(--text-secondary)]">{target.url}</p>
                 </div>
               </div>
-              <div className="flex" style={{ gap: '4px' }}>
+              <div className="flex gap-1">
                 <Button
                   variant="ghost"
                   size="icon"
@@ -188,11 +179,11 @@ export function StreamTargets() {
               </div>
             </div>
 
-            <div className="flex flex-col" style={{ gap: '6px' }}>
+            <div className="flex flex-col gap-1.5">
               <label className="block text-sm font-medium text-[var(--text-primary)]">
                 {t('targets.streamKey')}
               </label>
-              <div className="flex" style={{ gap: '8px' }}>
+              <div className="flex gap-2">
                 <Input
                   type={revealedKeys.has(target.id) ? 'text' : 'password'}
                   value={revealedKeys.has(target.id) ? target.streamKey : maskKey(target.streamKey)}
@@ -238,14 +229,8 @@ export function StreamTargets() {
         }`}
         onClick={hasOutputGroups ? () => setCreateModalOpen(true) : undefined}
       >
-        <CardBody
-          className="flex flex-col items-center justify-center"
-          style={{ padding: '48px 24px' }}
-        >
-          <div
-            className="w-12 h-12 rounded-full bg-[var(--primary-subtle)] flex items-center justify-center"
-            style={{ marginBottom: '12px' }}
-          >
+        <CardBody className="flex flex-col items-center justify-center py-12 px-6">
+          <div className="w-12 h-12 rounded-full bg-[var(--primary-subtle)] flex items-center justify-center mb-3">
             <Plus className="w-6 h-6 text-[var(--primary)]" />
           </div>
           <span className="text-sm font-medium text-[var(--text-secondary)]">

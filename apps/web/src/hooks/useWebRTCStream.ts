@@ -12,6 +12,7 @@
  */
 
 import { useCallback } from 'react';
+import { useShallow } from 'zustand/shallow';
 import { useWebRTCConnectionStore, type WebRTCStatus } from '@/stores/webrtcConnectionStore';
 
 export interface WebRTCStreamResult {
@@ -35,17 +36,18 @@ export interface WebRTCStreamResult {
  * @returns Stream, status, error, and retry function
  */
 export function useWebRTCStream(sourceId: string): WebRTCStreamResult {
-  // Subscribe to specific connection state using selector for optimal re-renders
-  const stream = useWebRTCConnectionStore(
-    useCallback((state) => state.connections[sourceId]?.stream ?? null, [sourceId])
-  );
-
-  const status = useWebRTCConnectionStore(
-    useCallback((state) => state.connections[sourceId]?.status ?? 'idle', [sourceId])
-  );
-
-  const error = useWebRTCConnectionStore(
-    useCallback((state) => state.connections[sourceId]?.error, [sourceId])
+  // Single consolidated selector for stream, status, and error — reduces
+  // Zustand subscriptions from 3 to 1. useShallow prevents re-renders when
+  // the selected values haven't changed (shallow equality on the object).
+  const { stream, status, error } = useWebRTCConnectionStore(
+    useShallow((state) => {
+      const conn = state.connections[sourceId];
+      return {
+        stream: conn?.stream ?? null,
+        status: conn?.status ?? ('idle' as WebRTCStatus),
+        error: conn?.error,
+      };
+    })
   );
 
   const retryConnection = useWebRTCConnectionStore((state) => state.retryConnection);

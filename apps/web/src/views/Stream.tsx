@@ -22,12 +22,42 @@ import { AudioMixerPanel } from '@/components/stream/AudioMixerPanel';
 import { TransitionOverlay } from '@/components/stream/TransitionOverlay';
 import { RecordingButton } from '@/components/stream/RecordingButton';
 import { ReplayBufferButton } from '@/components/stream/ReplayBufferButton';
+import { useProfileStore } from '@/stores/profileStore';
+import { useStreamStore } from '@/stores/streamStore';
+import { useSceneStore } from '@/stores/sceneStore';
+import { useStudioStore } from '@/stores/studioStore';
+import { cn } from '@/lib/utils';
+import { toast } from '@/hooks/useToast';
+import { useHotkeys } from '@/hooks/useHotkeys';
+import { getIncomingUrl, migrateProfileIfNeeded } from '@/types/profile';
+import { sourceHasAudio } from '@/types/source';
+import { createDefaultAudioTrack } from '@/types/scene';
+import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValidation';
+import { api } from '@/lib/backend/httpApi';
+import { events } from '@/lib/backend';
+import { useAudioLevels } from '@/hooks/useAudioLevels';
+import { useAppVisibility } from '@/hooks/useAppVisibility';
 
 // Lazy-loaded components for code splitting
 // These components are heavier and not needed on initial render
-const PropertiesPanel = lazy(() => import('@/components/stream/PropertiesPanel').then(m => ({ default: m.PropertiesPanel })));
-const StudioModeLayout = lazy(() => import('@/components/stream/StudioModeLayout').then(m => ({ default: m.StudioModeLayout })));
-const MultiviewPanel = lazy(() => import('@/components/stream/MultiviewPanel').then(m => ({ default: m.MultiviewPanel })));
+const propertiesPanelImport = () => import('@/components/stream/PropertiesPanel').then(m => ({ default: m.PropertiesPanel }));
+const studioModeImport = () => import('@/components/stream/StudioModeLayout').then(m => ({ default: m.StudioModeLayout }));
+const multiviewImport = () => import('@/components/stream/MultiviewPanel').then(m => ({ default: m.MultiviewPanel }));
+
+const PropertiesPanel = lazy(propertiesPanelImport);
+const StudioModeLayout = lazy(studioModeImport);
+const MultiviewPanel = lazy(multiviewImport);
+
+// Preload commonly-used chunks after initial render to avoid skeleton flashes.
+// This runs once on module load and populates the browser's module cache.
+if (typeof window !== 'undefined') {
+  const preload = () => { propertiesPanelImport(); studioModeImport(); };
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(preload);
+  } else {
+    setTimeout(preload, 100);
+  }
+}
 
 // Lightweight loading fallbacks for lazy components
 const PanelSkeleton = () => (
@@ -46,31 +76,20 @@ const StudioLayoutSkeleton = () => (
     <div className="text-[var(--text-muted)]">Loading Studio Mode...</div>
   </div>
 );
-import { useProfileStore } from '@/stores/profileStore';
-import { useStreamStore } from '@/stores/streamStore';
-import { useSceneStore } from '@/stores/sceneStore';
-import { useSourceStore } from '@/stores/sourceStore';
-import { useStudioStore } from '@/stores/studioStore';
-import { cn } from '@/lib/utils';
-import { toast } from '@/hooks/useToast';
-import { useHotkeys } from '@/hooks/useHotkeys';
-import { getIncomingUrl, migrateProfileIfNeeded } from '@/types/profile';
-import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValidation';
-import { api } from '@/lib/backend/httpApi';
-import { useAudioLevels } from '@/hooks/useAudioLevels';
 
 export function Stream() {
   const { t } = useTranslation();
 
   // Use useShallow to reduce re-renders by doing shallow comparison of the selected state
   // This is a 2026 Zustand best practice - previously 10+ separate selectors caused excessive re-renders
-  const { current, loading, error, updateProfile, saveProfile } = useProfileStore(
+  const { current, loading, error, updateProfile, saveProfile, addCurrentAudioTrack } = useProfileStore(
     useShallow((s) => ({
       current: s.current,
       loading: s.loading,
       error: s.error,
       updateProfile: s.updateProfile,
       saveProfile: s.saveProfile,
+      addCurrentAudioTrack: s.addCurrentAudioTrack,
     }))
   );
 
@@ -90,8 +109,6 @@ export function Stream() {
     }))
   );
 
-  const discoverDevices = useSourceStore((s) => s.discoverDevices);
-
   const { enabled: studioEnabled, toggleStudioMode } = useStudioStore(
     useShallow((s) => ({
       enabled: s.enabled,
@@ -101,6 +118,20 @@ export function Stream() {
 
   // Activate global hotkeys for the Stream view
   useHotkeys();
+
+  // Notify backend when tab visibility changes to throttle preview encoding
+  useAppVisibility();
+
+  // Subscribe to thermal state changes from backend
+  useEffect(() => {
+    let unsubscribe: (() => void) | null = null;
+    events.on<{ state: string; throttled: boolean }>('thermal_state_changed', (payload) => {
+      if (payload.throttled) {
+        toast.info(`System thermal pressure: ${payload.state}. Preview quality reduced.`);
+      }
+    }).then(unsub => { unsubscribe = unsub; });
+    return () => { unsubscribe?.(); };
+  }, []);
 
   // Get setCaptureStatus from the audio levels hook (single source of truth)
   const { setCaptureStatus } = useAudioLevels();
@@ -141,14 +172,6 @@ export function Stream() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleToggleMultiview]);
 
-  // Discover devices on mount
-  useEffect(() => {
-    discoverDevices().catch((err) => {
-      console.error('[Stream] Device discovery failed:', err);
-      // Silent failure - non-critical, user can manually refresh
-    });
-  }, [discoverDevices]);
-
   // Migrate profile if needed (on first load)
   useEffect(() => {
     const migrateIfNeeded = async () => {
@@ -170,9 +193,24 @@ export function Stream() {
     migrateIfNeeded();
   }, [current, updateProfile, saveProfile, t]);
 
-  // Get active scene
-  const activeScene = current?.scenes.find((s) => s.id === current.activeSceneId);
-  const selectedLayer = activeScene?.layers.find((l) => l.id === selectedLayerId);
+  // Get active scene — memoized to prevent new reference on every parent render
+  // Without this, every profile property change (layer transforms, visibility, etc.)
+  // would cascade a new scene reference to AudioMixerPanel, PropertiesPanel, etc.
+  const activeScene = useMemo(
+    () => current?.scenes.find((s) => s.id === current.activeSceneId),
+    [current?.scenes, current?.activeSceneId]
+  );
+
+  const selectedLayer = useMemo(
+    () => activeScene?.layers.find((l) => l.id === selectedLayerId),
+    [activeScene?.layers, selectedLayerId]
+  );
+
+  // Memoize source lookup for PropertiesPanel to avoid inline .find() in JSX
+  const selectedSource = useMemo(
+    () => selectedLayer ? current?.sources.find((s) => s.id === selectedLayer.sourceId) : undefined,
+    [selectedLayer?.sourceId, current?.sources]
+  );
 
   // Create stable string key from track source IDs to prevent infinite loop
   // (array reference comparison always fails, causing constant re-renders)
@@ -219,6 +257,19 @@ export function Stream() {
       }
     }).catch(console.error);
   }, [activeScene?.id, trackSourceIdsKey, current?.name, setCaptureStatus]);
+
+  // Migration: ensure every layer with audio has a corresponding audio track
+  // Covers profiles created before auto-population was added
+  useEffect(() => {
+    if (!activeScene || !current) return;
+
+    for (const layer of activeScene.layers) {
+      const source = current.sources.find(s => s.id === layer.sourceId);
+      if (source && sourceHasAudio(source) && !activeScene.audioMixer.tracks.some(t => t.sourceId === source.id)) {
+        addCurrentAudioTrack(activeScene.id, createDefaultAudioTrack(source.id));
+      }
+    }
+  }, [activeScene?.id, activeScene?.layers, activeScene?.audioMixer.tracks, current?.sources, addCurrentAudioTrack]);
 
   // Memoize whether streaming is possible (has at least one target configured)
   const canStream = useMemo(
@@ -309,7 +360,7 @@ export function Stream() {
           <p className="text-sm text-muted">
             {current.sources.length} {t('stream.sources', { defaultValue: 'sources' })}, {current.scenes.length} {t('stream.scenes', { defaultValue: 'scenes' })}
             {activeStreamCount > 0 && (
-              <span className="ml-2 text-green-500">
+              <span className="ml-2 text-[var(--success)]">
                 • {activeStreamCount} {t('stream.activeStreams', { defaultValue: 'active' })}
               </span>
             )}
@@ -404,7 +455,7 @@ export function Stream() {
                 profile={current}
                 scene={activeScene}
                 layer={selectedLayer}
-                source={selectedLayer ? current.sources.find((s) => s.id === selectedLayer.sourceId) : undefined}
+                source={selectedSource}
               />
             </Suspense>
           </div>
@@ -436,7 +487,7 @@ export function Stream() {
                 profile={current}
                 scene={activeScene}
                 layer={selectedLayer}
-                source={selectedLayer ? current.sources.find((s) => s.id === selectedLayer.sourceId) : undefined}
+                source={selectedSource}
               />
             </Suspense>
           </div>

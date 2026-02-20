@@ -9,13 +9,9 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 
 use crate::services::Encryption;
+use crate::services::PowerAssertion;
+use crate::services::process_util::{configure_hidden_window, kill_and_wait};
 use crate::models::OutputGroup;
-
-// Windows: Hide console windows
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
-#[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 /// Recording format options
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -99,6 +95,8 @@ pub struct RecordingService {
     recordings_dir: PathBuf,
     app_data_dir: PathBuf,
     active_recordings: Mutex<HashMap<String, ActiveRecording>>,
+    /// Prevents system idle sleep while recording
+    power_assertion: Mutex<Option<PowerAssertion>>,
 }
 
 impl RecordingService {
@@ -114,7 +112,19 @@ impl RecordingService {
             recordings_dir,
             app_data_dir,
             active_recordings: Mutex::new(HashMap::new()),
+            power_assertion: Mutex::new(None),
         })
+    }
+
+    /// Create a disabled recording service (used when initialization fails)
+    pub fn disabled() -> Self {
+        Self {
+            ffmpeg_path: String::new(),
+            recordings_dir: PathBuf::new(),
+            app_data_dir: PathBuf::new(),
+            active_recordings: Mutex::new(HashMap::new()),
+            power_assertion: Mutex::new(None),
+        }
     }
 
     /// Ensure a directory exists with secure permissions (owner-only)
@@ -191,19 +201,17 @@ impl RecordingService {
         };
 
         // Build FFmpeg command
-        let args = vec![
-            "-f".to_string(), "rawvideo".to_string(),
-            "-pix_fmt".to_string(), pixel_format.to_string(),
-            "-s".to_string(), format!("{}x{}", width, height),
-            "-r".to_string(), fps.to_string(),
-            "-i".to_string(), "pipe:0".to_string(),
-            "-c:v".to_string(), "libx264".to_string(),
-            "-preset".to_string(), "fast".to_string(),
-            "-crf".to_string(), "23".to_string(),
-            "-f".to_string(), config.format.ffmpeg_format().to_string(),
-            "-y".to_string(),
-            temp_path.to_string_lossy().to_string(),
-        ];
+        let mut builder = crate::services::ffmpeg_args::FfmpegArgsBuilder::new();
+        builder.rawvideo_input(width, height, fps, pixel_format);
+        builder.push(&[
+            "-c:v", "libx264",
+            "-preset", "fast",
+            "-crf", "23",
+            "-f", config.format.ffmpeg_format(),
+            "-y",
+        ]);
+        let mut args = builder.build();
+        args.push(temp_path.to_string_lossy().to_string());
 
         log::info!("Starting recording {}: {} {}", id, self.ffmpeg_path, args.join(" "));
 
@@ -213,11 +221,13 @@ impl RecordingService {
             .stdout(Stdio::null())
             .stderr(Stdio::piped());
 
-        #[cfg(windows)]
-        cmd.creation_flags(CREATE_NO_WINDOW);
+        configure_hidden_window(&mut cmd);
 
         let mut child = cmd.spawn()
             .map_err(|e| format!("Failed to start FFmpeg recording: {}", e))?;
+
+        // Acquire power assertion only after FFmpeg spawn succeeds
+        self.acquire_power_assertion();
 
         let stdin = child.stdin.take()
             .ok_or_else(|| "Failed to capture FFmpeg stdin".to_string())?;
@@ -272,14 +282,12 @@ impl RecordingService {
         };
 
         // Build FFmpeg command
-        let args = vec![
-            "-i".to_string(), relay_url.to_string(),
-            "-c:v".to_string(), "copy".to_string(),
-            "-c:a".to_string(), "copy".to_string(),
-            "-f".to_string(), config.format.ffmpeg_format().to_string(),
-            "-y".to_string(),
-            temp_path.to_string_lossy().to_string(),
-        ];
+        let mut builder = crate::services::ffmpeg_args::FfmpegArgsBuilder::new();
+        builder.push(&["-i", relay_url]);
+        builder.stream_copy();
+        builder.push(&["-f", config.format.ffmpeg_format(), "-y"]);
+        let mut args = builder.build();
+        args.push(temp_path.to_string_lossy().to_string());
 
         log::info!("Starting recording {} from relay: {} {}",
             id, self.ffmpeg_path, args.join(" "));
@@ -290,11 +298,13 @@ impl RecordingService {
             .stdout(Stdio::null())
             .stderr(Stdio::piped());
 
-        #[cfg(windows)]
-        cmd.creation_flags(CREATE_NO_WINDOW);
+        configure_hidden_window(&mut cmd);
 
         let child = cmd.spawn()
             .map_err(|e| format!("Failed to start FFmpeg recording: {}", e))?;
+
+        // Acquire power assertion only after FFmpeg spawn succeeds
+        self.acquire_power_assertion();
 
         // Store active recording
         {
@@ -316,6 +326,32 @@ impl RecordingService {
     }
 
     /// Stop a recording and finalize the file
+    /// Acquire power assertion to prevent system sleep during recording
+    fn acquire_power_assertion(&self) {
+        if let Ok(mut guard) = self.power_assertion.lock() {
+            if guard.is_none() {
+                match PowerAssertion::prevent_idle_sleep("SpiritStream recording active") {
+                    Ok(assertion) => *guard = Some(assertion),
+                    Err(e) => log::warn!("Failed to acquire recording power assertion: {}", e),
+                }
+            }
+        }
+    }
+
+    /// Release power assertion when all recordings stop
+    fn release_power_assertion_if_idle(&self) {
+        let is_empty = self.active_recordings.lock()
+            .map(|r| r.is_empty())
+            .unwrap_or(true);
+        if is_empty {
+            if let Ok(mut guard) = self.power_assertion.lock() {
+                if guard.take().is_some() {
+                    log::info!("Released recording power assertion");
+                }
+            }
+        }
+    }
+
     pub fn stop_recording(&self, id: &str) -> Result<RecordingInfo, String> {
         let recording = {
             let mut recordings = self.active_recordings.lock()
@@ -327,8 +363,7 @@ impl RecordingService {
 
         // Stop FFmpeg process
         let mut process = recording.process;
-        let _ = process.kill();
-        let _ = process.wait();
+        kill_and_wait(&mut process);
 
         let duration = recording.start_time.elapsed().as_secs_f64();
 
@@ -358,6 +393,7 @@ impl RecordingService {
         log::info!("Recording {} stopped: {} bytes, {:.1}s",
             info.id, info.size_bytes, duration);
 
+        self.release_power_assertion_if_idle();
         Ok(info)
     }
 
@@ -368,7 +404,9 @@ impl RecordingService {
             recordings.map(|r| r.keys().cloned().collect()).unwrap_or_default()
         };
 
-        ids.iter().map(|id| self.stop_recording(id)).collect()
+        let results: Vec<_> = ids.iter().map(|id| self.stop_recording(id)).collect();
+        self.release_power_assertion_if_idle();
+        results
     }
 
     /// Encrypt a recording file

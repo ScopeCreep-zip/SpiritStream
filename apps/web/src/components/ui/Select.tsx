@@ -1,4 +1,4 @@
-import { forwardRef, useId } from 'react';
+import { forwardRef, memo, useId } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
@@ -15,7 +15,7 @@ export interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElemen
   options: SelectOption[];
 }
 
-export const Select = forwardRef<HTMLSelectElement, SelectProps>(
+export const Select = memo(forwardRef<HTMLSelectElement, SelectProps>(
   ({ className, label, error, helper, options, id, ...props }, ref) => {
     const generatedId = useId();
     const selectId = id || generatedId;
@@ -24,7 +24,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
     const describedBy = errorId || helperId;
 
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      <div className="flex flex-col gap-1.5">
         {label && (
           <label
             htmlFor={selectId}
@@ -40,7 +40,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             aria-invalid={error ? true : undefined}
             aria-describedby={describedBy}
             className={cn(
-              'w-full text-sm rounded-lg transition-all duration-150',
+              'w-full text-sm rounded-lg transition-colors duration-150',
               'bg-[var(--bg-sunken)] text-[var(--text-primary)]',
               'border-2 border-[var(--border-strong)]',
               'hover:border-[var(--border-stronger)]',
@@ -48,10 +48,10 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
               'focus:ring-[3px] focus:ring-[var(--primary-muted)]',
               'disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-[var(--bg-muted)]',
               'appearance-none cursor-pointer',
+              'py-2.5 pl-3.5 pr-10',
               error && 'border-[var(--error-border)]',
               className
             )}
-            style={{ padding: '10px 40px 10px 14px' }}
             {...props}
           >
             {options.map((option) => (
@@ -78,6 +78,6 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
       </div>
     );
   }
-);
+));
 
 Select.displayName = 'Select';

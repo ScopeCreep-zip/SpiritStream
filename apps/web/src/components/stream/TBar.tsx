@@ -157,7 +157,7 @@ export function TBar({ disabled }: TBarProps) {
 
         {/* Thumb handle */}
         <div
-          className={`absolute left-1/2 -translate-x-1/2 w-6 h-4 rounded transition-all ${
+          className={`absolute left-1/2 -translate-x-1/2 w-6 h-4 rounded transition-transform ${
             tBarDragging
               ? 'bg-primary border-2 border-primary-foreground shadow-lg scale-110'
               : canUse

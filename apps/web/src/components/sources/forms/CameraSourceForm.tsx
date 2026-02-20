@@ -111,7 +111,7 @@ export function CameraSourceForm({
 
       {/* Linked audio device info */}
       {hasLinkedAudio && selectedCamera && (
-        <div className="p-3 bg-[var(--bg-elevated)] rounded-lg border border-[var(--border)]">
+        <div className="p-3 bg-[var(--bg-elevated)] rounded-lg border border-[var(--border-default)]">
           <div className="flex items-center gap-2 text-sm">
             <Link className="w-4 h-4 text-[var(--primary)]" />
             <span className="text-muted">

@@ -68,7 +68,7 @@ interface SceneCanvasProps {
   hideHeader?: boolean;
 }
 
-export function SceneCanvas({
+export const SceneCanvas = React.memo(function SceneCanvas({
   scene,
   sources,
   selectedLayerId,
@@ -192,7 +192,7 @@ export function SceneCanvas({
     <Card className={`h-full flex flex-col overflow-hidden ${hideHeader ? 'border-0 rounded-none bg-transparent' : ''}`}>
       {/* Header with view mode toggle - hidden for projector/fullscreen */}
       {!hideHeader && (
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-muted)] bg-[var(--bg-elevated)]">
           {/* Left side: Title/indicator */}
           {studioMode === 'preview' ? (
             <div className="flex items-center gap-2">
@@ -289,7 +289,7 @@ export function SceneCanvas({
       </div>
     </Card>
   );
-}
+});
 
 interface LayerPreviewProps {
   layer: SourceLayer;

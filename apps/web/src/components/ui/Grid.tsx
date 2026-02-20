@@ -9,9 +9,8 @@ export function Grid({
   cols = 2,
   gap = 'md',
   className,
-  style,
   ...props
-}: GridProps & { style?: React.CSSProperties }) {
+}: GridProps) {
   const colStyles = {
     1: 'grid-cols-1',
     2: 'grid-cols-2 max-lg:grid-cols-1',
@@ -19,16 +18,15 @@ export function Grid({
     4: 'grid-cols-4 max-xl:grid-cols-2 max-md:grid-cols-1',
   };
 
-  const gapValues = {
-    sm: '12px',
-    md: '16px',
-    lg: '24px',
+  const gapStyles = {
+    sm: 'gap-3',
+    md: 'gap-4',
+    lg: 'gap-6',
   };
 
   return (
     <div
-      className={cn('grid', colStyles[cols], className)}
-      style={{ gap: gapValues[gap], ...style }}
+      className={cn('grid', colStyles[cols], gapStyles[gap], className)}
       {...props}
     />
   );

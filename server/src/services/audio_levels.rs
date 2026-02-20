@@ -1,13 +1,16 @@
 // Audio Levels Service
 // Monitors audio sources and emits real level data to WebSocket clients
+// Unified audio bus: all source types register via broadcast::Receiver<AudioBuffer>
 
+use crate::services::audio_capture::AudioBuffer;
 use crate::services::events::{emit_event, EventSink};
+use parking_lot::Mutex;
 use serde::Serialize;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::Mutex;
+use tokio::sync::broadcast;
 use tokio::time::{interval, Duration};
 
 /// Audio level data for a single track
@@ -72,6 +75,10 @@ struct TrackState {
     rms_history_l: VecDeque<f32>,
     /// Recent RMS samples for smoothing (R channel)
     rms_history_r: VecDeque<f32>,
+    /// Running sum for L channel RMS (O(1) average computation)
+    rms_sum_l: f32,
+    /// Running sum for R channel RMS (O(1) average computation)
+    rms_sum_r: f32,
 }
 
 impl Default for TrackState {
@@ -81,6 +88,8 @@ impl Default for TrackState {
             peak_hold_r: 0.0,
             rms_history_l: VecDeque::with_capacity(8),
             rms_history_r: VecDeque::with_capacity(8),
+            rms_sum_l: 0.0,
+            rms_sum_r: 0.0,
         }
     }
 }
@@ -113,22 +122,44 @@ impl Default for TrackedSource {
     }
 }
 
+/// Combined audio state — single mutex for both tracked sources and smoothing state.
+/// Eliminates double-lock on 10Hz monitoring tick.
+struct AudioState {
+    tracked: HashMap<String, TrackedSource>,
+    smoothing: HashMap<String, TrackState>,
+}
+
 /// Audio level monitoring service - real levels only, no simulation
+///
+/// Unified audio bus: all source types (cpal, SCK, symphonia, rsmpeg) register
+/// via `register_audio_source()` which accepts a `broadcast::Receiver<AudioBuffer>`.
+/// A background task per source computes RMS/peak and calls `update_source_level()`.
+/// Mute = gain multiplier (decode keeps running, unmute is instant).
 pub struct AudioLevelService {
     /// Running state
     running: Arc<AtomicBool>,
-    /// Tracked source IDs and their data (level + last update time)
-    tracked_sources: Arc<Mutex<HashMap<String, TrackedSource>>>,
-    /// Internal track states for smoothing
-    track_states: Arc<Mutex<HashMap<String, TrackState>>>,
+    /// Combined tracked sources and smoothing state (single lock)
+    state: Arc<Mutex<AudioState>>,
+    /// Handle to the monitoring task for clean shutdown
+    task_handle: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// Background tasks spawned by register_audio_source (one per source)
+    source_tasks: Mutex<HashMap<String, tokio::task::JoinHandle<()>>>,
+    /// Muted sources — when muted, report zeros instead of real levels.
+    /// Decode keeps running so unmute is instant.
+    muted_sources: Arc<Mutex<HashSet<String>>>,
 }
 
 impl AudioLevelService {
     pub fn new() -> Self {
         Self {
             running: Arc::new(AtomicBool::new(false)),
-            tracked_sources: Arc::new(Mutex::new(HashMap::new())),
-            track_states: Arc::new(Mutex::new(HashMap::new())),
+            state: Arc::new(Mutex::new(AudioState {
+                tracked: HashMap::new(),
+                smoothing: HashMap::new(),
+            })),
+            task_handle: std::sync::Mutex::new(None),
+            source_tasks: Mutex::new(HashMap::new()),
+            muted_sources: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -138,18 +169,17 @@ impl AudioLevelService {
     }
 
     /// Set the list of tracked source IDs
-    pub async fn set_tracked_sources(&self, source_ids: Vec<String>) {
-        let mut sources = self.tracked_sources.lock().await;
-        let mut states = self.track_states.lock().await;
+    pub fn set_tracked_sources(&self, source_ids: Vec<String>) {
+        let mut state = self.state.lock();
 
         // Remove sources no longer tracked
-        sources.retain(|id, _| source_ids.contains(id));
-        states.retain(|id, _| source_ids.contains(id));
+        state.tracked.retain(|id, _| source_ids.contains(id));
+        state.smoothing.retain(|id, _| source_ids.contains(id));
 
         // Add new sources with zero level
         for id in source_ids {
-            sources.entry(id.clone()).or_insert_with(TrackedSource::default);
-            states.entry(id).or_insert_with(TrackState::default);
+            state.tracked.entry(id.clone()).or_insert_with(TrackedSource::default);
+            state.smoothing.entry(id).or_insert_with(TrackState::default);
         }
     }
 
@@ -158,7 +188,7 @@ impl AudioLevelService {
     /// - RMS = root mean square (average power)
     /// - Peak = instantaneous maximum absolute sample value
     /// For mono sources, pass the same value for both channels
-    pub async fn update_source_level(
+    pub fn update_source_level(
         &self,
         source_id: &str,
         rms_l: f32,
@@ -166,8 +196,8 @@ impl AudioLevelService {
         peak_l: f32,
         peak_r: f32,
     ) {
-        let mut sources = self.tracked_sources.lock().await;
-        if let Some(tracked) = sources.get_mut(source_id) {
+        let mut state = self.state.lock();
+        if let Some(tracked) = state.tracked.get_mut(source_id) {
             tracked.rms_l = rms_l.clamp(0.0, 1.0);
             tracked.rms_r = rms_r.clamp(0.0, 1.0);
             tracked.peak_l = peak_l.clamp(0.0, 1.0);
@@ -180,7 +210,7 @@ impl AudioLevelService {
             if let Ok(mut set) = warned.lock() {
                 if set.insert(source_id.to_string()) {
                     log::warn!("Audio level update for untracked source '{}'. Tracked sources: {:?}",
-                        source_id, sources.keys().collect::<Vec<_>>());
+                        source_id, state.tracked.keys().collect::<Vec<_>>());
                 }
             }
         }
@@ -188,11 +218,11 @@ impl AudioLevelService {
 
     /// Get health status for all tracked sources
     /// A source is considered "healthy" if it received an update within the last 2 seconds
-    pub async fn get_health_status(&self) -> HashMap<String, bool> {
-        let sources = self.tracked_sources.lock().await;
+    pub fn get_health_status(&self) -> HashMap<String, bool> {
+        let state = self.state.lock();
         let timeout = Duration::from_secs(2);
 
-        sources
+        state.tracked
             .iter()
             .map(|(id, tracked)| {
                 let healthy = tracked.last_update.elapsed() < timeout;
@@ -201,38 +231,164 @@ impl AudioLevelService {
             .collect()
     }
 
+    // ========================================================================
+    // Unified Audio Bus: register/unregister/mute
+    // ========================================================================
+
+    /// Register an audio source for unified metering.
+    ///
+    /// Spawns a background tokio task that receives `AudioBuffer` from the
+    /// broadcast channel, computes stereo RMS/peak, checks mute state,
+    /// and calls `update_source_level()`.
+    ///
+    /// Returns a `JoinHandle` that can be used for lifecycle tracking.
+    pub fn register_audio_source(
+        self: &Arc<Self>,
+        source_id: &str,
+        mut rx: broadcast::Receiver<AudioBuffer>,
+    ) {
+        let source_id_owned = source_id.to_string();
+        let this = Arc::clone(self);
+        let muted_sources = Arc::clone(&self.muted_sources);
+
+        let handle = tokio::spawn(async move {
+            log::info!("[AudioBus] Registered source '{}' for unified metering", source_id_owned);
+            let mut buffer_count: u64 = 0;
+            loop {
+                match rx.recv().await {
+                    Ok(buffer) => {
+                        buffer_count += 1;
+
+                        // Check mute state — if muted, report zeros
+                        let is_muted = muted_sources.lock().contains(&source_id_owned);
+                        let (rms_l, rms_r, peak_l, peak_r) = if is_muted {
+                            (0.0, 0.0, 0.0, 0.0)
+                        } else {
+                            compute_stereo_levels(&buffer)
+                        };
+
+                        this.update_source_level(&source_id_owned, rms_l, rms_r, peak_l, peak_r);
+
+                        if buffer_count <= 3 || buffer_count % 500 == 0 {
+                            log::debug!(
+                                "[AudioBus] Source '{}' buffer #{}: RMS L={:.4} R={:.4}, Peak L={:.4} R={:.4}, muted={}",
+                                source_id_owned, buffer_count, rms_l, rms_r, peak_l, peak_r, is_muted
+                            );
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        log::debug!("[AudioBus] Source '{}' lagged {} buffers", source_id_owned, n);
+                        continue;
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        log::info!("[AudioBus] Source '{}' channel closed, stopping metering", source_id_owned);
+                        break;
+                    }
+                }
+            }
+        });
+
+        self.source_tasks.lock().insert(source_id.to_string(), handle);
+    }
+
+    /// Unregister an audio source — aborts its background metering task.
+    pub fn unregister_audio_source(&self, source_id: &str) {
+        if let Some(handle) = self.source_tasks.lock().remove(source_id) {
+            handle.abort();
+            log::info!("[AudioBus] Unregistered source '{}'", source_id);
+        }
+        self.muted_sources.lock().remove(source_id);
+    }
+
+    /// Unregister all sources that are NOT in the provided set of active source IDs.
+    pub fn unregister_removed_sources(&self, active_ids: &[String]) {
+        let mut tasks = self.source_tasks.lock();
+        let stale: Vec<String> = tasks.keys()
+            .filter(|id| !active_ids.contains(id))
+            .cloned()
+            .collect();
+        for id in stale {
+            if let Some(handle) = tasks.remove(&id) {
+                handle.abort();
+                log::info!("[AudioBus] Unregistered removed source '{}'", id);
+            }
+        }
+        // Also clean muted set
+        self.muted_sources.lock().retain(|id| active_ids.contains(id));
+    }
+
+    /// Set mute state for a source. When muted, the metering task reports zeros.
+    /// Decode keeps running — unmute is instant.
+    pub fn set_source_mute(&self, source_id: &str, muted: bool) {
+        let mut set = self.muted_sources.lock();
+        if muted {
+            set.insert(source_id.to_string());
+            // Immediately report zeros so meters drop
+            self.update_source_level(source_id, 0.0, 0.0, 0.0, 0.0);
+        } else {
+            set.remove(source_id);
+        }
+        log::debug!("[AudioBus] Source '{}' mute={}", source_id, muted);
+    }
+
+    /// Check if a source is currently muted.
+    pub fn is_source_muted(&self, source_id: &str) -> bool {
+        self.muted_sources.lock().contains(source_id)
+    }
+
     /// Start the monitoring loop
-    pub fn start<E: EventSink + 'static>(&self, event_sink: Arc<E>) {
+    /// When `idle_flag` is set to true, reduces update rate from 10Hz to 2Hz
+    /// to save CPU/battery when the app UI is not visible.
+    /// When `throttle_flag` is set (thermal pressure), also uses the idle interval.
+    pub fn start<E: EventSink + 'static>(
+        &self,
+        event_sink: Arc<E>,
+        idle_flag: Arc<AtomicBool>,
+        throttle_flag: Arc<AtomicBool>,
+    ) {
         if self.running.swap(true, Ordering::Relaxed) {
             log::debug!("AudioLevelService already running");
             return;
         }
 
         let running = self.running.clone();
-        let tracked_sources = self.tracked_sources.clone();
-        let track_states = self.track_states.clone();
+        let audio_state = self.state.clone();
 
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             log::info!("AudioLevelService started (real levels only)");
 
-            // 10Hz update rate - 100ms intervals
-            // Visual metering at 10Hz is sufficient while reducing WebSocket traffic by 50%
-            // OBS audio thread runs at ~48Hz but visual meters update less frequently
-            let mut ticker = interval(Duration::from_millis(100));
+            // Normal: 10Hz (100ms) — sufficient for visual metering
+            // Idle: 2Hz (500ms) — minimal updates when tab is hidden
+            let normal_interval = Duration::from_millis(100);
+            let idle_interval = Duration::from_millis(500);
+            let mut ticker = interval(normal_interval);
             let mut emit_count: u64 = 0;
+            let mut was_idle = false;
 
             while running.load(Ordering::Relaxed) {
                 ticker.tick().await;
 
-                let sources = tracked_sources.lock().await;
-
-                if sources.is_empty() {
-                    // No sources to monitor — skip all work (near-zero CPU when idle)
-                    drop(sources);
-                    continue;
+                // Adjust tick rate when idle or thermally throttled
+                let is_idle = idle_flag.load(Ordering::Relaxed)
+                    || throttle_flag.load(Ordering::Relaxed);
+                if is_idle != was_idle {
+                    was_idle = is_idle;
+                    let new_interval = if is_idle { idle_interval } else { normal_interval };
+                    ticker = interval(new_interval);
+                    ticker.tick().await; // First tick completes immediately
+                    log::debug!("AudioLevelService tick rate changed to {}ms (idle={}, throttle={})",
+                        new_interval.as_millis(),
+                        idle_flag.load(Ordering::Relaxed),
+                        throttle_flag.load(Ordering::Relaxed));
                 }
 
-                let mut states = track_states.lock().await;
+                let mut state = audio_state.lock();
+
+                if state.tracked.is_empty() {
+                    // No sources to monitor — skip all work (near-zero CPU when idle)
+                    drop(state);
+                    continue;
+                }
 
                 let mut tracks = HashMap::new();
                 let mut master_rms_sum = 0.0;
@@ -243,23 +399,29 @@ impl AudioLevelService {
                 let mut master_peak_r = 0.0f32;
                 let mut master_clipping = false;
 
-                for (source_id, tracked) in sources.iter() {
-                    let state = states.entry(source_id.clone()).or_insert_with(TrackState::default);
+                // Collect source IDs to iterate (needed because we mutate smoothing in the same state)
+                let source_ids: Vec<String> = state.tracked.keys().cloned().collect();
 
-                    // RMS values (average power) - apply smoothing
-                    // Smooth L channel RMS using O(1) VecDeque operations
-                    state.rms_history_l.push_back(tracked.rms_l);
-                    if state.rms_history_l.len() > 6 {
-                        state.rms_history_l.pop_front();
-                    }
-                    let smoothed_rms_l = state.rms_history_l.iter().sum::<f32>() / state.rms_history_l.len() as f32;
+                for source_id in &source_ids {
+                    let tracked = state.tracked.get(source_id).unwrap().clone();
+                    let sm = state.smoothing.entry(source_id.clone()).or_insert_with(TrackState::default);
 
-                    // Smooth R channel RMS using O(1) VecDeque operations
-                    state.rms_history_r.push_back(tracked.rms_r);
-                    if state.rms_history_r.len() > 6 {
-                        state.rms_history_r.pop_front();
+                    // RMS values (average power) - apply smoothing with running sums (O(1) per tick)
+                    // Smooth L channel RMS
+                    sm.rms_sum_l += tracked.rms_l;
+                    sm.rms_history_l.push_back(tracked.rms_l);
+                    if sm.rms_history_l.len() > 6 {
+                        sm.rms_sum_l -= sm.rms_history_l.pop_front().unwrap();
                     }
-                    let smoothed_rms_r = state.rms_history_r.iter().sum::<f32>() / state.rms_history_r.len() as f32;
+                    let smoothed_rms_l = sm.rms_sum_l / sm.rms_history_l.len() as f32;
+
+                    // Smooth R channel RMS
+                    sm.rms_sum_r += tracked.rms_r;
+                    sm.rms_history_r.push_back(tracked.rms_r);
+                    if sm.rms_history_r.len() > 6 {
+                        sm.rms_sum_r -= sm.rms_history_r.pop_front().unwrap();
+                    }
+                    let smoothed_rms_r = sm.rms_sum_r / sm.rms_history_r.len() as f32;
 
                     // Combined RMS for overall level
                     let smoothed_rms = ((smoothed_rms_l.powi(2) + smoothed_rms_r.powi(2)) / 2.0).sqrt();
@@ -267,22 +429,22 @@ impl AudioLevelService {
                     // Peak values (instantaneous max) - apply peak hold with decay
                     // OBS-style peak hold: hold at max, then decay after hold time
                     // Peak hold for L channel (from actual peak, not RMS)
-                    if tracked.peak_l > state.peak_hold_l {
-                        state.peak_hold_l = tracked.peak_l;
+                    if tracked.peak_l > sm.peak_hold_l {
+                        sm.peak_hold_l = tracked.peak_l;
                     } else {
                         // Decay coefficient ~0.96 at 10Hz = same decay rate as 0.98 at 20Hz
-                        state.peak_hold_l = (state.peak_hold_l * 0.96).max(tracked.peak_l * 0.5);
+                        sm.peak_hold_l = (sm.peak_hold_l * 0.96).max(tracked.peak_l * 0.5);
                     }
 
                     // Peak hold for R channel (from actual peak, not RMS)
-                    if tracked.peak_r > state.peak_hold_r {
-                        state.peak_hold_r = tracked.peak_r;
+                    if tracked.peak_r > sm.peak_hold_r {
+                        sm.peak_hold_r = tracked.peak_r;
                     } else {
-                        state.peak_hold_r = (state.peak_hold_r * 0.96).max(tracked.peak_r * 0.5);
+                        sm.peak_hold_r = (sm.peak_hold_r * 0.96).max(tracked.peak_r * 0.5);
                     }
 
                     // Overall peak (max of L and R)
-                    let overall_peak = state.peak_hold_l.max(state.peak_hold_r);
+                    let overall_peak = sm.peak_hold_l.max(sm.peak_hold_r);
                     let clipping = overall_peak > 0.95;
 
                     // Calculate dB for display
@@ -300,9 +462,9 @@ impl AudioLevelService {
                         peak: overall_peak,
                         clipping,
                         left_rms: Some(smoothed_rms_l),
-                        left_peak: Some(state.peak_hold_l),
+                        left_peak: Some(sm.peak_hold_l),
                         right_rms: Some(smoothed_rms_r),
-                        right_peak: Some(state.peak_hold_r),
+                        right_peak: Some(sm.peak_hold_r),
                         peak_db,
                     });
 
@@ -311,15 +473,15 @@ impl AudioLevelService {
                     master_rms_l_sum += smoothed_rms_l * smoothed_rms_l;
                     master_rms_r_sum += smoothed_rms_r * smoothed_rms_r;
                     master_peak = master_peak.max(overall_peak);
-                    master_peak_l = master_peak_l.max(state.peak_hold_l);
-                    master_peak_r = master_peak_r.max(state.peak_hold_r);
+                    master_peak_l = master_peak_l.max(sm.peak_hold_l);
+                    master_peak_r = master_peak_r.max(sm.peak_hold_r);
                     if clipping {
                         master_clipping = true;
                     }
                 }
 
                 // Calculate master RMS
-                let num_sources = sources.len() as f32;
+                let num_sources = state.tracked.len() as f32;
                 let master_rms = (master_rms_sum / num_sources).sqrt();
                 let master_rms_l = (master_rms_l_sum / num_sources).sqrt();
                 let master_rms_r = (master_rms_r_sum / num_sources).sqrt();
@@ -363,11 +525,27 @@ impl AudioLevelService {
 
             log::info!("AudioLevelService stopped");
         });
+
+        // Store handle for clean shutdown
+        if let Ok(mut h) = self.task_handle.lock() {
+            *h = Some(handle);
+        }
     }
 
-    /// Stop the monitoring loop
+    /// Stop the monitoring loop and all registered source tasks.
     pub fn stop(&self) {
         self.running.store(false, Ordering::Relaxed);
+        if let Ok(mut h) = self.task_handle.lock() {
+            if let Some(handle) = h.take() {
+                handle.abort();
+            }
+        }
+        // Abort all registered source metering tasks
+        let mut tasks = self.source_tasks.lock();
+        for (id, handle) in tasks.drain() {
+            handle.abort();
+            log::debug!("[AudioBus] Aborted metering task for source '{}'", id);
+        }
     }
 }
 
@@ -380,5 +558,48 @@ impl Default for AudioLevelService {
 impl Drop for AudioLevelService {
     fn drop(&mut self) {
         self.stop();
+    }
+}
+
+/// Compute stereo RMS and peak from an `AudioBuffer`.
+///
+/// Returns `(rms_l, rms_r, peak_l, peak_r)`.
+/// - Mono (1 channel): same value for L and R.
+/// - Stereo (2+ channels): uses channels 0 (L) and 1 (R).
+/// - Empty buffer: all zeros.
+pub fn compute_stereo_levels(buffer: &AudioBuffer) -> (f32, f32, f32, f32) {
+    let channels = buffer.channels as usize;
+    if buffer.samples.is_empty() || channels == 0 {
+        return (0.0, 0.0, 0.0, 0.0);
+    }
+
+    if channels >= 2 {
+        let mut sum_sq_l = 0.0f32;
+        let mut sum_sq_r = 0.0f32;
+        let mut max_abs_l = 0.0f32;
+        let mut max_abs_r = 0.0f32;
+        let mut count = 0usize;
+        for frame in buffer.samples.chunks_exact(channels) {
+            let sample_l = frame[0];
+            let sample_r = frame[1];
+            sum_sq_l += sample_l * sample_l;
+            sum_sq_r += sample_r * sample_r;
+            max_abs_l = max_abs_l.max(sample_l.abs());
+            max_abs_r = max_abs_r.max(sample_r.abs());
+            count += 1;
+        }
+        let rms_l = if count > 0 { (sum_sq_l / count as f32).sqrt() } else { 0.0 };
+        let rms_r = if count > 0 { (sum_sq_r / count as f32).sqrt() } else { 0.0 };
+        (rms_l, rms_r, max_abs_l, max_abs_r)
+    } else {
+        // Mono
+        let mut sum_sq = 0.0f32;
+        let mut max_abs = 0.0f32;
+        for &sample in &buffer.samples {
+            sum_sq += sample * sample;
+            max_abs = max_abs.max(sample.abs());
+        }
+        let rms = (sum_sq / buffer.samples.len() as f32).sqrt();
+        (rms, rms, max_abs, max_abs)
     }
 }

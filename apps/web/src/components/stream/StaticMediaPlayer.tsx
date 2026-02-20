@@ -73,18 +73,17 @@ export function StaticMediaPlayer({
         <iframe
           src={fileUrl}
           title={sourceName}
-          className={`absolute border-0 transition-opacity duration-300 ${
+          className={`absolute border-0 origin-top-left transition-opacity duration-300 ${
             loading ? 'opacity-0' : 'opacity-100'
           }`}
           style={{
             width: nativeWidth,
             height: nativeHeight,
             transform: `scale(${scaleX}, ${scaleY})`,
-            transformOrigin: 'top left',
           }}
           onLoad={handleLoad}
           onError={handleError}
-          sandbox="allow-scripts allow-same-origin"
+          sandbox="allow-scripts allow-same-origin allow-modals"
           // credentialless allows cross-origin content when COEP: require-corp is set
           // @ts-expect-error - credentialless is a valid HTML attribute but not in React types yet
           credentialless=""

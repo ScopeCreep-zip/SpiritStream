@@ -10,11 +10,8 @@ use std::sync::Arc;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
-// Windows: Hide console windows for spawned processes
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
-#[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x08000000;
+#[cfg(target_os = "windows")]
+use crate::services::process_util::configure_hidden_window;
 
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -369,7 +366,7 @@ exit /b %errorlevel%
                 batch_path.display()
             )
         ]);
-        cmd.creation_flags(CREATE_NO_WINDOW);
+        configure_hidden_window(&mut cmd);
         let output = cmd.output()
             .map_err(|e| DownloadError::ElevationFailed(e.to_string()))?;
 

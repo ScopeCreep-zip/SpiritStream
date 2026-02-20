@@ -13,11 +13,8 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
-
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
-#[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x08000000;
+use crate::services::PowerAssertion;
+use crate::services::process_util::{configure_hidden_window, kill_and_wait};
 
 /// Segment information for the circular buffer
 #[derive(Debug, Clone)]
@@ -84,6 +81,8 @@ pub struct ReplayBufferService {
     ffmpeg_path: String,
     app_data_dir: PathBuf,
     state: Arc<Mutex<ReplayBufferInternal>>,
+    /// Prevents system idle sleep while replay buffer is active
+    power_assertion: Mutex<Option<PowerAssertion>>,
 }
 
 impl ReplayBufferService {
@@ -110,11 +109,40 @@ impl ReplayBufferService {
             ffmpeg_path,
             app_data_dir,
             state: Arc::new(Mutex::new(internal)),
+            power_assertion: Mutex::new(None),
         })
+    }
+
+    /// Create a disabled replay buffer service (used when initialization fails)
+    pub fn disabled() -> Self {
+        let internal = ReplayBufferInternal {
+            config: ReplayBufferConfig::default(),
+            ffmpeg_process: None,
+            segments: VecDeque::new(),
+            start_time: None,
+            segment_counter: 0,
+            temp_dir: PathBuf::new(),
+        };
+        Self {
+            ffmpeg_path: String::new(),
+            app_data_dir: PathBuf::new(),
+            state: Arc::new(Mutex::new(internal)),
+            power_assertion: Mutex::new(None),
+        }
     }
 
     /// Start the replay buffer from a relay URL (composited output)
     pub fn start(&self, relay_url: &str, config: ReplayBufferConfig) -> Result<(), String> {
+        // Acquire power assertion to prevent sleep during replay buffering
+        if let Ok(mut guard) = self.power_assertion.lock() {
+            if guard.is_none() {
+                match PowerAssertion::prevent_idle_sleep("SpiritStream replay buffer active") {
+                    Ok(assertion) => *guard = Some(assertion),
+                    Err(e) => log::warn!("Failed to acquire replay buffer power assertion: {}", e),
+                }
+            }
+        }
+
         let mut state = self.state.lock()
             .map_err(|e| format!("Lock poisoned: {}", e))?;
 
@@ -160,17 +188,18 @@ impl ReplayBufferService {
         // Using mpegts segments for compatibility and fast seeking
         let segment_pattern = state.temp_dir.join("segment_%05d.ts");
 
-        let args = vec![
-            "-i".to_string(), relay_url.to_string(),
-            "-c:v".to_string(), "copy".to_string(),
-            "-c:a".to_string(), "copy".to_string(),
-            "-f".to_string(), "segment".to_string(),
-            "-segment_time".to_string(), segment_duration.to_string(),
-            "-segment_format".to_string(), "mpegts".to_string(),
-            "-reset_timestamps".to_string(), "1".to_string(),
-            "-y".to_string(),
-            segment_pattern.to_string_lossy().to_string(),
-        ];
+        let mut builder = crate::services::ffmpeg_args::FfmpegArgsBuilder::new();
+        builder.push(&["-i", relay_url]);
+        builder.stream_copy();
+        builder.push(&[
+            "-f", "segment",
+            "-segment_time", &segment_duration.to_string(),
+            "-segment_format", "mpegts",
+            "-reset_timestamps", "1",
+            "-y",
+        ]);
+        let mut args = builder.build();
+        args.push(segment_pattern.to_string_lossy().to_string());
 
         log::info!("Starting replay buffer: {} {}", self.ffmpeg_path, args.join(" "));
 
@@ -180,8 +209,7 @@ impl ReplayBufferService {
             .stdout(Stdio::null())
             .stderr(Stdio::piped());
 
-        #[cfg(windows)]
-        cmd.creation_flags(CREATE_NO_WINDOW);
+        configure_hidden_window(&mut cmd);
 
         let child = cmd.spawn()
             .map_err(|e| format!("Failed to start replay buffer FFmpeg: {}", e))?;
@@ -213,8 +241,7 @@ impl ReplayBufferService {
             .map_err(|e| format!("Lock poisoned: {}", e))?;
 
         if let Some(mut process) = state.ffmpeg_process.take() {
-            let _ = process.kill();
-            let _ = process.wait();
+            kill_and_wait(&mut process);
         }
 
         // Clean up temp segments
@@ -224,6 +251,14 @@ impl ReplayBufferService {
         state.start_time = None;
 
         log::info!("Replay buffer stopped");
+
+        // Release power assertion
+        if let Ok(mut guard) = self.power_assertion.lock() {
+            if guard.take().is_some() {
+                log::info!("Released replay buffer power assertion");
+            }
+        }
+
         Ok(())
     }
 
@@ -279,8 +314,7 @@ impl ReplayBufferService {
             .stdout(Stdio::null())
             .stderr(Stdio::piped());
 
-        #[cfg(windows)]
-        cmd.creation_flags(CREATE_NO_WINDOW);
+        configure_hidden_window(&mut cmd);
 
         let output = cmd.output()
             .map_err(|e| format!("Failed to run FFmpeg concat: {}", e))?;

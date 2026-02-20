@@ -75,63 +75,38 @@ interface ReplayBufferStoreState {
 // Polling interval for state updates (in ms)
 const STATE_POLL_INTERVAL = 1000;
 
-// Centralized polling manager with reference counting
-const pollingManager = {
-  intervalId: null as ReturnType<typeof setInterval> | null,
-  activeSubscribers: 0,
+// Simple polling manager — only polls when replay buffer is active
+let pollIntervalId: ReturnType<typeof setInterval> | null = null;
 
-  subscribe() {
-    this.activeSubscribers++;
-    if (this.activeSubscribers === 1 && !this.intervalId) {
-      this.startPolling();
-    }
-  },
+function startStatePolling(): void {
+  // Clear any existing interval before starting a new one
+  stopStatePolling();
 
-  unsubscribe() {
-    this.activeSubscribers = Math.max(0, this.activeSubscribers - 1);
-    if (this.activeSubscribers === 0 && this.intervalId) {
-      this.stopPolling();
-    }
-  },
+  pollIntervalId = setInterval(async () => {
+    try {
+      const state = await api.replayBuffer.getState();
+      useReplayBufferStore.setState({
+        isActive: state.isActive,
+        bufferedSeconds: state.bufferedSecs,
+        duration: state.durationSecs,
+        outputPath: state.outputPath || useReplayBufferStore.getState().outputPath,
+      });
 
-  startPolling() {
-    if (this.intervalId) return;
-
-    this.intervalId = setInterval(async () => {
-      try {
-        const state = await api.replayBuffer.getState();
-        useReplayBufferStore.setState({
-          isActive: state.isActive,
-          bufferedSeconds: state.bufferedSecs,
-          duration: state.durationSecs,
-          outputPath: state.outputPath || useReplayBufferStore.getState().outputPath,
-        });
-      } catch {
-        // Silently ignore polling errors - the buffer might not be active
+      // If backend reports buffer is no longer active, stop polling
+      if (!state.isActive) {
+        stopStatePolling();
       }
-    }, STATE_POLL_INTERVAL);
-  },
-
-  stopPolling() {
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = null;
+    } catch {
+      // Silently ignore polling errors - the buffer might not be active
     }
-  },
-
-  // Force stop regardless of subscriber count (for cleanup)
-  forceStop() {
-    this.activeSubscribers = 0;
-    this.stopPolling();
-  }
-};
-
-function startStatePolling() {
-  pollingManager.subscribe();
+  }, STATE_POLL_INTERVAL);
 }
 
-function stopStatePolling() {
-  pollingManager.unsubscribe();
+function stopStatePolling(): void {
+  if (pollIntervalId !== null) {
+    clearInterval(pollIntervalId);
+    pollIntervalId = null;
+  }
 }
 
 // Fallback path used until platform-specific path is fetched
@@ -295,10 +270,9 @@ export const useReplayBufferStore = create<ReplayBufferStoreState>((set, get) =>
       });
 
       // Start or stop polling based on active state
-      // Use pollingManager.intervalId instead of the old pollInterval variable
-      if (state.isActive && !pollingManager.intervalId) {
+      if (state.isActive && pollIntervalId === null) {
         startStatePolling();
-      } else if (!state.isActive && pollingManager.intervalId) {
+      } else if (!state.isActive && pollIntervalId !== null) {
         stopStatePolling();
       }
     } catch (error) {

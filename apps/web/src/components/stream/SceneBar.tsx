@@ -24,6 +24,7 @@ import { useTransitionStore } from '@/stores/transitionStore';
 import { useProjectorStore } from '@/stores/projectorStore';
 import { toast } from '@/hooks/useToast';
 import { cn } from '@/lib/utils';
+import { useShallow } from 'zustand/shallow';
 
 interface SceneBarProps {
   profile: Profile;
@@ -32,11 +33,37 @@ interface SceneBarProps {
 
 export function SceneBar({ profile, activeSceneId }: SceneBarProps) {
   const { t } = useTranslation();
-  const { createScene, deleteScene, duplicateScene, setActiveScene } = useSceneStore();
-  const { addCurrentScene, removeCurrentScene, setCurrentActiveScene, reloadProfile } = useProfileStore();
-  const { enabled: studioEnabled, previewSceneId, programSceneId, setPreviewScene } = useStudioStore();
+  const { createScene, deleteScene, duplicateScene, setActiveScene } = useSceneStore(
+    useShallow(s => ({
+      createScene: s.createScene,
+      deleteScene: s.deleteScene,
+      duplicateScene: s.duplicateScene,
+      setActiveScene: s.setActiveScene
+    }))
+  );
+  const { addCurrentScene, removeCurrentScene, setCurrentActiveScene, reloadProfile } = useProfileStore(
+    useShallow(s => ({
+      addCurrentScene: s.addCurrentScene,
+      removeCurrentScene: s.removeCurrentScene,
+      setCurrentActiveScene: s.setCurrentActiveScene,
+      reloadProfile: s.reloadProfile
+    }))
+  );
+  const { enabled: studioEnabled, previewSceneId, programSceneId, setPreviewScene } = useStudioStore(
+    useShallow(s => ({
+      enabled: s.enabled,
+      previewSceneId: s.previewSceneId,
+      programSceneId: s.programSceneId,
+      setPreviewScene: s.setPreviewScene
+    }))
+  );
   const { isTransitioning } = useTransitionStore();
-  const { openProjector, hasActiveProjectors } = useProjectorStore();
+  const { openProjector, hasActiveProjectors } = useProjectorStore(
+    useShallow(s => ({
+      openProjector: s.openProjector,
+      hasActiveProjectors: s.hasActiveProjectors
+    }))
+  );
   const [showNewSceneInput, setShowNewSceneInput] = useState(false);
   const [newSceneName, setNewSceneName] = useState('');
 
@@ -178,7 +205,7 @@ export function SceneBar({ profile, activeSceneId }: SceneBarProps) {
           <div
             key={scene.id}
             className={cn(
-              'group relative flex items-center gap-2 px-4 py-2 rounded cursor-pointer transition-all min-h-[40px]',
+              'group relative flex items-center gap-2 px-4 py-2 rounded cursor-pointer transition-colors min-h-[40px]',
               // Normal mode styling
               !studioEnabled && isActive && 'bg-primary text-primary-foreground',
               !studioEnabled && !isActive && 'bg-muted/30 hover:bg-muted/50',

@@ -35,6 +35,9 @@ impl Go2RtcManager {
 
     /// Create a new Go2RtcManager with a custom port
     pub fn with_port(port: u16) -> Self {
+        // Clean up stale config files from previous runs that may not have shut down cleanly
+        Self::cleanup_stale_configs();
+
         let base_url = format!("http://127.0.0.1:{}", port);
         Self {
             child: RwLock::new(None),
@@ -43,6 +46,24 @@ impl Go2RtcManager {
             is_available: AtomicBool::new(false),
             binary_path: None,
             startup_lock: AsyncMutex::new(()),
+        }
+    }
+
+    /// Remove stale go2rtc config files from temp dir (left by crashed/killed processes)
+    fn cleanup_stale_configs() {
+        let temp_dir = std::env::temp_dir();
+        if let Ok(entries) = std::fs::read_dir(&temp_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy();
+                if name_str.starts_with("go2rtc-") && name_str.ends_with(".yaml") {
+                    if let Err(e) = std::fs::remove_file(entry.path()) {
+                        log::debug!("Failed to clean stale go2rtc config {:?}: {}", entry.path(), e);
+                    } else {
+                        log::info!("Cleaned stale go2rtc config: {}", name_str);
+                    }
+                }
+            }
         }
     }
 
@@ -361,6 +382,14 @@ impl Drop for Go2RtcManager {
                 // Send SIGKILL on Unix, TerminateProcess on Windows
                 let _ = child.start_kill();
             }
+        }
+
+        // Clean up temp config file
+        let config_path = std::env::temp_dir().join(format!("go2rtc-{}.yaml", self.port));
+        match std::fs::remove_file(&config_path) {
+            Ok(()) => log::debug!("Cleaned up go2rtc config: {:?}", config_path),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
+            Err(e) => log::warn!("Failed to clean up go2rtc config {:?}: {}", config_path, e),
         }
     }
 }

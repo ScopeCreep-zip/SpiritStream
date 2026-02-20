@@ -53,7 +53,7 @@ export function BrowserSourceForm({ data, onChange }: SourceFormProps<BrowserSou
         <textarea
           value={data.customCss || ''}
           onChange={(e) => onChange({ ...data, customCss: e.target.value || undefined })}
-          className="w-full h-20 px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg-input)] text-[var(--text)] font-mono text-sm resize-none focus:outline-none focus:border-[var(--primary)]"
+          className="w-full h-20 px-3 py-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-sunken)] text-[var(--text-primary)] font-mono text-sm resize-none focus:outline-none focus:border-[var(--primary)]"
           placeholder="body { background: transparent; }"
         />
       </div>

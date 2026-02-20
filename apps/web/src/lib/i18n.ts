@@ -2,30 +2,25 @@ import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
 import en from '@/locales/en.json';
-import es from '@/locales/es.json';
-import fr from '@/locales/fr.json';
-import de from '@/locales/de.json';
-import ja from '@/locales/ja.json';
-import ar from '@/locales/ar.json';
-import zhCN from '@/locales/zh-CN.json';
-import ko from '@/locales/ko.json';
-import uk from '@/locales/uk.json';
-import ru from '@/locales/ru.json';
-import af from '@/locales/af.json';
+
+// Only English is bundled eagerly. Other locales are loaded on demand.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const localeImporters: Record<string, () => Promise<{ default: Record<string, any> }>> = {
+  es: () => import('@/locales/es.json'),
+  fr: () => import('@/locales/fr.json'),
+  de: () => import('@/locales/de.json'),
+  ja: () => import('@/locales/ja.json'),
+  ar: () => import('@/locales/ar.json'),
+  'zh-CN': () => import('@/locales/zh-CN.json'),
+  ko: () => import('@/locales/ko.json'),
+  uk: () => import('@/locales/uk.json'),
+  ru: () => import('@/locales/ru.json'),
+  af: () => import('@/locales/af.json'),
+};
 
 i18n.use(initReactI18next).init({
   resources: {
     en: { translation: en },
-    es: { translation: es },
-    fr: { translation: fr },
-    de: { translation: de },
-    ja: { translation: ja },
-    ar: { translation: ar },
-    'zh-CN': { translation: zhCN },
-    ko: { translation: ko },
-    uk: { translation: uk },
-    ru: { translation: ru },
-    af: { translation: af },
   },
   lng: 'en',
   fallbackLng: 'en',
@@ -33,5 +28,24 @@ i18n.use(initReactI18next).init({
     escapeValue: false, // React already escapes
   },
 });
+
+/** Change the active language, lazy-loading the locale bundle if needed. */
+export async function changeLanguage(lng: string): Promise<void> {
+  if (lng === 'en') {
+    await i18n.changeLanguage('en');
+    return;
+  }
+
+  // Load locale on demand if not already loaded
+  if (!i18n.hasResourceBundle(lng, 'translation')) {
+    const importer = localeImporters[lng];
+    if (importer) {
+      const mod = await importer();
+      i18n.addResourceBundle(lng, 'translation', mod.default, true, true);
+    }
+  }
+
+  await i18n.changeLanguage(lng);
+}
 
 export default i18n;

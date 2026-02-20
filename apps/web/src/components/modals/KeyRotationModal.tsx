@@ -42,34 +42,34 @@ export function KeyRotationModal({
         </>
       }
     >
-      <div className="flex flex-col" style={{ gap: '16px' }}>
+      <div className="flex flex-col gap-4">
         <p className="text-sm text-[var(--text-secondary)]">
           {t('settings.rotateMachineKeyDescription')}
         </p>
 
-        <div className="flex flex-col" style={{ gap: '10px' }}>
+        <div className="flex flex-col gap-2.5">
           <div className="text-sm font-medium text-[var(--text-primary)]">
             {t('settings.rotationStepsTitle')}
           </div>
-          <div className="flex items-start" style={{ gap: '8px' }}>
+          <div className="flex items-start gap-2">
             <CheckCircle2 className="w-4 h-4 text-[var(--success-text)] mt-0.5" />
             <span className="text-sm text-[var(--text-secondary)]">
               {t('settings.rotationStepGenerate')}
             </span>
           </div>
-          <div className="flex items-start" style={{ gap: '8px' }}>
+          <div className="flex items-start gap-2">
             <CheckCircle2 className="w-4 h-4 text-[var(--success-text)] mt-0.5" />
             <span className="text-sm text-[var(--text-secondary)]">
               {t('settings.rotationStepBackup')}
             </span>
           </div>
-          <div className="flex items-start" style={{ gap: '8px' }}>
+          <div className="flex items-start gap-2">
             <CheckCircle2 className="w-4 h-4 text-[var(--success-text)] mt-0.5" />
             <span className="text-sm text-[var(--text-secondary)]">
               {t('settings.rotationStepReencrypt')}
             </span>
           </div>
-          <div className="flex items-start" style={{ gap: '8px' }}>
+          <div className="flex items-start gap-2">
             <CheckCircle2 className="w-4 h-4 text-[var(--success-text)] mt-0.5" />
             <span className="text-sm text-[var(--text-secondary)]">
               {t('settings.rotationStepDelete')}

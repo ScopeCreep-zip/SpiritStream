@@ -99,7 +99,10 @@ export function NestedSceneRenderer({
 
   // Render the nested scene's layers
   // Sort layers by zIndex (lowest first = back, highest last = front)
-  const sortedLayers = [...referencedScene.layers].sort((a, b) => a.zIndex - b.zIndex);
+  const sortedLayers = useMemo(
+    () => [...referencedScene.layers].sort((a, b) => a.zIndex - b.zIndex),
+    [referencedScene.layers]
+  );
 
   // Calculate scale factors for nested layers
   const scaleX = width / referencedScene.canvasWidth;
@@ -135,11 +138,10 @@ export function NestedSceneRenderer({
             {/* Render based on source type */}
             {layerSource.type === 'color' ? (
               <div
+                className="w-full h-full"
                 style={{
                   backgroundColor: (layerSource as ColorSource).color,
                   opacity: (layerSource as ColorSource).opacity,
-                  width: '100%',
-                  height: '100%',
                 }}
               />
             ) : layerSource.type === 'nestedScene' ? (

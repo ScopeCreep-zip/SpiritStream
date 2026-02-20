@@ -9,6 +9,7 @@ import { useProfileStore } from '@/stores/profileStore';
 import { api } from '@/lib/backend';
 import type { Profile, RtmpInput } from '@/types/profile';
 import { createDefaultProfile, getRtmpInput } from '@/types/profile';
+import { cn } from '@/lib/cn';
 
 export interface ProfileModalProps {
   open: boolean;
@@ -244,7 +245,7 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
         </>
       }
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div className="flex flex-col gap-4">
         <Input
           label={t('modals.profileName')}
           placeholder={t('modals.profileNamePlaceholder')}
@@ -254,18 +255,11 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
         />
 
         {/* RTMP Input Configuration */}
-        <div style={{ padding: '12px', backgroundColor: 'var(--bg-muted)', borderRadius: '8px' }}>
-          <div
-            style={{
-              marginBottom: '12px',
-              fontSize: '0.875rem',
-              fontWeight: 500,
-              color: 'var(--text-primary)',
-            }}
-          >
+        <div className="p-3 bg-[var(--bg-muted)] rounded-lg">
+          <div className="mb-3 text-sm font-medium text-[var(--text-primary)]">
             {t('modals.rtmpInputSettings')}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 1fr', gap: '12px' }}>
+          <div className="grid gap-3 grid-cols-[1fr_100px_1fr]">
             <Input
               label={t('modals.bindAddress')}
               placeholder="0.0.0.0"
@@ -291,19 +285,11 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
               helper={t('modals.applicationHelper')}
             />
           </div>
-          <div style={{ marginTop: '8px', fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+          <div className="mt-2 text-xs text-[var(--text-tertiary)]">
             {t('modals.rtmpUrlPreview')}: rtmp://{formData.bindAddress}:{formData.port}/
             {formData.application}
           </div>
-          <div style={{
-            marginTop: '8px',
-            padding: '8px',
-            backgroundColor: 'var(--bg-base)',
-            borderRadius: '4px',
-            fontSize: '0.75rem',
-            color: 'var(--text-secondary)',
-            lineHeight: '1.5'
-          }}>
+          <div className="mt-2 p-2 bg-[var(--bg-base)] rounded text-xs text-[var(--text-secondary)] leading-relaxed">
             {tDynamic('modals.profileExplanation', {
               defaultValue: 'Configure your streaming software (OBS, etc.) to send to this RTMP URL. Encoding settings are configured in your streaming software, not in the profile. Use output groups to re-encode to different settings for different platforms.'
             })}
@@ -312,11 +298,11 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
 
         {/* Password Protection (only for create mode) */}
         {mode === 'create' && (
-          <div style={{ padding: '12px', backgroundColor: 'var(--bg-muted)', borderRadius: '8px' }}>
-            <div className="flex items-center justify-between" style={{ marginBottom: formData.usePassword ? '12px' : '0' }}>
+          <div className="p-3 bg-[var(--bg-muted)] rounded-lg">
+            <div className={cn('flex items-center justify-between', formData.usePassword && 'mb-3')}>
               <div className="flex items-center gap-2">
                 <Lock className="w-4 h-4 text-[var(--primary)]" />
-                <span style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-primary)' }}>
+                <span className="text-sm font-medium text-[var(--text-primary)]">
                   {t('profiles.protectWithPassword')}
                 </span>
               </div>
@@ -337,7 +323,7 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
             </div>
 
             {formData.usePassword && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="flex flex-col gap-3">
                 <div className="relative">
                   <Input
                     label={t('modals.password.password')}
@@ -351,8 +337,7 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-[34px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}
+                    className="absolute right-3 top-[34px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors p-1"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -368,9 +353,9 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
                   autoComplete="new-password"
                 />
 
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
-                  <p style={{ fontWeight: 500, marginBottom: '4px' }}>{t('modals.passwordRequirements')}:</p>
-                  <ul style={{ margin: 0, paddingLeft: '16px' }}>
+                <div className="text-xs text-[var(--text-tertiary)]">
+                  <p className="font-medium mb-1">{t('modals.passwordRequirements')}:</p>
+                  <ul className="pl-4">
                     <li>{t('modals.passwordReq8Chars')}</li>
                     <li>{t('modals.passwordReqNoRecovery')}</li>
                   </ul>

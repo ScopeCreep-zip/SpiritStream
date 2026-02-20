@@ -13,7 +13,7 @@ import type {
   WindowInfo,
 } from '@/types/source';
 
-interface DeviceDiscoveryState {
+export interface DeviceDiscoveryState {
   cameras: CameraDevice[];
   displays: DisplayInfo[];
   windows: WindowInfo[];

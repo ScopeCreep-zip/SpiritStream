@@ -86,7 +86,7 @@ export function KeyRotationSection({ encryptStreamKeys, disabled = false }: KeyR
 
   return (
     <>
-      <div className="flex items-center justify-between" style={{ padding: '8px 0', gap: '12px' }}>
+      <div className="flex items-center justify-between py-2 gap-3">
         <div>
           <div className="text-sm font-medium text-[var(--text-primary)]">
             {t('settings.machineKey')}

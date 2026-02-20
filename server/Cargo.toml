@@ -30,6 +30,10 @@ rand = "0.8"
 base64 = "0.22"
 zeroize = { version = "1.7", features = ["derive"] }
 
+# Concurrent collections
+dashmap = "6"
+parking_lot = "0.12"
+
 # Utilities
 uuid = { version = "1.0", features = ["v4", "serde"] }
 which = "6.0"
@@ -49,9 +53,13 @@ async-stream = "0.3"
 scap = "0.0.8"
 cpal = { version = "0.17", features = ["jack"] }
 image = "0.25"
+turbojpeg = { version = "1.4", default-features = false, features = ["pkg-config"] }
+
+# Audio decode (in-process, replaces FFmpeg astats subprocesses)
+symphonia = { version = "0.5", features = ["mp3", "aac", "flac", "pcm", "vorbis", "isomp4", "mkv", "ogg", "wav"] }
 
 # FFmpeg Download
-reqwest = { version = "0.11", features = ["stream", "json"] }
+reqwest = { version = "0.11", features = ["stream", "json", "blocking"] }
 zip = "0.6"
 tar = "0.4"
 xz2 = "0.1"
@@ -70,12 +78,19 @@ winapi = { version = "0.3", features = ["fileapi", "winnt"] }
 # screencapturekit-rs provides Rust bindings for ScreenCaptureKit (macOS 13.0+)
 # Enables: display/window enumeration, system audio capture, GPU-accelerated video
 screencapturekit = "1.5"
-# TODO: Integrate objc2 for OBS-parity camera-audio pairing via associatedPersistentID
-# objc2 = "0.5"
-# block2 = "0.5"
+# Objective-C runtime bindings for NSProcessInfo (App Nap, Low Power Mode)
+# Also needed for OBS-parity camera-audio pairing via associatedPersistentID
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSProcessInfo", "NSString"] }
 
 [build-dependencies]
 serde_json = "1.0"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 2
 
 [profile.release]
 lto = true

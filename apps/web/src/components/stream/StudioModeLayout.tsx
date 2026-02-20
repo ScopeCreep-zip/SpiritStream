@@ -3,7 +3,7 @@
  * Dual-pane layout with Preview (editable) and Program (live) canvases
  * Supports right-click projector context menus for Preview and Program
  */
-import { useMemo, useCallback, useState } from 'react';
+import React, { useMemo, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SceneCanvas } from './SceneCanvas';
 import { TakeButton } from './TakeButton';
@@ -14,6 +14,7 @@ import { ProjectorContextMenu, useContextMenu } from '@/components/ui/ProjectorC
 import { useStudioStore } from '@/stores/studioStore';
 import { useTransitionStore } from '@/stores/transitionStore';
 import type { Profile, Source } from '@/types/profile';
+import { useShallow } from 'zustand/shallow';
 
 interface StudioModeLayoutProps {
   profile: Profile;
@@ -22,21 +23,29 @@ interface StudioModeLayoutProps {
   onSelectLayer: (layerId: string | null) => void;
 }
 
-export function StudioModeLayout({
+export const StudioModeLayout = React.memo(function StudioModeLayout({
   profile,
   sources,
   selectedLayerId,
   onSelectLayer,
 }: StudioModeLayoutProps) {
   const { t } = useTranslation();
-  const { previewSceneId, programSceneId, executeTake } = useStudioStore();
+  const { previewSceneId, programSceneId, executeTake } = useStudioStore(
+    useShallow(s => ({
+      previewSceneId: s.previewSceneId,
+      programSceneId: s.programSceneId,
+      executeTake: s.executeTake
+    }))
+  );
   const { isTransitioning } = useTransitionStore();
 
   // Context menu state
   const [contextMenuType, setContextMenuType] = useState<'preview' | 'program' | null>(null);
   const projectorContextMenu = useContextMenu();
 
-  // Find the scenes
+  // Find the scenes — depend on profile.scenes for correctness but the useMemo
+  // prevents re-computation when the scene ID hasn't changed and the scenes
+  // array reference is the same (which it is after the Stream.tsx memoization fix)
   const previewScene = useMemo(
     () => profile.scenes.find((s) => s.id === previewSceneId),
     [profile.scenes, previewSceneId]
@@ -132,4 +141,4 @@ export function StudioModeLayout({
       )}
     </div>
   );
-}
+});

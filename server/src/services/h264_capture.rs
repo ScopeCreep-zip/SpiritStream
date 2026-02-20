@@ -7,9 +7,10 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
+use parking_lot::Mutex;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use bytes::Bytes;
 use scap::capturer::Resolution;
@@ -17,10 +18,78 @@ use scap::frame::Frame;
 use tokio::sync::broadcast;
 
 use super::screen_capture::{ScreenCaptureConfig, ScreenCaptureService};
+use super::frame_processing::{get_frame_dimensions, extract_frame_data};
 use crate::models::ScreenCaptureSource;
+use crate::services::ActivityAssertion;
 
 const DEFAULT_CHANNEL_CAPACITY: usize = 64;
-const ORPHAN_TIMEOUT_SECS: u64 = 60;
+const ORPHAN_TIMEOUT_SECS: u64 = 30;
+/// Default max hardware encoder sessions.
+/// Apple Silicon (M1/M2): 3 concurrent VideoToolbox sessions.
+/// Intel Macs: 1 attempt max — HW encoding is unreliable, graceful fallback to libx264.
+const DEFAULT_HW_ENCODER_MAX: u8 = if cfg!(target_arch = "aarch64") { 3 } else { 1 };
+
+use std::sync::atomic::AtomicU8;
+
+/// Tracks hardware video encoder session budget.
+/// M1/M2 Macs support ~3-4 concurrent VideoToolbox H264 sessions.
+/// Exceeding this causes silent degradation or failure.
+pub struct HwEncoderBudget {
+    max_sessions: AtomicU8,
+    active_sessions: Arc<AtomicU8>,
+}
+
+impl HwEncoderBudget {
+    pub fn new(max: u8) -> Self {
+        Self {
+            max_sessions: AtomicU8::new(max),
+            active_sessions: Arc::new(AtomicU8::new(0)),
+        }
+    }
+
+    /// Try to acquire a hardware encoder session.
+    /// Returns a RAII guard that releases on drop, or None if budget exhausted.
+    pub fn try_acquire(&self) -> Option<HwSessionGuard> {
+        loop {
+            let current = self.active_sessions.load(Ordering::SeqCst);
+            let max = self.max_sessions.load(Ordering::Relaxed);
+            if current >= max {
+                return None;
+            }
+            if self.active_sessions.compare_exchange(
+                current, current + 1, Ordering::SeqCst, Ordering::SeqCst
+            ).is_ok() {
+                return Some(HwSessionGuard { active_sessions: Arc::clone(&self.active_sessions) });
+            }
+        }
+    }
+
+    /// Get count of active hardware sessions
+    pub fn active_count(&self) -> u8 {
+        self.active_sessions.load(Ordering::Relaxed)
+    }
+}
+
+/// RAII guard that releases a hardware encoder session on drop.
+/// Owns an Arc to the counter so it can be moved into threads.
+pub struct HwSessionGuard {
+    active_sessions: Arc<AtomicU8>,
+}
+
+impl Drop for HwSessionGuard {
+    fn drop(&mut self) {
+        self.active_sessions.fetch_sub(1, Ordering::SeqCst);
+        log::debug!("Released HW encoder session (active: {})", self.active_sessions.load(Ordering::Relaxed));
+    }
+}
+
+/// Get current epoch millis for atomic timestamp
+fn now_epoch_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
 
 /// Active H264 capture session
 struct H264CaptureSession {
@@ -28,8 +97,8 @@ struct H264CaptureSession {
     stop_flag: Arc<AtomicBool>,
     /// Output broadcast sender (for HTTP mode)
     output_tx: Option<broadcast::Sender<Bytes>>,
-    /// Last time this session was accessed
-    last_accessed: Arc<Mutex<Instant>>,
+    /// Last access time as epoch millis (lock-free)
+    last_accessed: Arc<AtomicU64>,
     /// Screen capture thread handle
     _capture_handle: std::thread::JoinHandle<()>,
     /// Width of captured frames
@@ -38,6 +107,8 @@ struct H264CaptureSession {
     height: u32,
     /// Display ID for stopping the underlying screen capture
     display_id: u32,
+    /// RAII guard for hardware encoder budget (releases slot on session drop)
+    _hw_guard: Option<HwSessionGuard>,
 }
 
 /// Configuration for H264 encoding
@@ -55,11 +126,23 @@ pub struct H264EncodingConfig {
 
 impl Default for H264EncodingConfig {
     fn default() -> Self {
-        Self {
-            bitrate_kbps: 4000,
-            keyframe_interval: 5, // ~160ms at 30fps for faster preview switching
-            preset: "ultrafast".to_string(),
-            use_hw_accel: true,
+        // Intel Macs: default to software encoding at lower bitrate.
+        // VideoToolbox on Intel silently falls back to CPU-based encoding
+        // at hardware-quality settings (4000kbps), wasting 15-25% CPU per session.
+        if cfg!(target_arch = "x86_64") {
+            Self {
+                bitrate_kbps: 2000,
+                keyframe_interval: 5,
+                preset: "ultrafast".to_string(),
+                use_hw_accel: false,
+            }
+        } else {
+            Self {
+                bitrate_kbps: 4000,
+                keyframe_interval: 5, // ~160ms at 30fps for faster preview switching
+                preset: "ultrafast".to_string(),
+                use_hw_accel: true,
+            }
         }
     }
 }
@@ -69,6 +152,12 @@ pub struct H264CaptureService {
     sessions: Mutex<HashMap<String, H264CaptureSession>>,
     screen_capture: Arc<ScreenCaptureService>,
     ffmpeg_path: String,
+    /// Handle to the background cleanup task for clean shutdown
+    cleanup_handle: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// Prevents macOS App Nap from throttling H264 capture threads
+    activity_assertion: Mutex<Option<ActivityAssertion>>,
+    /// Hardware encoder session budget (VideoToolbox slots)
+    hw_budget: HwEncoderBudget,
 }
 
 impl H264CaptureService {
@@ -78,6 +167,40 @@ impl H264CaptureService {
             sessions: Mutex::new(HashMap::new()),
             screen_capture,
             ffmpeg_path,
+            cleanup_handle: std::sync::Mutex::new(None),
+            activity_assertion: Mutex::new(None),
+            hw_budget: HwEncoderBudget::new(DEFAULT_HW_ENCODER_MAX),
+        }
+    }
+
+    /// Get the hardware encoder budget (for external monitoring)
+    pub fn hw_budget(&self) -> &HwEncoderBudget {
+        &self.hw_budget
+    }
+
+    /// Acquire App Nap prevention when first capture starts
+    fn acquire_activity_assertion(&self) {
+        {
+            let mut guard = self.activity_assertion.lock();
+            if guard.is_none() {
+                match ActivityAssertion::begin("SpiritStream H264 capture active") {
+                    Ok(assertion) => *guard = Some(assertion),
+                    Err(e) => log::warn!("Failed to acquire H264 activity assertion: {}", e),
+                }
+            }
+        }
+    }
+
+    /// Release App Nap prevention when all captures stop
+    fn release_activity_assertion_if_idle(&self) {
+        let is_empty = self.sessions.lock().is_empty();
+        if is_empty {
+            {
+            let mut guard = self.activity_assertion.lock();
+                if guard.take().is_some() {
+                    log::info!("Released H264 capture activity assertion");
+                }
+            }
         }
     }
 
@@ -89,17 +212,37 @@ impl H264CaptureService {
         rtsp_url: String,
         encoding_config: Option<H264EncodingConfig>,
     ) -> Result<(), String> {
+        self.acquire_activity_assertion();
         let source_id = source.id.clone();
-        let encoding = encoding_config.unwrap_or_default();
+        let mut encoding = encoding_config.unwrap_or_default();
 
         // Check if already capturing
         {
-            let sessions = self.sessions.lock().unwrap();
+            let sessions = self.sessions.lock();
             if sessions.contains_key(&source_id) {
                 log::debug!("H264 capture already running for {}", source_id);
                 return Ok(());
             }
         }
+
+        // Check HW encoder budget — fall back to software if exhausted
+        let hw_guard = if encoding.use_hw_accel {
+            match self.hw_budget.try_acquire() {
+                Some(guard) => {
+                    log::info!("Acquired HW encoder slot (active: {})", self.hw_budget.active_count());
+                    Some(guard)
+                }
+                None => {
+                    log::warn!("HW encoder budget exhausted ({} active), falling back to libx264 ultrafast",
+                        self.hw_budget.active_count());
+                    encoding.use_hw_accel = false;
+                    encoding.preset = "ultrafast".to_string();
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
         let start_time = Instant::now();
         log::info!("Starting H264 capture for source: {} (RTSP: {})", source_id, rtsp_url);
@@ -133,7 +276,7 @@ impl H264CaptureService {
 
         // Create session state
         let stop_flag = Arc::new(AtomicBool::new(false));
-        let last_accessed = Arc::new(Mutex::new(Instant::now()));
+        let last_accessed = Arc::new(AtomicU64::new(now_epoch_millis()));
 
         // Clone values for the capture thread
         let stop_flag_clone = stop_flag.clone();
@@ -145,8 +288,9 @@ impl H264CaptureService {
 
         // Spawn the capture + encoding thread
         let capture_handle = std::thread::spawn(move || {
-            run_capture_encoding_loop(
+            run_encoding_loop(
                 frame_rx,
+                OutputMode::Rtsp(rtsp_url),
                 stop_flag_clone,
                 last_accessed_clone,
                 ffmpeg_path,
@@ -156,13 +300,12 @@ impl H264CaptureService {
                 encoding,
                 source_id_clone,
                 capture_audio,
-                rtsp_url,
             );
         });
 
-        // Store the session
+        // Store the session (hw_guard lives as long as the session)
         {
-            let mut sessions = self.sessions.lock().unwrap();
+            let mut sessions = self.sessions.lock();
             sessions.insert(
                 source_id.clone(),
                 H264CaptureSession {
@@ -173,6 +316,7 @@ impl H264CaptureService {
                     width,
                     height,
                     display_id: scap_display_id,
+                    _hw_guard: hw_guard,
                 },
             );
         }
@@ -194,19 +338,39 @@ impl H264CaptureService {
         source: &ScreenCaptureSource,
         encoding_config: Option<H264EncodingConfig>,
     ) -> Result<broadcast::Receiver<Bytes>, String> {
+        self.acquire_activity_assertion();
         let source_id = source.id.clone();
-        let encoding = encoding_config.unwrap_or_default();
+        let mut encoding = encoding_config.unwrap_or_default();
 
         // Check if already capturing
         {
-            let sessions = self.sessions.lock().unwrap();
+            let sessions = self.sessions.lock();
             if let Some(session) = sessions.get(&source_id) {
                 if let Some(ref tx) = session.output_tx {
-                    *session.last_accessed.lock().unwrap() = Instant::now();
+                    session.last_accessed.store(now_epoch_millis(), Ordering::Relaxed);
                     return Ok(tx.subscribe());
                 }
             }
         }
+
+        // Check HW encoder budget — fall back to software if exhausted
+        let hw_guard = if encoding.use_hw_accel {
+            match self.hw_budget.try_acquire() {
+                Some(guard) => {
+                    log::info!("Acquired HW encoder slot for HTTP (active: {})", self.hw_budget.active_count());
+                    Some(guard)
+                }
+                None => {
+                    log::warn!("HW encoder budget exhausted ({} active), falling back to libx264 ultrafast",
+                        self.hw_budget.active_count());
+                    encoding.use_hw_accel = false;
+                    encoding.preset = "ultrafast".to_string();
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
         let start_time = Instant::now();
         log::info!("Starting H264 capture for source: {} (HTTP mode)", source_id);
@@ -243,7 +407,7 @@ impl H264CaptureService {
 
         // Create session state
         let stop_flag = Arc::new(AtomicBool::new(false));
-        let last_accessed = Arc::new(Mutex::new(Instant::now()));
+        let last_accessed = Arc::new(AtomicU64::new(now_epoch_millis()));
 
         // Clone values for the capture thread
         let stop_flag_clone = stop_flag.clone();
@@ -254,11 +418,11 @@ impl H264CaptureService {
         let source_id_clone = source_id.clone();
         let capture_audio = source.capture_audio;
 
-        // Spawn the capture + encoding thread (HTTP mode - empty RTSP URL)
+        // Spawn the capture + encoding thread (HTTP mode)
         let capture_handle = std::thread::spawn(move || {
-            run_capture_encoding_loop_http(
+            run_encoding_loop(
                 frame_rx,
-                output_tx_clone,
+                OutputMode::Http(output_tx_clone),
                 stop_flag_clone,
                 last_accessed_clone,
                 ffmpeg_path,
@@ -271,9 +435,9 @@ impl H264CaptureService {
             );
         });
 
-        // Store the session
+        // Store the session (hw_guard lives as long as the session)
         {
-            let mut sessions = self.sessions.lock().unwrap();
+            let mut sessions = self.sessions.lock();
             sessions.insert(
                 source_id.clone(),
                 H264CaptureSession {
@@ -284,6 +448,7 @@ impl H264CaptureService {
                     width,
                     height,
                     display_id: scap_display_id,
+                    _hw_guard: hw_guard,
                 },
             );
         }
@@ -307,10 +472,10 @@ impl H264CaptureService {
 
         // Check for existing session first
         {
-            let sessions = self.sessions.lock().unwrap();
+            let sessions = self.sessions.lock();
             if let Some(session) = sessions.get(source_id) {
                 if let Some(ref tx) = session.output_tx {
-                    *session.last_accessed.lock().unwrap() = Instant::now();
+                    session.last_accessed.store(now_epoch_millis(), Ordering::Relaxed);
                     return Ok(tx.subscribe());
                 }
             }
@@ -324,10 +489,10 @@ impl H264CaptureService {
     /// Returns a new subscriber if the stream exists, None otherwise.
     /// This is used by the HTTP streaming endpoint to serve data to go2rtc.
     pub fn subscribe_to_stream(&self, source_id: &str) -> Option<broadcast::Receiver<Bytes>> {
-        let sessions = self.sessions.lock().unwrap();
+        let sessions = self.sessions.lock();
         if let Some(session) = sessions.get(source_id) {
             if let Some(ref tx) = session.output_tx {
-                *session.last_accessed.lock().unwrap() = Instant::now();
+                session.last_accessed.store(now_epoch_millis(), Ordering::Relaxed);
                 return Some(tx.subscribe());
             }
         }
@@ -336,44 +501,56 @@ impl H264CaptureService {
 
     /// Check if a capture session is active
     pub fn is_capturing(&self, source_id: &str) -> bool {
-        let sessions = self.sessions.lock().unwrap();
+        let sessions = self.sessions.lock();
         sessions.contains_key(source_id)
     }
 
     /// Stop a capture session
     pub fn stop_capture(&self, source_id: &str) -> Result<(), String> {
-        let mut sessions = self.sessions.lock().unwrap();
+        {
+            let mut sessions = self.sessions.lock();
 
-        if let Some(session) = sessions.remove(source_id) {
-            log::info!("Stopping H264 capture for source: {}", source_id);
-            session.stop_flag.store(true, Ordering::SeqCst);
+            if let Some(session) = sessions.remove(source_id) {
+                log::info!("Stopping H264 capture for source: {}", source_id);
+                session.stop_flag.store(true, Ordering::SeqCst);
 
-            // Also stop the underlying screen capture using the stored display_id
-            let capture_id = format!("display_{}", session.display_id);
-            let _ = self.screen_capture.stop_capture(&capture_id);
-
-            Ok(())
-        } else {
-            Err(format!("No active capture for source: {}", source_id))
+                // Also stop the underlying screen capture using the stored display_id
+                let capture_id = format!("display_{}", session.display_id);
+                let _ = self.screen_capture.stop_capture(&capture_id);
+            } else {
+                return Err(format!("No active capture for source: {}", source_id));
+            }
         }
+        self.release_activity_assertion_if_idle();
+        Ok(())
     }
 
     /// Stop all capture sessions
     pub fn stop_all(&self) {
-        let mut sessions = self.sessions.lock().unwrap();
+        {
+            let mut sessions = self.sessions.lock();
 
-        for (source_id, session) in sessions.drain() {
-            log::info!("Stopping H264 capture for source: {}", source_id);
-            session.stop_flag.store(true, Ordering::SeqCst);
+            for (source_id, session) in sessions.drain() {
+                log::info!("Stopping H264 capture for source: {}", source_id);
+                session.stop_flag.store(true, Ordering::SeqCst);
+            }
         }
 
         // Also stop all screen captures
         self.screen_capture.stop_all();
+
+        // Release activity assertion
+        {
+            let mut guard = self.activity_assertion.lock();
+            if guard.take().is_some() {
+                log::info!("Released H264 capture activity assertion (stop_all)");
+            }
+        }
     }
 
     /// Get info about active captures
     pub fn active_captures(&self) -> Vec<(String, u32, u32)> {
-        let sessions = self.sessions.lock().unwrap();
+        let sessions = self.sessions.lock();
         sessions
             .iter()
             .map(|(id, session)| (id.clone(), session.width, session.height))
@@ -382,15 +559,15 @@ impl H264CaptureService {
 
     /// Clean up orphaned sessions that have been inactive too long
     pub fn cleanup_orphans(&self) {
-        let mut sessions = self.sessions.lock().unwrap();
-        let now = Instant::now();
+        let mut sessions = self.sessions.lock();
+        let now_millis = now_epoch_millis();
 
         let orphans: Vec<String> = sessions
             .iter()
             .filter(|(_, session)| {
-                let last = *session.last_accessed.lock().unwrap();
+                let last_millis = session.last_accessed.load(Ordering::Relaxed);
                 // Check if timeout exceeded since last access
-                now.duration_since(last).as_secs() > ORPHAN_TIMEOUT_SECS
+                now_millis.saturating_sub(last_millis) > ORPHAN_TIMEOUT_SECS * 1000
             })
             .map(|(id, _)| id.clone())
             .collect();
@@ -399,6 +576,34 @@ impl H264CaptureService {
             if let Some(session) = sessions.remove(&source_id) {
                 log::info!("Cleaning up orphaned H264 capture: {}", source_id);
                 session.stop_flag.store(true, Ordering::SeqCst);
+                // Also stop the underlying screen capture
+                let capture_id = format!("display_{}", session.display_id);
+                let _ = self.screen_capture.stop_capture(&capture_id);
+            }
+        }
+    }
+
+    /// Start a background task that periodically cleans up orphaned sessions.
+    /// Should be called once during service initialization.
+    pub fn start_cleanup_task(self: &Arc<Self>) {
+        let service = Arc::clone(self);
+        let handle = tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(10));
+            loop {
+                interval.tick().await;
+                service.cleanup_orphans();
+            }
+        });
+        if let Ok(mut h) = self.cleanup_handle.lock() {
+            *h = Some(handle);
+        }
+    }
+
+    /// Stop the background cleanup task
+    pub fn stop_cleanup_task(&self) {
+        if let Ok(mut h) = self.cleanup_handle.lock() {
+            if let Some(handle) = h.take() {
+                handle.abort();
             }
         }
     }
@@ -492,286 +697,46 @@ impl H264CaptureService {
 
 impl Drop for H264CaptureService {
     fn drop(&mut self) {
+        self.stop_cleanup_task();
         self.stop_all();
     }
 }
 
-/// Main capture and encoding loop running in a separate thread (RTSP output mode)
-fn run_capture_encoding_loop(
-    mut frame_rx: broadcast::Receiver<Arc<Frame>>,
-    stop_flag: Arc<AtomicBool>,
-    last_accessed: Arc<Mutex<Instant>>,
-    ffmpeg_path: String,
-    initial_width: u32,
-    initial_height: u32,
-    fps: u32,
-    encoding: H264EncodingConfig,
-    source_id: String,
-    capture_audio: bool,
-    rtsp_output_url: String,
-) {
-    // H264 encoding is latency-sensitive — schedule on P-cores
-    crate::services::thread_config::set_thread_qos(crate::services::thread_config::QosClass::UserInitiated);
-    let encoding_start = Instant::now();
-
-    // Wait for the first frame to get actual dimensions
-    let (width, height) = match wait_for_first_frame(&mut frame_rx, &stop_flag) {
-        Some((w, h)) => (w, h),
-        None => {
-            log::warn!("No frames received for H264 capture: {}", source_id);
-            return;
-        }
-    };
-
-    // Cap resolution at 1280x720 for low latency (matches camera resolution)
-    // Higher resolutions (1920x1080, 2560x1440) cause significant encoding latency
-    let (target_width, target_height, needs_scale) = if width > 1280 || height > 720 {
-        // Scale down maintaining aspect ratio
-        let scale_w = 1280.0 / width as f64;
-        let scale_h = 720.0 / height as f64;
-        let scale = scale_w.min(scale_h);
-        // Round to even numbers for YUV420p compatibility
-        let new_w = ((width as f64 * scale) as u32 / 2) * 2;
-        let new_h = ((height as f64 * scale) as u32 / 2) * 2;
-        log::info!(
-            "Capping resolution from {}x{} to {}x{} for low latency",
-            width, height, new_w, new_h
-        );
-        (new_w, new_h, true)
-    } else {
-        (width, height, false)
-    };
-
-    log::debug!(
-        "[{:?}] First frame received for {}: {}x{} -> {}x{} (initial estimate was {}x{}, RTSP output)",
-        encoding_start.elapsed(),
-        source_id, width, height, target_width, target_height, initial_width, initial_height
-    );
-
-    // Build FFmpeg command for encoding
-    // Use low-latency flags to reduce startup time
-    let mut ffmpeg_args = vec![
-        "-hide_banner".to_string(),
-        "-v".to_string(),
-        "error".to_string(),
-        "-fflags".to_string(),
-        "+genpts+nobuffer".to_string(), // Generate PTS, minimize buffering
-        "-flags".to_string(),
-        "low_delay".to_string(),
-        // Input 0: raw video from stdin
-        "-f".to_string(),
-        "rawvideo".to_string(),
-        "-pix_fmt".to_string(),
-        "bgra".to_string(),
-        "-s".to_string(),
-        format!("{}x{}", width, height),
-        "-r".to_string(),
-        fps.to_string(),
-        "-i".to_string(),
-        "pipe:0".to_string(),
-    ];
-
-    // Screen capture audio: Currently NOT capturing from default mic (:0)
-    // Screen audio should come from ScreenCaptureKit (macOS 12.3+), not the microphone
-    // TODO: Integrate ScreenCaptureKit audio capture when scap supports it
-    if capture_audio {
-        log::info!("Screen capture audio requested but not yet implemented - requires ScreenCaptureKit audio integration");
-        // Do NOT add audio input here - capturing from :0/default would use the mic, not screen audio
-    }
-
-    // Add scale filter if resolution needs capping
-    if needs_scale {
-        ffmpeg_args.extend([
-            "-vf".to_string(),
-            format!("scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:(ow-iw)/2:(oh-ih)/2",
-                    target_width, target_height, target_width, target_height),
-        ]);
-    }
-
-    // Add video encoder settings with low-latency focus
-    if encoding.use_hw_accel && cfg!(target_os = "macos") {
-        // Use VideoToolbox hardware encoder on macOS with low-latency settings
-        ffmpeg_args.extend([
-            "-c:v".to_string(),
-            "h264_videotoolbox".to_string(),
-            "-realtime".to_string(),
-            "1".to_string(),
-            "-prio_speed".to_string(),
-            "1".to_string(), // Prioritize speed over quality for lower latency
-            "-allow_sw".to_string(),
-            "1".to_string(), // Fallback to software if HW unavailable
-            "-profile:v".to_string(),
-            "baseline".to_string(), // Faster encoding, simpler profile
-            "-level".to_string(),
-            "3.1".to_string(),
-        ]);
-    } else {
-        // Use libx264 software encoder with zerolatency tune
-        ffmpeg_args.extend([
-            "-c:v".to_string(),
-            "libx264".to_string(),
-            "-preset".to_string(),
-            encoding.preset.clone(),
-            "-tune".to_string(),
-            "zerolatency".to_string(),
-            "-profile:v".to_string(),
-            "baseline".to_string(),
-        ]);
-    }
-
-    // Video encoding options
-    ffmpeg_args.extend([
-        "-g".to_string(),
-        encoding.keyframe_interval.to_string(),
-        "-b:v".to_string(),
-        format!("{}k", encoding.bitrate_kbps),
-        "-maxrate".to_string(),
-        format!("{}k", encoding.bitrate_kbps * 2),
-        "-bufsize".to_string(),
-        format!("{}k", encoding.bitrate_kbps),
-        "-pix_fmt".to_string(),
-        "yuv420p".to_string(),
-        // Color space metadata for correct YUV-to-RGB conversion in browsers
-        // Without this, browsers may use BT.601 instead of BT.709, causing green/pink tint
-        "-colorspace".to_string(),
-        "bt709".to_string(),
-        "-color_primaries".to_string(),
-        "bt709".to_string(),
-        "-color_trc".to_string(),
-        "bt709".to_string(),
-        // Limited range (16-235) as expected by most decoders - prevents green tint
-        "-color_range".to_string(),
-        "tv".to_string(),
-    ]);
-
-    // Disable audio - screen capture audio requires ScreenCaptureKit integration (not yet implemented)
-    // When ScreenCaptureKit audio is available, this can be updated to encode captured audio
-    ffmpeg_args.push("-an".to_string());
-
-    // Output: RTSP push to go2rtc (low latency passthrough)
-    ffmpeg_args.extend([
-        "-rtsp_transport".to_string(),
-        "tcp".to_string(),
-        "-f".to_string(),
-        "rtsp".to_string(),
-        rtsp_output_url.clone(),
-    ]);
-    log::info!("FFmpeg outputting to RTSP: {}", rtsp_output_url);
-
-    log::debug!("FFmpeg command: {} {:?}", ffmpeg_path, ffmpeg_args);
-
-    // Spawn FFmpeg process (RTSP mode - no stdout needed)
-    let mut ffmpeg = match Command::new(&ffmpeg_path)
-        .args(&ffmpeg_args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
-        Ok(child) => child,
-        Err(e) => {
-            log::error!("Failed to spawn FFmpeg for H264 capture: {}", e);
-            return;
-        }
-    };
-
-    let ffmpeg_pid = ffmpeg.id();
-    log::info!(
-        "[{:?}] FFmpeg started for H264 capture (PID: {}, RTSP passthrough)",
-        encoding_start.elapsed(),
-        ffmpeg_pid
-    );
-
-    let mut stdin = ffmpeg.stdin.take().expect("Failed to get FFmpeg stdin");
-
-    // Main loop: read frames and write to FFmpeg stdin
-    let frame_size = (width * height * 4) as usize; // BGRA = 4 bytes per pixel
-
-    while !stop_flag.load(Ordering::SeqCst) {
-        // Update last accessed
-        *last_accessed.lock().unwrap() = Instant::now();
-
-        // Use blocking_recv() since we're in a sync thread
-        match frame_rx.blocking_recv() {
-            Ok(frame) => {
-                // Extract raw frame data
-                if let Some(data) = extract_frame_data(&frame, frame_size) {
-                    if let Err(e) = stdin.write_all(&data) {
-                        log::error!("Failed to write frame to FFmpeg: {}", e);
-                        break;
-                    }
-                }
-            }
-            Err(broadcast::error::RecvError::Lagged(n)) => {
-                log::warn!("H264 capture lagged by {} frames for {}", n, source_id);
-                // Continue processing
-            }
-            Err(broadcast::error::RecvError::Closed) => {
-                log::info!("Screen capture channel closed for {}", source_id);
-                break;
-            }
-        }
-    }
-
-    // Cleanup
-    log::info!("Stopping H264 capture encoding loop for {}", source_id);
-
-    // Close stdin to signal FFmpeg to finish
-    drop(stdin);
-
-    // Wait for FFmpeg to exit
-    let _ = ffmpeg.wait();
-
-    log::info!("H264 capture stopped for {}", source_id);
+/// Output mode for H264 encoding — determines how FFmpeg output is handled
+enum OutputMode {
+    /// RTSP push to go2rtc (stdout null, no output reader)
+    Rtsp(String),
+    /// HTTP/MPEG-TS output via broadcast channel (stdout piped, output reader thread)
+    Http(broadcast::Sender<Bytes>),
 }
 
-/// Main capture and encoding loop for HTTP/MPEG-TS output mode
-fn run_capture_encoding_loop_http(
-    mut frame_rx: broadcast::Receiver<Arc<Frame>>,
-    output_tx: broadcast::Sender<Bytes>,
-    stop_flag: Arc<AtomicBool>,
-    last_accessed: Arc<Mutex<Instant>>,
-    ffmpeg_path: String,
-    initial_width: u32,
-    initial_height: u32,
-    fps: u32,
-    encoding: H264EncodingConfig,
-    source_id: String,
-    capture_audio: bool,
-) {
-    // H264 encoding is latency-sensitive — schedule on P-cores
-    crate::services::thread_config::set_thread_qos(crate::services::thread_config::QosClass::UserInitiated);
-    let encoding_start = Instant::now();
-
-    // Wait for the first frame to get actual dimensions
-    let (width, height) = match wait_for_first_frame(&mut frame_rx, &stop_flag) {
-        Some((w, h)) => (w, h),
-        None => {
-            log::warn!("No frames received for H264 capture: {}", source_id);
-            return;
-        }
-    };
-
-    // Cap resolution at 1280x720 for low latency
-    let (target_width, target_height, needs_scale) = if width > 1280 || height > 720 {
-        let scale_w = 1280.0 / width as f64;
-        let scale_h = 720.0 / height as f64;
-        let scale = scale_w.min(scale_h);
+/// Cap resolution to 1280x720 for low-latency encoding.
+/// Returns (target_width, target_height, needs_scale).
+fn cap_resolution(width: u32, height: u32) -> (u32, u32, bool) {
+    if width > 1280 || height > 720 {
+        let scale = (1280.0 / width as f64).min(720.0 / height as f64);
+        // Round to even numbers for YUV420p compatibility
         let new_w = ((width as f64 * scale) as u32 / 2) * 2;
         let new_h = ((height as f64 * scale) as u32 / 2) * 2;
         log::info!("Capping resolution from {}x{} to {}x{} for low latency", width, height, new_w, new_h);
         (new_w, new_h, true)
     } else {
         (width, height, false)
-    };
+    }
+}
 
-    log::debug!(
-        "[{:?}] First frame received for {}: {}x{} -> {}x{} (initial estimate was {}x{}, HTTP/MPEG-TS mode)",
-        encoding_start.elapsed(), source_id, width, height, target_width, target_height, initial_width, initial_height
-    );
-
-    // Build FFmpeg command
-    let mut ffmpeg_args = vec![
+/// Build common FFmpeg args shared between RTSP and HTTP output modes
+fn build_common_ffmpeg_args(
+    width: u32,
+    height: u32,
+    fps: u32,
+    encoding: &H264EncodingConfig,
+    needs_scale: bool,
+    target_width: u32,
+    target_height: u32,
+    capture_audio: bool,
+) -> Vec<String> {
+    let mut args = vec![
         "-hide_banner".to_string(),
         "-v".to_string(), "error".to_string(),
         "-fflags".to_string(), "+genpts+nobuffer".to_string(),
@@ -783,31 +748,30 @@ fn run_capture_encoding_loop_http(
         "-i".to_string(), "pipe:0".to_string(),
     ];
 
-    // Screen capture audio: Do NOT capture from default mic
-    // Screen audio should come from ScreenCaptureKit, not microphone input
     if capture_audio {
-        log::info!("Screen capture audio requested but not yet implemented");
+        log::info!("Screen capture audio requested but not yet implemented - requires ScreenCaptureKit audio integration");
     }
 
-    // Scale filter if needed
     if needs_scale {
-        ffmpeg_args.extend(["-vf".to_string(),
+        args.extend([
+            "-vf".to_string(),
             format!("scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:(ow-iw)/2:(oh-ih)/2",
-                    target_width, target_height, target_width, target_height)]);
+                    target_width, target_height, target_width, target_height),
+        ]);
     }
 
-    // Video encoder
+    // Video encoder — HW (VideoToolbox) or SW (libx264)
     if encoding.use_hw_accel && cfg!(target_os = "macos") {
-        ffmpeg_args.extend([
+        args.extend([
             "-c:v".to_string(), "h264_videotoolbox".to_string(),
             "-realtime".to_string(), "1".to_string(),
             "-prio_speed".to_string(), "1".to_string(),
-            "-allow_sw".to_string(), "1".to_string(),
+            "-allow_sw".to_string(), "0".to_string(),
             "-profile:v".to_string(), "baseline".to_string(),
             "-level".to_string(), "3.1".to_string(),
         ]);
     } else {
-        ffmpeg_args.extend([
+        args.extend([
             "-c:v".to_string(), "libx264".to_string(),
             "-preset".to_string(), encoding.preset.clone(),
             "-tune".to_string(), "zerolatency".to_string(),
@@ -815,8 +779,8 @@ fn run_capture_encoding_loop_http(
         ]);
     }
 
-    // Encoding options with color space metadata
-    ffmpeg_args.extend([
+    // Encoding options with BT.709 color space metadata
+    args.extend([
         "-g".to_string(), encoding.keyframe_interval.to_string(),
         "-b:v".to_string(), format!("{}k", encoding.bitrate_kbps),
         "-maxrate".to_string(), format!("{}k", encoding.bitrate_kbps * 2),
@@ -828,78 +792,151 @@ fn run_capture_encoding_loop_http(
         "-color_range".to_string(), "tv".to_string(),
     ]);
 
-    // Disable audio - screen capture audio requires ScreenCaptureKit integration
-    ffmpeg_args.push("-an".to_string());
+    // Disable audio — screen capture audio requires ScreenCaptureKit integration
+    args.push("-an".to_string());
 
-    // MPEG-TS output to stdout
-    ffmpeg_args.extend([
-        "-flush_packets".to_string(), "1".to_string(),
-        "-f".to_string(), "mpegts".to_string(),
-        "-muxdelay".to_string(), "0".to_string(),
-        "pipe:1".to_string(),
-    ]);
+    args
+}
+
+/// Unified capture and encoding loop for both RTSP and HTTP/MPEG-TS output modes.
+/// The two modes share 90%+ identical code — only FFmpeg output config and
+/// stdout handling differ, controlled by the `OutputMode` enum.
+fn run_encoding_loop(
+    mut frame_rx: broadcast::Receiver<Arc<Frame>>,
+    output: OutputMode,
+    stop_flag: Arc<AtomicBool>,
+    last_accessed: Arc<AtomicU64>,
+    ffmpeg_path: String,
+    initial_width: u32,
+    initial_height: u32,
+    fps: u32,
+    encoding: H264EncodingConfig,
+    source_id: String,
+    capture_audio: bool,
+) {
+    crate::services::thread_config::set_thread_qos(crate::services::thread_config::QosClass::UserInitiated);
+    let encoding_start = Instant::now();
+
+    let mode_label = match &output {
+        OutputMode::Rtsp(_) => "RTSP",
+        OutputMode::Http(_) => "HTTP/MPEG-TS",
+    };
+
+    // Wait for the first frame to get actual dimensions
+    let (width, height) = match wait_for_first_frame(&mut frame_rx, &stop_flag) {
+        Some((w, h)) => (w, h),
+        None => {
+            log::warn!("No frames received for H264 capture: {}", source_id);
+            return;
+        }
+    };
+
+    let (target_width, target_height, needs_scale) = cap_resolution(width, height);
+
+    log::debug!(
+        "[{:?}] First frame for {}: {}x{} -> {}x{} (estimate {}x{}, {} mode)",
+        encoding_start.elapsed(), source_id, width, height,
+        target_width, target_height, initial_width, initial_height, mode_label
+    );
+
+    // Build common FFmpeg args, then append output-specific args
+    let mut ffmpeg_args = build_common_ffmpeg_args(
+        width, height, fps, &encoding, needs_scale, target_width, target_height, capture_audio,
+    );
+
+    match &output {
+        OutputMode::Rtsp(url) => {
+            ffmpeg_args.extend([
+                "-rtsp_transport".to_string(), "tcp".to_string(),
+                "-f".to_string(), "rtsp".to_string(),
+                url.clone(),
+            ]);
+            log::info!("FFmpeg outputting to RTSP: {}", url);
+        }
+        OutputMode::Http(_) => {
+            ffmpeg_args.extend([
+                "-flush_packets".to_string(), "1".to_string(),
+                "-f".to_string(), "mpegts".to_string(),
+                "-muxdelay".to_string(), "0".to_string(),
+                "pipe:1".to_string(),
+            ]);
+        }
+    }
 
     log::debug!("FFmpeg command: {} {:?}", ffmpeg_path, ffmpeg_args);
 
-    // Spawn FFmpeg
+    // Spawn FFmpeg — stdout piped only for HTTP mode
+    let stdout_cfg = match &output {
+        OutputMode::Rtsp(_) => Stdio::null(),
+        OutputMode::Http(_) => Stdio::piped(),
+    };
+
     let mut ffmpeg = match Command::new(&ffmpeg_path)
         .args(&ffmpeg_args)
         .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
+        .stdout(stdout_cfg)
         .stderr(Stdio::piped())
         .spawn()
     {
         Ok(child) => child,
         Err(e) => {
-            log::error!("Failed to spawn FFmpeg: {}", e);
+            log::error!("Failed to spawn FFmpeg for H264 capture: {}", e);
             return;
         }
     };
 
     let ffmpeg_pid = ffmpeg.id();
-    log::info!("[{:?}] FFmpeg started (PID: {}, HTTP/MPEG-TS mode)", encoding_start.elapsed(), ffmpeg_pid);
+    log::info!("[{:?}] FFmpeg started (PID: {}, {} mode)", encoding_start.elapsed(), ffmpeg_pid, mode_label);
 
-    let mut stdin = ffmpeg.stdin.take().expect("stdin");
-    let stdout = ffmpeg.stdout.take().expect("stdout");
+    let mut stdin = ffmpeg.stdin.take().expect("Failed to get FFmpeg stdin");
 
-    // Spawn output reader thread
-    let stop_flag_clone = stop_flag.clone();
-    let source_id_clone = source_id.clone();
-    let output_thread = std::thread::spawn(move || {
-        crate::services::thread_config::set_thread_qos(crate::services::thread_config::QosClass::Utility);
-        read_mpegts_output(stdout, output_tx, stop_flag_clone, source_id_clone);
-    });
+    // Spawn output reader thread only for HTTP mode
+    let output_thread = match output {
+        OutputMode::Http(output_tx) => {
+            let stdout = ffmpeg.stdout.take().expect("stdout");
+            let stop_clone = stop_flag.clone();
+            let sid = source_id.clone();
+            Some(std::thread::spawn(move || {
+                crate::services::thread_config::set_thread_qos(crate::services::thread_config::QosClass::Utility);
+                read_mpegts_output(stdout, output_tx, stop_clone, sid);
+            }))
+        }
+        OutputMode::Rtsp(_) => None,
+    };
 
-    // Main loop: read frames and write to FFmpeg
-    let frame_size = (width * height * 4) as usize;
+    // Main loop: read frames and write to FFmpeg stdin
+    let frame_size = (width * height * 4) as usize; // BGRA = 4 bytes per pixel
 
     while !stop_flag.load(Ordering::SeqCst) {
-        *last_accessed.lock().unwrap() = Instant::now();
+        last_accessed.store(now_epoch_millis(), Ordering::Relaxed);
 
         match frame_rx.blocking_recv() {
             Ok(frame) => {
                 if let Some(data) = extract_frame_data(&frame, frame_size) {
                     if let Err(e) = stdin.write_all(&data) {
-                        log::error!("Failed to write frame: {}", e);
+                        log::error!("Failed to write frame to FFmpeg: {}", e);
                         break;
                     }
                 }
             }
             Err(broadcast::error::RecvError::Lagged(n)) => {
-                log::warn!("Lagged by {} frames for {}", n, source_id);
+                log::warn!("H264 capture lagged by {} frames for {}", n, source_id);
             }
             Err(broadcast::error::RecvError::Closed) => {
-                log::info!("Channel closed for {}", source_id);
+                log::info!("Screen capture channel closed for {}", source_id);
                 break;
             }
         }
     }
 
-    log::info!("Stopping HTTP encoding loop for {}", source_id);
+    // Cleanup
+    log::info!("Stopping {} encoding loop for {}", mode_label, source_id);
     drop(stdin);
     let _ = ffmpeg.wait();
-    let _ = output_thread.join();
-    log::info!("HTTP capture stopped for {}", source_id);
+    if let Some(thread) = output_thread {
+        let _ = thread.join();
+    }
+    log::info!("H264 capture stopped for {}", source_id);
 }
 
 /// Read MPEG-TS output from FFmpeg and broadcast chunks
@@ -978,37 +1015,6 @@ fn wait_for_first_frame(
     }
 }
 
-/// Get dimensions from a scap Frame
-fn get_frame_dimensions(frame: &Frame) -> (u32, u32) {
-    match frame {
-        Frame::BGRA(bgra) => (bgra.width as u32, bgra.height as u32),
-        Frame::RGB(rgb) => (rgb.width as u32, rgb.height as u32),
-        Frame::YUVFrame(yuv) => (yuv.width as u32, yuv.height as u32),
-        _ => (1920, 1080), // Fallback for other formats
-    }
-}
-
-/// Extract raw frame data from a scap Frame
-fn extract_frame_data(frame: &Frame, expected_size: usize) -> Option<Vec<u8>> {
-    let data = match frame {
-        Frame::BGRA(bgra) => bgra.data.clone(),
-        _ => {
-            log::warn!("Unexpected frame format, expected BGRA");
-            return None;
-        }
-    };
-
-    // Verify size
-    if data.len() < expected_size {
-        log::warn!(
-            "Frame data size mismatch: expected {}, got {}",
-            expected_size,
-            data.len()
-        );
-    }
-
-    Some(data)
-}
 
 /// Extract screen number from a device name like "Capture screen 0" or "Screen 1"
 fn extract_screen_number(device_name: &str) -> Option<usize> {
@@ -1044,10 +1050,17 @@ mod tests {
     #[test]
     fn test_encoding_config_defaults() {
         let config = H264EncodingConfig::default();
-        assert_eq!(config.bitrate_kbps, 4000);
         assert_eq!(config.keyframe_interval, 5); // ~160ms at 30fps for faster preview switching
         assert_eq!(config.preset, "ultrafast");
-        assert!(config.use_hw_accel);
+
+        // Architecture-dependent defaults
+        if cfg!(target_arch = "aarch64") {
+            assert_eq!(config.bitrate_kbps, 4000);
+            assert!(config.use_hw_accel);
+        } else {
+            assert_eq!(config.bitrate_kbps, 2000);
+            assert!(!config.use_hw_accel);
+        }
     }
 
     #[test]

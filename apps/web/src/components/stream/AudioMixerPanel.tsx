@@ -8,18 +8,82 @@
  * (audioLevelStore) in a RAF loop, bypassing React's render cycle.
  * This eliminates ~30 re-renders per second across all channel strips.
  */
-import { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus, Volume2 } from 'lucide-react';
 import { Card, CardBody } from '@/components/ui/Card';
 import { AddSourceModal } from '@/components/modals/AddSourceModal';
 import { UnifiedChannelStrip } from './UnifiedChannelStrip';
 import { useAudioLevels } from '@/hooks/useAudioLevels';
-import type { Profile, Scene } from '@/types/profile';
-import type { AudioFilter } from '@/types/source';
+import type { Profile, Scene, AudioTrack } from '@/types/profile';
+import type { AudioFilter, Source } from '@/types/source';
 import { useSceneStore } from '@/stores/sceneStore';
 import { useProfileStore } from '@/stores/profileStore';
 import { toast } from '@/hooks/useToast';
+import { useShallow } from 'zustand/shallow';
+
+/**
+ * Wrapper that creates stable handler references for a single audio track.
+ * Without this, inline arrow functions in .map() create new references every render,
+ * defeating React.memo on UnifiedChannelStrip and causing unnecessary re-renders.
+ */
+interface AudioTrackStripProps {
+  track: AudioTrack;
+  label: string;
+  sources: Source[];
+  captureError?: string;
+  onVolumeChange: (sourceId: string, volume: number) => void;
+  onMuteToggle: (sourceId: string, muted: boolean) => void;
+  onSoloToggle: (sourceId: string, solo: boolean) => void;
+  onFiltersChange: (sourceId: string, filters: AudioFilter[]) => void;
+}
+
+const AudioTrackStrip = React.memo(function AudioTrackStrip({
+  track,
+  label,
+  sources,
+  captureError,
+  onVolumeChange,
+  onMuteToggle,
+  onSoloToggle,
+  onFiltersChange,
+}: AudioTrackStripProps) {
+  // Stable per-track handlers — these only change when the parent handler changes,
+  // NOT on every parent render (because track.sourceId is captured in useCallback)
+  const handleVolume = useCallback(
+    (v: number) => onVolumeChange(track.sourceId, v),
+    [track.sourceId, onVolumeChange]
+  );
+  const handleMute = useCallback(
+    (m: boolean) => onMuteToggle(track.sourceId, m),
+    [track.sourceId, onMuteToggle]
+  );
+  const handleSolo = useCallback(
+    (s: boolean) => onSoloToggle(track.sourceId, s),
+    [track.sourceId, onSoloToggle]
+  );
+  const handleFilters = useCallback(
+    (f: AudioFilter[]) => onFiltersChange(track.sourceId, f),
+    [track.sourceId, onFiltersChange]
+  );
+
+  return (
+    <UnifiedChannelStrip
+      trackId={track.sourceId}
+      label={label}
+      volume={track.volume}
+      muted={track.muted}
+      solo={track.solo}
+      filters={track.audioFilters || []}
+      availableSources={sources}
+      captureError={captureError}
+      onVolumeChange={handleVolume}
+      onMuteToggle={handleMute}
+      onSoloToggle={handleSolo}
+      onFiltersChange={handleFilters}
+    />
+  );
+});
 
 interface AudioMixerPanelProps {
   profile: Profile;
@@ -29,20 +93,40 @@ interface AudioMixerPanelProps {
 // NOTE: DEFAULT_LEVEL removed - level data is read directly from audioLevelStore
 // by each UnifiedChannelStrip in its RAF loop, not passed through props
 
-export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
+export const AudioMixerPanel = React.memo(function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
   const { t } = useTranslation();
-  const { setTrackVolume, setTrackMuted, setTrackSolo, setMasterVolume, setMasterMuted } = useSceneStore();
-  const { updateCurrentAudioTrack, updateCurrentMasterVolume, updateCurrentMasterMuted } = useProfileStore();
+  const { setTrackVolume, setTrackMuted, setTrackSolo, setMasterVolume, setMasterMuted } = useSceneStore(
+    useShallow(s => ({
+      setTrackVolume: s.setTrackVolume,
+      setTrackMuted: s.setTrackMuted,
+      setTrackSolo: s.setTrackSolo,
+      setMasterVolume: s.setMasterVolume,
+      setMasterMuted: s.setMasterMuted
+    }))
+  );
+  const { updateCurrentAudioTrack, updateCurrentMasterVolume, updateCurrentMasterMuted } = useProfileStore(
+    useShallow(s => ({
+      updateCurrentAudioTrack: s.updateCurrentAudioTrack,
+      updateCurrentMasterVolume: s.updateCurrentMasterVolume,
+      updateCurrentMasterMuted: s.updateCurrentMasterMuted
+    }))
+  );
   const [showAddModal, setShowAddModal] = useState(false);
 
   // Get connection status, capture status, and health status
   // NOTE: `levels` removed - channel strips read directly from audioLevelStore
   const { isConnected, isInitializing, healthStatus, captureStatus } = useAudioLevels();
 
-  // Memoize source name lookup function
-  const getSourceName = useCallback((sourceId: string) => {
-    return profile.sources.find((s) => s.id === sourceId)?.name ?? t('stream.unknownSource', { defaultValue: 'Unknown' });
-  }, [profile.sources, t]);
+  // Memoized source name map — O(1) lookup instead of O(n) .find() per track
+  const sourceNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const s of profile.sources) {
+      map.set(s.id, s.name);
+    }
+    return map;
+  }, [profile.sources]);
+
+  const defaultSourceName = t('stream.unknownSource', { defaultValue: 'Unknown' });
 
   // Memoized handlers that use local state updates instead of reloading profile
   const handleVolumeChange = useCallback(async (sourceId: string, volume: number) => {
@@ -120,7 +204,7 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
 
   return (
     <Card>
-      <CardBody style={{ padding: '12px 16px' }}>
+      <CardBody className="py-3 px-4">
         {/* Header */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
@@ -171,21 +255,16 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
                   }
 
                   return (
-                    <UnifiedChannelStrip
+                    <AudioTrackStrip
                       key={track.sourceId}
-                      trackId={track.sourceId}
-                      label={getSourceName(track.sourceId)}
-                      // NOTE: Level props removed - component reads from audioLevelStore
-                      volume={track.volume}
-                      muted={track.muted}
-                      solo={track.solo}
-                      filters={track.audioFilters || []}
-                      availableSources={profile.sources}
+                      track={track}
+                      label={sourceNameMap.get(track.sourceId) ?? defaultSourceName}
+                      sources={profile.sources}
                       captureError={captureError}
-                      onVolumeChange={(v) => handleVolumeChange(track.sourceId, v)}
-                      onMuteToggle={(m) => handleMuteToggle(track.sourceId, m)}
-                      onSoloToggle={(s) => handleSoloToggle(track.sourceId, s)}
-                      onFiltersChange={(f) => handleFiltersChange(track.sourceId, f)}
+                      onVolumeChange={handleVolumeChange}
+                      onMuteToggle={handleMuteToggle}
+                      onSoloToggle={handleSoloToggle}
+                      onFiltersChange={handleFiltersChange}
                     />
                   );
                 })
@@ -202,7 +281,7 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
           {/* Divider */}
           {scene.audioMixer.tracks.length > 0 && (
             <div className="flex flex-col mx-2 self-stretch">
-              <div className="flex-1 w-px bg-[var(--border-default)]" style={{ marginTop: 20 }} />
+              <div className="flex-1 w-px bg-[var(--border-default)] mt-5" />
             </div>
           )}
 
@@ -237,4 +316,4 @@ export function AudioMixerPanel({ profile, scene }: AudioMixerPanelProps) {
       />
     </Card>
   );
-}
+});

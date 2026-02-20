@@ -28,8 +28,9 @@ use super::permissions::PermissionsService;
 const TARGET_CACHE_TTL: Duration = Duration::from_secs(5);
 
 /// Cached scap targets with timestamp
+/// Uses Arc<Vec<Target>> so cache reads are a cheap pointer clone instead of deep copy
 struct TargetCache {
-    targets: Vec<Target>,
+    targets: Arc<Vec<Target>>,
     last_refresh: Instant,
 }
 
@@ -41,33 +42,52 @@ fn get_target_cache() -> &'static RwLock<Option<TargetCache>> {
 }
 
 /// Get scap targets with caching
-/// Returns cached targets if within TTL, otherwise refreshes the cache
-fn get_targets_cached() -> Vec<Target> {
+/// Returns Arc-wrapped targets — pointer copy instead of deep clone on cache hit
+fn get_targets_cached() -> Arc<Vec<Target>> {
     let cache = get_target_cache();
 
-    // Try to read from cache
+    // Try to read from cache (cheap Arc::clone on hit)
     {
         if let Ok(guard) = cache.read() {
             if let Some(ref c) = *guard {
                 if c.last_refresh.elapsed() < TARGET_CACHE_TTL {
-                    return c.targets.clone();
+                    return Arc::clone(&c.targets);
                 }
             }
         }
     }
 
     // Cache miss or expired - refresh
-    let targets = scap::get_all_targets();
+    let targets = Arc::new(scap::get_all_targets());
 
     // Update cache
     if let Ok(mut guard) = cache.write() {
         *guard = Some(TargetCache {
-            targets: targets.clone(),
+            targets: Arc::clone(&targets),
             last_refresh: Instant::now(),
         });
     }
 
     targets
+}
+
+/// Build a map of display_id → (width, height) using screencapturekit's SCDisplay
+/// which provides accurate pixel dimensions. Falls back to empty map on error.
+#[cfg(target_os = "macos")]
+fn get_display_dimensions_map() -> std::collections::HashMap<u32, (u32, u32)> {
+    use screencapturekit::shareable_content::SCShareableContent;
+
+    match SCShareableContent::get() {
+        Ok(content) => content
+            .displays()
+            .iter()
+            .map(|d| (d.display_id(), (d.width(), d.height())))
+            .collect(),
+        Err(e) => {
+            log::debug!("Failed to get SCShareableContent for dimensions: {:?}", e);
+            std::collections::HashMap::new()
+        }
+    }
 }
 
 /// Invalidate the target cache (e.g., when displays are added/removed)
@@ -79,10 +99,25 @@ pub fn invalidate_target_cache() {
 }
 
 /// Information about an available display
+/// Carries both the native scap ID (for capture) and profile-facing fields (for frontend/storage)
 #[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DisplayInfo {
+    /// Native scap ID (CGDirectDisplayID on macOS, HMONITOR on Windows)
     pub id: u32,
+    /// Native ID as string for profile storage / JSON compat
+    pub display_id: String,
+    /// Human-readable name (e.g., "Built-in Retina Display")
     pub name: String,
+    /// Platform device name for go2rtc (e.g., "Capture screen 0" on macOS)
+    /// Populated by DeviceDiscovery's AVFoundation enrichment, not by scap
+    pub device_name: Option<String>,
+    /// Display width in pixels
+    pub width: u32,
+    /// Display height in pixels
+    pub height: u32,
+    /// Whether this is the primary display
+    pub is_primary: bool,
 }
 
 /// Information about an available window
@@ -162,16 +197,41 @@ impl ScreenCaptureService {
 
     /// List available displays/monitors (sync version - use list_displays_async in async contexts)
     /// Uses cached targets to avoid repeated 3-10s blocking calls on macOS
+    /// Returns native scap IDs (CGDirectDisplayID on macOS, HMONITOR on Windows)
     pub fn list_displays() -> Vec<DisplayInfo> {
         let targets = get_targets_cached();
 
+        // On macOS, get display dimensions from screencapturekit (SCDisplay has width/height)
+        #[cfg(target_os = "macos")]
+        let dimension_map = get_display_dimensions_map();
+
+        let mut is_first = true;
+
         targets
-            .into_iter()
+            .iter()
             .filter_map(|target| {
                 if let Target::Display(display) = target {
+                    let is_primary = is_first;
+                    is_first = false;
+
+                    // Look up dimensions from screencapturekit on macOS, default on other platforms
+                    #[cfg(target_os = "macos")]
+                    let (width, height) = dimension_map
+                        .get(&display.id)
+                        .copied()
+                        .unwrap_or((1920, 1080));
+
+                    #[cfg(not(target_os = "macos"))]
+                    let (width, height) = (1920u32, 1080u32);
+
                     Some(DisplayInfo {
                         id: display.id,
-                        name: display.title,
+                        display_id: display.id.to_string(),
+                        name: display.title.clone(),
+                        device_name: None, // Enriched by DeviceDiscovery with AVFoundation names
+                        width,
+                        height,
+                        is_primary,
                     })
                 } else {
                     None
@@ -206,12 +266,12 @@ impl ScreenCaptureService {
         let targets = get_targets_cached();
 
         targets
-            .into_iter()
+            .iter()
             .filter_map(|target| {
                 if let Target::Window(window) = target {
                     Some(WindowInfo {
                         id: window.id,
-                        title: window.title,
+                        title: window.title.clone(),
                     })
                 } else {
                     None
@@ -246,85 +306,20 @@ impl ScreenCaptureService {
         display_id: u32,
         config: ScreenCaptureConfig,
     ) -> Result<broadcast::Receiver<Arc<Frame>>, String> {
-        // Check permission first (uses cached value on macOS, picker-based on Windows/Linux)
-        if !Self::has_permission_cached() {
-            return Err("Screen capture permission not granted. Please grant permission in System Settings > Privacy & Security > Screen Recording.".to_string());
-        }
-
         let capture_id = format!("display_{}", display_id);
-
-        // Check if already capturing
-        {
-            let captures = self.active_captures.lock().unwrap();
-            if captures.contains_key(&capture_id) {
-                return Err(format!("Already capturing display {}", display_id));
-            }
-        }
 
         // Find the display (uses cached targets for performance)
         let targets = get_targets_cached();
-        let display = targets
-            .into_iter()
+        let target = targets
+            .iter()
             .find_map(|t| {
                 if let Target::Display(d) = t {
-                    if d.id == display_id {
-                        Some(d)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
+                    if d.id == display_id { Some(Target::Display(d.clone())) } else { None }
+                } else { None }
             })
             .ok_or_else(|| format!("Display {} not found", display_id))?;
 
-        // Create capturer options
-        let options = Options {
-            fps: config.fps,
-            show_cursor: config.show_cursor,
-            show_highlight: config.show_highlight,
-            target: Some(Target::Display(display)),
-            excluded_targets: None,
-            output_type: FrameType::BGRAFrame,
-            output_resolution: config.output_resolution,
-            crop_area: None,
-            ..Default::default()
-        };
-
-        // Create capturer
-        let mut capturer = Capturer::build(options)
-            .map_err(|e| format!("Failed to build capturer: {:?}", e))?;
-
-        // Create broadcast channel for frames
-        let (frame_tx, frame_rx) = broadcast::channel::<Arc<Frame>>(16);
-        let stop_flag = Arc::new(AtomicBool::new(false));
-        let stop_flag_clone = stop_flag.clone();
-
-        // Start capture in background thread — real-time video, needs P-cores
-        let handle = std::thread::spawn(move || {
-            crate::services::thread_config::set_thread_qos(crate::services::thread_config::QosClass::UserInteractive);
-            capturer.start_capture();
-
-            while !stop_flag_clone.load(Ordering::Relaxed) {
-                if let Ok(frame) = capturer.get_next_frame() {
-                    let _ = frame_tx.send(Arc::new(frame));
-                }
-            }
-
-            capturer.stop_capture();
-        });
-
-        // Store active capture
-        {
-            let mut captures = self.active_captures.lock().unwrap();
-            captures.insert(capture_id.clone(), ActiveCapture {
-                stop_flag,
-                _handle: handle,
-            });
-        }
-
-        log::info!("Started screen capture for display {}", display_id);
-        Ok(frame_rx)
+        self.start_capture_internal(capture_id, target, config)
     }
 
     /// Start capturing a window
@@ -333,44 +328,48 @@ impl ScreenCaptureService {
         window_id: u32,
         config: ScreenCaptureConfig,
     ) -> Result<broadcast::Receiver<Arc<Frame>>, String> {
+        let capture_id = format!("window_{}", window_id);
+
+        // Find the window (uses cached targets for performance)
+        let targets = get_targets_cached();
+        let target = targets
+            .iter()
+            .find_map(|t| {
+                if let Target::Window(w) = t {
+                    if w.id == window_id { Some(Target::Window(w.clone())) } else { None }
+                } else { None }
+            })
+            .ok_or_else(|| format!("Window {} not found", window_id))?;
+
+        self.start_capture_internal(capture_id, target, config)
+    }
+
+    /// Internal: start capture for any target type (display or window)
+    fn start_capture_internal(
+        &self,
+        capture_id: String,
+        target: Target,
+        config: ScreenCaptureConfig,
+    ) -> Result<broadcast::Receiver<Arc<Frame>>, String> {
         // Check permission first (uses cached value on macOS, picker-based on Windows/Linux)
         if !Self::has_permission_cached() {
             return Err("Screen capture permission not granted. Please grant permission in System Settings > Privacy & Security > Screen Recording.".to_string());
         }
 
-        let capture_id = format!("window_{}", window_id);
-
         // Check if already capturing
         {
             let captures = self.active_captures.lock().unwrap();
             if captures.contains_key(&capture_id) {
-                return Err(format!("Already capturing window {}", window_id));
+                return Err(format!("Already capturing: {}", capture_id));
             }
         }
-
-        // Find the window (uses cached targets for performance)
-        let targets = get_targets_cached();
-        let window = targets
-            .into_iter()
-            .find_map(|t| {
-                if let Target::Window(w) = t {
-                    if w.id == window_id {
-                        Some(w)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            })
-            .ok_or_else(|| format!("Window {} not found", window_id))?;
 
         // Create capturer options
         let options = Options {
             fps: config.fps,
             show_cursor: config.show_cursor,
             show_highlight: config.show_highlight,
-            target: Some(Target::Window(window)),
+            target: Some(target),
             excluded_targets: None,
             output_type: FrameType::BGRAFrame,
             output_resolution: config.output_resolution,
@@ -387,18 +386,36 @@ impl ScreenCaptureService {
         let stop_flag = Arc::new(AtomicBool::new(false));
         let stop_flag_clone = stop_flag.clone();
 
-        // Start capture in background thread — real-time video, needs P-cores
+        // Start capture in background thread
         let handle = std::thread::spawn(move || {
-            crate::services::thread_config::set_thread_qos(crate::services::thread_config::QosClass::UserInteractive);
+            crate::services::thread_config::set_thread_qos(crate::services::thread_config::QosClass::UserInitiated);
             capturer.start_capture();
+            let mut capturing = true;
 
             while !stop_flag_clone.load(Ordering::Relaxed) {
+                // Pause/resume scap capturer based on consumer count to avoid CPU waste
+                if frame_tx.receiver_count() == 0 {
+                    if capturing {
+                        capturer.stop_capture();
+                        capturing = false;
+                        log::debug!("Screen capture paused - no consumers");
+                    }
+                    std::thread::sleep(Duration::from_millis(500));
+                    continue;
+                }
+                if !capturing {
+                    capturer.start_capture();
+                    capturing = true;
+                    log::debug!("Screen capture resumed - consumer connected");
+                }
                 if let Ok(frame) = capturer.get_next_frame() {
                     let _ = frame_tx.send(Arc::new(frame));
                 }
             }
 
-            capturer.stop_capture();
+            if capturing {
+                capturer.stop_capture();
+            }
         });
 
         // Store active capture
@@ -410,7 +427,7 @@ impl ScreenCaptureService {
             });
         }
 
-        log::info!("Started screen capture for window {}", window_id);
+        log::info!("Started screen capture: {}", capture_id);
         Ok(frame_rx)
     }
 
@@ -483,8 +500,8 @@ mod tests {
         if ScreenCaptureService::is_supported() && ScreenCaptureService::has_permission_cached() {
             let displays = ScreenCaptureService::list_displays();
             println!("Found {} displays:", displays.len());
-            for display in displays {
-                println!("  - {} (ID: {})", display.name, display.id);
+            for display in &displays {
+                println!("  - {} (ID: {}, {}x{}, primary: {})", display.name, display.id, display.width, display.height, display.is_primary);
             }
         }
     }

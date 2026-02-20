@@ -274,7 +274,8 @@ function createGradient(ctx: OffscreenCanvasRenderingContext2D, meterTop: number
 function drawMeter(registered: RegisteredCanvas): void {
   const { ctx, trackId, config } = registered;
   const { volume, muted, isDragging = false, thresholdFilters = [] } = config;
-  const level = trackId ? trackLevels.get(trackId) : masterLevel;
+  const rawLevel = trackId ? trackLevels.get(trackId) : masterLevel;
+  const level = rawLevel ?? createDefaultLevel();
 
   // Meter coordinates
   const meterX = LABEL_WIDTH;
@@ -286,15 +287,6 @@ function drawMeter(registered: RegisteredCanvas): void {
 
   // Clear canvas (use logical dimensions, ctx is already scaled by dpr)
   ctx.clearRect(0, 0, TOTAL_WIDTH, TOTAL_HEIGHT);
-
-  if (!level) {
-    // Draw empty meter background
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-    ctx.beginPath();
-    ctx.roundRect(meterX, meterTop, BAR_WIDTH, METER_HEIGHT, 4);
-    ctx.fill();
-    return;
-  }
 
   // Get or create gradient
   if (!registered.gradient) {
@@ -590,6 +582,20 @@ self.onmessage = (e: MessageEvent) => {
       // Process raw WebSocket message
       if (typeof data === 'string') {
         processAudioData(data);
+      }
+      break;
+    }
+
+    case 'pause': {
+      // Pause rendering when app tab is hidden to save CPU
+      stopRenderLoop();
+      break;
+    }
+
+    case 'resume': {
+      // Resume rendering when app tab becomes visible
+      if (canvases.size > 0) {
+        startRenderLoop();
       }
       break;
     }

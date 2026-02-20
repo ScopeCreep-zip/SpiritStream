@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { memo, useId } from 'react';
 import { cn } from '@/lib/cn';
 
 export interface ToggleProps {
@@ -27,7 +27,7 @@ const sizes = {
   },
 };
 
-export function Toggle({
+export const Toggle = memo(function Toggle({
   checked = false,
   onChange,
   disabled,
@@ -45,11 +45,10 @@ export function Toggle({
   return (
     <label
       className={cn(
-        'inline-flex items-center cursor-pointer',
+        'inline-flex items-center gap-3 cursor-pointer',
         disabled && 'opacity-50 cursor-not-allowed',
         className
       )}
-      style={{ gap: '12px' }}
     >
       <span className={cn('relative flex-shrink-0', sizeConfig.track)}>
         <input
@@ -94,4 +93,4 @@ export function Toggle({
       )}
     </label>
   );
-}
+});

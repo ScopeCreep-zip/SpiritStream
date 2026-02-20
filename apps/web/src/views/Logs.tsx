@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Download, Trash2, ArrowDownToLine } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
@@ -11,7 +11,7 @@ import { useLogStore } from '@/stores/logStore';
 import { dialogs } from '@/lib/backend';
 import { toast } from '@/hooks/useToast';
 
-export function Logs() {
+export default function Logs() {
   const { t, i18n } = useTranslation();
   const {
     logs,
@@ -32,9 +32,9 @@ export function Logs() {
     }
   }, [logs, autoScroll]);
 
-  const applyTimeFilter = (entries: typeof logs) => {
+  const timeFilteredLogs = useMemo(() => {
     if (timeFilter === 'all') {
-      return entries;
+      return logs;
     }
     const now = Date.now();
     const cutoffMs = (() => {
@@ -52,12 +52,13 @@ export function Logs() {
       }
     })();
 
-    return entries.filter((log) => now - log.timestamp.getTime() <= cutoffMs);
-  };
+    return logs.filter((log) => now - log.timestamp.getTime() <= cutoffMs);
+  }, [logs, timeFilter]);
 
-  const timeFilteredLogs = applyTimeFilter(logs);
-  const filteredLogs =
-    filter === 'all' ? timeFilteredLogs : timeFilteredLogs.filter((log) => log.level === filter);
+  const filteredLogs = useMemo(
+    () => (filter === 'all' ? timeFilteredLogs : timeFilteredLogs.filter((log) => log.level === filter)),
+    [timeFilteredLogs, filter]
+  );
 
   // Format timestamp for display
   const formatTime = (date: Date): string => {
@@ -116,7 +117,7 @@ export function Logs() {
           <CardTitle>{t('logs.title')}</CardTitle>
           <CardDescription>{t('logs.description')}</CardDescription>
         </div>
-        <div className="flex items-center" style={{ gap: '12px' }}>
+        <div className="flex items-center gap-3">
           <Select
             value={timeFilter}
             onChange={(e) =>
@@ -150,13 +151,12 @@ export function Logs() {
           </Button>
         </div>
       </CardHeader>
-      <CardBody style={{ padding: 0 }}>
+      <CardBody className="p-0">
         <LogConsole maxHeight="500px">
           <div ref={consoleRef}>
             {filteredLogs.length === 0 ? (
               <div
-                className="text-center text-[var(--text-secondary)]"
-                style={{ padding: '32px 16px' }}
+                className="text-center text-[var(--text-secondary)] py-8 px-4"
               >
                 {t('logs.noLogs')}
               </div>

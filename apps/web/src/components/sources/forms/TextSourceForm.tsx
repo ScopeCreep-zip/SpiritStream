@@ -54,7 +54,7 @@ export function TextSourceForm({ data, onChange }: SourceFormProps<TextSource>) 
         <textarea
           value={data.content}
           onChange={(e) => onChange({ ...data, content: e.target.value })}
-          className="w-full h-24 px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg-input)] text-[var(--text)] resize-none focus:outline-none focus:border-[var(--primary)]"
+          className="w-full h-24 px-3 py-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-sunken)] text-[var(--text-primary)] resize-none focus:outline-none focus:border-[var(--primary)]"
           placeholder="Enter text..."
         />
       </div>
@@ -96,7 +96,7 @@ export function TextSourceForm({ data, onChange }: SourceFormProps<TextSource>) 
               type="color"
               value={data.textColor}
               onChange={(e) => onChange({ ...data, textColor: e.target.value })}
-              className="w-10 h-10 rounded border border-[var(--border)] cursor-pointer"
+              className="w-10 h-10 rounded border border-[var(--border-default)] cursor-pointer"
             />
             <Input
               value={data.textColor}
@@ -114,7 +114,7 @@ export function TextSourceForm({ data, onChange }: SourceFormProps<TextSource>) 
               type="color"
               value={data.backgroundColor || '#00000000'}
               onChange={(e) => onChange({ ...data, backgroundColor: e.target.value })}
-              className="w-10 h-10 rounded border border-[var(--border)] cursor-pointer"
+              className="w-10 h-10 rounded border border-[var(--border-default)] cursor-pointer"
             />
             <Input
               value={data.backgroundColor || ''}
@@ -148,7 +148,7 @@ export function TextSourceForm({ data, onChange }: SourceFormProps<TextSource>) 
       />
 
       {/* Outline settings */}
-      <div className="border-t border-[var(--border)] pt-4 mt-2">
+      <div className="border-t border-[var(--border-default)] pt-4 mt-2">
         <div className="flex items-center justify-between mb-3">
           <span className="text-sm font-medium">{t('stream.outline', { defaultValue: 'Text Outline' })}</span>
           <Toggle
@@ -191,7 +191,7 @@ export function TextSourceForm({ data, onChange }: SourceFormProps<TextSource>) 
                     color: e.target.value,
                   },
                 })}
-                className="w-10 h-10 rounded border border-[var(--border)] cursor-pointer"
+                className="w-10 h-10 rounded border border-[var(--border-default)] cursor-pointer"
               />
             </div>
           </div>

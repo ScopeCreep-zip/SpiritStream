@@ -122,14 +122,13 @@ export function BrowserSourceRenderer({ source, width, height }: BrowserSourceRe
         key={key}
         ref={iframeRef}
         src={source.url}
+        className="border-0 origin-top-left"
         style={{
           width: source.width,
           height: source.height,
-          border: 'none',
           transform: `scale(${scale})`,
-          transformOrigin: 'top left',
         }}
-        sandbox="allow-scripts allow-same-origin allow-forms"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
         loading="lazy"
         // credentialless allows cross-origin content when COEP: require-corp is set
         // This is needed because external sites don't have CORP headers

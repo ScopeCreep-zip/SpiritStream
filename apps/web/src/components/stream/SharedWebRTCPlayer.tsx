@@ -143,7 +143,7 @@ export function SharedWebRTCPlayer({
         autoPlay
         muted
         playsInline
-        className={`w-full h-full object-cover transition-opacity duration-300 ${
+        className={`w-full h-full object-cover will-change-transform ${
           status === 'playing' && videoReady ? 'opacity-100' : 'opacity-0'
         }`}
       />

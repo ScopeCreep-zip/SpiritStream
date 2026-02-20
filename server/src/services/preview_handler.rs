@@ -1,18 +1,19 @@
 // Preview Handler Service
 // Manages FFmpeg processes for MJPEG preview streams
 
-use std::collections::HashMap;
+use dashmap::DashMap;
 use std::io::{BufRead, BufReader, Read};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 use tokio::time::timeout;
 use bytes::Bytes;
 
 use crate::models::{Scene, Source};
-use crate::services::Compositor;
+use crate::services::{Compositor, extract_jpeg_frame};
 
 /// Timeout for snapshot capture (prevents indefinite blocking)
 const SNAPSHOT_TIMEOUT_SECS: u64 = 10;
@@ -51,11 +52,7 @@ const PLACEHOLDER_JPEG: &[u8] = &[
     0x0F, 0xFF, 0xD9
 ];
 
-// Windows: Hide console windows for spawned processes
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
-#[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x08000000;
+use crate::services::process_util::{configure_hidden_window, kill_and_wait};
 
 /// MJPEG frame boundary marker
 const MJPEG_BOUNDARY: &str = "frame";
@@ -67,10 +64,14 @@ const DEFAULT_PREVIEW_FPS: u32 = 15;
 const DEFAULT_PREVIEW_QUALITY: u32 = 5;
 
 /// Maximum concurrent source previews (LRU eviction)
-const MAX_SOURCE_PREVIEWS: usize = 5;
+/// Increased from 5 to 12 to support Studio Mode + Multiview without thrashing
+const MAX_SOURCE_PREVIEWS: usize = 12;
 
 /// Cleanup timeout for orphaned previews (seconds)
 const ORPHAN_TIMEOUT_SECS: u64 = 30;
+
+/// Maximum time without receiving a frame before reader thread exits (seconds)
+const READER_STALL_TIMEOUT_SECS: u64 = 30;
 
 /// Maximum age for a cached frame before considered stale (seconds)
 const STALE_FRAME_THRESHOLD_SECS: u64 = 5;
@@ -85,6 +86,10 @@ struct PreviewProcess {
     last_frame_time: Arc<Mutex<Instant>>,
     /// Whether the reader thread is still alive
     is_alive: Arc<AtomicBool>,
+    /// Handle to the MJPEG reader thread (joined on stop for clean shutdown)
+    reader_handle: Option<std::thread::JoinHandle<()>>,
+    /// Handle to the stderr reader thread (joined on stop for clean shutdown)
+    stderr_handle: Option<std::thread::JoinHandle<()>>,
 }
 
 /// Preview parameters from HTTP query
@@ -111,7 +116,9 @@ impl Default for PreviewParams {
 pub struct PreviewHandler {
     ffmpeg_path: String,
     scene_preview: Arc<Mutex<Option<PreviewProcess>>>,
-    source_previews: Arc<Mutex<HashMap<String, PreviewProcess>>>,
+    source_previews: Arc<DashMap<String, PreviewProcess>>,
+    /// When true, previews should throttle frame processing (app in background)
+    idle_flag: Arc<AtomicBool>,
 }
 
 impl PreviewHandler {
@@ -120,386 +127,24 @@ impl PreviewHandler {
         Self {
             ffmpeg_path,
             scene_preview: Arc::new(Mutex::new(None)),
-            source_previews: Arc::new(Mutex::new(HashMap::new())),
+            source_previews: Arc::new(DashMap::new()),
+            idle_flag: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    /// Build FFmpeg input args for a source
+    /// Set the idle flag (shared with NativePreviewService)
+    pub fn set_idle_flag(&self, flag: Arc<AtomicBool>) {
+        self.idle_flag.store(flag.load(Ordering::Relaxed), Ordering::Relaxed);
+    }
+
+    /// Set idle mode
+    pub fn set_idle(&self, idle: bool) {
+        self.idle_flag.store(idle, Ordering::Relaxed);
+    }
+
+    /// Build FFmpeg input args for a source (delegates to shared ffmpeg_source_args module)
     fn build_source_input_args(&self, source: &Source) -> Result<Vec<String>, String> {
-        match source {
-            Source::Camera(cam) => {
-                // Validate device ID is not empty
-                if cam.device_id.is_empty() {
-                    return Err("Camera device not selected".to_string());
-                }
-
-                let mut args = Vec::new();
-
-                // Platform-specific capture
-                #[cfg(target_os = "macos")]
-                {
-                    args.extend([
-                        "-f".to_string(),
-                        "avfoundation".to_string(),
-                        "-framerate".to_string(),
-                        cam.fps.unwrap_or(30).to_string(),
-                        "-pixel_format".to_string(),
-                        "uyvy422".to_string(),
-                    ]);
-
-                    if let (Some(w), Some(h)) = (cam.width, cam.height) {
-                        args.extend([
-                            "-video_size".to_string(),
-                            format!("{}x{}", w, h),
-                        ]);
-                    }
-
-                    // AVFoundation uses "VIDEO_INDEX:AUDIO_INDEX" format
-                    // Use "INDEX:none" for video-only (no audio)
-                    let device_input = if cam.device_id.contains(':') {
-                        cam.device_id.clone()
-                    } else {
-                        format!("{}:none", cam.device_id)
-                    };
-                    args.extend([
-                        "-i".to_string(),
-                        device_input,
-                    ]);
-                }
-
-                #[cfg(target_os = "windows")]
-                {
-                    args.extend([
-                        "-f".to_string(),
-                        "dshow".to_string(),
-                    ]);
-
-                    if let Some(fps) = cam.fps {
-                        args.extend(["-framerate".to_string(), fps.to_string()]);
-                    }
-
-                    if let (Some(w), Some(h)) = (cam.width, cam.height) {
-                        args.extend(["-video_size".to_string(), format!("{}x{}", w, h)]);
-                    }
-
-                    args.extend([
-                        "-i".to_string(),
-                        format!("video={}", cam.device_id),
-                    ]);
-                }
-
-                #[cfg(target_os = "linux")]
-                {
-                    args.extend([
-                        "-f".to_string(),
-                        "v4l2".to_string(),
-                    ]);
-
-                    if let Some(fps) = cam.fps {
-                        args.extend(["-framerate".to_string(), fps.to_string()]);
-                    }
-
-                    if let (Some(w), Some(h)) = (cam.width, cam.height) {
-                        args.extend(["-video_size".to_string(), format!("{}x{}", w, h)]);
-                    }
-
-                    args.extend([
-                        "-i".to_string(),
-                        cam.device_id.clone(),
-                    ]);
-                }
-
-                Ok(args)
-            }
-
-            Source::ScreenCapture(screen) => {
-                // Validate display ID is not empty
-                if screen.display_id.is_empty() {
-                    return Err("Display not selected".to_string());
-                }
-
-                let mut args = Vec::new();
-
-                #[cfg(target_os = "macos")]
-                {
-                    args.extend([
-                        "-f".to_string(),
-                        "avfoundation".to_string(),
-                        "-framerate".to_string(),
-                        screen.fps.to_string(),
-                        "-capture_cursor".to_string(),
-                        if screen.capture_cursor { "1" } else { "0" }.to_string(),
-                        "-pixel_format".to_string(),
-                        "uyvy422".to_string(),
-                    ]);
-
-                    // AVFoundation screen capture: "VIDEO_INDEX:AUDIO_INDEX" or "VIDEO_INDEX:none"
-                    let screen_input = if screen.capture_audio {
-                        format!("{}:", screen.display_id)
-                    } else {
-                        format!("{}:none", screen.display_id)
-                    };
-                    args.extend([
-                        "-i".to_string(),
-                        screen_input,
-                    ]);
-                }
-
-                #[cfg(target_os = "windows")]
-                {
-                    args.extend([
-                        "-f".to_string(),
-                        "gdigrab".to_string(),
-                        "-framerate".to_string(),
-                        screen.fps.to_string(),
-                    ]);
-
-                    if screen.capture_cursor {
-                        args.extend(["-draw_mouse".to_string(), "1".to_string()]);
-                    }
-
-                    args.extend([
-                        "-i".to_string(),
-                        "desktop".to_string(),
-                    ]);
-                }
-
-                #[cfg(target_os = "linux")]
-                {
-                    args.extend([
-                        "-f".to_string(),
-                        "x11grab".to_string(),
-                        "-framerate".to_string(),
-                        screen.fps.to_string(),
-                    ]);
-
-                    if screen.capture_cursor {
-                        args.extend(["-draw_mouse".to_string(), "1".to_string()]);
-                    }
-
-                    // X11 display format
-                    args.extend([
-                        "-i".to_string(),
-                        format!(":{}", screen.display_id),
-                    ]);
-                }
-
-                Ok(args)
-            }
-
-            Source::MediaFile(media) => {
-                // Validate file path is not empty
-                if media.file_path.is_empty() {
-                    return Err("Media file path not specified".to_string());
-                }
-
-                Ok(vec![
-                    "-stream_loop".to_string(),
-                    if media.loop_playback { "-1" } else { "0" }.to_string(),
-                    "-i".to_string(),
-                    media.file_path.clone(),
-                ])
-            }
-
-            Source::CaptureCard(card) => {
-                // Validate device ID is not empty
-                if card.device_id.is_empty() {
-                    return Err("Capture card device not selected".to_string());
-                }
-
-                let mut args = Vec::new();
-
-                #[cfg(target_os = "macos")]
-                {
-                    args.extend([
-                        "-f".to_string(),
-                        "avfoundation".to_string(),
-                        "-pixel_format".to_string(),
-                        "uyvy422".to_string(),
-                    ]);
-
-                    // Capture cards may have both video and audio
-                    let device_input = if card.device_id.contains(':') {
-                        card.device_id.clone()
-                    } else {
-                        format!("{}:none", card.device_id)
-                    };
-                    args.extend([
-                        "-i".to_string(),
-                        device_input,
-                    ]);
-                }
-
-                #[cfg(target_os = "windows")]
-                {
-                    args.extend([
-                        "-f".to_string(),
-                        "dshow".to_string(),
-                        "-i".to_string(),
-                        format!("video={}:audio={}", card.device_id, card.device_id),
-                    ]);
-                }
-
-                #[cfg(target_os = "linux")]
-                {
-                    args.extend([
-                        "-f".to_string(),
-                        "v4l2".to_string(),
-                        "-i".to_string(),
-                        card.device_id.clone(),
-                    ]);
-                }
-
-                Ok(args)
-            }
-
-            Source::Rtmp(rtmp) => {
-                // Build RTMP input URL from source configuration
-                let host = if rtmp.bind_address == "0.0.0.0" {
-                    "127.0.0.1"
-                } else {
-                    &rtmp.bind_address
-                };
-                let rtmp_url = format!("rtmp://{}:{}/{}", host, rtmp.port, rtmp.application);
-
-                Ok(vec![
-                    "-rtmp_live".to_string(),
-                    "live".to_string(),
-                    "-i".to_string(),
-                    rtmp_url,
-                ])
-            }
-
-            Source::AudioDevice(_) => {
-                // Audio-only devices get a placeholder visual
-                Ok(vec![
-                    "-f".to_string(),
-                    "lavfi".to_string(),
-                    "-i".to_string(),
-                    format!("color=c=darkblue:s={}x{}:d=3600", DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT),
-                ])
-            }
-            // Client-rendered sources (Color, Text, Browser) - these are rendered by the browser
-            // For preview purposes, we generate placeholder visuals
-            Source::Color(color) => {
-                let hex = color.color.trim_start_matches('#');
-                Ok(vec![
-                    "-f".to_string(),
-                    "lavfi".to_string(),
-                    "-i".to_string(),
-                    format!("color=c=0x{}:s={}x{}:d=3600", hex, DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT),
-                ])
-            }
-            Source::Text(_) => {
-                // Text sources are rendered purely in the browser
-                Ok(vec![
-                    "-f".to_string(),
-                    "lavfi".to_string(),
-                    "-i".to_string(),
-                    format!("color=c=black:s={}x{}:d=3600", DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT),
-                ])
-            }
-            Source::Browser(_) => {
-                // Browser sources are rendered purely in the browser
-                Ok(vec![
-                    "-f".to_string(),
-                    "lavfi".to_string(),
-                    "-i".to_string(),
-                    format!("color=c=gray:s={}x{}:d=3600", DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT),
-                ])
-            }
-            Source::WindowCapture(win) => {
-                // Window capture - similar to screen capture but for specific window
-                if win.window_id.is_empty() {
-                    return Err("Window not selected".to_string());
-                }
-
-                let mut args = Vec::new();
-
-                #[cfg(target_os = "macos")]
-                {
-                    // On macOS, window capture uses the same avfoundation with window ID
-                    args.extend([
-                        "-f".to_string(),
-                        "avfoundation".to_string(),
-                        "-framerate".to_string(),
-                        win.fps.to_string(),
-                        "-capture_cursor".to_string(),
-                        if win.capture_cursor { "1" } else { "0" }.to_string(),
-                        "-i".to_string(),
-                        format!("{}:none", win.window_id),
-                    ]);
-                }
-
-                #[cfg(target_os = "windows")]
-                {
-                    // On Windows, use gdigrab with window title
-                    args.extend([
-                        "-f".to_string(),
-                        "gdigrab".to_string(),
-                        "-framerate".to_string(),
-                        win.fps.to_string(),
-                        "-draw_mouse".to_string(),
-                        if win.capture_cursor { "1" } else { "0" }.to_string(),
-                        "-i".to_string(),
-                        format!("title={}", win.window_title),
-                    ]);
-                }
-
-                #[cfg(target_os = "linux")]
-                {
-                    // On Linux, use x11grab with window ID
-                    args.extend([
-                        "-f".to_string(),
-                        "x11grab".to_string(),
-                        "-framerate".to_string(),
-                        win.fps.to_string(),
-                        "-draw_mouse".to_string(),
-                        if win.capture_cursor { "1" } else { "0" }.to_string(),
-                        "-i".to_string(),
-                        format!(":0.0+{}", win.window_id),
-                    ]);
-                }
-
-                Ok(args)
-            }
-            Source::MediaPlaylist(_) => {
-                // Media playlists are rendered client-side with video element
-                Ok(vec![
-                    "-f".to_string(),
-                    "lavfi".to_string(),
-                    "-i".to_string(),
-                    format!("color=c=0x00008B:s={}x{}:d=3600", DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT),
-                ])
-            }
-            Source::NestedScene(_) => {
-                // Nested scenes are composited client-side
-                Ok(vec![
-                    "-f".to_string(),
-                    "lavfi".to_string(),
-                    "-i".to_string(),
-                    format!("color=c=0x800080:s={}x{}:d=3600", DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT),
-                ])
-            }
-            Source::GameCapture(_) => {
-                // Game capture - placeholder, actual capture handled by platform-specific code
-                Ok(vec![
-                    "-f".to_string(),
-                    "lavfi".to_string(),
-                    "-i".to_string(),
-                    format!("color=c=0x006400:s={}x{}:d=3600", DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT),
-                ])
-            }
-            Source::Ndi(_) => {
-                // NDI sources require NDI SDK - placeholder for now
-                Ok(vec![
-                    "-f".to_string(),
-                    "lavfi".to_string(),
-                    "-i".to_string(),
-                    format!("color=c=0xFF8C00:s={}x{}:d=3600", DEFAULT_PREVIEW_WIDTH, DEFAULT_PREVIEW_HEIGHT),
-                ])
-            }
-        }
+        super::ffmpeg_source_args::source_input_args(source, &super::ffmpeg_source_args::PREVIEW_OPTS)
     }
 
     /// Build FFmpeg args for MJPEG output
@@ -540,25 +185,22 @@ impl PreviewHandler {
 
         // Check if preview is already running
         {
-            let mut previews = self.source_previews.lock()
-                .map_err(|e| format!("Lock poisoned: {}", e))?;
-
-            if let Some(preview) = previews.get_mut(&source_id) {
+            if let Some(mut preview) = self.source_previews.get_mut(&source_id) {
                 preview.last_accessed = Instant::now();
                 // Preview already running - we need to create a new broadcast for this request
             }
 
             // Enforce max source previews (LRU eviction)
-            if previews.len() >= MAX_SOURCE_PREVIEWS && !previews.contains_key(&source_id) {
-                // Find oldest preview
-                let oldest = previews.iter()
-                    .min_by_key(|(_, p)| p.last_accessed)
-                    .map(|(id, _)| id.clone());
+            if self.source_previews.len() >= MAX_SOURCE_PREVIEWS && !self.source_previews.contains_key(&source_id) {
+                // Find oldest preview - collect key to avoid holding iterator across remove
+                let oldest = self.source_previews.iter()
+                    .min_by_key(|entry| entry.value().last_accessed)
+                    .map(|entry| entry.key().clone());
 
                 if let Some(oldest_id) = oldest {
-                    if let Some(mut old_preview) = previews.remove(&oldest_id) {
-                        let _ = old_preview.child.kill();
-                        let _ = old_preview.child.wait();
+                    if let Some((_, mut old_preview)) = self.source_previews.remove(&oldest_id) {
+                        kill_and_wait(&mut old_preview.child);
+                        Self::join_preview_threads(&mut old_preview);
                         log::info!("Evicted old preview for source: {}", oldest_id);
                     }
                 }
@@ -591,8 +233,7 @@ impl PreviewHandler {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        #[cfg(windows)]
-        cmd.creation_flags(CREATE_NO_WINDOW);
+        configure_hidden_window(&mut cmd);
 
         let mut child = cmd.spawn()
             .map_err(|e| format!("Failed to start FFmpeg preview: {} (path: {})", e, self.ffmpeg_path))?;
@@ -617,17 +258,18 @@ impl PreviewHandler {
 
         // Spawn reader thread
         let source_id_clone = source_id.clone();
-        std::thread::spawn(move || {
+        let idle_flag_clone = Arc::clone(&self.idle_flag);
+        let reader_handle = std::thread::spawn(move || {
             Self::read_mjpeg_stream(
                 stdout, tx, latest_frame_clone, last_frame_time_clone,
-                is_alive_clone, source_id_clone
+                is_alive_clone, source_id_clone, idle_flag_clone
             );
         });
 
         // Log stderr in background - capture all output for debugging
-        if let Some(stderr) = child.stderr.take() {
+        let stderr_handle = if let Some(stderr) = child.stderr.take() {
             let source_id_log = source_id.clone();
-            std::thread::spawn(move || {
+            Some(std::thread::spawn(move || {
                 let reader = BufReader::new(stderr);
                 for line in reader.lines().map_while(Result::ok) {
                     // Log all stderr output at debug level, errors at warn
@@ -638,27 +280,31 @@ impl PreviewHandler {
                     }
                 }
                 log::debug!("[Preview:{}] stderr reader finished", source_id_log);
-            });
-        }
+            }))
+        } else {
+            None
+        };
 
-        // Store the process with frame cache
-        {
-            let mut previews = self.source_previews.lock()
-                .map_err(|e| format!("Lock poisoned: {}", e))?;
-
-            previews.insert(source_id, PreviewProcess {
-                child,
-                last_accessed: Instant::now(),
-                latest_frame,
-                last_frame_time,
-                is_alive,
-            });
-        }
+        // Store the process with frame cache and thread handles
+        self.source_previews.insert(source_id, PreviewProcess {
+            child,
+            last_accessed: Instant::now(),
+            latest_frame,
+            last_frame_time,
+            is_alive,
+            reader_handle: Some(reader_handle),
+            stderr_handle,
+        });
 
         Ok(rx)
     }
 
-    /// Read MJPEG frames from FFmpeg stdout, broadcast them, and cache the latest
+    /// Read MJPEG frames from FFmpeg stdout, broadcast them, and cache the latest.
+    ///
+    /// When no subscribers are listening, the encoder enters a throttled idle state:
+    /// - After 30 consecutive no-subscriber frames (~2s at 15fps): sleep 500ms between reads
+    /// - After 60s total idle: exit the loop and mark the reader as dead
+    /// This prevents orphaned FFmpeg MJPEG processes from consuming 5-15% CPU each.
     fn read_mjpeg_stream(
         mut stdout: std::process::ChildStdout,
         tx: broadcast::Sender<Bytes>,
@@ -666,6 +312,7 @@ impl PreviewHandler {
         last_frame_time: Arc<Mutex<Instant>>,
         is_alive: Arc<AtomicBool>,
         source_id: String,
+        idle_flag: Arc<AtomicBool>,
     ) {
         let mut buffer = Vec::with_capacity(64 * 1024);
         let mut temp = [0u8; 8192];
@@ -673,10 +320,46 @@ impl PreviewHandler {
         let boundary_bytes = boundary.as_bytes();
         let mut frame_count = 0u64;
         let mut total_bytes = 0usize;
+        let mut idle_skip_counter = 0u32;
+
+        // No-subscriber tracking: throttle then stop orphaned encoders
+        let mut no_subscriber_count: u32 = 0;
+        let mut idle_since: Option<Instant> = None;
+        const NO_SUB_THROTTLE_THRESHOLD: u32 = 30;  // ~2s at 15fps
+        const NO_SUB_MAX_IDLE_SECS: u64 = 60;       // Stop after 60s with no subscribers
 
         log::debug!("[Preview:{}] Starting MJPEG reader, looking for boundary: {:?}", source_id, boundary);
 
         loop {
+            // Check for stall: if no frame received for READER_STALL_TIMEOUT_SECS, exit
+            // This prevents orphaned reader threads when FFmpeg stalls or produces no output
+            {
+                let elapsed = last_frame_time.lock().elapsed();
+                if elapsed > Duration::from_secs(READER_STALL_TIMEOUT_SECS) {
+                    log::warn!(
+                        "[Preview:{}] No frames for {}s, stopping stale preview reader",
+                        source_id, elapsed.as_secs()
+                    );
+                    break;
+                }
+            }
+
+            // Check if we've been idle (no subscribers) for too long
+            if let Some(since) = idle_since {
+                if since.elapsed() > Duration::from_secs(NO_SUB_MAX_IDLE_SECS) {
+                    log::info!(
+                        "[Preview:{}] No subscribers for {}s, stopping orphaned encoder",
+                        source_id, NO_SUB_MAX_IDLE_SECS
+                    );
+                    break;
+                }
+            }
+
+            // Throttle reads when no subscribers: sleep to let FFmpeg back-pressure naturally
+            if no_subscriber_count >= NO_SUB_THROTTLE_THRESHOLD {
+                std::thread::sleep(Duration::from_millis(500));
+            }
+
             match stdout.read(&mut temp) {
                 Ok(0) => {
                     // EOF
@@ -689,8 +372,18 @@ impl PreviewHandler {
                     buffer.extend_from_slice(&temp[..n]);
 
                     // Look for complete frames (boundary to boundary)
-                    while let Some(frame) = Self::extract_jpeg_frame(&mut buffer, boundary_bytes) {
+                    while let Some(frame) = extract_jpeg_frame(&mut buffer, boundary_bytes) {
                         frame_count += 1;
+
+                        // When idle (UI hidden), skip 3 out of 4 frames to save CPU
+                        if idle_flag.load(Ordering::Relaxed) {
+                            idle_skip_counter += 1;
+                            if idle_skip_counter % 4 != 0 {
+                                continue;
+                            }
+                        } else {
+                            idle_skip_counter = 0;
+                        }
 
                         // Validate JPEG magic bytes (FF D8 FF)
                         let is_valid_jpeg = frame.len() >= 3
@@ -713,10 +406,12 @@ impl PreviewHandler {
                         let frame_bytes = Bytes::from(frame);
 
                         // Cache the latest frame and update timestamp for staleness detection
-                        if let Ok(mut cached) = latest_frame.lock() {
+                        {
+                            let mut cached = latest_frame.lock();
                             *cached = Some(frame_bytes.clone());
                         }
-                        if let Ok(mut time) = last_frame_time.lock() {
+                        {
+                            let mut time = last_frame_time.lock();
                             *time = Instant::now();
                         }
 
@@ -726,13 +421,21 @@ impl PreviewHandler {
                                     log::info!("[Preview:{}] First frame broadcast to {} receivers",
                                         source_id, receiver_count);
                                 }
+                                // Reset no-subscriber tracking on successful delivery
+                                no_subscriber_count = 0;
+                                idle_since = None;
                             }
                             Err(_) => {
-                                // No receivers, but keep running for snapshot cache
-                                // Don't stop - snapshots may still need the cached frame
-                                if frame_count == 1 {
-                                    log::debug!("[Preview:{}] No broadcast receivers, continuing for snapshot cache",
-                                        source_id);
+                                // No receivers — track consecutive no-subscriber frames
+                                no_subscriber_count += 1;
+                                if idle_since.is_none() {
+                                    idle_since = Some(Instant::now());
+                                }
+                                if no_subscriber_count == NO_SUB_THROTTLE_THRESHOLD {
+                                    log::info!(
+                                        "[Preview:{}] No subscribers for ~2s, throttling reads",
+                                        source_id
+                                    );
                                 }
                             }
                         }
@@ -751,57 +454,21 @@ impl PreviewHandler {
     }
 
     /// Extract a complete JPEG frame from the buffer
-    fn extract_jpeg_frame(buffer: &mut Vec<u8>, boundary: &[u8]) -> Option<Vec<u8>> {
-        // Find first boundary
-        let first = Self::find_subsequence(buffer, boundary)?;
-
-        // Find content type line end (after boundary)
-        let header_start = first + boundary.len();
-        let header_end = Self::find_subsequence(&buffer[header_start..], b"\r\n\r\n")?;
-        let content_start = header_start + header_end + 4;
-
-        // Find next boundary
-        let next_boundary = Self::find_subsequence(&buffer[content_start..], boundary)?;
-        let content_end = content_start + next_boundary;
-
-        // Check for JPEG markers
-        if content_end - content_start < 2 {
-            // Not enough data
-            buffer.drain(..first + boundary.len());
-            return None;
-        }
-
-        // Extract JPEG data (trim trailing \r\n before boundary)
-        let mut jpeg_end = content_end;
-        while jpeg_end > content_start && (buffer[jpeg_end - 1] == b'\n' || buffer[jpeg_end - 1] == b'\r') {
-            jpeg_end -= 1;
-        }
-
-        let frame = buffer[content_start..jpeg_end].to_vec();
-        buffer.drain(..content_end);
-
-        Some(frame)
-    }
-
-    /// Find subsequence in slice
-    fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-        haystack.windows(needle.len()).position(|w| w == needle)
-    }
 
     /// Get cached frame from a running preview (if available)
     /// Returns None if the preview is dead or frame is stale
     pub fn get_cached_frame(&self, source_id: &str) -> Option<Vec<u8>> {
-        let previews = self.source_previews.lock().ok()?;
-        let preview = previews.get(source_id)?;
+        let preview = self.source_previews.get(source_id)?;
 
         // Check if the reader thread is still alive
-        if !preview.is_alive.load(Ordering::SeqCst) {
+        if !preview.value().is_alive.load(Ordering::SeqCst) {
             log::debug!("[Preview:{}] Reader thread is dead, returning None", source_id);
             return None;
         }
 
         // Check if the frame is stale (no new frames for too long)
-        if let Ok(last_time) = preview.last_frame_time.lock() {
+        {
+            let last_time = preview.value().last_frame_time.lock();
             let age = last_time.elapsed();
             if age.as_secs() > STALE_FRAME_THRESHOLD_SECS {
                 log::debug!("[Preview:{}] Cached frame is stale ({:.1}s old), returning None",
@@ -810,29 +477,24 @@ impl PreviewHandler {
             }
         }
 
-        let frame = preview.latest_frame.lock().ok()?;
+        let frame = preview.value().latest_frame.lock();
         frame.as_ref().map(|b| b.to_vec())
     }
 
     /// Check if a preview is running for a source (and actually alive)
     pub fn is_preview_running(&self, source_id: &str) -> bool {
-        self.source_previews.lock()
-            .map(|p| {
-                p.get(source_id)
-                    .map(|preview| preview.is_alive.load(Ordering::SeqCst))
-                    .unwrap_or(false)
-            })
+        self.source_previews.get(source_id)
+            .map(|preview| preview.value().is_alive.load(Ordering::SeqCst))
             .unwrap_or(false)
     }
 
     /// Clean up dead preview processes from the hashmap
     pub fn cleanup_dead_preview(&self, source_id: &str) {
-        if let Ok(mut previews) = self.source_previews.lock() {
-            if let Some(preview) = previews.get(source_id) {
-                if !preview.is_alive.load(Ordering::SeqCst) {
-                    log::info!("[Preview:{}] Removing dead preview from cache", source_id);
-                    previews.remove(source_id);
-                }
+        if let Some(preview) = self.source_previews.get(source_id) {
+            if !preview.value().is_alive.load(Ordering::SeqCst) {
+                log::info!("[Preview:{}] Removing dead preview from cache", source_id);
+                drop(preview); // Drop the reference before removing
+                self.source_previews.remove(source_id);
             }
         }
     }
@@ -927,8 +589,7 @@ impl PreviewHandler {
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
 
-            #[cfg(windows)]
-            cmd.creation_flags(CREATE_NO_WINDOW);
+            crate::services::process_util::configure_hidden_window_tokio(&mut cmd);
 
             // kill_on_drop ensures the process is killed if the future is dropped (e.g., on timeout)
             cmd.kill_on_drop(true);
@@ -970,14 +631,23 @@ impl PreviewHandler {
         Ok(jpeg_data)
     }
 
+    /// Join thread handles after killing the child process.
+    /// Killing the child closes pipes, causing reader threads to exit naturally.
+    fn join_preview_threads(preview: &mut PreviewProcess) {
+        if let Some(h) = preview.reader_handle.take() {
+            let _ = h.join();
+        }
+        if let Some(h) = preview.stderr_handle.take() {
+            let _ = h.join();
+        }
+    }
+
     /// Stop a source preview
     pub fn stop_source_preview(&self, source_id: &str) {
-        if let Ok(mut previews) = self.source_previews.lock() {
-            if let Some(mut preview) = previews.remove(source_id) {
-                let _ = preview.child.kill();
-                let _ = preview.child.wait();
-                log::info!("Stopped preview for source: {}", source_id);
-            }
+        if let Some((_, mut preview)) = self.source_previews.remove(source_id) {
+            kill_and_wait(&mut preview.child);
+            Self::join_preview_threads(&mut preview);
+            log::info!("Stopped preview for source: {}", source_id);
         }
     }
 
@@ -1050,8 +720,7 @@ impl PreviewHandler {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        #[cfg(windows)]
-        cmd.creation_flags(CREATE_NO_WINDOW);
+        configure_hidden_window(&mut cmd);
 
         let mut child = cmd.spawn()
             .map_err(|e| format!("Failed to start FFmpeg scene preview: {} (path: {})", e, self.ffmpeg_path))?;
@@ -1074,7 +743,8 @@ impl PreviewHandler {
 
         // Spawn reader thread
         let scene_id_clone = scene_id.clone();
-        std::thread::spawn(move || {
+        let idle_flag_clone = Arc::clone(&self.idle_flag);
+        let reader_handle = std::thread::spawn(move || {
             Self::read_mjpeg_stream(
                 stdout,
                 tx,
@@ -1082,13 +752,14 @@ impl PreviewHandler {
                 last_frame_time_clone,
                 is_alive_clone,
                 format!("scene:{}", scene_id_clone),
+                idle_flag_clone,
             );
         });
 
         // Log stderr in background
-        if let Some(stderr) = child.stderr.take() {
+        let stderr_handle = if let Some(stderr) = child.stderr.take() {
             let scene_id_log = scene_id.clone();
-            std::thread::spawn(move || {
+            Some(std::thread::spawn(move || {
                 let reader = BufReader::new(stderr);
                 for line in reader.lines().map_while(Result::ok) {
                     if line.contains("error") || line.contains("Error") || line.contains("Invalid") {
@@ -1098,13 +769,14 @@ impl PreviewHandler {
                     }
                 }
                 log::debug!("[ScenePreview:{}] stderr reader finished", scene_id_log);
-            });
-        }
+            }))
+        } else {
+            None
+        };
 
-        // Store the process with frame cache
+        // Store the process with frame cache and thread handles
         {
-            let mut scene_preview = self.scene_preview.lock()
-                .map_err(|e| format!("Lock poisoned: {}", e))?;
+            let mut scene_preview = self.scene_preview.lock();
 
             *scene_preview = Some(PreviewProcess {
                 child,
@@ -1112,6 +784,8 @@ impl PreviewHandler {
                 latest_frame,
                 last_frame_time,
                 is_alive,
+                reader_handle: Some(reader_handle),
+                stderr_handle,
             });
         }
 
@@ -1121,7 +795,7 @@ impl PreviewHandler {
     /// Get cached frame from the scene preview (if available)
     /// Returns None if the preview is dead or frame is stale
     pub fn get_scene_cached_frame(&self) -> Option<Vec<u8>> {
-        let preview = self.scene_preview.lock().ok()?;
+        let preview = self.scene_preview.lock();
         let proc = preview.as_ref()?;
 
         // Check if the reader thread is still alive
@@ -1131,7 +805,8 @@ impl PreviewHandler {
         }
 
         // Check if the frame is stale (no new frames for too long)
-        if let Ok(last_time) = proc.last_frame_time.lock() {
+        {
+            let last_time = proc.last_frame_time.lock();
             let age = last_time.elapsed();
             if age.as_secs() > STALE_FRAME_THRESHOLD_SECS {
                 log::debug!("[ScenePreview] Cached frame is stale ({:.1}s old), returning None",
@@ -1140,29 +815,25 @@ impl PreviewHandler {
             }
         }
 
-        let frame = proc.latest_frame.lock().ok()?;
+        let frame = proc.latest_frame.lock();
         frame.as_ref().map(|b| b.to_vec())
     }
 
     /// Check if scene preview is running (and actually alive)
     pub fn is_scene_preview_running(&self) -> bool {
-        self.scene_preview.lock()
-            .map(|p| {
-                p.as_ref()
-                    .map(|proc| proc.is_alive.load(Ordering::SeqCst))
-                    .unwrap_or(false)
-            })
+        let p = self.scene_preview.lock();
+        p.as_ref()
+            .map(|proc| proc.is_alive.load(Ordering::SeqCst))
             .unwrap_or(false)
     }
 
     /// Clean up dead scene preview
     pub fn cleanup_dead_scene_preview(&self) {
-        if let Ok(mut preview) = self.scene_preview.lock() {
-            if let Some(proc) = preview.as_ref() {
-                if !proc.is_alive.load(Ordering::SeqCst) {
-                    log::info!("[ScenePreview] Removing dead scene preview from cache");
-                    *preview = None;
-                }
+        let mut preview = self.scene_preview.lock();
+        if let Some(proc) = preview.as_ref() {
+            if !proc.is_alive.load(Ordering::SeqCst) {
+                log::info!("[ScenePreview] Removing dead scene preview from cache");
+                *preview = None;
             }
         }
     }
@@ -1221,30 +892,35 @@ impl PreviewHandler {
 
     /// Stop the scene preview
     pub fn stop_scene_preview(&self) {
-        if let Ok(mut scene) = self.scene_preview.lock() {
-            if let Some(mut preview) = scene.take() {
-                let _ = preview.child.kill();
-                let _ = preview.child.wait();
-                log::info!("Stopped scene preview");
-            }
+        let mut scene = self.scene_preview.lock();
+        if let Some(mut preview) = scene.take() {
+            kill_and_wait(&mut preview.child);
+            Self::join_preview_threads(&mut preview);
+            log::info!("Stopped scene preview");
         }
     }
 
     /// Stop all previews
     pub fn stop_all_previews(&self) {
         // Stop scene preview
-        if let Ok(mut scene) = self.scene_preview.lock() {
+        {
+            let mut scene = self.scene_preview.lock();
             if let Some(mut preview) = scene.take() {
-                let _ = preview.child.kill();
-                let _ = preview.child.wait();
+                kill_and_wait(&mut preview.child);
+                Self::join_preview_threads(&mut preview);
             }
         }
 
         // Stop all source previews
-        if let Ok(mut previews) = self.source_previews.lock() {
-            for (id, mut preview) in previews.drain() {
-                let _ = preview.child.kill();
-                let _ = preview.child.wait();
+        // DashMap doesn't have drain, so collect keys first, then remove individually
+        let keys: Vec<String> = self.source_previews.iter()
+            .map(|entry| entry.key().clone())
+            .collect();
+
+        for id in keys {
+            if let Some((_, mut preview)) = self.source_previews.remove(&id) {
+                kill_and_wait(&mut preview.child);
+                Self::join_preview_threads(&mut preview);
                 log::info!("Stopped preview for source: {}", id);
             }
         }
@@ -1255,31 +931,27 @@ impl PreviewHandler {
         let timeout = Duration::from_secs(ORPHAN_TIMEOUT_SECS);
         let now = Instant::now();
 
-        if let Ok(mut previews) = self.source_previews.lock() {
-            let orphans: Vec<String> = previews.iter()
-                .filter(|(_, p)| now.duration_since(p.last_accessed) > timeout)
-                .map(|(id, _)| id.clone())
-                .collect();
+        // Collect orphan keys first, then remove them to avoid holding iterator across remove
+        let orphans: Vec<String> = self.source_previews.iter()
+            .filter(|entry| now.duration_since(entry.value().last_accessed) > timeout)
+            .map(|entry| entry.key().clone())
+            .collect();
 
-            for id in orphans {
-                if let Some(mut preview) = previews.remove(&id) {
-                    let _ = preview.child.kill();
-                    let _ = preview.child.wait();
-                    log::info!("Cleaned up orphaned preview: {}", id);
-                }
+        for id in orphans {
+            if let Some((_, mut preview)) = self.source_previews.remove(&id) {
+                kill_and_wait(&mut preview.child);
+                Self::join_preview_threads(&mut preview);
+                log::info!("Cleaned up orphaned preview: {}", id);
             }
         }
     }
 
     /// Get active preview count
     pub fn active_preview_count(&self) -> usize {
-        let scene_count = self.scene_preview.lock()
-            .map(|s| if s.is_some() { 1 } else { 0 })
-            .unwrap_or(0);
+        let s = self.scene_preview.lock();
+        let scene_count = if s.is_some() { 1 } else { 0 };
 
-        let source_count = self.source_previews.lock()
-            .map(|p| p.len())
-            .unwrap_or(0);
+        let source_count = self.source_previews.len();
 
         scene_count + source_count
     }

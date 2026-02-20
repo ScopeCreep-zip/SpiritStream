@@ -14,7 +14,7 @@ export function Logo({ size = 'md', showText = true, className }: LogoProps) {
   };
 
   return (
-    <div className={cn('flex items-center', className)} style={{ gap: '12px' }}>
+    <div className={cn('flex items-center', 'gap-3', className)}>
       <img
         src="/app-icon.png"
         alt="SpiritStream"
@@ -25,14 +25,7 @@ export function Logo({ size = 'md', showText = true, className }: LogoProps) {
         )}
       />
       {showText && (
-        <span
-          className="font-bold text-lg bg-clip-text"
-          style={{
-            background: 'var(--gradient-brand)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-          }}
-        >
+        <span className="font-bold text-lg text-gradient">
           SpiritStream
         </span>
       )}
