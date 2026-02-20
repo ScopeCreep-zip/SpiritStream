@@ -3607,3 +3607,114 @@ fn select_sample_fmt(encoder: *const ffi::AVCodec, fallback: ffi::AVSampleFormat
     }
     fallback
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_rtmp_listen_url_extracts_base_app_and_key() {
+        let (base, app, playpath) = parse_rtmp_listen_url("rtmp://127.0.0.1:1935/live/stream_key?listen=1");
+        assert_eq!(base, "rtmp://127.0.0.1:1935?listen=1");
+        assert_eq!(app.as_deref(), Some("live"));
+        assert_eq!(playpath.as_deref(), Some("stream_key"));
+    }
+
+    #[test]
+    fn parse_rtmp_listen_url_non_rtmp_passthrough() {
+        let input = "http://example.com/live/stream";
+        let (base, app, playpath) = parse_rtmp_listen_url(input);
+        assert_eq!(base, input);
+        assert_eq!(app, None);
+        assert_eq!(playpath, None);
+    }
+
+    #[test]
+    fn targets_contain_twitch_detects_known_hosts() {
+        let targets = vec![
+            "rtmp://live.twitch.tv/app/abc".to_string(),
+            "rtmp://a.rtmp.youtube.com/live2/xyz".to_string(),
+        ];
+        assert!(targets_contain_twitch(&targets));
+    }
+
+    #[test]
+    fn target_state_reconnect_backoff_and_reset() {
+        let mut state = TargetState::new("rtmp://example.com/live".to_string());
+        let config = ReconnectionConfig {
+            max_retries: 3,
+            initial_delay_secs: 1,
+            max_delay_secs: 10,
+            failure_threshold: 2,
+            auto_reconnect: true,
+        };
+
+        assert!(!state.record_failure(config.failure_threshold));
+        assert!(state.record_failure(config.failure_threshold));
+        assert!(state.is_failed);
+        assert!(state.should_attempt_reconnect(&config));
+
+        state.start_reconnect();
+        assert!(state.reconnecting);
+        assert_eq!(state.reconnect_attempt, 1);
+        assert!(!state.should_attempt_reconnect(&config));
+
+        let earlier = Instant::now()
+            .checked_sub(Duration::from_secs(2))
+            .unwrap_or_else(Instant::now);
+        state.last_reconnect = Some(earlier);
+        state.reconnecting = false;
+        assert!(state.should_attempt_reconnect(&config));
+
+        state.finish_reconnect(true);
+        assert!(!state.is_failed);
+        assert_eq!(state.reconnect_attempt, 0);
+        assert_eq!(state.consecutive_failures, 0);
+    }
+
+    #[test]
+    fn add_group_detects_passthrough_vs_transcode_mode() {
+        let mut pipeline = InputPipeline::new(InputPipelineConfig {
+            input_id: "input-1".to_string(),
+            input_url: "rtmp://127.0.0.1:1935/live".to_string(),
+            expected_stream_key: None,
+        });
+
+        let passthrough = OutputGroup {
+            id: "g1".to_string(),
+            video: crate::models::VideoSettings {
+                codec: "copy".to_string(),
+                ..Default::default()
+            },
+            audio: crate::models::AudioSettings {
+                codec: "copy".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let transcode = OutputGroup {
+            id: "g2".to_string(),
+            video: crate::models::VideoSettings {
+                codec: "h264_amf".to_string(),
+                ..Default::default()
+            },
+            audio: crate::models::AudioSettings {
+                codec: "aac".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        pipeline
+            .add_group(passthrough, vec!["rtmp://a".to_string()])
+            .expect("passthrough group should add");
+        pipeline
+            .add_group(transcode, vec!["rtmp://b".to_string()])
+            .expect("transcode group should add");
+
+        assert_eq!(pipeline.groups.len(), 2);
+        assert_eq!(pipeline.groups[0].mode, OutputGroupMode::Passthrough);
+        assert_eq!(pipeline.groups[1].mode, OutputGroupMode::Transcode);
+    }
+}
