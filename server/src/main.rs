@@ -40,6 +40,7 @@ use tower_http::{
 use spiritstream_server::commands::{
     get_encoders, test_ffmpeg, test_rtmp_target,
     probe_encoder_capabilities, get_encoder_capabilities, get_all_video_encoders,
+    get_ffmpeg_diagnostics,
 };
 use spiritstream_server::models::{OutputGroup, Profile, RtmpInput, Settings, ObsIntegrationDirection};
 use spiritstream_server::services::{
@@ -1638,6 +1639,7 @@ async fn invoke_command(
         "get_encoder_capabilities" => Ok(json!(get_encoder_capabilities())),
         "get_video_encoders" => Ok(json!(get_all_video_encoders())),
         "test_ffmpeg" => Ok(json!(test_ffmpeg()?)),
+        "get_ffmpeg_diagnostics" => Ok(json!(get_ffmpeg_diagnostics()?)),
         "test_rtmp_target" => {
             let url: String = get_arg(&payload, "url")?;
             let stream_key: String = get_arg(&payload, "streamKey")?;

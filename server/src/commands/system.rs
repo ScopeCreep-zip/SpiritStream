@@ -52,6 +52,165 @@ pub fn test_ffmpeg() -> Result<String, String> {
     }
 }
 
+/// Version details for a linked FFmpeg library
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct FfmpegLibraryVersion {
+    pub library: String,
+    pub version: String,
+}
+
+/// Runtime FFmpeg diagnostics snapshot for fast cross-machine validation.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct FfmpegDiagnostics {
+    pub ffmpeg_libs_feature_enabled: bool,
+    pub ffmpeg_version: Option<String>,
+    pub libraries: Vec<FfmpegLibraryVersion>,
+    pub available_video_encoders: Vec<String>,
+    pub available_audio_encoders: Vec<String>,
+    pub detected_hw_backends: Vec<String>,
+    pub encoder_probe: EncoderCapabilities,
+    pub notes: Vec<String>,
+}
+
+/// Collect a runtime diagnostics snapshot for FFmpeg libs + encoder availability.
+pub fn get_ffmpeg_diagnostics() -> Result<FfmpegDiagnostics, String> {
+    let probe = EncoderCapabilities::refresh();
+
+    #[cfg(feature = "ffmpeg-libs")]
+    {
+        let ffmpeg_version = unsafe {
+            let ptr = ffi::av_version_info();
+            if ptr.is_null() {
+                None
+            } else {
+                Some(CStr::from_ptr(ptr).to_string_lossy().into_owned())
+            }
+        };
+
+        let libraries = vec![
+            FfmpegLibraryVersion {
+                library: "libavutil".to_string(),
+                version: format_ffmpeg_version(unsafe { ffi::avutil_version() }),
+            },
+            FfmpegLibraryVersion {
+                library: "libavcodec".to_string(),
+                version: format_ffmpeg_version(unsafe { ffi::avcodec_version() }),
+            },
+            FfmpegLibraryVersion {
+                library: "libavformat".to_string(),
+                version: format_ffmpeg_version(unsafe { ffi::avformat_version() }),
+            },
+            FfmpegLibraryVersion {
+                library: "libavfilter".to_string(),
+                version: format_ffmpeg_version(unsafe { ffi::avfilter_version() }),
+            },
+            FfmpegLibraryVersion {
+                library: "libswscale".to_string(),
+                version: format_ffmpeg_version(unsafe { ffi::swscale_version() }),
+            },
+            FfmpegLibraryVersion {
+                library: "libswresample".to_string(),
+                version: format_ffmpeg_version(unsafe { ffi::swresample_version() }),
+            },
+        ];
+
+        let mut available_video_encoders = Vec::new();
+        for name in [
+            "libx264",
+            "libx265",
+            "libsvtav1",
+            "h264_nvenc",
+            "hevc_nvenc",
+            "av1_nvenc",
+            "h264_amf",
+            "hevc_amf",
+            "av1_amf",
+            "h264_qsv",
+            "hevc_qsv",
+            "av1_qsv",
+            "h264_videotoolbox",
+            "hevc_videotoolbox",
+        ] {
+            if encoder_available(name) {
+                available_video_encoders.push(name.to_string());
+            }
+        }
+
+        let mut available_audio_encoders = Vec::new();
+        for name in ["aac", "libopus"] {
+            if encoder_available(name) {
+                available_audio_encoders.push(name.to_string());
+            }
+        }
+
+        let mut detected_hw_backends = Vec::new();
+        if probe.nvenc.available {
+            detected_hw_backends.push("cuda".to_string());
+        }
+        if probe.amf.available {
+            detected_hw_backends.push("d3d11va".to_string());
+        }
+        if probe.qsv.available {
+            detected_hw_backends.push("qsv".to_string());
+        }
+        if probe.videotoolbox.available {
+            detected_hw_backends.push("videotoolbox".to_string());
+        }
+        detected_hw_backends.sort();
+        detected_hw_backends.dedup();
+
+        let mut notes = Vec::new();
+        if ffmpeg_version.is_none() {
+            notes.push("FFmpeg version string was unavailable from av_version_info".to_string());
+        }
+        if !probe.probe_errors.is_empty() {
+            notes.push("Probe errors present; inspect encoder_probe.probe_errors for details".to_string());
+        }
+
+        Ok(FfmpegDiagnostics {
+            ffmpeg_libs_feature_enabled: true,
+            ffmpeg_version,
+            libraries,
+            available_video_encoders,
+            available_audio_encoders,
+            detected_hw_backends,
+            encoder_probe: probe,
+            notes,
+        })
+    }
+
+    #[cfg(not(feature = "ffmpeg-libs"))]
+    {
+        Ok(FfmpegDiagnostics {
+            ffmpeg_libs_feature_enabled: false,
+            ffmpeg_version: None,
+            libraries: Vec::new(),
+            available_video_encoders: Vec::new(),
+            available_audio_encoders: Vec::new(),
+            detected_hw_backends: Vec::new(),
+            encoder_probe: probe,
+            notes: vec!["ffmpeg-libs feature not enabled".to_string()],
+        })
+    }
+}
+
+#[cfg(feature = "ffmpeg-libs")]
+fn format_ffmpeg_version(raw: u32) -> String {
+    let major = (raw >> 16) & 0xff;
+    let minor = (raw >> 8) & 0xff;
+    let micro = raw & 0xff;
+    format!("{major}.{minor}.{micro}")
+}
+
+#[cfg(feature = "ffmpeg-libs")]
+fn encoder_available(name: &str) -> bool {
+    let c_name = match std::ffi::CString::new(name) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+    unsafe { !ffi::avcodec_find_encoder_by_name(c_name.as_ptr()).is_null() }
+}
+
 /// Result of testing an RTMP target
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct RtmpTestResult {
