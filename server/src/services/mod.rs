@@ -32,10 +32,12 @@ mod stream_audio_decoder;
 mod frame_processing;
 pub mod ffmpeg_args;
 pub mod ffmpeg_source_args;
+pub mod ffmpeg_process;
 pub mod process_util;
 pub mod thread_config;
 mod power_management;
 mod source_lifecycle;
+pub mod capture_core;
 
 // macOS-specific ScreenCaptureKit audio capture
 #[cfg(target_os = "macos")]

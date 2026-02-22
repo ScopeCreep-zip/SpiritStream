@@ -23,6 +23,14 @@ export const ScreenCaptureForm = React.memo(({ data, onChange, devices, onRefres
     label: `${d.name} (${d.width}x${d.height})${d.isPrimary ? ' - Primary' : ''}`,
   }));
 
+  const resolutionOptions: SelectOption[] = [
+    { value: '720p', label: '720p (1280x720) — Low resource usage' },
+    { value: '1080p', label: '1080p (1920x1080) — Recommended' },
+    { value: '1440p', label: '1440p (2560x1440)' },
+    { value: '2160p', label: '4K (3840x2160)' },
+    { value: 'captured', label: 'Native — Full display resolution' },
+  ];
+
   return (
     <div className="flex flex-col gap-4">
       <Input
@@ -66,6 +74,12 @@ export const ScreenCaptureForm = React.memo(({ data, onChange, devices, onRefres
         type="number"
         value={String(data.fps)}
         onChange={(e) => onChange({ ...data, fps: parseInt(e.target.value) || 30 })}
+      />
+      <Select
+        label={t('stream.captureResolution', { defaultValue: 'Capture Resolution' })}
+        value={data.captureResolution || '1080p'}
+        onChange={(e) => onChange({ ...data, captureResolution: e.target.value as ScreenCaptureSource['captureResolution'] })}
+        options={resolutionOptions}
       />
       <div className="flex items-center justify-between">
         <span className="text-sm">{t('stream.captureCursor', { defaultValue: 'Capture Cursor' })}</span>

@@ -3,14 +3,14 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::Stdio;
 use std::sync::Mutex;
 use std::time::Instant;
 use serde::{Deserialize, Serialize};
 
 use crate::services::Encryption;
 use crate::services::PowerAssertion;
-use crate::services::process_util::{configure_hidden_window, kill_and_wait};
+use crate::services::ffmpeg_process::FfmpegProcess;
 use crate::models::OutputGroup;
 
 /// Recording format options
@@ -82,7 +82,7 @@ pub struct RecordingInfo {
 /// Active recording handle
 struct ActiveRecording {
     id: String,
-    process: Child,
+    process: FfmpegProcess,
     temp_path: PathBuf,
     final_path: PathBuf,
     config: RecordingConfig,
@@ -215,21 +215,18 @@ impl RecordingService {
 
         log::info!("Starting recording {}: {} {}", id, self.ffmpeg_path, args.join(" "));
 
-        let mut cmd = Command::new(&self.ffmpeg_path);
-        cmd.args(&args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped());
-
-        configure_hidden_window(&mut cmd);
-
-        let mut child = cmd.spawn()
-            .map_err(|e| format!("Failed to start FFmpeg recording: {}", e))?;
+        let mut child = FfmpegProcess::spawn(
+            &self.ffmpeg_path,
+            &args,
+            &format!("rec-native-{}", &id[..id.len().min(12)]),
+            Stdio::piped(),
+            Stdio::null(),
+        ).map_err(|e| format!("Failed to start FFmpeg recording: {}", e))?;
 
         // Acquire power assertion only after FFmpeg spawn succeeds
         self.acquire_power_assertion();
 
-        let stdin = child.stdin.take()
+        let stdin = child.take_stdin()
             .ok_or_else(|| "Failed to capture FFmpeg stdin".to_string())?;
 
         // Store active recording
@@ -292,16 +289,13 @@ impl RecordingService {
         log::info!("Starting recording {} from relay: {} {}",
             id, self.ffmpeg_path, args.join(" "));
 
-        let mut cmd = Command::new(&self.ffmpeg_path);
-        cmd.args(&args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped());
-
-        configure_hidden_window(&mut cmd);
-
-        let child = cmd.spawn()
-            .map_err(|e| format!("Failed to start FFmpeg recording: {}", e))?;
+        let child = FfmpegProcess::spawn(
+            &self.ffmpeg_path,
+            &args,
+            &format!("rec-relay-{}", &id[..id.len().min(12)]),
+            Stdio::null(),
+            Stdio::null(),
+        ).map_err(|e| format!("Failed to start FFmpeg recording: {}", e))?;
 
         // Acquire power assertion only after FFmpeg spawn succeeds
         self.acquire_power_assertion();
@@ -363,7 +357,7 @@ impl RecordingService {
 
         // Stop FFmpeg process
         let mut process = recording.process;
-        kill_and_wait(&mut process);
+        process.kill_and_wait();
 
         let duration = recording.start_time.elapsed().as_secs_f64();
 

@@ -65,6 +65,8 @@ export interface ScreenCaptureSource extends BaseSource {
   captureCursor: boolean;
   captureAudio: boolean;
   fps: number;
+  /** Target capture resolution. Default '1080p'. Use 'captured' for native display resolution. */
+  captureResolution?: '480p' | '720p' | '1080p' | '1440p' | '2160p' | 'captured';
 }
 
 /**
@@ -80,6 +82,8 @@ export interface WindowCaptureSource extends BaseSource {
   fps: number;
   /** Whether to capture window audio (macOS/Windows) */
   captureAudio: boolean;
+  /** Target capture resolution. Default '1080p'. Use 'captured' for native display resolution. */
+  captureResolution?: '480p' | '720p' | '1080p' | '1440p' | '2160p' | 'captured';
 }
 
 /**
@@ -330,364 +334,83 @@ export interface WindowInfo {
   height?: number;
 }
 
-/**
- * Helper to check if source has video
- */
-export function sourceHasVideo(source: Source): boolean {
-  switch (source.type) {
-    case 'rtmp':
-    case 'screenCapture':
-    case 'windowCapture':
-    case 'gameCapture':
-    case 'camera':
-    case 'captureCard':
-    case 'color':
-    case 'text':
-    case 'browser':
-    case 'nestedScene':
-    case 'ndi':
-      return true;
-    case 'mediaFile':
-      return !source.audioOnly;
-    case 'mediaPlaylist':
-      return true; // Playlists typically contain video
-    case 'audioDevice':
-      return false;
-  }
-}
+// ---------------------------------------------------------------------------
+// Re-exports from sourceRegistry (single source of truth)
+//
+// These were previously 14 factory functions + 6 switch statements inline here.
+// Now delegated to @/lib/sourceRegistry for maintainability.
+// Existing imports from '@/types/source' continue to work unchanged.
+// ---------------------------------------------------------------------------
+export {
+  sourceHasVideo,
+  sourceHasAudio,
+  getSourceTypeLabel,
+  getSourceTypeIcon,
+  isClientSideSource,
+  createDefaultSource,
+  SOURCE_REGISTRY,
+  type SourceCategory,
+  type SourceTypeEntry,
+} from '@/lib/sourceRegistry';
 
-/**
- * Helper to check if source has audio
- * Note: Camera returns false because audio comes from the auto-created linked AudioDeviceSource
- */
-export function sourceHasAudio(source: Source): boolean {
-  switch (source.type) {
-    case 'rtmp':
-      return source.captureAudio;
-    case 'mediaFile':
-      // Media files have audio by default unless explicitly disabled
-      return source.captureAudio !== false;
-    case 'audioDevice':
-      return true;
-    case 'captureCard':
-      return source.captureAudio;
-    case 'ndi':
-      return source.captureAudio;
-    case 'screenCapture':
-      return source.captureAudio;
-    // Camera video itself has no audio - audio comes from linked AudioDeviceSource
-    case 'camera':
-      return false;
-    case 'windowCapture':
-      return source.captureAudio;
-    case 'gameCapture':
-      return source.captureAudio;
-    case 'mediaPlaylist':
-      return source.captureAudio;
-    case 'color':
-    case 'text':
-    case 'browser':
-    case 'nestedScene':
-      return false;
-  }
-}
+// Legacy factory functions — thin wrappers around createDefaultSource for
+// backward compatibility. New code should use createDefaultSource() directly.
+import { createDefaultSource } from '@/lib/sourceRegistry';
 
-/**
- * Factory functions for creating default sources
- */
 export function createDefaultRtmpSource(name = 'RTMP Input'): RtmpSource {
-  return {
-    type: 'rtmp',
-    id: crypto.randomUUID(),
-    name,
-    bindAddress: '0.0.0.0',
-    port: 1935,
-    application: 'live',
-    captureAudio: true,
-  };
+  return createDefaultSource('rtmp', { name });
 }
 
-export function createDefaultMediaFileSource(
-  name = 'Media File',
-  filePath = ''
-): MediaFileSource {
-  return {
-    type: 'mediaFile',
-    id: crypto.randomUUID(),
-    name,
-    filePath,
-    loopPlayback: false,
-    audioOnly: false,
-    captureAudio: true,
-  };
+export function createDefaultMediaFileSource(name = 'Media File', filePath = ''): MediaFileSource {
+  return createDefaultSource('mediaFile', { name, filePath });
 }
 
-export function createDefaultScreenCaptureSource(
-  name = 'Screen Capture',
-  displayId = '',
-  deviceName?: string
-): ScreenCaptureSource {
-  return {
-    type: 'screenCapture',
-    id: crypto.randomUUID(),
-    name,
-    displayId,
-    deviceName,
-    captureCursor: true,
-    captureAudio: false,
-    fps: 30,
-  };
+export function createDefaultScreenCaptureSource(name = 'Screen Capture', displayId = '', deviceName?: string): ScreenCaptureSource {
+  return createDefaultSource('screenCapture', { name, displayId, deviceName });
 }
 
-export function createDefaultCameraSource(
-  name = 'Camera',
-  deviceId = ''
-): CameraSource {
-  return {
-    type: 'camera',
-    id: crypto.randomUUID(),
-    name,
-    deviceId,
-    captureAudio: false,
-  };
+export function createDefaultCameraSource(name = 'Camera', deviceId = ''): CameraSource {
+  return createDefaultSource('camera', { name, deviceId });
 }
 
-export function createDefaultCaptureCardSource(
-  name = 'Capture Card',
-  deviceId = ''
-): CaptureCardSource {
-  return {
-    type: 'captureCard',
-    id: crypto.randomUUID(),
-    name,
-    deviceId,
-    captureAudio: true,
-  };
+export function createDefaultCaptureCardSource(name = 'Capture Card', deviceId = ''): CaptureCardSource {
+  return createDefaultSource('captureCard', { name, deviceId });
 }
 
-export function createDefaultAudioDeviceSource(
-  name = 'Audio Input',
-  deviceId = ''
-): AudioDeviceSource {
-  return {
-    type: 'audioDevice',
-    id: crypto.randomUUID(),
-    name,
-    deviceId,
-  };
+export function createDefaultAudioDeviceSource(name = 'Audio Input', deviceId = ''): AudioDeviceSource {
+  return createDefaultSource('audioDevice', { name, deviceId });
 }
 
-export function createDefaultColorSource(
-  name = 'Color Fill',
-  color = '#7C3AED'
-): ColorSource {
-  return {
-    type: 'color',
-    id: crypto.randomUUID(),
-    name,
-    color,
-    opacity: 1.0,
-  };
+export function createDefaultColorSource(name = 'Color Fill', color = '#7C3AED'): ColorSource {
+  return createDefaultSource('color', { name, color });
 }
 
-export function createDefaultTextSource(
-  name = 'Text',
-  content = ''
-): TextSource {
-  return {
-    type: 'text',
-    id: crypto.randomUUID(),
-    name,
-    content,
-    fontFamily: 'Arial',
-    fontSize: 48,
-    fontWeight: 'normal',
-    fontStyle: 'normal',
-    textColor: '#FFFFFF',
-    backgroundColor: undefined,
-    backgroundOpacity: 0.8,
-    textAlign: 'center',
-    lineHeight: 1.2,
-    padding: 16,
-    outline: {
-      enabled: false,
-      color: '#000000',
-      width: 2,
-    },
-  };
+export function createDefaultTextSource(name = 'Text', content = ''): TextSource {
+  return createDefaultSource('text', { name, content });
 }
 
-export function createDefaultBrowserSource(
-  name = 'Browser',
-  url = ''
-): BrowserSource {
-  return {
-    type: 'browser',
-    id: crypto.randomUUID(),
-    name,
-    url,
-    width: 1920,
-    height: 1080,
-    customCss: undefined,
-    refreshInterval: 0,
-  };
+export function createDefaultBrowserSource(name = 'Browser', url = ''): BrowserSource {
+  return createDefaultSource('browser', { name, url });
 }
 
-export function createDefaultWindowCaptureSource(
-  name = 'Window Capture',
-  windowId = '',
-  windowTitle = ''
-): WindowCaptureSource {
-  return {
-    type: 'windowCapture',
-    id: crypto.randomUUID(),
-    name,
-    windowId,
-    windowTitle,
-    captureCursor: true,
-    fps: 30,
-    captureAudio: false,
-  };
+export function createDefaultWindowCaptureSource(name = 'Window Capture', windowId = '', windowTitle = ''): WindowCaptureSource {
+  return createDefaultSource('windowCapture', { name, windowId, windowTitle });
 }
 
-export function createDefaultMediaPlaylistSource(
-  name = 'Media Playlist'
-): MediaPlaylistSource {
-  return {
-    type: 'mediaPlaylist',
-    id: crypto.randomUUID(),
-    name,
-    items: [],
-    currentItemIndex: 0,
-    autoAdvance: true,
-    shuffleMode: 'none',
-    fadeBetweenItems: false,
-    fadeDurationMs: 500,
-    captureAudio: true,
-  };
+export function createDefaultMediaPlaylistSource(name = 'Media Playlist'): MediaPlaylistSource {
+  return createDefaultSource('mediaPlaylist', { name });
 }
 
-export function createDefaultNestedSceneSource(
-  name = 'Nested Scene',
-  referencedSceneId = ''
-): NestedSceneSource {
-  return {
-    type: 'nestedScene',
-    id: crypto.randomUUID(),
-    name,
-    referencedSceneId,
-  };
+export function createDefaultNestedSceneSource(name = 'Nested Scene', referencedSceneId = ''): NestedSceneSource {
+  return createDefaultSource('nestedScene', { name, referencedSceneId });
 }
 
-export function createDefaultGameCaptureSource(
-  name = 'Game Capture'
-): GameCaptureSource {
-  return {
-    type: 'gameCapture',
-    id: crypto.randomUUID(),
-    name,
-    targetType: 'any',
-    captureMode: 'auto',
-    captureCursor: false,
-    antiCheatHook: false,
-    fps: 60,
-    captureAudio: false,
-  };
+export function createDefaultGameCaptureSource(name = 'Game Capture'): GameCaptureSource {
+  return createDefaultSource('gameCapture', { name });
 }
 
-export function createDefaultNDISource(
-  name = 'NDI Source',
-  sourceName = ''
-): NDISource {
-  return {
-    type: 'ndi',
-    id: crypto.randomUUID(),
-    name,
-    sourceName,
-    lowBandwidth: false,
-    receiverName: 'SpiritStream',
-    captureAudio: true,
-  };
-}
-
-/**
- * Get a human-readable label for source type
- */
-export function getSourceTypeLabel(type: SourceType): string {
-  switch (type) {
-    case 'rtmp':
-      return 'RTMP Input';
-    case 'mediaFile':
-      return 'Media File';
-    case 'screenCapture':
-      return 'Screen Capture';
-    case 'windowCapture':
-      return 'Window Capture';
-    case 'gameCapture':
-      return 'Game Capture';
-    case 'camera':
-      return 'Camera';
-    case 'captureCard':
-      return 'Capture Card';
-    case 'audioDevice':
-      return 'Audio Device';
-    case 'color':
-      return 'Color';
-    case 'text':
-      return 'Text';
-    case 'browser':
-      return 'Browser';
-    case 'mediaPlaylist':
-      return 'Media Playlist';
-    case 'nestedScene':
-      return 'Nested Scene';
-    case 'ndi':
-      return 'NDI Source';
-  }
-}
-
-/**
- * Get icon name for source type (for Lucide icons)
- */
-export function getSourceTypeIcon(type: SourceType): string {
-  switch (type) {
-    case 'rtmp':
-      return 'Radio';
-    case 'mediaFile':
-      return 'Film';
-    case 'screenCapture':
-      return 'Monitor';
-    case 'windowCapture':
-      return 'AppWindow';
-    case 'gameCapture':
-      return 'Gamepad2';
-    case 'camera':
-      return 'Camera';
-    case 'captureCard':
-      return 'Usb';
-    case 'audioDevice':
-      return 'Mic';
-    case 'color':
-      return 'Palette';
-    case 'text':
-      return 'Type';
-    case 'browser':
-      return 'Globe';
-    case 'mediaPlaylist':
-      return 'ListVideo';
-    case 'nestedScene':
-      return 'Layers';
-    case 'ndi':
-      return 'Network';
-  }
-}
-
-/**
- * Check if source renders via pure CSS (no WebRTC needed)
- */
-export function isClientSideSource(source: Source): boolean {
-  // Game capture and NDI require backend rendering, not client-side
-  return source.type === 'color' || source.type === 'text' || source.type === 'browser' || source.type === 'nestedScene';
+export function createDefaultNDISource(name = 'NDI Source', sourceName = ''): NDISource {
+  return createDefaultSource('ndi', { name, sourceName });
 }
 
 // ============================================================================
@@ -776,86 +499,26 @@ export type AudioFilter =
   | GainFilter
   | ExpanderFilter;
 
-/**
- * Factory functions for audio filters
- */
-export function createCompressorFilter(): CompressorFilter {
-  return {
-    id: crypto.randomUUID(),
-    type: 'compressor',
-    enabled: true,
-    order: 0,
-    threshold: -20,
-    ratio: 4,
-    attack: 5,
-    release: 50,
-    outputGain: 0,
-  };
-}
+// ---------------------------------------------------------------------------
+// Re-exports from filterRegistry (single source of truth)
+// ---------------------------------------------------------------------------
+export {
+  createAudioFilter,
+  createVideoFilter,
+  getAudioFilterLabel,
+  getVideoFilterLabel,
+  AUDIO_FILTER_REGISTRY,
+  VIDEO_FILTER_REGISTRY,
+} from '@/lib/filterRegistry';
 
-export function createNoiseGateFilter(): NoiseGateFilter {
-  return {
-    id: crypto.randomUUID(),
-    type: 'noiseGate',
-    enabled: true,
-    order: 0,
-    threshold: -40,
-    attack: 5,
-    hold: 100,
-    release: 100,
-  };
-}
+import { createAudioFilter } from '@/lib/filterRegistry';
 
-export function createNoiseSuppressionFilter(): NoiseSuppressionFilter {
-  return {
-    id: crypto.randomUUID(),
-    type: 'noiseSuppression',
-    enabled: true,
-    order: 0,
-    level: 50,
-  };
-}
-
-export function createGainFilter(): GainFilter {
-  return {
-    id: crypto.randomUUID(),
-    type: 'gain',
-    enabled: true,
-    order: 0,
-    gain: 0,
-  };
-}
-
-export function createExpanderFilter(): ExpanderFilter {
-  return {
-    id: crypto.randomUUID(),
-    type: 'expander',
-    enabled: true,
-    order: 0,
-    threshold: -40,
-    ratio: 2,
-    attack: 5,
-    release: 100,
-  };
-}
-
-/**
- * Get human-readable label for audio filter type
- */
-export function getAudioFilterLabel(type: AudioFilterType): string {
-  switch (type) {
-    case 'compressor':
-      return 'Compressor';
-    case 'noiseGate':
-      return 'Noise Gate';
-    case 'noiseSuppression':
-      return 'Noise Suppression';
-    case 'gain':
-      return 'Gain';
-    case 'expander':
-      return 'Expander';
-  }
-}
+// Legacy named factory functions — wrappers for backward compat
+export function createCompressorFilter(): CompressorFilter { return createAudioFilter('compressor'); }
+export function createNoiseGateFilter(): NoiseGateFilter { return createAudioFilter('noiseGate'); }
+export function createNoiseSuppressionFilter(): NoiseSuppressionFilter { return createAudioFilter('noiseSuppression'); }
+export function createGainFilter(): GainFilter { return createAudioFilter('gain'); }
+export function createExpanderFilter(): ExpanderFilter { return createAudioFilter('expander'); }
 
 /**
  * All available audio filter types
@@ -1003,145 +666,18 @@ export type VideoFilter =
   | MaskFilter
   | Transform3DFilter;
 
-/**
- * Factory functions for video filters
- */
-export function createChromaKeyFilter(): ChromaKeyFilter {
-  return {
-    id: crypto.randomUUID(),
-    type: 'chromaKey',
-    enabled: true,
-    order: 0,
-    keyColor: '#00FF00', // Green screen default
-    similarity: 400,
-    smoothness: 80,
-    keySpill: 100,
-  };
-}
+// Legacy named video filter factory functions — wrappers for backward compat
+import { createVideoFilter } from '@/lib/filterRegistry';
 
-export function createColorKeyFilter(): ColorKeyFilter {
-  return {
-    id: crypto.randomUUID(),
-    type: 'colorKey',
-    enabled: true,
-    order: 0,
-    keyColor: '#00FF00',
-    similarity: 400,
-    smoothness: 80,
-  };
-}
-
-export function createColorCorrectionFilter(): ColorCorrectionFilter {
-  return {
-    id: crypto.randomUUID(),
-    type: 'colorCorrection',
-    enabled: true,
-    order: 0,
-    brightness: 0,
-    contrast: 0,
-    saturation: 1,
-    gamma: 1,
-    hue: 0,
-  };
-}
-
-export function createLUTFilter(): LUTFilter {
-  return {
-    id: crypto.randomUUID(),
-    type: 'lut',
-    enabled: true,
-    order: 0,
-    lutFile: '',
-    intensity: 1,
-  };
-}
-
-export function createBlurFilter(): BlurFilter {
-  return {
-    id: crypto.randomUUID(),
-    type: 'blur',
-    enabled: true,
-    order: 0,
-    blurType: 'gaussian',
-    size: 10,
-  };
-}
-
-export function createSharpenFilter(): SharpenFilter {
-  return {
-    id: crypto.randomUUID(),
-    type: 'sharpen',
-    enabled: true,
-    order: 0,
-    amount: 1,
-  };
-}
-
-export function createScrollFilter(): ScrollFilter {
-  return {
-    id: crypto.randomUUID(),
-    type: 'scroll',
-    enabled: true,
-    order: 0,
-    horizontalSpeed: 0,
-    verticalSpeed: 50,
-    loop: true,
-  };
-}
-
-export function createMaskFilter(): MaskFilter {
-  return {
-    id: crypto.randomUUID(),
-    type: 'mask',
-    enabled: true,
-    order: 0,
-    maskImage: '',
-    maskType: 'alpha',
-    invert: false,
-  };
-}
-
-export function createTransform3DFilter(): Transform3DFilter {
-  return {
-    id: crypto.randomUUID(),
-    type: 'transform3d',
-    enabled: true,
-    order: 0,
-    rotationX: 0,
-    rotationY: 0,
-    rotationZ: 0,
-    perspective: 1000,
-    positionX: 0,
-    positionY: 0,
-    positionZ: 0,
-  };
-}
-
-/**
- * Get human-readable label for video filter type
- */
-export function getVideoFilterLabel(type: VideoFilterType): string {
-  switch (type) {
-    case 'chromaKey':
-      return 'Chroma Key';
-    case 'colorKey':
-      return 'Color Key';
-    case 'colorCorrection':
-      return 'Color Correction';
-    case 'lut':
-      return 'LUT';
-    case 'blur':
-      return 'Blur';
-    case 'sharpen':
-      return 'Sharpen';
-    case 'scroll':
-      return 'Scroll';
-    case 'mask':
-      return 'Image Mask';
-    case 'transform3d':
-      return '3D Transform';
-  }
-}
+export function createChromaKeyFilter(): ChromaKeyFilter { return createVideoFilter('chromaKey'); }
+export function createColorKeyFilter(): ColorKeyFilter { return createVideoFilter('colorKey'); }
+export function createColorCorrectionFilter(): ColorCorrectionFilter { return createVideoFilter('colorCorrection'); }
+export function createLUTFilter(): LUTFilter { return createVideoFilter('lut'); }
+export function createBlurFilter(): BlurFilter { return createVideoFilter('blur'); }
+export function createSharpenFilter(): SharpenFilter { return createVideoFilter('sharpen'); }
+export function createScrollFilter(): ScrollFilter { return createVideoFilter('scroll'); }
+export function createMaskFilter(): MaskFilter { return createVideoFilter('mask'); }
+export function createTransform3DFilter(): Transform3DFilter { return createVideoFilter('transform3d'); }
 
 /**
  * All available video filter types

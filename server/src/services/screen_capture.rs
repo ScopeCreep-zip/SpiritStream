@@ -16,11 +16,13 @@ use scap::{
     frame::{Frame, FrameType},
     Target,
 };
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock, RwLock};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
+
+use super::capture_core::session::{CaptureSession, CaptureSessionManager};
+use super::capture_core::timeout::spawn_blocking_with_timeout_or_default;
 
 use super::permissions::PermissionsService;
 
@@ -142,26 +144,20 @@ impl Default for ScreenCaptureConfig {
             fps: 30,
             show_cursor: true,
             show_highlight: false,
-            output_resolution: Resolution::Captured,
+            output_resolution: Resolution::_1080p,
         }
     }
 }
 
-/// Active capture session
-struct ActiveCapture {
-    stop_flag: Arc<AtomicBool>,
-    _handle: std::thread::JoinHandle<()>,
-}
-
 /// Service for managing screen capture
 pub struct ScreenCaptureService {
-    active_captures: Mutex<HashMap<String, ActiveCapture>>,
+    sessions: CaptureSessionManager<Frame>,
 }
 
 impl ScreenCaptureService {
     pub fn new() -> Self {
         Self {
-            active_captures: Mutex::new(HashMap::new()),
+            sessions: CaptureSessionManager::new("screen"),
         }
     }
 
@@ -243,21 +239,7 @@ impl ScreenCaptureService {
     /// List available displays/monitors (async version - safe for tokio)
     /// Uses spawn_blocking with timeout protection since scap can hang
     pub async fn list_displays_async() -> Vec<DisplayInfo> {
-        use std::time::Duration;
-
-        let list_future = tokio::task::spawn_blocking(Self::list_displays);
-
-        match tokio::time::timeout(Duration::from_secs(5), list_future).await {
-            Ok(Ok(displays)) => displays,
-            Ok(Err(_)) => {
-                log::warn!("list_displays task panicked");
-                Vec::new()
-            }
-            Err(_) => {
-                log::warn!("list_displays timed out after 5 seconds");
-                Vec::new()
-            }
-        }
+        spawn_blocking_with_timeout_or_default("list_displays", 5, Self::list_displays).await
     }
 
     /// List available windows (sync version - use list_windows_async in async contexts)
@@ -283,21 +265,7 @@ impl ScreenCaptureService {
     /// List available windows (async version - safe for tokio)
     /// Uses spawn_blocking with timeout protection since scap can hang
     pub async fn list_windows_async() -> Vec<WindowInfo> {
-        use std::time::Duration;
-
-        let list_future = tokio::task::spawn_blocking(Self::list_windows);
-
-        match tokio::time::timeout(Duration::from_secs(5), list_future).await {
-            Ok(Ok(windows)) => windows,
-            Ok(Err(_)) => {
-                log::warn!("list_windows task panicked");
-                Vec::new()
-            }
-            Err(_) => {
-                log::warn!("list_windows timed out after 5 seconds");
-                Vec::new()
-            }
-        }
+        spawn_blocking_with_timeout_or_default("list_windows", 5, Self::list_windows).await
     }
 
     /// Start capturing a display
@@ -356,12 +324,10 @@ impl ScreenCaptureService {
             return Err("Screen capture permission not granted. Please grant permission in System Settings > Privacy & Security > Screen Recording.".to_string());
         }
 
-        // Check if already capturing
-        {
-            let captures = self.active_captures.lock().unwrap();
-            if captures.contains_key(&capture_id) {
-                return Err(format!("Already capturing: {}", capture_id));
-            }
+        // If already capturing this target, return a new subscriber to the existing stream
+        if let Some(rx) = self.sessions.subscribe(&capture_id) {
+            log::debug!("Reusing existing capture for {} (new subscriber)", capture_id);
+            return Ok(rx);
         }
 
         // Create capturer options
@@ -381,10 +347,15 @@ impl ScreenCaptureService {
         let mut capturer = Capturer::build(options)
             .map_err(|e| format!("Failed to build capturer: {:?}", e))?;
 
-        // Create broadcast channel for frames
-        let (frame_tx, frame_rx) = broadcast::channel::<Arc<Frame>>(16);
-        let stop_flag = Arc::new(AtomicBool::new(false));
-        let stop_flag_clone = stop_flag.clone();
+        // Create session with broadcast channel
+        let (session, frame_rx) = CaptureSession::<Frame>::new(
+            capture_id.clone(),
+            "screen",
+            16,
+        );
+
+        let stop_flag = session.stop_flag();
+        let frame_tx = session.sender();
 
         // Start capture in background thread
         let handle = std::thread::spawn(move || {
@@ -392,7 +363,7 @@ impl ScreenCaptureService {
             capturer.start_capture();
             let mut capturing = true;
 
-            while !stop_flag_clone.load(Ordering::Relaxed) {
+            while !stop_flag.load(Ordering::Relaxed) {
                 // Pause/resume scap capturer based on consumer count to avoid CPU waste
                 if frame_tx.receiver_count() == 0 {
                     if capturing {
@@ -418,58 +389,40 @@ impl ScreenCaptureService {
             }
         });
 
-        // Store active capture
-        {
-            let mut captures = self.active_captures.lock().unwrap();
-            captures.insert(capture_id.clone(), ActiveCapture {
-                stop_flag,
-                _handle: handle,
-            });
-        }
+        // Store session with thread handle
+        self.sessions.insert(capture_id, session.with_handle(handle));
 
-        log::info!("Started screen capture: {}", capture_id);
         Ok(frame_rx)
     }
 
     /// Stop a capture by ID
     pub fn stop_capture(&self, capture_id: &str) -> Result<(), String> {
-        let mut captures = self.active_captures.lock().unwrap();
-
-        if let Some(capture) = captures.remove(capture_id) {
-            capture.stop_flag.store(true, Ordering::Relaxed);
-            log::info!("Stopped screen capture: {}", capture_id);
-            Ok(())
-        } else {
-            Err(format!("No active capture: {}", capture_id))
-        }
+        self.sessions.stop_nonblocking(capture_id)
     }
 
     /// Stop all active captures
     pub fn stop_all(&self) {
-        let mut captures = self.active_captures.lock().unwrap();
-
-        for (id, capture) in captures.drain() {
-            capture.stop_flag.store(true, Ordering::Relaxed);
-            log::info!("Stopped screen capture: {}", id);
-        }
+        self.sessions.stop_all_nonblocking();
     }
 
     /// Check if a capture is active
     pub fn is_capturing(&self, capture_id: &str) -> bool {
-        let captures = self.active_captures.lock().unwrap();
-        captures.contains_key(capture_id)
+        self.sessions.is_active(capture_id)
     }
 
     /// Get count of active captures
     pub fn active_capture_count(&self) -> usize {
-        let captures = self.active_captures.lock().unwrap();
-        captures.len()
+        self.sessions.active_count()
     }
 
     /// Get list of active capture IDs
     pub fn active_capture_ids(&self) -> Vec<String> {
-        let captures = self.active_captures.lock().unwrap();
-        captures.keys().cloned().collect()
+        self.sessions.active_ids()
+    }
+
+    /// Subscribe to an existing capture's broadcast channel
+    pub fn subscribe(&self, capture_id: &str) -> Option<broadcast::Receiver<Arc<Frame>>> {
+        self.sessions.subscribe(capture_id)
     }
 }
 

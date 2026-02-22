@@ -39,19 +39,16 @@ export function useInitialize() {
 
       // Run all initialization tasks in parallel for faster startup
       Promise.all([
-        // Load profiles, then restore last used profile using shared settings
-        loadProfiles().then(async () => {
-          try {
-            const settings = await settingsPromise;
-            if (settings?.lastProfile) {
-              const profiles = useProfileStore.getState().profiles;
-              const exists = profiles.some((p) => p.name === settings.lastProfile);
-              if (exists) {
-                await loadProfile(settings.lastProfile);
-              }
+        loadProfiles(),
+        // Restore last used profile in parallel — doesn't need profile list
+        // loadProfile backend returns error if profile doesn't exist, handled by catch
+        settingsPromise.then(async (settings) => {
+          if (settings?.lastProfile) {
+            try {
+              await loadProfile(settings.lastProfile);
+            } catch {
+              // Profile may not exist or failed to load — ignore
             }
-          } catch {
-            // Ignore restore errors - user can manually select profile
           }
         }),
         syncWithBackend(),

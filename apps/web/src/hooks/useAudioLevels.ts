@@ -104,8 +104,6 @@ export function useAudioLevels(): UseAudioLevelsResult {
   }, [connectionStatus]);
 
   useEffect(() => {
-    let mounted = true;
-    let unsubscribe: (() => void) | null = null;
     let receivedCount = 0;
 
     console.log('[useAudioLevels] Subscribing to audio_levels events...');
@@ -113,49 +111,32 @@ export function useAudioLevels(): UseAudioLevelsResult {
     // Handler for audio_levels events
     // PERFORMANCE: Routes data to pure JS store, bypasses React state
     const handleAudioLevels = (payload: AudioLevelsData) => {
-      if (mounted) {
-        // Update pure JS store (no React re-render)
-        updateLevels(payload);
+      // Update pure JS store (no React re-render)
+      updateLevels(payload);
 
-        // Only update React state for connection status
-        setHasReceivedData(true);
+      // Only update React state for connection status
+      setHasReceivedData(true);
 
-        // Log first few events and then periodically to confirm data is flowing
-        receivedCount++;
-        const trackCount = Object.keys(payload.tracks).length;
-        if (receivedCount <= 3 || (receivedCount % 100 === 0 && trackCount > 0)) {
-          console.log(
-            `[useAudioLevels] Event #${receivedCount}: ${trackCount} tracks, master rms=${payload.master.rms.toFixed(4)}`
-          );
-          if (trackCount > 0 && receivedCount <= 3) {
-            console.log('[useAudioLevels] Track IDs:', Object.keys(payload.tracks));
-          }
+      // Log first few events and then periodically to confirm data is flowing
+      receivedCount++;
+      const trackCount = Object.keys(payload.tracks).length;
+      if (receivedCount <= 3 || (receivedCount % 100 === 0 && trackCount > 0)) {
+        console.log(
+          `[useAudioLevels] Event #${receivedCount}: ${trackCount} tracks, master rms=${payload.master.rms.toFixed(4)}`
+        );
+        if (trackCount > 0 && receivedCount <= 3) {
+          console.log('[useAudioLevels] Track IDs:', Object.keys(payload.tracks));
         }
       }
     };
 
-    // Subscribe to audio_levels events
-    events
-      .on<AudioLevelsData>('audio_levels', handleAudioLevels)
-      .then((unsub) => {
-        if (mounted) {
-          unsubscribe = unsub;
-          console.log('[useAudioLevels] ✓ Subscribed successfully');
-        } else {
-          // Component unmounted before subscription completed
-          unsub();
-        }
-      })
-      .catch((err) => {
-        console.error('[useAudioLevels] ✗ Subscription failed:', err);
-      });
+    // Subscribe — Promise chain ensures cleanup works even in StrictMode
+    const subPromise = events.on<AudioLevelsData>('audio_levels', handleAudioLevels);
+    console.log('[useAudioLevels] ✓ Subscribed successfully');
 
     return () => {
-      mounted = false;
-      if (unsubscribe) {
-        unsubscribe();
-        console.log(`[useAudioLevels] Unsubscribed (received ${receivedCount} events)`);
-      }
+      subPromise.then((unsub) => unsub());
+      console.log(`[useAudioLevels] Unsubscribed (received ${receivedCount} events)`);
     };
   }, []);
 

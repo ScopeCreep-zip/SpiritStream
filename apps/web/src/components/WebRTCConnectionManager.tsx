@@ -15,8 +15,45 @@
 import { useEffect, useRef } from 'react';
 import { useProfileStore } from '@/stores/profileStore';
 import { useWebRTCConnectionStore } from '@/stores/webrtcConnectionStore';
+import type { WebRTCStatus } from '@/stores/webrtcConnectionStore';
 import { sourceNeedsWebRTC } from '@/lib/mediaTypes';
 import type { Source } from '@/types/profile';
+
+/**
+ * Wait for a source's WebRTC connection to reach a terminal state.
+ * Prevents thundering herd by ensuring each source's capture pipeline
+ * (scap + FFmpeg + go2rtc) stabilizes before starting the next.
+ */
+function waitForConnectionStable(sourceId: string, timeoutMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      unsub();
+      resolve();
+    }, timeoutMs);
+
+    const TERMINAL_STATES: WebRTCStatus[] = ['playing', 'error', 'unavailable'];
+
+    // Check if already in terminal state
+    const currentStatus = useWebRTCConnectionStore.getState().connections[sourceId]?.status;
+    if (currentStatus && TERMINAL_STATES.includes(currentStatus)) {
+      clearTimeout(timeout);
+      resolve();
+      return;
+    }
+
+    const unsub = useWebRTCConnectionStore.subscribe(
+      (state) => state.connections[sourceId]?.status,
+      (status) => {
+        if (status && TERMINAL_STATES.includes(status)) {
+          clearTimeout(timeout);
+          unsub();
+          // Brief settle time for system resources to free up
+          setTimeout(resolve, 300);
+        }
+      }
+    );
+  });
+}
 
 // Selector that returns a stable string of source IDs (JSON for comparison)
 function selectWebRTCSourceIds(state: { current: { sources: Source[] } | null }): string {
@@ -74,13 +111,34 @@ export function WebRTCConnectionManager() {
 
     const webrtcSourceIdSet = new Set(webrtcSourceIds);
 
-    // Start connections for new sources
-    for (const sourceId of webrtcSourceIds) {
-      if (!activeConnectionsRef.current.has(sourceId)) {
-        console.log('[WebRTCManager] Starting connection for:', sourceId);
-        startConnection(sourceId);
-        activeConnectionsRef.current.add(sourceId);
-      }
+    // Collect new sources that need connections
+    const newSources = webrtcSourceIds.filter((id) => !activeConnectionsRef.current.has(id));
+
+    // Sequential connection startup — each source waits for the previous to stabilize.
+    // Each connection triggers heavy backend work: native capture + FFmpeg H264 encoder + go2rtc.
+    // Starting all at once exhausts HW encoder slots (3-4 on Apple Silicon) and causes
+    // go2rtc WHEP 500 errors when the producer can't connect under load.
+    let cancelled = false;
+    if (newSources.length > 0) {
+      const sequentialStart = async (): Promise<void> => {
+        for (let i = 0; i < newSources.length; i++) {
+          if (cancelled) return;
+          const sourceId = newSources[i];
+          console.log(
+            `[WebRTCManager] Starting connection for: ${sourceId} (${i + 1}/${newSources.length})`
+          );
+          startConnection(sourceId);
+          activeConnectionsRef.current.add(sourceId);
+
+          // Wait for this connection to reach a terminal state before starting next.
+          // Prevents resource contention from concurrent capture pipelines.
+          // 15s timeout ensures we don't block forever if a source hangs.
+          if (i < newSources.length - 1) {
+            await waitForConnectionStable(sourceId, 15000);
+          }
+        }
+      };
+      sequentialStart();
     }
 
     // Stop connections for removed sources
@@ -90,6 +148,10 @@ export function WebRTCConnectionManager() {
         activeConnectionsRef.current.delete(sourceId);
       }
     }
+
+    return () => {
+      cancelled = true;
+    };
   }, [webrtcSourceIdsStr, currentProfileName, startConnection, stopConnection, stopAllConnections]);
 
   // Cleanup on unmount (app closing)

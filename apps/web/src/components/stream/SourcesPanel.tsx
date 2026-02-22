@@ -30,13 +30,12 @@ import {
 } from './sources';
 import type { Profile, Scene, Source } from '@/types/profile';
 import type { SourceLayer } from '@/types/scene';
-import { createDefaultTransform, createDefaultAudioTrack } from '@/types/scene';
+import { createDefaultTransform } from '@/types/scene';
 import { useSceneStore } from '@/stores/sceneStore';
 import { useProfileStore } from '@/stores/profileStore';
 import { toast, createErrorHandler } from '@/hooks/useToast';
 import { api } from '@/lib/backend';
 import type { Source as SourceDef } from '@/types/source';
-import { sourceHasAudio } from '@/types/source';
 import { useShallow } from 'zustand/shallow';
 
 interface SourcesPanelProps {
@@ -76,14 +75,14 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
     }))
   );
   // Note: We use api.source.remove directly in handleRemoveSource for linked source confirmation flow
-  const { removeCurrentSource, updateCurrentLayer, reorderCurrentLayers, addCurrentLayer, updateCurrentScene, addCurrentAudioTrack } = useProfileStore(
+  const { removeCurrentSource, updateCurrentLayer, reorderCurrentLayers, addCurrentLayer, updateCurrentScene, setCurrentAudioTracks } = useProfileStore(
     useShallow(s => ({
       removeCurrentSource: s.removeCurrentSource,
       updateCurrentLayer: s.updateCurrentLayer,
       reorderCurrentLayers: s.reorderCurrentLayers,
       addCurrentLayer: s.addCurrentLayer,
       updateCurrentScene: s.updateCurrentScene,
-      addCurrentAudioTrack: s.addCurrentAudioTrack,
+      setCurrentAudioTracks: s.setCurrentAudioTracks,
     }))
   );
   const [showAddModal, setShowAddModal] = useState(false);
@@ -356,8 +355,8 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
     if (!activeScene) return;
 
     try {
-      // Add layer to backend - returns the layerId
-      const layerId = await addLayer(profile.name, activeScene.id, source.id);
+      // Add layer to backend - returns layerId + authoritative audioTracks
+      const result = await addLayer(profile.name, activeScene.id, source.id);
 
       // Create the layer object for local state update
       // Calculate zIndex as max + 1 to place on top
@@ -366,7 +365,7 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
         : -1;
 
       const newLayer: SourceLayer = {
-        id: layerId,
+        id: result.layerId,
         sourceId: source.id,
         visible: true,
         locked: false,
@@ -377,12 +376,9 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
       // Update local state instead of reloading entire profile
       addCurrentLayer(activeScene.id, newLayer);
 
-      // Sync audio track to local state (mirrors backend layer.rs:118-138)
-      if (sourceHasAudio(source)) {
-        const alreadyHasTrack = activeScene.audioMixer.tracks.some(t => t.sourceId === source.id);
-        if (!alreadyHasTrack) {
-          addCurrentAudioTrack(activeScene.id, createDefaultAudioTrack(source.id));
-        }
+      // Sync audio tracks from backend (authoritative source — eliminates dedup issues)
+      if (result.audioTracks) {
+        setCurrentAudioTracks(activeScene.id, result.audioTracks);
       }
 
       toast.success(t('stream.sourceAdded', { name: source.name, defaultValue: `Added ${source.name} to scene` }));
@@ -390,7 +386,7 @@ export function SourcesPanel({ profile, activeScene }: SourcesPanelProps) {
       // Source was added to profile but layer creation failed
       handleLayerAddError(err);
     }
-  }, [activeScene, profile.name, addLayer, addCurrentLayer, addCurrentAudioTrack, t, handleLayerAddError]);
+  }, [activeScene, profile.name, addLayer, addCurrentLayer, setCurrentAudioTracks, t, handleLayerAddError]);
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;

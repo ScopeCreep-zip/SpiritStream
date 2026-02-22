@@ -6,10 +6,21 @@ allowed-tools:
   - Grep
 ---
 
-Run TypeScript type checking without emitting files:
+Run type checking across the entire project:
 
+## TypeScript (Frontend)
 ```bash
-npx tsc --noEmit
+pnpm typecheck
+```
+
+## Rust (Backend)
+```bash
+cargo check --manifest-path server/Cargo.toml
+```
+
+## Tauri Desktop (if applicable)
+```bash
+cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 ```
 
 If there are type errors:
@@ -19,6 +30,7 @@ If there are type errors:
 
 Focus on:
 - Missing type annotations
-- Type mismatches
+- Type mismatches between frontend types and backend models
+- Serde serialization alignment (camelCase in TS, snake_case in Rust with `rename_all`)
 - Missing properties
 - Incorrect return types

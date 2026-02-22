@@ -4,13 +4,31 @@ allowed-tools:
   - Bash
 ---
 
-Start SpiritStream in development mode:
+Start SpiritStream in development mode. Choose the appropriate mode:
 
-1. Run `npm run dev` which will:
-   - Compile TypeScript
-   - Copy resources
-   - Launch Electron
+## Frontend only (React + Vite)
+```bash
+pnpm dev:web
+```
+Starts the frontend dev server at localhost:5173.
 
-This runs the application for testing. The process will stay running until terminated.
+## Backend only (Rust + Axum)
+```bash
+pnpm backend:dev
+```
+Starts the Rust server at localhost:8008.
+
+## Both (recommended for full dev)
+Run in separate terminals or use:
+```bash
+pnpm dev
+```
+This starts all workspaces in parallel via Turbo.
+
+## Desktop app (Tauri)
+```bash
+pnpm dev:desktop
+```
+Launches Tauri with the server sidecar and embedded webview.
 
 Note: If there are compilation errors, they will appear in the output. Review them and suggest fixes.

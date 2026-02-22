@@ -48,6 +48,17 @@ interface ProfileState {
   reloadProfile: () => Promise<void>;
   duplicateProfile: (name: string) => Promise<void>;
 
+  // Source CRUD (calls backend API + updates local state atomically)
+  addSource: (profileName: string, source: Source, password?: string) => Promise<Source[]>;
+  updateSource: (
+    profileName: string,
+    sourceId: string,
+    updates: Partial<Source>,
+    password?: string
+  ) => Promise<Source>;
+  removeSource: (profileName: string, sourceId: string, password?: string) => Promise<void>;
+  reorderSources: (profileName: string, sourceIds: string[], password?: string) => Promise<Source[]>;
+
   // Source management (local state updates without auto-save)
   // Use these after source API calls to sync local state without reloading entire profile
   setCurrentSources: (sources: Source[]) => void;
@@ -64,6 +75,7 @@ interface ProfileState {
   // Audio mixer management (local state updates without auto-save)
   // Use these after audio API calls to sync local state without reloading entire profile
   addCurrentAudioTrack: (sceneId: string, track: import('@/types/scene').AudioTrack) => void;
+  setCurrentAudioTracks: (sceneId: string, tracks: import('@/types/scene').AudioTrack[]) => void;
   updateCurrentAudioTrack: (sceneId: string, sourceId: string, updates: Partial<import('@/types/scene').AudioTrack>) => void;
   updateCurrentMasterVolume: (sceneId: string, masterVolume: number) => void;
   updateCurrentMasterMuted: (sceneId: string, masterMuted: boolean) => void;
@@ -335,6 +347,67 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
 
+  // Source CRUD — calls backend API then updates local state in one atomic set()
+  addSource: async (profileName, source, password) => {
+    const sources = await api.source.add(profileName, source, password);
+    set((state) => ({
+      current: state.current ? { ...state.current, sources } : state.current,
+    }));
+    return sources;
+  },
+
+  updateSource: async (profileName, sourceId, updates, password) => {
+    const updatedSource = await api.source.update(profileName, sourceId, updates, password);
+    set((state) => {
+      if (!state.current) return state;
+      return {
+        current: {
+          ...state.current,
+          sources: state.current.sources.map((s) =>
+            s.id === sourceId ? updatedSource : s
+          ),
+        },
+      };
+    });
+    return updatedSource;
+  },
+
+  removeSource: async (profileName, sourceId, password) => {
+    const result = await api.source.remove(profileName, sourceId, undefined, password);
+    // Atomically remove from sources + all scene layers/audio tracks
+    if ('removed' in result && result.removed) {
+      const removedIds = new Set([sourceId]);
+      if (result.linkedRemoved) {
+        result.linkedRemoved.forEach((id: string) => removedIds.add(id));
+      }
+      set((state) => {
+        if (!state.current) return state;
+        return {
+          current: {
+            ...state.current,
+            sources: state.current.sources.filter((s) => !removedIds.has(s.id)),
+            scenes: state.current.scenes.map((scene) => ({
+              ...scene,
+              layers: scene.layers.filter((l) => !removedIds.has(l.sourceId)),
+              audioMixer: {
+                ...scene.audioMixer,
+                tracks: scene.audioMixer.tracks.filter((t) => !removedIds.has(t.sourceId)),
+              },
+            })),
+          },
+        };
+      });
+    }
+  },
+
+  reorderSources: async (profileName, sourceIds, password) => {
+    const sources = await api.source.reorder(profileName, sourceIds, password);
+    set((state) => ({
+      current: state.current ? { ...state.current, sources } : state.current,
+    }));
+    return sources;
+  },
+
   // Update sources without triggering save (used after source API calls)
   setCurrentSources: (sources) => {
     const current = get().current;
@@ -466,6 +539,10 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   addCurrentAudioTrack: (sceneId, track) => {
     const current = get().current;
     if (current) {
+      // Guard: don't add duplicate tracks for the same sourceId
+      const scene = current.scenes.find(s => s.id === sceneId);
+      if (scene?.audioMixer.tracks.some(t => t.sourceId === track.sourceId)) return;
+
       set({
         current: {
           ...current,
@@ -476,6 +553,29 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
                   audioMixer: {
                     ...scene.audioMixer,
                     tracks: [...scene.audioMixer.tracks, track],
+                  },
+                }
+              : scene
+          ),
+        },
+      });
+    }
+  },
+
+  // Replace all audio tracks for a scene (authoritative sync from backend)
+  setCurrentAudioTracks: (sceneId, tracks) => {
+    const current = get().current;
+    if (current) {
+      set({
+        current: {
+          ...current,
+          scenes: current.scenes.map((scene) =>
+            scene.id === sceneId
+              ? {
+                  ...scene,
+                  audioMixer: {
+                    ...scene.audioMixer,
+                    tracks,
                   },
                 }
               : scene

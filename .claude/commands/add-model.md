@@ -9,47 +9,44 @@ argument-hints: "ModelName (e.g., Preset)"
 
 Create a new domain model following the project's patterns:
 
-1. **Create model file** at `src/models/{ModelName}.ts`:
-   - Private properties with underscore prefix
-   - Getters and setters
-   - `toDTO()` method
-   - Static `fromDTO()` factory method
-   - Constructor with sensible defaults
+1. **Create Rust model** at `server/src/models/{model_name}.rs`:
+   - Derive `Debug, Clone, Serialize, Deserialize`
+   - Use `#[serde(rename_all = "camelCase")]` for JSON interop
+   - Use `Result<T, String>` for fallible operations
+   - Add to `server/src/models/mod.rs` exports
 
-2. **Add DTO interface** in `src/shared/interfaces.ts`:
-   - All properties from the model
-   - Use primitive types only (no class instances)
+   ```rust
+   #[derive(Debug, Clone, Serialize, Deserialize)]
+   #[serde(rename_all = "camelCase")]
+   pub struct ModelName {
+       pub id: String,
+       pub name: String,
+   }
+
+   impl ModelName {
+       pub fn new(name: String) -> Self {
+           Self {
+               id: uuid::Uuid::new_v4().to_string(),
+               name,
+           }
+       }
+   }
+   ```
+
+2. **Create TypeScript interface** in `apps/web/src/types/`:
+   - Match camelCase field names from Rust serde output
+   - Use `interface` for object shapes
+
+   ```typescript
+   export interface ModelName {
+       id: string;
+       name: string;
+   }
+   ```
 
 3. **Follow existing patterns** from:
-   - Profile.ts
-   - OutputGroup.ts
-   - StreamTarget.ts
+   - `server/src/models/profile.rs` + `apps/web/src/types/source.ts`
+   - `server/src/models/output_group.rs`
+   - `server/src/models/stream_target.rs`
 
-Example structure:
-```typescript
-export class ModelName {
-  private _id: string;
-  private _name: string;
-
-  constructor(name: string = '') {
-    this._id = generateUUID();
-    this._name = name;
-  }
-
-  // Getters/Setters
-  get id(): string { return this._id; }
-  get name(): string { return this._name; }
-  set name(value: string) { this._name = value; }
-
-  // Serialization
-  toDTO(): ModelNameDTO {
-    return { id: this._id, name: this._name };
-  }
-
-  static fromDTO(dto: ModelNameDTO): ModelName {
-    const instance = new ModelName(dto.name);
-    instance._id = dto.id;
-    return instance;
-  }
-}
-```
+4. **If the model needs a Zustand store**, create at `apps/web/src/stores/{modelName}Store.ts` following patterns in existing stores.

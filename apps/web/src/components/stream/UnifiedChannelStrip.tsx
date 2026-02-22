@@ -457,6 +457,8 @@ export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
         {/* Canvas - rendered by worker via OffscreenCanvas */}
         <canvas
           ref={canvasRef}
+          width={TOTAL_WIDTH}
+          height={TOTAL_HEIGHT}
           style={{ width: TOTAL_WIDTH, height: TOTAL_HEIGHT, willChange: 'transform' }}
         />
 

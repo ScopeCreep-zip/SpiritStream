@@ -60,6 +60,9 @@ interface RegisteredCanvas {
   // Drawing state
   gradient: CanvasGradient | null;
   lastLevel: StereoLevel | null;
+  // Diagnostic flags (log once per canvas to avoid spam)
+  errorLogged?: boolean;
+  mismatchLogged?: boolean;
 }
 
 interface AudioLevelsPayload {
@@ -105,6 +108,7 @@ let masterLevel: StereoLevel = createDefaultLevel();
 let masterPeakHold = { left: 0, right: 0, time: 0 };
 // Note: rafId removed - now using setInterval (intervalId) for background tab support
 let lastDataTime = 0;
+let dataReceivedLogged = false;
 let sharedBuffer: SharedArrayBuffer | null = null;
 let sharedView: Float32Array | null = null;
 
@@ -204,6 +208,13 @@ function processAudioData(jsonString: string): void {
       });
     }
 
+    // One-time diagnostic: confirm data reaches the worker with track IDs
+    if (trackLevels.size > 0 && !dataReceivedLogged) {
+      dataReceivedLogged = true;
+      console.log('[AudioMeterWorker] First audio data received:',
+        `${trackLevels.size} tracks, keys:`, [...trackLevels.keys()]);
+    }
+
     // Update SharedArrayBuffer if available
     if (sharedView) {
       sharedView[0]++; // Increment version
@@ -275,6 +286,12 @@ function drawMeter(registered: RegisteredCanvas): void {
   const { ctx, trackId, config } = registered;
   const { volume, muted, isDragging = false, thresholdFilters = [] } = config;
   const rawLevel = trackId ? trackLevels.get(trackId) : masterLevel;
+  if (trackId && !rawLevel && !registered.mismatchLogged) {
+    registered.mismatchLogged = true;
+    console.warn('[AudioMeterWorker] Track ID mismatch:',
+      `canvas trackId="${trackId}"`,
+      `available keys:`, [...trackLevels.keys()]);
+  }
   const level = rawLevel ?? createDefaultLevel();
 
   // Meter coordinates
@@ -490,9 +507,15 @@ const RENDER_INTERVAL_MS = 33; // ~30fps - smooth enough for VU meters, efficien
 let intervalId: ReturnType<typeof setInterval> | null = null;
 
 function renderLoop(): void {
-  // Draw all registered canvases
   for (const registered of canvases.values()) {
-    drawMeter(registered);
+    try {
+      drawMeter(registered);
+    } catch (err) {
+      if (!registered.errorLogged) {
+        registered.errorLogged = true;
+        console.error('[AudioMeterWorker] drawMeter error:', err);
+      }
+    }
   }
 }
 

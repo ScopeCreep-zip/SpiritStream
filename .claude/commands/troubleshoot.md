@@ -5,34 +5,48 @@ allowed-tools:
   - Read
   - Glob
   - Grep
-argument-hints: "issue type (build, ffmpeg, electron, stream)"
+argument-hints: "issue type (build, ffmpeg, server, frontend, capture, go2rtc)"
 ---
 
 Diagnose and troubleshoot common issues based on the type provided:
 
 ## Build Issues
-- Check if node_modules exists: `ls node_modules`
-- Check TypeScript version: `npx tsc --version`
-- Run clean build: `npm run clean && npm run compile`
-- Check for missing dependencies
+- Check if node_modules exists: `ls apps/web/node_modules`
+- Check pnpm workspace: `pnpm ls --depth 0`
+- Check Rust toolchain: `rustc --version && cargo --version`
+- Run clean build: `pnpm build`
+- Check Rust build: `cargo build --manifest-path server/Cargo.toml`
+- Verify turbojpeg: `pkg-config --libs libturbojpeg`
 
 ## FFmpeg Issues
-- Check if FFmpeg exists: `ls resources/ffmpeg/bin/`
-- Test FFmpeg: `./resources/ffmpeg/bin/ffmpeg -version`
-- Check encoders.conf is valid JSON
-- Verify FFmpeg path resolution in code
+- Check if FFmpeg is in PATH: `which ffmpeg && ffmpeg -version`
+- Check encoder support: `ffmpeg -encoders | grep h264`
+- Check go2rtc FFmpeg source config in server logs
+- Review FFmpeg stderr output for encoding errors
 
-## Electron Issues
-- Check main.js exists: `ls dist/electron/main.js`
-- Check preload.js exists: `ls dist/electron/preload.js`
-- Verify Electron version: `npx electron --version`
-- Check BrowserWindow configuration
+## Server Issues
+- Check if server is running: `curl http://localhost:8008/health`
+- Check server logs for startup errors
+- Verify port 8008 is not in use: `lsof -i :8008`
+- Check go2rtc is accessible: `curl http://localhost:1984/api/streams`
 
-## Stream Issues
-- Verify incoming URL format
-- Check stream targets configuration
-- Review ffmpeg.log for errors
-- Test network connectivity
+## Frontend Issues
+- Check Vite dev server: `curl http://localhost:5173`
+- Check for TypeScript errors: `pnpm typecheck`
+- Check backend connection: look at browser console for WebSocket errors
+- Verify CORS headers from backend
+
+## Capture Issues
+- Check macOS permissions: screen recording, camera, microphone
+- Look for "permission denied" or "not authorized" in server logs
+- Check scap/nokhwa device enumeration
+- Verify VideoToolbox availability: `ffmpeg -hide_banner -encoders | grep videotoolbox`
+
+## go2rtc Issues
+- Check go2rtc process: `ps aux | grep go2rtc`
+- Check stream registration: `curl http://localhost:1984/api/streams`
+- Check WebRTC connections: `curl http://localhost:1984/api/webrtc`
+- Look for "wrong sync byte" (MPEG-TS alignment issue)
 
 Provide:
 1. Diagnosis of the problem

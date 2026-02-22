@@ -159,18 +159,60 @@ self.relay_refcount.fetch_add(1, Ordering::SeqCst);
 
 ```
 server/src/
-├── main.rs          # Entry point, router setup
-├── lib.rs           # Re-exports for external use
-├── commands/        # HTTP command handlers
-│   └── mod.rs
-├── models/          # Data structures, DTOs
+├── main.rs              # Axum HTTP server entry, router setup
+├── lib.rs               # Re-exports
+├── routes/              # HTTP route handlers
 │   ├── mod.rs
-│   ├── profile.rs
-│   └── settings.rs
-└── services/        # Business logic
+│   ├── invoke.rs        # POST /api/invoke/* (legacy command dispatch)
+│   ├── capture.rs       # Capture endpoints
+│   ├── preview.rs       # Preview endpoints
+│   ├── webrtc.rs        # WebRTC signaling
+│   ├── audio.rs         # Audio endpoints
+│   ├── devices.rs       # Device discovery
+│   ├── health.rs        # Health check
+│   ├── recording.rs     # Recording control
+│   ├── permissions.rs   # Permission queries
+│   ├── files.rs         # File browser
+│   └── websocket.rs     # WebSocket handler
+├── commands/            # Business logic
+│   ├── mod.rs
+│   ├── capture/         # Capture subcommands (module dir)
+│   ├── source.rs        # Source CRUD
+│   ├── scene.rs         # Scene management
+│   ├── layer.rs         # Layer operations
+│   ├── profile.rs       # Profile management
+│   ├── mixer.rs         # Audio mixer
+│   ├── streaming.rs     # Stream control
+│   ├── device.rs        # Device commands
+│   ├── settings.rs      # Settings
+│   ├── system.rs        # System info
+│   └── theme.rs         # Theme management
+├── models/              # Domain models
+│   ├── mod.rs
+│   ├── profile.rs       # Profile, Scene, Layer
+│   ├── source.rs        # Source types + config
+│   ├── output_group.rs  # Encoding profiles
+│   ├── stream_target.rs # RTMP destinations
+│   ├── settings.rs      # App settings
+│   ├── theme.rs         # Theme model
+│   ├── encoders.rs      # Encoder definitions
+│   └── stream_stats.rs  # Streaming statistics
+└── services/            # Service layer (35+ modules)
     ├── mod.rs
-    ├── ffmpeg_handler.rs
-    └── profile_manager.rs
+    ├── device_discovery/ # Device enumeration (module dir)
+    ├── ffmpeg_handler/   # FFmpeg process management (module dir)
+    ├── screen_capture.rs
+    ├── camera_capture.rs
+    ├── h264_capture.rs
+    ├── audio_capture.rs
+    ├── audio_levels.rs
+    ├── compositor.rs
+    ├── source_lifecycle.rs
+    ├── go2rtc_manager.rs
+    ├── profile_manager.rs
+    ├── encryption.rs
+    ├── permissions.rs
+    └── ...              # 20+ more service modules
 ```
 
 ## Serde Patterns

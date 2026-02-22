@@ -78,25 +78,37 @@ try {
 
 ## File Organization
 
+See `architecture.md` for full directory structure.
+
 ### Frontend (`apps/web/src/`)
 ```
 components/     # React components
-  ui/           # Base UI components (Button, Card, etc.)
-  stream/       # Streaming-related components
+  ui/           # Base UI (Button, Card, etc.)
+  layout/       # Layout components
+  stream/       # Streaming controls
   modals/       # Modal dialogs
-hooks/          # Custom React hooks
-stores/         # Zustand state stores
+  sources/      # Source-specific components
+  dashboard/    # Dashboard views
+  settings/     # Settings panels
+hooks/          # Custom React hooks (15 hooks)
+stores/         # Zustand state stores (17 stores)
 lib/
-  backend/      # Backend abstraction layer
+  backend/      # Backend abstraction (Tauri/HTTP)
+  audio/        # Audio meter workers
 types/          # TypeScript type definitions
+utils/          # Utility functions
 views/          # Page-level components
 ```
 
 ### Backend (`server/src/`)
 ```
-commands/       # HTTP command handlers
-models/         # Data structures, DTOs
-services/       # Business logic
+routes/         # HTTP route handlers (12 modules)
+commands/       # Business logic (12 modules)
+  capture/      # Capture subcommands
+models/         # Domain models (10 modules)
+services/       # Service layer (35+ modules)
+  device_discovery/  # Device enumeration
+  ffmpeg_handler/    # FFmpeg management
 ```
 
 ## Comments

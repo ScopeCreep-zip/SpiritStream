@@ -23,16 +23,15 @@ import {
 } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
-import { useProfileStore } from '@/stores/profileStore';
 import { useSourceStore } from '@/stores/sourceStore';
 import { usePermissionCheck, type SourcePermissionType } from '@/stores/permissionStore';
+import { useSourceActions } from '@/hooks/useSourceActions';
 import { dialogs } from '@/lib/backend/dialogs';
 import { backendMode } from '@/lib/backend/env';
 import { useFileBrowser } from '@/hooks/useFileBrowser';
 import type {
   SourceType,
   Source,
-  AudioDeviceSource,
 } from '@/types/source';
 import {
   createDefaultRtmpSource,
@@ -50,9 +49,7 @@ import {
   createDefaultNestedSceneSource,
   createDefaultNDISource,
   getSourceTypeLabel,
-  sourceHasAudio,
 } from '@/types/source';
-import { createDefaultAudioTrack } from '@/types/scene';
 import { useShallow } from 'zustand/shallow';
 
 // Lazy load form components
@@ -104,23 +101,15 @@ const SOURCE_TYPES: { type: SourceType; icon: React.ReactNode }[] = [
 
 export function AddSourceModal({ open, onClose, profileName, filterType, excludeTypes = [], onSourceAdded }: AddSourceModalProps) {
   const { t } = useTranslation();
-  const { current, setCurrentSources, addCurrentAudioTrack, saveProfile } = useProfileStore(
+  const { devices, discoverDevices, listWindows } = useSourceStore(
     useShallow(s => ({
-      current: s.current,
-      setCurrentSources: s.setCurrentSources,
-      addCurrentAudioTrack: s.addCurrentAudioTrack,
-      saveProfile: s.saveProfile
-    }))
-  );
-  const { addSource, devices, discoverDevices, listWindows } = useSourceStore(
-    useShallow(s => ({
-      addSource: s.addSource,
       devices: s.devices,
       discoverDevices: s.discoverDevices,
       listWindows: s.listWindows
     }))
   );
   const { ensurePermission } = usePermissionCheck();
+  const { addSourceToScene } = useSourceActions();
   const { FileBrowser, openFilePath: browserOpenFile } = useFileBrowser();
 
   const [step, setStep] = useState<ModalStep>('select-type');
@@ -217,13 +206,11 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
     // Permission granted or not required - now discover devices
     // This triggers device enumeration AFTER permission dialog, so camera LED
     // won't light up until permission is granted
-    if (type === 'camera' || type === 'screenCapture' || type === 'windowCapture' || type === 'captureCard' || type === 'audioDevice') {
-      await discoverDevices();
-    }
-
-    // For window capture, also fetch windows list
     if (type === 'windowCapture') {
-      await listWindows();
+      // Parallelize device discovery + window listing for window capture
+      await Promise.all([discoverDevices(), listWindows()]);
+    } else if (type === 'camera' || type === 'screenCapture' || type === 'captureCard' || type === 'audioDevice') {
+      await discoverDevices();
     }
 
     setSelectedType(type);
@@ -355,52 +342,8 @@ export function AddSourceModal({ open, onClose, profileName, filterType, exclude
     setError(null);
 
     try {
-      // addSource saves to backend and returns updated sources list
-      let updatedSources = await addSource(profileName, formData);
-      // Update local state with new sources - don't reload profile to avoid overwriting local edits
-      setCurrentSources(updatedSources);
-
-      // CAMERA SPECIAL CASE: Create linked AudioDeviceSource for camera microphone
-      // Camera video itself doesn't have audio - audio comes from a separate microphone device
-      // The linkedAudioDeviceId points to that microphone, which we create as a separate AudioDeviceSource
-      if (
-        formData.type === 'camera' &&
-        formData.captureAudio &&
-        formData.linkedAudioDeviceId
-      ) {
-        // Find the camera device to get the linked audio device name
-        const cameraDevice = devices.cameras.find((c) => c.deviceId === formData.deviceId);
-        const linkedAudioSource: AudioDeviceSource = {
-          type: 'audioDevice',
-          id: crypto.randomUUID(),
-          name: `${formData.name} Audio`,
-          deviceId: formData.linkedAudioDeviceId,
-          linkedToSourceId: formData.id, // Track parent for cascade delete
-          channels: cameraDevice?.linkedAudioDeviceName?.toLowerCase().includes('stereo') ? 2 : 2,
-          sampleRate: 48000,
-        };
-
-        // Add the linked audio source
-        updatedSources = await addSource(profileName, linkedAudioSource);
-        setCurrentSources(updatedSources);
-
-        // Add audio track for the linked audio source (AudioDeviceSource has audio)
-        if (current?.activeSceneId) {
-          const linkedAudioTrack = createDefaultAudioTrack(linkedAudioSource.id);
-          addCurrentAudioTrack(current.activeSceneId, linkedAudioTrack);
-        }
-      }
-
-      // If this source has audio (non-camera sources), add it to the active scene's audio mixer
-      if (sourceHasAudio(formData) && current?.activeSceneId) {
-        const audioTrack = createDefaultAudioTrack(formData.id);
-        addCurrentAudioTrack(current.activeSceneId, audioTrack);
-      }
-
-      // Save profile if any audio tracks were added
-      if ((sourceHasAudio(formData) || (formData.type === 'camera' && formData.captureAudio && formData.linkedAudioDeviceId)) && current?.activeSceneId) {
-        await saveProfile();
-      }
+      // Consolidated: adds source + linked audio + audio tracks + saves
+      await addSourceToScene({ profileName, source: formData });
 
       // Notify parent of the newly added source
       onSourceAdded?.(formData);

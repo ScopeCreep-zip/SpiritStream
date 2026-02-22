@@ -9,12 +9,13 @@
 
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use crate::services::PowerAssertion;
-use crate::services::process_util::{configure_hidden_window, kill_and_wait};
+use crate::services::ffmpeg_process::FfmpegProcess;
+use crate::services::process_util::configure_hidden_window;
 
 /// Segment information for the circular buffer
 #[derive(Debug, Clone)]
@@ -69,7 +70,7 @@ pub struct SavedReplayInfo {
 /// Internal state for the replay buffer
 struct ReplayBufferInternal {
     config: ReplayBufferConfig,
-    ffmpeg_process: Option<Child>,
+    ffmpeg_process: Option<FfmpegProcess>,
     segments: VecDeque<BufferSegment>,
     start_time: Option<Instant>,
     segment_counter: u64,
@@ -203,16 +204,13 @@ impl ReplayBufferService {
 
         log::info!("Starting replay buffer: {} {}", self.ffmpeg_path, args.join(" "));
 
-        let mut cmd = Command::new(&self.ffmpeg_path);
-        cmd.args(&args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped());
-
-        configure_hidden_window(&mut cmd);
-
-        let child = cmd.spawn()
-            .map_err(|e| format!("Failed to start replay buffer FFmpeg: {}", e))?;
+        let child = FfmpegProcess::spawn(
+            &self.ffmpeg_path,
+            &args,
+            "replay-buf",
+            Stdio::null(),
+            Stdio::null(),
+        ).map_err(|e| format!("Failed to start replay buffer FFmpeg: {}", e))?;
 
         state.ffmpeg_process = Some(child);
         state.start_time = Some(Instant::now());
@@ -241,7 +239,7 @@ impl ReplayBufferService {
             .map_err(|e| format!("Lock poisoned: {}", e))?;
 
         if let Some(mut process) = state.ffmpeg_process.take() {
-            kill_and_wait(&mut process);
+            process.kill_and_wait();
         }
 
         // Clean up temp segments

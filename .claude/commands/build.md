@@ -8,16 +8,26 @@ allowed-tools:
 
 Run the full build process for SpiritStream:
 
-1. First run `npm run clean` to clean previous builds
-2. Then run `npm run compile` to compile TypeScript
-3. Finally run `npm run copy-resources` to copy static files
+1. Build the Rust backend:
+   ```bash
+   cargo build --manifest-path server/Cargo.toml
+   ```
 
-If there are any TypeScript compilation errors:
+2. Build the frontend:
+   ```bash
+   pnpm build:web
+   ```
+
+3. Or build everything at once:
+   ```bash
+   pnpm build
+   ```
+
+If there are compilation errors:
 - Read the error messages carefully
 - Identify the file and line number
 - Report the errors with suggested fixes
 
 After successful build, confirm:
-- dist/electron/main.js exists
-- dist/config/encoders.conf exists
-- dist/frontend/index/index.html exists
+- Rust server binary compiled without errors
+- Frontend built to `apps/web/dist/`

@@ -9,7 +9,7 @@
  * - useShallow: Zustand best practice for selector optimization
  * - useTransition: React 19 concurrent feature for non-blocking UI mode switches
  */
-import { useState, useEffect, useMemo, useCallback, lazy, Suspense, useTransition } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense, useTransition } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Play, Square, AlertTriangle, Plus, LayoutGrid, Grid3X3 } from 'lucide-react';
 import { useShallow } from 'zustand/shallow';
@@ -82,14 +82,14 @@ export function Stream() {
 
   // Use useShallow to reduce re-renders by doing shallow comparison of the selected state
   // This is a 2026 Zustand best practice - previously 10+ separate selectors caused excessive re-renders
-  const { current, loading, error, updateProfile, saveProfile, addCurrentAudioTrack } = useProfileStore(
+  const { current, loading, error, updateProfile, saveProfile, setCurrentAudioTracks } = useProfileStore(
     useShallow((s) => ({
       current: s.current,
       loading: s.loading,
       error: s.error,
       updateProfile: s.updateProfile,
       saveProfile: s.saveProfile,
-      addCurrentAudioTrack: s.addCurrentAudioTrack,
+      setCurrentAudioTracks: s.setCurrentAudioTracks,
     }))
   );
 
@@ -122,15 +122,14 @@ export function Stream() {
   // Notify backend when tab visibility changes to throttle preview encoding
   useAppVisibility();
 
-  // Subscribe to thermal state changes from backend
+  // Subscribe to thermal state changes from backend — Promise chain for StrictMode safety
   useEffect(() => {
-    let unsubscribe: (() => void) | null = null;
-    events.on<{ state: string; throttled: boolean }>('thermal_state_changed', (payload) => {
+    const subPromise = events.on<{ state: string; throttled: boolean }>('thermal_state_changed', (payload) => {
       if (payload.throttled) {
         toast.info(`System thermal pressure: ${payload.state}. Preview quality reduced.`);
       }
-    }).then(unsub => { unsubscribe = unsub; });
-    return () => { unsubscribe?.(); };
+    });
+    return () => { subPromise.then((unsub) => unsub()); };
   }, []);
 
   // Get setCaptureStatus from the audio levels hook (single source of truth)
@@ -172,26 +171,31 @@ export function Stream() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleToggleMultiview]);
 
-  // Migrate profile if needed (on first load)
+  // Refs for migration and monitor dedup
+  const migratedProfileRef = useRef<string>('');
+  const migratedScenesRef = useRef<Set<string>>(new Set());
+  const lastMonitorKeyRef = useRef<string>('');
+
+  // Migrate profile if needed (runs once per profile load, not on every current change)
   useEffect(() => {
-    const migrateIfNeeded = async () => {
-      if (current && current.sources.length === 0 && (current.input || current.scenes.length === 0)) {
-        const migrated = migrateProfileIfNeeded(current);
-        if (migrated !== current) {
-          try {
-            updateProfile(migrated);
-            await saveProfile();
-          } catch (err) {
-            console.error('[Stream] Profile migration failed:', err);
-            toast.error(t('errors.profileMigrationFailed', {
-              defaultValue: 'Failed to save migrated profile'
-            }));
-          }
-        }
+    if (!current) return;
+    if (migratedProfileRef.current === current.name) return;
+    migratedProfileRef.current = current.name;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (current.sources.length === 0 && ((current as any).input || current.scenes.length === 0)) {
+      const migrated = migrateProfileIfNeeded(current);
+      if (migrated !== current) {
+        updateProfile(migrated).catch((err) => {
+          console.error('[Stream] Profile migration failed:', err);
+          toast.error(t('errors.profileMigrationFailed', {
+            defaultValue: 'Failed to save migrated profile'
+          }));
+        });
       }
-    };
-    migrateIfNeeded();
-  }, [current, updateProfile, saveProfile, t]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current?.name, current?.sources.length, updateProfile, t]);
 
   // Get active scene — memoized to prevent new reference on every parent render
   // Without this, every profile property change (layer transforms, visibility, etc.)
@@ -219,21 +223,59 @@ export function Stream() {
     [activeScene?.audioMixer.tracks]
   );
 
-  // Sync audio monitor sources with backend when scene changes
+  // Combined effect: audio track migration + monitor source sync
+  // Merging these prevents the race where setMonitorSources fires before migration completes
   useEffect(() => {
     if (!activeScene || !current) {
       // No scene selected, clear audio monitoring
-      api.audio.setMonitorSources([]).then(() => {
-        setCaptureStatus({});
-      }).catch(console.error);
+      if (lastMonitorKeyRef.current !== '') {
+        lastMonitorKeyRef.current = '';
+        api.audio.setMonitorSources([]).then(() => {
+          setCaptureStatus({});
+        }).catch(console.error);
+      }
       return;
     }
 
-    // Get audio track source IDs from the active scene
-    const sourceIds = activeScene.audioMixer.tracks.map((t) => t.sourceId);
-    // Pass profile name so backend can start real audio capture for device sources
+    // Step 1: Migrate missing audio tracks (if not already done for this scene)
+    let tracks = activeScene.audioMixer.tracks;
+    let addedAny = false;
+
+    if (!migratedScenesRef.current.has(activeScene.id)) {
+      const newTracks = [...tracks];
+      for (const layer of activeScene.layers) {
+        const source = current.sources.find(s => s.id === layer.sourceId);
+        if (source && sourceHasAudio(source) && !newTracks.some(t => t.sourceId === source.id)) {
+          newTracks.push(createDefaultAudioTrack(source.id));
+          addedAny = true;
+        }
+      }
+
+      // Audio-only sources (audioDevice) aren't placed in scene layers but should
+      // appear in every scene's mixer (matches OBS behavior for global audio sources)
+      for (const source of current.sources) {
+        if (source.type === 'audioDevice' && !newTracks.some(t => t.sourceId === source.id)) {
+          newTracks.push(createDefaultAudioTrack(source.id));
+          addedAny = true;
+        }
+      }
+
+      migratedScenesRef.current.add(activeScene.id);
+
+      if (addedAny) {
+        tracks = newTracks;
+        setCurrentAudioTracks(activeScene.id, newTracks);
+        setTimeout(() => saveProfile(), 0);
+      }
+    }
+
+    // Step 2: Sync monitor sources with backend (skip if unchanged)
+    const monitorKey = `${current.name}|${tracks.map(t => t.sourceId).join(',')}`;
+    if (monitorKey === lastMonitorKeyRef.current) return;
+    lastMonitorKeyRef.current = monitorKey;
+
+    const sourceIds = tracks.map(t => t.sourceId);
     api.audio.setMonitorSources(sourceIds, current.name).then((result) => {
-      // Store capture status in the hook (single source of truth for AudioMixerPanel)
       if (result.captureResults) {
         setCaptureStatus(result.captureResults);
 
@@ -256,20 +298,8 @@ export function Stream() {
         }
       }
     }).catch(console.error);
-  }, [activeScene?.id, trackSourceIdsKey, current?.name, setCaptureStatus]);
-
-  // Migration: ensure every layer with audio has a corresponding audio track
-  // Covers profiles created before auto-population was added
-  useEffect(() => {
-    if (!activeScene || !current) return;
-
-    for (const layer of activeScene.layers) {
-      const source = current.sources.find(s => s.id === layer.sourceId);
-      if (source && sourceHasAudio(source) && !activeScene.audioMixer.tracks.some(t => t.sourceId === source.id)) {
-        addCurrentAudioTrack(activeScene.id, createDefaultAudioTrack(source.id));
-      }
-    }
-  }, [activeScene?.id, activeScene?.layers, activeScene?.audioMixer.tracks, current?.sources, addCurrentAudioTrack]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeScene?.id, trackSourceIdsKey, activeScene?.layers.length, current?.sources, current?.name, setCaptureStatus, setCurrentAudioTracks, saveProfile]);
 
   // Memoize whether streaming is possible (has at least one target configured)
   const canStream = useMemo(
@@ -323,8 +353,25 @@ export function Stream() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-muted">{t('common.loading')}</div>
+      <div className="flex flex-col h-full gap-4">
+        {/* Title bar skeleton */}
+        <div className="flex items-center justify-between gap-4 animate-pulse">
+          <div className="flex flex-col gap-1">
+            <div className="h-5 w-40 bg-[var(--bg-elevated)] rounded" />
+            <div className="h-3 w-60 bg-[var(--bg-elevated)] rounded" />
+          </div>
+          <div className="h-9 w-24 bg-[var(--bg-elevated)] rounded" />
+        </div>
+        {/* Main 3-column skeleton */}
+        <div className="flex flex-1 gap-4 min-h-0">
+          <div className="w-56 lg:w-64 flex-shrink-0"><PanelSkeleton /></div>
+          <div className="flex-1 min-w-0 bg-[var(--bg-surface)] rounded-lg animate-pulse" />
+          <div className="w-56 lg:w-64 flex-shrink-0"><PanelSkeleton /></div>
+        </div>
+        {/* Scene tabs skeleton */}
+        <div className="h-10 bg-[var(--bg-surface)] rounded-lg animate-pulse" />
+        {/* Audio mixer skeleton */}
+        <div className="h-[260px] bg-[var(--bg-surface)] rounded-lg animate-pulse" />
       </div>
     );
   }

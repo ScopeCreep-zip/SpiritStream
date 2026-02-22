@@ -182,16 +182,10 @@ function App() {
     };
 
     const pollHealthCheck = async () => {
-      const healthy = await checkServerHealth(10, 500);
-      if (cancelled) return;
-
-      if (!healthy) {
-        setServerHealthy(false);
-        setIsCheckingHealth(false);
-        return;
-      }
-
-      const ready = await checkServerReady(15, 400);
+      // /ready subsumes /health — a successful response proves server is reachable.
+      // Polling /ready directly eliminates the sequential health-then-ready phases
+      // and saves up to 5s on cold start.
+      const ready = await checkServerReady(20, 500);
       if (cancelled) return;
 
       setServerHealthy(ready);
@@ -213,13 +207,8 @@ function App() {
     setIsCheckingHealth(true);
     setServerHealthy(null); // Reset to loading state
 
-    const healthy = await checkServerHealth(15, 500);
-    if (healthy) {
-      const ready = await checkServerReady(15, 400);
-      setServerHealthy(ready);
-    } else {
-      setServerHealthy(false);
-    }
+    const ready = await checkServerReady(20, 500);
+    setServerHealthy(ready);
     setIsCheckingHealth(false);
   };
 
@@ -228,11 +217,14 @@ function App() {
     return <ConnectionError onRetry={handleRetryConnection} isRetrying={isCheckingHealth} />;
   }
 
-  // Show loading state while checking server health
+  // Show branded splash while connecting to server
   if (serverHealthy === null) {
     return (
-      <div className="fixed inset-0 flex items-center justify-center bg-[var(--bg-base)]">
-        <div className="text-[var(--text-secondary)]">{t('common.loading', { defaultValue: 'Loading...' })}</div>
+      <div className="fixed inset-0 flex flex-col items-center justify-center bg-[var(--bg-base)] gap-4">
+        <div className="flex items-center gap-2 text-[var(--text-muted)]">
+          <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+          <span className="text-sm">{t('common.connecting', { defaultValue: 'Connecting to server...' })}</span>
+        </div>
       </div>
     );
   }

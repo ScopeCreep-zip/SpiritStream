@@ -202,7 +202,7 @@ log:
         log::debug!("go2rtc config written to: {:?}", config_path);
 
         // Spawn the process with the config file
-        let child = Command::new(&binary_path)
+        let mut child = Command::new(&binary_path)
             .arg("-c")
             .arg(&config_path)
             .stdout(Stdio::piped())
@@ -210,6 +210,27 @@ log:
             .kill_on_drop(true)
             .spawn()
             .map_err(|e| format!("Failed to spawn go2rtc: {}", e))?;
+
+        // Drain stderr in background to prevent pipe buffer deadlock.
+        // go2rtc is less verbose than FFmpeg but can still fill the 64KB buffer
+        // during extended runtime, especially with error conditions.
+        if let Some(stderr) = child.stderr.take() {
+            tokio::spawn(async move {
+                use tokio::io::{AsyncBufReadExt, BufReader};
+                let reader = BufReader::new(stderr);
+                let mut lines = reader.lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    let lower = line.to_lowercase();
+                    if lower.contains("error") || lower.contains("fatal") {
+                        log::warn!("[go2rtc] {}", line);
+                    } else if lower.contains("warn") {
+                        log::debug!("[go2rtc] {}", line);
+                    } else {
+                        log::trace!("[go2rtc] {}", line);
+                    }
+                }
+            });
+        }
 
         *self.child.write().await = Some(child);
 

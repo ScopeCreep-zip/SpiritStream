@@ -280,14 +280,22 @@ export function disconnectSocket(): void {
 }
 
 export const events = {
-  on: async <T>(eventName: string, handler: Handler<T>): Promise<() => void> => {
+  on: <T>(eventName: string, handler: Handler<T>): Promise<() => void> => {
     const set = handlers.get(eventName) ?? new Set<AnyHandler>();
     set.add(handler as AnyHandler);
     handlers.set(eventName, set);
 
-    await ensureSocket();
+    // Fire-and-forget socket connection — don't gate unsubscribe on it.
+    // The handler is added synchronously above (set.add), so the removal
+    // function works immediately. Previously, awaiting ensureSocket() meant
+    // the returned unsubscribe was null during React StrictMode cleanup
+    // (cleanup runs before the Promise resolves → handler never removed →
+    // duplicate events on re-mount).
+    ensureSocket().catch(() => {
+      // Connection errors handled by WebSocket event listeners
+    });
 
-    return () => {
+    const removeHandler = (): void => {
       const listeners = handlers.get(eventName);
       if (listeners) {
         listeners.delete(handler as AnyHandler);
@@ -301,5 +309,8 @@ export const events = {
         socket = null;
       }
     };
+
+    // Return immediately-resolving Promise for backward compatibility
+    return Promise.resolve(removeHandler);
   },
 };

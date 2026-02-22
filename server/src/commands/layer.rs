@@ -160,7 +160,12 @@ async fn add_layer_to_scene(state: &AppState, payload: &Value) -> Result<Value, 
             "linkedAudioSourceId": linked_audio_source_id
         }),
     );
-    Ok(json!({ "layerId": layer_id, "linkedAudioSourceId": linked_audio_source_id }))
+    let updated_tracks = &profile.scenes[scene_idx].audio_mixer.tracks;
+    Ok(json!({
+        "layerId": layer_id,
+        "linkedAudioSourceId": linked_audio_source_id,
+        "audioTracks": updated_tracks,
+    }))
 }
 
 async fn update_layer(state: &AppState, payload: &Value) -> Result<Value, String> {

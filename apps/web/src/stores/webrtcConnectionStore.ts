@@ -62,6 +62,14 @@ interface WebRTCConnectionState {
   resumeAllVideo: () => void;
 }
 
+/** Typed error for WHEP HTTP failures — enables robust status code detection in retry logic */
+class WHEPError extends Error {
+  constructor(public readonly httpStatus: number) {
+    super(`WHEP request failed: ${httpStatus}`);
+    this.name = 'WHEPError';
+  }
+}
+
 /** Localhost connections don't need STUN — host candidates suffice */
 function getIceConfig(whepUrl: string): RTCConfiguration {
   try {
@@ -148,7 +156,7 @@ async function connectWHEP(
 
   if (!response.ok) {
     pc.close();
-    throw new Error(`WHEP request failed: ${response.status}`);
+    throw new WHEPError(response.status);
   }
 
   const answerSdp = await response.text();
@@ -253,36 +261,68 @@ export const useWebRTCConnectionStore = create<WebRTCConnectionState>()(
 
         console.log('[WebRTCStore] Got stream info for:', sourceId, info);
 
-        // Try WHEP (WebRTC)
+        // Try WHEP (WebRTC) with retry for 500 errors (go2rtc producer not ready).
+        // go2rtc lazily connects to HTTP sources on first WHEP request — under
+        // concurrent capture load (multiple FFmpeg + scap), the producer may need
+        // several seconds to connect and extract the first keyframe.
         if (info.whepUrl) {
-          try {
-            const { pc, stream } = await connectWHEP(
-              info.whepUrl,
-              conn.abortController!.signal
-            );
+          const MAX_RETRIES = 5;
+          const BASE_DELAY = 500; // 500ms, 1s, 2s, 4s, 8s
+          let lastError: unknown;
 
-            console.log('[WebRTCStore] WHEP connected for:', sourceId);
-            set({
-              connections: {
-                ...get().connections,
-                [sourceId]: {
-                  ...conn,
-                  pc,
-                  stream,
-                  status: 'playing',
-                  error: undefined,
-                  isConnecting: false,
-                  retryCount: 0, // Reset retry count on success
+          for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            if (conn.abortController?.signal.aborted) return;
+            try {
+              const { pc, stream } = await connectWHEP(
+                info.whepUrl,
+                conn.abortController!.signal
+              );
+
+              console.log('[WebRTCStore] WHEP connected for:', sourceId);
+              set({
+                connections: {
+                  ...get().connections,
+                  [sourceId]: {
+                    ...conn,
+                    pc,
+                    stream,
+                    status: 'playing',
+                    error: undefined,
+                    isConnecting: false,
+                    retryCount: 0,
+                  },
                 },
-              },
-            });
-            return;
-          } catch (e) {
-            if (e instanceof DOMException && e.name === 'AbortError') {
+              });
               return;
+            } catch (e) {
+              if (e instanceof DOMException && e.name === 'AbortError') return;
+              lastError = e;
+
+              const is500 = e instanceof WHEPError && e.httpStatus === 500;
+              if (is500 && attempt < MAX_RETRIES) {
+                const delay = BASE_DELAY * Math.pow(2, attempt);
+                console.log(
+                  `[WebRTCStore] WHEP 500 for ${sourceId}, retry ${attempt + 1}/${MAX_RETRIES} in ${delay}ms`
+                );
+                await new Promise<void>((resolve) => {
+                  const timer = setTimeout(resolve, delay);
+                  conn.abortController?.signal.addEventListener(
+                    'abort',
+                    () => {
+                      clearTimeout(timer);
+                      resolve();
+                    },
+                    { once: true }
+                  );
+                });
+                continue;
+              }
+              console.warn(`[WebRTCStore] WHEP failed for ${sourceId}:`, e);
+              break;
             }
-            console.warn(`[WebRTCStore] WHEP connection failed for ${sourceId}:`, e);
           }
+          // Fall through — lastError is set but we continue to "All methods failed"
+          void lastError;
         }
 
         // All methods failed

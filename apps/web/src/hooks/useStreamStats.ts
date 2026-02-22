@@ -31,36 +31,24 @@ export interface StreamError {
 export function useStreamStats() {
   const { updateStats, setStreamEnded, setStreamError } = useStreamStore();
 
-  // Set up event listeners
+  // Set up event listeners — Promise chain ensures cleanup works in StrictMode
   useEffect(() => {
-    let unlistenStats: (() => void) | null = null;
-    let unlistenEnded: (() => void) | null = null;
-    let unlistenError: (() => void) | null = null;
+    const statsPromise = events.on<StreamStats>('stream_stats', (payload) => {
+      updateStats(payload.groupId, payload);
+    });
 
-    const setupListeners = async () => {
-      // Listen for stream stats updates
-      unlistenStats = await events.on<StreamStats>('stream_stats', (payload) => {
-        updateStats(payload.groupId, payload);
-      });
+    const endedPromise = events.on<string>('stream_ended', (payload) => {
+      setStreamEnded(payload);
+    });
 
-      // Listen for stream ended events (clean exit)
-      unlistenEnded = await events.on<string>('stream_ended', (payload) => {
-        setStreamEnded(payload);
-      });
+    const errorPromise = events.on<StreamError>('stream_error', (payload) => {
+      setStreamError(payload.groupId, payload.error);
+    });
 
-      // Listen for stream error events (crash/unexpected exit)
-      unlistenError = await events.on<StreamError>('stream_error', (payload) => {
-        setStreamError(payload.groupId, payload.error);
-      });
-    };
-
-    setupListeners();
-
-    // Cleanup listeners on unmount
     return () => {
-      if (unlistenStats) unlistenStats();
-      if (unlistenEnded) unlistenEnded();
-      if (unlistenError) unlistenError();
+      statsPromise.then((unsub) => unsub());
+      endedPromise.then((unsub) => unsub());
+      errorPromise.then((unsub) => unsub());
     };
   }, [updateStats, setStreamEnded, setStreamError]);
 

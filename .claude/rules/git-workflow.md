@@ -32,16 +32,17 @@ Follow these conventions for all Git operations.
 - `chore`: Maintenance tasks
 
 ### Scopes
-- `electron`: Main process changes
-- `frontend`: UI changes
+- `server`: Rust backend changes
+- `web`: React frontend changes
+- `desktop`: Tauri desktop wrapper changes
 - `models`: Domain model changes
 - `services`: Service layer changes
-- `ipc`: IPC handler changes
+- `routes`: HTTP route changes
 - `build`: Build system changes
 
 ### Examples
 ```
-feat(frontend): add dark mode toggle
+feat(web): add dark mode toggle
 
 Adds a toggle switch in settings to enable dark mode.
 Updates CSS variables for dark theme support.
@@ -50,7 +51,7 @@ Closes #42
 ```
 
 ```
-fix(services): prevent stream key exposure in logs
+fix(server): prevent stream key exposure in logs
 
 Masks stream keys with asterisks when logging
 stream operations to prevent credential leakage.
@@ -60,12 +61,13 @@ stream operations to prevent credential leakage.
 
 1. **Check for type errors**
    ```bash
-   npx tsc --noEmit
+   pnpm typecheck
+   cargo check --manifest-path server/Cargo.toml
    ```
 
 2. **Verify build succeeds**
    ```bash
-   npm run build
+   pnpm build
    ```
 
 3. **Review changes**

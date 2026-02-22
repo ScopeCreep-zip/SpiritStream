@@ -1,11 +1,13 @@
 // Camera Capture Service
 // Uses FFmpeg for camera capture with platform-specific device access
 
-use std::collections::HashMap;
-use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::process::{Command, Stdio};
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::io::{BufReader, Read};
 use tokio::sync::broadcast;
+
+use super::capture_core::session::{CaptureSession, CaptureSessionManager};
 
 /// Information about an available camera
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -55,27 +57,17 @@ pub struct VideoFrame {
     pub timestamp_ms: u64,
 }
 
-/// Active camera capture
-struct ActiveCapture {
-    process: Child,
-    camera_name: String,
-    frame_tx: broadcast::Sender<Arc<VideoFrame>>,
-    stop_flag: Arc<std::sync::atomic::AtomicBool>,
-    /// Thread handle for frame reader (joined on stop for clean shutdown)
-    capture_handle: Option<std::thread::JoinHandle<()>>,
-}
-
 /// Service for managing camera capture via FFmpeg
 pub struct CameraCaptureService {
     ffmpeg_path: String,
-    active_captures: Mutex<HashMap<String, ActiveCapture>>,
+    sessions: CaptureSessionManager<VideoFrame>,
 }
 
 impl CameraCaptureService {
     pub fn new(ffmpeg_path: String) -> Self {
         Self {
             ffmpeg_path,
-            active_captures: Mutex::new(HashMap::new()),
+            sessions: CaptureSessionManager::new("camera"),
         }
     }
 
@@ -263,6 +255,12 @@ impl CameraCaptureService {
         camera_id: &str,
         config: CameraCaptureConfig,
     ) -> Result<broadcast::Receiver<Arc<VideoFrame>>, String> {
+        // If already capturing this camera, return a new subscriber
+        if let Some(rx) = self.sessions.subscribe(camera_id) {
+            log::debug!("Reusing existing camera capture for {} (new subscriber)", camera_id);
+            return Ok(rx);
+        }
+
         let cameras = self.list_cameras();
         let camera = cameras
             .iter()
@@ -270,7 +268,6 @@ impl CameraCaptureService {
             .ok_or_else(|| format!("Camera {} not found", camera_id))?;
 
         // Build FFmpeg command for raw frame capture
-        // Bind strings to variables so they live long enough
         let fps_str = config.fps.to_string();
         let video_size = format!("{}x{}", config.width, config.height);
         let device_path = &camera.device_path;
@@ -321,14 +318,18 @@ impl CameraCaptureService {
             .spawn()
             .map_err(|e| format!("Failed to start FFmpeg: {}", e))?;
 
-        // Create broadcast channel for frames
-        let (frame_tx, frame_rx) = broadcast::channel(16);
-        let stop_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        // Create session with broadcast channel
+        let (session, frame_rx) = CaptureSession::<VideoFrame>::new(
+            camera_id,
+            "camera",
+            16,
+        );
+
+        let stop_flag = session.stop_flag();
+        let frame_tx = session.sender();
 
         // Start frame reading thread
         let stdout = process.stdout.take().ok_or("Failed to capture stdout")?;
-        let tx_clone = frame_tx.clone();
-        let stop_flag_clone = stop_flag.clone();
         let width = config.width;
         let height = config.height;
 
@@ -339,15 +340,14 @@ impl CameraCaptureService {
             let mut buffer = vec![0u8; frame_size];
             let start_time = std::time::Instant::now();
 
-            while !stop_flag_clone.load(std::sync::atomic::Ordering::Relaxed) {
+            while !stop_flag.load(Ordering::Relaxed) {
                 // Skip frame reading when no consumers are connected
-                if tx_clone.receiver_count() == 0 {
+                if frame_tx.receiver_count() == 0 {
                     std::thread::sleep(std::time::Duration::from_millis(100));
                     continue;
                 }
                 match reader.read_exact(&mut buffer) {
                     Ok(_) => {
-                        // Wrap in Arc for zero-copy sharing across broadcast subscribers
                         let data = Arc::new(buffer.clone());
                         let frame = VideoFrame {
                             data,
@@ -356,103 +356,64 @@ impl CameraCaptureService {
                             pixel_format: "bgra",
                             timestamp_ms: start_time.elapsed().as_millis() as u64,
                         };
-                        let _ = tx_clone.send(Arc::new(frame));
+                        let _ = frame_tx.send(Arc::new(frame));
                     }
                     Err(_) => break,
                 }
             }
         });
 
-        // Store active capture
-        {
-            let mut captures = self.active_captures.lock().unwrap();
-            captures.insert(
-                camera_id.to_string(),
-                ActiveCapture {
-                    process,
-                    camera_name: camera.name.clone(),
-                    frame_tx,
-                    stop_flag,
-                    capture_handle: Some(capture_handle),
-                },
-            );
-        }
+        // Store session with thread handle and on_stop callback to kill FFmpeg
+        let camera_name = camera.name.clone();
+        self.sessions.insert(
+            camera_id.to_string(),
+            session
+                .with_label(&camera_name)
+                .with_handle(capture_handle)
+                .with_on_stop(move || {
+                    let _ = process.kill();
+                }),
+        );
 
-        log::info!("Started camera capture for {} ({})", camera_id, camera.name);
+        log::info!("Started camera capture for {} ({})", camera_id, camera_name);
         Ok(frame_rx)
     }
 
     /// Stop capturing from a camera
     pub fn stop_capture(&self, camera_id: &str) -> Result<(), String> {
-        let handle = {
-            let mut captures = self.active_captures.lock().unwrap();
-            if let Some(mut capture) = captures.remove(camera_id) {
-                capture.stop_flag.store(true, std::sync::atomic::Ordering::Relaxed);
-                let _ = capture.process.kill();
-                log::info!("Stopped camera capture for {}", camera_id);
-                capture.capture_handle.take()
-            } else {
-                return Err(format!("No active capture for camera {}", camera_id));
-            }
-        };
-        // Join thread outside the lock to avoid deadlock
-        if let Some(handle) = handle {
-            let _ = handle.join();
-        }
-        Ok(())
+        self.sessions.stop(camera_id)
     }
 
     /// Stop all active captures
     pub fn stop_all(&self) {
-        let handles: Vec<_> = {
-            let mut captures = self.active_captures.lock().unwrap();
-            captures.drain().map(|(id, mut capture)| {
-                capture.stop_flag.store(true, std::sync::atomic::Ordering::Relaxed);
-                let _ = capture.process.kill();
-                log::info!("Stopped camera capture for {}", id);
-                capture.capture_handle.take()
-            }).collect()
-        };
-        // Join all threads outside the lock
-        for handle in handles.into_iter().flatten() {
-            let _ = handle.join();
-        }
+        self.sessions.stop_all();
     }
 
     /// Check if a camera is currently being captured
     pub fn is_capturing(&self, camera_id: &str) -> bool {
-        let captures = self.active_captures.lock().unwrap();
-        captures.contains_key(camera_id)
+        self.sessions.is_active(camera_id)
     }
 
     /// Get count of active captures
     pub fn active_capture_count(&self) -> usize {
-        let captures = self.active_captures.lock().unwrap();
-        captures.len()
+        self.sessions.active_count()
     }
 
     /// Get list of active capture IDs with camera names
     pub fn active_captures_info(&self) -> Vec<(String, String)> {
-        let captures = self.active_captures.lock().unwrap();
-        captures
-            .iter()
-            .map(|(id, capture)| (id.clone(), capture.camera_name.clone()))
-            .collect()
+        self.sessions.map_sessions(|id, session| {
+            (id.to_string(), session.metadata.label.clone().unwrap_or_default())
+        })
     }
 
     /// Subscribe to an existing camera capture to receive frames
     /// Returns None if the capture doesn't exist
     pub fn subscribe_capture(&self, camera_id: &str) -> Option<broadcast::Receiver<Arc<VideoFrame>>> {
-        let captures = self.active_captures.lock().unwrap();
-        captures.get(camera_id).map(|c| c.frame_tx.subscribe())
+        self.sessions.subscribe(camera_id)
     }
 }
 
-impl Drop for CameraCaptureService {
-    fn drop(&mut self) {
-        self.stop_all();
-    }
-}
+// Drop handled by CaptureSessionManager's Drop impl
 
 #[cfg(test)]
 mod tests {

@@ -26,6 +26,7 @@ import AudioMeterWorkerUrl from './audioMeterWorker.ts?worker&url';
 // Worker instance (singleton)
 let worker: Worker | null = null;
 let isReady = false;
+let readyTimeoutId: ReturnType<typeof setTimeout> | undefined;
 
 // Promise that resolves when worker is ready - for Suspense integration
 let workerReadyResolve: () => void;
@@ -76,6 +77,11 @@ export function initAudioMeterWorker(): void {
     worker.onmessage = (e: MessageEvent) => {
       if (e.data.type === 'ready') {
         isReady = true;
+        // Clear the "not ready" warning timeout — worker initialized successfully
+        if (readyTimeoutId !== undefined) {
+          clearTimeout(readyTimeoutId);
+          readyTimeoutId = undefined;
+        }
         console.log('[AudioMeterWorker] Worker ready');
 
         // Try SharedArrayBuffer (requires COOP/COEP headers)
@@ -100,13 +106,14 @@ export function initAudioMeterWorker(): void {
     worker.onerror = (err) => {
       console.error('[AudioMeterWorker] Worker error:', err);
     };
-    // Warn if worker takes too long to initialize
-    setTimeout(() => {
+    // Warn if worker takes too long to initialize (cleared on 'ready' message)
+    readyTimeoutId = setTimeout(() => {
       if (!isReady) {
         console.warn(
           '[AudioMeterWorker] Worker not ready after 5s. Audio meters may not render. Check browser console for module loading errors.'
         );
       }
+      readyTimeoutId = undefined;
     }, 5000);
   } catch (err) {
     console.error('[AudioMeterWorker] Failed to create worker:', err);
@@ -173,6 +180,10 @@ export function terminateAudioMeterWorker(): void {
     worker.terminate();
     worker = null;
     isReady = false;
+    if (readyTimeoutId !== undefined) {
+      clearTimeout(readyTimeoutId);
+      readyTimeoutId = undefined;
+    }
     sharedBuffer = null;
     sharedView = null;
     pendingOperations.length = 0;
@@ -307,8 +318,14 @@ export function updateMeterConfig(
 /**
  * Forward raw WebSocket audio data to the worker.
  */
+let forwardLogged = false;
+
 export function forwardAudioData(rawMessage: string): void {
   if (isReady && worker) {
+    if (!forwardLogged) {
+      forwardLogged = true;
+      console.log('[AudioMeterWorker] First audio data forwarded to worker');
+    }
     worker.postMessage({ type: 'audioData', data: rawMessage });
   }
 }

@@ -67,36 +67,30 @@ export function useFFmpegDownload(): FFmpegDownloadState {
   const [versionInfo, setVersionInfo] = useState<FFmpegVersionInfo | null>(null);
   const [isCheckingVersion, setIsCheckingVersion] = useState(false);
 
-  // Listen to download progress events
+  // Listen to download progress events — Promise chain ensures cleanup in StrictMode
   useEffect(() => {
-    let unlistenProgress: (() => void) | null = null;
+    const subPromise = events.on<DownloadProgress>('ffmpeg_download_progress', (payload) => {
+      setProgress(payload);
 
-    const setupListener = async () => {
-      unlistenProgress = await events.on<DownloadProgress>('ffmpeg_download_progress', (payload) => {
-        setProgress(payload);
-
-        // Handle completion states
-        if (payload.phase === 'complete') {
-          setIsDownloading(false);
-          setError(null);
-          // Check for the bundled path
-          checkBundledFFmpeg().then((path) => {
-            if (path) setFFmpegPath(path);
-          });
-        } else if (payload.phase === 'elevation_denied') {
-          setIsDownloading(false);
-          setError(payload.message || 'Permission denied');
-        } else if (payload.phase === 'error') {
-          setIsDownloading(false);
-          setError(payload.message || 'Installation failed');
-        }
-      });
-    };
-
-    setupListener();
+      // Handle completion states
+      if (payload.phase === 'complete') {
+        setIsDownloading(false);
+        setError(null);
+        // Check for the bundled path
+        checkBundledFFmpeg().then((path) => {
+          if (path) setFFmpegPath(path);
+        });
+      } else if (payload.phase === 'elevation_denied') {
+        setIsDownloading(false);
+        setError(payload.message || 'Permission denied');
+      } else if (payload.phase === 'error') {
+        setIsDownloading(false);
+        setError(payload.message || 'Installation failed');
+      }
+    });
 
     return () => {
-      if (unlistenProgress) unlistenProgress();
+      subPromise.then((unsub) => unsub());
     };
     // checkBundledFFmpeg is intentionally excluded - we only want to set up the listener once
     // eslint-disable-next-line react-hooks/exhaustive-deps

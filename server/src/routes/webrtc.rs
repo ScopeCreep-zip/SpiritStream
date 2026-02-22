@@ -4,6 +4,7 @@ use axum::{
     response::IntoResponse,
 };
 use serde_json::json;
+use std::time::Duration;
 use tower_cookies::Cookies;
 
 use crate::app_state::AppState;
@@ -91,6 +92,15 @@ pub(crate) async fn webrtc_start_handler(
         }
     };
 
+    log::info!(
+        "WebRTC start for source '{}' — HW encoders: {}/{}, active H264: {}, active screen: {}",
+        source_id,
+        state.h264_capture.hw_budget().active_count(),
+        state.h264_capture.hw_budget().max_sessions(),
+        state.h264_capture.active_captures().len(),
+        state.screen_capture.active_capture_count()
+    );
+
     // Build go2rtc source URL based on source type
     // go2rtc uses native source formats like ffmpeg:device for cameras
     let go2rtc_source = match &source {
@@ -147,22 +157,33 @@ pub(crate) async fn webrtc_start_handler(
                     log::debug!("H264 capture started for {} (HTTP mode)", source_id);
                 }
                 Ok(Ok(Err(e))) => {
-                    // start_capture returned an error
-                    if !e.contains("Already capturing") {
-                        log::error!("Failed to start H264 capture: {}", e);
-                        return Json(json!({ "ok": false, "error": format!("Failed to start screen capture: {}", e) }));
-                    }
-                    log::debug!("H264 capture already running for {}", source_id);
+                    log::error!("Failed to start H264 capture for {}: {}", source_id, e);
+                    return Json(json!({ "ok": false, "error": format!("Failed to start screen capture: {}", e) }));
                 }
                 Ok(Err(_panic)) => {
-                    // start_capture panicked
                     log::error!("H264 capture panicked for source {}", source_id);
                     return Json(json!({ "ok": false, "error": "Screen capture failed unexpectedly (panic)" }));
                 }
                 Err(join_err) => {
-                    // spawn_blocking task failed to join
                     log::error!("H264 capture task failed: {}", join_err);
                     return Json(json!({ "ok": false, "error": "Screen capture task failed" }));
+                }
+            }
+
+            // Wait for first MPEG-TS data before registering with go2rtc.
+            // This ensures go2rtc's Dial() will get valid MPEG-TS headers when it
+            // connects to our HTTP stream endpoint — prevents WHEP 500 race condition.
+            match state.h264_capture.subscribe_to_stream(&source_id) {
+                Some(mut rx) => {
+                    match tokio::time::timeout(Duration::from_secs(10), rx.recv()).await {
+                        Ok(Ok(_)) => log::debug!("First MPEG-TS data confirmed for {}", source_id),
+                        Ok(Err(e)) => log::warn!("Stream recv error for {}: {}", source_id, e),
+                        Err(_) => log::warn!("Timeout waiting for first MPEG-TS data from {} (10s) — stream may be slow to start", source_id),
+                    }
+                }
+                None => {
+                    log::error!("No H264 session for {} — capture did not start correctly", source_id);
+                    return Json(json!({ "ok": false, "error": "Screen capture session not found after start" }));
                 }
             }
 

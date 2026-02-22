@@ -37,18 +37,18 @@ export const PropertiesPanel = React.memo(function PropertiesPanel({ profile, sc
       selectLayer: s.selectLayer
     }))
   );
-  const { updateCurrentLayer, removeCurrentLayer, updateCurrentSource } = useProfileStore(
+  const { updateCurrentLayer, removeCurrentLayer, updateCurrentSource, updateSource } = useProfileStore(
     useShallow(s => ({
       updateCurrentLayer: s.updateCurrentLayer,
       removeCurrentLayer: s.removeCurrentLayer,
-      updateCurrentSource: s.updateCurrentSource
+      updateCurrentSource: s.updateCurrentSource,
+      updateSource: s.updateSource,
     }))
   );
-  const { devices, discoverDevices, updateSource } = useSourceStore(
+  const { devices, discoverDevices } = useSourceStore(
     useShallow(s => ({
       devices: s.devices,
       discoverDevices: s.discoverDevices,
-      updateSource: s.updateSource
     }))
   );
 

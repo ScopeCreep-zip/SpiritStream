@@ -6,11 +6,13 @@
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use parking_lot::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use crate::services::ffmpeg_process::FfmpegProcess;
 
 use bytes::Bytes;
 use scap::capturer::Resolution;
@@ -67,6 +69,11 @@ impl HwEncoderBudget {
     /// Get count of active hardware sessions
     pub fn active_count(&self) -> u8 {
         self.active_sessions.load(Ordering::Relaxed)
+    }
+
+    /// Get max allowed hardware encoder sessions
+    pub fn max_sessions(&self) -> u8 {
+        self.max_sessions.load(Ordering::Relaxed)
     }
 }
 
@@ -258,13 +265,18 @@ impl H264CaptureService {
             scap_display_id
         );
 
-        // Configure screen capture
+        // Configure screen capture with user-selected resolution
         let capture_config = ScreenCaptureConfig {
             fps: source.fps,
             show_cursor: source.capture_cursor,
             show_highlight: false,
-            output_resolution: Resolution::Captured,
+            output_resolution: parse_capture_resolution(&source.capture_resolution),
         };
+
+        log::info!(
+            "Screen capture config for {}: {}fps, cursor={}, resolution={}",
+            source_id, source.fps, source.capture_cursor, source.capture_resolution
+        );
 
         // Start native screen capture
         let frame_rx = self.screen_capture.start_display_capture(scap_display_id, capture_config)?;
@@ -386,13 +398,18 @@ impl H264CaptureService {
             scap_display_id
         );
 
-        // Configure screen capture
+        // Configure screen capture with user-selected resolution
         let capture_config = ScreenCaptureConfig {
             fps: source.fps,
             show_cursor: source.capture_cursor,
             show_highlight: false,
-            output_resolution: Resolution::Captured,
+            output_resolution: parse_capture_resolution(&source.capture_resolution),
         };
+
+        log::info!(
+            "Screen capture config for {}: {}fps, cursor={}, resolution={}",
+            source_id, source.fps, source.capture_cursor, source.capture_resolution
+        );
 
         // Start native screen capture
         let frame_rx = self.screen_capture.start_display_capture(scap_display_id, capture_config)?;
@@ -710,6 +727,21 @@ enum OutputMode {
     Http(broadcast::Sender<Bytes>),
 }
 
+/// Parse a user-facing resolution string into a scap Resolution enum.
+/// Returns _1080p as the safe default for unrecognized values.
+fn parse_capture_resolution(resolution: &str) -> Resolution {
+    match resolution {
+        "480p" => Resolution::_480p,
+        "720p" => Resolution::_720p,
+        "1080p" => Resolution::_1080p,
+        "1440p" => Resolution::_1440p,
+        "2160p" => Resolution::_2160p,
+        "4320p" => Resolution::_4320p,
+        "captured" => Resolution::Captured,
+        _ => Resolution::_1080p, // Safe default
+    }
+}
+
 /// Cap resolution to 1280x720 for low-latency encoding.
 /// Returns (target_width, target_height, needs_scale).
 fn cap_resolution(width: u32, height: u32) -> (u32, u32, bool) {
@@ -865,35 +897,36 @@ fn run_encoding_loop(
 
     log::debug!("FFmpeg command: {} {:?}", ffmpeg_path, ffmpeg_args);
 
-    // Spawn FFmpeg — stdout piped only for HTTP mode
+    // Spawn FFmpeg with automatic stderr draining (prevents pipe buffer deadlock)
     let stdout_cfg = match &output {
         OutputMode::Rtsp(_) => Stdio::null(),
         OutputMode::Http(_) => Stdio::piped(),
     };
 
-    let mut ffmpeg = match Command::new(&ffmpeg_path)
-        .args(&ffmpeg_args)
-        .stdin(Stdio::piped())
-        .stdout(stdout_cfg)
-        .stderr(Stdio::piped())
-        .spawn()
-    {
-        Ok(child) => child,
+    let label = format!("h264:{}", &source_id[..source_id.len().min(8)]);
+    let mut ffmpeg = match FfmpegProcess::spawn(
+        &ffmpeg_path,
+        &ffmpeg_args,
+        &label,
+        Stdio::piped(),
+        stdout_cfg,
+    ) {
+        Ok(proc) => proc,
         Err(e) => {
             log::error!("Failed to spawn FFmpeg for H264 capture: {}", e);
             return;
         }
     };
 
-    let ffmpeg_pid = ffmpeg.id();
+    let ffmpeg_pid = ffmpeg.pid();
     log::info!("[{:?}] FFmpeg started (PID: {}, {} mode)", encoding_start.elapsed(), ffmpeg_pid, mode_label);
 
-    let mut stdin = ffmpeg.stdin.take().expect("Failed to get FFmpeg stdin");
+    let mut stdin = ffmpeg.take_stdin().expect("Failed to get FFmpeg stdin");
 
     // Spawn output reader thread only for HTTP mode
     let output_thread = match output {
         OutputMode::Http(output_tx) => {
-            let stdout = ffmpeg.stdout.take().expect("stdout");
+            let stdout = ffmpeg.take_stdout().expect("stdout");
             let stop_clone = stop_flag.clone();
             let sid = source_id.clone();
             Some(std::thread::spawn(move || {
@@ -933,6 +966,17 @@ fn run_encoding_loop(
     log::info!("Stopping {} encoding loop for {}", mode_label, source_id);
     drop(stdin);
     let _ = ffmpeg.wait();
+
+    // Log stderr diagnostics if FFmpeg reported errors
+    if let Some(exit_info) = ffmpeg.try_exit_info() {
+        if exit_info.had_error {
+            log::warn!("[FFmpeg:{}] Exited with errors. Last {} stderr lines:", label, exit_info.recent_stderr.len());
+            for line in &exit_info.recent_stderr {
+                log::warn!("[FFmpeg:{}]   {}", label, line);
+            }
+        }
+    }
+
     if let Some(thread) = output_thread {
         let _ = thread.join();
     }

@@ -1,7 +1,63 @@
 // Source Model
 // Represents different input source types for multi-input streaming
+//
+// Uses SourceBase trait to eliminate repeated 14-arm match statements.
+// Each variant's inner struct implements SourceBase for common accessors.
 
 use serde::{Deserialize, Serialize};
+
+// ---------------------------------------------------------------------------
+// Common trait — eliminates N-arm matches for id/name access
+// ---------------------------------------------------------------------------
+
+/// Common accessors shared by all source types.
+/// Implementing this trait for each source variant's inner struct lets us
+/// delegate `Source::id()` and `Source::name()` through a single match + trait call.
+pub trait SourceBase {
+    fn id(&self) -> &str;
+    fn name(&self) -> &str;
+}
+
+/// Macro to implement SourceBase for a struct with `id: String` and `name: String` fields
+macro_rules! impl_source_base {
+    ($($t:ty),+ $(,)?) => {
+        $(
+            impl SourceBase for $t {
+                fn id(&self) -> &str { &self.id }
+                fn name(&self) -> &str { &self.name }
+            }
+        )+
+    };
+}
+
+// ---------------------------------------------------------------------------
+// Source capabilities — declarative metadata for each source type
+// ---------------------------------------------------------------------------
+
+/// Which backend capture service handles this source type
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CaptureBackend {
+    /// Screen/display capture via scap
+    Screen,
+    /// Camera capture via FFmpeg
+    Camera,
+    /// Audio-only capture via cpal
+    Audio,
+    /// FFmpeg-based capture (media files, RTMP, capture cards, NDI)
+    FFmpeg,
+    /// Rendered client-side in the browser (color, text, browser, nested scene)
+    ClientSide,
+}
+
+/// Declarative capabilities for a source type
+#[derive(Debug, Clone)]
+pub struct SourceCapabilities {
+    pub has_video: bool,
+    pub has_audio: bool,
+    pub needs_device: bool,
+    pub capture_backend: CaptureBackend,
+}
 
 /// Source - represents a single input source
 /// Tagged enum with type discriminator for frontend compatibility
@@ -38,76 +94,89 @@ pub enum Source {
     Ndi(NdiSource),
 }
 
+// Implement SourceBase for all 14 source structs via macro
+impl_source_base!(
+    RtmpSource,
+    MediaFileSource,
+    ScreenCaptureSource,
+    WindowCaptureSource,
+    CameraSource,
+    CaptureCardSource,
+    AudioDeviceSource,
+    ColorSource,
+    TextSource,
+    BrowserSource,
+    MediaPlaylistSource,
+    NestedSceneSource,
+    GameCaptureSource,
+    NdiSource,
+);
+
 impl Source {
+    /// Access the inner source as a trait object for common field access
+    fn base(&self) -> &dyn SourceBase {
+        match self {
+            Source::Rtmp(s) => s,
+            Source::MediaFile(s) => s,
+            Source::ScreenCapture(s) => s,
+            Source::WindowCapture(s) => s,
+            Source::Camera(s) => s,
+            Source::CaptureCard(s) => s,
+            Source::AudioDevice(s) => s,
+            Source::Color(s) => s,
+            Source::Text(s) => s,
+            Source::Browser(s) => s,
+            Source::MediaPlaylist(s) => s,
+            Source::NestedScene(s) => s,
+            Source::GameCapture(s) => s,
+            Source::Ndi(s) => s,
+        }
+    }
+
     /// Get the unique ID of this source
     pub fn id(&self) -> &str {
-        match self {
-            Source::Rtmp(s) => &s.id,
-            Source::MediaFile(s) => &s.id,
-            Source::ScreenCapture(s) => &s.id,
-            Source::WindowCapture(s) => &s.id,
-            Source::Camera(s) => &s.id,
-            Source::CaptureCard(s) => &s.id,
-            Source::AudioDevice(s) => &s.id,
-            Source::Color(s) => &s.id,
-            Source::Text(s) => &s.id,
-            Source::Browser(s) => &s.id,
-            Source::MediaPlaylist(s) => &s.id,
-            Source::NestedScene(s) => &s.id,
-            Source::GameCapture(s) => &s.id,
-            Source::Ndi(s) => &s.id,
-        }
+        self.base().id()
     }
 
     /// Get the user-friendly name of this source
     pub fn name(&self) -> &str {
+        self.base().name()
+    }
+
+    /// Get declarative capabilities for this source type
+    pub fn capabilities(&self) -> SourceCapabilities {
         match self {
-            Source::Rtmp(s) => &s.name,
-            Source::MediaFile(s) => &s.name,
-            Source::ScreenCapture(s) => &s.name,
-            Source::WindowCapture(s) => &s.name,
-            Source::Camera(s) => &s.name,
-            Source::CaptureCard(s) => &s.name,
-            Source::AudioDevice(s) => &s.name,
-            Source::Color(s) => &s.name,
-            Source::Text(s) => &s.name,
-            Source::Browser(s) => &s.name,
-            Source::MediaPlaylist(s) => &s.name,
-            Source::NestedScene(s) => &s.name,
-            Source::GameCapture(s) => &s.name,
-            Source::Ndi(s) => &s.name,
+            Source::Rtmp(_) =>        SourceCapabilities { has_video: true,  has_audio: true,  needs_device: false, capture_backend: CaptureBackend::FFmpeg },
+            Source::MediaFile(s) =>   SourceCapabilities { has_video: !s.audio_only, has_audio: true, needs_device: false, capture_backend: CaptureBackend::FFmpeg },
+            Source::ScreenCapture(_) => SourceCapabilities { has_video: true, has_audio: false, needs_device: true, capture_backend: CaptureBackend::Screen },
+            Source::WindowCapture(_) => SourceCapabilities { has_video: true, has_audio: false, needs_device: true, capture_backend: CaptureBackend::Screen },
+            Source::Camera(_) =>      SourceCapabilities { has_video: true,  has_audio: false, needs_device: true,  capture_backend: CaptureBackend::Camera },
+            Source::CaptureCard(_) => SourceCapabilities { has_video: true,  has_audio: true,  needs_device: true,  capture_backend: CaptureBackend::FFmpeg },
+            Source::AudioDevice(_) => SourceCapabilities { has_video: false, has_audio: true,  needs_device: true,  capture_backend: CaptureBackend::Audio },
+            Source::Color(_) =>       SourceCapabilities { has_video: true,  has_audio: false, needs_device: false, capture_backend: CaptureBackend::ClientSide },
+            Source::Text(_) =>        SourceCapabilities { has_video: true,  has_audio: false, needs_device: false, capture_backend: CaptureBackend::ClientSide },
+            Source::Browser(_) =>     SourceCapabilities { has_video: true,  has_audio: false, needs_device: false, capture_backend: CaptureBackend::ClientSide },
+            Source::MediaPlaylist(_) => SourceCapabilities { has_video: true, has_audio: true, needs_device: false, capture_backend: CaptureBackend::FFmpeg },
+            Source::NestedScene(_) => SourceCapabilities { has_video: true,  has_audio: false, needs_device: false, capture_backend: CaptureBackend::ClientSide },
+            Source::GameCapture(_) => SourceCapabilities { has_video: true,  has_audio: false, needs_device: false, capture_backend: CaptureBackend::Screen },
+            Source::Ndi(_) =>         SourceCapabilities { has_video: true,  has_audio: true,  needs_device: false, capture_backend: CaptureBackend::FFmpeg },
         }
     }
 
     /// Check if this source has video output
     pub fn has_video(&self) -> bool {
-        match self {
-            Source::Rtmp(_) => true,
-            Source::MediaFile(s) => !s.audio_only,
-            Source::ScreenCapture(_) => true,
-            Source::WindowCapture(_) => true,
-            Source::Camera(_) => true,
-            Source::CaptureCard(_) => true,
-            Source::AudioDevice(_) => false,
-            Source::Color(_) => true,
-            Source::Text(_) => true,
-            Source::Browser(_) => true,
-            Source::MediaPlaylist(_) => true,
-            Source::NestedScene(_) => true,
-            Source::GameCapture(_) => true,
-            Source::Ndi(_) => true,
-        }
+        self.capabilities().has_video
     }
 
     /// Check if this source has audio output
-    /// Note: Camera returns false because audio comes from the auto-created linked AudioDeviceSource
+    /// Note: Camera returns false because audio comes from the auto-created linked AudioDeviceSource.
+    /// For dynamic checks (e.g., captureAudio toggle), use the instance method below.
     pub fn has_audio(&self) -> bool {
         match self {
             Source::Rtmp(s) => s.capture_audio,
             Source::MediaFile(s) => s.capture_audio,
             Source::ScreenCapture(s) => s.capture_audio,
             Source::WindowCapture(s) => s.capture_audio,
-            // Camera video itself has no audio - audio comes from linked AudioDeviceSource
             Source::Camera(_) => false,
             Source::CaptureCard(s) => s.capture_audio,
             Source::AudioDevice(_) => true,
@@ -197,6 +266,10 @@ pub struct ScreenCaptureSource {
     /// Target frame rate for capture
     #[serde(default = "default_fps")]
     pub fps: u32,
+    /// Target capture resolution preset. Controls scap output resolution.
+    /// Default "1080p" balances quality and performance. "captured" uses native display resolution.
+    #[serde(default = "default_capture_resolution")]
+    pub capture_resolution: String,
 }
 
 /// Window capture source - captures a specific application window
@@ -223,6 +296,14 @@ pub struct WindowCaptureSource {
     /// Whether to capture window audio (macOS/Windows)
     #[serde(default)]
     pub capture_audio: bool,
+    /// Target capture resolution preset. Controls scap output resolution.
+    /// Default "1080p" balances quality and performance. "captured" uses native display resolution.
+    #[serde(default = "default_capture_resolution")]
+    pub capture_resolution: String,
+}
+
+fn default_capture_resolution() -> String {
+    "1080p".to_string()
 }
 
 fn default_true() -> bool {
