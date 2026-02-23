@@ -5,34 +5,42 @@ allowed-tools:
   - Read
   - Glob
   - Grep
-argument-hints: "issue type (build, ffmpeg, electron, stream)"
+argument-hints: "issue type (build, ffmpeg, server, stream, desktop)"
 ---
 
 Diagnose and troubleshoot common issues based on the type provided:
 
 ## Build Issues
 - Check if node_modules exists: `ls node_modules`
-- Check TypeScript version: `npx tsc --version`
-- Run clean build: `npm run clean && npm run compile`
+- Check pnpm workspace: `pnpm ls --depth 0`
+- Run clean build: `pnpm build`
+- Check Rust compilation: `cargo check --manifest-path server/Cargo.toml`
 - Check for missing dependencies
 
 ## FFmpeg Issues
-- Check if FFmpeg exists: `ls resources/ffmpeg/bin/`
-- Test FFmpeg: `./resources/ffmpeg/bin/ffmpeg -version`
-- Check encoders.conf is valid JSON
-- Verify FFmpeg path resolution in code
+- Test FFmpeg availability via API: `curl http://127.0.0.1:8008/api/invoke/test_ffmpeg -X POST`
+- Check FFmpeg path in settings
+- Check server logs for FFmpeg errors
+- Verify FFmpeg path resolution in `server/src/services/ffmpeg_handler.rs`
 
-## Electron Issues
-- Check main.js exists: `ls dist/electron/main.js`
-- Check preload.js exists: `ls dist/electron/preload.js`
-- Verify Electron version: `npx electron --version`
-- Check BrowserWindow configuration
+## Server Issues
+- Check server health: `curl http://127.0.0.1:8008/health`
+- Check server readiness: `curl http://127.0.0.1:8008/ready`
+- Check if port 8008 is in use: `lsof -i :8008`
+- Review server logs in data directory
+- Check environment variables (SPIRITSTREAM_HOST, SPIRITSTREAM_PORT)
+
+## Desktop (Tauri) Issues
+- Check Tauri sidecar configuration in `apps/desktop/src-tauri/tauri.conf.json`
+- Verify server binary exists in sidecar path
+- Check Tauri logs for launcher errors
+- Verify webview can connect to `http://127.0.0.1:8008`
 
 ## Stream Issues
 - Verify incoming URL format
 - Check stream targets configuration
-- Review ffmpeg.log for errors
-- Test network connectivity
+- Review server logs for FFmpeg process errors
+- Test network connectivity to RTMP targets
 
 Provide:
 1. Diagnosis of the problem

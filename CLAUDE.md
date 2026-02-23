@@ -1,270 +1,48 @@
-# SpiritStream - Claude Code Context
+# SpiritStream
 
-> This file provides persistent context for Claude Code sessions. It is automatically loaded at session start.
-
-## Project Overview
-
-**SpiritStream** is a desktop streaming application undergoing a complete architectural overhaul. The application manages RTMP stream configurations, handles FFmpeg-based stream processing, and provides a modern UI for multi-output streaming with profile management.
+Desktop streaming application with RTMP stream management, FFmpeg processing, and multi-output streaming with profile management.
 
 **Repository**: https://github.com/ScopeCreep-zip/SpiritStream
-**Current Branch**: web-app-split
-**Migration Status**: ✅ **COMPLETE** — Electron fully removed, Tauri 2.x production-ready
-**Architecture Split**: ✅ **COMPLETE** — Frontend/Backend split into independent services
-**Current Work**: See [web-app-split-master-plan.md](.claude/claudedocs/web-app-split-master-plan.md)
 
-## New Architecture (Target)
+## Architecture
 
-### Technology Stack
+Host server (Rust/Axum) + Client (React) — desktop via Tauri sidecar, also Docker and web browser access.
+
+See `.claude/rules/architecture.md` for full details.
+
+## Tech Stack
 
 | Layer | Technology |
 |-------|------------|
-| Desktop Framework | **Tauri 2.x** |
-| Backend Language | **Rust** |
-| Frontend Framework | **React 18+** |
-| Styling | **Tailwind CSS v4** |
-| Build Tool | **Vite + Tauri** |
-| State Management | **Zustand** |
-| Internationalization | **i18next** (5 languages) |
-| Type Safety | **TypeScript + Rust** |
-
-### Design System
-
-The application uses a **Purple & Pink theme** with full light/dark mode support:
-
-- **Primary**: Violet (#7C3AED light / #A78BFA dark)
-- **Secondary**: Fuchsia (#C026D3 light / #E879F9 dark)
-- **Accent**: Pink (#DB2777 light / #F472B6 dark)
-- **Neutrals**: Purple-tinted gray scale
-
-All colors are WCAG 2.2 AA compliant. See `.claude/claudedocs/research/spiritstream-complete-design-system.md` for complete design tokens.
-
-## Target Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         CLIENT LAYER                                 │
-│  ┌─────────────────────────┐    ┌─────────────────────────┐         │
-│  │  Tauri Desktop          │    │  Web Browser            │         │
-│  │  (Embedded Webview)     │    │  (Remote Access)        │         │
-│  └───────────┬─────────────┘    └───────────┬─────────────┘         │
-│              │         HTTP/WS API          │                       │
-│              └──────────────┬───────────────┘                       │
-├─────────────────────────────┼───────────────────────────────────────┤
-│                             ▼                                       │
-│                    HOST SERVER (Rust + Axum)                        │
-│         POST /api/invoke/* │ WS /ws │ Static UI (optional)         │
-├─────────────────────────────────────────────────────────────────────┤
-│                       SERVICE LAYER                                  │
-│    ProfileManager │ FFmpegHandler │ SettingsManager │ ThemeManager  │
-├─────────────────────────────────────────────────────────────────────┤
-│                       FFMPEG LAYER                                   │
-│             RTMP Relay │ Encoding Processes │ Stream Stats          │
-├─────────────────────────────────────────────────────────────────────┤
-│                       STORAGE LAYER                                  │
-│                Profiles │ Settings │ Logs │ Themes                  │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-**Deployment Modes:**
-- **Desktop**: Tauri launcher spawns host server, UI in embedded webview
-- **Docker**: Host server in container, UI served or separate
-- **Cloud**: Managed host servers with multi-tenant storage (future)
-
-## Directory Structure
-
-```
-spiritstream/
-├── apps/
-│   ├── web/                      # React frontend (standalone)
-│   │   ├── package.json          # @spiritstream/web
-│   │   ├── vite.config.ts
-│   │   ├── index.html
-│   │   └── src/
-│   │       ├── components/       # React components
-│   │       │   ├── ui/          # Base UI components
-│   │       │   ├── layout/      # Layout components
-│   │       │   ├── stream/      # Streaming controls
-│   │       │   └── modals/      # Modal dialogs
-│   │       ├── hooks/           # Custom React hooks
-│   │       ├── stores/          # Zustand state management
-│   │       ├── lib/
-│   │       │   └── backend/     # Backend abstraction (Tauri/HTTP)
-│   │       ├── types/           # TypeScript types
-│   │       ├── styles/          # Global styles + Tailwind
-│   │       ├── locales/         # i18n translations
-│   │       └── views/           # Page views
-│   │
-│   └── desktop/                  # Tauri wrapper (minimal)
-│       ├── package.json          # @spiritstream/desktop
-│       ├── vite.config.ts        # Points to ../web
-│       └── apps/desktop/src-tauri/
-│           ├── Cargo.toml        # Minimal deps (launcher only)
-│           ├── tauri.conf.json   # Sidecar config
-│           ├── binaries/         # Server sidecar binary
-│           └── src/main.rs       # Launcher (spawns server)
-│
-├── server/                       # Standalone Rust backend
-│   ├── Cargo.toml                # No Tauri dependencies
-│   └── src/
-│       ├── main.rs               # Axum HTTP server
-│       ├── lib.rs
-│       ├── commands/             # Business logic
-│       ├── models/               # Domain models
-│       └── services/             # Service layer
-│
-├── packages/
-│   └── shared/                   # Shared TypeScript types (future)
-│
-├── docker/
-│   ├── Dockerfile                # Backend container
-│   └── docker-compose.yml
-│
-├── .claude/                      # Claude Code config
-│   ├── claudedocs/              # Documentation
-│   ├── commands/                # Custom commands
-│   └── rules/                   # Coding standards
-│
-├── pnpm-workspace.yaml           # Workspace config
-├── turbo.json                    # Build orchestration
-└── package.json                  # Root workspace
-```
-
-## Core Domain Models
-
-### Profile
-Top-level configuration entity:
-- `id: string` - UUID
-- `name: string` - User-friendly name
-- `incomingUrl: string` - RTMP source URL
-- `outputGroups: OutputGroup[]` - Encoding configurations
-- `theme?: Theme` - Optional UI customization
-
-### OutputGroup
-Encoding profile for stream targets:
-- `videoEncoder: string` - FFmpeg video codec
-- `resolution: string` - Output resolution
-- `videoBitrate: number` - Video bitrate (kbps)
-- `fps: number` - Frame rate
-- `audioCodec: string` - FFmpeg audio codec
-- `audioBitrate: number` - Audio bitrate (kbps)
-- `generatePts: boolean` - PTS timestamp generation
-- `streamTargets: StreamTarget[]` - Output destinations
-
-### StreamTarget
-RTMP destination:
-- `url: string` - RTMP server URL
-- `streamKey: string` - Authentication key
-- `port: number` - RTMP port (default: 1935)
-
-## Tauri Commands (Target API)
-
-### Profile Commands
-```rust
-#[tauri::command]
-async fn get_all_profiles() -> Result<Vec<String>, String>;
-
-#[tauri::command]
-async fn load_profile(name: String, password: Option<String>) -> Result<Profile, String>;
-
-#[tauri::command]
-async fn save_profile(profile: Profile, password: Option<String>) -> Result<(), String>;
-
-#[tauri::command]
-async fn delete_profile(name: String) -> Result<(), String>;
-```
-
-### Stream Commands
-```rust
-#[tauri::command]
-async fn start_stream(group: OutputGroup, incoming_url: String) -> Result<ProcessInfo, String>;
-
-#[tauri::command]
-async fn stop_stream(group_id: String) -> Result<(), String>;
-
-#[tauri::command]
-async fn stop_all_streams() -> Result<(), String>;
-
-#[tauri::command]
-async fn get_available_encoders() -> Result<Encoders, String>;
-```
-
-## Frontend Component Strategy
-
-### UI Component Library
-Build from scratch using:
-- Tailwind CSS v4 with design tokens
-- CSS custom properties for theming
-- Radix UI primitives for accessibility
-- Framer Motion for animations
-
-### Core Components
-| Component | Purpose |
-|-----------|---------|
-| `Button` | All button variants (primary, secondary, ghost, destructive) |
-| `Card` | Container component with header/body/footer |
-| `Input` | Text input with labels and validation |
-| `Select` | Dropdown selection |
-| `Switch` | Toggle switches |
-| `Modal` | Dialog overlays |
-| `StreamStatus` | Live/connecting/offline/error indicator |
-| `ThemeToggle` | Light/dark mode switch |
-
-## Design Tokens
-
-Theme tokens are defined as CSS custom properties:
-
-```css
-/* Primary Colors */
---primary: #7C3AED;           /* Light mode */
---primary: #A78BFA;           /* Dark mode */
-
-/* Backgrounds */
---bg-base: #FAFAFA;           /* Light */
---bg-base: #0F0A14;           /* Dark */
-
-/* Text */
---text-primary: #1F1A29;      /* Light */
---text-primary: #F4F2F7;      /* Dark */
-
-/* Status */
---status-live: #10B981;
---status-connecting: #F59E0B;
---status-offline: #9489A8;
---status-error: #EF4444;
-```
-
-See full token list in design system research document.
+| Backend | Rust + Axum 0.7 |
+| Frontend | React 19 + TypeScript 5.9 |
+| Styling | Tailwind CSS v4 |
+| Build | Vite 7 + Turbo |
+| State | Zustand 5 |
+| i18n | i18next (11 locales) |
+| Desktop | Tauri 2.x (launcher only) |
 
 ## Build Commands
 
 ```bash
-# Development Modes
-pnpm dev                  # All workspaces in parallel (Turbo)
+pnpm dev                  # All workspaces (Turbo)
 pnpm dev:web              # Frontend only (localhost:5173)
 pnpm dev:desktop          # Desktop app (Tauri + server sidecar)
-pnpm backend:dev          # Standalone HTTP server (localhost:8008)
 
-# Build
 pnpm build                # All workspaces (Turbo)
 pnpm build:web            # Frontend only
-pnpm build:desktop        # Desktop app with server sidecar
-pnpm backend:build        # Rust server release build
+pnpm build:desktop        # Desktop app with sidecar
 
-# Type checking
-pnpm typecheck            # Check TypeScript (Turbo)
-cargo check --manifest-path server/Cargo.toml    # Check server
-cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml  # Check desktop
-
-# Linting
-pnpm lint                 # ESLint (Turbo)
-pnpm format               # Prettier
+pnpm typecheck            # TypeScript checking (Turbo)
+cargo check --manifest-path server/Cargo.toml               # Server
+cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml  # Desktop
 ```
 
 ## Environment Variables
 
 ```bash
 # Frontend (Vite)
-VITE_BACKEND_MODE=http              # Force HTTP mode (auto-detects if not set)
+VITE_BACKEND_MODE=http              # Force HTTP mode (auto-detects if unset)
 VITE_BACKEND_URL=http://host:8008   # Backend URL for HTTP mode
 VITE_BACKEND_TOKEN=secret           # Auth token
 
@@ -275,123 +53,19 @@ SPIRITSTREAM_API_TOKEN=secret       # Auth token (optional)
 SPIRITSTREAM_UI_ENABLED=1           # Serve static UI files
 ```
 
-## Security Model
+## Design Theme
 
-### Remote Access Security
-- Default binding: `localhost:8008` (remote access opt-in)
-- Token authentication: Bearer header + WebSocket query param
-- Enforced only when token is configured
-- UI serving disabled by default
-
-### Tauri Security
-- Capability-based permissions
-- CSP headers enforced
-- IPC allowlist configuration
-- No Node.js in renderer
-
-### Profile Encryption
-- AES-256-GCM encryption
-- Argon2id key derivation (Rust)
-- Random salt and nonce per encryption
-- Stream keys always encrypted at rest
+Purple & pink palette, WCAG 2.2 AA compliant, full light/dark mode. Primary: Violet, Secondary: Fuchsia, Accent: Pink. See `.claude/claudedocs/research/spiritstream-complete-design-system.md`.
 
 ## Coding Standards
 
-### TypeScript (Frontend)
-- Strict mode enabled
-- Explicit return types for functions
-- Interface over type for object shapes
-- Functional components with hooks
+- **TypeScript**: strict mode, explicit return types, `interface` for objects, `type` for unions
+- **Rust**: `Result<T, String>` errors, `Arc<ServiceManager>` pattern, `mask_sensitive()` for logs
+- **React**: functional components, Zustand stores, all API calls via `api.*` from `lib/backend/`
+- **CSS**: Tailwind v4 with design tokens, dark mode via `data-theme="dark"`
 
-### Rust (Backend)
-- Use `Result<T, E>` for error handling
-- Prefer `&str` over `String` for parameters
-- Use `#[derive]` macros appropriately
-- Document public APIs with `///`
-
-### React Components
-- One component per file
-- Props interface defined above component
-- Use `forwardRef` when exposing refs
-- Memoize expensive computations
-
-### CSS/Tailwind
-- Use design tokens via `var(--token)`
-- Semantic class names for custom CSS
-- Mobile-first responsive design
-- Dark mode via `data-theme="dark"`
-
-## Documentation Guidelines
-
-**All Claude-generated documentation MUST be placed in `.claude/claudedocs/`**
-
-### Directory Structure
-
-```
-.claude/claudedocs/
-├── index.md                    # Master index (update when adding docs)
-├── architecture-new.md         # System architecture
-├── component-library.md        # React components
-├── design-system.md            # Design tokens reference
-├── tauri-migration.md          # Migration plan
-├── ui-specification.md         # UI/UX specification
-├── pages-and-views.md          # View documentation
-├── research/                   # Research & reference materials
-│   ├── *.md                    # Analysis documents
-│   └── *.html                  # Mockups, prototypes
-└── scratch/                    # Temporary working documents
-    └── *.md                    # Draft docs, notes, explorations
-```
-
-### Documentation Rules
-
-1. **Never create docs in project root** - Use `.claude/claudedocs/` exclusively
-2. **Update index.md** - Add new documents to the index with descriptions
-3. **Use `scratch/` for temporary work** - Draft analysis, exploration notes, temporary plans
-4. **Use `research/` for reference materials** - Mockups, external research, design specs
-5. **Promote scratch to root when finalized** - Move completed docs from `scratch/` to `claudedocs/`
-
-### When to Create Documentation
-
-| Scenario | Location | Filename Pattern |
-|----------|----------|------------------|
-| Planning a feature | `scratch/` | `feature-name-plan.md` |
-| Analyzing code | `scratch/` | `analysis-topic.md` |
-| API documentation | `claudedocs/` | `api-name.md` |
-| Component specs | `claudedocs/` | `component-name.md` |
-| Research/mockups | `research/` | Descriptive name |
-| Architecture decisions | `claudedocs/` | `adr-NNN-title.md` |
-
-### Document Template
-
-```markdown
-# Document Title
-
-> Brief description of document purpose
-
-## Overview
-[What this document covers]
-
-## Content
-[Main content]
-
-## Related Documents
-- [Link to related doc](./related.md)
-
----
-*Last Updated: YYYY-MM-DD*
-```
+See `.claude/rules/coding-standards.md` for full details.
 
 ## Extended Documentation
 
-@.claude/claudedocs/index.md
 @.claude/claudedocs/web-app-split-master-plan.md
-@.claude/claudedocs/migration-status.md
-@.claude/claudedocs/passthrough-architecture.md
-@.claude/claudedocs/architecture-new.md
-@.claude/claudedocs/component-library.md
-@.claude/claudedocs/design-system.md
-@.claude/claudedocs/ui-specification.md
-@.claude/claudedocs/pages-and-views.md
-@.claude/claudedocs/research/spiritstream-complete-design-system.md
-

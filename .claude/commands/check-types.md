@@ -1,16 +1,27 @@
 ---
-description: Check TypeScript types without building
+description: Check TypeScript and Rust types without building
 allowed-tools:
   - Bash
   - Read
   - Grep
 ---
 
-Run TypeScript type checking without emitting files:
+Run type checking across the full stack:
 
-```bash
-npx tsc --noEmit
-```
+1. **TypeScript** (frontend):
+   ```bash
+   pnpm typecheck
+   ```
+
+2. **Rust** (server):
+   ```bash
+   cargo check --manifest-path server/Cargo.toml
+   ```
+
+3. **Rust** (desktop launcher):
+   ```bash
+   cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
+   ```
 
 If there are type errors:
 1. List each error with file, line, and message
@@ -19,6 +30,6 @@ If there are type errors:
 
 Focus on:
 - Missing type annotations
-- Type mismatches
+- Type mismatches between frontend types and server models
 - Missing properties
 - Incorrect return types

@@ -1,74 +1,73 @@
-# MagillaStream Coding Standards
+# SpiritStream Coding Standards
 
 These rules apply to all code modifications in this project.
 
 ## TypeScript Conventions
 
 ### Naming
-- **Classes/Interfaces/Types**: PascalCase (`ProfileManager`, `OutputGroupDTO`)
+- **Classes/Interfaces/Types**: PascalCase (`ProfileManager`, `OutputGroup`)
 - **Variables/Functions/Methods**: camelCase (`loadProfile`, `streamTargets`)
 - **Constants**: UPPER_SNAKE_CASE (`MAX_RETRY_COUNT`)
-- **Private members**: underscore prefix (`_id`, `_name`)
-- **Files**: camelCase for utilities (`profileManager.ts`), PascalCase for models (`Profile.ts`)
+- **Files**: camelCase for utilities (`profileStore.ts`), PascalCase for components (`StreamStatus.tsx`)
 
 ### Types
 - Always use explicit return types for public methods
 - Use `interface` for object shapes, `type` for unions/aliases
 - Prefer `readonly` for properties that shouldn't change
-- Use strict null checks - handle `undefined` and `null` explicitly
+- Use strict null checks — handle `undefined` and `null` explicitly
 
-### Classes
-- Use private constructor + getInstance() for singletons
-- Implement toDTO() for models that need serialization
-- Use static fromDTO() factory methods for deserialization
+## Rust Conventions
 
-## Electron Patterns
+### Service Pattern
+- Services are `Arc<ServiceManager>` fields in `AppState`, shared across routes
+- Service methods return `Result<T, String>` — the `invoke()` handler wraps results in `InvokeResponse { ok, data, error }`
+- Error handling: `log::error!()` + return `Err(string)`; let `invoke()` handle serialization
 
-### IPC Handlers
-- Channel naming: `service:action` (e.g., `profile:load`)
-- Always validate inputs in handlers
-- Return serializable data only (DTOs, primitives)
-- Handle errors with try/catch and logging
+### Sensitive Data
+- Use `mask_sensitive()` / `redact_payload()` before logging any request or response that may contain stream keys or tokens
+- Path inputs validated via `validate_path_within_any()` to prevent traversal
 
-### Security
-- Never disable context isolation
-- Never enable node integration in renderer
-- Sanitize all paths to prevent traversal attacks
-- Mask sensitive data (stream keys) in logs
+### Naming
+- **Structs/Enums/Traits**: PascalCase (`ProfileManager`, `InvokeResponse`)
+- **Functions/Methods**: snake_case (`get_all_profiles`, `start_stream`)
+- **Constants**: UPPER_SNAKE_CASE (`DEFAULT_PORT`)
+- **Modules**: snake_case (`ffmpeg_handler`, `profile_manager`)
 
-## Error Handling
+## Frontend Patterns
 
-### Main Process
+### Backend Abstraction
+- All API calls go through `api.*` from `lib/backend/api.ts` — never call `fetch()` directly
+- `api.ts` selects `httpApi` (default) or `tauriApi` (legacy) based on detected mode
+- HTTP calls use `safeFetch()` with retry logic and cookie-based auth
+
+### State Management
+- Zustand stores in `stores/`, one store per domain (e.g., `profileStore`, `settingsStore`)
+- Stores export hooks: `useProfileStore`, `useSettingsStore`, etc.
+
+### Error Handling
 ```typescript
 try {
-  const result = await operation();
-  return result;
+  const result = await api.profile.load(name);
+  // update state
 } catch (error) {
-  Logger.getInstance().error(`Operation failed: ${error.message}`);
-  throw new Error(`User-friendly message: ${error.message}`);
+  showError(`Failed to load profile: ${error.message}`);
 }
 ```
 
-### Frontend
-```typescript
-try {
-  const result = await window.electronAPI.service.action();
-  updateUI(result);
-} catch (error) {
-  showError(`Failed to perform action: ${error.message}`);
-}
-```
+### Components
+- Functional components only, one per file
+- Props interface defined above the component
+- Use `forwardRef` when exposing refs
+- Memoize expensive computations
 
-## File Organization
-
-- One class per file for models
-- Group related utilities in single files
-- Keep IPC handlers in ipcHandlers.ts
-- Shared interfaces in shared/interfaces.ts
+## CSS / Tailwind
+- Use design tokens via `var(--token)`
+- Semantic class names for custom CSS
+- Mobile-first responsive design
+- Dark mode via `data-theme="dark"`
 
 ## Comments
-
 - Don't add comments for obvious code
 - Do add comments for complex logic or non-obvious decisions
-- Use JSDoc for public APIs
+- Use JSDoc for public TS APIs, `///` for public Rust APIs
 - Keep comments up to date when code changes

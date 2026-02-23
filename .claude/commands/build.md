@@ -8,16 +8,16 @@ allowed-tools:
 
 Run the full build process for SpiritStream:
 
-1. First run `npm run clean` to clean previous builds
-2. Then run `npm run compile` to compile TypeScript
-3. Finally run `npm run copy-resources` to copy static files
+1. Run `pnpm build` to build all workspaces via Turbo
+2. If frontend-only: `pnpm build:web`
+3. If desktop: `pnpm build:desktop`
+4. If server-only: `cargo build --manifest-path server/Cargo.toml --release`
 
-If there are any TypeScript compilation errors:
+If there are build errors:
 - Read the error messages carefully
 - Identify the file and line number
 - Report the errors with suggested fixes
 
 After successful build, confirm:
-- dist/electron/main.js exists
-- dist/config/encoders.conf exists
-- dist/frontend/index/index.html exists
+- `apps/web/dist/` exists (frontend assets)
+- `server/target/release/spiritstream-server` exists (server binary, if built)
