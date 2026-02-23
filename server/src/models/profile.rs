@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, HashMap};
-use crate::models::{OutputGroup, Platform, Source, RtmpSource, Scene, SourceLayer, AudioMixer, AudioTrack, Transform, SceneTransition};
+use crate::models::{OutputGroup, Platform, Source, RtmpSource, Scene, SourceLayer, AudioMixer, Transform, SceneTransition, SourceAudioConfig};
 
 /// RTMP Input configuration - where the stream enters the system
 /// LEGACY: Kept for backward compatibility, use Sources instead
@@ -70,6 +70,11 @@ pub struct Profile {
     #[serde(default)]
     pub default_transition: Option<SceneTransition>,
 
+    /// Per-source audio configurations (OBS pattern: source-level, not scene-level).
+    /// Keyed by source ID. Created when a source is added, removed when deleted.
+    #[serde(default)]
+    pub source_audio_configs: HashMap<String, SourceAudioConfig>,
+
     /// Encoding configurations with their targets
     pub output_groups: Vec<OutputGroup>,
 }
@@ -80,6 +85,8 @@ impl Profile {
     pub fn migrate_if_needed(&mut self) {
         // Skip if already migrated (has sources)
         if !self.sources.is_empty() {
+            // Migrate legacy AudioTrack data to source_audio_configs if needed
+            self.migrate_audio_tracks_to_source_configs();
             return;
         }
 
@@ -117,16 +124,7 @@ impl Profile {
                     },
                     z_index: 0,
                 }],
-                audio_mixer: AudioMixer {
-                    master_volume: 1.0,
-                    master_muted: false,
-                    tracks: vec![AudioTrack {
-                        source_id: source_id.clone(),
-                        volume: 1.0,
-                        muted: false,
-                        solo: false,
-                    }],
-                },
+                audio_mixer: AudioMixer::default(),
                 transition_in: None,
             };
 
@@ -134,6 +132,40 @@ impl Profile {
             self.sources.push(source);
             self.scenes.push(scene);
             self.active_scene_id = Some(scene_id);
+
+            // Create default audio config for the new source
+            self.source_audio_configs.insert(source_id, SourceAudioConfig::default());
+        }
+    }
+
+    /// Migrate legacy per-scene AudioTrack data into profile-level source_audio_configs.
+    /// Takes the first scene's track settings as the canonical values since they
+    /// were identical in practice (users didn't set different volumes per scene).
+    fn migrate_audio_tracks_to_source_configs(&mut self) {
+        // Skip if already has source_audio_configs populated
+        if !self.source_audio_configs.is_empty() {
+            return;
+        }
+
+        // Collect track data from scenes (first scene wins for volume/mute/solo)
+        for scene in &self.scenes {
+            for track in &scene.audio_mixer.tracks {
+                self.source_audio_configs
+                    .entry(track.source_id.clone())
+                    .or_insert_with(|| SourceAudioConfig {
+                        volume: track.volume,
+                        muted: track.muted,
+                        solo: track.solo,
+                        ..SourceAudioConfig::default()
+                    });
+            }
+        }
+
+        // Also ensure any source without an audio config gets a default
+        for source in &self.sources {
+            self.source_audio_configs
+                .entry(source.id().to_string())
+                .or_insert_with(SourceAudioConfig::default);
         }
     }
 

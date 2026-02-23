@@ -87,7 +87,6 @@ impl Scene {
     pub fn with_fullscreen_source(name: &str, source_id: &str) -> Self {
         let mut scene = Self::new(name);
         scene.layers.push(SourceLayer::fullscreen(source_id, 1920, 1080));
-        scene.audio_mixer.tracks.push(AudioTrack::new(source_id));
         scene
     }
 
@@ -111,11 +110,6 @@ impl Scene {
             transform,
             z_index,
         });
-
-        // Add audio track if not already present
-        if !self.audio_mixer.tracks.iter().any(|t| t.source_id == source_id) {
-            self.audio_mixer.tracks.push(AudioTrack::new(source_id));
-        }
 
         layer_id
     }
@@ -215,7 +209,11 @@ pub struct Crop {
     pub right: u32,
 }
 
-/// AudioMixer - audio mixing configuration for a scene
+/// AudioMixer - scene-level audio mixing configuration.
+///
+/// Per-source audio settings (volume, mute, solo, filters) now live on
+/// `Profile.source_audio_configs` (OBS pattern: source-level, not scene-level).
+/// The scene only controls master volume/mute.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioMixer {
@@ -225,9 +223,10 @@ pub struct AudioMixer {
     /// Master muted state
     #[serde(default)]
     pub master_muted: bool,
-    /// Individual audio tracks
-    #[serde(default)]
-    pub tracks: Vec<AudioTrack>,
+    /// LEGACY: Per-source audio tracks. Kept for backward compatibility during
+    /// migration. New code should use Profile.source_audio_configs instead.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tracks: Vec<LegacyAudioTrack>,
 }
 
 fn default_volume() -> f32 {
@@ -244,36 +243,21 @@ impl Default for AudioMixer {
     }
 }
 
-impl AudioMixer {
-    /// Create a mixer with a single source
-    pub fn with_source(source_id: &str) -> Self {
-        Self {
-            master_volume: 1.0,
-            master_muted: false,
-            tracks: vec![AudioTrack::new(source_id)],
-        }
-    }
-}
-
-/// AudioTrack - audio settings for a single source in the mixer
+/// LEGACY: Audio track kept for backward compatibility during migration.
+/// New code should use `SourceAudioConfig` from `Profile.source_audio_configs`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AudioTrack {
-    /// Reference to the source ID
+pub struct LegacyAudioTrack {
     pub source_id: String,
-    /// Volume (0.0 - 2.0, 1.0 = unity gain)
     #[serde(default = "default_volume")]
     pub volume: f32,
-    /// Whether this track is muted
     #[serde(default)]
     pub muted: bool,
-    /// Whether this track is soloed (mutes all others)
     #[serde(default)]
     pub solo: bool,
 }
 
-impl AudioTrack {
-    /// Create a new audio track with default settings
+impl LegacyAudioTrack {
     pub fn new(source_id: &str) -> Self {
         Self {
             source_id: source_id.to_string(),

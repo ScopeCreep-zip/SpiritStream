@@ -560,7 +560,16 @@ pub(super) async fn handle_set_audio_monitor_sources(state: &AppState, payload: 
                                             "deviceName": device_name
                                         }));
 
-                                        // Register with unified audio bus
+                                        // Bridge to audio engine for mixing
+                                        let engine_rx = receiver.resubscribe();
+                                        state.audio_engine.register_source_from_broadcast(
+                                            &source_id,
+                                            48000, // default sample rate
+                                            2,     // default channels
+                                            engine_rx,
+                                        );
+
+                                        // Register with unified audio bus for metering
                                         state.audio_level_service.register_audio_source(
                                             &source_id,
                                             receiver,

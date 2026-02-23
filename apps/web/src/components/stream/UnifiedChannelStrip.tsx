@@ -2,25 +2,16 @@
  * Unified Channel Strip
  * Combined VU meter + volume control in a single vertical bar
  *
- * ARCHITECTURE (Comlink-inspired):
- * - registerMeterCanvas() returns a Promise that resolves when canvas is
- *   actually transferred to the worker (auto-queued if worker not ready)
- * - No fallback rendering needed - worker handles all canvas drawing
- * - Main thread only does lightweight DOM updates (peak dB, clipping)
- *
- * References:
- * - Comlink pattern: https://github.com/GoogleChromeLabs/comlink
- * - OffscreenCanvas: https://web.dev/articles/offscreen-canvas
+ * Canvas rendering is handled by the meter coordinator (single RAF loop).
+ * This component registers its canvas on mount and unregisters on unmount.
  */
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Headphones } from 'lucide-react';
 import { AudioFilterButton } from './AudioFilterButton';
-import type { AudioFilter, Source } from '@/types/source';
+import type { AudioFilter, Source, MonitoringType } from '@/types/source';
 import { linearToDb, dbToLinear } from '@/hooks/useAudioLevels';
-import {
-  getTrackLevel,
-  getMasterLevel,
-} from '@/lib/audio/audioLevelStore';
+import { formatDb } from '@/utils/formatters';
 import {
   LABEL_WIDTH,
   BAR_WIDTH,
@@ -30,16 +21,7 @@ import {
   TOTAL_HEIGHT,
   TOTAL_WIDTH,
 } from '@/lib/audio/meterRenderer';
-import {
-  registerMeterCanvas,
-  updateMeterConfig,
-  isCanvasRegistered,
-  getCanvasId,
-} from '@/lib/audio/audioMeterWorkerBridge';
-
-// Check if OffscreenCanvas is supported
-const supportsOffscreenCanvas = typeof OffscreenCanvas !== 'undefined' &&
-  typeof HTMLCanvasElement.prototype.transferControlToOffscreen === 'function';
+import { registerMeter, unregisterMeter, type MeterConfig } from '@/lib/audio/meterCoordinator';
 
 // Pre-computed layout values from meter constants (avoids repeated arithmetic in JSX)
 const METER_LAYOUT = {
@@ -55,6 +37,8 @@ export interface UnifiedChannelStripProps {
   muted: boolean;
   solo: boolean;
   filters?: AudioFilter[];
+  monitoringType?: MonitoringType;
+  balance?: number;
   isMaster?: boolean;
   availableSources?: Source[];
   captureError?: string;
@@ -71,6 +55,8 @@ export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
   muted,
   solo,
   filters = [],
+  monitoringType,
+  balance,
   isMaster = false,
   availableSources = [],
   captureError,
@@ -85,16 +71,22 @@ export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
 
   const [localVolume, setLocalVolume] = useState(volume);
   const [isDragging, setIsDragging] = useState(false);
-  const [isRegistered, setIsRegistered] = useState(false);
   const clipIndicatorRef = useRef<HTMLDivElement>(null);
 
-  const workerCanvasIdRef = useRef<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const clipTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recentlyCommittedRef = useRef(false);
   const commitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastClipRef = useRef(false);
   const peakDbRef = useRef<HTMLSpanElement>(null);
+
+  // Memoize threshold filters to avoid allocating new arrays every render/frame
+  const thresholdFilters = useMemo(
+    () => filters.filter(f => ['noiseGate', 'compressor', 'expander'].includes(f.type)),
+    [filters]
+  );
+
+  // Config ref — always fresh, read by coordinator's getConfig()
+  const configRef = useRef<MeterConfig>({ volume: localVolume, muted, isDragging: false, thresholdFilters });
+  configRef.current = { volume: localVolume, muted, isDragging, thresholdFilters };
 
   // Sync local volume from props
   useEffect(() => {
@@ -113,129 +105,34 @@ export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
   useEffect(() => {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
-      if (clipTimeoutRef.current) clearTimeout(clipTimeoutRef.current);
       if (commitTimeoutRef.current) clearTimeout(commitTimeoutRef.current);
     };
   }, []);
 
-  // Canvas registration - Promise-based, auto-queued
+  // Register with meter coordinator — single RAF loop handles all rendering + DOM updates
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !supportsOffscreenCanvas) return;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
-    // Already registered (React StrictMode)
-    if (isCanvasRegistered(canvas)) {
-      const existingId = getCanvasId(canvas);
-      if (existingId) {
-        workerCanvasIdRef.current = existingId;
-        setIsRegistered(true);
-        return;
-      }
-    }
+    // DPR setup
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = TOTAL_WIDTH * dpr;
+    canvas.height = TOTAL_HEIGHT * dpr;
+    ctx.scale(dpr, dpr);
 
-    // Register canvas - Promise resolves when actually transferred to worker
-    let cancelled = false;
-
-    registerMeterCanvas(
+    const stripId = trackId ?? '__master__';
+    registerMeter(stripId, {
       canvas,
-      isMaster ? null : (trackId || null),
-      { volume: localVolume, muted }
-    ).then((canvasId) => {
-      if (cancelled) return;
-      workerCanvasIdRef.current = canvasId;
-      setIsRegistered(true);
-    }).catch((err) => {
-      if (cancelled) return;
-      console.error('[UnifiedChannelStrip] Canvas registration failed:', err);
+      ctx,
+      trackId: isMaster ? null : (trackId ?? null),
+      getConfig: () => configRef.current,
+      peakDbEl: peakDbRef.current,
+      clipEl: clipIndicatorRef.current,
     });
 
-    return () => {
-      cancelled = true;
-    };
-  }, [trackId, isMaster]);
-
-  // Send config updates to worker (volume, muted, dragging state)
-  useEffect(() => {
-    if (isRegistered && workerCanvasIdRef.current) {
-      updateMeterConfig(workerCanvasIdRef.current, { volume: localVolume, muted, isDragging });
-    }
-  }, [localVolume, muted, isDragging, isRegistered]);
-
-  // Send filter threshold updates to worker
-  useEffect(() => {
-    if (isRegistered && workerCanvasIdRef.current && filters.length > 0) {
-      // Extract threshold filters (noise gate, compressor, expander)
-      const thresholdFilters = filters
-        .filter(f => ['noiseGate', 'compressor', 'expander'].includes(f.type))
-        .map(f => ({
-          type: f.type,
-          threshold: (f as { threshold?: number }).threshold,
-          enabled: f.enabled,
-        }));
-      updateMeterConfig(workerCanvasIdRef.current, { thresholdFilters });
-    }
-  }, [filters, isRegistered]);
-
-  // DOM updates: peak dB display and clipping (10Hz, lightweight)
-  useEffect(() => {
-    let rafId: number;
-    let lastUpdateTime = 0;
-    const UPDATE_INTERVAL = 100;
-
-    const getLevel = () => isMaster
-      ? getMasterLevel()
-      : (trackId ? getTrackLevel(trackId) : getMasterLevel());
-
-    const updateDom = () => {
-      const level = getLevel();
-
-      const span = peakDbRef.current;
-      if (span) {
-        const db = level.peakDb;
-        const text = (db <= -60 || !isFinite(db)) ? '-∞' : db.toFixed(1);
-        span.textContent = text;
-        span.className = `px-1 py-0.5 rounded ${
-          db > -3 ? 'text-red-400 bg-red-500/10'
-            : db > -10 ? 'text-yellow-400 bg-yellow-500/10'
-            : 'text-[var(--text-muted)]'
-        }`;
-      }
-
-      // Clip indicator — direct DOM mutation instead of setState to avoid
-      // triggering a React re-render from the high-frequency RAF loop
-      if (level.clipping && !lastClipRef.current) {
-        lastClipRef.current = true;
-        const clip = clipIndicatorRef.current;
-        if (clip) {
-          clip.className = 'absolute rounded-t bg-red-500 animate-pulse';
-        }
-        if (clipTimeoutRef.current) clearTimeout(clipTimeoutRef.current);
-        clipTimeoutRef.current = setTimeout(() => {
-          lastClipRef.current = false;
-          const c = clipIndicatorRef.current;
-          if (c) {
-            c.className = 'absolute rounded-t bg-transparent';
-          }
-        }, 1000);
-      }
-    };
-
-    updateDom();
-
-    const domUpdateLoop = (timestamp: number) => {
-      if (timestamp - lastUpdateTime >= UPDATE_INTERVAL) {
-        lastUpdateTime = timestamp;
-        updateDom();
-      }
-      rafId = requestAnimationFrame(domUpdateLoop);
-    };
-
-    rafId = requestAnimationFrame(domUpdateLoop);
-
-    return () => {
-      cancelAnimationFrame(rafId);
-      if (clipTimeoutRef.current) clearTimeout(clipTimeoutRef.current);
-    };
+    return () => unregisterMeter(stripId);
   }, [trackId, isMaster]);
 
   // Volume from Y position
@@ -359,11 +256,6 @@ export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
 
   const volumePercent = Math.round(localVolume * 100);
 
-  const formatDb = (db: number): string => {
-    if (db <= -60 || !isFinite(db)) return '-∞';
-    return db.toFixed(1);
-  };
-
   const STRIP_WIDTH = METER_LAYOUT.stripWidth;
 
   return (
@@ -396,6 +288,14 @@ export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
             >
               S
             </button>
+            {monitoringType && monitoringType !== 'none' && (
+              <div
+                className="w-5 h-5 rounded flex items-center justify-center bg-green-500/20 text-green-400 border border-green-500/50"
+                title={monitoringType === 'monitorOnly' ? t('audio.monitorOnly', { defaultValue: 'Monitor Only' }) : t('audio.monitorAndOutput', { defaultValue: 'Monitor & Output' })}
+              >
+                <Headphones className="w-3 h-3" />
+              </div>
+            )}
             {trackId && onFiltersChange && (
               <AudioFilterButton
                 trackId={trackId}
@@ -454,23 +354,13 @@ export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
           style={{ left: LABEL_WIDTH, top: PADDING_Y - 4, width: BAR_WIDTH, height: 4 }}
         />
 
-        {/* Canvas - rendered by worker via OffscreenCanvas */}
+        {/* Canvas - rendered by meter coordinator (single RAF loop) */}
         <canvas
           ref={canvasRef}
           width={TOTAL_WIDTH}
           height={TOTAL_HEIGHT}
           style={{ width: TOTAL_WIDTH, height: TOTAL_HEIGHT, willChange: 'transform' }}
         />
-
-        {/* Loading shimmer while worker initializes */}
-        {!isRegistered && supportsOffscreenCanvas && (
-          <div
-            className="absolute bg-[var(--bg-sunken)] overflow-hidden"
-            style={{ left: LABEL_WIDTH, top: PADDING_Y, width: BAR_WIDTH, height: METER_HEIGHT }}
-          >
-            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-[var(--bg-elevated)]/30 to-transparent skeleton-shimmer" />
-          </div>
-        )}
 
         {/* No signal overlay */}
         {captureError && (
@@ -509,6 +399,23 @@ export const UnifiedChannelStrip = React.memo(function UnifiedChannelStrip({
         >
           {captureError ? `⚠ ${t('audio.captureError', { defaultValue: 'No signal' })}` : '\u00A0'}
         </span>
+        {/* Balance indicator */}
+        {!isMaster && balance !== undefined && balance !== 0 && (
+          <div className="flex items-center gap-1 text-[9px] text-[var(--text-muted)]" title={`Balance: ${balance > 0 ? `R ${Math.round(balance * 100)}%` : `L ${Math.round(Math.abs(balance) * 100)}%`}`}>
+            <span>L</span>
+            <div className="relative w-8 h-1 bg-[var(--bg-sunken)] rounded-full">
+              <div
+                className="absolute top-0 h-full bg-[var(--primary)] rounded-full"
+                style={{
+                  left: balance < 0 ? `${50 + balance * 50}%` : '50%',
+                  width: `${Math.abs(balance) * 50}%`,
+                }}
+              />
+              <div className="absolute top-0 left-1/2 w-px h-full bg-[var(--text-muted)] opacity-50" />
+            </div>
+            <span>R</span>
+          </div>
+        )}
       </div>
     </div>
   );

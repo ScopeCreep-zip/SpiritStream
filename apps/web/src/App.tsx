@@ -37,7 +37,6 @@ import { useConnectionStatus } from '@/hooks/useConnectionStatus';
 import { useBackendConnection } from '@/hooks/useBackendConnection';
 import { useDataSync } from '@/hooks/useDataSync';
 import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValidation';
-import { terminateAudioMeterWorker } from '@/lib/audio/audioMeterWorkerBridge';
 import { getIncomingUrl } from '@/types/profile';
 import { toast } from '@/hooks/useToast';
 import { useThemeStore } from '@/stores/themeStore';
@@ -262,13 +261,6 @@ function AppContent() {
 
   // Initialize theme store on app startup
   useThemeStore((state) => state.currentThemeId);
-
-  // Terminate audio meter worker on app unmount
-  useEffect(() => {
-    return () => {
-      terminateAudioMeterWorker();
-    };
-  }, []);
 
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const {

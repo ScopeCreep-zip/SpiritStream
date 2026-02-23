@@ -37,6 +37,7 @@ import { api } from '@/lib/backend/httpApi';
 import { events } from '@/lib/backend';
 import { useAudioLevels } from '@/hooks/useAudioLevels';
 import { useAppVisibility } from '@/hooks/useAppVisibility';
+import { PanelSkeleton, StudioLayoutSkeleton } from '@/components/stream/Skeletons';
 
 // Lazy-loaded components for code splitting
 // These components are heavier and not needed on initial render
@@ -59,23 +60,6 @@ if (typeof window !== 'undefined') {
   }
 }
 
-// Lightweight loading fallbacks for lazy components
-const PanelSkeleton = () => (
-  <div className="h-full bg-[var(--bg-surface)] rounded-lg animate-pulse">
-    <div className="h-10 bg-[var(--bg-elevated)] rounded-t-lg" />
-    <div className="p-4 space-y-3">
-      <div className="h-4 bg-[var(--bg-elevated)] rounded w-3/4" />
-      <div className="h-4 bg-[var(--bg-elevated)] rounded w-1/2" />
-      <div className="h-4 bg-[var(--bg-elevated)] rounded w-2/3" />
-    </div>
-  </div>
-);
-
-const StudioLayoutSkeleton = () => (
-  <div className="flex-1 bg-[var(--bg-surface)] rounded-lg animate-pulse flex items-center justify-center">
-    <div className="text-[var(--text-muted)]">Loading Studio Mode...</div>
-  </div>
-);
 
 export function Stream() {
   const { t } = useTranslation();
@@ -132,8 +116,8 @@ export function Stream() {
     return () => { subPromise.then((unsub) => unsub()); };
   }, []);
 
-  // Get setCaptureStatus from the audio levels hook (single source of truth)
-  const { setCaptureStatus } = useAudioLevels();
+  // Get setCaptureStatus + captureStatus from the audio levels hook (single source of truth)
+  const { setCaptureStatus, captureStatus } = useAudioLevels();
 
   const [isValidating, setIsValidating] = useState(false);
   const [showMultiview, setShowMultiview] = useState(false);
@@ -175,6 +159,28 @@ export function Stream() {
   const migratedProfileRef = useRef<string>('');
   const migratedScenesRef = useRef<Set<string>>(new Set());
   const lastMonitorKeyRef = useRef<string>('');
+
+  // Subscribe to device hotplug events — toast on disconnect, re-trigger capture on reconnect
+  useEffect(() => {
+    const disconnectSub = events.on<{ deviceName: string; type: string }>('device_disconnected', (payload) => {
+      toast.info(t('stream.deviceDisconnected', {
+        name: payload.deviceName,
+        defaultValue: `Audio device disconnected: ${payload.deviceName}`,
+      }));
+    });
+    const reconnectSub = events.on<{ deviceName: string; type: string }>('device_reconnected', (payload) => {
+      toast.info(t('stream.deviceReconnected', {
+        name: payload.deviceName,
+        defaultValue: `Audio device reconnected: ${payload.deviceName}`,
+      }));
+      // Reset monitor key to force re-trigger of audio capture effect
+      lastMonitorKeyRef.current = '';
+    });
+    return () => {
+      disconnectSub.then((unsub) => unsub());
+      reconnectSub.then((unsub) => unsub());
+    };
+  }, [t]);
 
   // Migrate profile if needed (runs once per profile load, not on every current change)
   useEffect(() => {
@@ -219,7 +225,7 @@ export function Stream() {
   // Create stable string key from track source IDs to prevent infinite loop
   // (array reference comparison always fails, causing constant re-renders)
   const trackSourceIdsKey = useMemo(
-    () => activeScene?.audioMixer.tracks.map((t) => t.sourceId).join(',') ?? '',
+    () => (activeScene?.audioMixer.tracks ?? []).map((t) => t.sourceId).join(',') ?? '',
     [activeScene?.audioMixer.tracks]
   );
 
@@ -238,7 +244,7 @@ export function Stream() {
     }
 
     // Step 1: Migrate missing audio tracks (if not already done for this scene)
-    let tracks = activeScene.audioMixer.tracks;
+    let tracks = activeScene.audioMixer.tracks ?? [];
     let addedAny = false;
 
     if (!migratedScenesRef.current.has(activeScene.id)) {
@@ -551,6 +557,7 @@ export function Stream() {
       <AudioMixerPanel
         profile={current}
         scene={activeScene}
+        captureStatus={captureStatus}
       />
 
       {/* Multiview panel (overlay) - Lazy loaded */}

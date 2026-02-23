@@ -299,7 +299,8 @@ impl H264CaptureService {
         let capture_audio = source.capture_audio;
 
         // Spawn the capture + encoding thread
-        let capture_handle = std::thread::spawn(move || {
+        let thread_name = format!("ss-h264-{}", &source_id[..source_id.len().min(8)]);
+        let capture_handle = std::thread::Builder::new().name(thread_name).spawn(move || {
             run_encoding_loop(
                 frame_rx,
                 OutputMode::Rtsp(rtsp_url),
@@ -313,7 +314,7 @@ impl H264CaptureService {
                 source_id_clone,
                 capture_audio,
             );
-        });
+        }).expect("Failed to spawn h264 capture thread");
 
         // Store the session (hw_guard lives as long as the session)
         {
@@ -436,7 +437,8 @@ impl H264CaptureService {
         let capture_audio = source.capture_audio;
 
         // Spawn the capture + encoding thread (HTTP mode)
-        let capture_handle = std::thread::spawn(move || {
+        let thread_name = format!("ss-h264-{}", &source_id[..source_id.len().min(8)]);
+        let capture_handle = std::thread::Builder::new().name(thread_name).spawn(move || {
             run_encoding_loop(
                 frame_rx,
                 OutputMode::Http(output_tx_clone),
@@ -450,7 +452,7 @@ impl H264CaptureService {
                 source_id_clone,
                 capture_audio,
             );
-        });
+        }).expect("Failed to spawn h264 capture thread");
 
         // Store the session (hw_guard lives as long as the session)
         {
@@ -929,10 +931,11 @@ fn run_encoding_loop(
             let stdout = ffmpeg.take_stdout().expect("stdout");
             let stop_clone = stop_flag.clone();
             let sid = source_id.clone();
-            Some(std::thread::spawn(move || {
+            let thread_name = format!("ss-h264-mux-{}", &source_id[..source_id.len().min(8)]);
+            Some(std::thread::Builder::new().name(thread_name).spawn(move || {
                 crate::services::thread_config::set_thread_qos(crate::services::thread_config::QosClass::Utility);
                 read_mpegts_output(stdout, output_tx, stop_clone, sid);
-            }))
+            }).expect("Failed to spawn h264 mux reader thread"))
         }
         OutputMode::Rtsp(_) => None,
     };

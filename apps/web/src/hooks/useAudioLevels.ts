@@ -121,12 +121,12 @@ export function useAudioLevels(): UseAudioLevelsResult {
       receivedCount++;
       const trackCount = Object.keys(payload.tracks).length;
       if (receivedCount <= 3 || (receivedCount % 100 === 0 && trackCount > 0)) {
+        const trackEntries = Object.entries(payload.tracks)
+          .map(([id, t]) => `${id.slice(0, 8)}…: rms=${t.rms.toFixed(4)}`)
+          .join(', ');
         console.log(
-          `[useAudioLevels] Event #${receivedCount}: ${trackCount} tracks, master rms=${payload.master.rms.toFixed(4)}`
+          `[useAudioLevels] Event #${receivedCount}: ${trackCount} tracks [${trackEntries}], master rms=${payload.master.rms.toFixed(4)}`
         );
-        if (trackCount > 0 && receivedCount <= 3) {
-          console.log('[useAudioLevels] Track IDs:', Object.keys(payload.tracks));
-        }
       }
     };
 
@@ -153,27 +153,5 @@ export function useAudioLevels(): UseAudioLevelsResult {
   return { isConnected, isInitializing, captureStatus, setCaptureStatus, healthStatus };
 }
 
-/**
- * Convert dB value to linear (0-1) scale
- */
-export function dbToLinear(db: number): number {
-  return Math.pow(10, db / 20);
-}
-
-/**
- * Convert linear (0-1) value to dB
- */
-export function linearToDb(linear: number): number {
-  if (linear <= 0) return -Infinity;
-  return 20 * Math.log10(linear);
-}
-
-/**
- * Get color for a given audio level
- */
-export function getLevelColor(level: number): string {
-  if (level > 0.9) return '#ef4444'; // Red - clipping danger
-  if (level > 0.7) return '#f97316'; // Orange - warning
-  if (level > 0.5) return '#eab308'; // Yellow - nominal high
-  return '#22c55e'; // Green - safe
-}
+// Re-export audio conversion utilities from canonical location
+export { dbToLinear, linearToDb, getLevelColor } from '@/utils/formatters';

@@ -1,14 +1,14 @@
 /**
  * Audio utilities module
  *
- * Exports pure JavaScript audio level store and rendering utilities
- * for high-performance audio metering that bypasses React's render cycle.
- *
- * Also exports Web Worker-based rendering for complete main thread offloading.
+ * Exports pure JavaScript audio level store, rendering utilities,
+ * and the meter coordinator for high-performance audio metering
+ * that bypasses React's render cycle.
  */
 
 export {
   updateLevels,
+  updateLevelsBinary,
   getTrackLevel,
   getMasterLevel,
   getPeakHold,
@@ -33,22 +33,18 @@ export {
 } from './meterRenderer';
 
 export {
-  registerMeterRenderer,
-  shouldUpdatePeakDb,
-  shouldCheckClipping,
-  getActiveRendererCount,
-} from './audioAnimationManager';
+  registerMeter,
+  unregisterMeter,
+  pauseCoordinator,
+  resumeCoordinator,
+  type MeterConfig,
+  type MeterRegistration,
+} from './meterCoordinator';
 
-// Web Worker-based rendering (OffscreenCanvas)
 export {
-  initAudioMeterWorker,
-  terminateAudioMeterWorker,
-  registerMeterCanvas,
-  unregisterMeterCanvas,
-  updateMeterConfig,
-  forwardAudioData,
-  isWorkerReady,
-  hasSharedMemory,
-  getMasterLevelFromShared,
-  getSharedVersion,
-} from './audioMeterWorkerBridge';
+  decodeAudioFrame,
+  AUDIO_FRAME_MAGIC,
+  AUDIO_FRAME_VERSION,
+  type DecodedAudioFrame,
+  type DecodedTrackLevel,
+} from './binaryCodec';

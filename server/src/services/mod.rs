@@ -38,6 +38,10 @@ pub mod thread_config;
 mod power_management;
 mod source_lifecycle;
 pub mod capture_core;
+pub mod audio_engine;
+pub mod audio_filters;
+mod device_hotplug;
+mod h264_budget;
 
 // macOS-specific ScreenCaptureKit audio capture
 #[cfg(target_os = "macos")]
@@ -76,3 +80,6 @@ pub use stream_audio_decoder::*;
 pub use frame_processing::*;
 pub use power_management::*;
 pub use source_lifecycle::*;
+pub use audio_engine::AudioEngineService;
+pub use device_hotplug::DeviceHotplugMonitor;
+pub use h264_budget::{H264Budget, H264BudgetGuard};

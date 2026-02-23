@@ -5,54 +5,16 @@
  * Supports two view modes:
  * - Edit: Shows individual layer previews with resize handles
  * - Preview: Shows composed scene output from backend Compositor
- *
- * Features:
- * - Drag layers to reposition
- * - Resize layers via corner handles
- * - GPU-accelerated movement via CSS transforms
- * - Adaptive framerate preview polling (no rate limiting)
  */
-import React, { useRef, useState, useLayoutEffect, useEffect, useCallback, useMemo } from 'react';
+import React, { useRef, useState, useLayoutEffect, useCallback, useMemo } from 'react';
 import { Card } from '@/components/ui/Card';
-import type { Scene, SourceLayer, Transform } from '@/types/scene';
+import type { Scene, Transform } from '@/types/scene';
 import type { Source } from '@/types/source';
 import { useSceneStore } from '@/stores/sceneStore';
 import { useProfileStore } from '@/stores/profileStore';
-import { SharedWebRTCPlayer } from './SharedWebRTCPlayer';
-import { StaticMediaPlayer } from './StaticMediaPlayer';
-import { TextSourceRenderer } from './TextSourceRenderer';
-import { BrowserSourceRenderer } from './BrowserSourceRenderer';
-import { NestedSceneRenderer } from './NestedSceneRenderer';
-import { MediaPlaylistRenderer } from './MediaPlaylistRenderer';
-import { isStaticMediaFile, isImageFile } from '@/lib/mediaTypes';
-import type { ColorSource, TextSource, BrowserSource, NestedSceneSource, MediaPlaylistSource } from '@/types/source';
+import { LayerPreview, calculateCanvasDimensions } from './canvas';
 
 type ViewMode = 'edit' | 'preview';
-type ResizeDirection = 'nw' | 'ne' | 'sw' | 'se' | null;
-
-// Calculate canvas dimensions that fit within available space
-function calculateCanvasDimensions(
-  canvasWidth: number,
-  canvasHeight: number,
-  availableWidth: number,
-  availableHeight: number
-): { width: number; height: number } {
-  const aspectRatio = canvasWidth / canvasHeight;
-  let width = availableWidth;
-  let height = width / aspectRatio;
-
-  if (height > availableHeight) {
-    height = availableHeight;
-    width = height * aspectRatio;
-  }
-
-  if (width > canvasWidth) {
-    width = canvasWidth;
-    height = canvasHeight;
-  }
-
-  return { width: Math.floor(width), height: Math.floor(height) };
-}
 
 interface SceneCanvasProps {
   scene?: Scene;
@@ -79,8 +41,6 @@ export const SceneCanvas = React.memo(function SceneCanvas({
   hideHeader = false,
 }: SceneCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  // In Studio Mode: Program pane always shows composed preview, Preview pane defaults to preview but can toggle
-  // In Normal Mode: defaults to edit view
   const [viewMode, setViewMode] = useState<ViewMode>(studioMode ? 'preview' : 'edit');
   const { updateLayer } = useSceneStore();
   const { updateCurrentLayer } = useProfileStore();
@@ -88,8 +48,6 @@ export const SceneCanvas = React.memo(function SceneCanvas({
   // Force preview mode in Program pane (can't edit live output)
   const effectiveViewMode = studioMode === 'program' ? 'preview' : viewMode;
 
-  // Start with small default dimensions - the ResizeObserver will correct them
-  // This prevents the initial render from causing layout expansion
   const [dimensions, setDimensions] = useState({ width: 320, height: 180 });
 
   useLayoutEffect(() => {
@@ -105,10 +63,9 @@ export const SceneCanvas = React.memo(function SceneCanvas({
       const availableWidth = container.clientWidth;
       const availableHeight = container.clientHeight;
 
-      // If container hasn't been laid out yet, schedule a retry
       if (availableWidth <= 0 || availableHeight <= 0) {
         if (retryTimeout) clearTimeout(retryTimeout);
-        retryTimeout = setTimeout(updateDimensions, 16); // Retry next frame
+        retryTimeout = setTimeout(updateDimensions, 16);
         return;
       }
 
@@ -119,20 +76,14 @@ export const SceneCanvas = React.memo(function SceneCanvas({
         availableHeight
       );
 
-      // Only update if dimensions actually changed (prevents unnecessary re-renders)
       setDimensions(prev => {
-        if (prev.width === newDims.width && prev.height === newDims.height) {
-          return prev;
-        }
+        if (prev.width === newDims.width && prev.height === newDims.height) return prev;
         return newDims;
       });
     };
 
-    // Calculate dimensions synchronously on mount - useLayoutEffect runs before paint
-    // so this ensures the correct size on the first visible render
     updateDimensions();
 
-    // Use ResizeObserver for subsequent changes, with requestAnimationFrame for batching
     const observer = new ResizeObserver(() => {
       if (rafId) cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(updateDimensions);
@@ -146,7 +97,6 @@ export const SceneCanvas = React.memo(function SceneCanvas({
     };
   }, [scene?.canvasWidth, scene?.canvasHeight]);
 
-  // Handle layer transform updates (debounced save to backend)
   const handleLayerTransformChange = useCallback(
     async (layerId: string, newTransform: Partial<Transform>) => {
       if (!profileName || !scene) return;
@@ -158,7 +108,6 @@ export const SceneCanvas = React.memo(function SceneCanvas({
 
       try {
         await updateLayer(profileName, scene.id, layerId, { transform: updatedTransform });
-        // Update local state instead of reloading entire profile
         updateCurrentLayer(scene.id, layerId, { transform: updatedTransform });
       } catch (err) {
         console.error('Failed to update layer transform:', err);
@@ -190,10 +139,9 @@ export const SceneCanvas = React.memo(function SceneCanvas({
 
   return (
     <Card className={`h-full flex flex-col overflow-hidden ${hideHeader ? 'border-0 rounded-none bg-transparent' : ''}`}>
-      {/* Header with view mode toggle - hidden for projector/fullscreen */}
+      {/* Header with view mode toggle */}
       {!hideHeader && (
         <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-muted)] bg-[var(--bg-elevated)]">
-          {/* Left side: Title/indicator */}
           {studioMode === 'preview' ? (
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-green-500 flex items-center gap-1.5">
@@ -214,7 +162,6 @@ export const SceneCanvas = React.memo(function SceneCanvas({
             <span className="text-sm font-medium text-[var(--text-secondary)]">Canvas</span>
           )}
 
-          {/* Right side: Edit/Preview toggle (hidden in Studio Mode - both panes render layers) */}
           {!studioMode && (
             <div className="flex items-center gap-1 bg-[var(--bg-sunken)] p-1 rounded-lg">
               <button
@@ -256,7 +203,6 @@ export const SceneCanvas = React.memo(function SceneCanvas({
           className="relative bg-[var(--bg-base)] shadow-2xl"
           style={{ width: dimensions.width, height: dimensions.height }}
         >
-          {/* Render layers - read-only in Preview mode (outside Studio) or Program mode (Studio) */}
           {sortedLayers.map((layer) => {
             const isReadOnly = studioMode === 'program' || (effectiveViewMode === 'preview' && !studioMode);
             return (
@@ -278,7 +224,6 @@ export const SceneCanvas = React.memo(function SceneCanvas({
             );
           })}
 
-          {/* Canvas size indicator */}
           <div className="absolute bottom-2 right-2 text-sm text-[var(--text-muted)] bg-[var(--bg-elevated)] px-2 py-1 rounded shadow pointer-events-none">
             {scene.canvasWidth}x{scene.canvasHeight}
             {effectiveViewMode === 'preview' && !studioMode && (
@@ -290,366 +235,3 @@ export const SceneCanvas = React.memo(function SceneCanvas({
     </Card>
   );
 });
-
-interface LayerPreviewProps {
-  layer: SourceLayer;
-  scale: number;
-  canvasWidth: number;
-  canvasHeight: number;
-  sourceName: string;
-  source: Source | undefined;
-  isSelected: boolean;
-  onClick: () => void;
-  onTransformChange: (transform: Partial<Transform>) => void;
-  /** All scenes in the profile (for nested scene rendering) */
-  scenes: Scene[];
-  /** All sources in the profile (for nested scene rendering) */
-  sources: Source[];
-  /** Read-only mode (no selection ring, no drag handles) - used in Program pane */
-  readOnly?: boolean;
-}
-
-/**
- * LayerPreview - Live preview for a layer with drag/resize support
- * Uses fixed preview dimensions for stable polling (no rate limiting)
- * Uses CSS transforms for GPU-accelerated drag/resize
- * Memoized to prevent unnecessary re-renders
- */
-const LayerPreview = React.memo(function LayerPreview({
-  layer,
-  scale,
-  canvasWidth,
-  canvasHeight,
-  sourceName,
-  source,
-  isSelected,
-  onClick,
-  onTransformChange,
-  scenes,
-  sources,
-  readOnly = false,
-}: LayerPreviewProps) {
-  const { transform, visible } = layer;
-
-  // Drag/resize state
-  const [isDragging, setIsDragging] = useState(false);
-  const [isResizing, setIsResizing] = useState<ResizeDirection>(null);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const [resizeOffset, setResizeOffset] = useState({ width: 0, height: 0, x: 0, y: 0 });
-  const dragStartRef = useRef({ mouseX: 0, mouseY: 0, layerX: 0, layerY: 0, width: 0, height: 0 });
-
-  // Use refs to track dragging state for the reset effect
-  // This allows us to check the state without including it in dependencies
-  const isDraggingRef = useRef(false);
-  const isResizingRef = useRef<ResizeDirection>(null);
-
-  // Keep refs in sync with state (runs synchronously during render)
-  isDraggingRef.current = isDragging;
-  isResizingRef.current = isResizing;
-
-  // Reset offsets only when transform actually changes from server
-  // Using refs to check dragging state prevents the effect from running when dragging state changes
-  useEffect(() => {
-    if (!isDraggingRef.current && !isResizingRef.current) {
-      setDragOffset({ x: 0, y: 0 });
-      setResizeOffset({ width: 0, height: 0, x: 0, y: 0 });
-    }
-  }, [transform.x, transform.y, transform.width, transform.height]);
-
-  const hasVideo = source?.type !== 'audioDevice';
-
-  // Drag handlers
-  const handleDragStart = useCallback(
-    (e: React.MouseEvent) => {
-      if (!isSelected || isResizing || layer.locked) return;
-      e.preventDefault();
-      e.stopPropagation();
-
-      // Capture the current visual position (including any pending offset from previous drag)
-      // This prevents jumps when starting a new drag before server responds
-      const visualX = transform.x + dragOffset.x;
-      const visualY = transform.y + dragOffset.y;
-
-      setIsDragging(true);
-      dragStartRef.current = {
-        mouseX: e.clientX,
-        mouseY: e.clientY,
-        layerX: visualX,
-        layerY: visualY,
-        width: transform.width + resizeOffset.width,
-        height: transform.height + resizeOffset.height,
-      };
-    },
-    [isSelected, isResizing, transform, layer.locked, dragOffset, resizeOffset]
-  );
-
-  const handleResizeStart = useCallback(
-    (e: React.MouseEvent, direction: ResizeDirection) => {
-      if (layer.locked) return;
-      e.preventDefault();
-      e.stopPropagation();
-
-      // Capture the current visual position and size (including any pending offsets)
-      const visualX = transform.x + dragOffset.x + resizeOffset.x;
-      const visualY = transform.y + dragOffset.y + resizeOffset.y;
-      const visualWidth = transform.width + resizeOffset.width;
-      const visualHeight = transform.height + resizeOffset.height;
-
-      setIsResizing(direction);
-      dragStartRef.current = {
-        mouseX: e.clientX,
-        mouseY: e.clientY,
-        layerX: visualX,
-        layerY: visualY,
-        width: visualWidth,
-        height: visualHeight,
-      };
-    },
-    [transform, layer.locked, dragOffset, resizeOffset]
-  );
-
-  // Global mouse move/up handlers with RAF throttling
-  useEffect(() => {
-    if (!isDragging && !isResizing) return;
-
-    // RAF-based throttling to limit processing to display refresh rate
-    let rafPending = false;
-    let lastClientX = 0;
-    let lastClientY = 0;
-
-    const processMouseMove = () => {
-      const deltaX = (lastClientX - dragStartRef.current.mouseX) / scale;
-      const deltaY = (lastClientY - dragStartRef.current.mouseY) / scale;
-
-      if (isDragging) {
-        // Calculate new position with bounds checking
-        const newX = Math.max(0, Math.min(canvasWidth - transform.width, dragStartRef.current.layerX + deltaX));
-        const newY = Math.max(0, Math.min(canvasHeight - transform.height, dragStartRef.current.layerY + deltaY));
-        setDragOffset({ x: newX - transform.x, y: newY - transform.y });
-      } else if (isResizing) {
-        let newWidth = dragStartRef.current.width;
-        let newHeight = dragStartRef.current.height;
-        let newX = dragStartRef.current.layerX;
-        let newY = dragStartRef.current.layerY;
-
-        // Calculate resize based on direction
-        switch (isResizing) {
-          case 'se':
-            newWidth = Math.max(50, dragStartRef.current.width + deltaX);
-            newHeight = Math.max(50, dragStartRef.current.height + deltaY);
-            break;
-          case 'sw':
-            newWidth = Math.max(50, dragStartRef.current.width - deltaX);
-            newHeight = Math.max(50, dragStartRef.current.height + deltaY);
-            newX = dragStartRef.current.layerX + (dragStartRef.current.width - newWidth);
-            break;
-          case 'ne':
-            newWidth = Math.max(50, dragStartRef.current.width + deltaX);
-            newHeight = Math.max(50, dragStartRef.current.height - deltaY);
-            newY = dragStartRef.current.layerY + (dragStartRef.current.height - newHeight);
-            break;
-          case 'nw':
-            newWidth = Math.max(50, dragStartRef.current.width - deltaX);
-            newHeight = Math.max(50, dragStartRef.current.height - deltaY);
-            newX = dragStartRef.current.layerX + (dragStartRef.current.width - newWidth);
-            newY = dragStartRef.current.layerY + (dragStartRef.current.height - newHeight);
-            break;
-        }
-
-        // Clamp to canvas bounds
-        newX = Math.max(0, Math.min(canvasWidth - 50, newX));
-        newY = Math.max(0, Math.min(canvasHeight - 50, newY));
-        newWidth = Math.min(newWidth, canvasWidth - newX);
-        newHeight = Math.min(newHeight, canvasHeight - newY);
-
-        setResizeOffset({
-          width: newWidth - transform.width,
-          height: newHeight - transform.height,
-          x: newX - transform.x,
-          y: newY - transform.y,
-        });
-      }
-      rafPending = false;
-    };
-
-    const handleMouseMove = (e: MouseEvent) => {
-      lastClientX = e.clientX;
-      lastClientY = e.clientY;
-      if (rafPending) return;
-      rafPending = true;
-      requestAnimationFrame(processMouseMove);
-    };
-
-    const handleMouseUp = () => {
-      if (isDragging) {
-        const newX = transform.x + dragOffset.x;
-        const newY = transform.y + dragOffset.y;
-        if (dragOffset.x !== 0 || dragOffset.y !== 0) {
-          onTransformChange({ x: Math.round(newX), y: Math.round(newY) });
-        }
-        // Don't reset dragOffset here - the useEffect will reset it when transform updates
-        setIsDragging(false);
-      }
-
-      if (isResizing) {
-        const newWidth = transform.width + resizeOffset.width;
-        const newHeight = transform.height + resizeOffset.height;
-        const newX = transform.x + resizeOffset.x;
-        const newY = transform.y + resizeOffset.y;
-        if (resizeOffset.width !== 0 || resizeOffset.height !== 0) {
-          onTransformChange({
-            x: Math.round(newX),
-            y: Math.round(newY),
-            width: Math.round(newWidth),
-            height: Math.round(newHeight),
-          });
-        }
-        // Don't reset resizeOffset here - the useEffect will reset it when transform updates
-        setIsResizing(null);
-      }
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isDragging, isResizing, scale, transform, dragOffset, resizeOffset, canvasWidth, canvasHeight, onTransformChange]);
-
-  if (!visible) return null;
-
-  // Calculate display position with drag/resize offsets (GPU-accelerated via transform)
-  const displayX = (transform.x + dragOffset.x + resizeOffset.x) * scale;
-  const displayY = (transform.y + dragOffset.y + resizeOffset.y) * scale;
-  const displayWidth = (transform.width + resizeOffset.width) * scale;
-  const displayHeight = (transform.height + resizeOffset.height) * scale;
-
-  return (
-    <div
-      className={`absolute transition-shadow ${
-        readOnly ? 'cursor-default' : layer.locked ? 'cursor-not-allowed' : 'cursor-move'
-      } ${
-        !readOnly && isSelected ? 'ring-2 ring-primary shadow-lg' : !readOnly ? 'hover:ring-1 hover:ring-primary/30' : ''
-      } ${!readOnly && (isDragging || isResizing) ? 'cursor-grabbing' : ''}`}
-      style={{
-        left: 0,
-        top: 0,
-        width: displayWidth,
-        height: displayHeight,
-        transform: `translate(${displayX}px, ${displayY}px) ${transform.rotation ? `rotate(${transform.rotation}deg)` : ''}`,
-        willChange: isDragging || isResizing ? 'transform, width, height' : 'auto',
-      }}
-      onClick={(e) => {
-        if (readOnly) return;
-        e.stopPropagation();
-        onClick();
-      }}
-      onMouseDown={readOnly ? undefined : handleDragStart}
-    >
-      {/* Live preview via shared WebRTC, CSS rendering, or static rendering for images/HTML */}
-      <div className="w-full h-full bg-[var(--bg-sunken)] overflow-hidden pointer-events-none">
-        {hasVideo && source ? (
-          // Color source - pure CSS rendering
-          source.type === 'color' ? (
-            <div
-              style={{
-                backgroundColor: (source as ColorSource).color,
-                opacity: (source as ColorSource).opacity,
-                width: '100%',
-                height: '100%',
-              }}
-            />
-          ) : // Text source - CSS rendering
-          source.type === 'text' ? (
-            <TextSourceRenderer
-              source={source as TextSource}
-              width={displayWidth}
-              height={displayHeight}
-            />
-          ) : // Browser source - iframe rendering
-          source.type === 'browser' ? (
-            <BrowserSourceRenderer
-              source={source as BrowserSource}
-              width={displayWidth}
-              height={displayHeight}
-            />
-          ) : // Nested scene - recursive scene rendering
-          source.type === 'nestedScene' ? (
-            <NestedSceneRenderer
-              source={source as NestedSceneSource}
-              scenes={scenes}
-              sources={sources}
-              width={displayWidth}
-              height={displayHeight}
-            />
-          ) : // Media playlist - client-side playlist playback
-          source.type === 'mediaPlaylist' ? (
-            <MediaPlaylistRenderer
-              source={source as MediaPlaylistSource}
-              isLayerPreview
-            />
-          ) : // Static media file (image/HTML) - no WebRTC needed
-          source.type === 'mediaFile' && 'filePath' in source && isStaticMediaFile(source.filePath) ? (
-            <StaticMediaPlayer
-              filePath={source.filePath}
-              isImage={isImageFile(source.filePath)}
-              width={displayWidth}
-              height={displayHeight}
-              sourceName={sourceName}
-              nativeWidth={canvasWidth}
-              nativeHeight={canvasHeight}
-            />
-          ) : (
-            // All other sources use WebRTC
-            <SharedWebRTCPlayer
-              sourceId={source.id}
-              sourceName={sourceName}
-              sourceType={source.type}
-              width={displayWidth}
-              height={displayHeight}
-            />
-          )
-        ) : (
-          <div className="w-full h-full bg-gradient-to-br from-[var(--bg-elevated)] to-[var(--bg-sunken)] flex items-center justify-center">
-            <span className="text-[var(--text-muted)] text-xs text-center px-2 truncate">
-              {sourceName}
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* Resize handles - only show when selected, not locked, and not read-only */}
-      {isSelected && !layer.locked && !readOnly && (
-        <>
-          <div
-            className="absolute -top-2 -left-2 w-6 h-6 flex items-center justify-center cursor-nw-resize z-10"
-            onMouseDown={(e) => handleResizeStart(e, 'nw')}
-          >
-            <div className="w-4 h-4 bg-primary rounded-full border-2 border-primary-foreground shadow-md" />
-          </div>
-          <div
-            className="absolute -top-2 -right-2 w-6 h-6 flex items-center justify-center cursor-ne-resize z-10"
-            onMouseDown={(e) => handleResizeStart(e, 'ne')}
-          >
-            <div className="w-4 h-4 bg-primary rounded-full border-2 border-primary-foreground shadow-md" />
-          </div>
-          <div
-            className="absolute -bottom-2 -left-2 w-6 h-6 flex items-center justify-center cursor-sw-resize z-10"
-            onMouseDown={(e) => handleResizeStart(e, 'sw')}
-          >
-            <div className="w-4 h-4 bg-primary rounded-full border-2 border-primary-foreground shadow-md" />
-          </div>
-          <div
-            className="absolute -bottom-2 -right-2 w-6 h-6 flex items-center justify-center cursor-se-resize z-10"
-            onMouseDown={(e) => handleResizeStart(e, 'se')}
-          >
-            <div className="w-4 h-4 bg-primary rounded-full border-2 border-primary-foreground shadow-md" />
-          </div>
-        </>
-      )}
-    </div>
-  );
-});
-

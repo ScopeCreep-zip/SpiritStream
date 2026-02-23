@@ -7,12 +7,14 @@ export type { Platform };
 
 // Import and re-export source and scene types
 import type { Source, SourceType } from './source';
-import type { Scene, SourceLayer, Transform, Crop, AudioMixer, AudioTrack, SceneTransition, TransitionType } from './scene';
+import type { Scene, SourceLayer, Transform, Crop, AudioMixer, AudioTrack, LegacyAudioTrack, SceneTransition, TransitionType } from './scene';
+import type { SourceAudioConfig } from './source';
 export type { Source, SourceType };
-export type { Scene, SourceLayer, Transform, Crop, AudioMixer, AudioTrack, SceneTransition, TransitionType };
+export type { Scene, SourceLayer, Transform, Crop, AudioMixer, AudioTrack, LegacyAudioTrack, SceneTransition, TransitionType };
+export type { SourceAudioConfig };
 
 // Import factory functions for creating default sources/scenes
-import { createDefaultRtmpSource } from './source';
+import { createDefaultRtmpSource, createDefaultSourceAudioConfig } from './source';
 import { createDefaultScene, addFullscreenLayerToScene } from './scene';
 
 /**
@@ -98,6 +100,9 @@ export interface Profile {
   activeSceneId?: string;
   /** NEW: Default transition for scene switching */
   defaultTransition?: SceneTransition;
+  /** Per-source audio configurations (OBS pattern: source-level, not scene-level).
+   *  Keyed by source ID. */
+  sourceAudioConfigs?: Record<string, SourceAudioConfig>;
   outputGroups: OutputGroup[];
 }
 
@@ -201,6 +206,7 @@ export const createDefaultProfile = (name: string = 'New Profile'): Profile => {
     sources: [rtmpSource],
     scenes: [defaultScene],
     activeSceneId: defaultScene.id,
+    sourceAudioConfigs: { [rtmpSource.id]: createDefaultSourceAudioConfig() },
     outputGroups: [createPassthroughOutputGroup()],
   };
 };

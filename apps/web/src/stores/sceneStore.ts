@@ -4,7 +4,8 @@
  */
 import { create } from 'zustand';
 import { api } from '@/lib/backend';
-import type { Scene, SourceLayer, Transform, LayerGroup, AudioTrack } from '@/types/scene';
+import type { Scene, SourceLayer, Transform, LayerGroup } from '@/types/scene';
+import type { SourceAudioConfig } from '@/types/source';
 import {
   createGroupFromLayers,
   deleteGroup as deleteGroupHelper,
@@ -54,7 +55,7 @@ interface SceneState {
     sourceId: string,
     transform?: Transform,
     password?: string
-  ) => Promise<{ layerId: string; linkedAudioSourceId?: string; audioTracks?: AudioTrack[] }>;
+  ) => Promise<{ layerId: string; linkedAudioSourceId?: string; sourceAudioConfigs?: Record<string, SourceAudioConfig> }>;
   updateLayer: (
     profileName: string,
     sceneId: string,
@@ -253,7 +254,7 @@ export const useSceneStore = create<SceneState>((set) => ({
   // Layer management
   addLayer: async (profileName, sceneId, sourceId, transform, password) => {
     try {
-      const result = await api.invoke<{ layerId: string; linkedAudioSourceId?: string; audioTracks?: AudioTrack[] }>('add_layer_to_scene', {
+      const result = await api.invoke<{ layerId: string; linkedAudioSourceId?: string; sourceAudioConfigs?: Record<string, SourceAudioConfig> }>('add_layer_to_scene', {
         profileName,
         sceneId,
         sourceId,

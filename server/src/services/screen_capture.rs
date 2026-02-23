@@ -358,7 +358,8 @@ impl ScreenCaptureService {
         let frame_tx = session.sender();
 
         // Start capture in background thread
-        let handle = std::thread::spawn(move || {
+        let thread_name = format!("ss-screen-{}", &capture_id[..capture_id.len().min(8)]);
+        let handle = std::thread::Builder::new().name(thread_name).spawn(move || {
             crate::services::thread_config::set_thread_qos(crate::services::thread_config::QosClass::UserInitiated);
             capturer.start_capture();
             let mut capturing = true;
@@ -387,7 +388,7 @@ impl ScreenCaptureService {
             if capturing {
                 capturer.stop_capture();
             }
-        });
+        }).expect("Failed to spawn screen capture thread");
 
         // Store session with thread handle
         self.sessions.insert(capture_id, session.with_handle(handle));

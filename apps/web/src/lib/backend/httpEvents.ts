@@ -1,6 +1,6 @@
 import { getBackendWsUrl } from './env';
 import { useConnectionStore } from '@/stores/connectionStore';
-import { forwardAudioData, isWorkerReady } from '@/lib/audio/audioMeterWorkerBridge';
+import { updateLevelsBinary } from '@/lib/audio/audioLevelStore';
 
 type Handler<T> = (payload: T) => void;
 
@@ -149,6 +149,7 @@ function ensureSocket(): Promise<void> {
 
   openPromise = new Promise((resolve) => {
     socket = new WebSocket(wsUrl);
+    socket.binaryType = 'arraybuffer'; // Avoid Blob wrapping for binary frames
 
     socket.addEventListener('open', () => {
       openPromise = null;
@@ -159,22 +160,16 @@ function ensureSocket(): Promise<void> {
 
     socket.addEventListener('message', (event) => {
       if (!event.data) return;
-      const rawData = event.data as string;
 
-      // Check if this is an audio_levels event (quick string check)
-      const isAudioLevels = rawData.includes('"event":"audio_levels"');
-
-      // Forward audio data to worker for off-thread canvas rendering
-      if (isAudioLevels && isWorkerReady()) {
-        forwardAudioData(rawData);
+      // Binary frame = audio levels (fast path, zero JSON parsing)
+      if (event.data instanceof ArrayBuffer) {
+        updateLevelsBinary(event.data);
+        return;
       }
 
-      // Parse and dispatch to main thread handlers
-      // NOTE: audio_levels is still parsed for the main thread store update,
-      // which is needed for DOM updates (peak dB display) even when worker
-      // handles canvas rendering. The store update is fast (just object mutation).
+      // Text frame = all other events (JSON path)
       try {
-        const parsed = JSON.parse(rawData) as {
+        const parsed = JSON.parse(event.data as string) as {
           event?: string;
           payload?: unknown;
         };

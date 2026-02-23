@@ -4,7 +4,7 @@
 use serde_json::{json, Value};
 
 use crate::app_state::{AppState, get_arg, get_opt_arg};
-use crate::models::{AudioDeviceSource, AudioTrack, Source, SourceLayer, Transform};
+use crate::models::{AudioDeviceSource, Source, SourceAudioConfig, SourceLayer, Transform};
 use crate::services::{EventSink, SourceTransition};
 
 /// Handle layer management commands.
@@ -103,11 +103,11 @@ async fn add_layer_to_scene(state: &AppState, payload: &Value) -> Result<Value, 
                     // Add to profile sources
                     profile.sources.push(linked_audio);
 
-                    // Add audio track for the linked audio source
-                    profile.scenes[scene_idx]
-                        .audio_mixer
-                        .tracks
-                        .push(AudioTrack::new(&linked_audio_id));
+                    // Create source-level audio config for linked audio source
+                    profile.source_audio_configs.insert(
+                        linked_audio_id.clone(),
+                        SourceAudioConfig::default(),
+                    );
 
                     linked_audio_source_id = Some(linked_audio_id);
                 }
@@ -115,27 +115,10 @@ async fn add_layer_to_scene(state: &AppState, payload: &Value) -> Result<Value, 
         }
     }
 
-    // Add audio track for original source only if it has audio output and not already in mixer
-    let source = profile.sources.iter().find(|s| s.id() == &source_id);
-    let source_has_audio = source.map(|s| s.has_audio()).unwrap_or(false);
-
-    if source_has_audio
-        && !profile.scenes[scene_idx]
-            .audio_mixer
-            .tracks
-            .iter()
-            .any(|t| t.source_id == source_id)
-    {
-        profile.scenes[scene_idx]
-            .audio_mixer
-            .tracks
-            .push(AudioTrack {
-                source_id: source_id.clone(),
-                volume: 1.0,
-                muted: false,
-                solo: false,
-            });
-    }
+    // Ensure source-level audio config exists
+    profile.source_audio_configs
+        .entry(source_id.clone())
+        .or_insert_with(SourceAudioConfig::default);
 
     // Track source lifecycle: if adding to the active scene, register a ref
     if profile.active_scene_id.as_deref() == Some(&scene_id) {
@@ -160,11 +143,10 @@ async fn add_layer_to_scene(state: &AppState, payload: &Value) -> Result<Value, 
             "linkedAudioSourceId": linked_audio_source_id
         }),
     );
-    let updated_tracks = &profile.scenes[scene_idx].audio_mixer.tracks;
     Ok(json!({
         "layerId": layer_id,
         "linkedAudioSourceId": linked_audio_source_id,
-        "audioTracks": updated_tracks,
+        "sourceAudioConfigs": profile.source_audio_configs,
     }))
 }
 

@@ -113,6 +113,9 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/audio-levels/start", post(routes::audio_levels_start_handler))
         .route("/api/audio-levels/stop", post(routes::audio_levels_stop_handler))
         .route("/api/audio-levels/health", get(routes::audio_levels_health_handler))
+        // Audio filter endpoints
+        .route("/api/audio/filters/:source_id", post(routes::set_audio_filters_handler))
+        .route("/api/audio/filters/:source_id", get(routes::get_audio_filters_handler))
         // Recording endpoints
         .route("/api/recording/start", post(routes::start_recording_handler))
         .route("/api/recording/stop", post(routes::stop_recording_handler))

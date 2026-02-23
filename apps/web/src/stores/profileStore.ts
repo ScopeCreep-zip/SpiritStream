@@ -74,11 +74,20 @@ interface ProfileState {
 
   // Audio mixer management (local state updates without auto-save)
   // Use these after audio API calls to sync local state without reloading entire profile
+  /** @deprecated Use source audio config methods instead */
   addCurrentAudioTrack: (sceneId: string, track: import('@/types/scene').AudioTrack) => void;
+  /** @deprecated Use source audio config methods instead */
   setCurrentAudioTracks: (sceneId: string, tracks: import('@/types/scene').AudioTrack[]) => void;
+  /** @deprecated Use source audio config methods instead */
   updateCurrentAudioTrack: (sceneId: string, sourceId: string, updates: Partial<import('@/types/scene').AudioTrack>) => void;
   updateCurrentMasterVolume: (sceneId: string, masterVolume: number) => void;
   updateCurrentMasterMuted: (sceneId: string, masterMuted: boolean) => void;
+
+  // Source-level audio config management (OBS pattern)
+  getSourceAudioConfig: (sourceId: string) => import('@/types/source').SourceAudioConfig | undefined;
+  setSourceAudioConfig: (sourceId: string, config: Partial<import('@/types/source').SourceAudioConfig>) => void;
+  setAllSourceAudioConfigs: (configs: Record<string, import('@/types/source').SourceAudioConfig>) => void;
+  removeSourceAudioConfig: (sourceId: string) => void;
 
   // Scene management (local state updates without auto-save)
   // Use these after scene API calls to sync local state without reloading entire profile
@@ -391,7 +400,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
               layers: scene.layers.filter((l) => !removedIds.has(l.sourceId)),
               audioMixer: {
                 ...scene.audioMixer,
-                tracks: scene.audioMixer.tracks.filter((t) => !removedIds.has(t.sourceId)),
+                tracks: (scene.audioMixer.tracks ?? []).filter((t) => !removedIds.has(t.sourceId)),
               },
             })),
           },
@@ -444,7 +453,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
             layers: scene.layers.filter((l) => l.sourceId !== sourceId),
             audioMixer: {
               ...scene.audioMixer,
-              tracks: scene.audioMixer.tracks.filter((t) => t.sourceId !== sourceId),
+              tracks: (scene.audioMixer.tracks ?? []).filter((t) => t.sourceId !== sourceId),
             },
           })),
         },
@@ -541,7 +550,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     if (current) {
       // Guard: don't add duplicate tracks for the same sourceId
       const scene = current.scenes.find(s => s.id === sceneId);
-      if (scene?.audioMixer.tracks.some(t => t.sourceId === track.sourceId)) return;
+      if (scene?.audioMixer.tracks?.some(t => t.sourceId === track.sourceId)) return;
 
       set({
         current: {
@@ -552,7 +561,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
                   ...scene,
                   audioMixer: {
                     ...scene.audioMixer,
-                    tracks: [...scene.audioMixer.tracks, track],
+                    tracks: [...(scene.audioMixer.tracks ?? []), track],
                   },
                 }
               : scene
@@ -598,7 +607,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
                   ...scene,
                   audioMixer: {
                     ...scene.audioMixer,
-                    tracks: scene.audioMixer.tracks.map((track) =>
+                    tracks: (scene.audioMixer.tracks ?? []).map((track) =>
                       track.sourceId === sourceId ? { ...track, ...updates } : track
                     ),
                   },
@@ -651,6 +660,65 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
                 }
               : scene
           ),
+        },
+      });
+    }
+  },
+
+  // Source-level audio config: get config for a source
+  getSourceAudioConfig: (sourceId) => {
+    const current = get().current;
+    return current?.sourceAudioConfigs?.[sourceId];
+  },
+
+  // Source-level audio config: update partial config for a source
+  setSourceAudioConfig: (sourceId, updates) => {
+    const current = get().current;
+    if (current) {
+      const existing = current.sourceAudioConfigs?.[sourceId] ?? {
+        volume: 1.0,
+        muted: false,
+        solo: false,
+        syncOffsetMs: 0,
+        monitoringType: 'none' as const,
+        trackBitmask: 0b000001,
+        balance: 0.0,
+        audioFilters: [],
+      };
+      set({
+        current: {
+          ...current,
+          sourceAudioConfigs: {
+            ...current.sourceAudioConfigs,
+            [sourceId]: { ...existing, ...updates },
+          },
+        },
+      });
+    }
+  },
+
+  // Source-level audio config: replace all configs (from backend sync)
+  setAllSourceAudioConfigs: (configs) => {
+    const current = get().current;
+    if (current) {
+      set({
+        current: {
+          ...current,
+          sourceAudioConfigs: configs,
+        },
+      });
+    }
+  },
+
+  // Source-level audio config: remove config when source is deleted
+  removeSourceAudioConfig: (sourceId) => {
+    const current = get().current;
+    if (current && current.sourceAudioConfigs) {
+      const { [sourceId]: _removed, ...rest } = current.sourceAudioConfigs;
+      set({
+        current: {
+          ...current,
+          sourceAudioConfigs: rest,
         },
       });
     }

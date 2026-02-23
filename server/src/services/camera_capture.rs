@@ -333,7 +333,8 @@ impl CameraCaptureService {
         let width = config.width;
         let height = config.height;
 
-        let capture_handle = std::thread::spawn(move || {
+        let thread_name = format!("ss-cam-{}", &camera_id[..camera_id.len().min(8)]);
+        let capture_handle = std::thread::Builder::new().name(thread_name).spawn(move || {
             crate::services::thread_config::set_thread_qos(crate::services::thread_config::QosClass::UserInteractive);
             let frame_size = (width * height * 4) as usize; // BGRA
             let mut reader = BufReader::new(stdout);
@@ -361,7 +362,7 @@ impl CameraCaptureService {
                     Err(_) => break,
                 }
             }
-        });
+        }).expect("Failed to spawn camera capture thread");
 
         // Store session with thread handle and on_stop callback to kill FFmpeg
         let camera_name = camera.name.clone();

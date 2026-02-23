@@ -532,6 +532,61 @@ export const AUDIO_FILTER_TYPES: AudioFilterType[] = [
 ];
 
 // ============================================================================
+// SOURCE-LEVEL AUDIO CONFIG (OBS pattern: audio config lives on source)
+// ============================================================================
+
+/**
+ * Audio monitoring mode — how audio is routed for preview listening
+ */
+export type MonitoringType = 'none' | 'monitorOnly' | 'monitorAndOutput';
+
+/**
+ * Fader curve type — how the volume fader maps to gain
+ * Mirrors server/src/models/source.rs FaderCurve
+ */
+export type FaderCurve = 'cubic' | 'linear' | 'sine';
+
+/**
+ * Per-source audio configuration (OBS parity: source-level, not scene-level).
+ * Mirrors server/src/models/source.rs SourceAudioConfig
+ */
+export interface SourceAudioConfig {
+  /** Volume multiplier (0.0-20.0, 1.0 = unity gain) */
+  volume: number;
+  muted: boolean;
+  solo: boolean;
+  /** Sync offset in milliseconds (positive = delay audio) */
+  syncOffsetMs: number;
+  monitoringType: MonitoringType;
+  /** Bitmask of which output tracks receive this source's audio (bits 0-5 = tracks 1-6) */
+  trackBitmask: number;
+  /** Stereo balance (-1.0 = full left, 0.0 = center, 1.0 = full right) */
+  balance: number;
+  /** Fader curve type (how volume fader maps to gain). Default: 'cubic' */
+  faderCurve?: FaderCurve;
+  audioFilters: AudioFilter[];
+  /** Config version — incremented on any audio config change for mixer hot-reload detection */
+  configVersion?: number;
+}
+
+/**
+ * Create a default source audio config
+ */
+export function createDefaultSourceAudioConfig(): SourceAudioConfig {
+  return {
+    volume: 1.0,
+    muted: false,
+    solo: false,
+    syncOffsetMs: 0,
+    monitoringType: 'none',
+    trackBitmask: 0b000001, // Track 1 only
+    balance: 0.0,
+    audioFilters: [],
+    configVersion: 0,
+  };
+}
+
+// ============================================================================
 // VIDEO FILTERS
 // ============================================================================
 

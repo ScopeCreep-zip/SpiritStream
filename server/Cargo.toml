@@ -58,6 +58,15 @@ turbojpeg = { version = "1.4", default-features = false, features = ["pkg-config
 # Audio decode (in-process, replaces FFmpeg astats subprocesses)
 symphonia = { version = "0.5", features = ["mp3", "aac", "flac", "pcm", "vorbis", "isomp4", "mkv", "ogg", "wav"] }
 
+# Audio resampling (pure Rust, SIMD-optimized)
+rubato = "0.16"
+
+# RNNoise noise suppression (pure Rust, no system deps)
+nnnoiseless = "0.2"
+
+# Wait-free ring buffers for audio callbacks
+rtrb = "0.3"
+
 # FFmpeg Download
 reqwest = { version = "0.11", features = ["stream", "json", "blocking"] }
 zip = "0.6"
@@ -72,6 +81,10 @@ tempfile = "3.10"
 # Platform-specific
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["fileapi", "winnt"] }
+windows-sys = { version = "0.59", features = ["Win32_System_Threading"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
 
 # macOS-specific (for advanced device discovery and screen capture)
 [target.'cfg(target_os = "macos")'.dependencies]

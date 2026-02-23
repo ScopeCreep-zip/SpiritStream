@@ -3,6 +3,10 @@ use serde_json::Value;
 
 pub trait EventSink: Send + Sync {
     fn emit(&self, event: &str, payload: Value);
+
+    /// Emit a binary payload over the event bus.
+    /// Default implementation is a no-op for sinks that don't support binary.
+    fn emit_binary(&self, _tag: &str, _data: bytes::Bytes) {}
 }
 
 pub struct NoopEventSink;

@@ -17,14 +17,8 @@ import { Button } from '@/components/ui/Button';
 import { ProjectorContextMenu, ContextMenuSeparator, ContextMenuItem, useContextMenu } from '@/components/ui/ProjectorContextMenu';
 import type { Profile } from '@/types/profile';
 import type { Scene } from '@/types/scene';
-import { useSceneStore } from '@/stores/sceneStore';
-import { useProfileStore } from '@/stores/profileStore';
-import { useStudioStore } from '@/stores/studioStore';
-import { useTransitionStore } from '@/stores/transitionStore';
-import { useProjectorStore } from '@/stores/projectorStore';
-import { toast } from '@/hooks/useToast';
+import { useSceneActions } from '@/hooks/useSceneActions';
 import { cn } from '@/lib/utils';
-import { useShallow } from 'zustand/shallow';
 
 interface SceneBarProps {
   profile: Profile;
@@ -33,37 +27,6 @@ interface SceneBarProps {
 
 export function SceneBar({ profile, activeSceneId }: SceneBarProps) {
   const { t } = useTranslation();
-  const { createScene, deleteScene, duplicateScene, setActiveScene } = useSceneStore(
-    useShallow(s => ({
-      createScene: s.createScene,
-      deleteScene: s.deleteScene,
-      duplicateScene: s.duplicateScene,
-      setActiveScene: s.setActiveScene
-    }))
-  );
-  const { addCurrentScene, removeCurrentScene, setCurrentActiveScene, reloadProfile } = useProfileStore(
-    useShallow(s => ({
-      addCurrentScene: s.addCurrentScene,
-      removeCurrentScene: s.removeCurrentScene,
-      setCurrentActiveScene: s.setCurrentActiveScene,
-      reloadProfile: s.reloadProfile
-    }))
-  );
-  const { enabled: studioEnabled, previewSceneId, programSceneId, setPreviewScene } = useStudioStore(
-    useShallow(s => ({
-      enabled: s.enabled,
-      previewSceneId: s.previewSceneId,
-      programSceneId: s.programSceneId,
-      setPreviewScene: s.setPreviewScene
-    }))
-  );
-  const { isTransitioning } = useTransitionStore();
-  const { openProjector, hasActiveProjectors } = useProjectorStore(
-    useShallow(s => ({
-      openProjector: s.openProjector,
-      hasActiveProjectors: s.hasActiveProjectors
-    }))
-  );
   const [showNewSceneInput, setShowNewSceneInput] = useState(false);
   const [newSceneName, setNewSceneName] = useState('');
 
@@ -71,117 +34,30 @@ export function SceneBar({ profile, activeSceneId }: SceneBarProps) {
   const [contextMenuScene, setContextMenuScene] = useState<Scene | null>(null);
   const sceneContextMenu = useContextMenu();
 
-  const handleCreateScene = useCallback(async () => {
-    if (!newSceneName.trim()) {
-      toast.error(t('stream.sceneNameRequired', { defaultValue: 'Scene name is required' }));
-      return;
-    }
+  const {
+    handleCreateScene,
+    handleDeleteScene,
+    handleDuplicateScene,
+    handleSelectScene,
+    handleOpenProjector,
+    handleOpenMultiview,
+    studioEnabled,
+    previewSceneId,
+    programSceneId,
+    isTransitioning,
+    hasActiveProjectors,
+  } = useSceneActions({
+    profileName: profile.name,
+    activeSceneId,
+    sceneCount: profile.scenes.length,
+  });
 
-    try {
-      // Create scene on backend - returns the created scene
-      const createdScene = await createScene(profile.name, newSceneName.trim());
+  const handleCreate = useCallback(() => {
+    handleCreateScene(newSceneName, () => {
       setNewSceneName('');
       setShowNewSceneInput(false);
-
-      // If the API returns the created scene, use it for local update
-      if (createdScene && typeof createdScene === 'object' && 'id' in createdScene) {
-        addCurrentScene(createdScene as Scene);
-      } else {
-        // Fallback: reload profile if API doesn't return scene data
-        await reloadProfile();
-      }
-      toast.success(t('stream.sceneCreated', { defaultValue: 'Scene created' }));
-    } catch (err) {
-      toast.error(t('stream.sceneCreateFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to create scene: ${err instanceof Error ? err.message : String(err)}` }));
-    }
-  }, [newSceneName, profile.name, createScene, addCurrentScene, reloadProfile, t]);
-
-  const handleDeleteScene = useCallback(async (sceneId: string, sceneName: string) => {
-    if (profile.scenes.length <= 1) {
-      toast.error(t('stream.cannotDeleteLastScene', { defaultValue: 'Cannot delete the last scene' }));
-      return;
-    }
-
-    if (confirm(t('stream.confirmDeleteScene', { name: sceneName, defaultValue: `Delete scene "${sceneName}"?` }))) {
-      try {
-        await deleteScene(profile.name, sceneId);
-        // Update local state instead of reloading entire profile
-        removeCurrentScene(sceneId);
-        toast.success(t('stream.sceneDeleted', { defaultValue: 'Scene deleted' }));
-      } catch (err) {
-        toast.error(t('stream.sceneDeleteFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to delete scene: ${err instanceof Error ? err.message : String(err)}` }));
-      }
-    }
-  }, [profile.name, profile.scenes.length, deleteScene, removeCurrentScene, t]);
-
-  const handleDuplicateScene = useCallback(async (sceneId: string) => {
-    try {
-      // Duplicate scene on backend - returns the duplicated scene
-      const duplicatedScene = await duplicateScene(profile.name, sceneId);
-
-      // If the API returns the duplicated scene, use it for local update
-      if (duplicatedScene && typeof duplicatedScene === 'object' && 'id' in duplicatedScene) {
-        addCurrentScene(duplicatedScene as Scene);
-      } else {
-        // Fallback: reload profile if API doesn't return scene data
-        await reloadProfile();
-      }
-      toast.success(t('stream.sceneDuplicated', { defaultValue: 'Scene duplicated' }));
-    } catch (err) {
-      toast.error(t('stream.sceneDuplicateFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to duplicate scene: ${err instanceof Error ? err.message : String(err)}` }));
-    }
-  }, [profile.name, duplicateScene, addCurrentScene, reloadProfile, t]);
-
-  const handleSelectScene = useCallback(async (sceneId: string) => {
-    // Prevent clicks during transition
-    if (isTransitioning) return;
-
-    // In Studio Mode, clicking loads to Preview only
-    if (studioEnabled) {
-      if (sceneId !== previewSceneId) {
-        setPreviewScene(sceneId);
-      }
-      return;
-    }
-
-    // Normal mode: switch active scene
-    if (sceneId === activeSceneId) return;
-
-    try {
-      await setActiveScene(profile.name, sceneId);
-      // Update local state instead of reloading entire profile
-      setCurrentActiveScene(sceneId);
-    } catch (err) {
-      toast.error(t('stream.sceneSwitchFailed', { error: err instanceof Error ? err.message : String(err), defaultValue: `Failed to switch scene: ${err instanceof Error ? err.message : String(err)}` }));
-    }
-  }, [activeSceneId, profile.name, setActiveScene, setCurrentActiveScene, t, studioEnabled, previewSceneId, setPreviewScene, isTransitioning]);
-
-  const handleOpenProjector = useCallback(() => {
-    // In Studio Mode, project the Program scene; in Normal Mode, project the active scene
-    const sceneToProject = studioEnabled ? programSceneId : activeSceneId;
-    if (sceneToProject) {
-      openProjector({
-        type: 'scene',
-        displayMode: 'windowed',
-        targetId: sceneToProject,
-        profileName: profile.name,
-        alwaysOnTop: false,
-        hideCursor: false,
-      });
-    } else {
-      toast.error(t('stream.noSceneToProject', { defaultValue: 'No scene to project' }));
-    }
-  }, [studioEnabled, programSceneId, activeSceneId, profile.name, openProjector, t]);
-
-  const handleOpenMultiview = useCallback(() => {
-    openProjector({
-      type: 'multiview',
-      displayMode: 'windowed',
-      profileName: profile.name,
-      alwaysOnTop: false,
-      hideCursor: false,
     });
-  }, [profile.name, openProjector]);
+  }, [newSceneName, handleCreateScene]);
 
   const handleSceneContextMenu = useCallback((e: React.MouseEvent, scene: Scene) => {
     e.preventDefault();
@@ -270,7 +146,7 @@ export function SceneBar({ profile, activeSceneId }: SceneBarProps) {
             value={newSceneName}
             onChange={(e) => setNewSceneName(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') handleCreateScene();
+              if (e.key === 'Enter') handleCreate();
               if (e.key === 'Escape') {
                 setShowNewSceneInput(false);
                 setNewSceneName('');
@@ -280,7 +156,7 @@ export function SceneBar({ profile, activeSceneId }: SceneBarProps) {
             className="w-36 px-3 py-2 text-sm bg-background border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
             autoFocus
           />
-          <Button size="sm" variant="primary" className="h-auto" onClick={handleCreateScene}>
+          <Button size="sm" variant="primary" className="h-auto" onClick={handleCreate}>
             {t('common.add')}
           </Button>
           <Button

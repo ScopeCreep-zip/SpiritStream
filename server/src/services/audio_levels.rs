@@ -4,14 +4,19 @@
 
 use crate::services::audio_capture::AudioBuffer;
 use crate::services::events::{emit_event, EventSink};
+use bytes::{BufMut, BytesMut};
 use parking_lot::Mutex;
 use serde::Serialize;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::broadcast;
 use tokio::time::{interval, Duration};
+
+/// Binary audio frame magic byte and version
+const BINARY_MAGIC: u8 = 0xAF;
+const BINARY_VERSION: u8 = 1;
 
 /// Audio level data for a single track
 #[derive(Debug, Clone, Serialize)]
@@ -38,6 +43,12 @@ pub struct AudioLevel {
     /// Peak level in dB for display
     #[serde(skip_serializing_if = "Option::is_none")]
     pub peak_db: Option<f32>,
+    /// Pre-fader peak L (for gain staging display). Only present when mixer provides it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_peak_l: Option<f32>,
+    /// Pre-fader peak R (for gain staging display). Only present when mixer provides it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_peak_r: Option<f32>,
 }
 
 impl Default for AudioLevel {
@@ -51,6 +62,8 @@ impl Default for AudioLevel {
             right_rms: None,
             right_peak: None,
             peak_db: None,
+            input_peak_l: None,
+            input_peak_r: None,
         }
     }
 }
@@ -64,12 +77,24 @@ pub struct AudioLevelsData {
     pub master: AudioLevel,
 }
 
+/// OBS metering constants
+/// RMS integration window: 3 samples at 10Hz = ~300ms (OBS uses ~300ms)
+const RMS_WINDOW_SIZE: usize = 3;
+/// Peak hold duration: 20 seconds (OBS parity)
+const PEAK_HOLD_SECS: f64 = 20.0;
+/// OBS PPM peak decay rate: 6.92 dB/s (11.76 dB over 1.7 seconds)
+const PEAK_DECAY_DB_PER_SEC: f64 = 6.92;
+
 /// Internal state for smoothing and peak hold
 struct TrackState {
     /// Peak hold for L channel
     peak_hold_l: f32,
     /// Peak hold for R channel
     peak_hold_r: f32,
+    /// Time when peak hold started for L channel
+    peak_hold_start_l: Instant,
+    /// Time when peak hold started for R channel
+    peak_hold_start_r: Instant,
     /// Recent RMS samples for smoothing (L channel)
     /// Using VecDeque for O(1) pop_front instead of Vec::remove(0) which is O(n)
     rms_history_l: VecDeque<f32>,
@@ -86,8 +111,10 @@ impl Default for TrackState {
         Self {
             peak_hold_l: 0.0,
             peak_hold_r: 0.0,
-            rms_history_l: VecDeque::with_capacity(8),
-            rms_history_r: VecDeque::with_capacity(8),
+            peak_hold_start_l: Instant::now(),
+            peak_hold_start_r: Instant::now(),
+            rms_history_l: VecDeque::with_capacity(RMS_WINDOW_SIZE + 1),
+            rms_history_r: VecDeque::with_capacity(RMS_WINDOW_SIZE + 1),
             rms_sum_l: 0.0,
             rms_sum_r: 0.0,
         }
@@ -98,16 +125,23 @@ impl Default for TrackState {
 /// Follows OBS's audio metering model with separate RMS and Peak per channel
 #[derive(Debug, Clone)]
 struct TrackedSource {
-    /// Left channel RMS level (0.0 - 1.0) - average power
+    /// Left channel RMS level (0.0 - 1.0) - average power (post-fader)
     rms_l: f32,
-    /// Right channel RMS level (0.0 - 1.0) - average power
+    /// Right channel RMS level (0.0 - 1.0) - average power (post-fader)
     rms_r: f32,
-    /// Left channel peak level (0.0 - 1.0) - instantaneous max
+    /// Left channel peak level (0.0 - 1.0) - instantaneous max (post-fader)
     peak_l: f32,
-    /// Right channel peak level (0.0 - 1.0) - instantaneous max
+    /// Right channel peak level (0.0 - 1.0) - instantaneous max (post-fader)
     peak_r: f32,
+    /// Pre-fader peak L (for gain staging display)
+    input_peak_l: Option<f32>,
+    /// Pre-fader peak R (for gain staging display)
+    input_peak_r: Option<f32>,
     /// Last time this source received an update
     last_update: Instant,
+    /// Whether the mixer thread is actively writing to this source.
+    /// When true, the raw broadcast metering task yields (mixer has priority).
+    mixer_active: bool,
 }
 
 impl Default for TrackedSource {
@@ -117,7 +151,10 @@ impl Default for TrackedSource {
             rms_r: 0.0,
             peak_l: 0.0,
             peak_r: 0.0,
+            input_peak_l: None,
+            input_peak_r: None,
             last_update: Instant::now(),
+            mixer_active: false,
         }
     }
 }
@@ -134,7 +171,8 @@ struct AudioState {
 /// Unified audio bus: all source types (cpal, SCK, symphonia, rsmpeg) register
 /// via `register_audio_source()` which accepts a `broadcast::Receiver<AudioBuffer>`.
 /// A background task per source computes RMS/peak and calls `update_source_level()`.
-/// Mute = gain multiplier (decode keeps running, unmute is instant).
+/// Mute is handled by the AudioEngineService mixer thread (gain=0 when muted),
+/// so metering naturally reports zeros for muted sources.
 pub struct AudioLevelService {
     /// Running state
     running: Arc<AtomicBool>,
@@ -144,9 +182,6 @@ pub struct AudioLevelService {
     task_handle: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// Background tasks spawned by register_audio_source (one per source)
     source_tasks: Mutex<HashMap<String, tokio::task::JoinHandle<()>>>,
-    /// Muted sources — when muted, report zeros instead of real levels.
-    /// Decode keeps running so unmute is instant.
-    muted_sources: Arc<Mutex<HashSet<String>>>,
 }
 
 impl AudioLevelService {
@@ -159,7 +194,6 @@ impl AudioLevelService {
             })),
             task_handle: std::sync::Mutex::new(None),
             source_tasks: Mutex::new(HashMap::new()),
-            muted_sources: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -183,11 +217,14 @@ impl AudioLevelService {
         }
     }
 
-    /// Update the level for a specific source (called from real audio capture)
+    /// Update the level for a specific source (called from raw broadcast capture task).
+    /// If the mixer thread is actively writing to this source (`mixer_active`), this
+    /// method returns early — the mixer's post-fader levels take priority.
+    ///
     /// Follows OBS's audio metering model:
     /// - RMS = root mean square (average power)
     /// - Peak = instantaneous maximum absolute sample value
-    /// For mono sources, pass the same value for both channels
+    /// For mono sources, pass the same value for both channels.
     pub fn update_source_level(
         &self,
         source_id: &str,
@@ -198,6 +235,10 @@ impl AudioLevelService {
     ) {
         let mut state = self.state.lock();
         if let Some(tracked) = state.tracked.get_mut(source_id) {
+            // Yield to mixer thread when it's active (post-fader levels are authoritative)
+            if tracked.mixer_active {
+                return;
+            }
             tracked.rms_l = rms_l.clamp(0.0, 1.0);
             tracked.rms_r = rms_r.clamp(0.0, 1.0);
             tracked.peak_l = peak_l.clamp(0.0, 1.0);
@@ -213,6 +254,43 @@ impl AudioLevelService {
                         source_id, state.tracked.keys().collect::<Vec<_>>());
                 }
             }
+        }
+    }
+
+    /// Update the level for a specific source from the mixer thread (post-fader).
+    /// Sets `mixer_active = true` so the raw broadcast task yields.
+    /// Includes pre-fader `input_peak` for gain staging display.
+    pub fn update_source_level_from_mixer(
+        &self,
+        source_id: &str,
+        rms_l: f32,
+        rms_r: f32,
+        peak_l: f32,
+        peak_r: f32,
+        input_peak_l: f32,
+        input_peak_r: f32,
+    ) {
+        let mut state = self.state.lock();
+        if let Some(tracked) = state.tracked.get_mut(source_id) {
+            tracked.mixer_active = true;
+            tracked.rms_l = rms_l.clamp(0.0, 1.0);
+            tracked.rms_r = rms_r.clamp(0.0, 1.0);
+            tracked.peak_l = peak_l.clamp(0.0, 1.0);
+            tracked.peak_r = peak_r.clamp(0.0, 1.0);
+            tracked.input_peak_l = Some(input_peak_l.clamp(0.0, 1.0));
+            tracked.input_peak_r = Some(input_peak_r.clamp(0.0, 1.0));
+            tracked.last_update = Instant::now();
+        }
+    }
+
+    /// Reset `mixer_active` for a source so the raw broadcast task can resume.
+    /// Called when the mixer drops a source (producer abandoned).
+    pub fn reset_mixer_active(&self, source_id: &str) {
+        let mut state = self.state.lock();
+        if let Some(tracked) = state.tracked.get_mut(source_id) {
+            tracked.mixer_active = false;
+            tracked.input_peak_l = None;
+            tracked.input_peak_r = None;
         }
     }
 
@@ -249,7 +327,6 @@ impl AudioLevelService {
     ) {
         let source_id_owned = source_id.to_string();
         let this = Arc::clone(self);
-        let muted_sources = Arc::clone(&self.muted_sources);
 
         let handle = tokio::spawn(async move {
             log::info!("[AudioBus] Registered source '{}' for unified metering", source_id_owned);
@@ -259,20 +336,16 @@ impl AudioLevelService {
                     Ok(buffer) => {
                         buffer_count += 1;
 
-                        // Check mute state — if muted, report zeros
-                        let is_muted = muted_sources.lock().contains(&source_id_owned);
-                        let (rms_l, rms_r, peak_l, peak_r) = if is_muted {
-                            (0.0, 0.0, 0.0, 0.0)
-                        } else {
-                            compute_stereo_levels(&buffer)
-                        };
+                        // Mute is handled by the mixer thread (gain=0),
+                        // so metering naturally shows zeros for muted sources.
+                        let (rms_l, rms_r, peak_l, peak_r) = compute_stereo_levels(&buffer);
 
                         this.update_source_level(&source_id_owned, rms_l, rms_r, peak_l, peak_r);
 
                         if buffer_count <= 3 || buffer_count % 500 == 0 {
                             log::debug!(
-                                "[AudioBus] Source '{}' buffer #{}: RMS L={:.4} R={:.4}, Peak L={:.4} R={:.4}, muted={}",
-                                source_id_owned, buffer_count, rms_l, rms_r, peak_l, peak_r, is_muted
+                                "[AudioBus] Source '{}' buffer #{}: RMS L={:.4} R={:.4}, Peak L={:.4} R={:.4}",
+                                source_id_owned, buffer_count, rms_l, rms_r, peak_l, peak_r
                             );
                         }
                     }
@@ -297,7 +370,6 @@ impl AudioLevelService {
             handle.abort();
             log::info!("[AudioBus] Unregistered source '{}'", source_id);
         }
-        self.muted_sources.lock().remove(source_id);
     }
 
     /// Unregister all sources that are NOT in the provided set of active source IDs.
@@ -313,27 +385,6 @@ impl AudioLevelService {
                 log::info!("[AudioBus] Unregistered removed source '{}'", id);
             }
         }
-        // Also clean muted set
-        self.muted_sources.lock().retain(|id| active_ids.contains(id));
-    }
-
-    /// Set mute state for a source. When muted, the metering task reports zeros.
-    /// Decode keeps running — unmute is instant.
-    pub fn set_source_mute(&self, source_id: &str, muted: bool) {
-        let mut set = self.muted_sources.lock();
-        if muted {
-            set.insert(source_id.to_string());
-            // Immediately report zeros so meters drop
-            self.update_source_level(source_id, 0.0, 0.0, 0.0, 0.0);
-        } else {
-            set.remove(source_id);
-        }
-        log::debug!("[AudioBus] Source '{}' mute={}", source_id, muted);
-    }
-
-    /// Check if a source is currently muted.
-    pub fn is_source_muted(&self, source_id: &str) -> bool {
-        self.muted_sources.lock().contains(source_id)
     }
 
     /// Start the monitoring loop
@@ -407,10 +458,11 @@ impl AudioLevelService {
                     let sm = state.smoothing.entry(source_id.clone()).or_insert_with(TrackState::default);
 
                     // RMS values (average power) - apply smoothing with running sums (O(1) per tick)
+                    // Window size: RMS_WINDOW_SIZE samples at 10Hz = ~300ms (OBS parity)
                     // Smooth L channel RMS
                     sm.rms_sum_l += tracked.rms_l;
                     sm.rms_history_l.push_back(tracked.rms_l);
-                    if sm.rms_history_l.len() > 6 {
+                    if sm.rms_history_l.len() > RMS_WINDOW_SIZE {
                         sm.rms_sum_l -= sm.rms_history_l.pop_front().unwrap();
                     }
                     let smoothed_rms_l = sm.rms_sum_l / sm.rms_history_l.len() as f32;
@@ -418,7 +470,7 @@ impl AudioLevelService {
                     // Smooth R channel RMS
                     sm.rms_sum_r += tracked.rms_r;
                     sm.rms_history_r.push_back(tracked.rms_r);
-                    if sm.rms_history_r.len() > 6 {
+                    if sm.rms_history_r.len() > RMS_WINDOW_SIZE {
                         sm.rms_sum_r -= sm.rms_history_r.pop_front().unwrap();
                     }
                     let smoothed_rms_r = sm.rms_sum_r / sm.rms_history_r.len() as f32;
@@ -426,21 +478,48 @@ impl AudioLevelService {
                     // Combined RMS for overall level
                     let smoothed_rms = ((smoothed_rms_l.powi(2) + smoothed_rms_r.powi(2)) / 2.0).sqrt();
 
-                    // Peak values (instantaneous max) - apply peak hold with decay
-                    // OBS-style peak hold: hold at max, then decay after hold time
-                    // Peak hold for L channel (from actual peak, not RMS)
+                    // Peak values — OBS-style peak hold state machine:
+                    // 1. If new peak is higher, update and restart hold timer
+                    // 2. During hold period (20s), keep the peak value
+                    // 3. After hold expires, linear decay over 3 seconds to zero
+                    let now_instant = Instant::now();
+
+                    // Peak hold for L channel
                     if tracked.peak_l > sm.peak_hold_l {
                         sm.peak_hold_l = tracked.peak_l;
+                        sm.peak_hold_start_l = now_instant;
                     } else {
-                        // Decay coefficient ~0.96 at 10Hz = same decay rate as 0.98 at 20Hz
-                        sm.peak_hold_l = (sm.peak_hold_l * 0.96).max(tracked.peak_l * 0.5);
+                        let hold_elapsed = now_instant.duration_since(sm.peak_hold_start_l).as_secs_f64();
+                        if hold_elapsed > PEAK_HOLD_SECS {
+                            // OBS PPM dB-linear decay: 6.92 dB/s
+                            let decay_elapsed = hold_elapsed - PEAK_HOLD_SECS;
+                            let decay_db = PEAK_DECAY_DB_PER_SEC * decay_elapsed;
+                            let decay_factor = 10.0_f64.powf(-decay_db / 20.0) as f32;
+                            sm.peak_hold_l *= decay_factor;
+                            if sm.peak_hold_l < 0.001 {
+                                sm.peak_hold_l = 0.0;
+                            }
+                        }
+                        // During hold period: peak_hold_l stays unchanged
                     }
 
-                    // Peak hold for R channel (from actual peak, not RMS)
+                    // Peak hold for R channel
                     if tracked.peak_r > sm.peak_hold_r {
                         sm.peak_hold_r = tracked.peak_r;
+                        sm.peak_hold_start_r = now_instant;
                     } else {
-                        sm.peak_hold_r = (sm.peak_hold_r * 0.96).max(tracked.peak_r * 0.5);
+                        let hold_elapsed = now_instant.duration_since(sm.peak_hold_start_r).as_secs_f64();
+                        if hold_elapsed > PEAK_HOLD_SECS {
+                            // OBS PPM dB-linear decay: 6.92 dB/s
+                            let decay_elapsed = hold_elapsed - PEAK_HOLD_SECS;
+                            let decay_db = PEAK_DECAY_DB_PER_SEC * decay_elapsed;
+                            let decay_factor = 10.0_f64.powf(-decay_db / 20.0) as f32;
+                            sm.peak_hold_r *= decay_factor;
+                            if sm.peak_hold_r < 0.001 {
+                                sm.peak_hold_r = 0.0;
+                            }
+                        }
+                        // During hold period: peak_hold_r stays unchanged
                     }
 
                     // Overall peak (max of L and R)
@@ -466,6 +545,8 @@ impl AudioLevelService {
                         right_rms: Some(smoothed_rms_r),
                         right_peak: Some(sm.peak_hold_r),
                         peak_db,
+                        input_peak_l: tracked.input_peak_l,
+                        input_peak_r: tracked.input_peak_r,
                     });
 
                     // Accumulate for master
@@ -506,6 +587,8 @@ impl AudioLevelService {
                         right_rms: Some(master_rms_r),
                         right_peak: Some(master_peak_r),
                         peak_db: master_peak_db,
+                        input_peak_l: None,
+                        input_peak_r: None,
                     },
                 };
 
@@ -520,6 +603,11 @@ impl AudioLevelService {
                     );
                 }
 
+                // Emit binary frame for high-performance WebSocket transport
+                let binary = encode_levels_binary(&data);
+                event_sink.emit_binary("audio_levels", binary);
+
+                // Also emit JSON for backward compatibility (other event consumers)
                 emit_event(event_sink.as_ref(), "audio_levels", &data);
             }
 
@@ -559,6 +647,61 @@ impl Drop for AudioLevelService {
     fn drop(&mut self) {
         self.stop();
     }
+}
+
+/// Encode audio levels into compact binary format for WebSocket transport.
+///
+/// Wire format (little-endian):
+///   [1 byte magic 0xAF] [1 byte version] [2 bytes track count (u16le)]
+///   [MASTER_BLOCK: 9 × f32le + 1 byte flags = 37 bytes]
+///   [TRACK_BLOCK × N: 1 byte id_len, id_len bytes UTF-8 id, 9 × f32le + 1 byte flags]
+///
+/// f32 fields: rmsL, rmsR, peakL, peakR, peakDb, inputPeakL, inputPeakR, rms, peak
+/// flags: bit 0 = clipping, bit 1 = has inputPeak
+fn encode_levels_binary(data: &AudioLevelsData) -> bytes::Bytes {
+    // Pre-allocate: header(4) + master(37) + tracks(~50 bytes each)
+    let estimated = 4 + 37 + data.tracks.len() * 80;
+    let mut buf = BytesMut::with_capacity(estimated);
+
+    // Header
+    buf.put_u8(BINARY_MAGIC);
+    buf.put_u8(BINARY_VERSION);
+    buf.put_u16_le(data.tracks.len() as u16);
+
+    // Write a level block (9 × f32le + 1 byte flags)
+    fn write_block(buf: &mut BytesMut, level: &AudioLevel) {
+        buf.put_f32_le(level.left_rms.unwrap_or(level.rms));
+        buf.put_f32_le(level.right_rms.unwrap_or(level.rms));
+        buf.put_f32_le(level.left_peak.unwrap_or(level.peak));
+        buf.put_f32_le(level.right_peak.unwrap_or(level.peak));
+        buf.put_f32_le(level.peak_db.unwrap_or(-96.0));
+        buf.put_f32_le(level.input_peak_l.unwrap_or(0.0));
+        buf.put_f32_le(level.input_peak_r.unwrap_or(0.0));
+        buf.put_f32_le(level.rms);
+        buf.put_f32_le(level.peak);
+
+        let mut flags: u8 = 0;
+        if level.clipping {
+            flags |= 0x01;
+        }
+        if level.input_peak_l.is_some() {
+            flags |= 0x02;
+        }
+        buf.put_u8(flags);
+    }
+
+    // Master block
+    write_block(&mut buf, &data.master);
+
+    // Track blocks
+    for (id, level) in &data.tracks {
+        let id_bytes = id.as_bytes();
+        buf.put_u8(id_bytes.len().min(255) as u8);
+        buf.put_slice(&id_bytes[..id_bytes.len().min(255)]);
+        write_block(&mut buf, level);
+    }
+
+    buf.freeze()
 }
 
 /// Compute stereo RMS and peak from an `AudioBuffer`.

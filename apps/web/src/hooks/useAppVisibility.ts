@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { api } from '@/lib/backend';
-import { pauseAudioMeterWorker, resumeAudioMeterWorker } from '@/lib/audio/audioMeterWorkerBridge';
+import { pauseCoordinator, resumeCoordinator } from '@/lib/audio/meterCoordinator';
 import { useWebRTCConnectionStore } from '@/stores/webrtcConnectionStore';
 
 /**
@@ -9,7 +9,7 @@ import { useWebRTCConnectionStore } from '@/stores/webrtcConnectionStore';
  * updates while the UI is not visible, saving CPU/GPU/battery.
  *
  * Also pauses/resumes:
- * - Audio meter render loop in the Web Worker
+ * - Audio meter coordinator RAF loop
  * - WebRTC video track decoding (connections stay alive, video decoding stops)
  */
 export function useAppVisibility(): void {
@@ -23,14 +23,14 @@ export function useAppVisibility(): void {
       });
 
       if (idle) {
-        // Pause audio meter worker render loop
-        pauseAudioMeterWorker();
+        // Pause meter coordinator RAF loop
+        pauseCoordinator();
         // Pause WebRTC video tracks — stops video decoding without closing connections.
         // go2rtc stops sending when RTCP feedback ceases, saving CPU on both ends.
         useWebRTCConnectionStore.getState().pauseAllVideo();
       } else {
-        // Resume audio meter worker render loop
-        resumeAudioMeterWorker();
+        // Resume meter coordinator RAF loop
+        resumeCoordinator();
         // Resume WebRTC video tracks
         useWebRTCConnectionStore.getState().resumeAllVideo();
       }

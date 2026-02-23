@@ -6,7 +6,7 @@ use governor::{
     state::{InMemoryState, NotKeyed},
     RateLimiter,
 };
-use serde::{de::DeserializeOwned, Serialize};
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::{
     path::PathBuf,
@@ -16,10 +16,10 @@ use tokio::sync::{broadcast, Mutex as AsyncMutex};
 use tokio::task::JoinSet;
 
 use crate::services::{
-    AudioCaptureService, AudioLevelService, CameraCaptureService,
-    CaptureIndicatorService, DeviceCache, EventSink, FFmpegDownloader, FFmpegHandler,
-    Go2RtcManager, H264CaptureService, MediaAudioDecoder, NativePreviewService,
-    PowerBudgetManager, PreviewHandler, ProfileManager, RecordingService,
+    AudioCaptureService, AudioEngineService, AudioLevelService, CameraCaptureService,
+    CaptureIndicatorService, DeviceCache, DeviceHotplugMonitor, EventSink, FFmpegDownloader,
+    FFmpegHandler, Go2RtcManager, H264Budget, H264CaptureService, MediaAudioDecoder,
+    NativePreviewService, PowerBudgetManager, PreviewHandler, ProfileManager, RecordingService,
     ReplayBufferService, ScreenCaptureService, SettingsManager, SourceLifecycleService,
     StreamAudioDecoder, ThemeManager,
 };
@@ -30,10 +30,12 @@ use crate::services::SckAudioCaptureService;
 // Event System
 // ============================================================================
 
-#[derive(Clone, Serialize)]
-pub struct ServerEvent {
-    pub event: String,
-    pub payload: Value,
+#[derive(Clone)]
+pub enum ServerEvent {
+    /// JSON event — serialized to WebSocket Text frame
+    Json { event: String, payload: Value },
+    /// Binary event — sent as WebSocket Binary frame (zero-copy)
+    Binary { tag: String, data: bytes::Bytes },
 }
 
 #[derive(Clone)]
@@ -54,9 +56,16 @@ impl EventBus {
 
 impl EventSink for EventBus {
     fn emit(&self, event: &str, payload: Value) {
-        let _ = self.sender.send(ServerEvent {
+        let _ = self.sender.send(ServerEvent::Json {
             event: event.to_string(),
             payload,
+        });
+    }
+
+    fn emit_binary(&self, tag: &str, data: bytes::Bytes) {
+        let _ = self.sender.send(ServerEvent::Binary {
+            tag: tag.to_string(),
+            data,
         });
     }
 }
@@ -95,8 +104,11 @@ pub struct AppState {
     #[cfg(target_os = "macos")]
     pub sck_audio_capture: Arc<SckAudioCaptureService>,
     pub source_lifecycle: Arc<SourceLifecycleService>,
+    pub audio_engine: Arc<AudioEngineService>,
     pub power_budget: Arc<PowerBudgetManager>,
+    pub device_hotplug: Arc<DeviceHotplugMonitor>,
     pub device_cache: Arc<DeviceCache>,
+    pub h264_budget: Arc<H264Budget>,
     pub server_port: u16,
     pub background_tasks: Arc<Mutex<JoinSet<()>>>,
 }

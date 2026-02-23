@@ -323,7 +323,7 @@ impl Compositor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{RtmpSource, MediaFileSource, AudioMixer, AudioTrack, Transform};
+    use crate::models::{RtmpSource, MediaFileSource, AudioMixer, Transform};
 
     fn create_test_scene() -> Scene {
         Scene {
@@ -348,16 +348,7 @@ mod tests {
                     z_index: 0,
                 },
             ],
-            audio_mixer: AudioMixer {
-                master_volume: 1.0,
-                master_muted: false,
-                tracks: vec![AudioTrack {
-                    source_id: "rtmp1".to_string(),
-                    volume: 1.0,
-                    muted: false,
-                    solo: false,
-                }],
-            },
+            audio_mixer: AudioMixer::default(),
             transition_in: None,
         }
     }

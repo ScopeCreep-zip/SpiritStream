@@ -8,23 +8,20 @@
 
 import type { StereoLevel } from './audioLevelStore';
 import type { AudioFilter } from '@/types/source';
+import {
+  LABEL_WIDTH,
+  BAR_WIDTH,
+  ARROW_WIDTH,
+  ARROW_HEIGHT,
+  PADDING_Y,
+  METER_HEIGHT,
+  TOTAL_HEIGHT,
+  TOTAL_WIDTH,
+  THRESHOLD_COLORS,
+} from './meterConstants';
 
-// Meter dimensions (constants for consistency)
-export const LABEL_WIDTH = 22;
-export const BAR_WIDTH = 28;
-export const ARROW_WIDTH = 8;
-export const ARROW_HEIGHT = 12;
-export const PADDING_Y = 8;
-export const METER_HEIGHT = 160;
-export const TOTAL_HEIGHT = METER_HEIGHT + PADDING_Y * 2;
-export const TOTAL_WIDTH = LABEL_WIDTH + BAR_WIDTH + ARROW_WIDTH;
-
-// Threshold marker colors
-const THRESHOLD_COLORS: Record<string, string> = {
-  noiseGate: '#a855f7',    // Purple
-  compressor: '#3b82f6',   // Blue
-  expander: '#f59e0b',     // Amber
-};
+// Re-export layout constants for consumers that import from meterRenderer
+export { LABEL_WIDTH, BAR_WIDTH, ARROW_WIDTH, ARROW_HEIGHT, PADDING_Y, METER_HEIGHT, TOTAL_HEIGHT, TOTAL_WIDTH };
 
 // Cached gradient - reused across all meter renders
 let cachedGradient: CanvasGradient | null = null;

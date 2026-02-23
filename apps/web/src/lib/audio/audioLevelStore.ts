@@ -19,6 +19,10 @@ export interface StereoLevel {
   rightPeak: number;
   clipping: boolean;
   peakDb: number;
+  /** Pre-fader peak L (for gain staging display). Only present when mixer is active. */
+  inputPeakL?: number;
+  /** Pre-fader peak R (for gain staging display). Only present when mixer is active. */
+  inputPeakR?: number;
 }
 
 /** Incoming data format from WebSocket */
@@ -32,6 +36,8 @@ export interface AudioLevelsData {
     rightRms?: number;
     rightPeak?: number;
     peakDb?: number;
+    inputPeakL?: number;
+    inputPeakR?: number;
   }>;
   master: {
     rms: number;
@@ -85,10 +91,12 @@ const state: AudioLevelsState = {
   version: 0,
 };
 
-// Peak hold duration in milliseconds (OBS uses 20 seconds)
-const PEAK_HOLD_DURATION_MS = 20000;
-// Peak decay rate per frame (~60fps assumed for RAF)
-const PEAK_DECAY_RATE = 0.02;
+import { PEAK_HOLD_DURATION_MS, peakDecayFactor } from './meterConstants';
+import { decodeAudioFrame } from './binaryCodec';
+
+// OBS-parity peak decay: 6.92 dB/s, dB-linear.
+// Store runs at ~60fps (RAF callback rate).
+const PEAK_DECAY_FACTOR = peakDecayFactor(60);
 
 /**
  * Convert linear amplitude to dB
@@ -101,7 +109,7 @@ function linearToDb(linear: number): number {
 /**
  * Update peak hold state with OBS-parity behavior:
  * - Hold at max for 20 seconds
- * - Then decay gradually
+ * - Then dB-linear decay at 6.92 dB/s (OBS PPM: 11.76 dB / 1.7s)
  */
 function updatePeakHold(
   peakState: PeakHoldState,
@@ -114,8 +122,9 @@ function updatePeakHold(
     peakState.peakHoldL = leftPeak;
     peakState.peakHoldTime = now;
   } else if (now - peakState.peakHoldTime > PEAK_HOLD_DURATION_MS) {
-    // Decay after hold period
-    peakState.peakHoldL = Math.max(0, peakState.peakHoldL - PEAK_DECAY_RATE);
+    // dB-linear decay (multiplicative in amplitude domain)
+    peakState.peakHoldL *= PEAK_DECAY_FACTOR;
+    if (peakState.peakHoldL < 0.001) peakState.peakHoldL = 0;
   }
 
   // Right channel
@@ -123,7 +132,8 @@ function updatePeakHold(
     peakState.peakHoldR = rightPeak;
     peakState.peakHoldTime = now;
   } else if (now - peakState.peakHoldTime > PEAK_HOLD_DURATION_MS) {
-    peakState.peakHoldR = Math.max(0, peakState.peakHoldR - PEAK_DECAY_RATE);
+    peakState.peakHoldR *= PEAK_DECAY_FACTOR;
+    if (peakState.peakHoldR < 0.001) peakState.peakHoldR = 0;
   }
 }
 
@@ -173,6 +183,8 @@ export function updateLevels(data: AudioLevelsData): void {
     track.rightRms = trackData.rightRms ?? trackData.rms;
     track.rightPeak = trackData.rightPeak ?? trackData.peak;
     track.peakDb = trackData.peakDb ?? linearToDb(trackData.peak);
+    track.inputPeakL = trackData.inputPeakL;
+    track.inputPeakR = trackData.inputPeakR;
 
     // Update track peak hold
     updatePeakHold(state.peakHolds[id], track.leftPeak, track.rightPeak, now);
@@ -187,6 +199,71 @@ export function updateLevels(data: AudioLevelsData): void {
   }
 
   // Increment version for dirty checking in RAF loops
+  state.version++;
+}
+
+/**
+ * Update levels from a binary WebSocket frame.
+ * This is the fast path — decodes the compact binary format directly
+ * into the store with zero JSON parsing overhead.
+ */
+export function updateLevelsBinary(buffer: ArrayBuffer): void {
+  const frame = decodeAudioFrame(buffer);
+  if (!frame) return;
+
+  const now = performance.now();
+  const m = frame.master;
+
+  // Update master level
+  state.master.rms = m.rms;
+  state.master.peak = m.peak;
+  state.master.clipping = m.clipping;
+  state.master.leftRms = m.rmsL;
+  state.master.leftPeak = m.peakL;
+  state.master.rightRms = m.rmsR;
+  state.master.rightPeak = m.peakR;
+  state.master.peakDb = m.peakDb;
+
+  // Update master peak hold
+  updatePeakHold(state.masterPeakHold, m.peakL, m.peakR, now);
+
+  // Track IDs we've seen in this frame (for cleanup)
+  const seenIds = new Set<string>();
+
+  // Update each track
+  for (const [id, t] of frame.tracks) {
+    seenIds.add(id);
+
+    if (!state.tracks[id]) {
+      state.tracks[id] = { ...DEFAULT_LEVEL };
+    }
+    if (!state.peakHolds[id]) {
+      state.peakHolds[id] = { ...DEFAULT_PEAK_HOLD };
+    }
+
+    const track = state.tracks[id];
+    track.rms = t.rms;
+    track.peak = t.peak;
+    track.clipping = t.clipping;
+    track.leftRms = t.rmsL;
+    track.leftPeak = t.peakL;
+    track.rightRms = t.rmsR;
+    track.rightPeak = t.peakR;
+    track.peakDb = t.peakDb;
+    track.inputPeakL = t.hasInputPeak ? t.inputPeakL : undefined;
+    track.inputPeakR = t.hasInputPeak ? t.inputPeakR : undefined;
+
+    updatePeakHold(state.peakHolds[id], t.peakL, t.peakR, now);
+  }
+
+  // Clean up tracks no longer present
+  for (const id of Object.keys(state.tracks)) {
+    if (!seenIds.has(id)) {
+      delete state.tracks[id];
+      delete state.peakHolds[id];
+    }
+  }
+
   state.version++;
 }
 

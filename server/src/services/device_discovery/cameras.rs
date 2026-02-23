@@ -78,10 +78,8 @@ fn list_cameras_macos(ffmpeg_path: &str) -> Result<Vec<CameraDevice>, String> {
     let stderr = String::from_utf8_lossy(&output.stderr);
     let mut cameras = parse_avfoundation_cameras(&stderr)?;
 
-    // Get audio devices for auto-pairing
-    let audio_devices = super::audio::parse_avfoundation_audio(&stderr)?;
-
-    // Auto-pair cameras with their microphones
+    // Get audio devices for auto-pairing (native cpal, not FFmpeg parsing)
+    let audio_devices = super::audio::list_audio_inputs_sync(ffmpeg_path)?;
     pair_cameras_with_audio(&mut cameras, &audio_devices);
 
     Ok(cameras)

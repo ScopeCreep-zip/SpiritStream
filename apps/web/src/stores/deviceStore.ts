@@ -7,6 +7,7 @@
  */
 import { create } from 'zustand';
 import { api } from '@/lib/backend';
+import { events } from '@/lib/backend/httpEvents';
 import type {
   CameraDevice,
   DisplayInfo,
@@ -158,3 +159,10 @@ export const useDeviceStore = create<DeviceState>((set, get) => ({
 
   clearError: () => set({ error: null }),
 }));
+
+// Subscribe to device hotplug events from backend.
+// When the server detects device changes (USB plug/unplug), it emits
+// a "device_change" event via WebSocket. We force-refresh the device cache.
+events.on<{ type: string }>('device_change', () => {
+  useDeviceStore.getState().discoverDevices(true);
+});

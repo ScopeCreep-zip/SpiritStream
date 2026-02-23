@@ -112,18 +112,25 @@ export interface LayerGroup {
 }
 
 /**
- * AudioMixer - audio mixing configuration for a scene
+ * AudioMixer - scene-level audio mixing configuration.
+ *
+ * Per-source audio settings (volume, mute, solo, filters) now live on
+ * Profile.sourceAudioConfigs (OBS pattern: source-level, not scene-level).
+ * The scene only controls master volume/mute.
  */
 export interface AudioMixer {
   masterVolume: number;
   masterMuted: boolean;
-  tracks: AudioTrack[];
+  /** LEGACY: Per-source audio tracks. Kept for backward compatibility.
+   *  New code should use sourceAudioConfigs from profileStore instead. */
+  tracks?: LegacyAudioTrack[];
 }
 
 /**
- * AudioTrack - audio settings for a single source in the mixer
+ * LEGACY: Audio track kept for backward compatibility during migration.
+ * New code should use SourceAudioConfig from source.ts.
  */
-export interface AudioTrack {
+export interface LegacyAudioTrack {
   sourceId: string;
   volume: number;
   muted: boolean;
@@ -131,6 +138,9 @@ export interface AudioTrack {
   /** Audio filters applied to this track */
   audioFilters?: AudioFilter[];
 }
+
+/** @deprecated Use SourceAudioConfig from source.ts instead */
+export type AudioTrack = LegacyAudioTrack;
 
 /**
  * Factory function for creating a default scene
@@ -249,14 +259,13 @@ export function createDefaultAudioMixer(): AudioMixer {
   return {
     masterVolume: 1.0,
     masterMuted: false,
-    tracks: [],
   };
 }
 
 /**
- * Factory function for creating an audio track
+ * @deprecated Use createDefaultSourceAudioConfig() from source.ts instead
  */
-export function createDefaultAudioTrack(sourceId: string): AudioTrack {
+export function createDefaultAudioTrack(sourceId: string): LegacyAudioTrack {
   return {
     sourceId,
     volume: 1.0,
@@ -266,7 +275,8 @@ export function createDefaultAudioTrack(sourceId: string): AudioTrack {
 }
 
 /**
- * Helper to add a source to a scene as a fullscreen layer
+ * Helper to add a source to a scene as a fullscreen layer.
+ * Audio config is now source-level (not scene-level), so we only add the layer.
  */
 export function addFullscreenLayerToScene(scene: Scene, sourceId: string): Scene {
   const maxZIndex = Math.max(0, ...scene.layers.map((l) => l.zIndex));
@@ -279,10 +289,6 @@ export function addFullscreenLayerToScene(scene: Scene, sourceId: string): Scene
   return {
     ...scene,
     layers: [...scene.layers, newLayer],
-    audioMixer: {
-      ...scene.audioMixer,
-      tracks: [...scene.audioMixer.tracks, createDefaultAudioTrack(sourceId)],
-    },
   };
 }
 

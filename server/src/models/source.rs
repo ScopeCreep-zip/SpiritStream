@@ -715,3 +715,190 @@ pub struct NdiSource {
 fn default_receiver_name() -> String {
     "SpiritStream".to_string()
 }
+
+// ---------------------------------------------------------------------------
+// Source-level audio configuration (OBS pattern: audio config lives on source,
+// not per-scene. obs_source_set_volume() applies globally.)
+// ---------------------------------------------------------------------------
+
+/// Audio monitoring mode — how audio is routed for preview listening
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MonitoringType {
+    /// Audio goes to stream output only (default)
+    None,
+    /// Audio plays through monitoring device only, excluded from stream
+    MonitorOnly,
+    /// Audio plays through both monitoring device and stream output
+    MonitorAndOutput,
+}
+
+impl Default for MonitoringType {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+/// Fader curve type — how the volume fader maps to gain
+/// OBS supports cubic (default), linear, and sine curves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FaderCurve {
+    /// Cubic curve (default) — perceptually uniform, OBS default
+    Cubic,
+    /// Linear curve — direct 1:1 mapping
+    Linear,
+    /// Sine curve — gentle taper at extremes
+    Sine,
+}
+
+impl Default for FaderCurve {
+    fn default() -> Self {
+        Self::Cubic
+    }
+}
+
+/// Speaker/channel layout for audio processing
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SpeakerLayout {
+    Mono,
+    Stereo,
+    FivePointOne,
+    SevenPointOne,
+}
+
+impl Default for SpeakerLayout {
+    fn default() -> Self {
+        Self::Stereo
+    }
+}
+
+/// Per-source audio configuration (OBS parity: source-level, not scene-level)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceAudioConfig {
+    /// Volume multiplier (0.0-20.0, 1.0 = unity gain). OBS range.
+    #[serde(default = "default_unity")]
+    pub volume: f32,
+    /// Whether this source's audio is muted
+    #[serde(default)]
+    pub muted: bool,
+    /// Whether this source is soloed (mutes all non-soloed sources)
+    #[serde(default)]
+    pub solo: bool,
+    /// Sync offset in milliseconds (positive = delay audio)
+    #[serde(default)]
+    pub sync_offset_ms: i64,
+    /// How audio is routed for monitoring
+    #[serde(default)]
+    pub monitoring_type: MonitoringType,
+    /// Bitmask of which output tracks receive this source's audio (bits 0-5 = tracks 1-6)
+    #[serde(default = "default_track_bitmask")]
+    pub track_bitmask: u8,
+    /// Stereo balance (-1.0 = full left, 0.0 = center, 1.0 = full right)
+    #[serde(default)]
+    pub balance: f32,
+    /// Fader curve type (how volume fader maps to gain)
+    #[serde(default)]
+    pub fader_curve: FaderCurve,
+    /// Audio filter chain applied in order
+    #[serde(default)]
+    pub audio_filters: Vec<AudioFilterConfig>,
+    /// Config version — incremented by frontend on any audio config change.
+    /// Mixer thread uses this to detect filter parameter changes (not just count changes).
+    #[serde(default)]
+    pub config_version: u64,
+}
+
+fn default_unity() -> f32 {
+    1.0
+}
+
+fn default_track_bitmask() -> u8 {
+    0b000001 // Track 1 only
+}
+
+impl Default for SourceAudioConfig {
+    fn default() -> Self {
+        Self {
+            volume: 1.0,
+            muted: false,
+            solo: false,
+            sync_offset_ms: 0,
+            monitoring_type: MonitoringType::None,
+            track_bitmask: 0b000001,
+            balance: 0.0,
+            fader_curve: FaderCurve::default(),
+            audio_filters: Vec::new(),
+            config_version: 0,
+        }
+    }
+}
+
+/// Audio filter configuration — serialized as tagged enum for JSON interop
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum AudioFilterConfig {
+    Gain {
+        #[serde(default)]
+        gain_db: f32,
+    },
+    Compressor {
+        #[serde(default = "default_threshold")]
+        threshold_db: f32,
+        #[serde(default = "default_ratio")]
+        ratio: f32,
+        #[serde(default = "default_attack")]
+        attack_ms: f32,
+        #[serde(default = "default_release")]
+        release_ms: f32,
+        #[serde(default)]
+        output_gain_db: f32,
+        #[serde(default)]
+        sidechain_source_id: Option<String>,
+    },
+    NoiseGate {
+        #[serde(default = "default_open_threshold")]
+        open_threshold_db: f32,
+        #[serde(default = "default_close_threshold")]
+        close_threshold_db: f32,
+        #[serde(default = "default_attack")]
+        attack_ms: f32,
+        #[serde(default = "default_hold")]
+        hold_ms: f32,
+        #[serde(default = "default_release")]
+        release_ms: f32,
+    },
+    Expander {
+        #[serde(default = "default_threshold")]
+        threshold_db: f32,
+        #[serde(default = "default_ratio")]
+        ratio: f32,
+        #[serde(default = "default_attack")]
+        attack_ms: f32,
+        #[serde(default = "default_release")]
+        release_ms: f32,
+    },
+    Limiter {
+        #[serde(default = "default_limiter_threshold")]
+        threshold_db: f32,
+        #[serde(default = "default_release")]
+        release_ms: f32,
+    },
+    NoiseSuppression {
+        /// Suppression level (0.0-1.0, higher = more aggressive)
+        #[serde(default = "default_suppress_level")]
+        suppress_level: f32,
+    },
+}
+
+fn default_threshold() -> f32 { -18.0 }
+fn default_ratio() -> f32 { 4.0 }
+fn default_attack() -> f32 { 6.0 }
+fn default_release() -> f32 { 60.0 }
+fn default_open_threshold() -> f32 { -26.0 }
+fn default_close_threshold() -> f32 { -32.0 }
+fn default_hold() -> f32 { 200.0 }
+fn default_limiter_threshold() -> f32 { -0.5 }
+fn default_suppress_level() -> f32 { 0.5 }

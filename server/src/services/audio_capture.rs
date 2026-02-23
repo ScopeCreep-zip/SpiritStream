@@ -613,7 +613,25 @@ impl AudioCaptureService {
             .map_err(|e| format!("Failed to get device config: {}", e))?;
 
         let sample_format = supported_config.sample_format();
-        let stream_config: StreamConfig = supported_config.into();
+        let mut stream_config: StreamConfig = supported_config.clone().into();
+
+        // Negotiate buffer size: request 512 frames (10.7ms @ 48kHz) for low latency.
+        // Falls back to device default if range is unknown or request is out of range.
+        const TARGET_BUFFER_FRAMES: u32 = 512;
+        match supported_config.buffer_size() {
+            cpal::SupportedBufferSize::Range { min, max } => {
+                let requested = TARGET_BUFFER_FRAMES.clamp(*min, *max);
+                stream_config.buffer_size = cpal::BufferSize::Fixed(requested);
+                log::info!(
+                    "[AudioCapture] Buffer size negotiated: {} frames (range {}-{})",
+                    requested, min, max
+                );
+            }
+            cpal::SupportedBufferSize::Unknown => {
+                log::debug!("[AudioCapture] Buffer size range unknown, using device default");
+            }
+        }
+
         let sample_rate = stream_config.sample_rate;
         let channels = stream_config.channels;
 

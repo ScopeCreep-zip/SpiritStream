@@ -4,7 +4,7 @@
 use serde_json::{json, Value};
 
 use crate::app_state::{AppState, get_arg, get_opt_arg};
-use crate::models::{AudioTrack, Source};
+use crate::models::{Source, SourceAudioConfig};
 use crate::services::EventSink;
 
 /// Handle source-related commands.
@@ -39,6 +39,10 @@ async fn handle_add_source(state: &AppState, payload: &Value) -> Result<Value, S
         return Err(format!("Source with ID {} already exists", source.id()));
     }
 
+    // Create default source-level audio config (OBS pattern)
+    let source_id = source.id().to_string();
+    profile.source_audio_configs.insert(source_id, SourceAudioConfig::default());
+
     profile.sources.push(source);
 
     let settings = state.settings_manager.load()?;
@@ -71,9 +75,6 @@ async fn handle_update_source(state: &AppState, payload: &Value) -> Result<Value
         .position(|s| s.id() == source_id)
         .ok_or_else(|| format!("Source {} not found", source_id))?;
 
-    // Check if source had audio before update
-    let had_audio_before = profile.sources[source_idx].has_audio();
-
     // Merge updates into existing source
     let mut source_json =
         serde_json::to_value(&profile.sources[source_idx]).map_err(|e| e.to_string())?;
@@ -85,55 +86,10 @@ async fn handle_update_source(state: &AppState, payload: &Value) -> Result<Value
     profile.sources[source_idx] =
         serde_json::from_value(source_json).map_err(|e| format!("Failed to update source: {}", e))?;
 
-    // Check if source has audio after update
-    let has_audio_after = profile.sources[source_idx].has_audio();
-
-    // Sync audio tracks in scenes if audio capability changed
-    if had_audio_before != has_audio_after {
-        for scene in &mut profile.scenes {
-            // Check if this source is used in the scene
-            let source_in_scene = scene.layers.iter().any(|l| l.source_id == source_id);
-            if !source_in_scene {
-                continue;
-            }
-
-            if has_audio_after {
-                // Add audio track if not already present
-                if !scene
-                    .audio_mixer
-                    .tracks
-                    .iter()
-                    .any(|t| t.source_id == source_id)
-                {
-                    log::info!(
-                        "Adding audio track for source {} to scene {} (audio enabled)",
-                        source_id,
-                        scene.name
-                    );
-                    scene.audio_mixer.tracks.push(AudioTrack {
-                        source_id: source_id.clone(),
-                        volume: 1.0,
-                        muted: false,
-                        solo: false,
-                    });
-                }
-            } else {
-                // Remove audio track
-                let track_count = scene.audio_mixer.tracks.len();
-                scene
-                    .audio_mixer
-                    .tracks
-                    .retain(|t| t.source_id != source_id);
-                if scene.audio_mixer.tracks.len() < track_count {
-                    log::info!(
-                        "Removed audio track for source {} from scene {} (audio disabled)",
-                        source_id,
-                        scene.name
-                    );
-                }
-            }
-        }
-    }
+    // Ensure source has an audio config entry (may be missing from old profiles)
+    profile.source_audio_configs
+        .entry(source_id.clone())
+        .or_insert_with(SourceAudioConfig::default);
 
     let settings = state.settings_manager.load()?;
     state
@@ -202,6 +158,9 @@ async fn handle_remove_source(state: &AppState, payload: &Value) -> Result<Value
     // Proceed with deletion
     profile.sources.retain(|s| s.id() != source_id);
 
+    // Remove source-level audio config
+    profile.source_audio_configs.remove(&source_id);
+
     // Stop any running preview for this source
     state.preview_handler.stop_source_preview(&source_id);
 
@@ -237,6 +196,8 @@ async fn handle_remove_source(state: &AppState, payload: &Value) -> Result<Value
                 // Stop ScreenCaptureKit audio capture (macOS only)
                 #[cfg(target_os = "macos")]
                 let _ = state.sck_audio_capture.stop_capture(linked_id);
+                // Remove source-level audio config
+                profile.source_audio_configs.remove(linked_id);
             }
             linked_audio_ids.clone()
         } else {

@@ -31,6 +31,12 @@ use spiritstream_server::services::{
     H264CaptureService,
     // Audio level monitoring
     AudioLevelService,
+    // Audio mixing engine
+    AudioEngineService,
+    // Device hotplug monitoring
+    DeviceHotplugMonitor,
+    // H264 hardware encoder budget enforcement
+    H264Budget,
     // In-process media file audio decode (symphonia)
     MediaAudioDecoder,
     // In-process stream audio decode (RTMP/NDI via go2rtc + symphonia)
@@ -115,9 +121,11 @@ async fn shutdown_signal(state: AppState) {
     state.audio_capture.stop_all();
     state.h264_capture.stop_all();
 
-    // 6. Stop audio level monitoring and media decoders
-    log::info!("Stopping audio level monitoring...");
+    // 6. Stop audio engine, level monitoring, and device hotplug
+    log::info!("Stopping audio engine, level monitoring, and device hotplug...");
+    state.audio_engine.stop();
     state.audio_level_service.stop();
+    state.device_hotplug.stop();
     state.media_audio_decoder.stop_all();
     state.stream_audio_decoder.stop_all();
 
@@ -362,11 +370,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize audio level monitoring service
     let audio_level_service = Arc::new(AudioLevelService::new());
+
+    // Initialize audio mixing engine (OBS-parity mixer thread)
+    let audio_engine = Arc::new(AudioEngineService::new(
+        spiritstream_server::services::audio_engine::types::MixerConfig::default(),
+    ));
+
     let media_audio_decoder = Arc::new(MediaAudioDecoder::new());
     let stream_audio_decoder = Arc::new(StreamAudioDecoder::new());
     #[cfg(target_os = "macos")]
     let sck_audio_capture = Arc::new(SckAudioCaptureService::new());
     let event_bus_for_audio = event_bus.clone();
+
+    // Initialize device cache and hotplug monitor
+    let device_cache = Arc::new(DeviceCache::new());
+    let device_hotplug = Arc::new(DeviceHotplugMonitor::start(
+        event_bus.clone(),
+        device_cache.clone(),
+    ));
+
+    // Initialize H264 hardware encoder budget enforcement
+    let h264_budget = Arc::new(H264Budget::new());
 
     let state = AppState {
         profile_manager,
@@ -394,8 +418,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         media_audio_decoder: media_audio_decoder.clone(),
         stream_audio_decoder: stream_audio_decoder.clone(),
         source_lifecycle,
+        audio_engine: audio_engine.clone(),
         power_budget,
-        device_cache: Arc::new(DeviceCache::new()),
+        device_hotplug,
+        device_cache,
+        h264_budget,
         #[cfg(target_os = "macos")]
         sck_audio_capture,
         server_port: port,
@@ -406,6 +433,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let idle_flag = state.native_preview.idle_flag();
     let throttle_flag = state.power_budget.throttle_flag();
     audio_level_service.start(Arc::new(event_bus_for_audio), idle_flag, throttle_flag);
+
+    // Start audio mixing engine thread
+    audio_engine.start(audio_level_service.clone());
 
     // Start H264 orphan session reaper (cleans up sessions inactive for 60s)
     state.h264_capture.start_cleanup_task();

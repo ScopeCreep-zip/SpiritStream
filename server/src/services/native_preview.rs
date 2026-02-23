@@ -189,9 +189,10 @@ impl NativePreviewService {
         let tx_clone = frame_tx.clone();
         let pid = preview_id.clone();
 
-        let encode_handle = std::thread::spawn(move || {
+        let thread_name = format!("ss-preview-{}", &preview_id[..preview_id.len().min(8)]);
+        let encode_handle = std::thread::Builder::new().name(thread_name).spawn(move || {
             run_preview_loop(frame_rx, extract_fn, tx_clone, stop_clone, idle_clone, throttle_clone, config, pid);
-        });
+        }).expect("Failed to spawn preview thread");
 
         // Store active preview
         {

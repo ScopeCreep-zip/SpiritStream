@@ -47,10 +47,25 @@ pub(crate) async fn ws_handler(
 
 async fn handle_socket(mut socket: WebSocket, mut receiver: broadcast::Receiver<ServerEvent>) {
     while let Ok(event) = receiver.recv().await {
-        if let Ok(payload) = serde_json::to_string(&event) {
-            if socket.send(Message::Text(payload)).await.is_err() {
-                break;
+        let result = match event {
+            ServerEvent::Json { ref event, ref payload } => {
+                // Serialize JSON events to text frames
+                match serde_json::to_string(&serde_json::json!({
+                    "event": event,
+                    "payload": payload,
+                })) {
+                    Ok(text) => socket.send(Message::Text(text)).await,
+                    Err(_) => continue,
+                }
             }
+            ServerEvent::Binary { data, .. } => {
+                // Send binary events as binary frames (zero-copy)
+                socket.send(Message::Binary(data.to_vec())).await
+            }
+        };
+
+        if result.is_err() {
+            break;
         }
     }
 }
