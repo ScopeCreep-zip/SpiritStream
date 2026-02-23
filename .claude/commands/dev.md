@@ -6,11 +6,11 @@ allowed-tools:
 
 Start SpiritStream in development mode:
 
-1. Run `npm run dev` which will:
-   - Compile TypeScript
-   - Copy resources
-   - Launch Electron
+1. `pnpm dev` — runs all workspaces in parallel via Turbo (frontend + server)
+2. `pnpm dev:web` — frontend only (Vite on localhost:5173)
+3. `pnpm dev:desktop` — desktop app (Tauri launcher + server sidecar)
 
-This runs the application for testing. The process will stay running until terminated.
+For backend-only development:
+- `cargo run --manifest-path server/Cargo.toml` — starts the Axum HTTP server on localhost:8008
 
-Note: If there are compilation errors, they will appear in the output. Review them and suggest fixes.
+The frontend auto-detects backend mode (HTTP by default). If there are compilation errors, review them and suggest fixes.

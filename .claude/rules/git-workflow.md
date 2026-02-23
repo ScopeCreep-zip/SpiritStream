@@ -32,11 +32,12 @@ Follow these conventions for all Git operations.
 - `chore`: Maintenance tasks
 
 ### Scopes
-- `electron`: Main process changes
+- `server`: Rust backend / API changes
 - `frontend`: UI changes
+- `desktop`: Tauri launcher changes
 - `models`: Domain model changes
 - `services`: Service layer changes
-- `ipc`: IPC handler changes
+- `api`: API route / command changes
 - `build`: Build system changes
 
 ### Examples
@@ -60,12 +61,12 @@ stream operations to prevent credential leakage.
 
 1. **Check for type errors**
    ```bash
-   npx tsc --noEmit
+   pnpm typecheck
    ```
 
 2. **Verify build succeeds**
    ```bash
-   npm run build
+   pnpm build
    ```
 
 3. **Review changes**

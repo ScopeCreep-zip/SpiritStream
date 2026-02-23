@@ -8,32 +8,39 @@ allowed-tools:
 
 Perform a security review of the codebase focusing on:
 
-## Electron Security
-- [ ] Context isolation is enabled
-- [ ] Node integration is disabled
-- [ ] Sandbox mode is enabled
-- [ ] No `nodeIntegrationInWorker`
-- [ ] No `webSecurity: false`
+## Tauri Security
+- [ ] Capabilities are minimal in `apps/desktop/src-tauri/capabilities/default.json`
+- [ ] CSP headers configured in `apps/desktop/src-tauri/tauri.conf.json`
+- [ ] No unnecessary Tauri permissions granted
 
-## IPC Security
-- [ ] All IPC handlers validate input
-- [ ] No path traversal vulnerabilities
-- [ ] Sensitive data is not logged
+## Server Security
+- [ ] Token auth enforced when `SPIRITSTREAM_API_TOKEN` is set
+- [ ] CORS configuration is appropriate (check `server/src/main.rs`)
+- [ ] Cookie-based session auth is secure (HttpOnly, SameSite)
+- [ ] Rate limiting middleware is active
+
+## Path Traversal
+- [ ] `validate_path_within_any()` used for all file operations
+- [ ] File browser endpoints validate paths
+- [ ] No unvalidated user paths reach the filesystem
+
+## Sensitive Data
+- [ ] `mask_sensitive()` / `redact_payload()` used before logging
+- [ ] Stream keys not logged in plaintext
+- [ ] Stream keys encrypted at rest when `encrypt_stream_keys` is true
+- [ ] OAuth tokens handled securely
 
 ## Encryption
-- [ ] Strong key derivation (PBKDF2, high iterations)
-- [ ] Random salt and IV per encryption
-- [ ] Authenticated encryption (GCM mode)
-
-## Stream Keys
-- [ ] Not logged in plaintext
-- [ ] Masked in user-visible output
-- [ ] Encrypted when stored
+- [ ] AES-256-GCM for profile encryption
+- [ ] Argon2id key derivation
+- [ ] Random salt and nonce per encryption
 
 Check files:
-- `src/electron/main.ts` - Electron security settings
-- `src/electron/ipcHandlers.ts` - IPC handler validation
-- `src/utils/encryption.ts` - Encryption implementation
-- `src/utils/logger.ts` - Logging (check for sensitive data)
+- `server/src/main.rs` — routes, middleware, CORS, auth
+- `server/src/services/encryption.rs` — encryption implementation
+- `server/src/services/path_validator.rs` — path validation
+- `server/src/services/oauth.rs` — OAuth token handling
+- `apps/desktop/src-tauri/capabilities/` — Tauri permissions
+- `apps/desktop/src-tauri/tauri.conf.json` — CSP headers
 
 Report any findings with severity and recommended fixes.

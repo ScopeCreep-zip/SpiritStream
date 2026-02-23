@@ -1,55 +1,38 @@
 ---
-description: Create a new domain model with DTO
+description: Create a new domain model
 allowed-tools:
   - Read
   - Write
   - Edit
+  - Grep
 argument-hints: "ModelName (e.g., Preset)"
 ---
 
 Create a new domain model following the project's patterns:
 
-1. **Create model file** at `src/models/{ModelName}.ts`:
-   - Private properties with underscore prefix
-   - Getters and setters
-   - `toDTO()` method
-   - Static `fromDTO()` factory method
-   - Constructor with sensible defaults
+1. **Create Rust model** at `server/src/models/{model_name}.rs`:
+   ```rust
+   use serde::{Deserialize, Serialize};
 
-2. **Add DTO interface** in `src/shared/interfaces.ts`:
-   - All properties from the model
-   - Use primitive types only (no class instances)
+   #[derive(Debug, Clone, Serialize, Deserialize)]
+   pub struct ModelName {
+       pub id: String,
+       pub name: String,
+   }
+   ```
 
-3. **Follow existing patterns** from:
-   - Profile.ts
-   - OutputGroup.ts
-   - StreamTarget.ts
+2. **Register in models module** — add `pub mod model_name;` to `server/src/models/mod.rs`
 
-Example structure:
-```typescript
-export class ModelName {
-  private _id: string;
-  private _name: string;
+3. **Create TypeScript type** at `apps/web/src/types/{modelName}.ts` (or add to existing types file):
+   ```typescript
+   export interface ModelName {
+     id: string;
+     name: string;
+   }
+   ```
 
-  constructor(name: string = '') {
-    this._id = generateUUID();
-    this._name = name;
-  }
+4. **Follow existing patterns** from:
+   - Rust: `server/src/models/` (existing model files)
+   - TypeScript: `apps/web/src/types/` (existing type files)
 
-  // Getters/Setters
-  get id(): string { return this._id; }
-  get name(): string { return this._name; }
-  set name(value: string) { this._name = value; }
-
-  // Serialization
-  toDTO(): ModelNameDTO {
-    return { id: this._id, name: this._name };
-  }
-
-  static fromDTO(dto: ModelNameDTO): ModelName {
-    const instance = new ModelName(dto.name);
-    instance._id = dto.id;
-    return instance;
-  }
-}
-```
+Ensure field names match between Rust (snake_case with `#[serde(rename)]` if needed) and TypeScript (camelCase).

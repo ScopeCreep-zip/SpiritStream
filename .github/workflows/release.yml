@@ -71,7 +71,7 @@ jobs:
           - platform: 'macos-latest'
             args: '--target aarch64-apple-darwin'
             rust_target: 'aarch64-apple-darwin'
-          - platform: 'macos-latest'
+          - platform: 'macos-13'
             args: '--target x86_64-apple-darwin'
             rust_target: 'x86_64-apple-darwin'
           - platform: 'ubuntu-22.04'
