@@ -127,27 +127,10 @@ impl PlatformConfig {
         }
     }
 
-    /// Generic segment-based redaction (fallback)
+    /// Generic segment-based redaction (fallback).
+    /// Delegates to `PlatformRegistry::generic_redact` for a single source of truth.
     fn generic_segment_redact(url: &str) -> String {
-        let (scheme, rest) = match url.split_once("://") {
-            Some(parts) => parts,
-            None => return url.to_string(),
-        };
-
-        let (host, path) = match rest.split_once('/') {
-            Some(parts) => parts,
-            None => return url.to_string(),
-        };
-
-        let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-        if segments.len() < 2 {
-            return url.to_string();
-        }
-
-        let safe_segments = &segments[0..segments.len() - 1];
-        let safe_path = safe_segments.join("/");
-
-        format!("{scheme}://{host}/{safe_path}/***")
+        PlatformRegistry::generic_redact(url)
     }
 }
 

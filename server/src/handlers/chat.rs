@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 
 use crate::chat_lifecycle::{connect_trovo_chat, connect_twitch_chat, connect_youtube_chat_with_retry};
-use crate::state::{ensure_fresh_oauth_token, get_active_profile_settings, persist_active_profile_settings, AppState, FreshOAuthToken};
+use crate::state::{apply_and_persist_oauth_refresh, ensure_fresh_oauth_token, get_active_profile_settings, AppState, FreshOAuthToken};
 use crate::util::{build_hour_keys, get_arg, get_opt_arg};
 use spiritstream_server::models::{ChatConfig, ChatCredentials, ChatMessage, ChatPlatform, ChatSendResult, TwitchAuth, YouTubeAuth};
 use spiritstream_server::services::EventSink;
@@ -44,18 +44,9 @@ pub(crate) async fn handle(state: &AppState, command: &str, payload: &Value) -> 
                                     refreshed: false,
                                 }
                             });
-                            if fresh.refreshed {
-                                profile_settings.oauth.twitch.access_token = fresh.access_token.clone();
-                                if let Some(rt) = fresh.refresh_token {
-                                    profile_settings.oauth.twitch.refresh_token = rt;
-                                }
-                                profile_settings.oauth.twitch.expires_at = fresh.expires_at;
-                                if let Err(err) = persist_active_profile_settings(state, profile_settings.clone()).await {
-                                    log::warn!("Failed to persist Twitch OAuth refresh: {err}");
-                                }
-                            }
+                            let token = apply_and_persist_oauth_refresh(state, "twitch", &fresh, &mut profile_settings).await;
                             Some(TwitchAuth::AppOAuth {
-                                access_token: fresh.access_token,
+                                access_token: token,
                                 refresh_token: if refresh_token.is_none() {
                                     Some(profile_settings.oauth.twitch.refresh_token.clone())
                                         .filter(|s| !s.is_empty())
@@ -97,18 +88,9 @@ pub(crate) async fn handle(state: &AppState, command: &str, payload: &Value) -> 
                                     refreshed: false,
                                 }
                             });
-                            if fresh.refreshed {
-                                profile_settings.oauth.youtube.access_token = fresh.access_token.clone();
-                                if let Some(rt) = fresh.refresh_token {
-                                    profile_settings.oauth.youtube.refresh_token = rt;
-                                }
-                                profile_settings.oauth.youtube.expires_at = fresh.expires_at;
-                                if let Err(err) = persist_active_profile_settings(state, profile_settings.clone()).await {
-                                    log::warn!("Failed to persist YouTube OAuth refresh: {err}");
-                                }
-                            }
+                            let token = apply_and_persist_oauth_refresh(state, "youtube", &fresh, &mut profile_settings).await;
                             YouTubeAuth::AppOAuth {
-                                access_token: fresh.access_token,
+                                access_token: token,
                                 refresh_token: if refresh_token.is_none() {
                                     Some(profile_settings.oauth.youtube.refresh_token.clone())
                                         .filter(|s| !s.is_empty())

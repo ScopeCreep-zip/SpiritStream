@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 
 use crate::events::EventBus;
-use crate::state::{ensure_fresh_oauth_token, get_active_profile_settings, persist_active_profile_settings, AppState};
+use crate::state::{apply_and_persist_oauth_refresh, ensure_fresh_oauth_token, get_active_profile_settings, AppState};
 use spiritstream_server::models::{ChatConfig, ChatCredentials, ChatPlatform, ChatSettings, ProfileSettings, TwitchAuth, YouTubeAuth};
 use spiritstream_server::services::{ChatManager, EventSink};
 
@@ -49,16 +49,7 @@ pub(crate) async fn auto_connect_chat_platforms(
                 .await
                 {
                     Ok(fresh) => {
-                        if fresh.refreshed {
-                            profile_settings.oauth.twitch.access_token = fresh.access_token.clone();
-                            if let Some(rt) = fresh.refresh_token {
-                                profile_settings.oauth.twitch.refresh_token = rt;
-                            }
-                            profile_settings.oauth.twitch.expires_at = fresh.expires_at;
-                            if let Err(err) = persist_active_profile_settings(&state, profile_settings.clone()).await {
-                                log::warn!("Failed to persist Twitch OAuth refresh: {err}");
-                            }
-                        }
+                        apply_and_persist_oauth_refresh(&state, "twitch", &fresh, &mut profile_settings).await;
                         connect_twitch_chat(&state.chat_manager, &chat_settings, &profile_settings, &state.event_bus).await;
                     }
                     Err(e) => {
@@ -308,17 +299,8 @@ pub(crate) async fn connect_youtube_chat_with_retry(
                 &state.oauth_service,
             ).await {
                 Ok(fresh) => {
-                    if fresh.refreshed {
-                        profile_settings.oauth.youtube.access_token = fresh.access_token.clone();
-                        if let Some(rt) = fresh.refresh_token {
-                            profile_settings.oauth.youtube.refresh_token = rt;
-                        }
-                        profile_settings.oauth.youtube.expires_at = fresh.expires_at;
-                        if let Err(err) = persist_active_profile_settings(&state, profile_settings.clone()).await {
-                            log::warn!("Failed to persist YouTube OAuth refresh: {err}");
-                        }
-                    }
-                    Some(fresh.access_token)
+                    let token = apply_and_persist_oauth_refresh(&state, "youtube", &fresh, &mut profile_settings).await;
+                    Some(token)
                 }
                 Err(e) => {
                     log::warn!("YouTube token refresh failed: {e}");

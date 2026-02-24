@@ -13,6 +13,7 @@ mod log_manager;
 mod chat_manager;
 pub mod chat;
 mod events;
+mod stats_reader;
 mod path_validator;
 mod obs_websocket;
 mod discord_webhook;

@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU16, AtomicU64, AtomicUsize, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 use crate::services::{emit_event, EventSink};
-use crate::models::{OutputGroup, StreamStats};
+use crate::models::OutputGroup;
 use crate::services::PlatformRegistry;
 
 /// Reconnection configuration and state
@@ -75,10 +75,10 @@ use std::os::windows::process::CommandExt;
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 /// Process info for tracking active streams
-struct ProcessInfo {
-    child: Child,
-    start_time: Instant,
-    group_id: String,
+pub(crate) struct ProcessInfo {
+    pub(crate) child: Child,
+    pub(crate) start_time: Instant,
+    pub(crate) group_id: String,
     reconnection_state: ReconnectionState,
 }
 
@@ -89,10 +89,10 @@ struct ActiveGroupConfig {
 }
 
 /// FFmpeg relay process for shared ingest
-struct RelayProcess {
-    child: Child,
-    incoming_url: String,
-    output_groups: HashSet<String>,
+pub(crate) struct RelayProcess {
+    pub(crate) child: Child,
+    pub(crate) incoming_url: String,
+    pub(crate) output_groups: HashSet<String>,
 }
 
 /// Manages FFmpeg streaming processes
@@ -133,7 +133,7 @@ impl FFmpegHandler {
     const METER_UDP_QUERY: &'static str = "pkt_size=1316";
 
     /// Parse Windows error codes and FFmpeg error codes from log lines
-    fn parse_error_details(lines: &VecDeque<String>) -> Option<String> {
+    pub(crate) fn parse_error_details(lines: &VecDeque<String>) -> Option<String> {
         for line in lines.iter().rev() {
             // Windows socket error codes
             if line.contains("10054") {
@@ -288,7 +288,7 @@ impl FFmpegHandler {
 
     /// Static version of sanitize_arg for use in background threads
     /// Uses generic platform-agnostic redaction
-    fn sanitize_arg_static(arg: &str) -> String {
+    pub(crate) fn sanitize_arg_static(arg: &str) -> String {
         if !(arg.contains("rtmp://") || arg.contains("rtmps://")) {
             return arg.to_string();
         }
@@ -656,7 +656,8 @@ impl FFmpegHandler {
         Some(bytes)
     }
 
-    /// Background thread that reads FFmpeg stderr and emits stats events
+    /// Background thread that reads FFmpeg stderr and emits stats events.
+    /// Delegates to `StatsReaderContext` for structured state management.
     #[allow(clippy::too_many_arguments)]
     fn stats_reader(
         stderr: std::process::ChildStderr,
@@ -670,235 +671,27 @@ impl FFmpegHandler {
         port_assignments: Arc<Mutex<HashMap<String, u16>>>,
         next_port_offset: Arc<AtomicU16>,
     ) {
+        use super::stats_reader::StatsReaderContext;
+
+        let mut ctx = StatsReaderContext::new(
+            group_id, meter_bytes, event_sink, processes,
+            stopping_groups, relay, relay_refcount, port_assignments, next_port_offset,
+        );
+
         let reader = BufReader::new(stderr);
-        let mut stats = StreamStats::new(group_id.clone());
-        let mut last_emit = Instant::now();
-        let emit_interval = Duration::from_millis(1000); // Emit every second
-        let mut was_intentionally_stopped = false;
-        let mut recent_lines: VecDeque<String> = VecDeque::with_capacity(40);
-        let mut last_meter_bytes = meter_bytes
-            .as_ref()
-            .map(|bytes| bytes.load(Ordering::Relaxed))
-            .unwrap_or(0);
-        let mut last_meter_instant = Instant::now();
-        let mut has_meter_sample = false;
-        let mut smoothed_bitrate = 0.0;
-        let mut has_smoothed_bitrate = false;
-
         for line in reader.lines().map_while(Result::ok) {
-            // Check if process is still running (was it intentionally stopped?)
-            {
-                if let Ok(stopping) = stopping_groups.lock() {
-                    if stopping.contains(&group_id) {
-                        was_intentionally_stopped = true;
-                        break;
-                    }
-                }
-                if let Ok(procs) = processes.lock() {
-                    if !procs.contains_key(&group_id) {
-                        // Process was removed by stop() - intentional stop
-                        was_intentionally_stopped = true;
-                        break;
-                    }
-                }
+            if ctx.is_stopped() {
+                ctx.mark_intentional_stop();
+                break;
             }
-
-            let sanitized_line = Self::sanitize_arg_static(&line);
-            if recent_lines.len() == 40 {
-                recent_lines.pop_front();
-            }
-            recent_lines.push_back(sanitized_line.clone());
-
-            let parsed = stats.parse_line(&line);
-            let is_progress_line = line.trim_start().starts_with("progress=");
-
-            // Emit stats at most every second or at progress boundaries
-            if is_progress_line || (parsed && last_emit.elapsed() >= emit_interval) {
-                // Add uptime from process start if FFmpeg doesn't report time
-                if let Ok(procs) = processes.lock() {
-                    if let Some(info) = procs.get(&group_id) {
-                        let uptime = info.start_time.elapsed().as_secs_f64();
-                        if stats.time <= 0.0 {
-                            stats.time = uptime;
-                        }
-                    }
-                }
-
-                if meter_bytes.is_none() && stats.bitrate == 0.0 && stats.size > 0 && stats.time > 0.0 {
-                    let avg_kbps = (stats.size as f64 * 8.0) / 1000.0 / stats.time;
-                    if avg_kbps.is_finite() && avg_kbps > 0.0 {
-                        stats.bitrate = avg_kbps;
-                    }
-                }
-
-                if let Some(bytes) = meter_bytes.as_ref() {
-                    let now = Instant::now();
-                    let current_bytes = bytes.load(Ordering::Relaxed);
-                    if has_meter_sample {
-                        let elapsed = now.duration_since(last_meter_instant).as_secs_f64();
-                        let delta_bytes = current_bytes.saturating_sub(last_meter_bytes);
-                        if elapsed > 0.0 {
-                            let kbps = (delta_bytes as f64 * 8.0) / 1000.0 / elapsed;
-                            if kbps.is_finite() {
-                                let alpha = 0.2;
-                                if has_smoothed_bitrate {
-                                    smoothed_bitrate = smoothed_bitrate * (1.0 - alpha) + kbps * alpha;
-                                } else {
-                                    smoothed_bitrate = kbps;
-                                    has_smoothed_bitrate = true;
-                                }
-                                stats.bitrate = smoothed_bitrate;
-                            } else {
-                                stats.bitrate = 0.0;
-                            }
-                        }
-                    } else {
-                        has_meter_sample = true;
-                    }
-                    last_meter_bytes = current_bytes;
-                    last_meter_instant = now;
-                }
-
-                // Emit event
-                emit_event(event_sink.as_ref(), "stream_stats", &stats);
-                last_emit = Instant::now();
-            }
-
-            // Only log errors and warnings (not frame stats which are too verbose)
-            if line.contains("[error]")
-                || line.contains("[warning]")
-                || line.contains("Error")
-                || line.contains("error")
-            {
-                log::warn!("[FFmpeg:{group_id}] {sanitized_line}");
-            }
+            ctx.record_line(&line);
+            let parsed = ctx.parse_line(&line);
+            let is_progress = line.trim_start().starts_with("progress=");
+            ctx.maybe_emit_stats(parsed, is_progress);
+            ctx.log_errors(&line);
         }
 
-        // Decrement relay reference count when group ends
-        relay_refcount.fetch_sub(1, Ordering::SeqCst);
-
-        // Process ended - check if it was intentional or a crash
-        if was_intentionally_stopped {
-            if let Ok(mut stopping) = stopping_groups.lock() {
-                stopping.remove(&group_id);
-            }
-            // Intentional stop via stop() - process already removed
-            emit_event(event_sink.as_ref(), "stream_ended", &group_id);
-        } else {
-            // Process ended unexpectedly (crash, connection loss, etc.)
-            // Remove from HashMap and check exit status
-            let exit_status = {
-                if let Ok(mut procs) = processes.lock() {
-                    if let Some(mut info) = procs.remove(&group_id) {
-                        // Free the port assignment for this crashed group
-                        if let Ok(mut assignments) = port_assignments.lock() {
-                            if let Some(offset) = assignments.remove(&group_id) {
-                                log::debug!("Freed port offset {offset} from crashed group {group_id}");
-                                // Reset counter if all assignments are freed
-                                if assignments.is_empty() {
-                                    next_port_offset.store(0, Ordering::SeqCst);
-                                    log::debug!("All ports freed after crash, reset counter to 0");
-                                }
-                            }
-                        }
-
-                        // Try to get exit status
-                        match info.child.try_wait() {
-                            Ok(Some(status)) => Some(status),
-                            Ok(None) => info.child.wait().ok(),  // Process still running, wait for it
-                            Err(_) => info.child.wait().ok(),    // Error checking, try to wait anyway
-                        }
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            };
-
-            if let Ok(mut stopping) = stopping_groups.lock() {
-                if stopping.remove(&group_id) {
-                    emit_event(event_sink.as_ref(), "stream_ended", &group_id);
-                    return;
-                }
-            }
-
-            // Parse error details from recent log lines
-            let error_details = Self::parse_error_details(&recent_lines);
-
-            // Determine if this was a crash or normal exit
-            let error_message = match exit_status {
-                Some(status) if status.success() => {
-                    // FFmpeg exited cleanly (exit code 0)
-                    // This might happen if the input stream ended
-                    None
-                }
-                Some(status) => {
-                    // FFmpeg exited with error
-                    let code = status.code().unwrap_or(-1);
-                    let base_msg = format!("FFmpeg exited with code {code}");
-
-                    // Append detailed error if available
-                    if let Some(details) = error_details {
-                        Some(format!("{base_msg}: {details}"))
-                    } else {
-                        Some(base_msg)
-                    }
-                }
-                None => {
-                    // Couldn't get exit status
-                    let base_msg = "FFmpeg process terminated unexpectedly".to_string();
-                    if let Some(details) = error_details {
-                        Some(format!("{base_msg}: {details}"))
-                    } else {
-                        Some(base_msg)
-                    }
-                }
-            };
-
-            if let Some(error) = error_message {
-                log::error!("[FFmpeg:{group_id}] Stream crashed: {error}");
-                if !recent_lines.is_empty() {
-                    log::warn!("[FFmpeg:{group_id}] Last 10 stderr lines:");
-                    for entry in recent_lines.iter().rev().take(10).rev() {
-                        log::warn!("[FFmpeg:{group_id}]   {entry}");
-                    }
-                }
-
-                // Emit stream_error event with group_id, error message, and reconnection hint
-                emit_event(
-                    event_sink.as_ref(),
-                    "stream_error",
-                    &serde_json::json!({
-                        "groupId": group_id,
-                        "error": error,
-                        "canRetry": true,
-                        "suggestion": "Stream connection lost. Click retry to reconnect automatically."
-                    }),
-                );
-            } else {
-                // Clean exit (input ended)
-                emit_event(event_sink.as_ref(), "stream_ended", &group_id);
-            }
-        }
-
-        // Check relay refcount and stop relay if no more groups are using it
-        // Use atomic load to avoid race condition where multiple groups finish simultaneously
-        let should_stop_relay = relay_refcount.load(Ordering::SeqCst) == 0;
-        if should_stop_relay {
-            if let Ok(procs) = processes.lock() {
-                if !procs.is_empty() {
-                    return;
-                }
-            }
-            if let Ok(mut relay_guard) = relay.lock() {
-                if let Some(mut relay_proc) = relay_guard.take() {
-                    log::info!("Stopping relay process (no active groups)");
-                    let _ = relay_proc.child.kill();
-                    let _ = relay_proc.child.wait();
-                }
-            }
-        }
+        ctx.handle_process_end();
     }
 
     /// Stop streaming for an output group

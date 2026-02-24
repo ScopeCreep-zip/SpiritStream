@@ -61,29 +61,7 @@ async fn validate_channel_exists(channel: &str) -> Result<bool, String> {
 
 type TwitchClient = TwitchIRCClient<SecureTCPTransport, StaticLoginCredentials>;
 
-const STATUS_DISCONNECTED: u8 = 0;
-const STATUS_CONNECTING: u8 = 1;
-const STATUS_CONNECTED: u8 = 2;
-const STATUS_ERROR: u8 = 3;
 const OUTBOUND_DEDUP_WINDOW_SECS: u64 = 10;
-
-fn status_to_u8(status: ChatConnectionStatus) -> u8 {
-    match status {
-        ChatConnectionStatus::Disconnected => STATUS_DISCONNECTED,
-        ChatConnectionStatus::Connecting => STATUS_CONNECTING,
-        ChatConnectionStatus::Connected => STATUS_CONNECTED,
-        ChatConnectionStatus::Error => STATUS_ERROR,
-    }
-}
-
-fn status_from_u8(value: u8) -> ChatConnectionStatus {
-    match value {
-        STATUS_CONNECTING => ChatConnectionStatus::Connecting,
-        STATUS_CONNECTED => ChatConnectionStatus::Connected,
-        STATUS_ERROR => ChatConnectionStatus::Error,
-        _ => ChatConnectionStatus::Disconnected,
-    }
-}
 
 #[derive(Debug, Clone)]
 struct OutboundMessage {
@@ -108,7 +86,7 @@ impl TwitchConnector {
     pub fn new() -> Self {
         Self {
             client: None,
-            status: Arc::new(AtomicU8::new(STATUS_DISCONNECTED)),
+            status: Arc::new(AtomicU8::new(ChatConnectionStatus::Disconnected.to_u8())),
             last_error: Arc::new(StdMutex::new(None)),
             message_count: Arc::new(AtomicU64::new(0)),
             disconnecting: Arc::new(AtomicBool::new(false)),
@@ -177,7 +155,7 @@ impl ChatPlatform for TwitchConnector {
             return Err(PlatformError::AlreadyConnected);
         }
 
-        self.status.store(status_to_u8(ChatConnectionStatus::Connecting), Ordering::Relaxed);
+        self.status.store(ChatConnectionStatus::Connecting.to_u8(), Ordering::Relaxed);
         self.disconnecting.store(false, Ordering::Relaxed);
         self.can_send = false;
         self.self_login = None;
@@ -216,7 +194,7 @@ impl ChatPlatform for TwitchConnector {
             }
             Ok(false) => {
                 error!("Twitch channel '{}' does not exist", channel_lower);
-                self.status.store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
+                self.status.store(ChatConnectionStatus::Error.to_u8(), Ordering::Relaxed);
                 if let Ok(mut guard) = self.last_error.lock() {
                     *guard = Some(format!("Channel '{}' does not exist on Twitch", channel_lower));
                 }
@@ -264,7 +242,7 @@ impl ChatPlatform for TwitchConnector {
 
         // Join the channel
         if let Err(e) = client.join(channel_lower.clone()) {
-            self.status.store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
+            self.status.store(ChatConnectionStatus::Error.to_u8(), Ordering::Relaxed);
             if let Ok(mut guard) = self.last_error.lock() {
                 *guard = Some(format!("Failed to join channel: {}", e));
             }
@@ -273,7 +251,7 @@ impl ChatPlatform for TwitchConnector {
 
         self.client = Some(Arc::new(client));
         self.channel = Some(channel_lower.clone());
-        self.status.store(status_to_u8(ChatConnectionStatus::Connected), Ordering::Relaxed);
+        self.status.store(ChatConnectionStatus::Connected.to_u8(), Ordering::Relaxed);
 
         info!("Connected to Twitch channel: {}", channel_lower);
 
@@ -340,7 +318,7 @@ impl ChatPlatform for TwitchConnector {
                     }
                     ServerMessage::Reconnect(_) => {
                         warn!("Twitch server requested reconnect");
-                        status.store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
+                        status.store(ChatConnectionStatus::Error.to_u8(), Ordering::Relaxed);
                         if let Ok(mut guard) = last_error.lock() {
                             *guard = Some("Twitch server requested reconnect".to_string());
                         }
@@ -351,7 +329,7 @@ impl ChatPlatform for TwitchConnector {
                 }
             }
             if !disconnecting.load(Ordering::Relaxed) {
-                status.store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
+                status.store(ChatConnectionStatus::Error.to_u8(), Ordering::Relaxed);
                 if let Ok(mut guard) = last_error.lock() {
                     *guard = Some("Twitch connection lost".to_string());
                 }
@@ -379,7 +357,7 @@ impl ChatPlatform for TwitchConnector {
 
         self.client = None;
         self.channel = None;
-        self.status.store(status_to_u8(ChatConnectionStatus::Disconnected), Ordering::Relaxed);
+        self.status.store(ChatConnectionStatus::Disconnected.to_u8(), Ordering::Relaxed);
         self.can_send = false;
         if let Ok(mut guard) = self.last_error.lock() {
             *guard = None;
@@ -390,7 +368,7 @@ impl ChatPlatform for TwitchConnector {
     }
 
     fn status(&self) -> ChatConnectionStatus {
-        status_from_u8(self.status.load(Ordering::Relaxed))
+        ChatConnectionStatus::from_u8(self.status.load(Ordering::Relaxed))
     }
 
     fn message_count(&self) -> u64 {

@@ -7,29 +7,6 @@ use crate::models::{ChatConnectionStatus, ChatCredentials, ChatMessage};
 
 use super::platform::{ChatPlatform, PlatformError, PlatformResult};
 
-const STATUS_DISCONNECTED: u8 = 0;
-const STATUS_CONNECTING: u8 = 1;
-const STATUS_CONNECTED: u8 = 2;
-const STATUS_ERROR: u8 = 3;
-
-fn status_to_u8(status: ChatConnectionStatus) -> u8 {
-    match status {
-        ChatConnectionStatus::Disconnected => STATUS_DISCONNECTED,
-        ChatConnectionStatus::Connecting => STATUS_CONNECTING,
-        ChatConnectionStatus::Connected => STATUS_CONNECTED,
-        ChatConnectionStatus::Error => STATUS_ERROR,
-    }
-}
-
-fn status_from_u8(value: u8) -> ChatConnectionStatus {
-    match value {
-        STATUS_CONNECTING => ChatConnectionStatus::Connecting,
-        STATUS_CONNECTED => ChatConnectionStatus::Connected,
-        STATUS_ERROR => ChatConnectionStatus::Error,
-        _ => ChatConnectionStatus::Disconnected,
-    }
-}
-
 /// Stripchat connector placeholder.
 ///
 /// Public Stripchat developer docs currently expose studio stats APIs,
@@ -45,7 +22,7 @@ pub struct StripchatConnector {
 impl StripchatConnector {
     pub fn new() -> Self {
         Self {
-            status: Arc::new(AtomicU8::new(STATUS_DISCONNECTED)),
+            status: Arc::new(AtomicU8::new(ChatConnectionStatus::Disconnected.to_u8())),
             message_count: Arc::new(AtomicU64::new(0)),
             last_error: Arc::new(StdMutex::new(None)),
         }
@@ -63,7 +40,7 @@ impl ChatPlatform for StripchatConnector {
             ChatCredentials::Stripchat { username } => username,
             _ => {
                 self.status
-                    .store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
+                    .store(ChatConnectionStatus::Error.to_u8(), Ordering::Relaxed);
                 if let Ok(mut guard) = self.last_error.lock() {
                     *guard = Some("Expected Stripchat credentials".to_string());
                 }
@@ -74,7 +51,7 @@ impl ChatPlatform for StripchatConnector {
         };
 
         self.status
-            .store(status_to_u8(ChatConnectionStatus::Connecting), Ordering::Relaxed);
+            .store(ChatConnectionStatus::Connecting.to_u8(), Ordering::Relaxed);
 
         let message = format!(
             "Stripchat chat integration is not available yet for username '{username}'. \
@@ -82,7 +59,7 @@ Public docs currently expose studio stats APIs, not a stable chat API."
         );
 
         self.status
-            .store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
+            .store(ChatConnectionStatus::Error.to_u8(), Ordering::Relaxed);
         if let Ok(mut guard) = self.last_error.lock() {
             *guard = Some(message.clone());
         }
@@ -92,7 +69,7 @@ Public docs currently expose studio stats APIs, not a stable chat API."
 
     async fn disconnect(&mut self) -> PlatformResult<()> {
         self.status
-            .store(status_to_u8(ChatConnectionStatus::Disconnected), Ordering::Relaxed);
+            .store(ChatConnectionStatus::Disconnected.to_u8(), Ordering::Relaxed);
         if let Ok(mut guard) = self.last_error.lock() {
             *guard = None;
         }
@@ -100,7 +77,7 @@ Public docs currently expose studio stats APIs, not a stable chat API."
     }
 
     fn status(&self) -> ChatConnectionStatus {
-        status_from_u8(self.status.load(Ordering::Relaxed))
+        ChatConnectionStatus::from_u8(self.status.load(Ordering::Relaxed))
     }
 
     fn message_count(&self) -> u64 {

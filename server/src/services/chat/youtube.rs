@@ -14,29 +14,7 @@ use crate::models::{
 use super::platform::{ChatPlatform, PlatformError, PlatformResult};
 
 const YOUTUBE_API_BASE: &str = "https://www.googleapis.com/youtube/v3";
-const STATUS_DISCONNECTED: u8 = 0;
-const STATUS_CONNECTING: u8 = 1;
-const STATUS_CONNECTED: u8 = 2;
-const STATUS_ERROR: u8 = 3;
 const OUTBOUND_DEDUP_WINDOW_SECS: u64 = 10;
-
-fn status_to_u8(status: ChatConnectionStatus) -> u8 {
-    match status {
-        ChatConnectionStatus::Disconnected => STATUS_DISCONNECTED,
-        ChatConnectionStatus::Connecting => STATUS_CONNECTING,
-        ChatConnectionStatus::Connected => STATUS_CONNECTED,
-        ChatConnectionStatus::Error => STATUS_ERROR,
-    }
-}
-
-fn status_from_u8(value: u8) -> ChatConnectionStatus {
-    match value {
-        STATUS_CONNECTING => ChatConnectionStatus::Connecting,
-        STATUS_CONNECTED => ChatConnectionStatus::Connected,
-        STATUS_ERROR => ChatConnectionStatus::Error,
-        _ => ChatConnectionStatus::Disconnected,
-    }
-}
 
 #[derive(Debug, Clone)]
 struct OutboundMessage {
@@ -63,7 +41,7 @@ pub struct YouTubeConnector {
 impl YouTubeConnector {
     pub fn new() -> Self {
         Self {
-            status: Arc::new(AtomicU8::new(STATUS_DISCONNECTED)),
+            status: Arc::new(AtomicU8::new(ChatConnectionStatus::Disconnected.to_u8())),
             last_error: Arc::new(StdMutex::new(None)),
             message_count: Arc::new(AtomicU64::new(0)),
             disconnecting: Arc::new(AtomicBool::new(false)),
@@ -238,7 +216,7 @@ impl ChatPlatform for YouTubeConnector {
             return Err(PlatformError::AlreadyConnected);
         }
 
-        self.status.store(status_to_u8(ChatConnectionStatus::Connecting), Ordering::Relaxed);
+        self.status.store(ChatConnectionStatus::Connecting.to_u8(), Ordering::Relaxed);
         self.disconnecting.store(false, Ordering::Relaxed);
         self.can_send = false;
         self.message_count.store(0, Ordering::Relaxed);
@@ -273,7 +251,7 @@ impl ChatPlatform for YouTubeConnector {
         };
 
         info!("Connecting to YouTube Live Chat for channel: {}", channel_id);
-        self.status.store(status_to_u8(ChatConnectionStatus::Connecting), Ordering::Relaxed);
+        self.status.store(ChatConnectionStatus::Connecting.to_u8(), Ordering::Relaxed);
 
         let http_client = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
@@ -287,7 +265,7 @@ impl ChatPlatform for YouTubeConnector {
                 id
             }
             Err(e) => {
-                self.status.store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
+                self.status.store(ChatConnectionStatus::Error.to_u8(), Ordering::Relaxed);
                 if let Ok(mut guard) = self.last_error.lock() {
                     *guard = Some(format!("{}", e));
                 }
@@ -300,7 +278,7 @@ impl ChatPlatform for YouTubeConnector {
         self.auth_mode = Some(auth_mode.clone());
         self.can_send = matches!(auth_mode, AuthMode::OAuth { .. });
         self.self_channel_id = self.channel_id.clone();
-        self.status.store(status_to_u8(ChatConnectionStatus::Connected), Ordering::Relaxed);
+        self.status.store(ChatConnectionStatus::Connected.to_u8(), Ordering::Relaxed);
 
         // Create disconnect channel
         let (disconnect_tx, mut disconnect_rx) = mpsc::channel::<()>(1);
@@ -343,7 +321,7 @@ impl ChatPlatform for YouTubeConnector {
                         if !resp.status().is_success() {
                             let http_status = resp.status();
                             let body = resp.text().await.unwrap_or_default();
-                            status.store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
+                            status.store(ChatConnectionStatus::Error.to_u8(), Ordering::Relaxed);
                             // 403 often means quota exhausted; 401 means token expired
                             if http_status.as_u16() == 401 {
                                 error!("YouTube API auth expired, waiting for token refresh");
@@ -367,7 +345,7 @@ impl ChatPlatform for YouTubeConnector {
                                     if let Ok(mut guard) = last_error.lock() {
                                         *guard = None;
                                     }
-                                    status.store(status_to_u8(ChatConnectionStatus::Connected), Ordering::Relaxed);
+                                    status.store(ChatConnectionStatus::Connected.to_u8(), Ordering::Relaxed);
 
                                     // Update polling interval from API recommendation
                                     if let Some(interval) = data["pollingIntervalMillis"].as_u64() {
@@ -459,7 +437,7 @@ impl ChatPlatform for YouTubeConnector {
                                 }
                                 Err(e) => {
                                     warn!("Failed to parse YouTube chat response: {}", e);
-                                    status.store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
+                                    status.store(ChatConnectionStatus::Error.to_u8(), Ordering::Relaxed);
                                     if let Ok(mut guard) = last_error.lock() {
                                         *guard = Some("Failed to parse YouTube chat response".to_string());
                                     }
@@ -469,7 +447,7 @@ impl ChatPlatform for YouTubeConnector {
                     }
                     Err(e) => {
                         warn!("YouTube chat request failed: {}", e);
-                        status.store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
+                        status.store(ChatConnectionStatus::Error.to_u8(), Ordering::Relaxed);
                         if let Ok(mut guard) = last_error.lock() {
                             *guard = Some("YouTube chat request failed".to_string());
                         }
@@ -481,7 +459,7 @@ impl ChatPlatform for YouTubeConnector {
             }
 
             if !disconnecting.load(Ordering::Relaxed) {
-                status.store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
+                status.store(ChatConnectionStatus::Error.to_u8(), Ordering::Relaxed);
                 if let Ok(mut guard) = last_error.lock() {
                     *guard = Some("YouTube chat polling stopped".to_string());
                 }
@@ -510,7 +488,7 @@ impl ChatPlatform for YouTubeConnector {
         self.live_chat_id = None;
         self.auth_mode = None;
         self.can_send = false;
-        self.status.store(status_to_u8(ChatConnectionStatus::Disconnected), Ordering::Relaxed);
+        self.status.store(ChatConnectionStatus::Disconnected.to_u8(), Ordering::Relaxed);
         self.oauth_token_tx = None;
         if let Ok(mut guard) = self.last_error.lock() {
             *guard = None;
@@ -521,7 +499,7 @@ impl ChatPlatform for YouTubeConnector {
     }
 
     fn status(&self) -> ChatConnectionStatus {
-        status_from_u8(self.status.load(Ordering::Relaxed))
+        ChatConnectionStatus::from_u8(self.status.load(Ordering::Relaxed))
     }
 
     fn message_count(&self) -> u64 {

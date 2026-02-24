@@ -250,6 +250,26 @@ pub enum ChatConnectionStatus {
     Error,
 }
 
+impl ChatConnectionStatus {
+    pub fn to_u8(self) -> u8 {
+        match self {
+            Self::Disconnected => 0,
+            Self::Connecting => 1,
+            Self::Connected => 2,
+            Self::Error => 3,
+        }
+    }
+
+    pub fn from_u8(value: u8) -> Self {
+        match value {
+            1 => Self::Connecting,
+            2 => Self::Connected,
+            3 => Self::Error,
+            _ => Self::Disconnected,
+        }
+    }
+}
+
 /// Status information for a chat platform
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

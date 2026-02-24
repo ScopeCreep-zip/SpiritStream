@@ -104,6 +104,32 @@ pub(crate) async fn ensure_fresh_oauth_token(
     })
 }
 
+/// Apply a refreshed OAuth token to profile settings and persist to disk.
+/// Returns the access token (refreshed or original).
+pub(crate) async fn apply_and_persist_oauth_refresh(
+    state: &AppState,
+    provider: &str,
+    fresh: &FreshOAuthToken,
+    profile_settings: &mut ProfileSettings,
+) -> String {
+    if fresh.refreshed {
+        let account = match provider {
+            "twitch" => &mut profile_settings.oauth.twitch,
+            "youtube" => &mut profile_settings.oauth.youtube,
+            _ => return fresh.access_token.clone(),
+        };
+        account.access_token = fresh.access_token.clone();
+        if let Some(rt) = &fresh.refresh_token {
+            account.refresh_token = rt.clone();
+        }
+        account.expires_at = fresh.expires_at;
+        if let Err(err) = persist_active_profile_settings(state, profile_settings.clone()).await {
+            log::warn!("Failed to persist {} OAuth refresh: {err}", provider);
+        }
+    }
+    fresh.access_token.clone()
+}
+
 pub(crate) async fn set_active_profile(state: &AppState, profile: &Profile) {
     {
         let mut guard = state.active_profile_name.lock().await;

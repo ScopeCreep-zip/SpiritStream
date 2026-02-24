@@ -14,29 +14,6 @@ use crate::models::{
 
 use super::platform::{ChatPlatform, PlatformError, PlatformResult};
 
-const STATUS_DISCONNECTED: u8 = 0;
-const STATUS_CONNECTING: u8 = 1;
-const STATUS_CONNECTED: u8 = 2;
-const STATUS_ERROR: u8 = 3;
-
-fn status_to_u8(status: ChatConnectionStatus) -> u8 {
-    match status {
-        ChatConnectionStatus::Disconnected => STATUS_DISCONNECTED,
-        ChatConnectionStatus::Connecting => STATUS_CONNECTING,
-        ChatConnectionStatus::Connected => STATUS_CONNECTED,
-        ChatConnectionStatus::Error => STATUS_ERROR,
-    }
-}
-
-fn status_from_u8(value: u8) -> ChatConnectionStatus {
-    match value {
-        STATUS_CONNECTING => ChatConnectionStatus::Connecting,
-        STATUS_CONNECTED => ChatConnectionStatus::Connected,
-        STATUS_ERROR => ChatConnectionStatus::Error,
-        _ => ChatConnectionStatus::Disconnected,
-    }
-}
-
 async fn fetch_chat_token(client_id: &str, channel_id: &str) -> Result<String, PlatformError> {
     let url = format!(
         "https://open-api.trovo.live/openplatform/chat/channel-token/{}",
@@ -89,7 +66,7 @@ pub struct TrovoConnector {
 impl TrovoConnector {
     pub fn new() -> Self {
         Self {
-            status: Arc::new(AtomicU8::new(STATUS_DISCONNECTED)),
+            status: Arc::new(AtomicU8::new(ChatConnectionStatus::Disconnected.to_u8())),
             last_error: Arc::new(StdMutex::new(None)),
             message_count: Arc::new(AtomicU64::new(0)),
             disconnecting: Arc::new(AtomicBool::new(false)),
@@ -111,7 +88,7 @@ impl ChatPlatform for TrovoConnector {
         }
 
         self.status
-            .store(status_to_u8(ChatConnectionStatus::Connecting), Ordering::Relaxed);
+            .store(ChatConnectionStatus::Connecting.to_u8(), Ordering::Relaxed);
         self.disconnecting.store(false, Ordering::Relaxed);
         self.message_count.store(0, Ordering::Relaxed);
         self.can_send = false;
@@ -123,7 +100,7 @@ impl ChatPlatform for TrovoConnector {
             ChatCredentials::Trovo { channel_id } => channel_id,
             _ => {
                 self.status
-                    .store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
+                    .store(ChatConnectionStatus::Error.to_u8(), Ordering::Relaxed);
                 if let Ok(mut guard) = self.last_error.lock() {
                     *guard = Some("Expected Trovo credentials".to_string());
                 }
@@ -137,7 +114,7 @@ impl ChatPlatform for TrovoConnector {
             .or_else(|_| env::var("TROVO_CLIENT_ID"))
             .map_err(|_| {
             self.status
-                .store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
+                .store(ChatConnectionStatus::Error.to_u8(), Ordering::Relaxed);
             if let Ok(mut guard) = self.last_error.lock() {
                 *guard = Some(
                     "Missing SPIRITSTREAM_TROVO_CLIENT_ID (or TROVO_CLIENT_ID) in environment"
@@ -152,7 +129,7 @@ impl ChatPlatform for TrovoConnector {
 
         let token = fetch_chat_token(&client_id, &channel_id).await.map_err(|e| {
             self.status
-                .store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
+                .store(ChatConnectionStatus::Error.to_u8(), Ordering::Relaxed);
             if let Ok(mut guard) = self.last_error.lock() {
                 *guard = Some(format!("{e}"));
             }
@@ -163,7 +140,7 @@ impl ChatPlatform for TrovoConnector {
             .await
             .map_err(|e| {
                 self.status
-                    .store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
+                    .store(ChatConnectionStatus::Error.to_u8(), Ordering::Relaxed);
                 if let Ok(mut guard) = self.last_error.lock() {
                     *guard = Some(format!("Trovo websocket connection failed: {e}"));
                 }
@@ -183,7 +160,7 @@ impl ChatPlatform for TrovoConnector {
             .await
             .map_err(|e| {
                 self.status
-                    .store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
+                    .store(ChatConnectionStatus::Error.to_u8(), Ordering::Relaxed);
                 if let Ok(mut guard) = self.last_error.lock() {
                     *guard = Some(format!("Failed to send Trovo AUTH: {e}"));
                 }
@@ -227,7 +204,7 @@ impl ChatPlatform for TrovoConnector {
 
         auth_ok.map_err(|e| {
             self.status
-                .store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
+                .store(ChatConnectionStatus::Error.to_u8(), Ordering::Relaxed);
             if let Ok(mut guard) = self.last_error.lock() {
                 *guard = Some(format!("{e}"));
             }
@@ -237,7 +214,7 @@ impl ChatPlatform for TrovoConnector {
         let (disconnect_tx, mut disconnect_rx) = mpsc::channel::<()>(1);
         self.disconnect_tx = Some(disconnect_tx);
         self.status
-            .store(status_to_u8(ChatConnectionStatus::Connected), Ordering::Relaxed);
+            .store(ChatConnectionStatus::Connected.to_u8(), Ordering::Relaxed);
 
         let status = self.status.clone();
         let last_error = self.last_error.clone();
@@ -259,7 +236,7 @@ impl ChatPlatform for TrovoConnector {
                             if let Ok(mut guard) = last_error.lock() {
                                 *guard = Some("Trovo heartbeat failed".to_string());
                             }
-                            status.store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
+                            status.store(ChatConnectionStatus::Error.to_u8(), Ordering::Relaxed);
                             break;
                         }
                     }
@@ -350,7 +327,7 @@ impl ChatPlatform for TrovoConnector {
                                 if let Ok(mut guard) = last_error.lock() {
                                     *guard = Some(format!("Trovo read error: {err}"));
                                 }
-                                status.store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
+                                status.store(ChatConnectionStatus::Error.to_u8(), Ordering::Relaxed);
                                 break;
                             }
                         }
@@ -359,7 +336,7 @@ impl ChatPlatform for TrovoConnector {
             }
 
             if !disconnecting.load(Ordering::Relaxed) {
-                status.store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
+                status.store(ChatConnectionStatus::Error.to_u8(), Ordering::Relaxed);
                 if let Ok(mut guard) = last_error.lock() {
                     if guard.is_none() {
                         *guard = Some("Trovo connection lost".to_string());
@@ -384,7 +361,7 @@ impl ChatPlatform for TrovoConnector {
         }
 
         self.status
-            .store(status_to_u8(ChatConnectionStatus::Disconnected), Ordering::Relaxed);
+            .store(ChatConnectionStatus::Disconnected.to_u8(), Ordering::Relaxed);
         self.can_send = false;
         if let Ok(mut guard) = self.last_error.lock() {
             *guard = None;
@@ -394,7 +371,7 @@ impl ChatPlatform for TrovoConnector {
     }
 
     fn status(&self) -> ChatConnectionStatus {
-        status_from_u8(self.status.load(Ordering::Relaxed))
+        ChatConnectionStatus::from_u8(self.status.load(Ordering::Relaxed))
     }
 
     fn message_count(&self) -> u64 {
