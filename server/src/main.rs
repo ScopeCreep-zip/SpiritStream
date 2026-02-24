@@ -114,6 +114,8 @@ struct AppState {
     active_profile_settings: Arc<AsyncMutex<Option<ProfileSettings>>>,
     // Allowed export directories for path validation
     home_dir: Option<PathBuf>,
+    // True when server is bound to loopback address (127.0.0.1 / ::1)
+    is_localhost: bool,
 }
 
 #[derive(Serialize)]
@@ -226,11 +228,11 @@ fn mask_sensitive(text: &str) -> String {
 
     // Match long alphanumeric strings that follow keywords like token, key, password, secret, Bearer
     let token_re = TOKEN_RE.get_or_init(|| {
-        Regex::new(r#"(?i)(token|key|password|secret|bearer|oauth|access_token|refresh_token|authorization)[=:\s]+['"]?([A-Za-z0-9_\-./+]{20,})['"]?"#).unwrap()
+        Regex::new(r#"(?i)(token|key|password|secret|bearer|oauth|access_token|refresh_token|authorization)[=:\s]+['"]?([A-Za-z0-9_\-./+]{20,})['"]?"#).expect("invalid token redaction regex")
     });
     // Match ENC:: prefixed values
     let enc_re = ENC_RE.get_or_init(|| {
-        Regex::new(r#"ENC::[A-Za-z0-9+/=]{10,}"#).unwrap()
+        Regex::new(r#"ENC::[A-Za-z0-9+/=]{10,}"#).expect("invalid ENC redaction regex")
     });
 
     let result = token_re.replace_all(text, "$1=[REDACTED]");
@@ -276,26 +278,26 @@ fn sanitize_error(error: &str) -> String {
     let masked = mask_sensitive(error);
     log::warn!("[sanitize_error] Original error: {}", masked);
     eprintln!("[sanitize_error] Original error: {}", masked);
-    let lower = error.to_lowercase();
+    let lower = masked.to_lowercase();
 
     if lower.contains("failed to read") || lower.contains("no such file") || lower.contains("not found") {
         return "Resource not found".to_string();
     }
-    // Chat platform errors - pass through user-friendly messages
+    // Chat platform errors - pass through user-friendly messages (using masked version)
     if lower.contains("does not exist on twitch") || lower.contains("channel") && lower.contains("not found") {
-        return error.to_string();
+        return masked.to_string();
     }
     if lower.contains("failed to connect to") {
-        return error.to_string();
+        return masked.to_string();
     }
     if lower.contains("no active live broadcast") || lower.contains("not currently live") {
-        return error.to_string();
+        return masked.to_string();
     }
     if lower.contains("already connected") || lower.contains("not connected") {
-        return error.to_string();
+        return masked.to_string();
     }
     if lower.contains("no youtube oauth token") || lower.contains("no twitch oauth token") || lower.contains("please sign in") {
-        return error.to_string();
+        return masked.to_string();
     }
     if lower.contains("parse") || lower.contains("invalid") {
         return "Invalid request format".to_string();
@@ -309,26 +311,26 @@ fn sanitize_error(error: &str) -> String {
     if lower.contains("encrypt") || lower.contains("decrypt") {
         return "Encryption error".to_string();
     }
-    // Discord webhook errors - pass through user-friendly messages
+    // Discord webhook errors - pass through user-friendly messages (using masked version)
     if lower.contains("webhook") || lower.contains("discord") || lower.contains("rate limit") {
-        return error.to_string();
+        return masked.to_string();
     }
-    // Network errors - safe to show
+    // Network errors - safe to show (using masked version)
     if lower.contains("request failed") || lower.contains("connection") || lower.contains("timeout") {
-        return error.to_string();
+        return masked.to_string();
     }
-    // Missing argument errors - safe to show
+    // Missing argument errors - safe to show (using masked version)
     if lower.contains("missing argument") {
-        return error.to_string();
+        return masked.to_string();
     }
-    // Unknown command errors - safe to show for debugging
+    // Unknown command errors - safe to show for debugging (using masked version)
     if lower.contains("unknown command") {
-        return error.to_string();
+        return masked.to_string();
     }
 
     // Return generic message for unknown errors in production
     // In debug mode, we could log the actual error server-side
-    log::debug!("Sanitized error: {error}");
+    log::debug!("Sanitized error: {masked}");
     "Operation failed".to_string()
 }
 
@@ -1129,13 +1131,32 @@ struct LoginRequest {
     token: String,
 }
 
-/// Set a session cookie
-fn set_session_cookie(cookies: &Cookies) {
+/// Determine if cookies should use the Secure flag.
+/// True when: server is bound to non-loopback address, OR request came via HTTPS proxy.
+fn should_use_secure_cookie(state: &AppState, headers: &HeaderMap) -> bool {
+    if !state.is_localhost {
+        return true;
+    }
+    // Check for reverse proxy forwarding HTTPS
+    if let Some(proto) = headers.get("x-forwarded-proto") {
+        if let Ok(proto_str) = proto.to_str() {
+            return proto_str.eq_ignore_ascii_case("https");
+        }
+    }
+    false
+}
+
+/// Set a session cookie with security flags determined by deployment context
+fn set_session_cookie(cookies: &Cookies, use_secure: bool) {
     let session_id = uuid::Uuid::new_v4().to_string();
     let cookie = Cookie::build((AUTH_COOKIE_NAME, session_id))
         .http_only(true)
-        .secure(false) // Set to true when using HTTPS
-        .same_site(tower_cookies::cookie::SameSite::Strict)
+        .secure(use_secure)
+        .same_site(if use_secure {
+            tower_cookies::cookie::SameSite::None
+        } else {
+            tower_cookies::cookie::SameSite::Strict
+        })
         .path("/")
         .max_age(tower_cookies::cookie::time::Duration::seconds(COOKIE_MAX_AGE_SECS))
         .build();
@@ -1146,18 +1167,19 @@ fn set_session_cookie(cookies: &Cookies) {
 async fn auth_login(
     State(state): State<AppState>,
     cookies: Cookies,
+    headers: HeaderMap,
     Json(payload): Json<LoginRequest>,
 ) -> impl IntoResponse {
-    let expected_token = state.auth_token.as_deref();
+    let use_secure = should_use_secure_cookie(&state, &headers);
 
-    match expected_token {
+    match state.auth_token.as_deref() {
         None => {
             // No token configured - open access, set session cookie anyway
-            set_session_cookie(&cookies);
+            set_session_cookie(&cookies, use_secure);
             Json(json!({ "ok": true }))
         }
         Some(expected) if verify_token(expected, &payload.token) => {
-            set_session_cookie(&cookies);
+            set_session_cookie(&cookies, use_secure);
             Json(json!({ "ok": true }))
         }
         _ => {
@@ -1169,9 +1191,21 @@ async fn auth_login(
 }
 
 /// POST /auth/logout - Clear session cookie
-async fn auth_logout(cookies: Cookies) -> impl IntoResponse {
+async fn auth_logout(
+    State(state): State<AppState>,
+    cookies: Cookies,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    let use_secure = should_use_secure_cookie(&state, &headers);
     let cookie = Cookie::build((AUTH_COOKIE_NAME, ""))
         .path("/")
+        .http_only(true)
+        .secure(use_secure)
+        .same_site(if use_secure {
+            tower_cookies::cookie::SameSite::None
+        } else {
+            tower_cookies::cookie::SameSite::Strict
+        })
         .max_age(tower_cookies::cookie::time::Duration::ZERO)
         .build();
     cookies.remove(cookie);
@@ -3078,7 +3112,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         (final_host, configured_port)
     };
-    log::info!("Server will bind to {host}:{port}");
+    let is_localhost = parse_host(&host).is_loopback();
+    log::info!("Server will bind to {host}:{port} (localhost={is_localhost})");
 
     let custom_ffmpeg_path = settings.as_ref().and_then(|s| {
         if s.ffmpeg_path.is_empty() {
@@ -3171,6 +3206,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         active_profile_name: Arc::new(AsyncMutex::new(None)),
         active_profile_settings: Arc::new(AsyncMutex::new(None)),
         home_dir,
+        is_localhost,
     };
 
     // Start background YouTube token refresh task
@@ -3182,12 +3218,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Build CORS layer
     let cors = build_cors_layer();
 
-    // Build CSP header
-    let csp_value = HeaderValue::from_static(
+    // Build CSP header dynamically based on binding address
+    let csp_connect_src = if is_localhost {
+        "connect-src 'self' ws://localhost:* wss://localhost:* http://localhost:* http://127.0.0.1:*"
+    } else {
+        // When serving UI remotely, 'self' covers the server's own origin
+        // Also allow ws/wss for WebSocket on same origin
+        "connect-src 'self' ws: wss:"
+    };
+    let csp_string = format!(
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
-         connect-src 'self' ws://localhost:* wss://localhost:* http://localhost:* http://127.0.0.1:*; \
-         img-src 'self' data:; font-src 'self'"
+         {}; img-src 'self' data:; font-src 'self'",
+        csp_connect_src
     );
+    let csp_value = HeaderValue::from_str(&csp_string)
+        .unwrap_or_else(|_| HeaderValue::from_static("default-src 'self'"));
 
     // Build router with security layers
     // Protected routes (require authentication)
@@ -3235,6 +3280,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         log::info!("  Authentication: enabled");
     } else {
         log::info!("  Authentication: disabled (no token configured)");
+    }
+    if !is_localhost && state.auth_token.is_none() {
+        log::warn!(
+            "WARNING: Server bound to {} without authentication token. \
+             Set SPIRITSTREAM_API_TOKEN for security.",
+            host
+        );
     }
 
     let listener = tokio::net::TcpListener::bind(address).await?;

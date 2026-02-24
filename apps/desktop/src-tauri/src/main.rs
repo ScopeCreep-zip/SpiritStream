@@ -281,12 +281,35 @@ fn launch<R: Runtime>(app: &AppHandle<R>) {
     });
 }
 
+/// Validate that a host string is a valid IP address.
+fn validate_host(host: &str) -> Result<String, String> {
+    let trimmed = host.trim();
+    if trimmed.is_empty() {
+        return Ok(DEFAULT_HOST.to_string());
+    }
+    trimmed
+        .parse::<std::net::IpAddr>()
+        .map(|_| trimmed.to_string())
+        .map_err(|_| {
+            format!(
+                "Invalid host address: '{}'. Expected an IP address (e.g., 127.0.0.1 or 0.0.0.0)",
+                trimmed
+            )
+        })
+}
+
 async fn run_launcher<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let settings = load_settings(app).unwrap_or_default();
 
     let settings_host =
         if settings.backend_remote_enabled && !settings.backend_host.trim().is_empty() {
-            settings.backend_host.clone()
+            match validate_host(&settings.backend_host) {
+                Ok(h) => h,
+                Err(e) => {
+                    log::warn!("Invalid backend_host in settings: {e}. Falling back to localhost.");
+                    DEFAULT_HOST.to_string()
+                }
+            }
         } else {
             DEFAULT_HOST.to_string()
         };
@@ -303,7 +326,16 @@ async fn run_launcher<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
         Some(settings.backend_token.clone())
     };
 
-    let host = env::var("SPIRITSTREAM_HOST").unwrap_or(settings_host);
+    let host = match env::var("SPIRITSTREAM_HOST") {
+        Ok(env_host) => match validate_host(&env_host) {
+            Ok(h) => h,
+            Err(e) => {
+                log::warn!("Invalid SPIRITSTREAM_HOST env var: {e}. Using settings value.");
+                settings_host
+            }
+        },
+        Err(_) => settings_host,
+    };
     let port = env::var("SPIRITSTREAM_PORT").unwrap_or(settings_port);
 
     // Kill any zombie server processes from previous runs to avoid port conflicts

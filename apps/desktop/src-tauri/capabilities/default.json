@@ -44,18 +44,20 @@
     {
       "identifier": "fs:scope",
       "allow": [
-        "$HOME/**",
         "$APPDATA/**",
         "$LOCALAPPDATA/**",
+        "$RESOURCE/**",
         "$DOCUMENT/**",
         "$DOWNLOAD/**",
         "$DESKTOP/**",
-        "$RESOURCE/**",
-        "C:\\Program Files\\**",
-        "C:\\Program Files (x86)\\**",
-        "/usr/local/bin/**",
-        "/usr/bin/**",
-        "/opt/**"
+        "/usr/local/bin/ffmpeg",
+        "/usr/local/bin/ffprobe",
+        "/usr/bin/ffmpeg",
+        "/usr/bin/ffprobe",
+        "/opt/homebrew/bin/ffmpeg",
+        "/opt/homebrew/bin/ffprobe",
+        "C:\\Program Files\\ffmpeg\\**",
+        "C:\\Program Files (x86)\\ffmpeg\\**"
       ]
     },
     "dialog:default",
