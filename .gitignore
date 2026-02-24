@@ -70,6 +70,9 @@ Thumbs.db
 # Turbo
 .turbo/
 
+# Nix
+/result
+
 # FFmpeg binaries (downloaded at runtime)
 ffmpeg
 ffmpeg.exe
