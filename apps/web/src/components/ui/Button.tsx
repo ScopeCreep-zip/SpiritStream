@@ -7,54 +7,47 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
   loading?: boolean;
 }
 
+const VARIANT_CLASSES = {
+  primary:
+    'bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active',
+  secondary:
+    'bg-secondary text-secondary-foreground hover:bg-secondary-hover active:bg-secondary-active',
+  accent:
+    'bg-accent text-accent-foreground hover:bg-accent-hover active:bg-accent-active',
+  ghost:
+    'bg-transparent text-text-secondary hover:bg-bg-hover hover:text-text-primary',
+  outline:
+    'bg-transparent border-2 border-primary text-primary hover:bg-primary-subtle',
+  destructive:
+    'bg-error text-error-foreground hover:bg-error-hover active:bg-error-hover',
+} as const;
+
+const SIZE_CLASSES = {
+  sm: 'text-sm h-9 py-2 px-5',
+  md: 'text-base h-11 py-2.5 px-6',
+  lg: 'text-lg h-14 py-3 px-10',
+  icon: 'w-10 h-10 p-0',
+} as const;
+
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   (
     { className, variant = 'primary', size = 'md', loading, children, disabled, style, ...props },
     ref
   ) => {
-    const variants = {
-      primary:
-        '[background:var(--button-primary,var(--primary))] text-[var(--primary-foreground)] hover:[background:var(--button-primary-hover,var(--primary-hover))] active:[background:var(--button-primary-active,var(--primary-active))]',
-      secondary:
-        '[background:var(--button-secondary,var(--secondary))] text-[var(--secondary-foreground)] hover:[background:var(--button-secondary-hover,var(--secondary-hover))] active:[background:var(--button-secondary-active,var(--secondary-active))]',
-      accent:
-        '[background:var(--button-accent,var(--accent))] text-[var(--accent-foreground)] hover:[background:var(--button-accent-hover,var(--accent-hover))] active:[background:var(--button-accent-active,var(--accent-active))]',
-      ghost:
-        'bg-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]',
-      outline:
-        'bg-transparent border-2 border-[var(--primary)] text-[var(--primary)] hover:bg-[var(--primary-subtle)]',
-      destructive:
-        '[background:var(--button-destructive,var(--error))] text-[var(--error-foreground)] hover:[background:var(--button-destructive-hover,var(--error-hover))] active:[background:var(--button-destructive-active,var(--error-hover))]',
-    };
-
-    const sizeClasses = {
-      sm: 'text-sm',
-      md: 'text-base',
-      lg: 'text-lg',
-      icon: '',
-    };
-
-    const sizeStyles: Record<string, React.CSSProperties> = {
-      sm: { height: '36px', padding: '8px 20px' },
-      md: { height: '44px', padding: '10px 24px' },
-      lg: { height: '56px', padding: '12px 40px' },
-      icon: { width: '40px', height: '40px', padding: '0' },
-    };
-
     return (
       <button
         ref={ref}
         className={cn(
-          'inline-flex items-center justify-center font-semibold rounded-lg transition-all duration-150',
-          'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ring-default)]',
-          'focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--ring-offset)]',
+          'inline-flex items-center justify-center gap-2 font-semibold rounded-lg transition-all duration-150',
+          'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring-default',
+          'focus-visible:ring-offset-2 focus-visible:ring-offset-ring-offset',
           'disabled:opacity-50 disabled:cursor-not-allowed',
           'border-none cursor-pointer',
-          variants[variant],
-          sizeClasses[size],
+          VARIANT_CLASSES[variant],
+          SIZE_CLASSES[size],
           className
         )}
-        style={{ gap: '8px', ...sizeStyles[size], ...style }}
+        style={style}
         disabled={disabled || loading}
         {...props}
       >

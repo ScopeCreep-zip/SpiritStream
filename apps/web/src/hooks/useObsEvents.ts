@@ -1,5 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { events } from '@/lib/backend';
+import { logger } from '@/lib/logger';
+import { OBS_TRIGGER_DELAY_MS } from '@/lib/constants';
 import { useObsStore } from '@/stores/obsStore';
 import { useStreamStore } from '@/stores/streamStore';
 import { useProfileStore } from '@/stores/profileStore';
@@ -25,8 +27,8 @@ const INITIAL_RETRY_DELAY = 2000; // 2 seconds
 const MAX_RETRY_DELAY = 30000; // 30 seconds
 const RETRY_BACKOFF_MULTIPLIER = 1.5;
 
-// Delay before triggering SpiritStream when OBS starts streaming (ms)
-const OBS_TO_SPIRITSTREAM_DELAY_MS = 2000;
+// Delay before triggering SpiritStream when OBS starts streaming
+const OBS_TO_SPIRITSTREAM_DELAY_MS = OBS_TRIGGER_DELAY_MS;
 
 /**
  * Hook that listens for OBS WebSocket events and handles:
@@ -80,23 +82,23 @@ export function useObsEvents() {
       window.clearTimeout(retryTimeoutRef.current);
     }
 
-    console.log(`[useObsEvents] Scheduling retry in ${currentRetryDelay.current}ms`);
+    logger.debug(`[useObsEvents] Scheduling retry in ${currentRetryDelay.current}ms`);
 
     retryTimeoutRef.current = window.setTimeout(async () => {
       retryTimeoutRef.current = null;
 
       if (manuallyDisconnected.current) {
-        console.log('[useObsEvents] Skipping auto-connect - manually disconnected');
+        logger.debug('[useObsEvents] Skipping auto-connect - manually disconnected');
         return;
       }
 
       try {
-        console.log('[useObsEvents] Attempting OBS auto-connect...');
+        logger.debug('[useObsEvents] Attempting OBS auto-connect...');
         await connectRef.current(false); // false = not manual, this is auto-connect
         // Reset retry delay on successful connection
         currentRetryDelay.current = INITIAL_RETRY_DELAY;
       } catch (error) {
-        console.log('[useObsEvents] Auto-connect failed, will retry:', error);
+        logger.debug('[useObsEvents] Auto-connect failed, will retry:', error);
         scheduleRetry();
       }
     }, currentRetryDelay.current);
@@ -111,17 +113,17 @@ export function useObsEvents() {
   // Attempt to connect to OBS (isManual=false for auto-connect)
   const attemptConnect = useCallback(async () => {
     if (manuallyDisconnected.current) {
-      console.log('[useObsEvents] Skipping auto-connect - manually disconnected');
+      logger.debug('[useObsEvents] Skipping auto-connect - manually disconnected');
       return;
     }
 
     try {
-      console.log('[useObsEvents] Attempting OBS auto-connect...');
+      logger.debug('[useObsEvents] Attempting OBS auto-connect...');
       await connectRef.current(false); // false = not manual, this is auto-connect
       // Reset retry delay on successful connection
       currentRetryDelay.current = INITIAL_RETRY_DELAY;
     } catch (error) {
-      console.log('[useObsEvents] Auto-connect failed, will retry:', error);
+      logger.debug('[useObsEvents] Auto-connect failed, will retry:', error);
       scheduleRetry();
     }
   }, [scheduleRetry]);
@@ -201,7 +203,7 @@ export function useObsEvents() {
     const setupListeners = async () => {
       // Listen for OBS connection status changes
       unlistenStatus = await events.on<ObsStatusEvent>('obs://status', (payload) => {
-        console.log('[useObsEvents] Received obs://status:', payload);
+        logger.debug('[useObsEvents] Received obs://status:', payload);
 
         const connectionStatus: ObsConnectionStatus =
           payload.status === 'connecting' ? 'connecting' :
@@ -219,7 +221,7 @@ export function useObsEvents() {
 
       // Listen for OBS stream state changes
       unlistenStreamState = await events.on<ObsStreamStateEvent>('obs://stream_state', (payload) => {
-        console.log('[useObsEvents] Received obs://stream_state:', payload);
+        logger.debug('[useObsEvents] Received obs://stream_state:', payload);
 
         const newStatus = payload.status;
         const wasActive = prevStreamStatus.current === 'active';
@@ -231,7 +233,7 @@ export function useObsEvents() {
 
         // Skip if this change was triggered by us (SpiritStream -> OBS)
         if (triggeredByUs) {
-          console.log('[useObsEvents] Ignoring state change triggered by SpiritStream');
+          logger.debug('[useObsEvents] Ignoring state change triggered by SpiritStream');
           setTriggeredByUs(false);
           prevStreamStatus.current = newStatus;
           return;
@@ -248,16 +250,16 @@ export function useObsEvents() {
 
         // OBS started streaming -> Start SpiritStream
         if (!wasActive && isNowActive) {
-          console.log('[useObsEvents] OBS started streaming, triggering SpiritStream');
+          logger.info('[useObsEvents] OBS started streaming, triggering SpiritStream');
 
           if (!currentProfile) {
-            console.warn('[useObsEvents] No profile loaded, cannot start SpiritStream');
+            logger.warn('[useObsEvents] No profile loaded, cannot start SpiritStream');
             prevStreamStatus.current = newStatus;
             return;
           }
 
           if (isStreaming || activeGroups.size > 0) {
-            console.log('[useObsEvents] SpiritStream already streaming, skipping trigger');
+            logger.debug('[useObsEvents] SpiritStream already streaming, skipping trigger');
             prevStreamStatus.current = newStatus;
             return;
           }
@@ -268,7 +270,7 @@ export function useObsEvents() {
           );
 
           if (eligibleGroups.length === 0) {
-            console.warn('[useObsEvents] No eligible output groups to stream');
+            logger.warn('[useObsEvents] No eligible output groups to stream');
             prevStreamStatus.current = newStatus;
             return;
           }
@@ -280,23 +282,23 @@ export function useObsEvents() {
           // Add delay before starting SpiritStream to let OBS stabilize
           setTimeout(() => {
             startAllGroups(eligibleGroups, incomingUrl).catch((error) => {
-              console.error('[useObsEvents] Failed to start SpiritStream:', error);
+              logger.error('[useObsEvents] Failed to start SpiritStream:', error);
             });
           }, OBS_TO_SPIRITSTREAM_DELAY_MS);
         }
 
         // OBS stopped streaming -> Stop SpiritStream
         if (wasActive && isNowInactive) {
-          console.log('[useObsEvents] OBS stopped streaming, triggering SpiritStream stop');
+          logger.info('[useObsEvents] OBS stopped streaming, triggering SpiritStream stop');
 
           if (!isStreaming && activeGroups.size === 0) {
-            console.log('[useObsEvents] SpiritStream not streaming, skipping stop trigger');
+            logger.debug('[useObsEvents] SpiritStream not streaming, skipping stop trigger');
             prevStreamStatus.current = newStatus;
             return;
           }
 
           stopAllGroups().catch((error) => {
-            console.error('[useObsEvents] Failed to stop SpiritStream:', error);
+            logger.error('[useObsEvents] Failed to stop SpiritStream:', error);
           });
         }
 

@@ -21,22 +21,22 @@ const statusConfig: Record<
 > = {
   connected: {
     icon: Wifi,
-    bgClass: 'bg-[var(--success-subtle)]',
-    textClass: 'text-[var(--success-text)]',
-    dotClass: 'bg-[var(--success)]',
+    bgClass: 'bg-success-subtle',
+    textClass: 'text-success-text',
+    dotClass: 'bg-success',
   },
   connecting: {
     icon: Loader2,
-    bgClass: 'bg-[var(--warning-subtle)]',
-    textClass: 'text-[var(--warning-text)]',
-    dotClass: 'bg-[var(--warning)]',
+    bgClass: 'bg-warning-subtle',
+    textClass: 'text-warning-text',
+    dotClass: 'bg-warning',
     animate: true,
   },
   disconnected: {
     icon: WifiOff,
-    bgClass: 'bg-[var(--error-subtle)]',
-    textClass: 'text-[var(--error-text)]',
-    dotClass: 'bg-[var(--error)]',
+    bgClass: 'bg-error-subtle',
+    textClass: 'text-error-text',
+    dotClass: 'bg-error',
   },
 };
 

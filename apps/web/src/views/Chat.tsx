@@ -10,12 +10,14 @@ import { Modal } from '@/components/ui/Modal';
 import { ChatList } from '@/components/chat/ChatList';
 import { CHAT_OVERLAY_SETTINGS_EVENT, CHAT_OVERLAY_ALWAYS_ON_TOP_EVENT } from '@/lib/chatEvents';
 import { openChatOverlay, setOverlayAlwaysOnTop } from '@/lib/chatWindow';
+import { CHAT_POLL_INTERVAL_MS } from '@/lib/constants';
 import { useChatStore } from '@/stores/chatStore';
 import { useProfileStore } from '@/stores/profileStore';
 import { api, dialogs } from '@/lib/backend';
 import type { ChatMessage, ChatPlatformStatus } from '@/types/chat';
 import { createDefaultChatSettings } from '@/types/profile';
 import { toast } from '@/hooks/useToast';
+import { logger } from '@/lib/logger';
 import { cn } from '@/lib/cn';
 
 export function Chat() {
@@ -44,7 +46,7 @@ export function Chat() {
   const handleTransparentToggle = (transparent: boolean) => {
     setOverlayTransparent(transparent);
     emit(CHAT_OVERLAY_SETTINGS_EVENT, { transparent }).catch((error) => {
-      console.error('Failed to sync chat overlay settings:', error);
+      logger.error('Failed to sync chat overlay settings:', error);
     });
   };
 
@@ -52,7 +54,7 @@ export function Chat() {
     setOverlayAlwaysOnTopState(alwaysOnTop);
     setOverlayAlwaysOnTop(alwaysOnTop);
     emit(CHAT_OVERLAY_ALWAYS_ON_TOP_EVENT, { alwaysOnTop }).catch((error) => {
-      console.error('Failed to sync chat overlay always on top:', error);
+      logger.error('Failed to sync chat overlay always on top:', error);
     });
   };
 
@@ -66,7 +68,7 @@ export function Chat() {
         setStatuses(loadedStatuses);
         setActiveStreamCount(streamCount);
       } catch (error) {
-        console.error('Failed to load chat settings:', error);
+        logger.error('Failed to load chat settings:', error);
       }
     };
     load();
@@ -82,9 +84,9 @@ export function Chat() {
         setStatuses(loadedStatuses);
         setActiveStreamCount(streamCount);
       } catch (error) {
-        console.error('Failed to refresh chat status:', error);
+        logger.error('Failed to refresh chat status:', error);
       }
-    }, 5000);
+    }, CHAT_POLL_INTERVAL_MS);
 
     return () => clearInterval(interval);
   }, []);
@@ -197,7 +199,7 @@ export function Chat() {
         t('chat.exportSuccess', { defaultValue: 'Chat log exported.' })
       );
     } catch (error) {
-      console.error('Failed to export chat log:', error);
+      logger.error('Failed to export chat log:', error);
       toast.error(
         t('chat.exportFailed', { defaultValue: 'Failed to export chat log.' })
       );
@@ -216,7 +218,7 @@ export function Chat() {
       const results = await api.chat.searchSession(query, 500);
       setSearchResults(results);
     } catch (error) {
-      console.error('Failed to search chat session:', error);
+      logger.error('Failed to search chat session:', error);
       toast.error(
         t('chat.searchFailed', { defaultValue: 'Failed to search chat logs.' })
       );
@@ -257,13 +259,13 @@ export function Chat() {
   const statusDotClass = (status: ChatPlatformStatus['status']) => {
     switch (status) {
       case 'connected':
-        return 'bg-[var(--status-live)]';
+        return 'bg-status-live';
       case 'connecting':
-        return 'bg-[var(--status-connecting)]';
+        return 'bg-status-connecting';
       case 'error':
-        return 'bg-[var(--status-error)]';
+        return 'bg-status-error';
       default:
-        return 'bg-[var(--text-tertiary)]';
+        return 'bg-text-tertiary';
     }
   };
 
@@ -341,7 +343,7 @@ export function Chat() {
       setDraftMessage('');
     } catch (error) {
       toast.error(t('chat.sendFailed', { defaultValue: 'Failed to send message' }));
-      console.error('Failed to send chat message:', error);
+      logger.error('Failed to send chat message:', error);
     } finally {
       setIsSending(false);
     }
@@ -360,8 +362,8 @@ export function Chat() {
         </div>
       </CardHeader>
       <CardBody>
-        <div className="flex flex-wrap items-center justify-between" style={{ gap: '16px' }}>
-          <div className="flex flex-wrap items-center" style={{ gap: '24px' }}>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-6">
             <Toggle
               checked={overlayTransparent}
               onChange={handleTransparentToggle}
@@ -379,7 +381,7 @@ export function Chat() {
               })}
             />
           </div>
-          <div className="flex items-center" style={{ gap: '12px' }}>
+          <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" onClick={clearMessages}>
               <Trash2 className="w-4 h-4" />
               {t('common.clear')}
@@ -403,7 +405,7 @@ export function Chat() {
             </Button>
           </div>
         </div>
-        <div className="mt-6 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4">
+        <div className="mt-6 rounded-xl border border-border-subtle bg-bg-elevated p-4">
           <ChatList
             messages={messages}
             className="max-h-[520px]"
@@ -438,11 +440,11 @@ export function Chat() {
             </Button>
           </div>
           {sendTargets.length === 0 ? (
-            <p className="text-xs text-[var(--text-tertiary)]">
+            <p className="text-xs text-text-tertiary">
               {sendDisabledReason}
             </p>
           ) : (
-            <p className="text-xs text-[var(--text-tertiary)]">
+            <p className="text-xs text-text-tertiary">
               {t('chat.sendTargets', {
                 defaultValue: 'Sending to: {{targets}}',
                 targets: sendTargetLabel,
@@ -450,19 +452,19 @@ export function Chat() {
             </p>
           )}
           {platformStates.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-tertiary)]">
-              <span className="font-medium text-[var(--text-secondary)]">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-text-tertiary">
+              <span className="font-medium text-text-secondary">
                 {t('chat.sendStatus', { defaultValue: 'Send status:' })}
               </span>
               {platformStates.map((platform) => (
                 <div
                   key={platform.id}
-                  className="flex items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-2 py-1"
+                  className="flex items-center gap-2 rounded-full border border-border-subtle bg-bg-elevated px-2 py-1"
                 >
                   <span
                     className={cn('inline-block h-2 w-2 rounded-full', statusDotClass(platform.status))}
                   />
-                  <span className="text-[var(--text-primary)]">{platform.label}</span>
+                  <span className="text-text-primary">{platform.label}</span>
                   <span>
                     {platform.configured
                       ? t('chat.platformConfigured', { defaultValue: 'Configured' })
@@ -537,7 +539,7 @@ export function Chat() {
             emptyLabel={searchEmptyLabel}
             showTimestamps
           />
-          <div className="flex items-center justify-between text-xs text-[var(--text-tertiary)]">
+          <div className="flex items-center justify-between text-xs text-text-tertiary">
             <span>
               {searchScope === 'session'
                 ? t('chat.searchSessionHint', {

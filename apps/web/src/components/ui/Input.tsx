@@ -16,9 +16,9 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     const describedBy = errorId || helperId;
 
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      <div className="flex flex-col gap-1.5">
         {label && (
-          <label htmlFor={inputId} className="block text-sm font-medium text-[var(--text-primary)]">
+          <label htmlFor={inputId} className="block text-sm font-medium text-text-primary">
             {label}
           </label>
         )}
@@ -30,26 +30,26 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           aria-describedby={describedBy}
           className={cn(
             'w-full text-sm rounded-lg transition-all duration-150',
-            'bg-[var(--bg-sunken)] text-[var(--text-primary)]',
-            'border-2 border-[var(--border-strong)]',
-            'placeholder:text-[var(--text-muted)]',
-            'hover:border-[var(--border-stronger)]',
-            'focus:outline-none focus:border-[var(--border-interactive)]',
-            'focus:ring-[3px] focus:ring-[var(--primary-muted)]',
-            'disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-[var(--bg-muted)]',
-            error && 'border-[var(--error-border)] focus:ring-[var(--error-subtle)]',
+            'bg-bg-sunken text-text-primary',
+            'border-2 border-border-strong',
+            'placeholder:text-text-muted',
+            'hover:border-border-stronger',
+            'focus:outline-none focus:border-border-interactive',
+            'focus:ring-[3px] focus:ring-primary-muted',
+            'disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-bg-muted',
+            error && 'border-error-border focus:ring-error-subtle',
+            'py-2.5 px-3.5',
             className
           )}
-          style={{ padding: '10px 14px' }}
           {...props}
         />
         {helper && !error && (
-          <p id={helperId} className="text-xs text-[var(--text-tertiary)]">
+          <p id={helperId} className="text-xs text-text-tertiary">
             {helper}
           </p>
         )}
         {error && (
-          <p id={errorId} className="text-xs text-[var(--error-text)]" role="alert">
+          <p id={errorId} className="text-xs text-error-text" role="alert">
             {error}
           </p>
         )}

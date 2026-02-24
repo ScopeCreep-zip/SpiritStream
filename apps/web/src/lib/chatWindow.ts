@@ -1,4 +1,6 @@
 import { isTauri } from './backend/env';
+import { logger } from '@/lib/logger';
+import { CHAT_POPUP_WIDTH, CHAT_POPUP_HEIGHT, CHAT_OVERLAY_POLL_MS } from '@/lib/constants';
 import { useChatStore } from '@/stores/chatStore';
 
 const CHAT_OVERLAY_LABEL = 'chat-overlay';
@@ -31,8 +33,8 @@ async function openTauriOverlay() {
 
   const overlay = new WebviewWindow(CHAT_OVERLAY_LABEL, {
     title: 'SpiritStream Chat',
-    width: 420,
-    height: 720,
+    width: CHAT_POPUP_WIDTH,
+    height: CHAT_POPUP_HEIGHT,
     resizable: true,
     decorations: false,
     transparent: true,
@@ -43,15 +45,15 @@ async function openTauriOverlay() {
 
   overlay.once('tauri://created', () => {
     overlay.show().catch((error) => {
-      console.error('Failed to show chat overlay window:', error);
+      logger.error('Failed to show chat overlay window:', error);
     });
     overlay.setFocus().catch((error) => {
-      console.error('Failed to focus chat overlay window:', error);
+      logger.error('Failed to focus chat overlay window:', error);
     });
   });
 
   overlay.once('tauri://error', (error) => {
-    console.error('Failed to create chat overlay window:', error);
+    logger.error('Failed to create chat overlay window:', error);
   });
 }
 
@@ -63,8 +65,8 @@ function openBrowserPopup() {
   }
 
   // Calculate center position
-  const width = 420;
-  const height = 720;
+  const width = CHAT_POPUP_WIDTH;
+  const height = CHAT_POPUP_HEIGHT;
   const left = window.screenX + (window.outerWidth - width) / 2;
   const top = window.screenY + (window.outerHeight - height) / 2;
 
@@ -75,7 +77,7 @@ function openBrowserPopup() {
   );
 
   if (!browserPopup) {
-    console.error('Failed to open chat popup - popup may be blocked');
+    logger.error('Failed to open chat popup - popup may be blocked');
   }
 }
 
@@ -87,7 +89,7 @@ export async function openChatOverlay() {
       openBrowserPopup();
     }
   } catch (error) {
-    console.error('Failed to open chat overlay window:', error);
+    logger.error('Failed to open chat overlay window:', error);
   }
 }
 
@@ -103,7 +105,7 @@ export async function closeChatOverlay() {
         await overlay.close();
       }
     } catch (error) {
-      console.error('Failed to close chat overlay:', error);
+      logger.error('Failed to close chat overlay:', error);
     }
   } else if (browserPopup && !browserPopup.closed) {
     browserPopup.close();
@@ -124,7 +126,7 @@ export async function setOverlayAlwaysOnTop(alwaysOnTop: boolean) {
       await overlay.setAlwaysOnTop(alwaysOnTop);
     }
   } catch (error) {
-    console.error('Failed to set always on top:', error);
+    logger.error('Failed to set always on top:', error);
   }
 }
 
@@ -174,8 +176,8 @@ export async function setupOverlayAutoClose() {
         clearInterval(checkInterval);
         overlayWindow.close().catch(() => {});
       }
-    }, 500);
+    }, CHAT_OVERLAY_POLL_MS);
   } catch (error) {
-    console.error('Failed to set up overlay auto-close:', error);
+    logger.error('Failed to set up overlay auto-close:', error);
   }
 }

@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { api } from '@/lib/backend';
+import { logger } from '@/lib/logger';
 import { showSystemNotification } from '@/lib/notification';
+import { OBS_TRIGGER_DELAY_MS } from '@/lib/constants';
 import { useSettingsStore } from './settingsStore';
 import { api as httpApi } from '@/lib/backend/httpApi';
 import { useObsStore } from '@/stores/obsStore';
@@ -8,9 +10,6 @@ import i18n from '@/lib/i18n';
 import type { OutputGroup } from '@/types/profile';
 import type { StreamStats, StreamStatusType, TargetStats } from '@/types/stream';
 import type { ObsIntegrationDirection } from '@/types/api';
-
-// OBS integration delay (in ms) before triggering OBS after SpiritStream starts
-const OBS_TRIGGER_DELAY_MS = 2000;
 
 /**
  * Trigger OBS stream start/stop based on integration direction
@@ -32,7 +31,7 @@ async function triggerObsIfEnabled(action: 'start' | 'stop'): Promise<void> {
     // Check if connected to OBS
     const isConnected = await httpApi.obs.isConnected();
     if (!isConnected) {
-      console.log('[StreamStore] OBS not connected, skipping trigger');
+      logger.debug('[StreamStore] OBS not connected, skipping trigger');
       return;
     }
 
@@ -44,15 +43,15 @@ async function triggerObsIfEnabled(action: 'start' | 'stop'): Promise<void> {
 
     // Trigger OBS
     if (action === 'start') {
-      console.log('[StreamStore] Triggering OBS stream start');
+      logger.info('[StreamStore] Triggering OBS stream start');
       await httpApi.obs.startStream();
     } else {
-      console.log('[StreamStore] Triggering OBS stream stop');
+      logger.info('[StreamStore] Triggering OBS stream stop');
       await httpApi.obs.stopStream();
     }
   } catch (error) {
     // Don't fail the main stream action if OBS trigger fails
-    console.error('[StreamStore] Failed to trigger OBS:', error);
+    logger.error('[StreamStore] Failed to trigger OBS:', error);
     // Reset the flag on error
     useObsStore.getState().setTriggeredByUs(false);
   }
@@ -181,7 +180,7 @@ export const useStreamStore = create<StreamState>((set, get) => ({
         globalStatus: isStreaming ? 'live' : 'offline',
       });
     } catch (error) {
-      console.error('[StreamStore] Failed to sync with backend:', error);
+      logger.error('[StreamStore] Failed to sync with backend:', error);
     }
   },
 
@@ -190,7 +189,7 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     try {
       return await api.stream.isGroupStreaming(groupId);
     } catch (error) {
-      console.error('[StreamStore] Failed to check group streaming status:', error);
+      logger.error('[StreamStore] Failed to check group streaming status:', error);
       return false;
     }
   },
@@ -502,13 +501,13 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       // Fire and forget - don't block stream start on webhook
       api.discord.sendNotification().then((result) => {
         if (result.success && !result.skippedCooldown) {
-          console.log('[StreamStore] Discord go-live notification sent');
+          logger.info('[StreamStore] Discord go-live notification sent');
         } else if (result.skippedCooldown) {
-          console.log('[StreamStore] Discord notification skipped (cooldown active)');
+          logger.debug('[StreamStore] Discord notification skipped (cooldown active)');
         }
       }).catch((error) => {
         // Don't fail stream start if webhook fails
-        console.warn('[StreamStore] Discord notification failed:', error);
+        logger.warn('[StreamStore] Discord notification failed:', error);
       });
     }
   },

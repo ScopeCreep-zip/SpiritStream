@@ -14,14 +14,14 @@ export function Integrations() {
 
   return (
     <div className="space-y-6">
-      <div className="flex gap-2 border-b border-[var(--border-default)] pb-2">
+      <div className="flex gap-2 border-b border-border-default pb-2">
         <button
           onClick={() => setActiveTab('chat')}
           className={cn(
             'flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm font-medium transition-colors',
             activeTab === 'chat'
-              ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] border border-b-0 border-[var(--border-default)]'
-              : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)]'
+              ? 'bg-bg-surface text-text-primary border border-b-0 border-border-default'
+              : 'text-text-secondary hover:text-text-primary hover:bg-bg-muted'
           )}
         >
           <MessageSquare className="w-4 h-4" />
@@ -32,8 +32,8 @@ export function Integrations() {
           className={cn(
             'flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm font-medium transition-colors',
             activeTab === 'obs'
-              ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] border border-b-0 border-[var(--border-default)]'
-              : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)]'
+              ? 'bg-bg-surface text-text-primary border border-b-0 border-border-default'
+              : 'text-text-secondary hover:text-text-primary hover:bg-bg-muted'
           )}
         >
           <Radio className="w-4 h-4" />
@@ -44,8 +44,8 @@ export function Integrations() {
           className={cn(
             'flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm font-medium transition-colors',
             activeTab === 'discord'
-              ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] border border-b-0 border-[var(--border-default)]'
-              : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)]'
+              ? 'bg-bg-surface text-text-primary border border-b-0 border-border-default'
+              : 'text-text-secondary hover:text-text-primary hover:bg-bg-muted'
           )}
         >
           <Send className="w-4 h-4" />

@@ -24,11 +24,11 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
     const describedBy = errorId || helperId;
 
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      <div className="flex flex-col gap-1.5">
         {label && (
           <label
             htmlFor={selectId}
-            className="block text-sm font-medium text-[var(--text-primary)]"
+            className="block text-sm font-medium text-text-primary"
           >
             {label}
           </label>
@@ -41,17 +41,17 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             aria-describedby={describedBy}
             className={cn(
               'w-full text-sm rounded-lg transition-all duration-150',
-              'bg-[var(--bg-sunken)] text-[var(--text-primary)]',
-              'border-2 border-[var(--border-strong)]',
-              'hover:border-[var(--border-stronger)]',
-              'focus:outline-none focus:border-[var(--border-interactive)]',
-              'focus:ring-[3px] focus:ring-[var(--primary-muted)]',
-              'disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-[var(--bg-muted)]',
+              'bg-bg-sunken text-text-primary',
+              'border-2 border-border-strong',
+              'hover:border-border-stronger',
+              'focus:outline-none focus:border-border-interactive',
+              'focus:ring-[3px] focus:ring-primary-muted',
+              'disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-bg-muted',
               'appearance-none cursor-pointer',
-              error && 'border-[var(--error-border)]',
+              error && 'border-error-border',
+              'py-2.5 pr-10 pl-3.5',
               className
             )}
-            style={{ padding: '10px 40px 10px 14px' }}
             {...props}
           >
             {options.map((option) => (
@@ -61,17 +61,17 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             ))}
           </select>
           <ChevronDown
-            className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-tertiary)] pointer-events-none"
+            className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-tertiary pointer-events-none"
             aria-hidden="true"
           />
         </div>
         {helper && !error && (
-          <p id={helperId} className="text-xs text-[var(--text-tertiary)]">
+          <p id={helperId} className="text-xs text-text-tertiary">
             {helper}
           </p>
         )}
         {error && (
-          <p id={errorId} className="text-xs text-[var(--error-text)]" role="alert">
+          <p id={errorId} className="text-xs text-error-text" role="alert">
             {error}
           </p>
         )}

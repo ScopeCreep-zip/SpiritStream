@@ -166,7 +166,7 @@ export function Profiles() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--text-secondary)]">{t('profiles.loadingProfiles')}</div>
+        <div className="text-text-secondary">{t('profiles.loadingProfiles')}</div>
       </div>
     );
   }
@@ -174,7 +174,7 @@ export function Profiles() {
   if (error) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--error-text)]">
+        <div className="text-error-text">
           {t('common.error')}: {error}
         </div>
       </div>
@@ -187,22 +187,19 @@ export function Profiles() {
       <>
         <Card>
           <CardBody>
-            <div className="text-center" style={{ padding: '48px 0' }}>
+            <div className="text-center py-12">
               <div
-                className="w-16 h-16 mx-auto rounded-full bg-[var(--primary-subtle)] flex items-center justify-center"
-                style={{ marginBottom: '16px' }}
+                className="w-16 h-16 mx-auto rounded-full bg-primary-subtle flex items-center justify-center mb-4"
               >
-                <Plus className="w-8 h-8 text-[var(--primary)]" />
+                <Plus className="w-8 h-8 text-primary" />
               </div>
               <h3
-                className="text-lg font-semibold text-[var(--text-primary)]"
-                style={{ marginBottom: '8px' }}
+                className="text-lg font-semibold text-text-primary mb-2"
               >
                 {t('profiles.noProfilesYet')}
               </h3>
               <p
-                className="text-[var(--text-secondary)] max-w-md mx-auto"
-                style={{ marginBottom: '24px' }}
+                className="text-text-secondary max-w-md mx-auto mb-6"
               >
                 {t('profiles.noProfilesDescription')}
               </p>
@@ -264,7 +261,7 @@ export function Profiles() {
                   active={current?.id === profile.id}
                   onClick={() => handleProfileClick(profile.name)}
                   actions={
-                    <div className="flex" style={{ gap: '4px' }}>
+                    <div className="flex gap-1">
                       <Button
                         variant="ghost"
                         size="sm"
@@ -293,7 +290,7 @@ export function Profiles() {
                           handleDeleteClick(profile.name);
                         }}
                         title={t('common.delete')}
-                        className="text-[var(--error-text)] hover:bg-[var(--error-subtle)]"
+                        className="text-error-text hover:bg-error-subtle"
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>
@@ -336,7 +333,7 @@ export function Profiles() {
                             <Unlock
                               className={cn(
                                 "w-4 h-4 transition-all duration-300",
-                                isUnlocked && "text-[var(--success)] scale-110"
+                                isUnlocked && "text-success scale-110"
                               )}
                             />
                           </Button>
@@ -350,20 +347,18 @@ export function Profiles() {
 
             {/* Add New Profile Card */}
             <Card
-              className="border-2 border-dashed border-[var(--border-default)] hover:border-[var(--primary)] transition-colors cursor-pointer h-full"
+              className="border-2 border-dashed border-border-default hover:border-primary transition-colors cursor-pointer h-full"
               onClick={() => setCreateModalOpen(true)}
             >
               <CardBody
-                className="flex flex-col items-center justify-center h-full"
-                style={{ padding: '20px' }}
+                className="flex flex-col items-center justify-center h-full p-5"
               >
                 <div
-                  className="w-14 h-14 rounded-full bg-[var(--primary-subtle)] flex items-center justify-center"
-                  style={{ marginBottom: '16px' }}
+                  className="w-14 h-14 rounded-full bg-primary-subtle flex items-center justify-center mb-4"
                 >
-                  <Plus className="w-7 h-7 text-[var(--primary)]" />
+                  <Plus className="w-7 h-7 text-primary" />
                 </div>
-                <span className="text-base font-medium text-[var(--text-secondary)]">
+                <span className="text-base font-medium text-text-secondary">
                   {t('profiles.createNewProfile')}
                 </span>
               </CardBody>
@@ -417,7 +412,7 @@ export function Profiles() {
           </>
         }
       >
-        <p className="text-[var(--text-secondary)]">
+        <p className="text-text-secondary">
           {t('profiles.deleteConfirmation', { name: deletingProfileName })}
         </p>
       </Modal>

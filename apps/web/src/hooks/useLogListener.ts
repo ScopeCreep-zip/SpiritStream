@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { api, events } from '@/lib/backend';
+import { logger } from '@/lib/logger';
 import { useLogStore } from '@/stores/logStore';
 import { createLogEntry, mapLogLevelFromNumber, parseLogLine } from '@/lib/logging';
 
@@ -25,7 +26,7 @@ export function useLogListener() {
         const entries = lines.map(parseLogLine);
         addLogs(entries);
       } catch (error) {
-        console.error('Failed to load recent logs:', error);
+        logger.error('Failed to load recent logs:', error);
       }
     };
 

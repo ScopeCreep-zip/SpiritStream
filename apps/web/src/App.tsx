@@ -50,6 +50,7 @@ import { initConnection } from '@/lib/backend/httpEvents';
 import { setupMainWindowCloseHandler } from '@/lib/chatWindow';
 import { CHAT_OVERLAY_SYNC_EVENT, CHAT_OVERLAY_SYNC_REQUEST_EVENT } from '@/lib/chatEvents';
 import { useChatStore } from '@/stores/chatStore';
+import { logger } from '@/lib/logger';
 
 // Import all views
 import {
@@ -131,7 +132,7 @@ function MainApp() {
       if (!event.data || event.data.type !== 'chat-overlay-sync-request') return;
       const messages = useChatStore.getState().messages;
       const target = event.source as Window | null;
-      target?.postMessage({ type: 'chat-overlay-sync', messages }, { targetOrigin: '*' });
+      target?.postMessage({ type: 'chat-overlay-sync', messages }, { targetOrigin: window.location.origin });
     };
 
     window.addEventListener('message', handleMessage);
@@ -145,7 +146,7 @@ function MainApp() {
     listen(CHAT_OVERLAY_SYNC_REQUEST_EVENT, () => {
       const messages = useChatStore.getState().messages;
       emit(CHAT_OVERLAY_SYNC_EVENT, { messages }).catch((error) => {
-        console.error('Failed to sync chat overlay:', error);
+        logger.error('Failed to sync chat overlay:', error);
       });
     }).then((unsubscribe) => {
       unlisten = unsubscribe;
@@ -274,8 +275,8 @@ function MainApp() {
   // Show loading state while checking server health
   if (serverStatus === 'checking') {
     return (
-      <div className="fixed inset-0 flex items-center justify-center bg-[var(--bg-base)]">
-        <div className="text-[var(--text-secondary)]">{t('common.loading', { defaultValue: 'Loading...' })}</div>
+      <div className="fixed inset-0 flex items-center justify-center bg-bg-base">
+        <div className="text-text-secondary">{t('common.loading', { defaultValue: 'Loading...' })}</div>
       </div>
     );
   }
@@ -323,8 +324,8 @@ function AppContent() {
   }, []);
 
   // Store hooks
-  const { setLanguage } = useLanguageStore();
-  const { currentThemeId, setTheme } = useThemeStore();
+  const { initFromSettings: setLanguageFromProfile } = useLanguageStore();
+  const { setTheme } = useThemeStore();
 
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const {
@@ -338,6 +339,10 @@ function AppContent() {
   const { isStreaming, startAllGroups, stopAllGroups } = useStreamStore();
 
   // Apply profile-specific theme and language when profile changes
+  // NOTE: currentThemeId is intentionally NOT in deps — this effect should only
+  // fire when the profile changes, not when the user switches themes via Settings.
+  // Including it caused a snap-back loop: theme change → effect sees stale profile
+  // themeId → resets theme → profile updates → effect fires again.
   useEffect(() => {
     const applyProfileSettings = async () => {
       if (!current?.settings) return;
@@ -345,21 +350,23 @@ function AppContent() {
       try {
         // Apply theme (profile-specific)
         const themeId = current.settings.themeId;
-        if (themeId && themeId !== currentThemeId) {
+        const activeThemeId = useThemeStore.getState().currentThemeId;
+        if (themeId && themeId !== activeThemeId) {
           await setTheme(themeId);
         }
 
         // Apply language (profile-specific)
         if (current.settings.language) {
-          setLanguage(current.settings.language as any);
+          setLanguageFromProfile(current.settings.language);
         }
       } catch (error) {
-        console.error('Failed to apply profile settings:', error);
+        logger.error('Failed to apply profile settings:', error);
       }
     };
 
     applyProfileSettings();
-  }, [current, currentThemeId, setTheme, setLanguage]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current, setTheme, setLanguageFromProfile]);
 
   // Modal state
   const [profileModalOpen, setProfileModalOpen] = useState(false);
@@ -436,7 +443,7 @@ function AppContent() {
       await startAllGroups(current.outputGroups, incomingUrl);
       toast.success(t('toast.streamStarted'));
     } catch (err) {
-      console.error('[App] startAllGroups failed:', err);
+      logger.error('[App] startAllGroups failed:', err);
       toast.error(
         t('toast.startFailed', {
           error: err instanceof Error ? err.message : String(err),

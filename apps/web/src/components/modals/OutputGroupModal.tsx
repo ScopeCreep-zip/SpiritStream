@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Toggle } from '@/components/ui/Toggle';
 import { useProfileStore } from '@/stores/profileStore';
 import { api } from '@/lib/backend';
+import { logger } from '@/lib/logger';
 import type { OutputGroup, VideoSettings, AudioSettings, ContainerSettings } from '@/types/profile';
 import type { Encoders } from '@/types/stream';
 
@@ -138,11 +139,12 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
   // Check if trying to edit the default (immutable) group
   const isDefaultGroup = mode === 'edit' && group?.isDefault === true;
 
-  // If trying to edit default group, close modal immediately and return null
-  if (isDefaultGroup && open) {
-    setTimeout(() => onClose(), 0);
-    return null;
-  }
+  // Close modal when attempting to edit the default (immutable) group
+  useEffect(() => {
+    if (isDefaultGroup && open) {
+      onClose();
+    }
+  }, [isDefaultGroup, open, onClose]);
 
   // Load available encoders when modal opens
   useEffect(() => {
@@ -162,7 +164,7 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
           }
         })
         .catch((err) => {
-          console.error('Failed to load encoders:', err);
+          logger.error('Failed to load encoders:', err);
         })
         .finally(() => {
           setLoadingEncoders(false);
@@ -211,16 +213,24 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
     options?: { defaultValue?: string; [key: string]: string | number | undefined }
   ) => string;
 
-  const videoCodecOptions: SelectOption[] = encoders.video.map((enc) => {
-    const defaultLabel = ENCODER_DEFAULT_LABELS[enc] || enc;
-    const label = tDynamic(`encoder.encoders.${enc}`, { defaultValue: defaultLabel });
-    return { value: enc, label };
-  });
+  const videoCodecOptions: SelectOption[] = useMemo(
+    () =>
+      encoders.video.map((enc) => {
+        const defaultLabel = ENCODER_DEFAULT_LABELS[enc] || enc;
+        const label = tDynamic(`encoder.encoders.${enc}`, { defaultValue: defaultLabel });
+        return { value: enc, label };
+      }),
+    [encoders.video, tDynamic]
+  );
 
-  const audioCodecOptions: SelectOption[] = encoders.audio.map((enc) => {
-    const label = tDynamic(`audio.codecs.${enc}`, { defaultValue: enc });
-    return { value: enc, label };
-  });
+  const audioCodecOptions: SelectOption[] = useMemo(
+    () =>
+      encoders.audio.map((enc) => {
+        const label = tDynamic(`audio.codecs.${enc}`, { defaultValue: enc });
+        return { value: enc, label };
+      }),
+    [encoders.audio, tDynamic]
+  );
 
   const presetValues = useMemo(
     () => getPresetValues(formData.videoCodec),
@@ -228,70 +238,102 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
   );
   const presetSupported = presetValues.length > 0;
 
-  // Create translated options arrays
-  const resolutionOptions: SelectOption[] = RESOLUTION_VALUES.map((value) => ({
-    value,
-    label: tDynamic(`encoder.resolutions.${value}`, { defaultValue: value }),
-  }));
-
-  const fpsOptions: SelectOption[] = FPS_VALUES.map((value) => ({
-    value,
-    label: tDynamic(`encoder.frameRates.${value}`, { defaultValue: `${value} fps` }),
-  }));
-
-  const audioBitrateOptions: SelectOption[] = AUDIO_BITRATE_VALUES.map((value) => ({
-    value,
-    label: tDynamic(`audio.bitrates.${value}`, { defaultValue: value }),
-  }));
-
-  const audioChannelsOptions: SelectOption[] = AUDIO_CHANNELS_VALUES.map((value) => {
-    if (value === '1') {
-      return {
+  // Create translated options arrays (memoized to avoid re-creating on every render)
+  const resolutionOptions: SelectOption[] = useMemo(
+    () =>
+      RESOLUTION_VALUES.map((value) => ({
         value,
-        label: tDynamic('audio.channels.mono', { defaultValue: 'Mono' }),
-      };
-    }
-    if (value === '2') {
-      return {
+        label: tDynamic(`encoder.resolutions.${value}`, { defaultValue: value }),
+      })),
+    [tDynamic]
+  );
+
+  const fpsOptions: SelectOption[] = useMemo(
+    () =>
+      FPS_VALUES.map((value) => ({
         value,
-        label: tDynamic('audio.channels.stereo', { defaultValue: 'Stereo' }),
-      };
-    }
-    return {
-      value,
-      label: tDynamic('audio.channels.multiple', {
-        defaultValue: '{{count}} channels',
-        count: value,
+        label: tDynamic(`encoder.frameRates.${value}`, { defaultValue: `${value} fps` }),
+      })),
+    [tDynamic]
+  );
+
+  const audioBitrateOptions: SelectOption[] = useMemo(
+    () =>
+      AUDIO_BITRATE_VALUES.map((value) => ({
+        value,
+        label: tDynamic(`audio.bitrates.${value}`, { defaultValue: value }),
+      })),
+    [tDynamic]
+  );
+
+  const audioChannelsOptions: SelectOption[] = useMemo(
+    () =>
+      AUDIO_CHANNELS_VALUES.map((value) => {
+        if (value === '1') {
+          return {
+            value,
+            label: tDynamic('audio.channels.mono', { defaultValue: 'Mono' }),
+          };
+        }
+        if (value === '2') {
+          return {
+            value,
+            label: tDynamic('audio.channels.stereo', { defaultValue: 'Stereo' }),
+          };
+        }
+        return {
+          value,
+          label: tDynamic('audio.channels.multiple', {
+            defaultValue: '{{count}} channels',
+            count: value,
+          }),
+        };
       }),
-    };
-  });
+    [tDynamic]
+  );
 
-  const audioSampleRateOptions: SelectOption[] = AUDIO_SAMPLE_RATE_VALUES.map((value) => {
-    const khz = parseInt(value, 10) / 1000;
-    return {
-      value,
-      label: tDynamic('audio.sampleRateKHz', { defaultValue: '{{value}} kHz', value: khz }),
-    };
-  });
+  const audioSampleRateOptions: SelectOption[] = useMemo(
+    () =>
+      AUDIO_SAMPLE_RATE_VALUES.map((value) => {
+        const khz = parseInt(value, 10) / 1000;
+        return {
+          value,
+          label: tDynamic('audio.sampleRateKHz', { defaultValue: '{{value}} kHz', value: khz }),
+        };
+      }),
+    [tDynamic]
+  );
 
-  const containerFormatOptions: SelectOption[] = CONTAINER_FORMAT_VALUES.map((value) => ({
-    value,
-    label: value.toUpperCase(),
-  }));
-
-  const presetOptions: SelectOption[] = presetSupported
-    ? presetValues.map((value) => ({
+  const containerFormatOptions: SelectOption[] = useMemo(
+    () =>
+      CONTAINER_FORMAT_VALUES.map((value) => ({
         value,
-        label: tDynamic(`encoder.presets.${value}`, {
-          defaultValue: value.charAt(0).toUpperCase() + value.slice(1),
-        }),
-      }))
-    : [];
+        label: value.toUpperCase(),
+      })),
+    []
+  );
 
-  const profileOptions: SelectOption[] = PROFILE_VALUES.map((value) => ({
-    value,
-    label: value.charAt(0).toUpperCase() + value.slice(1),
-  }));
+  const presetOptions: SelectOption[] = useMemo(
+    () =>
+      presetSupported
+        ? presetValues.map((value) => ({
+            value,
+            label: tDynamic(`encoder.presets.${value}`, {
+              defaultValue: value.charAt(0).toUpperCase() + value.slice(1),
+            }),
+          }))
+        : [],
+    [presetSupported, presetValues, tDynamic]
+  );
+
+  const profileOptions: SelectOption[] = useMemo(
+    () =>
+      PROFILE_VALUES.map((value) => ({
+        value,
+        label: value.charAt(0).toUpperCase() + value.slice(1),
+      })),
+    []
+  );
 
   const validate = (): boolean => {
     const newErrors: Partial<FormData> = {};
@@ -391,16 +433,21 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
     }
   };
 
-  const handleChange =
+  const handleChange = useCallback(
     (field: keyof FormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       setFormData((prev) => ({ ...prev, [field]: e.target.value }));
       // Clear error when user starts typing
-      if (errors[field]) {
-        setErrors((prev) => ({ ...prev, [field]: undefined }));
-      }
-    };
+      setErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev));
+    },
+    []
+  );
 
   const title = mode === 'create' ? t('modals.createOutputGroup') : t('modals.editOutputGroup');
+
+  // Don't render anything for the immutable default group
+  if (isDefaultGroup) {
+    return null;
+  }
 
   return (
     <Modal
@@ -423,17 +470,10 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
         </>
       }
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div className="flex flex-col gap-4">
         {/* Info message explaining custom output groups */}
         {mode === 'create' && (
-          <div style={{
-            padding: '12px',
-            backgroundColor: 'var(--primary-muted)',
-            borderRadius: '8px',
-            fontSize: '0.875rem',
-            color: 'var(--text-secondary)',
-            lineHeight: '1.5'
-          }}>
+          <div className="p-3 bg-primary-muted rounded-lg text-sm text-text-secondary leading-normal">
             {tDynamic('modals.outputGroupExplanation', {
               defaultValue: 'Custom output groups re-encode your incoming stream to different settings. Use these when you need to send different quality streams to different platforms. The default passthrough group relays your stream as-is without re-encoding.'
             })}
@@ -449,7 +489,7 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
         />
 
         {/* Timestamp & Sync Settings */}
-        <div style={{ padding: '12px', backgroundColor: 'var(--bg-muted)', borderRadius: '8px' }}>
+        <div className="p-3 bg-bg-muted rounded-lg">
           <Toggle
             checked={formData.generatePts}
             onChange={(checked) => setFormData((prev) => ({ ...prev, generatePts: checked }))}
@@ -459,26 +499,12 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
         </div>
 
         {/* Video Settings Section */}
-        <div style={{ padding: '12px', backgroundColor: 'var(--bg-muted)', borderRadius: '8px' }}>
-          <div
-            style={{
-              marginBottom: '12px',
-              fontSize: '0.875rem',
-              fontWeight: 500,
-              color: 'var(--text-primary)',
-            }}
-          >
+        <div className="p-3 bg-bg-muted rounded-lg">
+          <div className="mb-3 text-sm font-medium text-text-primary">
             {t('modals.videoSettings')}
           </div>
 
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: '12px',
-              marginBottom: '12px',
-            }}
-          >
+          <div className="grid grid-cols-2 gap-3 mb-3">
             <Select
               label={t('encoder.videoEncoder')}
               value={formData.videoCodec}
@@ -495,14 +521,7 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
             />
           </div>
 
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr 1fr',
-              gap: '12px',
-              marginBottom: '12px',
-            }}
-          >
+          <div className="grid grid-cols-3 gap-3 mb-3">
             <Select
               label={t('encoder.frameRate')}
               value={formData.fps}
@@ -535,13 +554,7 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
             disabled={!presetSupported}
           />
           {!presetSupported && (
-            <div
-              style={{
-                marginTop: '6px',
-                fontSize: '0.75rem',
-                color: 'var(--text-secondary)',
-              }}
-            >
+            <div className="mt-1.5 text-xs text-text-secondary">
               {tDynamic('encoder.presetUnsupported', {
                 defaultValue: 'Presets are not available for this encoder.',
               })}
@@ -562,26 +575,12 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
         </div>
 
         {/* Audio Settings Section */}
-        <div style={{ padding: '12px', backgroundColor: 'var(--bg-muted)', borderRadius: '8px' }}>
-          <div
-            style={{
-              marginBottom: '12px',
-              fontSize: '0.875rem',
-              fontWeight: 500,
-              color: 'var(--text-primary)',
-            }}
-          >
+        <div className="p-3 bg-bg-muted rounded-lg">
+          <div className="mb-3 text-sm font-medium text-text-primary">
             {t('modals.audioSettings')}
           </div>
 
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: '12px',
-              marginBottom: '12px',
-            }}
-          >
+          <div className="grid grid-cols-2 gap-3 mb-3">
             <Select
               label={t('modals.audioCodec')}
               value={formData.audioCodec}
@@ -598,7 +597,7 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
             />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <div className="grid grid-cols-2 gap-3">
             <Select
               label={t('modals.audioChannels')}
               value={formData.audioChannels}
@@ -616,15 +615,8 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
         </div>
 
         {/* Container Settings Section */}
-        <div style={{ padding: '12px', backgroundColor: 'var(--bg-muted)', borderRadius: '8px' }}>
-          <div
-            style={{
-              marginBottom: '12px',
-              fontSize: '0.875rem',
-              fontWeight: 500,
-              color: 'var(--text-primary)',
-            }}
-          >
+        <div className="p-3 bg-bg-muted rounded-lg">
+          <div className="mb-3 text-sm font-medium text-text-primary">
             {t('modals.containerSettings')}
           </div>
 

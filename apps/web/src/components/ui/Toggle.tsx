@@ -27,11 +27,10 @@ export function Toggle({
   return (
     <label
       className={cn(
-        'inline-flex items-center cursor-pointer',
+        'inline-flex items-center gap-3 cursor-pointer',
         disabled && 'opacity-50 cursor-not-allowed',
         className
       )}
-      style={{ gap: '12px' }}
     >
       <span className="relative w-11 h-6 flex-shrink-0">
         <input
@@ -48,16 +47,16 @@ export function Toggle({
         <span
           className={cn(
             'absolute inset-0 rounded-full transition-colors duration-200',
-            'bg-[var(--border-strong)]',
-            'peer-checked:bg-[var(--primary)]',
-            'peer-focus-visible:ring-[3px] peer-focus-visible:ring-[var(--ring-default)]',
-            'peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-[var(--ring-offset)]'
+            'bg-border-strong',
+            'peer-checked:bg-primary',
+            'peer-focus-visible:ring-[3px] peer-focus-visible:ring-ring-default',
+            'peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-ring-offset'
           )}
         />
         <span
           className={cn(
             'absolute w-[18px] h-[18px] left-[3px] bottom-[3px]',
-            'bg-white rounded-full shadow-[var(--shadow-sm)]',
+            'bg-white rounded-full shadow-sm',
             'transition-transform duration-200',
             'peer-checked:translate-x-5'
           )}
@@ -65,9 +64,9 @@ export function Toggle({
       </span>
       {(label || description) && (
         <div className="flex flex-col">
-          {label && <span className="text-sm font-medium text-[var(--text-primary)]">{label}</span>}
+          {label && <span className="text-sm font-medium text-text-primary">{label}</span>}
           {description && (
-            <span id={descriptionId} className="text-xs text-[var(--text-tertiary)]">
+            <span id={descriptionId} className="text-xs text-text-tertiary">
               {description}
             </span>
           )}

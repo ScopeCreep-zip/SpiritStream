@@ -23,11 +23,10 @@ import { useProfileStore } from '@/stores/profileStore';
 import { dialogs } from '@/lib/backend';
 import { api } from '@/lib/backend';
 import { toast } from '@/hooks/useToast';
+import { logger } from '@/lib/logger';
 import { cn } from '@/lib/cn';
+import { AUTO_SAVE_DELAY_MS } from '@/lib/constants';
 import type { DiscordSettings } from '@/types/profile';
-
-// Debounce delay for auto-save (ms)
-const AUTO_SAVE_DELAY = 500;
 
 // Common emojis for streaming
 const EMOJI_CATEGORIES = [
@@ -98,7 +97,7 @@ export function DiscordPanel() {
         updateProfileSettings({
           discord: { ...discordSettings, ...pendingUpdatesRef.current },
         }).catch((error) => {
-          console.error('Failed to flush Discord settings on unmount:', error);
+          logger.error('Failed to flush Discord settings on unmount:', error);
         });
         pendingUpdatesRef.current = null;
       }
@@ -137,9 +136,9 @@ export function DiscordPanel() {
           });
           pendingUpdatesRef.current = null; // Clear after successful save
         } catch (error) {
-          console.error('Failed to save Discord setting:', error);
+          logger.error('Failed to save Discord setting:', error);
         }
-      }, AUTO_SAVE_DELAY);
+      }, AUTO_SAVE_DELAY_MS);
     },
     [discordSettings, updateProfileSettings]
   );
@@ -154,7 +153,7 @@ export function DiscordPanel() {
           discord: { ...discordSettings, webhookEnabled: checked },
         });
       } catch (error) {
-        console.error('Failed to save webhook enabled state:', error);
+        logger.error('Failed to save webhook enabled state:', error);
       }
     },
     [discordSettings, updateProfileSettings]
@@ -184,7 +183,7 @@ export function DiscordPanel() {
           discord: { ...discordSettings, cooldownEnabled: checked },
         });
       } catch (error) {
-        console.error('Failed to save cooldown enabled state:', error);
+        logger.error('Failed to save cooldown enabled state:', error);
       }
     },
     [discordSettings, updateProfileSettings]
@@ -213,7 +212,7 @@ export function DiscordPanel() {
         });
       }
     } catch (error) {
-      console.error('Failed to select image:', error);
+      logger.error('Failed to select image:', error);
       toast.error(t('common.error'));
     }
   }, [t, discordSettings, updateProfileSettings]);
@@ -227,7 +226,7 @@ export function DiscordPanel() {
         discord: { ...discordSettings, imagePath: '' },
       });
     } catch (error) {
-      console.error('Failed to remove image:', error);
+      logger.error('Failed to remove image:', error);
     }
   }, [discordSettings, updateProfileSettings]);
 
@@ -301,7 +300,7 @@ export function DiscordPanel() {
   // Show message if no profile is loaded
   if (!currentProfile) {
     return (
-      <div className="flex items-center justify-center p-8 text-[var(--text-tertiary)]">
+      <div className="flex items-center justify-center p-8 text-text-tertiary">
         {t('common.loadProfileFirst', 'Please load a profile first')}
       </div>
     );
@@ -311,12 +310,12 @@ export function DiscordPanel() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <div className="p-2 rounded-lg bg-[var(--bg-elevated)]">
+        <div className="p-2 rounded-lg bg-bg-elevated">
           <MessageSquare className="w-5 h-5 text-[#5865F2]" />
         </div>
         <div>
-          <h2 className="text-lg font-semibold text-[var(--text-primary)]">{t('discord.title')}</h2>
-          <p className="text-sm text-[var(--text-secondary)]">{t('discord.description')}</p>
+          <h2 className="text-lg font-semibold text-text-primary">{t('discord.title')}</h2>
+          <p className="text-sm text-text-secondary">{t('discord.description')}</p>
         </div>
       </div>
 
@@ -371,7 +370,7 @@ export function DiscordPanel() {
                 </Button>
               </div>
               {webhookUrl && !isValidWebhookUrl && (
-                <div className="flex items-center gap-2 text-xs text-[var(--status-error)]">
+                <div className="flex items-center gap-2 text-xs text-status-error">
                   <AlertCircle className="w-3 h-3" />
                   <span>{t('discord.invalidWebhookUrl')}</span>
                 </div>
@@ -396,7 +395,7 @@ export function DiscordPanel() {
                 <div
                   className={cn(
                     'flex items-center gap-2 text-sm',
-                    testResult.success ? 'text-[var(--status-live)]' : 'text-[var(--status-error)]'
+                    testResult.success ? 'text-status-live' : 'text-status-error'
                   )}
                 >
                   {testResult.success ? (
@@ -441,16 +440,16 @@ export function DiscordPanel() {
                   disabled={!webhookEnabled || !cooldownEnabled}
                 />
               </div>
-              <div className="flex items-center gap-2 pb-2 text-sm text-[var(--text-tertiary)]">
+              <div className="flex items-center gap-2 pb-2 text-sm text-text-tertiary">
                 <Timer className="w-4 h-4" />
                 <span>{t('discord.seconds')}</span>
               </div>
             </div>
 
             {/* Info about cooldown */}
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-[var(--bg-base)] border border-[var(--border-default)]">
-              <Info className="w-4 h-4 text-[var(--text-tertiary)] flex-shrink-0 mt-0.5" />
-              <p className="text-xs text-[var(--text-tertiary)]">{t('discord.cooldownInfo')}</p>
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-bg-base border border-border-default">
+              <Info className="w-4 h-4 text-text-tertiary flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-text-tertiary">{t('discord.cooldownInfo')}</p>
             </div>
           </CardBody>
         </Card>
@@ -475,10 +474,10 @@ export function DiscordPanel() {
                 rows={4}
                 className={cn(
                   'w-full px-3 py-2 pr-10 rounded-lg',
-                  'bg-[var(--bg-input)] border border-[var(--border-default)]',
-                  'text-sm text-[var(--text-primary)]',
-                  'placeholder:text-[var(--text-placeholder)]',
-                  'focus:outline-none focus:ring-2 focus:ring-[var(--ring-default)] focus:border-transparent',
+                  'bg-bg-sunken border border-border-default',
+                  'text-sm text-text-primary',
+                  'placeholder:text-text-muted',
+                  'focus:outline-none focus:ring-2 focus:ring-ring-default focus:border-transparent',
                   'disabled:opacity-50 disabled:cursor-not-allowed',
                   'resize-y min-h-[100px]'
                 )}
@@ -492,8 +491,8 @@ export function DiscordPanel() {
                   disabled={!webhookEnabled}
                   className={cn(
                     'p-1.5 rounded-md transition-colors',
-                    'text-[var(--text-tertiary)] hover:text-[var(--text-primary)]',
-                    'hover:bg-[var(--bg-muted)]',
+                    'text-text-tertiary hover:text-text-primary',
+                    'hover:bg-bg-muted',
                     'disabled:opacity-50 disabled:cursor-not-allowed'
                   )}
                   title={t('discord.insertEmoji')}
@@ -503,10 +502,10 @@ export function DiscordPanel() {
 
                 {/* Emoji Picker Dropdown */}
                 {showEmojiPicker && (
-                  <div className="absolute right-0 top-full mt-1 z-50 p-2 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-default)] shadow-lg w-64">
+                  <div className="absolute right-0 top-full mt-1 z-50 p-2 rounded-lg bg-bg-surface border border-border-default shadow-lg w-64">
                     {EMOJI_CATEGORIES.map((category) => (
                       <div key={category.nameKey} className="mb-2 last:mb-0">
-                        <div className="text-xs text-[var(--text-tertiary)] mb-1 px-1">
+                        <div className="text-xs text-text-tertiary mb-1 px-1">
                           {t(category.nameKey)}
                         </div>
                         <div className="flex flex-wrap gap-1">
@@ -515,7 +514,7 @@ export function DiscordPanel() {
                               key={emoji}
                               type="button"
                               onClick={() => handleEmojiSelect(emoji)}
-                              className="p-1.5 rounded hover:bg-[var(--bg-muted)] text-lg transition-colors"
+                              className="p-1.5 rounded hover:bg-bg-muted text-lg transition-colors"
                             >
                               {emoji}
                             </button>
@@ -530,9 +529,9 @@ export function DiscordPanel() {
           </div>
 
           {/* Markdown hint */}
-          <div className="flex items-start gap-2 p-3 rounded-lg bg-[var(--bg-base)] border border-[var(--border-default)]">
-            <Info className="w-4 h-4 text-[var(--text-tertiary)] flex-shrink-0 mt-0.5" />
-            <div className="text-xs text-[var(--text-tertiary)] space-y-1">
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-bg-base border border-border-default">
+            <Info className="w-4 h-4 text-text-tertiary flex-shrink-0 mt-0.5" />
+            <div className="text-xs text-text-tertiary space-y-1">
               <p>{t('discord.markdownSupport')}</p>
               <p className="font-mono">
                 {t('discord.markdownExample')}
@@ -542,13 +541,13 @@ export function DiscordPanel() {
 
           {/* Image Attachment */}
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-[var(--text-primary)]">
+            <label className="block text-sm font-medium text-text-primary">
               {t('discord.attachImage')}
             </label>
             {imagePath ? (
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-[var(--bg-base)] border border-[var(--border-default)]">
-                <ImageIcon className="w-5 h-5 text-[var(--text-tertiary)]" />
-                <span className="flex-1 text-sm text-[var(--text-primary)] truncate">
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-bg-base border border-border-default">
+                <ImageIcon className="w-5 h-5 text-text-tertiary" />
+                <span className="flex-1 text-sm text-text-primary truncate">
                   {imageFileName}
                 </span>
                 <Button
@@ -571,7 +570,7 @@ export function DiscordPanel() {
                 {t('discord.selectImage')}
               </Button>
             )}
-            <p className="text-xs text-[var(--text-tertiary)]">
+            <p className="text-xs text-text-tertiary">
               {t('discord.imageHint')}
             </p>
           </div>

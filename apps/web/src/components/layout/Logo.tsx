@@ -14,13 +14,13 @@ export function Logo({ size = 'md', showText = true, className }: LogoProps) {
   };
 
   return (
-    <div className={cn('flex items-center', className)} style={{ gap: '12px' }}>
+    <div className={cn('flex items-center gap-3', className)}>
       <img
         src="/app-icon.png"
         alt="SpiritStream"
         className={cn(
           'rounded-xl',
-          'shadow-[var(--shadow-md)]',
+          'shadow-md',
           sizes[size]
         )}
       />

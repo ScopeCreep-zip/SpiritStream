@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Lock, Eye, EyeOff } from 'lucide-react';
+import { cn } from '@/lib/cn';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
@@ -237,7 +238,7 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
         </>
       }
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div className="flex flex-col gap-4">
         <Input
           label={t('modals.profileName')}
           placeholder={t('modals.profileNamePlaceholder')}
@@ -247,18 +248,11 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
         />
 
         {/* RTMP Input Configuration */}
-        <div style={{ padding: '12px', backgroundColor: 'var(--bg-muted)', borderRadius: '8px' }}>
-          <div
-            style={{
-              marginBottom: '12px',
-              fontSize: '0.875rem',
-              fontWeight: 500,
-              color: 'var(--text-primary)',
-            }}
-          >
+        <div className="p-3 bg-bg-muted rounded-lg">
+          <div className="mb-3 text-sm font-medium text-text-primary">
             {t('modals.rtmpInputSettings')}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 1fr', gap: '12px' }}>
+          <div className="grid grid-cols-[1fr_100px_1fr] gap-3">
             <Input
               label={t('modals.bindAddress')}
               placeholder={t('modals.bindAddressPlaceholder')}
@@ -284,19 +278,11 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
               helper={t('modals.applicationHelper')}
             />
           </div>
-          <div style={{ marginTop: '8px', fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+          <div className="mt-2 text-xs text-text-tertiary">
             {t('modals.rtmpUrlPreview')}: rtmp://{formData.bindAddress}:{formData.port}/
             {formData.application}
           </div>
-          <div style={{
-            marginTop: '8px',
-            padding: '8px',
-            backgroundColor: 'var(--bg-base)',
-            borderRadius: '4px',
-            fontSize: '0.75rem',
-            color: 'var(--text-secondary)',
-            lineHeight: '1.5'
-          }}>
+          <div className="mt-2 p-2 bg-bg-base rounded text-xs text-text-secondary leading-normal">
             {tDynamic('modals.profileExplanation', {
               defaultValue: 'Configure your streaming software (OBS, etc.) to send to this RTMP URL. Encoding settings are configured in your streaming software, not in the profile. Use output groups to re-encode to different settings for different platforms.'
             })}
@@ -305,11 +291,11 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
 
         {/* Password Protection (only for create mode) */}
         {mode === 'create' && (
-          <div style={{ padding: '12px', backgroundColor: 'var(--bg-muted)', borderRadius: '8px' }}>
-            <div className="flex items-center justify-between" style={{ marginBottom: formData.usePassword ? '12px' : '0' }}>
+          <div className="p-3 bg-bg-muted rounded-lg">
+            <div className={cn('flex items-center justify-between', formData.usePassword && 'mb-3')}>
               <div className="flex items-center gap-2">
-                <Lock className="w-4 h-4 text-[var(--primary)]" />
-                <span style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-primary)' }}>
+                <Lock className="w-4 h-4 text-primary" />
+                <span className="text-sm font-medium text-text-primary">
                   {t('profiles.protectWithPassword')}
                 </span>
               </div>
@@ -330,7 +316,7 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
             </div>
 
             {formData.usePassword && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="flex flex-col gap-3">
                 <div className="relative">
                   <Input
                     label={t('modals.password.password')}
@@ -344,8 +330,7 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-[34px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}
+                    className="absolute right-3 top-[34px] bg-transparent border-none cursor-pointer p-1 text-text-tertiary hover:text-text-primary transition-colors"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -361,9 +346,9 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
                   autoComplete="new-password"
                 />
 
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
-                  <p style={{ fontWeight: 500, marginBottom: '4px' }}>{t('modals.passwordRequirements')}:</p>
-                  <ul style={{ margin: 0, paddingLeft: '16px' }}>
+                <div className="text-xs text-text-tertiary">
+                  <p className="font-medium mb-1">{t('modals.passwordRequirements')}:</p>
+                  <ul className="m-0 pl-4">
                     <li>{t('modals.passwordReq8Chars')}</li>
                     <li>{t('modals.passwordReqNoRecovery')}</li>
                   </ul>
@@ -405,18 +390,18 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
         }
       >
         <div className="space-y-3">
-          <p className="text-[var(--text-secondary)]">
+          <p className="text-text-secondary">
             {tDynamic('modals.portConflictBody', {
               defaultValue:
                 'Another profile is already configured to use this port. Only one profile can listen on a port at a time.'
             })}
           </p>
           {portConflictMessage && (
-            <div className="p-3 rounded-lg bg-[var(--warning-subtle)] border border-[var(--warning-border)] text-[var(--warning-text)] text-sm">
+            <div className="p-3 rounded-lg bg-warning-subtle border border-warning-border text-warning-text text-sm">
               {portConflictMessage}
             </div>
           )}
-          <p className="text-[var(--text-secondary)]">
+          <p className="text-text-secondary">
             {tDynamic('modals.portConflictConfirm', {
               defaultValue: 'Do you want to save anyway?'
             })}

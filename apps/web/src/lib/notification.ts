@@ -1,4 +1,5 @@
 import { isTauri } from '@/lib/platform';
+import { logger } from '@/lib/logger';
 import {
   isPermissionGranted,
   requestPermission,
@@ -26,6 +27,6 @@ export async function showSystemNotification(title: string, body: string) {
 
     await sendNotification({ title, body });
   } catch (err) {
-    console.warn('System notification failed:', err);
+    logger.warn('System notification failed:', err);
   }
 }
