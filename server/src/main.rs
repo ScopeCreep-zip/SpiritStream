@@ -1,4 +1,5 @@
 mod app;
+#[cfg(feature = "chat")]
 mod chat_lifecycle;
 mod config;
 mod events;
@@ -18,9 +19,15 @@ use std::sync::Arc;
 use tokio::sync::Mutex as AsyncMutex;
 
 use spiritstream_server::services::{
-    prune_logs, ChatManager, DiscordWebhookService, EventSink, FFmpegDownloader, FFmpegHandler,
-    OAuthConfig, OAuthService, ObsWebSocketHandler, ProfileManager, SettingsManager, ThemeManager,
+    prune_logs, EventSink, FFmpegDownloader, FFmpegHandler,
+    OAuthConfig, OAuthService, ProfileManager, SettingsManager, ThemeManager,
 };
+#[cfg(feature = "chat")]
+use spiritstream_server::services::ChatManager;
+#[cfg(feature = "discord")]
+use spiritstream_server::services::DiscordWebhookService;
+#[cfg(feature = "obs")]
+use spiritstream_server::services::ObsWebSocketHandler;
 
 use crate::config::ServerConfig;
 use crate::events::EventBus;
@@ -95,9 +102,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let home_dir = dirs_next::home_dir();
 
     // Initialize services
+    #[cfg(feature = "obs")]
     let obs_handler = Arc::new(ObsWebSocketHandler::new(config.app_data_dir.clone()));
+    #[cfg(feature = "discord")]
     let discord_service = Arc::new(DiscordWebhookService::new());
+    #[cfg(feature = "chat")]
     let chat_event_sink: Arc<dyn EventSink> = Arc::new(event_bus.clone());
+    #[cfg(feature = "chat")]
     let chat_manager = Arc::new(ChatManager::new(chat_event_sink, config.log_dir.clone()));
     let oauth_service = Arc::new(OAuthService::new(OAuthConfig::default()));
 
@@ -107,8 +118,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ffmpeg_handler,
         ffmpeg_downloader: Arc::new(AsyncMutex::new(FFmpegDownloader::new())),
         theme_manager,
+        #[cfg(feature = "obs")]
         obs_handler,
+        #[cfg(feature = "discord")]
         discord_service,
+        #[cfg(feature = "chat")]
         chat_manager,
         oauth_service,
         event_bus,

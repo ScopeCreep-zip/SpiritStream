@@ -1,6 +1,9 @@
+#[cfg(feature = "chat")]
 mod chat;
+#[cfg(feature = "discord")]
 mod discord;
 mod ffmpeg;
+#[cfg(feature = "obs")]
 mod obs;
 mod oauth;
 mod profiles;
@@ -63,12 +66,18 @@ pub(crate) async fn dispatch(
         // OBS commands
         "obs_get_state" | "obs_get_config" | "obs_set_config" | "obs_connect"
         | "obs_disconnect" | "obs_start_stream" | "obs_stop_stream" | "obs_is_connected" => {
-            obs::handle(state, command, &payload).await
+            #[cfg(feature = "obs")]
+            { obs::handle(state, command, &payload).await }
+            #[cfg(not(feature = "obs"))]
+            { Err("OBS support not compiled. Rebuild with --features obs".to_string()) }
         }
 
         // Discord commands
         "discord_test_webhook" | "discord_send_notification" | "discord_reset_cooldown" => {
-            discord::handle(state, command, &payload).await
+            #[cfg(feature = "discord")]
+            { discord::handle(state, command, &payload).await }
+            #[cfg(not(feature = "discord"))]
+            { Err("Discord support not compiled. Rebuild with --features discord".to_string()) }
         }
 
         // Chat commands
@@ -76,7 +85,10 @@ pub(crate) async fn dispatch(
         | "disconnect_chat" | "retry_chat_connection" | "disconnect_all_chat"
         | "get_chat_status" | "chat_get_log_status" | "get_platform_chat_status"
         | "is_chat_connected" => {
-            chat::handle(state, command, &payload).await
+            #[cfg(feature = "chat")]
+            { chat::handle(state, command, &payload).await }
+            #[cfg(not(feature = "chat"))]
+            { Err("Chat support not compiled. Rebuild with --features chat".to_string()) }
         }
 
         // OAuth commands

@@ -454,7 +454,7 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
       open={open}
       onClose={onClose}
       title={title}
-      maxWidth="600px"
+      maxWidth="lg"
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={saving}>

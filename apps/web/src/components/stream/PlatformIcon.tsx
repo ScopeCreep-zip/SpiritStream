@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { cn } from '@/lib/cn';
 import { type Platform, PLATFORMS } from '@/types/profile';
 
@@ -16,20 +17,24 @@ const sizeStyles = {
 export function PlatformIcon({ platform, size = 'md', className }: PlatformIconProps) {
   const platformConfig = PLATFORMS[platform];
 
-  // Use the color from PLATFORMS constant
-  const bgStyle = { backgroundColor: platformConfig.color };
+  const setColors = useCallback(
+    (el: HTMLDivElement | null) => {
+      if (el) {
+        el.style.setProperty('background-color', platformConfig.color);
+        el.style.setProperty('color', platformConfig.textColor);
+      }
+    },
+    [platformConfig.color, platformConfig.textColor]
+  );
 
   return (
     <div
+      ref={setColors}
       className={cn(
         'rounded-md flex items-center justify-center font-semibold',
         sizeStyles[size],
         className
       )}
-      style={{
-        ...bgStyle,
-        color: platformConfig.textColor,
-      }}
     >
       {platformConfig.abbreviation}
     </div>

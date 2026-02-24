@@ -318,14 +318,21 @@ interface ProgressBarProps {
 
 function ProgressBar({ percent, downloaded, total, phase }: ProgressBarProps) {
   const showBytes = phase === 'downloading' && total > 0;
+  const barRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (barRef.current) {
+      barRef.current.style.width = `${Math.min(percent, 100)}%`;
+    }
+  }, [percent]);
 
   return (
     <div className="space-y-1">
       {/* Progress bar */}
       <div className="h-2 bg-bg-sunken rounded-full overflow-hidden">
         <div
-          className="h-full bg-primary rounded-full transition-all duration-300"
-          style={{ width: `${Math.min(percent, 100)}%` }}
+          ref={barRef}
+          className="h-full w-0 bg-primary rounded-full transition-all duration-300"
         />
       </div>
 

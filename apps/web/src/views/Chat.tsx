@@ -485,7 +485,7 @@ export function Chat() {
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
         title={t('chat.searchTitle', { defaultValue: 'Search chat' })}
-        maxWidth="720px"
+        maxWidth="xl"
       >
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-3">

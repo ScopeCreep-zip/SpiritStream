@@ -31,7 +31,7 @@ const SIZE_CLASSES = {
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   (
-    { className, variant = 'primary', size = 'md', loading, children, disabled, style, ...props },
+    { className, variant = 'primary', size = 'md', loading, children, disabled, ...props },
     ref
   ) => {
     return (
@@ -47,7 +47,6 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
           SIZE_CLASSES[size],
           className
         )}
-        style={style}
         disabled={disabled || loading}
         {...props}
       >

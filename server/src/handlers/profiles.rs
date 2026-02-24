@@ -77,6 +77,7 @@ pub(crate) async fn handle(state: &AppState, command: &str, payload: &Value) -> 
                     let mut guard = state.active_profile_settings.lock().await;
                     *guard = None;
                 }
+                #[cfg(feature = "chat")]
                 state
                     .chat_manager
                     .update_profile_chat_settings(spiritstream_server::models::ChatSettings::default())

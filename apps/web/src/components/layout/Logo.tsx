@@ -25,14 +25,7 @@ export function Logo({ size = 'md', showText = true, className }: LogoProps) {
         )}
       />
       {showText && (
-        <span
-          className="font-bold text-lg bg-clip-text"
-          style={{
-            background: 'var(--gradient-brand)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-          }}
-        >
+        <span className="font-bold text-lg text-gradient">
           SpiritStream
         </span>
       )}

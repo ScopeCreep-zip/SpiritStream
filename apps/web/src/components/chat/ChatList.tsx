@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
 import type { ChatMessage, ChatPlatform } from '@/types/chat';
@@ -20,10 +20,21 @@ function ChatPlatformIcon({ platform, size = 'sm' }: { platform: string; size?: 
     textColor: '#FFFFFF',
   };
   const sizeClass = size === 'sm' ? 'w-6 h-6 text-[0.625rem]' : 'w-8 h-8 text-xs';
+
+  const setColors = useCallback(
+    (el: HTMLDivElement | null) => {
+      if (el) {
+        el.style.setProperty('background-color', config.color);
+        el.style.setProperty('color', config.textColor);
+      }
+    },
+    [config.color, config.textColor]
+  );
+
   return (
     <div
+      ref={setColors}
       className={cn('rounded-md flex items-center justify-center font-semibold shrink-0', sizeClass)}
-      style={{ backgroundColor: config.color, color: config.textColor }}
     >
       {config.abbreviation}
     </div>

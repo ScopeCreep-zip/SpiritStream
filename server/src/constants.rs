@@ -4,10 +4,15 @@ pub const DEFAULT_RATE_LIMIT_PER_MINUTE: u32 = 300;
 
 /// Commands that are called frequently for polling and don't need logging
 pub const QUIET_COMMANDS: &[&str] = &[
+    #[cfg(feature = "chat")]
     "get_chat_status",
+    #[cfg(feature = "chat")]
     "get_platform_chat_status",
+    #[cfg(feature = "chat")]
     "is_chat_connected",
+    #[cfg(feature = "obs")]
     "obs_get_state",
+    #[cfg(feature = "obs")]
     "obs_is_connected",
     "get_active_stream_count",
     "get_active_group_ids",
@@ -40,11 +45,15 @@ pub const STATS_RECENT_LINES_CAPACITY: usize = 40;
 pub const STATS_BITRATE_SMOOTHING_ALPHA: f64 = 0.2;
 
 // ── Chat ────────────────────────────────────────────────────────────
+#[cfg(feature = "chat")]
 pub const CHAT_MAX_SEEN_IDS: usize = 5000;
+#[cfg(feature = "chat")]
 pub const CHAT_OUTBOUND_DEDUP_WINDOW_SECS: u64 = 10;
 
 // ── Chat lifecycle/reconnect ────────────────────────────────────────
+#[cfg(feature = "chat")]
 pub const CHAT_RECONNECT_INTERVAL_SECS: u64 = 15;
+#[cfg(feature = "chat")]
 pub const CHAT_RECONNECT_COOLDOWN_SECS: u64 = 30;
 
 // ── OAuth ───────────────────────────────────────────────────────────
@@ -53,4 +62,5 @@ pub const OAUTH_CALLBACK_PORT_END: u16 = 49162;
 pub const OAUTH_FLOW_TIMEOUT_SECS: u64 = 600;
 
 // ── Token refresh ───────────────────────────────────────────────────
+#[cfg(feature = "chat")]
 pub const TOKEN_REFRESH_INTERVAL_SECS: u64 = 60;

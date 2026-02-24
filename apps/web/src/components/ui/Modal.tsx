@@ -9,12 +9,19 @@ export interface ModalProps {
   title: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
-  maxWidth?: string;
+  maxWidth?: 'sm' | 'md' | 'lg' | 'xl';
   /** Whether clicking the backdrop closes the modal. Default: false */
   closeOnBackdropClick?: boolean;
 }
 
-export function Modal({ open, onClose, title, children, footer, maxWidth = '500px', closeOnBackdropClick = false }: ModalProps) {
+const MAX_WIDTH_CLASSES = {
+  sm: 'max-w-[400px]',
+  md: 'max-w-[500px]',
+  lg: 'max-w-[600px]',
+  xl: 'max-w-[720px]',
+} as const;
+
+export function Modal({ open, onClose, title, children, footer, maxWidth = 'md', closeOnBackdropClick = false }: ModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
   const previousActiveElement = useRef<HTMLElement | null>(null);
 
@@ -108,10 +115,10 @@ export function Modal({ open, onClose, title, children, footer, maxWidth = '500p
         className={cn(
           'bg-bg-surface rounded-xl shadow-xl',
           'w-full max-h-[90vh] overflow-hidden',
+          MAX_WIDTH_CLASSES[maxWidth],
           'animate-in zoom-in-95 duration-200',
           'flex flex-col'
         )}
-        style={{ maxWidth }}
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"

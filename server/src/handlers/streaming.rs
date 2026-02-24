@@ -1,6 +1,7 @@
 use serde_json::{json, Value};
 use std::sync::Arc;
 
+#[cfg(feature = "chat")]
 use crate::chat_lifecycle::{auto_connect_chat_platforms, auto_disconnect_chat_platforms};
 use crate::state::AppState;
 use crate::util::get_arg;
@@ -12,12 +13,14 @@ pub(crate) async fn handle(state: &AppState, command: &str, payload: &Value) -> 
         "start_stream" => {
             let group: OutputGroup = get_arg(payload, "group")?;
             let incoming_url: String = get_arg(payload, "incomingUrl")?;
+            #[cfg(feature = "chat")]
             let was_streaming = state.ffmpeg_handler.active_count() > 0;
             let event_sink: Arc<dyn EventSink> = Arc::new(state.event_bus.clone());
             let pid = state.ffmpeg_handler.start(&group, &incoming_url, event_sink)?;
             // Reset reconnection state on successful manual start
             state.ffmpeg_handler.reset_reconnection_state(&group.id);
             // Auto-connect chat platforms on first stream start
+            #[cfg(feature = "chat")]
             if !was_streaming {
                 state.chat_manager.start_log_session();
                 tokio::spawn(auto_connect_chat_platforms(state.clone()));
@@ -27,20 +30,25 @@ pub(crate) async fn handle(state: &AppState, command: &str, payload: &Value) -> 
         "start_all_streams" => {
             let groups: Vec<OutputGroup> = get_arg(payload, "groups")?;
             let incoming_url: String = get_arg(payload, "incomingUrl")?;
+            #[cfg(feature = "chat")]
             let was_streaming = state.ffmpeg_handler.active_count() > 0;
             let event_sink: Arc<dyn EventSink> = Arc::new(state.event_bus.clone());
             let pids = state.ffmpeg_handler.start_all(&groups, &incoming_url, event_sink)?;
             // Auto-connect chat platforms when streams start
-            if !was_streaming {
-                state.chat_manager.start_log_session();
+            #[cfg(feature = "chat")]
+            {
+                if !was_streaming {
+                    state.chat_manager.start_log_session();
+                }
+                tokio::spawn(auto_connect_chat_platforms(state.clone()));
             }
-            tokio::spawn(auto_connect_chat_platforms(state.clone()));
             Ok(json!(pids))
         }
         "stop_stream" => {
             let group_id: String = get_arg(payload, "groupId")?;
             state.ffmpeg_handler.stop(&group_id)?;
             // Auto-disconnect chat when no more streams are running
+            #[cfg(feature = "chat")]
             if state.ffmpeg_handler.active_count() == 0 {
                 state.chat_manager.end_log_session();
                 let chat_mgr = state.chat_manager.clone();
@@ -51,11 +59,14 @@ pub(crate) async fn handle(state: &AppState, command: &str, payload: &Value) -> 
         }
         "stop_all_streams" => {
             state.ffmpeg_handler.stop_all()?;
-            state.chat_manager.end_log_session();
             // Auto-disconnect all chat platforms
-            let chat_mgr = state.chat_manager.clone();
-            let bus = state.event_bus.clone();
-            tokio::spawn(auto_disconnect_chat_platforms(chat_mgr, bus));
+            #[cfg(feature = "chat")]
+            {
+                state.chat_manager.end_log_session();
+                let chat_mgr = state.chat_manager.clone();
+                let bus = state.event_bus.clone();
+                tokio::spawn(auto_disconnect_chat_platforms(chat_mgr, bus));
+            }
             Ok(Value::Null)
         }
         "retry_stream" => {

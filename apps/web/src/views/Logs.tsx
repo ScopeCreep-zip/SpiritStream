@@ -157,7 +157,7 @@ export function Logs() {
         </div>
       </CardHeader>
       <CardBody className="p-0">
-        <LogConsole maxHeight="500px">
+        <LogConsole maxHeight="lg">
           <div ref={consoleRef}>
             {filteredLogs.length === 0 ? (
               <div

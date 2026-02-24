@@ -10,12 +10,20 @@ use std::sync::Arc;
 use tokio::sync::Mutex as AsyncMutex;
 
 use crate::events::EventBus;
-use spiritstream_server::models::{ObsIntegrationDirection, Profile, ProfileSettings};
+use spiritstream_server::models::Profile;
+#[cfg(feature = "obs")]
+use spiritstream_server::models::ObsIntegrationDirection;
+use spiritstream_server::models::ProfileSettings;
 use spiritstream_server::services::{
-    ChatManager, DiscordWebhookService, FFmpegDownloader, FFmpegHandler,
-    OAuthService, ObsConfig, ObsWebSocketHandler,
+    FFmpegDownloader, FFmpegHandler, OAuthService,
     ProfileManager, SettingsManager, ThemeManager,
 };
+#[cfg(feature = "chat")]
+use spiritstream_server::services::ChatManager;
+#[cfg(feature = "discord")]
+use spiritstream_server::services::DiscordWebhookService;
+#[cfg(feature = "obs")]
+use spiritstream_server::services::{ObsConfig, ObsWebSocketHandler};
 
 #[derive(Clone)]
 pub(crate) struct AppState {
@@ -24,8 +32,11 @@ pub(crate) struct AppState {
     pub ffmpeg_handler: Arc<FFmpegHandler>,
     pub ffmpeg_downloader: Arc<AsyncMutex<FFmpegDownloader>>,
     pub theme_manager: Arc<ThemeManager>,
+    #[cfg(feature = "obs")]
     pub obs_handler: Arc<ObsWebSocketHandler>,
+    #[cfg(feature = "discord")]
     pub discord_service: Arc<DiscordWebhookService>,
+    #[cfg(feature = "chat")]
     pub chat_manager: Arc<ChatManager>,
     pub oauth_service: Arc<OAuthService>,
     pub event_bus: EventBus,
@@ -140,36 +151,40 @@ pub(crate) async fn set_active_profile(state: &AppState, profile: &Profile) {
         *guard = Some(profile.settings.clone());
     }
 
+    #[cfg(feature = "chat")]
     state
         .chat_manager
         .update_profile_chat_settings(profile.settings.chat.clone())
         .await;
 
-    let obs_settings = &profile.settings.obs;
-    let direction = match obs_settings.direction {
-        ObsIntegrationDirection::ObsToSpiritstream => {
-            spiritstream_server::services::IntegrationDirection::ObsToSpiritstream
-        }
-        ObsIntegrationDirection::SpiritstreamToObs => {
-            spiritstream_server::services::IntegrationDirection::SpiritstreamToObs
-        }
-        ObsIntegrationDirection::Bidirectional => {
-            spiritstream_server::services::IntegrationDirection::Bidirectional
-        }
-        ObsIntegrationDirection::Disabled => {
-            spiritstream_server::services::IntegrationDirection::Disabled
-        }
-    };
+    #[cfg(feature = "obs")]
+    {
+        let obs_settings = &profile.settings.obs;
+        let direction = match obs_settings.direction {
+            ObsIntegrationDirection::ObsToSpiritstream => {
+                spiritstream_server::services::IntegrationDirection::ObsToSpiritstream
+            }
+            ObsIntegrationDirection::SpiritstreamToObs => {
+                spiritstream_server::services::IntegrationDirection::SpiritstreamToObs
+            }
+            ObsIntegrationDirection::Bidirectional => {
+                spiritstream_server::services::IntegrationDirection::Bidirectional
+            }
+            ObsIntegrationDirection::Disabled => {
+                spiritstream_server::services::IntegrationDirection::Disabled
+            }
+        };
 
-    let obs_config = ObsConfig {
-        host: obs_settings.host.clone(),
-        port: obs_settings.port,
-        password: obs_settings.password.clone(),
-        use_auth: obs_settings.use_auth,
-        direction,
-        auto_connect: obs_settings.auto_connect,
-    };
-    state.obs_handler.set_config(obs_config).await;
+        let obs_config = ObsConfig {
+            host: obs_settings.host.clone(),
+            port: obs_settings.port,
+            password: obs_settings.password.clone(),
+            use_auth: obs_settings.use_auth,
+            direction,
+            auto_connect: obs_settings.auto_connect,
+        };
+        state.obs_handler.set_config(obs_config).await;
+    }
 }
 
 pub(crate) async fn get_active_profile_name(state: &AppState) -> Option<String> {
