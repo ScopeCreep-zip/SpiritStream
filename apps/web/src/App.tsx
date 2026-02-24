@@ -325,7 +325,7 @@ function AppContent() {
 
   // Store hooks
   const { initFromSettings: setLanguageFromProfile } = useLanguageStore();
-  const { currentThemeId, setTheme } = useThemeStore();
+  const { setTheme } = useThemeStore();
 
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const {
@@ -339,6 +339,10 @@ function AppContent() {
   const { isStreaming, startAllGroups, stopAllGroups } = useStreamStore();
 
   // Apply profile-specific theme and language when profile changes
+  // NOTE: currentThemeId is intentionally NOT in deps — this effect should only
+  // fire when the profile changes, not when the user switches themes via Settings.
+  // Including it caused a snap-back loop: theme change → effect sees stale profile
+  // themeId → resets theme → profile updates → effect fires again.
   useEffect(() => {
     const applyProfileSettings = async () => {
       if (!current?.settings) return;
@@ -346,7 +350,8 @@ function AppContent() {
       try {
         // Apply theme (profile-specific)
         const themeId = current.settings.themeId;
-        if (themeId && themeId !== currentThemeId) {
+        const activeThemeId = useThemeStore.getState().currentThemeId;
+        if (themeId && themeId !== activeThemeId) {
           await setTheme(themeId);
         }
 
@@ -360,7 +365,8 @@ function AppContent() {
     };
 
     applyProfileSettings();
-  }, [current, currentThemeId, setTheme, setLanguageFromProfile]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current, setTheme, setLanguageFromProfile]);
 
   // Modal state
   const [profileModalOpen, setProfileModalOpen] = useState(false);
