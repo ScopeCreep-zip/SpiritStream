@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { api, events } from '@/lib/backend';
+import { logger } from '@/lib/logger';
 import type { ThemeSummary, ThemeMode } from '@/types/theme';
 
 interface ThemeState {
@@ -76,31 +77,37 @@ function clearThemeOverrides() {
   }
 }
 
+function isLegacyThemeState(value: unknown): value is { state?: { currentThemeId?: string; themeId?: string } } {
+  return typeof value === 'object' && value !== null && 'state' in value;
+}
+
+function hasThemeId(value: unknown): value is { themeId: string } {
+  return typeof value === 'object' && value !== null && 'themeId' in value && typeof (value as Record<string, unknown>).themeId === 'string';
+}
+
 function migrateOldThemeFormat(): { themeId: string } | null {
   try {
     const oldData = localStorage.getItem('spiritstream-theme');
     if (!oldData) return null;
 
-    const parsed = JSON.parse(oldData);
-    if (parsed && typeof parsed === 'object' && 'state' in parsed) {
-      const state = (parsed as { state?: { currentThemeId?: string } }).state;
+    const parsed: unknown = JSON.parse(oldData);
+    if (isLegacyThemeState(parsed)) {
+      const state = parsed.state;
       if (state?.currentThemeId) {
         return null; // Already persisted in the current format
       }
     }
 
-    const legacy = (parsed && typeof parsed === 'object' && 'state' in parsed
-      ? (parsed as { state?: Record<string, unknown> }).state
-      : parsed) as { theme?: string; themeId?: string } | null;
+    const legacy = isLegacyThemeState(parsed) ? parsed.state : parsed;
 
-    if (!legacy || !legacy.themeId) {
+    if (!hasThemeId(legacy)) {
       return null;
     }
 
     const themeId = legacy.themeId;
     return { themeId };
   } catch (error) {
-    console.error('Failed to migrate old theme format:', error);
+    logger.error('Failed to migrate old theme format:', error);
     return null;
   }
 }

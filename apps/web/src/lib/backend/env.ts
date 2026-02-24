@@ -1,3 +1,5 @@
+import { RETRY_BASE_DELAY_MS } from '@/lib/constants';
+
 /**
  * Backend communication mode.
  *
@@ -79,7 +81,7 @@ export async function safeFetch(
     // Retry logic for localhost - handles race condition with server startup
     // Increased retries to handle server warm-up time after health check passes
     const maxRetries = 5;
-    const baseDelay = 800; // ms
+    const baseDelay = RETRY_BASE_DELAY_MS;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {

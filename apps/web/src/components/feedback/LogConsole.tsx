@@ -10,7 +10,7 @@ export function LogConsole({ children, maxHeight = '300px', className }: LogCons
   return (
     <div
       className={cn(
-        'bg-[var(--bg-sunken)] border border-[var(--border-default)] rounded-lg',
+        'bg-bg-sunken border border-border-default rounded-lg',
         "font-['JetBrains_Mono',monospace] text-xs overflow-y-auto",
         className
       )}

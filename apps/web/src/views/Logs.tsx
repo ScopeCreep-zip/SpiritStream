@@ -9,6 +9,7 @@ import { LogEntry } from '@/components/feedback/LogEntry';
 import type { LogLevel } from '@/types/stream';
 import { useLogStore } from '@/stores/logStore';
 import { dialogs } from '@/lib/backend';
+import { logger } from '@/lib/logger';
 import { toast } from '@/hooks/useToast';
 
 export function Logs() {
@@ -90,7 +91,7 @@ export function Logs() {
         // User cancelled - don't show error
         return;
       }
-      console.error('Failed to export logs:', error);
+      logger.error('Failed to export logs:', error);
       toast.error(t('logs.exportFailed', { defaultValue: 'Failed to export logs' }));
     }
   };
@@ -121,7 +122,7 @@ export function Logs() {
           <CardTitle>{t('logs.title')}</CardTitle>
           <CardDescription>{t('logs.description')}</CardDescription>
         </div>
-        <div className="flex items-center" style={{ gap: '12px' }}>
+        <div className="flex items-center gap-3">
           <Select
             value={timeFilter}
             onChange={(e) =>
@@ -155,13 +156,12 @@ export function Logs() {
           </Button>
         </div>
       </CardHeader>
-      <CardBody style={{ padding: 0 }}>
+      <CardBody className="p-0">
         <LogConsole maxHeight="500px">
           <div ref={consoleRef}>
             {filteredLogs.length === 0 ? (
               <div
-                className="text-center text-[var(--text-secondary)]"
-                style={{ padding: '32px 16px' }}
+                className="text-center text-text-secondary py-8 px-4"
               >
                 {t('logs.noLogs')}
               </div>

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api } from '@/lib/backend';
+import { logger } from '@/lib/logger';
 import i18n from '@/lib/i18n';
 import {
   type Profile,
@@ -115,7 +116,7 @@ const applyProfileSettings = async (settings: ProfileSettings) => {
     try {
       await obsStore.disconnect(false); // false = not manual, don't disable auto-reconnect permanently
     } catch (error) {
-      console.warn('Failed to disconnect OBS when switching profiles:', error);
+      logger.warn('Failed to disconnect OBS when switching profiles:', error);
     }
   }
 
@@ -128,7 +129,7 @@ const applyProfileSettings = async (settings: ProfileSettings) => {
     pendingObsAutoConnectTimeout = setTimeout(() => {
       pendingObsAutoConnectTimeout = null;
       useObsStore.getState().connect(false).catch((error) => {
-        console.warn('Failed to auto-connect to OBS:', error);
+        logger.warn('Failed to auto-connect to OBS:', error);
       });
     }, 100);
   }
@@ -218,7 +219,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       }
 
       const profile = await api.profile.load(name, password);
-      console.log('[ProfileStore] Profile loaded from backend:', {
+      logger.debug('[ProfileStore] Profile loaded from backend:', {
         profileId: profile.id,
         profileName: profile.name,
       });
@@ -249,7 +250,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
           await api.settings.save({ ...settings, lastProfile: name });
         }
       } catch (settingsError) {
-        console.warn('[ProfileStore] Failed to save last profile:', settingsError);
+        logger.warn('[ProfileStore] Failed to save last profile:', settingsError);
       }
     } catch (error) {
       const errorMsg = String(error);
@@ -288,7 +289,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         await get().loadProfiles();
         set({ pendingUnlock: false });
       } catch (error) {
-        console.error('[ProfileStore] Failed to remove encryption:', error);
+        logger.error('[ProfileStore] Failed to remove encryption:', error);
         set({ error: String(error), pendingUnlock: false });
       }
     }
@@ -318,7 +319,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     const current = get().current;
     if (!current) return;
 
-    console.log('[ProfileStore] saveProfile called:', {
+    logger.debug('[ProfileStore] saveProfile called:', {
       profileId: current.id,
       profileName: current.name,
       hasPassword: !!password,
@@ -329,7 +330,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     set({ error: null });
     try {
       await api.profile.save(current, password);
-      console.log('[ProfileStore] saveProfile completed (backend save successful)');
+      logger.debug('[ProfileStore] saveProfile completed (backend save successful)');
       // Update the summary in the list
       const summaries = get().profiles.map((s) =>
         s.name === current.name ? createSummary(current) : s
@@ -340,7 +341,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       }
       set({ profiles: summaries });
     } catch (error) {
-      console.error('[ProfileStore] saveProfile failed:', error);
+      logger.error('[ProfileStore] saveProfile failed:', error);
       set({ error: String(error) });
     }
   },
@@ -407,14 +408,14 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     const current = get().current;
     if (current) {
       const updatedProfile = { ...current, ...updates };
-      console.log('[ProfileStore] updateProfile called:', {
+      logger.debug('[ProfileStore] updateProfile called:', {
         profileId: current.id,
         profileName: current.name,
         updateKeys: Object.keys(updates),
       });
       set({ current: updatedProfile });
       await get().saveProfile();
-      console.log('[ProfileStore] updateProfile completed (saveProfile called)');
+      logger.debug('[ProfileStore] updateProfile completed (saveProfile called)');
     }
   },
 
@@ -489,7 +490,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       // Prevent deletion of the default passthrough group
       const groupToDelete = current.outputGroups.find((g) => g.id === groupId);
       if (groupToDelete?.isDefault) {
-        console.warn('Cannot delete the default passthrough output group');
+        logger.warn('Cannot delete the default passthrough output group');
         return;
       }
 

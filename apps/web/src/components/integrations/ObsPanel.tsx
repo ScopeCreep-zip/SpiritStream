@@ -19,11 +19,10 @@ import { Toggle } from '@/components/ui/Toggle';
 import { useObsStore } from '@/stores/obsStore';
 import { useProfileStore } from '@/stores/profileStore';
 import { toast } from '@/hooks/useToast';
+import { logger } from '@/lib/logger';
 import { cn } from '@/lib/cn';
+import { AUTO_SAVE_DELAY_MS } from '@/lib/constants';
 import type { ObsIntegrationDirection } from '@/types/api';
-
-// Debounce delay for auto-save (ms)
-const AUTO_SAVE_DELAY = 500;
 
 const directionOptions: { value: ObsIntegrationDirection; labelKey: string; descKey: string }[] = [
   {
@@ -105,7 +104,7 @@ export function ObsPanel() {
       // Flush any pending updates
       if (pendingUpdatesRef.current) {
         updateConfig(pendingUpdatesRef.current).catch((error) => {
-          console.error('Failed to flush OBS config on unmount:', error);
+          logger.error('Failed to flush OBS config on unmount:', error);
         });
         pendingUpdatesRef.current = null;
       }
@@ -127,9 +126,9 @@ export function ObsPanel() {
           await updateConfig(pendingUpdatesRef.current!);
           pendingUpdatesRef.current = null; // Clear after successful save
         } catch (error) {
-          console.error('Failed to save OBS config:', error);
+          logger.error('Failed to save OBS config:', error);
         }
-      }, AUTO_SAVE_DELAY);
+      }, AUTO_SAVE_DELAY_MS);
     },
     [updateConfig]
   );
@@ -178,7 +177,7 @@ export function ObsPanel() {
       try {
         await updateConfig({ useAuth: checked });
       } catch (error) {
-        console.error('Failed to save useAuth:', error);
+        logger.error('Failed to save useAuth:', error);
       }
     },
     [updateConfig]
@@ -191,7 +190,7 @@ export function ObsPanel() {
       try {
         await updateConfig({ autoConnect: checked });
       } catch (error) {
-        console.error('Failed to save autoConnect:', error);
+        logger.error('Failed to save autoConnect:', error);
       }
     },
     [updateConfig]
@@ -221,13 +220,13 @@ export function ObsPanel() {
   const getStatusIcon = () => {
     switch (connectionStatus) {
       case 'connected':
-        return <Wifi className="w-4 h-4 text-[var(--status-live)]" />;
+        return <Wifi className="w-4 h-4 text-status-live" />;
       case 'connecting':
-        return <Loader2 className="w-4 h-4 text-[var(--status-connecting)] animate-spin" />;
+        return <Loader2 className="w-4 h-4 text-status-connecting animate-spin" />;
       case 'error':
-        return <AlertCircle className="w-4 h-4 text-[var(--status-error)]" />;
+        return <AlertCircle className="w-4 h-4 text-status-error" />;
       default:
-        return <WifiOff className="w-4 h-4 text-[var(--text-tertiary)]" />;
+        return <WifiOff className="w-4 h-4 text-text-tertiary" />;
     }
   };
 
@@ -246,7 +245,7 @@ export function ObsPanel() {
 
   if (!currentProfile) {
     return (
-      <div className="flex items-center justify-center p-8 text-[var(--text-tertiary)]">
+      <div className="flex items-center justify-center p-8 text-text-tertiary">
         {t('common.loadProfileFirst', 'Please load a profile first')}
       </div>
     );
@@ -256,12 +255,12 @@ export function ObsPanel() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <div className="p-2 rounded-lg bg-[var(--bg-elevated)]">
-          <Radio className="w-5 h-5 text-[var(--primary)]" />
+        <div className="p-2 rounded-lg bg-bg-elevated">
+          <Radio className="w-5 h-5 text-primary" />
         </div>
         <div>
-          <h2 className="text-lg font-semibold text-[var(--text-primary)]">{t('obs.title')}</h2>
-          <p className="text-sm text-[var(--text-secondary)]">{t('obs.description')}</p>
+          <h2 className="text-lg font-semibold text-text-primary">{t('obs.title')}</h2>
+          <p className="text-sm text-text-secondary">{t('obs.description')}</p>
         </div>
       </div>
 
@@ -355,15 +354,15 @@ export function ObsPanel() {
           </CardHeader>
           <CardBody className="space-y-4">
             {/* Connection Status */}
-            <div className="flex items-center justify-between p-3 rounded-lg bg-[var(--bg-base)]">
+            <div className="flex items-center justify-between p-3 rounded-lg bg-bg-base">
               <div className="flex items-center gap-3">
                 {getStatusIcon()}
                 <div>
-                  <div className="text-sm font-medium text-[var(--text-primary)]">
+                  <div className="text-sm font-medium text-text-primary">
                     {getStatusText()}
                   </div>
                   {isConnected && obsVersion && (
-                    <div className="text-xs text-[var(--text-tertiary)]">
+                    <div className="text-xs text-text-tertiary">
                       {t('obs.versionInfo', { obsVersion, wsVersion: websocketVersion })}
                     </div>
                   )}
@@ -396,21 +395,21 @@ export function ObsPanel() {
 
             {/* Error Message */}
             {errorMessage && (
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-[var(--status-error)]/10 border border-[var(--status-error)]/20">
-                <AlertCircle className="w-4 h-4 text-[var(--status-error)] flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-[var(--status-error)]">{errorMessage}</p>
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-status-error/10 border border-status-error/20">
+                <AlertCircle className="w-4 h-4 text-status-error flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-status-error">{errorMessage}</p>
               </div>
             )}
 
             {/* OBS Stream Status (read-only indicator) */}
             {isConnected && (
-              <div className="flex items-center gap-2 p-3 rounded-lg bg-[var(--bg-base)]">
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-bg-base">
                 {streamStatus === 'active' ? (
-                  <CheckCircle2 className="w-4 h-4 text-[var(--status-live)]" />
+                  <CheckCircle2 className="w-4 h-4 text-status-live" />
                 ) : (
-                  <Square className="w-4 h-4 text-[var(--text-tertiary)]" />
+                  <Square className="w-4 h-4 text-text-tertiary" />
                 )}
-                <span className="text-sm text-[var(--text-primary)]">
+                <span className="text-sm text-text-primary">
                   {streamStatus === 'active' ? t('obs.streaming') : t('obs.notStreaming')}
                 </span>
               </div>
@@ -434,19 +433,19 @@ export function ObsPanel() {
                 onClick={() => {
                   setDirection(option.value);
                   // Auto-save direction changes
-                  updateConfig({ direction: option.value }).catch(console.error);
+                  updateConfig({ direction: option.value }).catch(logger.error);
                 }}
                 className={cn(
                   'p-4 rounded-lg border text-left transition-all cursor-pointer',
                   direction === option.value
-                    ? 'border-[var(--primary)] bg-[var(--primary)]/10'
-                    : 'border-[var(--border-default)] bg-[var(--bg-base)] hover:border-[var(--border-strong)]'
+                    ? 'border-primary bg-primary/10'
+                    : 'border-border-default bg-bg-base hover:border-border-strong'
                 )}
               >
-                <div className="text-sm font-medium text-[var(--text-primary)]">
+                <div className="text-sm font-medium text-text-primary">
                   {t(option.labelKey as 'obs.directions.disabled')}
                 </div>
-                <div className="text-xs text-[var(--text-tertiary)] mt-1">
+                <div className="text-xs text-text-tertiary mt-1">
                   {t(option.descKey as 'obs.directions.disabledDescription')}
                 </div>
               </button>

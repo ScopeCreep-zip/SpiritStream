@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { cn } from '@/lib/cn';
 import { StreamStatus } from '@/components/ui/StreamStatus';
 import { PlatformIcon } from '@/components/stream/PlatformIcon';
@@ -18,36 +19,36 @@ export interface StreamCardProps {
   className?: string;
 }
 
-export function StreamCard({ platform, name, status, stats, onClick, className }: StreamCardProps) {
+export const StreamCard = memo(function StreamCard({ platform, name, status, stats, onClick, className }: StreamCardProps) {
   return (
     <div
       onClick={onClick}
       className={cn(
-        'bg-[var(--bg-surface)] border border-[var(--border-default)]',
+        'bg-bg-surface border border-border-default',
         'rounded-xl transition-all duration-150',
-        'hover:border-[var(--border-interactive)] hover:shadow-[var(--shadow-md)]',
+        'hover:border-border-interactive hover:shadow-md',
         onClick && 'cursor-pointer',
+        'p-4',
         className
       )}
-      style={{ padding: '16px' }}
     >
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <PlatformIcon platform={platform} />
-          <span className="font-semibold text-sm text-[var(--text-primary)]">{name}</span>
+          <span className="font-semibold text-sm text-text-primary">{name}</span>
         </div>
         <StreamStatus status={status} />
       </div>
       {stats && stats.length > 0 && (
-        <div className="grid grid-cols-3 gap-3 pt-3 border-t border-[var(--border-muted)]">
+        <div className="grid grid-cols-3 gap-3 pt-3 border-t border-border-muted">
           {stats.map((stat, index) => (
             <div key={index} className="text-center">
-              <div className="text-sm font-semibold text-[var(--text-primary)]">{stat.value}</div>
-              <div className="text-tiny uppercase text-[var(--text-tertiary)]">{stat.label}</div>
+              <div className="text-sm font-semibold text-text-primary">{stat.value}</div>
+              <div className="text-tiny uppercase text-text-tertiary">{stat.label}</div>
             </div>
           ))}
         </div>
       )}
     </div>
   );
-}
+});

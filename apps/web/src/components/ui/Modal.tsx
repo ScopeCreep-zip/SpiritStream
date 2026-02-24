@@ -98,7 +98,7 @@ export function Modal({ open, onClose, title, children, footer, maxWidth = '500p
     <div
       className={cn(
         'fixed inset-0 z-[1000] flex items-center justify-center',
-        'bg-[var(--bg-overlay)]',
+        'bg-bg-overlay',
         'animate-in fade-in duration-200'
       )}
       onClick={(e) => closeOnBackdropClick && e.target === e.currentTarget && onClose()}
@@ -106,7 +106,7 @@ export function Modal({ open, onClose, title, children, footer, maxWidth = '500p
       <div
         ref={modalRef}
         className={cn(
-          'bg-[var(--bg-surface)] rounded-xl shadow-[var(--shadow-xl)]',
+          'bg-bg-surface rounded-xl shadow-xl',
           'w-full max-h-[90vh] overflow-hidden',
           'animate-in zoom-in-95 duration-200',
           'flex flex-col'
@@ -133,19 +133,18 @@ export function ModalHeader({ title, onClose }: ModalHeaderProps) {
   const { t } = useTranslation();
   return (
     <div
-      className="flex-shrink-0 border-b border-[var(--border-muted)] flex items-center justify-between"
-      style={{ padding: '20px 24px' }}
+      className="flex-shrink-0 border-b border-border-muted flex items-center justify-between py-5 px-6"
     >
-      <h3 id="modal-title" className="text-lg font-semibold text-[var(--text-primary)]">
+      <h3 id="modal-title" className="text-lg font-semibold text-text-primary">
         {title}
       </h3>
       <button
         onClick={onClose}
         className={cn(
           'w-8 h-8 flex items-center justify-center rounded-md',
-          'text-[var(--text-tertiary)] bg-transparent border-none cursor-pointer',
-          'hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]',
-          'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ring-default)]',
+          'text-text-tertiary bg-transparent border-none cursor-pointer',
+          'hover:bg-bg-hover hover:text-text-primary',
+          'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring-default',
           'transition-all duration-150'
         )}
         aria-label={t('common.close')}
@@ -163,7 +162,7 @@ interface ModalBodyProps {
 
 export function ModalBody({ children, className }: ModalBodyProps) {
   return (
-    <div className={cn('flex-1 min-h-0 overflow-y-auto', className)} style={{ padding: '24px' }}>
+    <div className={cn('flex-1 min-h-0 overflow-y-auto p-6', className)}>
       {children}
     </div>
   );
@@ -177,8 +176,7 @@ interface ModalFooterProps {
 export function ModalFooter({ children, className }: ModalFooterProps) {
   return (
     <div
-      className={cn('flex-shrink-0 border-t border-[var(--border-muted)] flex justify-end gap-3', className)}
-      style={{ padding: '16px 24px' }}
+      className={cn('flex-shrink-0 border-t border-border-muted flex justify-end gap-3 py-4 px-6', className)}
     >
       {children}
     </div>

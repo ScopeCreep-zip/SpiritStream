@@ -20,22 +20,22 @@ export function StatBox({
   return (
     <div
       className={cn(
-        'bg-[var(--bg-surface)] border border-[var(--border-default)]',
+        'bg-bg-surface border border-border-default',
         'rounded-xl',
+        'p-5',
         className
       )}
-      style={{ padding: '20px' }}
     >
       <div className="flex items-center justify-between mb-2">
-        <span className="text-small text-[var(--text-secondary)]">{label}</span>
-        <span className="text-[var(--text-tertiary)]">{icon}</span>
+        <span className="text-small text-text-secondary">{label}</span>
+        <span className="text-text-tertiary">{icon}</span>
       </div>
-      <div className="text-2xl font-bold text-[var(--text-primary)]">{value}</div>
+      <div className="text-2xl font-bold text-text-primary">{value}</div>
       {change && (
         <div
           className={cn(
             'text-xs mt-1',
-            changeType === 'positive' ? 'text-[var(--success-text)]' : 'text-[var(--text-tertiary)]'
+            changeType === 'positive' ? 'text-success-text' : 'text-text-tertiary'
           )}
         >
           {change}

@@ -74,8 +74,7 @@ export function ChatList({
       {messages.length === 0 ? (
         showEmptyState ? (
           <div
-            className="text-center text-[var(--text-tertiary)]"
-            style={{ padding: '40px 16px' }}
+            className="text-center text-text-tertiary py-10 px-4"
           >
             {emptyLabel}
           </div>
@@ -101,8 +100,8 @@ export function ChatList({
                 className={cn(
                   'flex items-start gap-3 rounded-lg border p-3',
                   isOutbound
-                    ? 'border-[var(--border-strong)] bg-[var(--bg-base)]'
-                    : 'border-[var(--border-subtle)] bg-[var(--bg-elevated)]'
+                    ? 'border-border-strong bg-bg-base'
+                    : 'border-border-subtle bg-bg-elevated'
                 )}
               >
                 <div className="flex items-center gap-1">
@@ -111,15 +110,15 @@ export function ChatList({
                   ))}
                 </div>
                 <div className={cn('flex flex-wrap items-baseline gap-x-2 gap-y-1', densityConfig.text)}>
-                  <span className="font-semibold text-[var(--text-primary)]">
+                  <span className="font-semibold text-text-primary">
                     {isOutbound ? t('chat.you') : message.username}
                   </span>
                   {timestamp && (
-                    <span className="text-[0.7rem] text-[var(--text-tertiary)]">
+                    <span className="text-[0.7rem] text-text-tertiary">
                       {timestamp}
                     </span>
                   )}
-                  <span className="text-[var(--text-secondary)] break-words">{message.message}</span>
+                  <span className="text-text-secondary break-words">{message.message}</span>
                 </div>
               </div>
             );

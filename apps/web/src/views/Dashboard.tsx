@@ -275,7 +275,7 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--text-secondary)]">{t('common.loading')}</div>
+        <div className="text-text-secondary">{t('common.loading')}</div>
       </div>
     );
   }
@@ -283,7 +283,7 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
   if (error) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--error-text)]">
+        <div className="text-error-text">
           {t('common.error')}: {error}
         </div>
       </div>
@@ -321,7 +321,7 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
         />
       </StatsRow>
 
-      <Grid cols={2} style={{ marginBottom: '24px' }}>
+      <Grid cols={2} className="mb-6">
         <Card>
           <CardHeader>
             <div>
@@ -356,7 +356,7 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
                 active
               />
             ) : (
-              <div className="text-center py-8 text-[var(--text-secondary)]">
+              <div className="text-center py-8 text-text-secondary">
                 <p>{t('dashboard.noProfileSelected')}</p>
                 <Button variant="primary" className="mt-4" onClick={onOpenProfileModal}>
                   {t('dashboard.createProfile')}
@@ -449,7 +449,7 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
               ))}
             </Grid>
           ) : (
-            <div className="text-center py-8 text-[var(--text-secondary)]">
+            <div className="text-center py-8 text-text-secondary">
               <p>{t('dashboard.noStreamTargets')}</p>
               <Button
                 variant="outline"
@@ -465,7 +465,7 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
       </Card>
 
       {/* Output Groups Section */}
-      <Card style={{ marginTop: '24px' }}>
+      <Card className="mt-6">
         <CardHeader>
           <div>
             <CardTitle>{t('dashboard.outputGroups')}</CardTitle>
@@ -494,7 +494,7 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
               ))}
             </Grid>
           ) : (
-            <div className="text-center py-8 text-[var(--text-secondary)]">
+            <div className="text-center py-8 text-text-secondary">
               <p>{t('dashboard.noOutputGroups')}</p>
               <Button
                 variant="outline"
@@ -510,7 +510,7 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
       </Card>
 
       {/* Encoder Settings Section */}
-      <Card style={{ marginTop: '24px' }}>
+      <Card className="mt-6">
         <CardHeader>
           <div>
             <CardTitle>{t('dashboard.encoderSettings')}</CardTitle>
@@ -535,7 +535,7 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
               ))}
             </Grid>
           ) : (
-            <div className="text-center py-8 text-[var(--text-secondary)]">
+            <div className="text-center py-8 text-text-secondary">
               <p>{t('dashboard.noEncoderSettings')}</p>
               <Button
                 variant="outline"

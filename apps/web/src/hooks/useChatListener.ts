@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { events } from '@/lib/backend';
+import { logger } from '@/lib/logger';
 import { useChatStore } from '@/stores/chatStore';
 import type { ChatMessage } from '@/types/chat';
 import { CHAT_MESSAGE_EVENT, CHAT_OVERLAY_SETTINGS_EVENT } from '@/lib/chatEvents';
@@ -21,7 +22,7 @@ export function useChatListener() {
         unlistenMessages = unsubscribe;
       })
       .catch((error) => {
-        console.error('Failed to listen for chat messages:', error);
+        logger.error('Failed to listen for chat messages:', error);
       });
 
     events.on<{ transparent: boolean }>(CHAT_OVERLAY_SETTINGS_EVENT, (payload) => {
@@ -31,7 +32,7 @@ export function useChatListener() {
         unlistenOverlay = unsubscribe;
       })
       .catch((error) => {
-        console.error('Failed to listen for chat overlay settings:', error);
+        logger.error('Failed to listen for chat overlay settings:', error);
       });
 
     return () => {

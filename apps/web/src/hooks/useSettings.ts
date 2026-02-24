@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient, useIsMutating } from '@tanstack/react-query';
 import { useEffect, useCallback } from 'react';
 import { api } from '@/lib/backend';
+import { logger } from '@/lib/logger';
 import type { AppSettings } from '@/types/api';
 
 /**
@@ -122,7 +123,7 @@ export function useUpdateSetting() {
       if (context?.previousSettings) {
         queryClient.setQueryData(SETTINGS_QUERY_KEY, context.previousSettings);
       }
-      console.error('Failed to save setting:', err);
+      logger.error('Failed to save setting:', err);
     },
   });
 }
@@ -172,7 +173,7 @@ export function useSaveSettings() {
       if (context?.previousSettings) {
         queryClient.setQueryData(SETTINGS_QUERY_KEY, context.previousSettings);
       }
-      console.error('Failed to save settings:', err);
+      logger.error('Failed to save settings:', err);
     },
   });
 }

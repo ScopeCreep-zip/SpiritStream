@@ -13,6 +13,7 @@ import {
   CHAT_OVERLAY_SYNC_REQUEST_EVENT,
 } from '@/lib/chatEvents';
 import { isTauri } from '@/lib/backend/env';
+import { logger } from '@/lib/logger';
 import { setupOverlayAutoClose } from '@/lib/chatWindow';
 import { useChatStore } from '@/stores/chatStore';
 import type { ChatMessage } from '@/types/chat';
@@ -47,7 +48,7 @@ export function ChatOverlay() {
         const currentWindow = getCurrentWindow();
         await currentWindow.setAlwaysOnTop(event.payload.alwaysOnTop);
       } catch (error) {
-        console.error('Failed to set always on top:', error);
+        logger.error('Failed to set always on top:', error);
       }
     }).then((fn) => {
       unlistenAlwaysOnTop = fn;
@@ -71,7 +72,7 @@ export function ChatOverlay() {
   useEffect(() => {
     if (isTauri()) {
       emit(CHAT_OVERLAY_SYNC_REQUEST_EVENT, {}).catch((error) => {
-        console.error('Failed to request chat overlay sync:', error);
+        logger.error('Failed to request chat overlay sync:', error);
       });
       return;
     }
@@ -87,7 +88,7 @@ export function ChatOverlay() {
     };
 
     window.addEventListener('message', handleMessage);
-    window.opener.postMessage({ type: 'chat-overlay-sync-request' }, '*');
+    window.opener.postMessage({ type: 'chat-overlay-sync-request' }, window.location.origin);
 
     return () => {
       window.removeEventListener('message', handleMessage);
@@ -124,13 +125,13 @@ export function ChatOverlay() {
     try {
       await WebviewWindow.getCurrent().close();
     } catch (error) {
-      console.error('Failed to close chat overlay window:', error);
+      logger.error('Failed to close chat overlay window:', error);
     }
   };
 
   const handleDragStart = () => {
     getCurrentWindow().startDragging().catch((error) => {
-      console.error('Failed to start dragging chat overlay window:', error);
+      logger.error('Failed to start dragging chat overlay window:', error);
     });
   };
 
@@ -138,7 +139,7 @@ export function ChatOverlay() {
     <div
       className={cn(
         'min-h-screen w-full flex flex-col',
-        overlayTransparent ? 'bg-transparent' : 'bg-[var(--bg-base)]'
+        overlayTransparent ? 'bg-transparent' : 'bg-bg-base'
       )}
     >
       <div

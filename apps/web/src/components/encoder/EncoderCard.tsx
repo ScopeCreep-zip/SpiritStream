@@ -136,34 +136,34 @@ export function EncoderCard({
     <Card className={cn('transition-all duration-150', className)}>
       <CardBody>
         {/* Header Row */}
-        <div className="flex items-start justify-between" style={{ marginBottom: '16px' }}>
-          <div className="flex items-center" style={{ gap: '12px' }}>
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex items-center gap-3">
             {/* Encoder Icon */}
             <div
               className={cn(
                 'w-10 h-10 rounded-lg flex items-center justify-center',
                 encoder.type === 'passthrough'
-                  ? 'bg-[var(--bg-muted)] text-[var(--text-secondary)]'
+                  ? 'bg-bg-muted text-text-secondary'
                   : encoder.type === 'hardware'
-                    ? 'bg-[var(--success-subtle)] text-[var(--success-text)]'
-                    : 'bg-[var(--primary-subtle)] text-[var(--primary)]'
+                    ? 'bg-success-subtle text-success-text'
+                    : 'bg-primary-subtle text-primary'
               )}
             >
               <Cpu className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-semibold text-[var(--text-primary)]">
+              <h3 className="font-semibold text-text-primary">
                 {group.name || tDynamic('encoder.defaultEncoderName', { defaultValue: 'Encoder' })}
                 {isDefaultGroup && (
-                  <span className="ml-2 text-xs font-normal text-[var(--text-tertiary)]">
+                  <span className="ml-2 text-xs font-normal text-text-tertiary">
                     ({tDynamic('encoder.readonly', { defaultValue: 'Read-only' })})
                   </span>
                 )}
               </h3>
-              <p className="text-sm text-[var(--text-secondary)]">
+              <p className="text-sm text-text-secondary">
                 {encoder.label}
                 {encoder.type !== 'passthrough' && (
-                  <span className="text-[var(--text-tertiary)]">
+                  <span className="text-text-tertiary">
                     {' '}
                     ({encoder.type === 'hardware'
                       ? tDynamic('encoder.hardware', { defaultValue: 'Hardware' })
@@ -173,65 +173,64 @@ export function EncoderCard({
               </p>
             </div>
           </div>
-          <div className="flex items-center" style={{ gap: '8px' }}>
+          <div className="flex items-center gap-2">
             <StreamStatus status={status} />
           </div>
         </div>
 
         {/* Video Settings Grid */}
         <div
-          className="grid gap-4 py-4 border-t border-b border-[var(--border-muted)]"
-          style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}
+          className="grid grid-cols-4 gap-4 py-4 border-t border-b border-border-muted"
         >
           <div className="flex flex-col items-center text-center">
-            <Monitor className="w-4 h-4 text-[var(--text-tertiary)]" style={{ marginBottom: '4px' }} />
-            <span className="text-xs text-[var(--text-tertiary)] uppercase">
+            <Monitor className="w-4 h-4 text-text-tertiary mb-1" />
+            <span className="text-xs text-text-tertiary uppercase">
               {tDynamic('encoder.resolution', { defaultValue: 'Resolution' })}
             </span>
-            <span className="text-sm font-medium text-[var(--text-primary)]">{resolution}</span>
+            <span className="text-sm font-medium text-text-primary">{resolution}</span>
           </div>
           <div className="flex flex-col items-center text-center">
-            <Gauge className="w-4 h-4 text-[var(--text-tertiary)]" style={{ marginBottom: '4px' }} />
-            <span className="text-xs text-[var(--text-tertiary)] uppercase">
+            <Gauge className="w-4 h-4 text-text-tertiary mb-1" />
+            <span className="text-xs text-text-tertiary uppercase">
               {tDynamic('encoder.bitrate', { defaultValue: 'Bitrate' })}
             </span>
-            <span className="text-sm font-medium text-[var(--text-primary)]">{bitrate}</span>
+            <span className="text-sm font-medium text-text-primary">{bitrate}</span>
           </div>
           <div className="flex flex-col items-center text-center">
-            <Film className="w-4 h-4 text-[var(--text-tertiary)]" style={{ marginBottom: '4px' }} />
-            <span className="text-xs text-[var(--text-tertiary)] uppercase">
+            <Film className="w-4 h-4 text-text-tertiary mb-1" />
+            <span className="text-xs text-text-tertiary uppercase">
               {tDynamic('encoder.fps', { defaultValue: 'FPS' })}
             </span>
-            <span className="text-sm font-medium text-[var(--text-primary)]">{fps}</span>
+            <span className="text-sm font-medium text-text-primary">{fps}</span>
           </div>
           <div className="flex flex-col items-center text-center">
-            <Settings2 className="w-4 h-4 text-[var(--text-tertiary)]" style={{ marginBottom: '4px' }} />
-            <span className="text-xs text-[var(--text-tertiary)] uppercase">
+            <Settings2 className="w-4 h-4 text-text-tertiary mb-1" />
+            <span className="text-xs text-text-tertiary uppercase">
               {tDynamic('encoder.preset', { defaultValue: 'Preset' })}
             </span>
-            <span className="text-sm font-medium text-[var(--text-primary)]">{preset}</span>
+            <span className="text-sm font-medium text-text-primary">{preset}</span>
           </div>
         </div>
 
         {/* Footer: Audio + Actions */}
-        <div className="flex items-center justify-between" style={{ marginTop: '12px' }}>
-          <div className="flex items-center text-sm" style={{ gap: '8px' }}>
-            <Volume2 className="w-4 h-4 text-[var(--secondary)]" />
-            <span className="text-[var(--text-secondary)]">
+        <div className="flex items-center justify-between mt-3">
+          <div className="flex items-center text-sm gap-2">
+            <Volume2 className="w-4 h-4 text-secondary" />
+            <span className="text-text-secondary">
               {tDynamic('encoder.audio', { defaultValue: 'Audio' })}:
             </span>
-            <span className="text-[var(--text-primary)]">{audioSummary}</span>
+            <span className="text-text-primary">{audioSummary}</span>
             {group.video.profile && (
               <>
-                <span className="text-[var(--text-tertiary)]">|</span>
-                <span className="text-[var(--text-secondary)]">
+                <span className="text-text-tertiary">|</span>
+                <span className="text-text-secondary">
                   {tDynamic('encoder.profile', { defaultValue: 'Profile' })}:
                 </span>
-                <span className="text-[var(--text-primary)]">{profile}</span>
+                <span className="text-text-primary">{profile}</span>
               </>
             )}
           </div>
-          <div className="flex items-center" style={{ gap: '4px' }}>
+          <div className="flex items-center gap-1">
             {!isDefaultGroup && onEdit && (
               <>
                 <Button
@@ -261,7 +260,7 @@ export function EncoderCard({
               </>
             )}
             {isDefaultGroup && (
-              <span className="text-xs text-[var(--text-tertiary)] italic px-2">
+              <span className="text-xs text-text-tertiary italic px-2">
                 {tDynamic('encoder.defaultPassthrough', { defaultValue: 'Default RTMP relay - cannot be edited or deleted' })}
               </span>
             )}

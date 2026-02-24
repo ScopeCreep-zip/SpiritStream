@@ -13,6 +13,7 @@ import {
   CornerDownLeft,
 } from 'lucide-react';
 import { getBackendBaseUrl, getAuthHeaders, safeFetch } from '@/lib/backend/env';
+import { logger } from '@/lib/logger';
 
 interface FileEntry {
   name: string;
@@ -205,7 +206,7 @@ export function FileBrowserModal({
         setEntries(data.entries);
         setParentPath(data.parent ?? null);
       } catch (err) {
-        console.error('[FileBrowser] Browse failed:', err);
+        logger.error('[FileBrowser] Browse failed:', err);
         // Map server errors to user-friendly messages
         const errorMessage = err instanceof Error ? err.message : 'Failed to browse directory';
         const friendlyError = getFriendlyError(errorMessage, t);
@@ -449,7 +450,7 @@ export function FileBrowserModal({
             onKeyDown={handlePathKeyDown}
             onFocus={() => setIsEditingPath(true)}
             placeholder={t('fileBrowser.typePath', 'Type a path and press Enter...')}
-            className="flex-1 px-3 py-1.5 bg-[var(--bg-sunken)] rounded text-sm font-mono text-[var(--text-secondary)] border border-transparent focus:border-[var(--primary)] focus:outline-none"
+            className="flex-1 px-3 py-1.5 bg-bg-sunken rounded text-sm font-mono text-text-secondary border border-transparent focus:border-primary focus:outline-none"
           />
           {isEditingPath && pathInput !== currentPath && (
             <Button
@@ -467,7 +468,7 @@ export function FileBrowserModal({
         {/* Quick path shortcuts */}
         {quickPaths.length > 0 && (
           <div className="flex items-center gap-2 mb-3 flex-wrap">
-            <span className="text-xs text-[var(--text-muted)]">
+            <span className="text-xs text-text-muted">
               {t('fileBrowser.quickPaths', 'Quick paths:')}
             </span>
             {quickPaths.map((quickPath) => (
@@ -475,7 +476,7 @@ export function FileBrowserModal({
                 key={quickPath.path}
                 type="button"
                 onClick={() => browse(quickPath.path)}
-                className="text-xs px-2 py-0.5 rounded bg-[var(--bg-muted)] hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] transition-colors"
+                className="text-xs px-2 py-0.5 rounded bg-bg-muted hover:bg-bg-hover text-text-secondary transition-colors"
               >
                 {quickPath.label}
               </button>
@@ -484,26 +485,26 @@ export function FileBrowserModal({
         )}
 
         {/* File list */}
-        <div className="border border-[var(--border-default)] rounded-lg bg-[var(--bg-sunken)] h-[300px] overflow-y-auto">
+        <div className="border border-border-default rounded-lg bg-bg-sunken h-[300px] overflow-y-auto">
           {loading ? (
-            <div className="flex items-center justify-center h-full text-[var(--text-tertiary)]">
+            <div className="flex items-center justify-center h-full text-text-tertiary">
               {t('common.loading', 'Loading...')}
             </div>
           ) : error ? (
             <div className="flex flex-col items-center justify-center h-full p-4 text-center">
-              <p className="text-[var(--error-text)] mb-2">{error}</p>
+              <p className="text-error-text mb-2">{error}</p>
               <Button variant="outline" size="sm" onClick={() => browse(currentPath)}>
                 {t('common.retry', 'Retry')}
               </Button>
             </div>
           ) : filteredEntries.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-[var(--text-tertiary)]">
+            <div className="flex items-center justify-center h-full text-text-tertiary">
               {mode === 'directory'
                 ? t('fileBrowser.noSubdirectories', 'No subdirectories')
                 : t('fileBrowser.noFiles', 'No matching files')}
             </div>
           ) : (
-            <div className="divide-y divide-[var(--border-muted)]">
+            <div className="divide-y divide-border-muted">
               {filteredEntries.map((entry) => (
                 <div
                   key={entry.name}
@@ -513,26 +514,26 @@ export function FileBrowserModal({
                     flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors
                     ${
                       selectedEntry === entry.name
-                        ? 'bg-[var(--primary-subtle)]'
-                        : 'hover:bg-[var(--bg-hover)]'
+                        ? 'bg-primary-subtle'
+                        : 'hover:bg-bg-hover'
                     }
                   `}
                 >
                   {entry.type === 'directory' ? (
-                    <FolderOpen className="w-5 h-5 text-[var(--warning)]" />
+                    <FolderOpen className="w-5 h-5 text-warning" />
                   ) : (
-                    <File className="w-5 h-5 text-[var(--text-tertiary)]" />
+                    <File className="w-5 h-5 text-text-tertiary" />
                   )}
-                  <span className="flex-1 text-sm text-[var(--text-primary)] truncate">
+                  <span className="flex-1 text-sm text-text-primary truncate">
                     {entry.name}
                   </span>
                   {entry.type === 'file' && entry.size !== undefined && (
-                    <span className="text-xs text-[var(--text-muted)]">
+                    <span className="text-xs text-text-muted">
                       {formatSize(entry.size)}
                     </span>
                   )}
                   {entry.type === 'directory' && (
-                    <Folder className="w-4 h-4 text-[var(--text-muted)]" />
+                    <Folder className="w-4 h-4 text-text-muted" />
                   )}
                 </div>
               ))}
@@ -554,11 +555,11 @@ export function FileBrowserModal({
 
         {/* Current selection info */}
         {mode === 'directory' && currentPath && (
-          <div className="mt-3 p-2 bg-[var(--bg-muted)] rounded text-sm">
-            <span className="text-[var(--text-tertiary)]">
+          <div className="mt-3 p-2 bg-bg-muted rounded text-sm">
+            <span className="text-text-tertiary">
               {t('fileBrowser.selectedDirectory', 'Selected directory:')}
             </span>{' '}
-            <span className="font-mono text-[var(--text-secondary)]">{currentPath}</span>
+            <span className="font-mono text-text-secondary">{currentPath}</span>
           </div>
         )}
       </ModalBody>

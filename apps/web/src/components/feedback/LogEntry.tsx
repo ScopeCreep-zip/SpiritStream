@@ -9,10 +9,10 @@ export interface LogEntryProps {
 }
 
 const levelStyles: Record<LogLevel, string> = {
-  info: 'text-[var(--primary)]',
-  warn: 'text-[var(--warning-text)]',
-  error: 'text-[var(--error-text)]',
-  debug: 'text-[var(--text-tertiary)]',
+  info: 'text-primary',
+  warn: 'text-warning-text',
+  error: 'text-error-text',
+  debug: 'text-text-tertiary',
 };
 
 export function LogEntry({ time, level, message }: LogEntryProps) {
@@ -26,12 +26,11 @@ export function LogEntry({ time, level, message }: LogEntryProps) {
 
   return (
     <div
-      className="flex border-b border-[var(--border-muted)] last:border-b-0"
-      style={{ padding: '6px 12px', gap: '12px' }}
+      className="flex border-b border-border-muted last:border-b-0 py-1.5 px-3 gap-3"
     >
-      <span className="text-[var(--text-muted)] whitespace-nowrap">{time}</span>
+      <span className="text-text-muted whitespace-nowrap">{time}</span>
       <span className={cn('font-semibold w-12', levelStyles[level])}>{levelLabels[level]}</span>
-      <span className="text-[var(--text-primary)] break-words flex-1">{message}</span>
+      <span className="text-text-primary break-words flex-1">{message}</span>
     </div>
   );
 }

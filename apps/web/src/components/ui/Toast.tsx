@@ -12,9 +12,9 @@ function ToastItem({ toast }: { toast: ToastType }) {
   };
 
   const styles = {
-    success: 'bg-[var(--success-subtle)] border-[var(--success-border)] text-[var(--success-text)]',
-    error: 'bg-[var(--error-subtle)] border-[var(--error-border)] text-[var(--error-text)]',
-    info: 'bg-[var(--primary-muted)] border-[var(--primary)] text-[var(--primary)]',
+    success: 'bg-success-subtle border-success-border text-success-text',
+    error: 'bg-error-subtle border-error-border text-error-text',
+    info: 'bg-primary-muted border-primary text-primary',
   };
 
   return (

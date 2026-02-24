@@ -73,7 +73,7 @@ export function StreamTargets() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--text-secondary)]">{t('common.loading')}</div>
+        <div className="text-text-secondary">{t('common.loading')}</div>
       </div>
     );
   }
@@ -81,7 +81,7 @@ export function StreamTargets() {
   if (error) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--error-text)]">
+        <div className="text-error-text">
           {t('common.error')}: {error}
         </div>
       </div>
@@ -93,7 +93,7 @@ export function StreamTargets() {
       <Card>
         <CardBody>
           <div className="text-center py-12">
-            <p className="text-[var(--text-secondary)]">{t('targets.selectProfileFirst')}</p>
+            <p className="text-text-secondary">{t('targets.selectProfileFirst')}</p>
           </div>
         </CardBody>
       </Card>
@@ -109,28 +109,19 @@ export function StreamTargets() {
       <>
         <Card>
           <CardBody>
-            <div className="text-center" style={{ padding: '48px 0' }}>
+            <div className="text-center py-12">
               <div
-                className="w-16 h-16 mx-auto rounded-full bg-[var(--primary-subtle)] flex items-center justify-center"
-                style={{ marginBottom: '16px' }}
+                className="w-16 h-16 mx-auto rounded-full bg-primary-subtle flex items-center justify-center mb-4"
               >
-                <Plus className="w-8 h-8 text-[var(--primary)]" />
+                <Plus className="w-8 h-8 text-primary" />
               </div>
               <h3
-                className="text-lg font-semibold text-[var(--text-primary)]"
-                style={{ marginBottom: '8px' }}
+                className="text-lg font-semibold text-text-primary mb-2"
               >
                 {t('targets.noStreamTargets')}
               </h3>
               <p
-                className="text-[var(--text-secondary)]"
-                style={{
-                  marginBottom: '24px',
-                  maxWidth: '28rem',
-                  marginLeft: 'auto',
-                  marginRight: 'auto',
-                  textAlign: 'center',
-                }}
+                className="text-text-secondary mb-6 max-w-[28rem] mx-auto text-center"
               >
                 {hasOutputGroups
                   ? t('targets.noStreamTargetsDescription')
@@ -160,15 +151,15 @@ export function StreamTargets() {
       {targets.map((target) => (
         <Card key={target.id}>
           <CardBody>
-            <div className="flex items-start justify-between" style={{ marginBottom: '16px' }}>
-              <div className="flex items-center" style={{ gap: '12px' }}>
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center gap-3">
                 <PlatformIcon platform={target.service} size="lg" />
                 <div>
-                  <h3 className="font-semibold text-[var(--text-primary)]">{target.name}</h3>
-                  <p className="text-sm text-[var(--text-secondary)]">{target.url}</p>
+                  <h3 className="font-semibold text-text-primary">{target.name}</h3>
+                  <p className="text-sm text-text-secondary">{target.url}</p>
                 </div>
               </div>
-              <div className="flex" style={{ gap: '4px' }}>
+              <div className="flex gap-1">
                 <Button
                   variant="ghost"
                   size="icon"
@@ -188,11 +179,11 @@ export function StreamTargets() {
               </div>
             </div>
 
-            <div className="flex flex-col" style={{ gap: '6px' }}>
-              <label className="block text-sm font-medium text-[var(--text-primary)]">
+            <div className="flex flex-col gap-1.5">
+              <label className="block text-sm font-medium text-text-primary">
                 {t('targets.streamKey')}
               </label>
-              <div className="flex" style={{ gap: '8px' }}>
+              <div className="flex gap-2">
                 <Input
                   type={revealedKeys.has(target.id) ? 'text' : 'password'}
                   value={revealedKeys.has(target.id) ? target.streamKey : maskKey(target.streamKey)}
@@ -233,22 +224,20 @@ export function StreamTargets() {
       <Card
         className={`border-2 border-dashed transition-colors ${
           hasOutputGroups
-            ? 'border-[var(--border-default)] hover:border-[var(--primary)] cursor-pointer'
-            : 'border-[var(--border-muted)] opacity-50 cursor-not-allowed'
+            ? 'border-border-default hover:border-primary cursor-pointer'
+            : 'border-border-muted opacity-50 cursor-not-allowed'
         }`}
         onClick={hasOutputGroups ? () => setCreateModalOpen(true) : undefined}
       >
         <CardBody
-          className="flex flex-col items-center justify-center"
-          style={{ padding: '48px 24px' }}
+          className="flex flex-col items-center justify-center py-12 px-6"
         >
           <div
-            className="w-12 h-12 rounded-full bg-[var(--primary-subtle)] flex items-center justify-center"
-            style={{ marginBottom: '12px' }}
+            className="w-12 h-12 rounded-full bg-primary-subtle flex items-center justify-center mb-3"
           >
-            <Plus className="w-6 h-6 text-[var(--primary)]" />
+            <Plus className="w-6 h-6 text-primary" />
           </div>
-          <span className="text-sm font-medium text-[var(--text-secondary)]">
+          <span className="text-sm font-medium text-text-secondary">
             {hasOutputGroups ? t('targets.addNewTarget') : t('targets.createOutputGroupFirst')}
           </span>
         </CardBody>

@@ -110,12 +110,12 @@ export function FFmpegDownloadProgress({
     return (
       <div className={cn('space-y-2', className)}>
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm text-[var(--success-text)]">
+          <div className="flex items-center gap-2 text-sm text-success-text">
             <CheckCircle className="w-4 h-4" />
             <span>
               {t('settings.ffmpegInstalled')}
               {displayVersion && (
-                <span className="text-[var(--text-secondary)]">
+                <span className="text-text-secondary">
                   {' '}(v{displayVersion.replace(/^ffmpeg\s+version\s+/i, '').split(' ')[0]})
                 </span>
               )}
@@ -125,7 +125,7 @@ export function FFmpegDownloadProgress({
             variant="ghost"
             size="sm"
             onClick={() => setShowDeleteConfirm(true)}
-            className="text-[var(--text-tertiary)] hover:text-[var(--error-text)]"
+            className="text-text-tertiary hover:text-error-text"
           >
             <Trash2 className="w-4 h-4" />
           </Button>
@@ -133,8 +133,8 @@ export function FFmpegDownloadProgress({
 
         {/* Delete confirmation */}
         {showDeleteConfirm && (
-          <div className="p-3 rounded-lg bg-[var(--error-subtle)] border border-[var(--error-border)]">
-            <p className="text-sm text-[var(--text-secondary)] mb-3">
+          <div className="p-3 rounded-lg bg-error-subtle border border-error-border">
+            <p className="text-sm text-text-secondary mb-3">
               {t('settings.deleteFFmpegConfirm')}
             </p>
             <div className="flex gap-2">
@@ -158,7 +158,7 @@ export function FFmpegDownloadProgress({
         )}
 
         {versionCheckUnsupported && !showDeleteConfirm && (
-          <div className="flex items-center gap-2 text-xs text-[var(--text-tertiary)]">
+          <div className="flex items-center gap-2 text-xs text-text-tertiary">
             <AlertCircle className="w-3 h-3" />
             <span>{t('settings.ffmpegVersionUnavailable')}</span>
           </div>
@@ -166,14 +166,14 @@ export function FFmpegDownloadProgress({
 
         {/* Update available notification */}
         {hasUpdate && versionInfo && !showDeleteConfirm && (
-          <div className="flex items-center justify-between gap-3 p-3 rounded-lg bg-[var(--warning-subtle)] border border-[var(--warning-border)]">
+          <div className="flex items-center justify-between gap-3 p-3 rounded-lg bg-warning-subtle border border-warning-border">
             <div className="flex items-center gap-2">
-              <RefreshCw className="w-4 h-4 text-[var(--warning-text)]" />
+              <RefreshCw className="w-4 h-4 text-warning-text" />
               <div className="text-sm">
-                <span className="font-medium text-[var(--warning-text)]">
+                <span className="font-medium text-warning-text">
                   {t('settings.updateAvailable')}
                 </span>
-                <span className="text-[var(--text-secondary)] ml-2">
+                <span className="text-text-secondary ml-2">
                   {versionInfo.installed_version} {'->'} {versionInfo.latest_version}
                 </span>
               </div>
@@ -187,7 +187,7 @@ export function FFmpegDownloadProgress({
 
         {/* Checking for updates indicator */}
         {isCheckingVersion && !showDeleteConfirm && (
-          <div className="flex items-center gap-2 text-xs text-[var(--text-tertiary)]">
+          <div className="flex items-center gap-2 text-xs text-text-tertiary">
             <Loader2 className="w-3 h-3 animate-spin" />
             <span>{t('settings.checkingForUpdates')}</span>
           </div>
@@ -200,7 +200,7 @@ export function FFmpegDownloadProgress({
   if (isDeleting) {
     return (
       <div className={cn('space-y-3', className)}>
-        <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+        <div className="flex items-center gap-2 text-sm text-text-secondary">
           <Loader2 className="w-4 h-4 animate-spin" />
           <span>{t('settings.deletingFFmpeg')}</span>
         </div>
@@ -212,7 +212,7 @@ export function FFmpegDownloadProgress({
   if (error && !isDownloading) {
     return (
       <div className={cn('space-y-3', className)}>
-        <div className="flex items-center gap-2 text-sm text-[var(--error-text)]">
+        <div className="flex items-center gap-2 text-sm text-error-text">
           <AlertCircle className="w-4 h-4" />
           <span>{error}</span>
         </div>
@@ -243,9 +243,9 @@ export function FFmpegDownloadProgress({
     return (
       <div className={cn('space-y-3', className)}>
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+          <div className="flex items-center gap-2 text-sm text-text-secondary">
             {isRequestingPermission ? (
-              <ShieldCheck className="w-4 h-4 text-[var(--primary)]" />
+              <ShieldCheck className="w-4 h-4 text-primary" />
             ) : (
               <Loader2 className="w-4 h-4 animate-spin" />
             )}
@@ -261,10 +261,10 @@ export function FFmpegDownloadProgress({
 
         {/* Show elevation hint early so user has time to read it */}
         {showElevationHint && (
-          <div className="p-3 rounded-lg bg-[var(--primary-muted)] border border-[var(--primary-subtle)]">
+          <div className="p-3 rounded-lg bg-primary-muted border border-primary-subtle">
             <div className="flex items-start gap-2">
-              <ShieldCheck className="w-4 h-4 text-[var(--primary)] mt-0.5 flex-shrink-0" />
-              <p className="text-xs text-[var(--text-secondary)]">
+              <ShieldCheck className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-text-secondary">
                 {t('settings.elevationPromptHint')}
               </p>
             </div>
@@ -289,10 +289,10 @@ export function FFmpegDownloadProgress({
       <div className={cn('space-y-3', className)}>
         {/* Show elevation hint on Windows before download starts */}
         {isWindows && (
-          <div className="p-3 rounded-lg bg-[var(--primary-muted)] border border-[var(--primary-subtle)]">
+          <div className="p-3 rounded-lg bg-primary-muted border border-primary-subtle">
             <div className="flex items-start gap-2">
-              <ShieldCheck className="w-4 h-4 text-[var(--primary)] mt-0.5 flex-shrink-0" />
-              <p className="text-xs text-[var(--text-secondary)]">
+              <ShieldCheck className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-text-secondary">
                 {t('settings.elevationPromptHint')}
               </p>
             </div>
@@ -322,15 +322,15 @@ function ProgressBar({ percent, downloaded, total, phase }: ProgressBarProps) {
   return (
     <div className="space-y-1">
       {/* Progress bar */}
-      <div className="h-2 bg-[var(--bg-sunken)] rounded-full overflow-hidden">
+      <div className="h-2 bg-bg-sunken rounded-full overflow-hidden">
         <div
-          className="h-full bg-[var(--primary)] rounded-full transition-all duration-300"
+          className="h-full bg-primary rounded-full transition-all duration-300"
           style={{ width: `${Math.min(percent, 100)}%` }}
         />
       </div>
 
       {/* Progress text */}
-      <div className="flex items-center justify-between text-xs text-[var(--text-tertiary)]">
+      <div className="flex items-center justify-between text-xs text-text-tertiary">
         {showBytes ? (
           <>
             <span>{formatBytes(downloaded)}</span>

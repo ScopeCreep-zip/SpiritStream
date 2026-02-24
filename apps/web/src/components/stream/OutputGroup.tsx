@@ -30,28 +30,28 @@ export function OutputGroup({
   return (
     <div
       className={cn(
-        'bg-[var(--bg-muted)] border border-[var(--border-default)]',
+        'bg-bg-muted border border-border-default',
         'rounded-xl',
+        'mb-4',
         className
       )}
-      style={{ marginBottom: '16px' }}
     >
       <button
         className={cn(
           'w-full flex items-center justify-between cursor-pointer',
           'bg-transparent border-none text-left',
-          'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[var(--ring-default)]',
-          'focus-visible:ring-inset rounded-xl'
+          'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring-default',
+          'focus-visible:ring-inset rounded-xl',
+          'py-4 px-5'
         )}
-        style={{ padding: '16px 20px' }}
         onClick={() => setExpanded(!expanded)}
         aria-expanded={expanded}
       >
         <div className="flex items-center gap-3">
-          <Layers className="w-[18px] h-[18px] text-[var(--primary)]" />
+          <Layers className="w-[18px] h-[18px] text-primary" />
           <div>
-            <div className="font-semibold text-[var(--text-primary)]">{name}</div>
-            <div className="text-small text-[var(--text-secondary)]">{info}</div>
+            <div className="font-semibold text-text-primary">{name}</div>
+            <div className="text-small text-text-secondary">{info}</div>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -62,13 +62,13 @@ export function OutputGroup({
           />
           <ChevronDown
             className={cn(
-              'w-[18px] h-[18px] text-[var(--text-tertiary)] transition-transform duration-200',
+              'w-[18px] h-[18px] text-text-tertiary transition-transform duration-200',
               expanded && 'rotate-180'
             )}
           />
         </div>
       </button>
-      {expanded && <div style={{ padding: '0 20px 20px 20px' }}>{children}</div>}
+      {expanded && <div className="px-5 pb-5">{children}</div>}
     </div>
   );
 }

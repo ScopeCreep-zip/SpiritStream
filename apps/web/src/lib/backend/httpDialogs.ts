@@ -1,4 +1,5 @@
 import type { OpenFileOptions, SaveFileOptions, OpenTextResult, DialogFilter } from './dialogTypes';
+import { logger } from '@/lib/logger';
 import { getBackendBaseUrl, getAuthHeaders, safeFetch } from './env';
 
 type PickerAcceptType = { description?: string; accept: Record<string, string[]> };
@@ -135,7 +136,7 @@ export const dialogs = {
         if ((error as Error).name === 'AbortError') {
           throw error; // Re-throw to indicate user cancellation
         }
-        console.warn('[dialogs] File System Access API failed, falling back to download:', error);
+        logger.warn('[dialogs] File System Access API failed, falling back to download:', error);
         // Fall through to legacy download method
       }
     }
@@ -180,10 +181,10 @@ export const dialogs = {
 
         if (!response.ok) {
           const error = await response.text();
-          console.error('[dialogs] Failed to open path:', error);
+          logger.error('[dialogs] Failed to open path:', error);
         }
       } catch (error) {
-        console.error('[dialogs] Failed to open path:', error);
+        logger.error('[dialogs] Failed to open path:', error);
       }
     } else {
       // Use window.open for URLs

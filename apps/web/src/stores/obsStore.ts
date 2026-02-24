@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api } from '@/lib/backend/httpApi';
+import { logger } from '@/lib/logger';
 import { showSystemNotification } from '@/lib/notification';
 import { useSettingsStore } from './settingsStore';
 import { useProfileStore } from './profileStore';
@@ -85,7 +86,7 @@ export const useObsStore = create<ObsStoreState>((set, get) => ({
         websocketVersion: state.websocketVersion,
       });
     } catch (error) {
-      console.error('Failed to load OBS state:', error);
+      logger.error('Failed to load OBS state:', error);
     }
   },
 
@@ -99,7 +100,7 @@ export const useObsStore = create<ObsStoreState>((set, get) => ({
       const config = await api.obs.getConfig();
       set({ config });
     } catch (error) {
-      console.error('Failed to load OBS config:', error);
+      logger.error('Failed to load OBS config:', error);
     } finally {
       set({ isLoading: false });
     }
@@ -125,7 +126,7 @@ export const useObsStore = create<ObsStoreState>((set, get) => ({
         direction: config.direction,
         autoConnect: config.autoConnect,
       }).catch((error) => {
-        console.error('Failed to sync OBS config to backend:', error);
+        logger.error('Failed to sync OBS config to backend:', error);
       });
     }
   },
@@ -138,7 +139,7 @@ export const useObsStore = create<ObsStoreState>((set, get) => ({
     const currentProfile = useProfileStore.getState().current;
 
     if (!currentConfig || !currentProfile?.settings) {
-      console.error('Cannot update OBS config: no config or profile loaded');
+      logger.error('Cannot update OBS config: no config or profile loaded');
       return;
     }
 
@@ -184,7 +185,7 @@ export const useObsStore = create<ObsStoreState>((set, get) => ({
         autoConnect: newConfig.autoConnect,
       });
     } catch (error) {
-      console.error('Failed to update OBS config:', error);
+      logger.error('Failed to update OBS config:', error);
       // Reload config from profile on error
       get().syncConfigFromProfile();
       throw error;
@@ -227,7 +228,7 @@ export const useObsStore = create<ObsStoreState>((set, get) => ({
         errorMessage: null,
       });
     } catch (error) {
-      console.error('Failed to disconnect from OBS:', error);
+      logger.error('Failed to disconnect from OBS:', error);
       throw error;
     }
   },
@@ -236,7 +237,7 @@ export const useObsStore = create<ObsStoreState>((set, get) => ({
     try {
       await api.obs.startStream();
     } catch (error) {
-      console.error('Failed to start OBS stream:', error);
+      logger.error('Failed to start OBS stream:', error);
       throw error;
     }
   },
@@ -245,7 +246,7 @@ export const useObsStore = create<ObsStoreState>((set, get) => ({
     try {
       await api.obs.stopStream();
     } catch (error) {
-      console.error('Failed to stop OBS stream:', error);
+      logger.error('Failed to stop OBS stream:', error);
       throw error;
     }
   },

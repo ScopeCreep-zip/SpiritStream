@@ -86,16 +86,16 @@ export function KeyRotationSection({ encryptStreamKeys, disabled = false }: KeyR
 
   return (
     <>
-      <div className="flex items-center justify-between" style={{ padding: '8px 0', gap: '12px' }}>
+      <div className="flex items-center justify-between py-2 gap-3">
         <div>
-          <div className="text-sm font-medium text-[var(--text-primary)]">
+          <div className="text-sm font-medium text-text-primary">
             {t('settings.machineKey')}
           </div>
-          <div className="text-xs text-[var(--text-tertiary)]">
+          <div className="text-xs text-text-tertiary">
             {t('settings.lastRotated', { timestamp: lastRotatedLabel })}
           </div>
           {!encryptStreamKeys && (
-            <div className="text-xs text-[var(--text-tertiary)]">
+            <div className="text-xs text-text-tertiary">
               {t('settings.rotationEncryptionOffHint')}
             </div>
           )}

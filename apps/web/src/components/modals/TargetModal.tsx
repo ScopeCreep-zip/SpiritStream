@@ -185,7 +185,7 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
         </>
       }
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div className="flex flex-col gap-4">
         {/* Output Group Selector */}
         <Select
           label={t('modals.outputGroupLabel')}
@@ -224,7 +224,7 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
           helper={`${t('modals.default')}: ${platformConfig[formData.service].defaultServer}`}
         />
 
-        <div style={{ position: 'relative' }}>
+        <div className="relative">
           <Input
             label={t('targets.streamKey')}
             type={showStreamKey ? 'text' : 'password'}
@@ -240,17 +240,7 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
             onClick={() => setShowStreamKey(!showStreamKey)}
             aria-label={showStreamKey ? t('common.hideStreamKey') : t('common.showStreamKey')}
             aria-pressed={showStreamKey}
-            style={{
-              position: 'absolute',
-              right: '12px',
-              top: '32px',
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              color: 'var(--text-tertiary)',
-              fontSize: '12px',
-              padding: '4px 8px',
-            }}
+            className="absolute right-3 top-8 bg-transparent border-none cursor-pointer text-text-tertiary text-xs py-1 px-2 hover:text-text-primary transition-colors"
           >
             {showStreamKey ? t('common.hide') : t('common.show')}
           </button>

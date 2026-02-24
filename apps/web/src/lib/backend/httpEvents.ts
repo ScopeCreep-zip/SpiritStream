@@ -1,4 +1,5 @@
 import { getBackendWsUrl } from './env';
+import { logger } from '@/lib/logger';
 import { useConnectionStore } from '@/stores/connectionStore';
 
 type Handler<T> = (payload: T) => void;
@@ -79,8 +80,8 @@ function ensureSocket(): Promise<void> {
     const isCrossOrigin = wsHost !== window.location.host;
 
     if (isCrossOrigin) {
-      // For cross-origin connections, include token in query params
-      // Backend supports both cookie auth and token query param
+      // SECURITY: localStorage token is a temporary measure for cross-origin WS auth.
+      // Migrate to httpOnly cookie auth when full auth system (Workstream E) lands.
       const token = window.localStorage.getItem('spiritstream-auth-token');
       if (token) {
         const separator = wsUrl.includes('?') ? '&' : '?';
@@ -112,7 +113,7 @@ function ensureSocket(): Promise<void> {
           handler(parsed.payload);
         }
       } catch (error) {
-        console.warn('Failed to parse backend event:', error);
+        logger.warn('Failed to parse backend event:', error);
       }
     });
 

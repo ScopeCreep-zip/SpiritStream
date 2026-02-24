@@ -24,7 +24,7 @@ export function EncoderSettings() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--text-secondary)]">{t('common.loading')}</div>
+        <div className="text-text-secondary">{t('common.loading')}</div>
       </div>
     );
   }
@@ -33,7 +33,7 @@ export function EncoderSettings() {
   if (error) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--error-text)]">
+        <div className="text-error-text">
           {t('common.error')}: {error}
         </div>
       </div>
@@ -46,7 +46,7 @@ export function EncoderSettings() {
       <Card>
         <CardBody>
           <div className="text-center py-12">
-            <p className="text-[var(--text-secondary)]">
+            <p className="text-text-secondary">
               {tDynamic('encoder.selectProfileFirst', { defaultValue: 'Select a profile first' })}
             </p>
           </div>
@@ -97,22 +97,19 @@ export function EncoderSettings() {
       <>
         <Card>
           <CardBody>
-            <div className="text-center" style={{ padding: '48px 0' }}>
+            <div className="text-center py-12">
               <div
-                className="w-16 h-16 mx-auto rounded-full bg-[var(--primary-subtle)] flex items-center justify-center"
-                style={{ marginBottom: '16px' }}
+                className="w-16 h-16 mx-auto rounded-full bg-primary-subtle flex items-center justify-center mb-4"
               >
-                <Cpu className="w-8 h-8 text-[var(--primary)]" />
+                <Cpu className="w-8 h-8 text-primary" />
               </div>
               <h3
-                className="text-lg font-semibold text-[var(--text-primary)]"
-                style={{ marginBottom: '8px' }}
+                className="text-lg font-semibold text-text-primary mb-2"
               >
                 {tDynamic('encoder.noEncoders', { defaultValue: 'No Encoder Configurations' })}
               </h3>
               <p
-                className="text-[var(--text-secondary)] max-w-md mx-auto"
-                style={{ marginBottom: '24px' }}
+                className="text-text-secondary max-w-md mx-auto mb-6"
               >
                 {tDynamic('encoder.noEncodersDescription', {
                   defaultValue:
@@ -138,7 +135,7 @@ export function EncoderSettings() {
   }
 
   return (
-    <div className="flex flex-col" style={{ gap: '16px' }}>
+    <div className="flex flex-col gap-4">
       {/* Encoder Cards */}
       {outputGroups.map((group) => (
         <EncoderCard
@@ -153,12 +150,12 @@ export function EncoderSettings() {
 
       {/* Add New Encoder Card */}
       <Card
-        className="border-2 border-dashed border-[var(--border-default)] hover:border-[var(--primary)] transition-colors cursor-pointer"
+        className="border-2 border-dashed border-border-default hover:border-primary transition-colors cursor-pointer"
         onClick={() => setCreateModalOpen(true)}
       >
-        <CardBody className="flex items-center justify-center" style={{ padding: '32px 24px' }}>
+        <CardBody className="flex items-center justify-center py-8 px-6">
           <Button variant="ghost">
-            <Plus className="w-5 h-5" style={{ marginRight: '8px' }} />
+            <Plus className="w-5 h-5 mr-2" />
             {tDynamic('encoder.addEncoder', { defaultValue: 'Add Encoder' })}
           </Button>
         </CardBody>

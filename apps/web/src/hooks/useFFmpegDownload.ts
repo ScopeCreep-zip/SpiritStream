@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api, events } from '@/lib/backend';
+import { logger } from '@/lib/logger';
 import type { FFmpegVersionInfo } from '@/types/api';
 
 /**
@@ -114,7 +115,7 @@ export function useFFmpegDownload(): FFmpegDownloadState {
       setFFmpegPath(path);
       return path;
     } catch (err) {
-      console.error('Failed to check bundled FFmpeg:', err);
+      logger.error('Failed to check bundled FFmpeg:', err);
       return null;
     }
   }, []);
@@ -150,7 +151,7 @@ export function useFFmpegDownload(): FFmpegDownloadState {
       setIsDownloading(false);
       setProgress(null);
     } catch (err) {
-      console.error('Failed to cancel download:', err);
+      logger.error('Failed to cancel download:', err);
     }
   }, []);
 
@@ -181,7 +182,7 @@ export function useFFmpegDownload(): FFmpegDownloadState {
         setVersionInfo(info);
         return info;
       } catch (err) {
-        console.error('Failed to check for FFmpeg updates:', err);
+        logger.error('Failed to check for FFmpeg updates:', err);
         return null;
       } finally {
         setIsCheckingVersion(false);

@@ -67,9 +67,9 @@ export function LoginModal({ open, onSuccess }: LoginModalProps) {
     >
       <form onSubmit={handleSubmit}>
         <ModalBody>
-          <div className="flex items-center gap-3 mb-4 p-3 bg-[var(--bg-muted)] rounded-lg">
-            <ShieldCheck className="w-5 h-5 text-[var(--primary)]" />
-            <p className="text-sm text-[var(--text-secondary)]">
+          <div className="flex items-center gap-3 mb-4 p-3 bg-bg-muted rounded-lg">
+            <ShieldCheck className="w-5 h-5 text-primary" />
+            <p className="text-sm text-text-secondary">
               {t(
                 'login.description',
                 'This SpiritStream server requires authentication. Please enter your API token to continue.'
@@ -94,7 +94,7 @@ export function LoginModal({ open, onSuccess }: LoginModalProps) {
                 onClick={() => setShowToken(!showToken)}
                 aria-label={showToken ? t('common.hidePassword') : t('common.showPassword')}
                 aria-pressed={showToken}
-                className="absolute right-3 top-[34px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+                className="absolute right-3 top-[34px] text-text-tertiary hover:text-text-primary transition-colors"
                 disabled={loading}
               >
                 {showToken ? (
@@ -106,12 +106,12 @@ export function LoginModal({ open, onSuccess }: LoginModalProps) {
             </div>
 
             {error && (
-              <div className="p-3 bg-[var(--error-subtle)] border border-[var(--error-border)] rounded-lg">
-                <p className="text-sm text-[var(--error-text)]">{error}</p>
+              <div className="p-3 bg-error-subtle border border-error-border rounded-lg">
+                <p className="text-sm text-error-text">{error}</p>
               </div>
             )}
 
-            <div className="text-xs text-[var(--text-tertiary)]">
+            <div className="text-xs text-text-tertiary">
               <p>
                 {t(
                   'login.tokenHint',

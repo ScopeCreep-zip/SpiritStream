@@ -20,9 +20,11 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Toggle } from '@/components/ui/Toggle';
 import { api, events } from '@/lib/backend';
+import { logger } from '@/lib/logger';
 import { toast } from '@/hooks/useToast';
 import { cn } from '@/lib/cn';
 import { useProfileStore } from '@/stores/profileStore';
+import { CHAT_POLL_INTERVAL_MS } from '@/lib/constants';
 import type { ChatPlatform, ChatPlatformStatus, OAuthAccount } from '@/types/chat';
 import type { ChatSettings } from '@/types/profile';
 import { createDefaultChatSettings } from '@/types/profile';
@@ -155,22 +157,22 @@ function TwitchCard({
           {/* Connection status indicator */}
           <div className="flex items-center gap-2">
             {isConnecting ? (
-              <Loader2 className="w-4 h-4 text-[var(--status-connecting)] animate-spin" />
+              <Loader2 className="w-4 h-4 text-status-connecting animate-spin" />
             ) : isConnected ? (
-              <Wifi className="w-4 h-4 text-[var(--status-live)]" />
+              <Wifi className="w-4 h-4 text-status-live" />
             ) : hasError ? (
-              <AlertCircle className="w-4 h-4 text-[var(--status-error)]" />
+              <AlertCircle className="w-4 h-4 text-status-error" />
             ) : (
-              <WifiOff className="w-4 h-4 text-[var(--text-tertiary)]" />
+              <WifiOff className="w-4 h-4 text-text-tertiary" />
             )}
             <span
               className={cn(
                 'text-sm',
                 isConnected
-                  ? 'text-[var(--status-live)]'
+                  ? 'text-status-live'
                   : hasError
-                    ? 'text-[var(--status-error)]'
-                    : 'text-[var(--text-tertiary)]'
+                    ? 'text-status-error'
+                    : 'text-text-tertiary'
               )}
             >
               {statusLabel}
@@ -180,19 +182,19 @@ function TwitchCard({
       </CardHeader>
       <CardBody className="space-y-4">
         {/* Account section */}
-        <div className="p-3 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border-subtle)]">
+        <div className="p-3 rounded-lg bg-bg-elevated border border-border-subtle">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-full bg-[var(--bg-base)]">
-              <User className="w-5 h-5 text-[var(--text-secondary)]" />
+            <div className="p-2 rounded-full bg-bg-base">
+              <User className="w-5 h-5 text-text-secondary" />
             </div>
             <div className="flex-1">
               {isLoggedIn ? (
                 <>
-                  <p className="font-medium text-[var(--text-primary)]">{account?.displayName}</p>
-                  <p className="text-sm text-[var(--text-secondary)]">@{account?.username}</p>
+                  <p className="font-medium text-text-primary">{account?.displayName}</p>
+                  <p className="text-sm text-text-secondary">@{account?.username}</p>
                 </>
               ) : (
-                <p className="text-[var(--text-secondary)]">{t('chat.notLoggedIn', 'Not logged in')}</p>
+                <p className="text-text-secondary">{t('chat.notLoggedIn', 'Not logged in')}</p>
               )}
             </div>
             <div className="flex gap-2">
@@ -213,7 +215,7 @@ function TwitchCard({
                     onClick={handleForget}
                     disabled={isLoggingOut}
                     title={t('chat.forgetAccount', 'Forget Account')}
-                    className="text-[var(--status-error)] hover:text-[var(--status-error)]"
+                    className="text-status-error hover:text-status-error"
                   >
                     <Trash2 className="w-4 h-4" />
                   </Button>
@@ -242,7 +244,7 @@ function TwitchCard({
           disabled={isConnected || isConnecting}
         />
         {!isLoggedIn && (
-          <p className="text-xs text-[var(--text-tertiary)]">
+          <p className="text-xs text-text-tertiary">
             {t('chat.twitch.readOnlyHint', 'Read-only without login')}
           </p>
         )}
@@ -255,29 +257,29 @@ function TwitchCard({
           className="pt-1"
         />
         {!isLoggedIn && (
-          <p className="text-xs text-[var(--text-tertiary)]">
+          <p className="text-xs text-text-tertiary">
             {t('chat.sendRequiresLogin', 'Sign in to send messages')}
           </p>
         )}
 
         {/* Error message */}
         {hasError && status?.error && (
-          <div className="flex items-start gap-2 p-3 rounded-lg bg-[var(--status-error)]/10 border border-[var(--status-error)]/20">
-            <AlertCircle className="w-4 h-4 text-[var(--status-error)] flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-[var(--status-error)]">{status.error}</p>
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-status-error/10 border border-status-error/20">
+            <AlertCircle className="w-4 h-4 text-status-error flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-status-error">{status.error}</p>
           </div>
         )}
 
         {/* Message count */}
         {isConnected && status && (
-          <div className="text-sm text-[var(--text-secondary)]">
+          <div className="text-sm text-text-secondary">
             {t('chat.messageCount', { count: status.messageCount })}
           </div>
         )}
 
         {/* Stream-tied lifecycle hint + retry/clear */}
         <div className="flex items-center justify-between pt-2">
-          <p className="text-xs text-[var(--text-tertiary)]">
+          <p className="text-xs text-text-tertiary">
             {t(
               'chat.streamTiedHint',
               'Chat connects when you start streaming. YouTube may take ~10s to activate.'
@@ -412,22 +414,22 @@ function YouTubeCard({
           {/* Connection status indicator */}
           <div className="flex items-center gap-2">
             {isConnecting ? (
-              <Loader2 className="w-4 h-4 text-[var(--status-connecting)] animate-spin" />
+              <Loader2 className="w-4 h-4 text-status-connecting animate-spin" />
             ) : isConnected ? (
-              <Wifi className="w-4 h-4 text-[var(--status-live)]" />
+              <Wifi className="w-4 h-4 text-status-live" />
             ) : hasError ? (
-              <AlertCircle className="w-4 h-4 text-[var(--status-error)]" />
+              <AlertCircle className="w-4 h-4 text-status-error" />
             ) : (
-              <WifiOff className="w-4 h-4 text-[var(--text-tertiary)]" />
+              <WifiOff className="w-4 h-4 text-text-tertiary" />
             )}
             <span
               className={cn(
                 'text-sm',
                 isConnected
-                  ? 'text-[var(--status-live)]'
+                  ? 'text-status-live'
                   : hasError
-                    ? 'text-[var(--status-error)]'
-                    : 'text-[var(--text-tertiary)]'
+                    ? 'text-status-error'
+                    : 'text-text-tertiary'
               )}
             >
               {statusLabel}
@@ -439,7 +441,7 @@ function YouTubeCard({
         {/* Auth mode selector */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <label className="text-sm font-medium text-[var(--text-primary)]">
+            <label className="text-sm font-medium text-text-primary">
               {t('chat.youtube.authMethod', 'Authentication Method')}
             </label>
             <Button
@@ -451,11 +453,11 @@ function YouTubeCard({
               {showAdvanced ? t('chat.advancedHide', 'Hide advanced') : t('chat.advancedShow', 'Advanced')}
             </Button>
           </div>
-          <div className="p-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)]">
-            <p className="font-medium text-[var(--text-primary)]">
+          <div className="p-3 rounded-lg border border-border-subtle bg-bg-elevated">
+            <p className="font-medium text-text-primary">
               {t('chat.youtube.useOAuth', 'Sign in with Google')}
             </p>
-            <p className="text-xs text-[var(--text-tertiary)]">
+            <p className="text-xs text-text-tertiary">
               {t('chat.youtube.oauthHint', 'Uses shared app quota')}
             </p>
           </div>
@@ -472,19 +474,19 @@ function YouTubeCard({
 
         {/* OAuth account section (when OAuth mode is selected) */}
         {!useApiKey && (
-          <div className="p-3 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border-subtle)]">
+          <div className="p-3 rounded-lg bg-bg-elevated border border-border-subtle">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-full bg-[var(--bg-base)]">
-                <User className="w-5 h-5 text-[var(--text-secondary)]" />
+              <div className="p-2 rounded-full bg-bg-base">
+                <User className="w-5 h-5 text-text-secondary" />
               </div>
               <div className="flex-1">
                 {isLoggedIn ? (
                   <>
-                    <p className="font-medium text-[var(--text-primary)]">{account?.displayName}</p>
-                    <p className="text-sm text-[var(--text-secondary)]">{account?.userId}</p>
+                    <p className="font-medium text-text-primary">{account?.displayName}</p>
+                    <p className="text-sm text-text-secondary">{account?.userId}</p>
                   </>
                 ) : (
-                  <p className="text-[var(--text-secondary)]">{t('chat.notLoggedIn', 'Not logged in')}</p>
+                  <p className="text-text-secondary">{t('chat.notLoggedIn', 'Not logged in')}</p>
                 )}
               </div>
               {isLoggedIn ? (
@@ -504,7 +506,7 @@ function YouTubeCard({
                     onClick={handleForget}
                     disabled={isLoggingOut}
                     title={t('chat.forgetAccount', 'Forget Account')}
-                    className="text-[var(--status-error)] hover:text-[var(--status-error)]"
+                    className="text-status-error hover:text-status-error"
                   >
                     <Trash2 className="w-4 h-4" />
                   </Button>
@@ -521,7 +523,7 @@ function YouTubeCard({
               )}
             </div>
             {!isLoggedIn && (
-              <p className="mt-2 text-xs text-[var(--text-tertiary)]">
+              <p className="mt-2 text-xs text-text-tertiary">
                 {t('chat.youtube.loginRequired', 'Sign in is required to read YouTube chat')}
               </p>
             )}
@@ -539,7 +541,7 @@ function YouTubeCard({
             disabled={isConnected || isConnecting}
           />
           <div className="flex items-center justify-between mt-1">
-            <p className="text-xs text-[var(--text-tertiary)]">
+            <p className="text-xs text-text-tertiary">
               {t('chat.youtube.channelIdHint', 'Use your YouTube channel ID')}
             </p>
             {!useApiKey && isLoggedIn && account?.userId && (
@@ -568,7 +570,7 @@ function YouTubeCard({
               className={cn(
                 'absolute right-3 top-[34px]',
                 'p-1 rounded-md',
-                'text-[var(--text-tertiary)] hover:text-[var(--text-primary)]',
+                'text-text-tertiary hover:text-text-primary',
                 'transition-colors'
               )}
             >
@@ -584,7 +586,7 @@ function YouTubeCard({
           description={t('chat.sendEnabledHint', 'Send messages from SpiritStream')}
         />
         {!canSend && (
-          <p className="text-xs text-[var(--text-tertiary)]">
+          <p className="text-xs text-text-tertiary">
             {useApiKey
               ? t('chat.youtube.apiKeyReadOnly', 'API keys are read-only')
               : t('chat.sendRequiresLogin', 'Sign in to send messages')}
@@ -593,22 +595,22 @@ function YouTubeCard({
 
         {/* Error message */}
         {hasError && status?.error && (
-          <div className="flex items-start gap-2 p-3 rounded-lg bg-[var(--status-error)]/10 border border-[var(--status-error)]/20">
-            <AlertCircle className="w-4 h-4 text-[var(--status-error)] flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-[var(--status-error)]">{status.error}</p>
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-status-error/10 border border-status-error/20">
+            <AlertCircle className="w-4 h-4 text-status-error flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-status-error">{status.error}</p>
           </div>
         )}
 
         {/* Message count */}
         {isConnected && status && (
-          <div className="text-sm text-[var(--text-secondary)]">
+          <div className="text-sm text-text-secondary">
             {t('chat.messageCount', { count: status.messageCount })}
           </div>
         )}
 
         {/* Stream-tied lifecycle hint + retry/clear */}
         <div className="flex items-center justify-between pt-2">
-          <p className="text-xs text-[var(--text-tertiary)]">
+          <p className="text-xs text-text-tertiary">
             {t(
               'chat.streamTiedHint',
               'Chat connects when you start streaming. YouTube may take ~10s to activate.'
@@ -729,7 +731,7 @@ export function ChatPanel() {
         setTwitchAccount(twitchAcc);
         setYoutubeAccount(youtubeAcc);
       } catch (error) {
-        console.error('Failed to load chat settings:', error);
+        logger.error('Failed to load chat settings:', error);
       }
     };
 
@@ -765,7 +767,7 @@ export function ChatPanel() {
         const nextChat = { ...currentProfile.settings.chat, ...updates };
         await updateProfileSettings({ chat: nextChat });
       } catch (error) {
-        console.error('Failed to save chat settings:', error);
+        logger.error('Failed to save chat settings:', error);
       }
     },
     [currentProfile, updateProfileSettings]
@@ -798,9 +800,9 @@ export function ChatPanel() {
         const statuses = await api.chat.getStatus();
         setPlatformStatuses(statuses);
       } catch (error) {
-        console.error('Failed to load chat status:', error);
+        logger.error('Failed to load chat status:', error);
       }
-    }, 5000);
+    }, CHAT_POLL_INTERVAL_MS);
 
     return () => clearInterval(interval);
   }, []);
@@ -1180,7 +1182,7 @@ export function ChatPanel() {
 
   if (!currentProfile) {
     return (
-      <div className="flex items-center justify-center p-8 text-[var(--text-tertiary)]">
+      <div className="flex items-center justify-center p-8 text-text-tertiary">
         {t('common.loadProfileFirst', 'Please load a profile first')}
       </div>
     );
@@ -1190,16 +1192,16 @@ export function ChatPanel() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <div className="p-2 rounded-lg bg-[var(--bg-elevated)]">
-          <MessageSquare className="w-5 h-5 text-[var(--primary)]" />
+        <div className="p-2 rounded-lg bg-bg-elevated">
+          <MessageSquare className="w-5 h-5 text-primary" />
         </div>
         <div>
-          <h2 className="text-lg font-semibold text-[var(--text-primary)]">{t('chat.title')}</h2>
-          <p className="text-sm text-[var(--text-secondary)]">{t('chat.description')}</p>
+          <h2 className="text-lg font-semibold text-text-primary">{t('chat.title')}</h2>
+          <p className="text-sm text-text-secondary">{t('chat.description')}</p>
         </div>
       </div>
 
-      <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4 space-y-3">
+      <div className="rounded-xl border border-border-subtle bg-bg-elevated p-4 space-y-3">
         <div className="flex items-center justify-between gap-3">
           <button
             type="button"
@@ -1208,10 +1210,10 @@ export function ChatPanel() {
             aria-expanded={!visibilityPanelCollapsed}
           >
             <div>
-              <p className="text-sm font-medium text-[var(--text-primary)]">
+              <p className="text-sm font-medium text-text-primary">
                 {t('chat.visibility.title', { defaultValue: 'Visible platforms' })}
               </p>
-              <p className="text-xs text-[var(--text-tertiary)]">
+              <p className="text-xs text-text-tertiary">
                 {visiblePlatforms.length > 0
                   ? t('chat.visibility.mode.custom', { defaultValue: 'Custom' })
                   : t('chat.visibility.mode.auto', { defaultValue: 'Auto (active platforms)' })}
@@ -1219,7 +1221,7 @@ export function ChatPanel() {
             </div>
             <ChevronDown
               className={cn(
-                'w-4 h-4 text-[var(--text-tertiary)] transition-transform duration-200',
+                'w-4 h-4 text-text-tertiary transition-transform duration-200',
                 !visibilityPanelCollapsed && 'rotate-180'
               )}
             />
@@ -1235,7 +1237,7 @@ export function ChatPanel() {
         </div>
         {!visibilityPanelCollapsed && (
           <>
-            <p className="text-xs text-[var(--text-tertiary)]">
+            <p className="text-xs text-text-tertiary">
               {t(
                 'chat.visibility.hint',
                 'By default, active platforms are shown. Toggle to customize.'
@@ -1273,7 +1275,7 @@ export function ChatPanel() {
         )}
       </div>
 
-      <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4">
+      <div className="rounded-xl border border-border-subtle bg-bg-elevated p-4">
         <Toggle
           checked={crosspostEnabled}
           onChange={handleCrosspostChange}
@@ -1348,7 +1350,7 @@ export function ChatPanel() {
               onBlur={handleTrovoChannelSave}
               placeholder={t('chat.trovo.channelIdPlaceholder', 'e.g. 100000021')}
             />
-            <p className="text-xs text-[var(--text-tertiary)]">
+            <p className="text-xs text-text-tertiary">
               {t(
                 'chat.trovo.channelIdHint',
                 'Requires SPIRITSTREAM_TROVO_CLIENT_ID in environment. Read-only chat is supported.'
@@ -1362,13 +1364,13 @@ export function ChatPanel() {
               disabled
             />
             {getStatusForPlatform('trovo')?.error && (
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-[var(--status-error)]/10 border border-[var(--status-error)]/20">
-                <AlertCircle className="w-4 h-4 text-[var(--status-error)] flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-[var(--status-error)]">{getStatusForPlatform('trovo')?.error}</p>
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-status-error/10 border border-status-error/20">
+                <AlertCircle className="w-4 h-4 text-status-error flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-status-error">{getStatusForPlatform('trovo')?.error}</p>
               </div>
             )}
             <div className="flex items-center justify-between pt-2">
-              <p className="text-xs text-[var(--text-tertiary)]">
+              <p className="text-xs text-text-tertiary">
                 {t(
                   'chat.streamTiedHint',
                   'Chat connects when you start streaming. YouTube may take ~10s to activate.'
@@ -1397,8 +1399,8 @@ export function ChatPanel() {
           <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-[var(--bg-base)]">
-                <MessageSquare className="w-5 h-5 text-[var(--text-secondary)]" />
+              <div className="p-2 rounded-lg bg-bg-base">
+                <MessageSquare className="w-5 h-5 text-text-secondary" />
               </div>
               <div className="flex-1">
                 <CardTitle>{t('chat.stripchat.title', 'Stripchat')}</CardTitle>
@@ -1423,9 +1425,9 @@ export function ChatPanel() {
               description={t('chat.stripchat.sendHint', 'Stripchat sending is not available yet')}
               disabled
             />
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-[var(--status-warning)]/10 border border-[var(--status-warning)]/20">
-              <AlertCircle className="w-4 h-4 text-[var(--status-warning)] flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-[var(--status-warning)]">
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-warning/10 border border-warning/20">
+              <AlertCircle className="w-4 h-4 text-warning flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-warning">
                 {t(
                   'chat.stripchat.unavailableHint',
                   'Public Stripchat docs currently expose studio stats APIs, not a stable chat API.'

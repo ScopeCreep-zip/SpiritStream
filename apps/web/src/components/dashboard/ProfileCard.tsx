@@ -35,24 +35,24 @@ export function ProfileCard({
     <div
       onClick={onClick}
       className={cn(
-        'bg-[var(--bg-surface)] border-2 rounded-xl h-full',
+        'bg-bg-surface border-2 rounded-xl h-full',
         'transition-all duration-150',
         onClick && 'cursor-pointer',
         active
-          ? 'border-[var(--primary)] bg-[var(--primary-muted)]'
-          : 'border-[var(--border-default)] hover:border-[var(--border-interactive)] hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)]',
+          ? 'border-primary bg-primary-muted'
+          : 'border-border-default hover:border-border-interactive hover:-translate-y-0.5 hover:shadow-md',
+        'p-5',
         className
       )}
-      style={{ padding: '20px' }}
     >
       <div className="flex items-center justify-between mb-3">
-        <span className="font-semibold text-[var(--text-primary)]">{name}</span>
+        <span className="font-semibold text-text-primary">{name}</span>
         <div className="flex items-center gap-2">
           {active && <StreamStatus status="live" label={t('dashboard.active')} />}
           {actions}
         </div>
       </div>
-      <div className="flex gap-4 text-small text-[var(--text-secondary)]">
+      <div className="flex gap-4 text-small text-text-secondary">
         {meta.map((item, index) => (
           <span key={index} className="flex items-center gap-1.5">
             {item.icon}
@@ -62,7 +62,7 @@ export function ProfileCard({
       </div>
       {/* Service icons showing which platforms this profile targets (Story 1.1, 4.1, 4.2) */}
       {services && services.length > 0 && (
-        <div className="flex gap-1.5 mt-3 pt-3 border-t border-[var(--border-muted)]">
+        <div className="flex gap-1.5 mt-3 pt-3 border-t border-border-muted">
           {services.map((service) => (
             <PlatformIcon key={service} platform={service} size="sm" />
           ))}

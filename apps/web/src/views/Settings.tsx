@@ -28,6 +28,7 @@ import { useProfileStore } from '@/stores/profileStore';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AppSettings } from '@/types/api';
 import type { ProfileSettings as ProfileSettingsType, BackendSettings } from '@/types/profile';
+import { logger } from '@/lib/logger';
 import { cn } from '@/lib/cn';
 
 type SettingsTab = 'global' | 'profile';
@@ -124,7 +125,7 @@ export function Settings() {
         }
       }
     } catch (error) {
-      console.error('Failed to open file dialog:', error);
+      logger.error('Failed to open file dialog:', error);
     }
   };
 
@@ -139,7 +140,7 @@ export function Settings() {
         await dialogs.openExternal(settings?.profileStoragePath || '');
       }
     } catch (error) {
-      console.error('Failed to open profile storage:', error);
+      logger.error('Failed to open profile storage:', error);
     }
   };
 
@@ -159,7 +160,7 @@ export function Settings() {
       await api.settings.exportData(selected);
       alert(t('toast.dataExported'));
     } catch (error) {
-      console.error('Failed to export data:', error);
+      logger.error('Failed to export data:', error);
       alert(`${t('settings.exportFailed')}: ${error}`);
     }
   };
@@ -186,7 +187,7 @@ export function Settings() {
       await api.theme.install(selected);
       await refreshThemes();
     } catch (error) {
-      console.error('Failed to install theme:', error);
+      logger.error('Failed to install theme:', error);
       setThemeInstallError(String(error));
     } finally {
       setThemeInstalling(false);
@@ -213,7 +214,7 @@ export function Settings() {
       queryClient.invalidateQueries({ queryKey: SETTINGS_QUERY_KEY });
       setClearConfirmOpen(false);
     } catch (error) {
-      console.error('Failed to clear data:', error);
+      logger.error('Failed to clear data:', error);
       setClearError(`${t('settings.clearFailed')}: ${error}`);
     } finally {
       setClearInProgress(false);
@@ -269,7 +270,7 @@ export function Settings() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--text-secondary)]">{t('common.loading')}</div>
+        <div className="text-text-secondary">{t('common.loading')}</div>
       </div>
     );
   }
@@ -278,7 +279,7 @@ export function Settings() {
   if (isError || !settings) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-[var(--error-text)]">{t('settings.loadError', { defaultValue: 'Failed to load settings' })}</div>
+        <div className="text-error-text">{t('settings.loadError', { defaultValue: 'Failed to load settings' })}</div>
       </div>
     );
   }
@@ -286,20 +287,20 @@ export function Settings() {
   return (
     <div className="space-y-6">
       {/* Tab Navigation */}
-      <div className="flex gap-2 border-b border-[var(--border-default)] pb-2">
+      <div className="flex gap-2 border-b border-border-default pb-2">
         <button
           onClick={() => setActiveTab('profile')}
           className={cn(
             'flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm font-medium transition-colors',
             activeTab === 'profile'
-              ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] border border-b-0 border-[var(--border-default)]'
-              : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)]'
+              ? 'bg-bg-surface text-text-primary border border-b-0 border-border-default'
+              : 'text-text-secondary hover:text-text-primary hover:bg-bg-muted'
           )}
         >
           <User className="w-4 h-4" />
           {t('settings.profileSettings', { defaultValue: 'Profile Settings' })}
           {currentProfile && (
-            <span className="text-xs text-[var(--text-tertiary)]">({currentProfile.name})</span>
+            <span className="text-xs text-text-tertiary">({currentProfile.name})</span>
           )}
         </button>
         <button
@@ -307,8 +308,8 @@ export function Settings() {
           className={cn(
             'flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm font-medium transition-colors',
             activeTab === 'global'
-              ? 'bg-[var(--bg-surface)] text-[var(--text-primary)] border border-b-0 border-[var(--border-default)]'
-              : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-muted)]'
+              ? 'bg-bg-surface text-text-primary border border-b-0 border-border-default'
+              : 'text-text-secondary hover:text-text-primary hover:bg-bg-muted'
           )}
         >
           <Globe className="w-4 h-4" />
@@ -320,7 +321,7 @@ export function Settings() {
       {activeTab === 'profile' && (
         <>
           {!currentProfile ? (
-            <div className="flex items-center justify-center h-64 text-[var(--text-tertiary)]">
+            <div className="flex items-center justify-center h-64 text-text-tertiary">
               {t('settings.loadProfileFirst', { defaultValue: 'Please load a profile to edit its settings.' })}
             </div>
           ) : (
@@ -333,7 +334,7 @@ export function Settings() {
                     <CardDescription>{t('settings.appearanceDescription', { defaultValue: 'Theme and language for this profile.' })}</CardDescription>
                   </div>
                 </CardHeader>
-                <CardBody style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <CardBody className="p-6 flex flex-col gap-4">
                   <Select
                     label={t('settings.theme', { defaultValue: 'Theme' })}
                     value={currentThemeId}
@@ -341,14 +342,14 @@ export function Settings() {
                     options={themeOptions}
                     helper={t('settings.themeHelper', { defaultValue: 'Choose your preferred theme appearance.' })}
                   />
-                  <div className="flex items-center" style={{ gap: '12px' }}>
+                  <div className="flex items-center gap-3">
                     <Button variant="outline" onClick={handleInstallTheme} disabled={themeInstalling}>
                       {themeInstalling ? t('common.loading') : t('settings.installTheme', { defaultValue: 'Install Theme' })}
                     </Button>
                   </div>
                   {themeInstallError && (
-                    <div className="p-3 rounded-lg bg-[var(--error-subtle)] border border-[var(--error-border)]">
-                      <p className="text-sm text-[var(--error-text)]">{themeInstallError}</p>
+                    <div className="p-3 rounded-lg bg-error-subtle border border-error-border">
+                      <p className="text-sm text-error-text">{themeInstallError}</p>
                     </div>
                   )}
                   <Select
@@ -370,13 +371,13 @@ export function Settings() {
                     <CardDescription>{t('settings.notificationsSecurityDescription', { defaultValue: 'Notification preferences and data security for this profile.' })}</CardDescription>
                   </div>
                 </CardHeader>
-                <CardBody style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
+                <CardBody className="p-6 flex flex-col gap-4">
+                  <div className="flex items-center justify-between py-2">
                     <div>
-                      <div className="text-sm font-medium text-[var(--text-primary)]">
+                      <div className="text-sm font-medium text-text-primary">
                         {t('settings.showNotifications')}
                       </div>
-                      <div className="text-xs text-[var(--text-tertiary)]">
+                      <div className="text-xs text-text-tertiary">
                         {t('settings.showNotificationsDescription')}
                       </div>
                     </div>
@@ -385,12 +386,12 @@ export function Settings() {
                       onChange={(checked: boolean) => updateProfileSetting('showNotifications', checked)}
                     />
                   </div>
-                  <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
+                  <div className="flex items-center justify-between py-2">
                     <div>
-                      <div className="text-sm font-medium text-[var(--text-primary)]">
+                      <div className="text-sm font-medium text-text-primary">
                         {t('settings.encryptStreamKeys')}
                       </div>
-                      <div className="text-xs text-[var(--text-tertiary)]">
+                      <div className="text-xs text-text-tertiary">
                         {t('settings.encryptStreamKeysDescription')}
                       </div>
                     </div>
@@ -418,15 +419,15 @@ export function Settings() {
                     </CardDescription>
                   </div>
                 </CardHeader>
-                <CardBody style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <CardBody className="p-6 flex flex-col gap-4">
                   <div className="grid grid-cols-2 gap-6">
                     <div className="space-y-4">
-                      <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
+                      <div className="flex items-center justify-between py-2">
                         <div>
-                          <div className="text-sm font-medium text-[var(--text-primary)]">
+                          <div className="text-sm font-medium text-text-primary">
                             {t('settings.remoteAccessToggle', { defaultValue: 'Allow remote web access' })}
                           </div>
-                          <div className="text-xs text-[var(--text-tertiary)]">
+                          <div className="text-xs text-text-tertiary">
                             {t('settings.remoteAccessToggleDescription', {
                               defaultValue: 'When off, the API binds to localhost only. Restart required after changes.',
                             })}
@@ -437,12 +438,12 @@ export function Settings() {
                           onChange={(checked: boolean) => updateBackendSetting('remoteEnabled', checked)}
                         />
                       </div>
-                      <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
+                      <div className="flex items-center justify-between py-2">
                         <div>
-                          <div className="text-sm font-medium text-[var(--text-primary)]">
+                          <div className="text-sm font-medium text-text-primary">
                             {t('settings.remoteAccessUiToggle', { defaultValue: 'Serve web GUI from the host' })}
                           </div>
-                          <div className="text-xs text-[var(--text-tertiary)]">
+                          <div className="text-xs text-text-tertiary">
                             {t('settings.remoteAccessUiToggleDescription', {
                               defaultValue: 'When off, the host will not serve the UI files. Restart required after changes.',
                             })}
@@ -509,12 +510,12 @@ export function Settings() {
                 <CardDescription>{t('settings.ffmpegDescription')}</CardDescription>
               </div>
             </CardHeader>
-            <CardBody style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div className="flex flex-col" style={{ gap: '6px' }}>
-                <label className="block text-sm font-medium text-[var(--text-primary)]">
+            <CardBody className="p-6 flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="block text-sm font-medium text-text-primary">
                   {t('settings.ffmpegPath')}
                 </label>
-                <div className="flex" style={{ gap: '8px' }}>
+                <div className="flex gap-2">
                   <Input
                     value={ffmpegPath}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
@@ -538,7 +539,7 @@ export function Settings() {
                 disabled
                 helper={t('settings.detectedVersion')}
               />
-              <div className="border-t border-[var(--border-muted)]" style={{ paddingTop: '16px' }}>
+              <div className="border-t border-border-muted pt-4">
                 <FFmpegDownloadProgress
                   installedVersion={ffmpegVersion || undefined}
                   autoDownload={settings.autoDownloadFfmpeg}
@@ -559,13 +560,13 @@ export function Settings() {
                 <CardDescription>{t('settings.appBehaviorDescription', { defaultValue: 'System-wide application settings.' })}</CardDescription>
               </div>
             </CardHeader>
-            <CardBody style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div className="flex items-center justify-between" style={{ padding: '8px 0' }}>
+            <CardBody className="p-6 flex flex-col gap-4">
+              <div className="flex items-center justify-between py-2">
                 <div>
-                  <div className="text-sm font-medium text-[var(--text-primary)]">
+                  <div className="text-sm font-medium text-text-primary">
                     {t('settings.startMinimized')}
                   </div>
-                  <div className="text-xs text-[var(--text-tertiary)]">
+                  <div className="text-xs text-text-tertiary">
                     {t('settings.startMinimizedDescription')}
                   </div>
                 </div>
@@ -597,12 +598,12 @@ export function Settings() {
                 <CardDescription>{t('settings.dataManagementDescription', { defaultValue: 'Export and manage your application data.' })}</CardDescription>
               </div>
             </CardHeader>
-            <CardBody style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div className="flex flex-col" style={{ gap: '6px' }}>
-                <label className="block text-sm font-medium text-[var(--text-primary)]">
+            <CardBody className="p-6 flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="block text-sm font-medium text-text-primary">
                   {t('settings.profileStorage')}
                 </label>
-                <div className="flex" style={{ gap: '8px' }}>
+                <div className="flex gap-2">
                   <Input value={settings.profileStoragePath} disabled className="flex-1 font-mono text-xs" />
                   <Button variant="outline" onClick={handleOpenProfileStorage}>
                     <FolderOpen className="w-4 h-4" />
@@ -610,7 +611,7 @@ export function Settings() {
                   </Button>
                 </div>
               </div>
-              <div className="flex" style={{ gap: '12px' }}>
+              <div className="flex gap-3">
                 <Button variant="outline" onClick={handleExportData}>
                   <Download className="w-4 h-4" />
                   {t('settings.exportData')}
@@ -632,17 +633,17 @@ export function Settings() {
               </div>
             </CardHeader>
             <CardBody>
-              <div className="text-center" style={{ padding: '16px 0' }}>
-                <div className="flex justify-center" style={{ marginBottom: '16px' }}>
+              <div className="text-center py-4">
+                <div className="flex justify-center mb-4">
                   <Logo size="lg" />
                 </div>
-                <div className="text-sm text-[var(--text-secondary)]" style={{ marginBottom: '4px' }}>
+                <div className="text-sm text-text-secondary mb-1">
                   {t('settings.version')} 0.1.0
                 </div>
-                <div className="text-xs text-[var(--text-tertiary)]" style={{ marginBottom: '24px' }}>
+                <div className="text-xs text-text-tertiary mb-6">
                   {t('settings.tagline')}
                 </div>
-                <div className="flex justify-center" style={{ gap: '12px' }}>
+                <div className="flex justify-center gap-3">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -690,10 +691,10 @@ export function Settings() {
           </>
         }
       >
-        <p className="text-[var(--text-secondary)]">{t('settings.clearConfirm')}</p>
+        <p className="text-text-secondary">{t('settings.clearConfirm')}</p>
         {clearError && (
-          <div className="mt-4 p-3 rounded-lg bg-[var(--error-subtle)] border border-[var(--error-border)]">
-            <p className="text-sm text-[var(--error-text)]">{clearError}</p>
+          <div className="mt-4 p-3 rounded-lg bg-error-subtle border border-error-border">
+            <p className="text-sm text-error-text">{clearError}</p>
           </div>
         )}
       </Modal>

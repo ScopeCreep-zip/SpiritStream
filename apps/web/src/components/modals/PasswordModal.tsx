@@ -74,9 +74,9 @@ export function PasswordModal({
     <Modal open={open} onClose={onClose} title={title}>
       <form onSubmit={handleSubmit}>
         <ModalBody>
-          <div className="flex items-center gap-3 mb-4 p-3 bg-[var(--bg-muted)] rounded-lg">
-            <Lock className="w-5 h-5 text-[var(--primary)]" />
-            <p className="text-sm text-[var(--text-secondary)]">{description}</p>
+          <div className="flex items-center gap-3 mb-4 p-3 bg-bg-muted rounded-lg">
+            <Lock className="w-5 h-5 text-primary" />
+            <p className="text-sm text-text-secondary">{description}</p>
           </div>
 
           <div className="space-y-4">
@@ -97,7 +97,7 @@ export function PasswordModal({
                 onClick={() => setShowPassword(!showPassword)}
                 aria-label={showPassword ? t('common.hidePassword') : t('common.showPassword')}
                 aria-pressed={showPassword}
-                className="absolute right-3 top-[34px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+                className="absolute right-3 top-[34px] text-text-tertiary hover:text-text-primary transition-colors"
               >
                 {showPassword ? (
                   <EyeOff className="w-4 h-4" aria-hidden="true" />
@@ -118,13 +118,13 @@ export function PasswordModal({
             )}
 
             {displayError && (
-              <div className="p-3 bg-[var(--error-subtle)] border border-[var(--error-border)] rounded-lg">
-                <p className="text-sm text-[var(--error-text)]">{displayError}</p>
+              <div className="p-3 bg-error-subtle border border-error-border rounded-lg">
+                <p className="text-sm text-error-text">{displayError}</p>
               </div>
             )}
 
             {mode === 'encrypt' && (
-              <div className="text-xs text-[var(--text-tertiary)]">
+              <div className="text-xs text-text-tertiary">
                 <p className="font-medium mb-1">{t('modals.passwordRequirements')}:</p>
                 <ul className="list-disc list-inside space-y-0.5">
                   <li>{t('modals.passwordReq8Chars')}</li>
