@@ -4,6 +4,7 @@ use std::time::Instant;
 use spiritstream_server::models::ChatPlatform;
 
 use crate::chat_lifecycle::{connect_trovo_chat, connect_twitch_chat, connect_youtube_chat_with_retry};
+use spiritstream_server::constants::{CHAT_RECONNECT_INTERVAL_SECS, CHAT_RECONNECT_COOLDOWN_SECS};
 use crate::state::{get_active_profile_settings, AppState};
 
 /// Background task to retry chat connections when a platform drops.
@@ -12,7 +13,7 @@ pub(crate) async fn start_chat_reconnect_task(
 ) {
     tokio::spawn(async move {
         let mut last_attempts: HashMap<ChatPlatform, Instant> = HashMap::new();
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(15));
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(CHAT_RECONNECT_INTERVAL_SECS));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
         loop {
@@ -30,7 +31,7 @@ pub(crate) async fn start_chat_reconnect_task(
 
                 if last_attempts
                     .get(&status.platform)
-                    .map(|last| last.elapsed() < std::time::Duration::from_secs(30))
+                    .map(|last| last.elapsed() < std::time::Duration::from_secs(CHAT_RECONNECT_COOLDOWN_SECS))
                     .unwrap_or(false)
                 {
                     continue;

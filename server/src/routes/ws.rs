@@ -10,7 +10,7 @@ use serde::Deserialize;
 use tokio::sync::broadcast;
 use tower_cookies::Cookies;
 
-use crate::constants::AUTH_COOKIE_NAME;
+use spiritstream_server::constants::AUTH_COOKIE_NAME;
 use crate::events::ServerEvent;
 use crate::security::auth::verify_token;
 use crate::state::AppState;

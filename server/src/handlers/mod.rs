@@ -10,7 +10,7 @@ mod themes;
 
 use serde_json::Value;
 
-use crate::constants::QUIET_COMMANDS;
+use spiritstream_server::constants::QUIET_COMMANDS;
 use crate::security::redaction::redact_payload;
 use crate::state::AppState;
 

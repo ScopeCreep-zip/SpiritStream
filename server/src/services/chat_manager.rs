@@ -294,7 +294,7 @@ impl ChatManager {
 
         tokio::spawn(async move {
             use std::collections::{HashSet, VecDeque};
-            const MAX_SEEN_IDS: usize = 5000;
+            use crate::constants::CHAT_MAX_SEEN_IDS;
             let mut seen_ids: HashSet<String> = HashSet::new();
             let mut seen_order: VecDeque<String> = VecDeque::new();
 
@@ -312,7 +312,7 @@ impl ChatManager {
                     }
                     seen_ids.insert(message.id.clone());
                     seen_order.push_back(message.id.clone());
-                    if seen_order.len() > MAX_SEEN_IDS {
+                    if seen_order.len() > CHAT_MAX_SEEN_IDS {
                         if let Some(old) = seen_order.pop_front() {
                             seen_ids.remove(&old);
                         }

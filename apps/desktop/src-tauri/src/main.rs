@@ -15,7 +15,6 @@ use tauri_plugin_shell::{
 struct ServerProcess(Mutex<Option<CommandChild>>);
 
 const DEFAULT_HOST: &str = "127.0.0.1";
-const DEFAULT_PORT: &str = "8008";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -30,6 +29,21 @@ struct Settings {
     backend_port: u16,
     #[serde(default)]
     backend_token: String,
+}
+
+impl Settings {
+    /// Normalize and apply defaults to deserialized settings
+    fn validated(self) -> Self {
+        Self {
+            backend_host: {
+                let h = self.backend_host.trim().to_string();
+                if h.is_empty() { DEFAULT_HOST.to_string() } else { h }
+            },
+            backend_port: if self.backend_port == 0 { 8008 } else { self.backend_port },
+            backend_token: self.backend_token.trim().to_string(),
+            ..self
+        }
+    }
 }
 
 /// Migrate user data from legacy locations to the new Tauri data directory.
@@ -299,32 +313,21 @@ fn validate_host(host: &str) -> Result<String, String> {
 }
 
 async fn run_launcher<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
-    let settings = load_settings(app).unwrap_or_default();
+    let settings = load_settings(app).unwrap_or_default().validated();
 
-    let settings_host =
-        if settings.backend_remote_enabled && !settings.backend_host.trim().is_empty() {
-            match validate_host(&settings.backend_host) {
-                Ok(h) => h,
-                Err(e) => {
-                    log::warn!("Invalid backend_host in settings: {e}. Falling back to localhost.");
-                    DEFAULT_HOST.to_string()
-                }
+    let settings_host = if settings.backend_remote_enabled && !settings.backend_host.is_empty() {
+        match validate_host(&settings.backend_host) {
+            Ok(h) => h,
+            Err(e) => {
+                log::warn!("Invalid backend_host in settings: {e}. Falling back to localhost.");
+                DEFAULT_HOST.to_string()
             }
-        } else {
-            DEFAULT_HOST.to_string()
-        };
-
-    let settings_port = if settings.backend_port == 0 {
-        DEFAULT_PORT.to_string()
+        }
     } else {
-        settings.backend_port.to_string()
+        DEFAULT_HOST.to_string()
     };
-
-    let settings_token = if settings.backend_token.trim().is_empty() {
-        None
-    } else {
-        Some(settings.backend_token.clone())
-    };
+    let settings_port = settings.backend_port.to_string();
+    let settings_token = if settings.backend_token.is_empty() { None } else { Some(settings.backend_token.clone()) };
 
     let host = match env::var("SPIRITSTREAM_HOST") {
         Ok(env_host) => match validate_host(&env_host) {
@@ -370,173 +373,147 @@ async fn run_launcher<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     Ok(())
 }
 
-fn spawn_server<R: Runtime>(
-    app: &AppHandle<R>,
-    host: &str,
-    port: &str,
-    auth_token: Option<&str>,
-) -> Result<(), String> {
-    let mut command = if let Ok(server_path) = env::var("SPIRITSTREAM_SERVER_PATH") {
-        app.shell().command(server_path)
-    } else {
-        app.shell()
-            .sidecar("spiritstream-server")
-            .map_err(|e| e.to_string())?
-    };
+/// Check if a directory contains .json or .jsonc theme files.
+fn has_theme_files(dir: &std::path::Path) -> bool {
+    std::fs::read_dir(dir)
+        .map(|entries| {
+            entries.flatten().any(|entry| {
+                entry
+                    .path()
+                    .extension()
+                    .map(|ext| ext == "jsonc" || ext == "json")
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false)
+}
 
-    // Use Local AppData instead of Roaming AppData for all user data
-    // This keeps everything in one machine-specific location that doesn't sync
-    // For a streaming app, settings/profiles don't need to roam across domain machines
-    let app_data_dir = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|e| format!("Failed to resolve app local data dir: {e}"))?;
-
-    // Migrate legacy data from old locations (safety net for portable/dev installs)
-    migrate_legacy_data(&app_data_dir);
-
-    // Put logs in a subdirectory of the local data dir
-    let log_dir = app_data_dir.join("logs");
-
-    // Ensure directories exist before spawning server
-    std::fs::create_dir_all(&app_data_dir).ok();
-    std::fs::create_dir_all(&log_dir).ok();
-
-    // Helper function to check if directory has theme files
-    fn has_theme_files(dir: &std::path::Path) -> bool {
-        std::fs::read_dir(dir)
-            .map(|entries| {
-                entries.flatten().any(|entry| {
+/// Count the number of .json/.jsonc theme files in a directory.
+fn count_theme_files(dir: &std::path::Path) -> usize {
+    std::fs::read_dir(dir)
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|entry| {
                     entry
                         .path()
                         .extension()
                         .map(|ext| ext == "jsonc" || ext == "json")
                         .unwrap_or(false)
                 })
-            })
-            .unwrap_or(false)
-    }
+                .count()
+        })
+        .unwrap_or(0)
+}
 
-    // Helper to count theme files (for logging)
-    fn count_theme_files(dir: &std::path::Path) -> usize {
-        std::fs::read_dir(dir)
-            .map(|entries| {
-                entries
+/// Resolve the themes directory by checking bundled resources, then dev fallback paths.
+fn resolve_themes_dir<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
+    let bundled = app.path().resource_dir().ok().map(|dir| dir.join("themes"));
+
+    // Log detailed info about bundled path for debugging production issues
+    if let Some(ref path) = bundled {
+        log::info!("Checking bundled themes at: {:?}", path);
+        log::info!(
+            "  exists: {}, is_dir: {}",
+            path.exists(),
+            path.is_dir()
+        );
+
+        if path.exists() {
+            let count = count_theme_files(path);
+            log::info!("  theme files found: {}", count);
+
+            if let Ok(entries) = std::fs::read_dir(path) {
+                let files: Vec<_> = entries
                     .flatten()
-                    .filter(|entry| {
-                        entry
-                            .path()
-                            .extension()
-                            .map(|ext| ext == "jsonc" || ext == "json")
-                            .unwrap_or(false)
-                    })
-                    .count()
-            })
-            .unwrap_or(0)
+                    .map(|e| e.file_name().to_string_lossy().to_string())
+                    .collect();
+                log::info!("  contents: {:?}", files);
+            }
+        }
     }
 
-    // Find themes directory - check bundled resources first, then dev paths
-    let themes_dir = {
-        let bundled = app.path().resource_dir().ok().map(|dir| dir.join("themes"));
+    // Use bundled if it exists AND has theme files
+    if bundled
+        .as_ref()
+        .map(|p| p.exists() && has_theme_files(p))
+        .unwrap_or(false)
+    {
+        log::info!("Using bundled themes directory");
+        return bundled;
+    }
 
-        // Log detailed info about bundled path for debugging production issues
-        if let Some(ref path) = bundled {
-            log::info!("Checking bundled themes at: {:?}", path);
-            log::info!(
-                "  exists: {}, is_dir: {}",
-                path.exists(),
-                path.is_dir()
-            );
+    // Development fallback chain
+    let cwd = std::env::current_dir().ok();
 
-            // List contents if exists
-            if path.exists() {
-                let count = count_theme_files(path);
-                log::info!("  theme files found: {}", count);
+    let cwd_themes = cwd.as_ref().map(|d| d.join("themes"));
+    if cwd_themes
+        .as_ref()
+        .map(|p| has_theme_files(p))
+        .unwrap_or(false)
+    {
+        log::info!("Using CWD themes directory: {:?}", cwd_themes);
+        return cwd_themes;
+    }
 
-                if let Ok(entries) = std::fs::read_dir(path) {
-                    let files: Vec<_> = entries
-                        .flatten()
-                        .map(|e| e.file_name().to_string_lossy().to_string())
-                        .collect();
-                    log::info!("  contents: {:?}", files);
-                }
-            }
-        }
+    let parent_themes = cwd
+        .as_ref()
+        .and_then(|d| d.join("../../themes").canonicalize().ok());
+    if parent_themes
+        .as_ref()
+        .map(|p| has_theme_files(p))
+        .unwrap_or(false)
+    {
+        log::info!("Using parent themes directory: {:?}", parent_themes);
+        return parent_themes;
+    }
 
-        // Use bundled if it exists AND has theme files
-        if bundled
-            .as_ref()
-            .map(|p| p.exists() && has_theme_files(p))
-            .unwrap_or(false)
-        {
-            log::info!("Using bundled themes directory");
-            bundled
-        } else {
-            // Development fallback chain
-            let cwd = std::env::current_dir().ok();
+    let grandparent_themes = cwd
+        .as_ref()
+        .and_then(|d| d.join("../../../themes").canonicalize().ok());
+    if grandparent_themes
+        .as_ref()
+        .map(|p| has_theme_files(p))
+        .unwrap_or(false)
+    {
+        log::info!(
+            "Using grandparent themes directory: {:?}",
+            grandparent_themes
+        );
+        return grandparent_themes;
+    }
 
-            // Option 1: themes/ in CWD (running from project root)
-            let cwd_themes = cwd.as_ref().map(|d| d.join("themes"));
-            if cwd_themes
-                .as_ref()
-                .map(|p| has_theme_files(p))
-                .unwrap_or(false)
-            {
-                log::info!("Using CWD themes directory: {:?}", cwd_themes);
-                cwd_themes
-            } else {
-                // Option 2: ../../themes from apps/desktop
-                let parent_themes = cwd
-                    .as_ref()
-                    .and_then(|d| d.join("../../themes").canonicalize().ok());
-                if parent_themes
-                    .as_ref()
-                    .map(|p| has_theme_files(p))
-                    .unwrap_or(false)
-                {
-                    log::info!("Using parent themes directory: {:?}", parent_themes);
-                    parent_themes
-                } else {
-                    // Option 3: ../../../themes from apps/desktop/src-tauri
-                    let grandparent_themes = cwd
-                        .as_ref()
-                        .and_then(|d| d.join("../../../themes").canonicalize().ok());
-                    if grandparent_themes
-                        .as_ref()
-                        .map(|p| has_theme_files(p))
-                        .unwrap_or(false)
-                    {
-                        log::info!(
-                            "Using grandparent themes directory: {:?}",
-                            grandparent_themes
-                        );
-                        grandparent_themes
-                    } else {
-                        log::warn!("No themes directory found with theme files!");
-                        log::warn!("  Tried bundled: {:?}", bundled);
-                        log::warn!("  Tried CWD: {:?}", cwd_themes);
-                        log::warn!("  Tried parent: {:?}", parent_themes);
-                        log::warn!("  Tried grandparent: {:?}", grandparent_themes);
-                        // Return bundled path anyway - server will handle missing
-                        bundled
-                    }
-                }
-            }
-        }
-    };
+    log::warn!("No themes directory found with theme files!");
+    log::warn!("  Tried bundled: {:?}", bundled);
+    log::warn!("  Tried CWD: {:?}", cwd_themes);
+    log::warn!("  Tried parent: {:?}", parent_themes);
+    log::warn!("  Tried grandparent: {:?}", grandparent_themes);
+    // Return bundled path anyway - server will handle missing
+    bundled
+}
 
+/// Set environment variables on the server command, falling back to env vars if already set.
+#[allow(clippy::too_many_arguments)]
+fn setup_server_env<R: Runtime>(
+    mut command: tauri_plugin_shell::process::Command,
+    app: &AppHandle<R>,
+    app_data_dir: &std::path::Path,
+    log_dir: &std::path::Path,
+    themes_dir: &Option<PathBuf>,
+    host: &str,
+    port: &str,
+    auth_token: Option<&str>,
+) -> tauri_plugin_shell::process::Command {
     if env::var("SPIRITSTREAM_DATA_DIR").is_err() {
-        command = command.env("SPIRITSTREAM_DATA_DIR", &app_data_dir);
+        command = command.env("SPIRITSTREAM_DATA_DIR", app_data_dir);
     }
     if env::var("SPIRITSTREAM_LOG_DIR").is_err() {
-        command = command.env("SPIRITSTREAM_LOG_DIR", &log_dir);
+        command = command.env("SPIRITSTREAM_LOG_DIR", log_dir);
     }
-    // Only set SPIRITSTREAM_THEMES_DIR if bundled themes exist
     if env::var("SPIRITSTREAM_THEMES_DIR").is_err() {
-        if let Some(themes) = &themes_dir {
+        if let Some(themes) = themes_dir {
             command = command.env("SPIRITSTREAM_THEMES_DIR", themes);
         }
-        // If themes don't exist, let server use its default handling
     }
     if env::var("SPIRITSTREAM_HOST").is_err() {
         command = command.env("SPIRITSTREAM_HOST", host);
@@ -549,7 +526,6 @@ fn spawn_server<R: Runtime>(
             command = command.env("SPIRITSTREAM_API_TOKEN", token);
         }
     }
-
     if env::var("SPIRITSTREAM_UI_DIR").is_err() {
         if let Ok(resource_dir) = app.path().resource_dir() {
             let dist_dir = resource_dir.join("dist");
@@ -558,20 +534,14 @@ fn spawn_server<R: Runtime>(
             }
         }
     }
+    command
+}
 
-    let (mut rx, child) = command.spawn().map_err(|e| {
-        log::error!("Failed to spawn server: {e}");
-        format!("Failed to spawn server: {e}")
-    })?;
-
-    // Store the child process handle so we can kill it on exit
-    if let Some(server_state) = app.try_state::<ServerProcess>() {
-        if let Ok(mut guard) = server_state.0.lock() {
-            *guard = Some(child);
-        }
-    }
-
-    let app_handle = app.clone();
+/// Monitor server stdout/stderr and emit events on termination.
+fn monitor_server_output<R: Runtime>(
+    app: AppHandle<R>,
+    mut rx: tokio::sync::mpsc::Receiver<CommandEvent>,
+) {
     tauri::async_runtime::spawn(async move {
         let mut startup_errors: Vec<String> = Vec::new();
         let mut terminated_early = false;
@@ -585,7 +555,6 @@ fn spawn_server<R: Runtime>(
                 CommandEvent::Stderr(line) => {
                     let msg = String::from_utf8_lossy(&line).to_string();
                     log::warn!("[server] {}", msg);
-                    // Capture stderr for potential error reporting
                     startup_errors.push(msg);
                 }
                 CommandEvent::Error(error) => {
@@ -600,7 +569,6 @@ fn spawn_server<R: Runtime>(
                     );
                     terminated_early = true;
 
-                    // Emit event to frontend with error details
                     let error_msg = if startup_errors.is_empty() {
                         format!(
                             "Server process terminated with code {:?}",
@@ -610,7 +578,7 @@ fn spawn_server<R: Runtime>(
                         startup_errors.join("\n")
                     };
 
-                    let _ = app_handle.emit("server-error", &error_msg);
+                    let _ = app.emit("server-error", &error_msg);
                     log::error!("Server startup failed: {}", error_msg);
                     break;
                 }
@@ -622,6 +590,52 @@ fn spawn_server<R: Runtime>(
             log::error!("Server terminated during startup - check logs for details");
         }
     });
+}
+
+fn spawn_server<R: Runtime>(
+    app: &AppHandle<R>,
+    host: &str,
+    port: &str,
+    auth_token: Option<&str>,
+) -> Result<(), String> {
+    // 1. Resolve server binary
+    let command = if let Ok(server_path) = env::var("SPIRITSTREAM_SERVER_PATH") {
+        app.shell().command(server_path)
+    } else {
+        app.shell()
+            .sidecar("spiritstream-server")
+            .map_err(|e| e.to_string())?
+    };
+
+    // 2. Resolve app data directory
+    let app_data_dir = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| format!("Failed to resolve app local data dir: {e}"))?;
+    migrate_legacy_data(&app_data_dir);
+    let log_dir = app_data_dir.join("logs");
+    std::fs::create_dir_all(&app_data_dir).ok();
+    std::fs::create_dir_all(&log_dir).ok();
+
+    // 3. Resolve themes and configure environment
+    let themes_dir = resolve_themes_dir(app);
+    let command = setup_server_env(command, app, &app_data_dir, &log_dir, &themes_dir, host, port, auth_token);
+
+    // 4. Spawn
+    let (rx, child) = command.spawn().map_err(|e| {
+        log::error!("Failed to spawn server: {e}");
+        format!("Failed to spawn server: {e}")
+    })?;
+
+    // 5. Store the child process handle so we can kill it on exit
+    if let Some(server_state) = app.try_state::<ServerProcess>() {
+        if let Ok(mut guard) = server_state.0.lock() {
+            *guard = Some(child);
+        }
+    }
+
+    // 6. Monitor output
+    monitor_server_output(app.clone(), rx);
 
     Ok(())
 }

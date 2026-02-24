@@ -14,6 +14,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{oneshot, Mutex};
 
+use crate::constants::{OAUTH_CALLBACK_PORT_START, OAUTH_CALLBACK_PORT_END, OAUTH_FLOW_TIMEOUT_SECS};
+
 // ============================================================================
 // Embedded OAuth Client IDs (PKCE flow - no secrets needed)
 // ============================================================================
@@ -314,7 +316,7 @@ impl OAuthService {
         }
 
         // Fallback to ephemeral range if all preferred ports are busy
-        for port in 49152..49162 {
+        for port in OAUTH_CALLBACK_PORT_START..OAUTH_CALLBACK_PORT_END {
             if TcpListener::bind(format!("127.0.0.1:{}", port)).is_ok() {
                 return Ok(port);
             }
@@ -326,7 +328,7 @@ impl OAuthService {
     async fn cleanup_expired_flows(&self) {
         let mut flows = self.pending_flows.lock().await;
         let now = Instant::now();
-        flows.retain(|_, flow| now.duration_since(flow.created_at) < Duration::from_secs(600));
+        flows.retain(|_, flow| now.duration_since(flow.created_at) < Duration::from_secs(OAUTH_FLOW_TIMEOUT_SECS));
     }
 
     /// Build the authorization URL (PKCE optional for code flow)

@@ -1,5 +1,6 @@
 use spiritstream_server::models::ChatPlatform;
 
+use spiritstream_server::constants::TOKEN_REFRESH_INTERVAL_SECS;
 use crate::state::{apply_and_persist_oauth_refresh, ensure_fresh_oauth_token, get_active_profile_settings, AppState};
 
 /// Background task to refresh YouTube OAuth tokens and update the live chat connector.
@@ -7,7 +8,7 @@ pub(crate) async fn start_youtube_token_refresh_task(
     state: AppState,
 ) {
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(TOKEN_REFRESH_INTERVAL_SECS));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
         loop {

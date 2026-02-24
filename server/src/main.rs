@@ -1,7 +1,6 @@
 mod app;
 mod chat_lifecycle;
 mod config;
-mod constants;
 mod events;
 mod handlers;
 mod logging;
@@ -52,7 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _ = prune_logs(&config.log_dir, s.log_retention_days);
     }
 
-    let ffmpeg_handler = Arc::new(FFmpegHandler::new_with_custom_path(
+    let ffmpeg_handler = Arc::new(FFmpegHandler::new(
         config.app_data_dir.clone(),
         custom_ffmpeg_path,
     ));

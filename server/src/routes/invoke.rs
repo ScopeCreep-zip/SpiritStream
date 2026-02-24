@@ -6,7 +6,7 @@ use axum::{
 use serde_json::Value;
 use tower_cookies::Cookies;
 
-use crate::constants::AUTH_COOKIE_NAME;
+use spiritstream_server::constants::AUTH_COOKIE_NAME;
 use crate::handlers;
 use crate::security::auth::{bearer_token, verify_token};
 use crate::security::redaction::sanitize_error;

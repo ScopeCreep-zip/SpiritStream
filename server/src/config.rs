@@ -130,7 +130,7 @@ impl ServerConfig {
             let configured_port = env_port.unwrap_or(settings_port);
 
             let final_host = if !remote_enabled && !env_host_was_set {
-                "127.0.0.1".to_string()
+                spiritstream_server::constants::DEFAULT_HOST.to_string()
             } else {
                 configured_host
             };
@@ -142,7 +142,7 @@ impl ServerConfig {
         let rate_limit = env::var("SPIRITSTREAM_RATE_LIMIT")
             .ok()
             .and_then(|v| v.parse().ok())
-            .unwrap_or(crate::constants::DEFAULT_RATE_LIMIT_PER_MINUTE);
+            .unwrap_or(spiritstream_server::constants::DEFAULT_RATE_LIMIT_PER_MINUTE);
 
         Ok(ServerConfig {
             app_data_dir,

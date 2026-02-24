@@ -10,6 +10,12 @@ use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicU16, AtomicU64, AtomicUsize, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
+use crate::constants::{
+    RECONNECT_MAX_RETRIES, RECONNECT_INITIAL_DELAY_SECS, RECONNECT_MAX_DELAY_SECS,
+    FFMPEG_STOP_GRACE_PERIOD_SECS, FFMPEG_STOP_POLL_INTERVAL_MS,
+    METER_READ_TIMEOUT_MS, METER_UDP_BUFFER_SIZE,
+    RTMP_RECV_TIMEOUT_US, RTMP_CLIENT_BUFFER_MS,
+};
 use crate::services::{emit_event, EventSink};
 use crate::models::OutputGroup;
 use crate::services::PlatformRegistry;
@@ -25,9 +31,9 @@ struct ReconnectionConfig {
 impl Default for ReconnectionConfig {
     fn default() -> Self {
         Self {
-            max_retries: 5,
-            initial_delay_secs: 5,
-            max_delay_secs: 120,
+            max_retries: RECONNECT_MAX_RETRIES,
+            initial_delay_secs: RECONNECT_INITIAL_DELAY_SECS,
+            max_delay_secs: RECONNECT_MAX_DELAY_SECS,
         }
     }
 }
@@ -171,7 +177,7 @@ impl FFmpegHandler {
 
     /// Create FFmpegHandler with optional custom FFmpeg path from settings
     /// Falls back to auto-discovery if custom path is empty or invalid
-    pub fn new_with_custom_path(app_data_dir: PathBuf, custom_path: Option<String>) -> Self {
+    pub fn new(app_data_dir: PathBuf, custom_path: Option<String>) -> Self {
         let ffmpeg_path = match custom_path {
             Some(ref path) if !path.is_empty() && std::path::Path::new(path).exists() => {
                 log::info!("Using custom FFmpeg path from settings: {path}");
@@ -198,22 +204,6 @@ impl FFmpegHandler {
         }
     }
 
-    /// Create a new FFmpegHandler (legacy, without bundled FFmpeg support)
-    pub fn new() -> Self {
-        Self {
-            ffmpeg_path: Self::find_ffmpeg(),
-            processes: Arc::new(Mutex::new(HashMap::new())),
-            stopping_groups: Arc::new(Mutex::new(HashSet::new())),
-            disabled_targets: Arc::new(Mutex::new(HashSet::new())),
-            relay: Arc::new(Mutex::new(None)),
-            active_groups: Arc::new(Mutex::new(HashMap::new())),
-            relay_refcount: Arc::new(AtomicUsize::new(0)),
-            platform_registry: PlatformRegistry::new(),
-            reconnection_config: ReconnectionConfig::default(),
-            port_assignments: Arc::new(Mutex::new(HashMap::new())),
-            next_port_offset: Arc::new(AtomicU16::new(0)),
-        }
-    }
 
     /// Normalize an RTMP URL for consistency
     fn normalize_rtmp_url(url: &str) -> String {
@@ -334,12 +324,6 @@ impl FFmpegHandler {
         // This will cause FFmpeg commands to fail with a clear error
         log::warn!("FFmpeg not found at system location: {system_path:?}");
         system_path.to_string_lossy().to_string()
-    }
-
-    /// Legacy find_ffmpeg - now just delegates to system path check
-    fn find_ffmpeg() -> String {
-        use crate::services::FFmpegDownloader;
-        FFmpegDownloader::get_system_install_path().to_string_lossy().to_string()
     }
 
     fn record_active_group(&self, group: &OutputGroup, incoming_url: &str) -> Result<(), String> {
@@ -621,7 +605,7 @@ impl FFmpegHandler {
             }
         };
 
-        if let Err(err) = socket.set_read_timeout(Some(Duration::from_millis(250))) {
+        if let Err(err) = socket.set_read_timeout(Some(Duration::from_millis(METER_READ_TIMEOUT_MS))) {
             log::warn!(
                 "Failed to set meter read timeout for group {group_id} on {bind_addr}: {err}"
             );
@@ -632,7 +616,7 @@ impl FFmpegHandler {
         let group_id = group_id.to_string();
 
         thread::spawn(move || {
-            let mut buffer = [0u8; 2048];
+            let mut buffer = [0u8; METER_UDP_BUFFER_SIZE];
             loop {
                 match socket.recv_from(&mut buffer) {
                     Ok((len, _)) => {
@@ -903,11 +887,11 @@ impl FFmpegHandler {
         }
 
         let start = Instant::now();
-        while start.elapsed() < Duration::from_secs(2) {
+        while start.elapsed() < Duration::from_secs(FFMPEG_STOP_GRACE_PERIOD_SECS) {
             if let Ok(Some(_)) = child.try_wait() {
                 return;
             }
-            thread::sleep(Duration::from_millis(100));
+            thread::sleep(Duration::from_millis(FFMPEG_STOP_POLL_INTERVAL_MS));
         }
 
         let _ = child.kill();
@@ -1332,8 +1316,8 @@ impl FFmpegHandler {
         // FFmpeg RTMP protocol options verified in FFmpeg documentation
         // https://ffmpeg.org/ffmpeg-protocols.html#rtmp
         let options = [
-            ("timeout", "30000000"),    // 30 seconds in microseconds (receive timeout)
-            ("rtmp_buffer", "30000"),   // 30 seconds in milliseconds (client buffer)
+            ("timeout", RTMP_RECV_TIMEOUT_US),    // 30 seconds in microseconds (receive timeout)
+            ("rtmp_buffer", RTMP_CLIENT_BUFFER_MS),   // 30 seconds in milliseconds (client buffer)
             ("tcp_keepalive", "1"),     // Enable TCP keepalive probes
             ("rtmp_live", "live"),      // Live stream mode
         ];
@@ -1553,8 +1537,3 @@ impl FFmpegHandler {
     }
 }
 
-impl Default for FFmpegHandler {
-    fn default() -> Self {
-        Self::new()
-    }
-}

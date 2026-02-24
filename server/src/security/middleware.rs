@@ -6,7 +6,7 @@ use axum::{
 };
 use tower_cookies::Cookies;
 
-use crate::constants::AUTH_COOKIE_NAME;
+use spiritstream_server::constants::AUTH_COOKIE_NAME;
 use crate::security::auth::{bearer_token, verify_token};
 use crate::state::{AppState, InvokeResponse};
 

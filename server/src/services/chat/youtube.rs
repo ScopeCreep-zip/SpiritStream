@@ -14,7 +14,7 @@ use crate::models::{
 use super::platform::{ChatPlatform, PlatformError, PlatformResult};
 
 const YOUTUBE_API_BASE: &str = "https://www.googleapis.com/youtube/v3";
-const OUTBOUND_DEDUP_WINDOW_SECS: u64 = 10;
+use crate::constants::CHAT_OUTBOUND_DEDUP_WINDOW_SECS;
 
 #[derive(Debug, Clone)]
 struct OutboundMessage {
@@ -387,7 +387,7 @@ impl ChatPlatform for YouTubeConnector {
                                                     let mut recent = recent_outbound.lock().unwrap_or_else(|e| e.into_inner());
                                                     let now = Instant::now();
                                                     while let Some(front) = recent.front() {
-                                                        if now.duration_since(front.timestamp).as_secs() > OUTBOUND_DEDUP_WINDOW_SECS {
+                                                        if now.duration_since(front.timestamp).as_secs() > CHAT_OUTBOUND_DEDUP_WINDOW_SECS {
                                                             recent.pop_front();
                                                         } else {
                                                             break;

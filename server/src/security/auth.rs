@@ -8,7 +8,7 @@ use serde_json::json;
 use subtle::ConstantTimeEq;
 use tower_cookies::{Cookie, Cookies};
 
-use crate::constants::{AUTH_COOKIE_NAME, COOKIE_MAX_AGE_SECS};
+use spiritstream_server::constants::{AUTH_COOKIE_NAME, COOKIE_MAX_AGE_SECS};
 use crate::state::AppState;
 
 /// Constant-time token comparison to prevent timing attacks

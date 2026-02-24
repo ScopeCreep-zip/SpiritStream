@@ -9,11 +9,8 @@ use std::sync::atomic::{AtomicU16, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use crate::constants::{STATS_EMIT_INTERVAL_MS, STATS_RECENT_LINES_CAPACITY, STATS_BITRATE_SMOOTHING_ALPHA};
 use crate::models::StreamStats;
-
-const STATS_EMIT_INTERVAL_MS: u64 = 1000;
-const RECENT_LINES_CAPACITY: usize = 40;
-const BITRATE_SMOOTHING_ALPHA: f64 = 0.2;
 use crate::services::{emit_event, EventSink};
 
 use super::ffmpeg_handler::{FFmpegHandler, ProcessInfo, RelayProcess};
@@ -70,7 +67,7 @@ impl BitrateMetering {
 
         if self.has_smoothed {
             self.smoothed_bitrate =
-                self.smoothed_bitrate * (1.0 - BITRATE_SMOOTHING_ALPHA) + kbps * BITRATE_SMOOTHING_ALPHA;
+                self.smoothed_bitrate * (1.0 - STATS_BITRATE_SMOOTHING_ALPHA) + kbps * STATS_BITRATE_SMOOTHING_ALPHA;
         } else {
             self.smoothed_bitrate = kbps;
             self.has_smoothed = true;
@@ -120,7 +117,7 @@ impl StatsReaderContext {
             last_emit: Instant::now(),
             emit_interval: Duration::from_millis(STATS_EMIT_INTERVAL_MS),
             was_intentionally_stopped: false,
-            recent_lines: VecDeque::with_capacity(RECENT_LINES_CAPACITY),
+            recent_lines: VecDeque::with_capacity(STATS_RECENT_LINES_CAPACITY),
             meter,
             event_sink,
             processes,
@@ -154,7 +151,7 @@ impl StatsReaderContext {
     /// Sanitize and buffer a stderr line.
     pub(crate) fn record_line(&mut self, line: &str) {
         let sanitized = FFmpegHandler::sanitize_arg_static(line);
-        if self.recent_lines.len() == RECENT_LINES_CAPACITY {
+        if self.recent_lines.len() == STATS_RECENT_LINES_CAPACITY {
             self.recent_lines.pop_front();
         }
         self.recent_lines.push_back(sanitized);

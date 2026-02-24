@@ -11,11 +11,11 @@ fn default_log_retention_days() -> u32 {
 
 // Legacy default functions (kept for migration compatibility)
 fn default_backend_host() -> String {
-    "127.0.0.1".to_string()
+    crate::constants::DEFAULT_HOST.to_string()
 }
 
 fn default_backend_port() -> u16 {
-    8008
+    crate::constants::DEFAULT_PORT
 }
 
 fn default_obs_host() -> String {
