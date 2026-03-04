@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-#[cfg(feature = "ffmpeg-libs")]
 use ffmpeg_sys_next as ffi;
 
 /// NVENC (NVIDIA) encoder capabilities
@@ -140,37 +139,58 @@ impl EncoderCapabilities {
 
         log::info!("Probing NVENC (NVIDIA)...");
         caps.nvenc = Self::probe_nvenc(&mut caps.probe_errors);
-        log::info!("  NVENC: available={}, h264={}, hevc={}, av1={}, gpu={:?}",
-            caps.nvenc.available, caps.nvenc.h264, caps.nvenc.hevc, caps.nvenc.av1, caps.nvenc.gpu_name);
+        log::info!(
+            "  NVENC: available={}, h264={}, hevc={}, av1={}, gpu={:?}",
+            caps.nvenc.available,
+            caps.nvenc.h264,
+            caps.nvenc.hevc,
+            caps.nvenc.av1,
+            caps.nvenc.gpu_name
+        );
 
         log::info!("Probing AMF (AMD)...");
         caps.amf = Self::probe_amf(&mut caps.probe_errors);
-        log::info!("  AMF: available={}, h264={}, hevc={}, av1={}, gpu={:?}",
-            caps.amf.available, caps.amf.h264, caps.amf.hevc, caps.amf.av1, caps.amf.gpu_name);
+        log::info!(
+            "  AMF: available={}, h264={}, hevc={}, av1={}, gpu={:?}",
+            caps.amf.available,
+            caps.amf.h264,
+            caps.amf.hevc,
+            caps.amf.av1,
+            caps.amf.gpu_name
+        );
 
         log::info!("Probing QSV (Intel)...");
         caps.qsv = Self::probe_qsv(&mut caps.probe_errors);
-        log::info!("  QSV: available={}, h264={}, hevc={}, av1={}, low_power={}, device={:?}",
-            caps.qsv.available, caps.qsv.h264, caps.qsv.hevc, caps.qsv.av1, caps.qsv.low_power, caps.qsv.device_name);
+        log::info!(
+            "  QSV: available={}, h264={}, hevc={}, av1={}, low_power={}, device={:?}",
+            caps.qsv.available,
+            caps.qsv.h264,
+            caps.qsv.hevc,
+            caps.qsv.av1,
+            caps.qsv.low_power,
+            caps.qsv.device_name
+        );
 
         log::info!("Probing VideoToolbox (Apple)...");
         caps.videotoolbox = Self::probe_videotoolbox(&mut caps.probe_errors);
-        log::info!("  VideoToolbox: available={}, h264={}, hevc={}, hw_accel={}",
-            caps.videotoolbox.available, caps.videotoolbox.h264, caps.videotoolbox.hevc,
-            caps.videotoolbox.hardware_accelerated);
+        log::info!(
+            "  VideoToolbox: available={}, h264={}, hevc={}, hw_accel={}",
+            caps.videotoolbox.available,
+            caps.videotoolbox.h264,
+            caps.videotoolbox.hevc,
+            caps.videotoolbox.hardware_accelerated
+        );
 
         log::info!("Probing software encoders...");
-        #[cfg(feature = "ffmpeg-libs")]
-        {
-            caps.software = Self::probe_software_via_libs(&mut caps.probe_errors);
-        }
-        #[cfg(not(feature = "ffmpeg-libs"))]
-        {
-            caps.software = Self::probe_software_fallback(&mut caps.probe_errors);
-        }
-        log::info!("  Software: libx264={}, libx265={}, libsvtav1={}, aac={}, opus={}",
-            caps.software.libx264, caps.software.libx265, caps.software.libsvtav1,
-            caps.software.aac, caps.software.opus);
+        caps.software = Self::probe_software_via_libs(&mut caps.probe_errors);
+        log::info!(
+            "  Software: libx264={}, libx265={}, libsvtav1={}, aac={}, opus={}",
+            caps.software.libx264,
+            caps.software.libx265,
+            caps.software.libsvtav1,
+            caps.software.aac,
+            caps.software.opus
+        );
 
         log::info!("=== Encoder probe complete ===");
 
@@ -178,7 +198,12 @@ impl EncoderCapabilities {
         let h264_count = caps.available_h264_encoders().len();
         let hevc_count = caps.available_hevc_encoders().len();
         let av1_count = caps.available_av1_encoders().len();
-        log::info!("Available encoders: {} H.264, {} HEVC, {} AV1", h264_count, hevc_count, av1_count);
+        log::info!(
+            "Available encoders: {} H.264, {} HEVC, {} AV1",
+            h264_count,
+            hevc_count,
+            av1_count
+        );
 
         caps
     }
@@ -305,7 +330,8 @@ impl EncoderCapabilities {
             native_caps.available = native_caps.h264 || native_caps.hevc;
 
             if !native_caps.available {
-                probe_errors.push("videotoolbox: ffmpeg build lacks videotoolbox encoders".to_string());
+                probe_errors
+                    .push("videotoolbox: ffmpeg build lacks videotoolbox encoders".to_string());
             }
 
             return native_caps;
@@ -335,7 +361,11 @@ impl EncoderCapabilities {
                 id: "h264_nvenc".to_string(),
                 name: format!(
                     "NVIDIA NVENC H.264{}",
-                    self.nvenc.gpu_name.as_ref().map(|n| format!(" ({})", n)).unwrap_or_default()
+                    self.nvenc
+                        .gpu_name
+                        .as_ref()
+                        .map(|n| format!(" ({})", n))
+                        .unwrap_or_default()
                 ),
                 hardware: true,
                 codec: "h264".to_string(),
@@ -351,7 +381,11 @@ impl EncoderCapabilities {
                 id: "h264_amf".to_string(),
                 name: format!(
                     "AMD AMF H.264{}",
-                    self.amf.gpu_name.as_ref().map(|n| format!(" ({})", n)).unwrap_or_default()
+                    self.amf
+                        .gpu_name
+                        .as_ref()
+                        .map(|n| format!(" ({})", n))
+                        .unwrap_or_default()
                 ),
                 hardware: true,
                 codec: "h264".to_string(),
@@ -379,7 +413,11 @@ impl EncoderCapabilities {
                 id: "h264_qsv".to_string(),
                 name: format!(
                     "Intel Quick Sync H.264{}",
-                    self.qsv.device_name.as_ref().map(|n| format!(" ({})", n)).unwrap_or_default()
+                    self.qsv
+                        .device_name
+                        .as_ref()
+                        .map(|n| format!(" ({})", n))
+                        .unwrap_or_default()
                 ),
                 hardware: true,
                 codec: "h264".to_string(),
@@ -519,18 +557,9 @@ impl EncoderCapabilities {
     // =========================================================================
 
     fn encoder_available_for_probe(encoder_name: &str) -> bool {
-        #[cfg(feature = "ffmpeg-libs")]
-        {
-            Self::encoder_available_via_libs(encoder_name)
-        }
-        #[cfg(not(feature = "ffmpeg-libs"))]
-        {
-            let _ = encoder_name;
-            false
-        }
+        Self::encoder_available_via_libs(encoder_name)
     }
 
-    #[cfg(feature = "ffmpeg-libs")]
     fn encoder_available_via_libs(encoder_name: &str) -> bool {
         let name = std::ffi::CString::new(encoder_name).ok();
         let Some(name) = name else {
@@ -539,7 +568,6 @@ impl EncoderCapabilities {
         unsafe { !ffi::avcodec_find_encoder_by_name(name.as_ptr()).is_null() }
     }
 
-    #[cfg(feature = "ffmpeg-libs")]
     fn probe_software_via_libs(_probe_errors: &mut Vec<String>) -> SoftwareCaps {
         let caps = SoftwareCaps {
             libx264: Self::encoder_available_via_libs("libx264"),
@@ -560,13 +588,6 @@ impl EncoderCapabilities {
 
         caps
     }
-
-    #[cfg(not(feature = "ffmpeg-libs"))]
-    fn probe_software_fallback(probe_errors: &mut Vec<String>) -> SoftwareCaps {
-        probe_errors.push("ffmpeg-libs feature not enabled; software encoder probing disabled".to_string());
-        SoftwareCaps::default()
-    }
-
 }
 
 // =========================================================================
@@ -693,8 +714,7 @@ mod native_nvenc {
         nv_enc_unregister_async_event: *const c_void,
         nv_enc_map_input_resource: *const c_void,
         nv_enc_unmap_input_resource: *const c_void,
-        nv_enc_destroy_encoder:
-            Option<unsafe extern "C" fn(encoder: *mut c_void) -> i32>,
+        nv_enc_destroy_encoder: Option<unsafe extern "C" fn(encoder: *mut c_void) -> i32>,
         nv_enc_invalidate_ref_frames: *const c_void,
         nv_enc_open_encode_session_ex: Option<
             unsafe extern "C" fn(
@@ -743,16 +763,13 @@ mod native_nvenc {
         #[cfg(target_os = "windows")]
         let lib_names = ["nvEncodeAPI64.dll", "nvEncodeAPI.dll"];
         #[cfg(target_os = "linux")]
-        let lib_names = [
-            "libnvidia-encode.so.1",
-            "libnvidia-encode.so",
-        ];
+        let lib_names = ["libnvidia-encode.so.1", "libnvidia-encode.so"];
         #[cfg(not(any(target_os = "windows", target_os = "linux")))]
         let lib_names: [&str; 0] = [];
 
-        let lib = lib_names.iter().find_map(|name| {
-            unsafe { Library::new(*name).ok() }
-        });
+        let lib = lib_names
+            .iter()
+            .find_map(|name| unsafe { Library::new(*name).ok() });
 
         let lib = match lib {
             Some(l) => l,
@@ -830,9 +847,9 @@ mod native_nvenc {
 
     #[cfg(target_os = "windows")]
     fn get_nvidia_gpu_name_windows() -> Option<String> {
-        use std::process::Command;
         #[cfg(windows)]
         use std::os::windows::process::CommandExt;
+        use std::process::Command;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
 
         let output = Command::new("nvidia-smi")
@@ -890,22 +907,21 @@ mod native_amf {
     // AMF component IDs for encoders
     #[cfg(target_os = "windows")]
     const AMF_VIDEO_ENCODER_VCE: &[u16] = &[
-        'A' as u16, 'M' as u16, 'F' as u16, 'V' as u16, 'i' as u16, 'd' as u16,
-        'e' as u16, 'o' as u16, 'E' as u16, 'n' as u16, 'c' as u16, 'o' as u16,
-        'd' as u16, 'e' as u16, 'r' as u16, 'V' as u16, 'C' as u16, 'E' as u16, 0,
+        'A' as u16, 'M' as u16, 'F' as u16, 'V' as u16, 'i' as u16, 'd' as u16, 'e' as u16,
+        'o' as u16, 'E' as u16, 'n' as u16, 'c' as u16, 'o' as u16, 'd' as u16, 'e' as u16,
+        'r' as u16, 'V' as u16, 'C' as u16, 'E' as u16, 0,
     ];
     #[cfg(target_os = "windows")]
     const AMF_VIDEO_ENCODER_HEVC: &[u16] = &[
-        'A' as u16, 'M' as u16, 'F' as u16, 'V' as u16, 'i' as u16, 'd' as u16,
-        'e' as u16, 'o' as u16, 'E' as u16, 'n' as u16, 'c' as u16, 'o' as u16,
-        'd' as u16, 'e' as u16, 'r' as u16, 'H' as u16, 'E' as u16, 'V' as u16,
-        'C' as u16, 0,
+        'A' as u16, 'M' as u16, 'F' as u16, 'V' as u16, 'i' as u16, 'd' as u16, 'e' as u16,
+        'o' as u16, 'E' as u16, 'n' as u16, 'c' as u16, 'o' as u16, 'd' as u16, 'e' as u16,
+        'r' as u16, 'H' as u16, 'E' as u16, 'V' as u16, 'C' as u16, 0,
     ];
     #[cfg(target_os = "windows")]
     const AMF_VIDEO_ENCODER_AV1: &[u16] = &[
-        'A' as u16, 'M' as u16, 'F' as u16, 'V' as u16, 'i' as u16, 'd' as u16,
-        'e' as u16, 'o' as u16, 'E' as u16, 'n' as u16, 'c' as u16, 'o' as u16,
-        'd' as u16, 'e' as u16, 'r' as u16, 'A' as u16, 'V' as u16, '1' as u16, 0,
+        'A' as u16, 'M' as u16, 'F' as u16, 'V' as u16, 'i' as u16, 'd' as u16, 'e' as u16,
+        'o' as u16, 'E' as u16, 'n' as u16, 'c' as u16, 'o' as u16, 'd' as u16, 'e' as u16,
+        'r' as u16, 'A' as u16, 'V' as u16, '1' as u16, 0,
     ];
 
     // AMF interface IDs
@@ -940,12 +956,8 @@ mod native_amf {
         get_trace: *const c_void,
         get_debug: *const c_void,
         get_programs: *const c_void,
-        create_context: Option<
-            unsafe extern "system" fn(
-                this: *mut c_void,
-                context: *mut *mut c_void,
-            ) -> i32,
-        >,
+        create_context:
+            Option<unsafe extern "system" fn(this: *mut c_void, context: *mut *mut c_void) -> i32>,
         create_component: *const c_void,
         set_cache_folder: *const c_void,
         get_cache_folder: *const c_void,
@@ -971,12 +983,7 @@ mod native_amf {
         // AMFContext
         terminate: Option<unsafe extern "system" fn(this: *mut c_void) -> i32>,
         init_dx9: *const c_void,
-        init_dx11: Option<
-            unsafe extern "system" fn(
-                this: *mut c_void,
-                device: *mut c_void,
-            ) -> i32,
-        >,
+        init_dx11: Option<unsafe extern "system" fn(this: *mut c_void, device: *mut c_void) -> i32>,
         init_opengl: *const c_void,
         init_opencl: *const c_void,
         init_openclEx: *const c_void,
@@ -1007,7 +1014,7 @@ mod native_amf {
         create_surface_from_opengl: *const c_void,
         create_surface_from_opencl: *const c_void,
         create_audio_buffer_from_host: *const c_void,
-        create_component:  Option<
+        create_component: Option<
             unsafe extern "system" fn(
                 this: *mut c_void,
                 id: *const u16,
@@ -1171,12 +1178,16 @@ mod native_amf {
         // Test H.264 encoder
         let mut component: *mut c_void = ptr::null_mut();
         let ret = unsafe {
-            create_component(context as *mut c_void, AMF_VIDEO_ENCODER_VCE.as_ptr(), &mut component)
+            create_component(
+                context as *mut c_void,
+                AMF_VIDEO_ENCODER_VCE.as_ptr(),
+                &mut component,
+            )
         };
         if ret == AMF_OK && !component.is_null() {
             caps.h264 = true;
             unsafe {
-                if let Some(release) = (*(*( component as *mut AmfComponent)).vtbl).release {
+                if let Some(release) = (*(*(component as *mut AmfComponent)).vtbl).release {
                     release(component);
                 }
             }
@@ -1186,12 +1197,16 @@ mod native_amf {
         // Test HEVC encoder
         component = ptr::null_mut();
         let ret = unsafe {
-            create_component(context as *mut c_void, AMF_VIDEO_ENCODER_HEVC.as_ptr(), &mut component)
+            create_component(
+                context as *mut c_void,
+                AMF_VIDEO_ENCODER_HEVC.as_ptr(),
+                &mut component,
+            )
         };
         if ret == AMF_OK && !component.is_null() {
             caps.hevc = true;
             unsafe {
-                if let Some(release) = (*(*( component as *mut AmfComponent)).vtbl).release {
+                if let Some(release) = (*(*(component as *mut AmfComponent)).vtbl).release {
                     release(component);
                 }
             }
@@ -1201,12 +1216,16 @@ mod native_amf {
         // Test AV1 encoder
         component = ptr::null_mut();
         let ret = unsafe {
-            create_component(context as *mut c_void, AMF_VIDEO_ENCODER_AV1.as_ptr(), &mut component)
+            create_component(
+                context as *mut c_void,
+                AMF_VIDEO_ENCODER_AV1.as_ptr(),
+                &mut component,
+            )
         };
         if ret == AMF_OK && !component.is_null() {
             caps.av1 = true;
             unsafe {
-                if let Some(release) = (*(*( component as *mut AmfComponent)).vtbl).release {
+                if let Some(release) = (*(*(component as *mut AmfComponent)).vtbl).release {
                     release(component);
                 }
             }
@@ -1225,7 +1244,10 @@ mod native_amf {
 
         log::info!(
             "Native AMF: Available, h264={}, hevc={}, av1={}, GPU: {:?}",
-            caps.h264, caps.hevc, caps.av1, caps.gpu_name
+            caps.h264,
+            caps.hevc,
+            caps.av1,
+            caps.gpu_name
         );
     }
 
@@ -1243,8 +1265,8 @@ mod native_amf {
 
     #[cfg(target_os = "windows")]
     fn get_amd_gpu_name() -> Option<String> {
-        use std::process::Command;
         use std::os::windows::process::CommandExt;
+        use std::process::Command;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
 
         // Try wmic to get AMD GPU name
@@ -1377,33 +1399,25 @@ mod native_qsv {
     type MfxConfig = *mut c_void;
 
     // Legacy Media SDK functions
-    type MfxInitFn = unsafe extern "C" fn(impl_: u32, ver: *mut MfxVersion, session: *mut MfxSession) -> i32;
+    type MfxInitFn =
+        unsafe extern "C" fn(impl_: u32, ver: *mut MfxVersion, session: *mut MfxSession) -> i32;
     type MfxCloseFn = unsafe extern "C" fn(session: MfxSession) -> i32;
     type MfxVideoEncodeQueryFn = unsafe extern "C" fn(
         session: MfxSession,
         in_param: *mut MfxVideoParam,
         out_param: *mut MfxVideoParam,
     ) -> i32;
-    type MfxQueryImplDescriptionFn = unsafe extern "C" fn(
-        session: MfxSession,
-        format: u32,
-        desc: *mut *mut c_void,
-    ) -> i32;
+    type MfxQueryImplDescriptionFn =
+        unsafe extern "C" fn(session: MfxSession, format: u32, desc: *mut *mut c_void) -> i32;
 
     // oneVPL loader functions
     type MfxLoadFn = unsafe extern "C" fn() -> MfxLoader;
     type MfxUnloadFn = unsafe extern "C" fn(loader: MfxLoader);
     type MfxCreateConfigFn = unsafe extern "C" fn(loader: MfxLoader) -> MfxConfig;
-    type MfxSetConfigFilterPropertyFn = unsafe extern "C" fn(
-        config: MfxConfig,
-        name: *const u8,
-        value: MfxVariant,
-    ) -> i32;
-    type MfxCreateSessionFn = unsafe extern "C" fn(
-        loader: MfxLoader,
-        index: u32,
-        session: *mut MfxSession,
-    ) -> i32;
+    type MfxSetConfigFilterPropertyFn =
+        unsafe extern "C" fn(config: MfxConfig, name: *const u8, value: MfxVariant) -> i32;
+    type MfxCreateSessionFn =
+        unsafe extern "C" fn(loader: MfxLoader, index: u32, session: *mut MfxSession) -> i32;
 
     #[repr(C)]
     #[derive(Clone, Copy)]
@@ -1447,9 +1461,9 @@ mod native_qsv {
         #[cfg(target_os = "linux")]
         let lib_names = ["libvpl.so.2", "libvpl.so"];
 
-        let lib = lib_names.iter().find_map(|name| {
-            unsafe { Library::new(*name).ok() }
-        });
+        let lib = lib_names
+            .iter()
+            .find_map(|name| unsafe { Library::new(*name).ok() });
 
         let lib = match lib {
             Some(l) => l,
@@ -1553,7 +1567,11 @@ mod native_qsv {
 
         log::info!(
             "Native QSV (oneVPL): h264={}, hevc={}, av1={}, low_power={}, device={:?}",
-            caps.h264, caps.hevc, caps.av1, caps.low_power, caps.device_name
+            caps.h264,
+            caps.hevc,
+            caps.av1,
+            caps.low_power,
+            caps.device_name
         );
 
         true
@@ -1567,9 +1585,9 @@ mod native_qsv {
         #[cfg(target_os = "linux")]
         let lib_names = ["libmfxhw64.so.1", "libmfx.so.1", "libmfx.so"];
 
-        let lib = lib_names.iter().find_map(|name| {
-            unsafe { Library::new(*name).ok() }
-        });
+        let lib = lib_names
+            .iter()
+            .find_map(|name| unsafe { Library::new(*name).ok() });
 
         let lib = match lib {
             Some(l) => l,
@@ -1627,7 +1645,11 @@ mod native_qsv {
 
         log::info!(
             "Native QSV (legacy): h264={}, hevc={}, av1={}, low_power={}, device={:?}",
-            caps.h264, caps.hevc, caps.av1, caps.low_power, caps.device_name
+            caps.h264,
+            caps.hevc,
+            caps.av1,
+            caps.low_power,
+            caps.device_name
         );
 
         true
@@ -1686,8 +1708,8 @@ mod native_qsv {
     fn get_intel_gpu_name() -> Option<String> {
         #[cfg(target_os = "windows")]
         {
-            use std::process::Command;
             use std::os::windows::process::CommandExt;
+            use std::process::Command;
             const CREATE_NO_WINDOW: u32 = 0x08000000;
 
             let output = Command::new("wmic")
@@ -1700,9 +1722,12 @@ mod native_qsv {
                 let text = String::from_utf8_lossy(&output.stdout);
                 for line in text.lines() {
                     let trimmed = line.trim();
-                    if trimmed.contains("Intel") &&
-                       (trimmed.contains("Graphics") || trimmed.contains("UHD") ||
-                        trimmed.contains("Iris") || trimmed.contains("Arc")) {
+                    if trimmed.contains("Intel")
+                        && (trimmed.contains("Graphics")
+                            || trimmed.contains("UHD")
+                            || trimmed.contains("Iris")
+                            || trimmed.contains("Arc"))
+                    {
                         return Some(trimmed.to_string());
                     }
                 }
@@ -1715,9 +1740,7 @@ mod native_qsv {
             use std::process::Command;
 
             // Try lspci for Intel GPU
-            let output = Command::new("lspci")
-                .output()
-                .ok()?;
+            let output = Command::new("lspci").output().ok()?;
 
             if output.status.success() {
                 let text = String::from_utf8_lossy(&output.stdout);
@@ -1760,13 +1783,15 @@ mod native_videotoolbox {
             // VideoToolbox is available on all modern Macs
             // Check if FFmpeg has it compiled in by looking for the encoders
             caps.available = true;
-            caps.h264 = true;  // All Macs support H.264
+            caps.h264 = true; // All Macs support H.264
             caps.hevc = check_hevc_support();
-            caps.hardware_accelerated = true;  // Modern Macs always have hardware encoding
+            caps.hardware_accelerated = true; // Modern Macs always have hardware encoding
 
             log::info!(
                 "Native VideoToolbox: h264={}, hevc={}, hw_accel={}",
-                caps.h264, caps.hevc, caps.hardware_accelerated
+                caps.h264,
+                caps.hevc,
+                caps.hardware_accelerated
             );
 
             caps

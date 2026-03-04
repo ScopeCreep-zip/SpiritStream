@@ -112,7 +112,31 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.0-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y \
+            libwebkit2gtk-4.0-dev \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            pkg-config \
+            ffmpeg \
+            libavcodec-dev \
+            libavformat-dev \
+            libavutil-dev \
+            libavfilter-dev \
+            libswscale-dev \
+            libswresample-dev
+
+      - name: Install FFmpeg libs (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: ./scripts/setup-ffmpeg-libs.ps1
+
+      - name: Install FFmpeg libs (macOS)
+        if: matrix.platform == 'macos-latest'
+        run: |
+          brew update
+          brew install ffmpeg pkg-config
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
@@ -146,10 +170,8 @@ jobs:
             - **Linux**: `.AppImage` or `.deb` package
 
             ### Requirements
-            - **FFmpeg** is required for streaming functionality
-              - macOS: `brew install ffmpeg`
-              - Windows: Download from [ffmpeg.org](https://ffmpeg.org/download.html)
-              - Linux: `sudo apt install ffmpeg`
+            - FFmpeg runtime libraries are bundled in desktop artifacts where available.
+            - If your distro blocks bundled runtime loading, install system FFmpeg packages.
           draft: true
           prerelease: false
           files: |
@@ -178,10 +200,8 @@ jobs:
             - **Linux**: `.AppImage` or `.deb` package
 
             ### Requirements
-            - **FFmpeg** is required for streaming functionality
-              - macOS: `brew install ffmpeg`
-              - Windows: Download from [ffmpeg.org](https://ffmpeg.org/download.html)
-              - Linux: `sudo apt install ffmpeg`
+            - FFmpeg runtime libraries are bundled in desktop artifacts where available.
+            - If your distro blocks bundled runtime loading, install system FFmpeg packages.
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}

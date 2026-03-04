@@ -84,16 +84,13 @@ function Check-Node {
 }
 
 function Install-FFmpeg {
-    if (Get-Command ffmpeg -ErrorAction SilentlyContinue) {
-        $FFmpegVersion = ffmpeg -version | Select-String -Pattern "ffmpeg version"
-        Print-Step "FFmpeg already installed: $FFmpegVersion"
+    $setupScript = Join-Path (Get-Location) "scripts\setup-ffmpeg-libs.ps1"
+    if (Test-Path $setupScript) {
+        Print-Step "Installing FFmpeg shared libs..."
+        & $setupScript
     } else {
-        Print-Step "Installing FFmpeg..."
-        if (Get-Command winget -ErrorAction SilentlyContinue) {
-            winget install ffmpeg
-        } else {
-            Print-Warning "Please install FFmpeg manually from https://ffmpeg.org/download.html"
-        }
+        Print-Warning "Missing scripts/setup-ffmpeg-libs.ps1"
+        Print-Warning "Please run it manually to install FFmpeg shared libs"
     }
 }
 

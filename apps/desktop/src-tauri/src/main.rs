@@ -527,6 +527,45 @@ fn spawn_server<R: Runtime>(
         }
     }
 
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let ffmpeg_runtime_dir = resource_dir.join("ffmpeg-libs");
+        if ffmpeg_runtime_dir.exists() {
+            if env::var("FFMPEG_DIR").is_err() {
+                command = command.env("FFMPEG_DIR", ffmpeg_runtime_dir.clone());
+            }
+
+            #[cfg(target_os = "windows")]
+            {
+                let existing = env::var("PATH").unwrap_or_default();
+                let mut paths = vec![ffmpeg_runtime_dir.to_string_lossy().to_string()];
+                if !existing.is_empty() {
+                    paths.push(existing);
+                }
+                command = command.env("PATH", paths.join(";"));
+            }
+
+            #[cfg(target_os = "linux")]
+            {
+                let existing = env::var("LD_LIBRARY_PATH").unwrap_or_default();
+                let mut paths = vec![ffmpeg_runtime_dir.to_string_lossy().to_string()];
+                if !existing.is_empty() {
+                    paths.push(existing);
+                }
+                command = command.env("LD_LIBRARY_PATH", paths.join(":"));
+            }
+
+            #[cfg(target_os = "macos")]
+            {
+                let existing = env::var("DYLD_FALLBACK_LIBRARY_PATH").unwrap_or_default();
+                let mut paths = vec![ffmpeg_runtime_dir.to_string_lossy().to_string()];
+                if !existing.is_empty() {
+                    paths.push(existing);
+                }
+                command = command.env("DYLD_FALLBACK_LIBRARY_PATH", paths.join(":"));
+            }
+        }
+    }
+
     let (mut rx, child) = command.spawn().map_err(|e| {
         log::error!("Failed to spawn server: {e}");
         format!("Failed to spawn server: {e}")

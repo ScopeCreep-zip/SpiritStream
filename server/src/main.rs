@@ -9,15 +9,15 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use chrono::Local;
 use governor::{
     clock::DefaultClock,
     state::{InMemoryState, NotKeyed},
     Quota, RateLimiter,
 };
+use log::{Level, LevelFilter, Log, Metadata, Record};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
-use log::{Level, LevelFilter, Log, Metadata, Record};
-use chrono::Local;
 use std::{
     collections::HashSet,
     env,
@@ -38,21 +38,21 @@ use tower_http::{
 };
 
 use spiritstream_server::commands::{
-    get_encoders, test_ffmpeg, test_rtmp_target,
-    probe_encoder_capabilities, get_encoder_capabilities, get_all_video_encoders,
-    get_ffmpeg_diagnostics,
+    get_all_video_encoders, get_encoder_capabilities, get_encoders, get_ffmpeg_diagnostics,
+    probe_encoder_capabilities, test_ffmpeg, test_rtmp_target,
 };
-use spiritstream_server::models::{OutputGroup, Profile, RtmpInput, Settings, ObsIntegrationDirection};
+use spiritstream_server::models::{
+    ObsIntegrationDirection, OutputGroup, Profile, RtmpInput, Settings,
+};
+use spiritstream_server::services::PlatformRegistry;
 use spiritstream_server::services::{
     prune_logs, read_recent_logs, validate_extension, validate_path_within_any,
-    DiscordWebhookService, Encryption, EventSink, FFmpegDownloader, ObsWebSocketHandler,
-    ProfileManager, SettingsManager, ThemeManager, ObsConfig,
+    DiscordWebhookService, Encryption, EventSink, FFmpegDownloader, ObsConfig, ObsWebSocketHandler,
+    ProfileManager, SettingsManager, ThemeManager,
 };
-#[cfg(feature = "ffmpeg-libs")]
-use spiritstream_server::services::{InputPipeline, InputPipelineConfig, OutputGroupConfig, OutputGroupMode};
-#[cfg(feature = "ffmpeg-libs")]
-use spiritstream_server::services::PlatformRegistry;
-#[cfg(feature = "ffmpeg-libs")]
+use spiritstream_server::services::{
+    InputPipeline, InputPipelineConfig, OutputGroupConfig, OutputGroupMode,
+};
 use std::collections::HashMap;
 
 // ============================================================================
@@ -106,13 +106,10 @@ impl EventSink for EventBus {
 struct AppState {
     profile_manager: Arc<ProfileManager>,
     settings_manager: Arc<SettingsManager>,
-    #[cfg(feature = "ffmpeg-libs")]
     ffmpeg_libs_pipelines: Arc<Mutex<std::collections::HashMap<String, InputPipeline>>>,
     ffmpeg_downloader: Arc<AsyncMutex<FFmpegDownloader>>,
-    #[cfg(feature = "ffmpeg-libs")]
     platform_registry: Arc<PlatformRegistry>,
     disabled_targets: Arc<Mutex<HashSet<String>>>,
-    #[cfg(feature = "ffmpeg-libs")]
     stream_sessions: Arc<Mutex<HashMap<String, StreamSession>>>,
     theme_manager: Arc<ThemeManager>,
     obs_handler: Arc<ObsWebSocketHandler>,
@@ -133,7 +130,6 @@ struct InvokeResponse {
     error: Option<String>,
 }
 
-#[cfg(feature = "ffmpeg-libs")]
 #[derive(Clone)]
 struct StreamSession {
     group: OutputGroup,
@@ -152,7 +148,10 @@ struct ServerLogger {
 }
 
 impl ServerLogger {
-    fn new(log_dir: &std::path::Path, event_bus: EventBus) -> Result<Self, Box<dyn std::error::Error>> {
+    fn new(
+        log_dir: &std::path::Path,
+        event_bus: EventBus,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let log_path = log_dir.join("spiritstream-server.log");
         let file = OpenOptions::new()
             .create(true)
@@ -240,7 +239,10 @@ fn sanitize_error(error: &str) -> String {
     eprintln!("[sanitize_error] Original error: {}", error);
     let lower = error.to_lowercase();
 
-    if lower.contains("failed to read") || lower.contains("no such file") || lower.contains("not found") {
+    if lower.contains("failed to read")
+        || lower.contains("no such file")
+        || lower.contains("not found")
+    {
         return "Resource not found".to_string();
     }
     if lower.contains("parse") || lower.contains("invalid") {
@@ -260,7 +262,8 @@ fn sanitize_error(error: &str) -> String {
         return error.to_string();
     }
     // Network errors - safe to show
-    if lower.contains("request failed") || lower.contains("connection") || lower.contains("timeout") {
+    if lower.contains("request failed") || lower.contains("connection") || lower.contains("timeout")
+    {
         return error.to_string();
     }
     // Missing argument errors - safe to show
@@ -339,7 +342,9 @@ fn set_session_cookie(cookies: &Cookies) {
         .secure(false) // Set to true when using HTTPS
         .same_site(tower_cookies::cookie::SameSite::Strict)
         .path("/")
-        .max_age(tower_cookies::cookie::time::Duration::seconds(COOKIE_MAX_AGE_SECS))
+        .max_age(tower_cookies::cookie::time::Duration::seconds(
+            COOKIE_MAX_AGE_SECS,
+        ))
         .build();
     cookies.add(cookie);
 }
@@ -381,10 +386,7 @@ async fn auth_logout(cookies: Cookies) -> impl IntoResponse {
 }
 
 /// GET /auth/check - Check if session is valid
-async fn auth_check(
-    State(state): State<AppState>,
-    cookies: Cookies,
-) -> impl IntoResponse {
+async fn auth_check(State(state): State<AppState>, cookies: Cookies) -> impl IntoResponse {
     // If no token configured, always authenticated
     if state.auth_token.is_none() {
         return Json(json!({ "authenticated": true, "required": false }));
@@ -666,12 +668,10 @@ async fn files_browse(
     }
 
     // Sort: directories first, then alphabetically
-    file_entries.sort_by(|a, b| {
-        match (&a.entry_type[..], &b.entry_type[..]) {
-            ("directory", "file") => std::cmp::Ordering::Less,
-            ("file", "directory") => std::cmp::Ordering::Greater,
-            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-        }
+    file_entries.sort_by(|a, b| match (&a.entry_type[..], &b.entry_type[..]) {
+        ("directory", "file") => std::cmp::Ordering::Less,
+        ("file", "directory") => std::cmp::Ordering::Greater,
+        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
     });
 
     // Calculate parent directory (if not at root)
@@ -777,7 +777,10 @@ async fn ws_handler(
     let authenticated = state.auth_token.is_none()
         || cookies.get(AUTH_COOKIE_NAME).is_some()
         || query.token.as_deref().is_some_and(|token| {
-            state.auth_token.as_deref().is_some_and(|expected| verify_token(expected, token))
+            state
+                .auth_token
+                .as_deref()
+                .is_some_and(|expected| verify_token(expected, token))
         });
 
     if !authenticated {
@@ -845,7 +848,6 @@ async fn invoke(
     }
 }
 
-#[cfg(feature = "ffmpeg-libs")]
 fn normalize_rtmp_url(url: &str) -> String {
     let mut url = url.trim().to_string();
 
@@ -864,7 +866,6 @@ fn normalize_rtmp_url(url: &str) -> String {
     url
 }
 
-#[cfg(feature = "ffmpeg-libs")]
 fn resolve_stream_key(key: &str) -> String {
     if key.starts_with("${") && key.ends_with('}') && key.len() > 3 {
         let var_name = &key[2..key.len() - 1];
@@ -874,7 +875,9 @@ fn resolve_stream_key(key: &str) -> String {
                 value
             }
             Err(_) => {
-                log::warn!("Environment variable not found for stream key, check your configuration");
+                log::warn!(
+                    "Environment variable not found for stream key, check your configuration"
+                );
                 key.to_string()
             }
         }
@@ -883,7 +886,6 @@ fn resolve_stream_key(key: &str) -> String {
     }
 }
 
-#[cfg(feature = "ffmpeg-libs")]
 fn build_target_urls(state: &AppState, group: &OutputGroup) -> Vec<String> {
     let disabled = state.disabled_targets.lock().unwrap_or_else(|e| {
         log::warn!("Disabled targets mutex poisoned (build_target_urls), recovering: {e}");
@@ -899,23 +901,27 @@ fn build_target_urls(state: &AppState, group: &OutputGroup) -> Vec<String> {
         if resolved_key.is_empty() {
             log::info!(
                 "Target '{}' ({:?}) has empty stream key, using default 'stream'",
-                target.name, target.service
+                target.name,
+                target.service
             );
             resolved_key = "stream".to_string();
         }
 
         let normalized_url = normalize_rtmp_url(&target.url);
-        let normalized_url = state.platform_registry.normalize_url(&target.service, &normalized_url);
-        let full_url = state
+        let normalized_url = state
             .platform_registry
-            .build_url_with_key(&target.service, &normalized_url, &resolved_key);
+            .normalize_url(&target.service, &normalized_url);
+        let full_url = state.platform_registry.build_url_with_key(
+            &target.service,
+            &normalized_url,
+            &resolved_key,
+        );
         target_outputs.push(full_url);
     }
 
     target_outputs
 }
 
-#[cfg(feature = "ffmpeg-libs")]
 fn enable_target(state: &AppState, target_id: &str) {
     let mut disabled = state.disabled_targets.lock().unwrap_or_else(|e| {
         log::warn!("Disabled targets mutex poisoned (enable_target), recovering: {e}");
@@ -924,7 +930,6 @@ fn enable_target(state: &AppState, target_id: &str) {
     disabled.remove(target_id);
 }
 
-#[cfg(feature = "ffmpeg-libs")]
 fn disable_target(state: &AppState, target_id: &str) {
     let mut disabled = state.disabled_targets.lock().unwrap_or_else(|e| {
         log::warn!("Disabled targets mutex poisoned (disable_target), recovering: {e}");
@@ -941,7 +946,6 @@ fn is_target_disabled(state: &AppState, target_id: &str) -> bool {
     disabled.contains(target_id)
 }
 
-#[cfg(feature = "ffmpeg-libs")]
 fn store_stream_session(
     state: &AppState,
     group: OutputGroup,
@@ -962,7 +966,6 @@ fn store_stream_session(
     );
 }
 
-#[cfg(feature = "ffmpeg-libs")]
 fn remove_stream_session(state: &AppState, group_id: &str) {
     let mut sessions = state.stream_sessions.lock().unwrap_or_else(|e| {
         log::warn!("Stream sessions mutex poisoned (remove), recovering: {e}");
@@ -971,7 +974,6 @@ fn remove_stream_session(state: &AppState, group_id: &str) {
     sessions.remove(group_id);
 }
 
-#[cfg(feature = "ffmpeg-libs")]
 fn clear_stream_sessions(state: &AppState) {
     let mut sessions = state.stream_sessions.lock().unwrap_or_else(|e| {
         log::warn!("Stream sessions mutex poisoned (clear), recovering: {e}");
@@ -980,7 +982,6 @@ fn clear_stream_sessions(state: &AppState) {
     sessions.clear();
 }
 
-#[cfg(feature = "ffmpeg-libs")]
 fn build_libs_targets(state: &AppState, group: &OutputGroup) -> Result<Vec<String>, String> {
     let targets = build_target_urls(state, group);
     if targets.is_empty() {
@@ -989,7 +990,6 @@ fn build_libs_targets(state: &AppState, group: &OutputGroup) -> Result<Vec<Strin
     Ok(targets)
 }
 
-#[cfg(feature = "ffmpeg-libs")]
 fn libs_active_group_count(state: &AppState) -> usize {
     let guard = match state.ffmpeg_libs_pipelines.lock() {
         Ok(guard) => guard,
@@ -1008,7 +1008,6 @@ fn libs_active_group_count(state: &AppState) -> usize {
         .sum()
 }
 
-#[cfg(feature = "ffmpeg-libs")]
 fn libs_group_ids(state: &AppState) -> Vec<String> {
     let guard = match state.ffmpeg_libs_pipelines.lock() {
         Ok(guard) => guard,
@@ -1026,7 +1025,6 @@ fn libs_group_ids(state: &AppState) -> Vec<String> {
     ids
 }
 
-#[cfg(feature = "ffmpeg-libs")]
 fn libs_has_group(state: &AppState, group_id: &str) -> bool {
     let guard = match state.ffmpeg_libs_pipelines.lock() {
         Ok(guard) => guard,
@@ -1038,7 +1036,6 @@ fn libs_has_group(state: &AppState, group_id: &str) -> bool {
         .any(|pipeline| pipeline.get_group_handle(group_id).is_some())
 }
 
-#[cfg(feature = "ffmpeg-libs")]
 fn libs_pipeline_group_ids(state: &AppState, group_id: &str) -> Option<Vec<String>> {
     let guard = state.ffmpeg_libs_pipelines.lock().ok()?;
     for pipeline in guard.values() {
@@ -1054,12 +1051,14 @@ fn libs_pipeline_group_ids(state: &AppState, group_id: &str) -> Option<Vec<Strin
     None
 }
 
-#[cfg(feature = "ffmpeg-libs")]
 fn sessions_for_groups(
     state: &AppState,
     group_ids: &[String],
 ) -> Result<(Vec<OutputGroup>, String, Option<String>), String> {
-    let sessions = state.stream_sessions.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
+    let sessions = state
+        .stream_sessions
+        .lock()
+        .map_err(|e| format!("Lock poisoned: {e}"))?;
     let mut groups = Vec::new();
     let mut incoming_url: Option<String> = None;
     let mut expected_key: Option<Option<String>> = None;
@@ -1072,7 +1071,9 @@ fn sessions_for_groups(
 
         if let Some(ref existing_url) = incoming_url {
             if existing_url != &session.incoming_url {
-                return Err("Stream inputs differ across groups; cannot restart together".to_string());
+                return Err(
+                    "Stream inputs differ across groups; cannot restart together".to_string(),
+                );
             }
         } else {
             incoming_url = Some(session.incoming_url.clone());
@@ -1094,7 +1095,6 @@ fn sessions_for_groups(
     ))
 }
 
-#[cfg(feature = "ffmpeg-libs")]
 fn restart_libs_groups(state: &AppState, group_ids: Vec<String>) -> Result<(), String> {
     if group_ids.is_empty() {
         return Ok(());
@@ -1116,7 +1116,6 @@ fn restart_libs_groups(state: &AppState, group_ids: Vec<String>) -> Result<(), S
     Ok(())
 }
 
-#[cfg(feature = "ffmpeg-libs")]
 fn start_libs_pipeline(
     state: &AppState,
     group: OutputGroup,
@@ -1126,7 +1125,8 @@ fn start_libs_pipeline(
     let group_id = group.id.clone();
     let targets = build_libs_targets(state, &group)?;
 
-    let mut guard = state.ffmpeg_libs_pipelines
+    let mut guard = state
+        .ffmpeg_libs_pipelines
         .lock()
         .map_err(|_| "ffmpeg libs pipelines lock poisoned".to_string())?;
     if guard.contains_key(&group_id) {
@@ -1145,7 +1145,6 @@ fn start_libs_pipeline(
     Ok(0)
 }
 
-#[cfg(feature = "ffmpeg-libs")]
 fn start_libs_pipeline_multi(
     state: &AppState,
     groups: Vec<OutputGroup>,
@@ -1154,7 +1153,8 @@ fn start_libs_pipeline_multi(
 ) -> Result<Vec<u32>, String> {
     let pipeline_id = "passthrough-multi".to_string();
 
-    let mut guard = state.ffmpeg_libs_pipelines
+    let mut guard = state
+        .ffmpeg_libs_pipelines
         .lock()
         .map_err(|_| "ffmpeg libs pipelines lock poisoned".to_string())?;
     if guard.contains_key(&pipeline_id) {
@@ -1177,11 +1177,11 @@ fn start_libs_pipeline_multi(
     Ok(vec![0; groups.len()])
 }
 
-#[cfg(feature = "ffmpeg-libs")]
 fn stop_libs_pipeline(state: &AppState, group_id: &str) -> Result<(), String> {
     let mut pipeline_to_join: Option<InputPipeline> = None;
     {
-        let mut guard = state.ffmpeg_libs_pipelines
+        let mut guard = state
+            .ffmpeg_libs_pipelines
             .lock()
             .map_err(|_| "ffmpeg libs pipelines lock poisoned".to_string())?;
 
@@ -1213,13 +1213,16 @@ fn stop_libs_pipeline(state: &AppState, group_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(feature = "ffmpeg-libs")]
 fn stop_all_libs_pipelines(state: &AppState) -> Result<(), String> {
     let pipelines = {
-        let mut guard = state.ffmpeg_libs_pipelines
+        let mut guard = state
+            .ffmpeg_libs_pipelines
             .lock()
             .map_err(|_| "ffmpeg libs pipelines lock poisoned".to_string())?;
-        guard.drain().map(|(_, pipeline)| pipeline).collect::<Vec<_>>()
+        guard
+            .drain()
+            .map(|(_, pipeline)| pipeline)
+            .collect::<Vec<_>>()
     };
 
     for mut pipeline in pipelines {
@@ -1234,12 +1237,12 @@ fn stop_all_libs_pipelines(state: &AppState) -> Result<(), String> {
 // Command Handler
 // ============================================================================
 
-async fn invoke_command(
-    state: &AppState,
-    command: &str,
-    payload: Value,
-) -> Result<Value, String> {
-    log::debug!("[invoke_command] Command: {}, Payload: {:?}", command, payload);
+async fn invoke_command(state: &AppState, command: &str, payload: Value) -> Result<Value, String> {
+    log::debug!(
+        "[invoke_command] Command: {}, Payload: {:?}",
+        command,
+        payload
+    );
 
     let result = match command {
         "get_all_profiles" => {
@@ -1283,13 +1286,19 @@ async fn invoke_command(
                 .profile_manager
                 .save_with_key_encryption(&profile, password.as_deref())
                 .await?;
-            state.event_bus.emit("profile_changed", json!({ "action": "saved", "name": profile.name }));
+            state.event_bus.emit(
+                "profile_changed",
+                json!({ "action": "saved", "name": profile.name }),
+            );
             Ok(Value::Null)
         }
         "delete_profile" => {
             let name: String = get_arg(&payload, "name")?;
             state.profile_manager.delete(&name).await?;
-            state.event_bus.emit("profile_changed", json!({ "action": "deleted", "name": name }));
+            state.event_bus.emit(
+                "profile_changed",
+                json!({ "action": "deleted", "name": name }),
+            );
             Ok(Value::Null)
         }
         "is_profile_encrypted" => {
@@ -1299,7 +1308,10 @@ async fn invoke_command(
         "validate_input" => {
             let profile_id: String = get_arg(&payload, "profileId")?;
             let input: RtmpInput = get_arg(&payload, "input")?;
-            state.profile_manager.validate_input_conflict(&profile_id, &input).await?;
+            state
+                .profile_manager
+                .validate_input_conflict(&profile_id, &input)
+                .await?;
             Ok(Value::Null)
         }
         "set_profile_order" => {
@@ -1331,33 +1343,39 @@ async fn invoke_command(
             let group: OutputGroup = get_arg(&payload, "group")?;
             let incoming_url: String = get_arg(&payload, "incomingUrl")?;
             let expected_stream_key: Option<String> = get_opt_arg(&payload, "expectedStreamKey")?;
-            #[cfg(feature = "ffmpeg-libs")]
             {
                 let libs_active = libs_active_group_count(state) > 0;
                 let libs_has_group = libs_has_group(state, &group.id);
 
                 if libs_active && libs_has_group {
-                    store_stream_session(state, group.clone(), &incoming_url, expected_stream_key.as_deref());
+                    store_stream_session(
+                        state,
+                        group.clone(),
+                        &incoming_url,
+                        expected_stream_key.as_deref(),
+                    );
                     return Ok(json!(0));
                 }
 
-                store_stream_session(state, group.clone(), &incoming_url, expected_stream_key.as_deref());
-                let pid = start_libs_pipeline(state, group, &incoming_url, expected_stream_key.as_deref())?;
+                store_stream_session(
+                    state,
+                    group.clone(),
+                    &incoming_url,
+                    expected_stream_key.as_deref(),
+                );
+                let pid = start_libs_pipeline(
+                    state,
+                    group,
+                    &incoming_url,
+                    expected_stream_key.as_deref(),
+                )?;
                 Ok(json!(pid))
-            }
-            #[cfg(not(feature = "ffmpeg-libs"))]
-            {
-                let _ = group;
-                let _ = incoming_url;
-                let _ = expected_stream_key;
-                Err("ffmpeg-libs feature not enabled".to_string())
             }
         }
         "start_all_streams" => {
             let groups: Vec<OutputGroup> = get_arg(&payload, "groups")?;
             let incoming_url: String = get_arg(&payload, "incomingUrl")?;
             let expected_stream_key: Option<String> = get_opt_arg(&payload, "expectedStreamKey")?;
-            #[cfg(feature = "ffmpeg-libs")]
             {
                 let libs_active = libs_active_group_count(state) > 0;
                 if libs_active {
@@ -1373,7 +1391,12 @@ async fn invoke_command(
                 }
 
                 for group in &start_groups {
-                    store_stream_session(state, group.clone(), &incoming_url, expected_stream_key.as_deref());
+                    store_stream_session(
+                        state,
+                        group.clone(),
+                        &incoming_url,
+                        expected_stream_key.as_deref(),
+                    );
                 }
 
                 if start_groups.len() == 1 {
@@ -1394,23 +1417,18 @@ async fn invoke_command(
                     Ok(json!(pids))
                 }
             }
-            #[cfg(not(feature = "ffmpeg-libs"))]
-            {
-                let _ = groups;
-                let _ = incoming_url;
-                let _ = expected_stream_key;
-                Err("ffmpeg-libs feature not enabled".to_string())
-            }
         }
         "stop_stream" => {
             let group_id: String = get_arg(&payload, "groupId")?;
-            #[cfg(feature = "ffmpeg-libs")]
             {
                 let libs_running = {
-                    let guard = state.ffmpeg_libs_pipelines
+                    let guard = state
+                        .ffmpeg_libs_pipelines
                         .lock()
                         .map_err(|_| "ffmpeg libs pipelines lock poisoned".to_string())?;
-                    guard.values().any(|pipeline| pipeline.is_group_running(&group_id))
+                    guard
+                        .values()
+                        .any(|pipeline| pipeline.is_group_running(&group_id))
                 };
 
                 if libs_running {
@@ -1419,25 +1437,12 @@ async fn invoke_command(
                 remove_stream_session(state, &group_id);
                 Ok(Value::Null)
             }
-            #[cfg(not(feature = "ffmpeg-libs"))]
-            {
-                let _ = group_id;
-                Err("ffmpeg-libs feature not enabled".to_string())
-            }
         }
         "stop_all_streams" => {
-            #[cfg(feature = "ffmpeg-libs")]
-            {
-                stop_all_libs_pipelines(state)?;
-                clear_stream_sessions(state);
-                Ok(Value::Null)
-            }
-            #[cfg(not(feature = "ffmpeg-libs"))]
-            {
-                Err("ffmpeg-libs feature not enabled".to_string())
-            }
+            stop_all_libs_pipelines(state)?;
+            clear_stream_sessions(state);
+            Ok(Value::Null)
         }
-        #[cfg(feature = "ffmpeg-libs")]
         "start_ffmpeg_libs_passthrough" => {
             let input_url: String = get_arg(&payload, "inputUrl")?;
             let targets: Vec<String> = get_arg(&payload, "targets")?;
@@ -1448,13 +1453,15 @@ async fn invoke_command(
                 return Err("At least one target URL is required".to_string());
             }
 
-            let pipeline_id = group_id.clone()
+            let pipeline_id = group_id
+                .clone()
                 .or_else(|| input_id.clone())
                 .unwrap_or_else(|| "passthrough".to_string());
             let input_id = input_id.unwrap_or_else(|| pipeline_id.clone());
             let group_id = group_id.unwrap_or_else(|| pipeline_id.clone());
 
-            let mut guard = state.ffmpeg_libs_pipelines
+            let mut guard = state
+                .ffmpeg_libs_pipelines
                 .lock()
                 .map_err(|_| "ffmpeg libs pipelines lock poisoned".to_string())?;
             if guard.contains_key(&pipeline_id) {
@@ -1478,9 +1485,6 @@ async fn invoke_command(
             guard.insert(pipeline_id, pipeline);
             Ok(Value::Null)
         }
-        #[cfg(not(feature = "ffmpeg-libs"))]
-        "start_ffmpeg_libs_passthrough" => Err("ffmpeg-libs feature not enabled".to_string()),
-        #[cfg(feature = "ffmpeg-libs")]
         "start_ffmpeg_libs_group" => {
             let input_url: String = get_arg(&payload, "inputUrl")?;
             let group: OutputGroup = get_arg(&payload, "group")?;
@@ -1495,7 +1499,8 @@ async fn invoke_command(
             let pipeline_id = group.id.clone();
             let input_id = input_id.unwrap_or_else(|| pipeline_id.clone());
 
-            let mut guard = state.ffmpeg_libs_pipelines
+            let mut guard = state
+                .ffmpeg_libs_pipelines
                 .lock()
                 .map_err(|_| "ffmpeg libs pipelines lock poisoned".to_string())?;
             if guard.contains_key(&pipeline_id) {
@@ -1513,12 +1518,10 @@ async fn invoke_command(
             guard.insert(pipeline_id, pipeline);
             Ok(Value::Null)
         }
-        #[cfg(not(feature = "ffmpeg-libs"))]
-        "start_ffmpeg_libs_group" => Err("ffmpeg-libs feature not enabled".to_string()),
-        #[cfg(feature = "ffmpeg-libs")]
         "stop_ffmpeg_libs_passthrough" => {
             let has_any = {
-                let guard = state.ffmpeg_libs_pipelines
+                let guard = state
+                    .ffmpeg_libs_pipelines
                     .lock()
                     .map_err(|_| "ffmpeg libs pipelines lock poisoned".to_string())?;
                 !guard.is_empty()
@@ -1529,11 +1532,8 @@ async fn invoke_command(
             stop_all_libs_pipelines(state)?;
             Ok(Value::Null)
         }
-        #[cfg(not(feature = "ffmpeg-libs"))]
-        "stop_ffmpeg_libs_passthrough" => Err("ffmpeg-libs feature not enabled".to_string()),
         "retry_stream" => {
             let group_id: String = get_arg(&payload, "groupId")?;
-            #[cfg(feature = "ffmpeg-libs")]
             {
                 let group_ids = libs_pipeline_group_ids(state, &group_id)
                     .unwrap_or_else(|| vec![group_id.clone()]);
@@ -1543,58 +1543,33 @@ async fn invoke_command(
                     "nextDelaySecs": Option::<u64>::None
                 }))
             }
-            #[cfg(not(feature = "ffmpeg-libs"))]
-            {
-                let _ = group_id;
-                Err("ffmpeg-libs feature not enabled".to_string())
-            }
         }
         "get_active_stream_count" => {
-            #[cfg(feature = "ffmpeg-libs")]
-            {
-                let libs_count = libs_active_group_count(state);
-                Ok(json!(libs_count))
-            }
-            #[cfg(not(feature = "ffmpeg-libs"))]
-            {
-                Err("ffmpeg-libs feature not enabled".to_string())
-            }
+            let libs_count = libs_active_group_count(state);
+            Ok(json!(libs_count))
         }
         "is_group_streaming" => {
             let group_id: String = get_arg(&payload, "groupId")?;
-            #[cfg(feature = "ffmpeg-libs")]
             {
                 let libs_running = {
-                    let guard = state.ffmpeg_libs_pipelines
+                    let guard = state
+                        .ffmpeg_libs_pipelines
                         .lock()
                         .map_err(|_| "ffmpeg libs pipelines lock poisoned".to_string())?;
-                    guard.values().any(|pipeline| pipeline.is_group_running(&group_id))
+                    guard
+                        .values()
+                        .any(|pipeline| pipeline.is_group_running(&group_id))
                 };
                 Ok(json!(libs_running))
             }
-            #[cfg(not(feature = "ffmpeg-libs"))]
-            {
-                let _ = group_id;
-                Err("ffmpeg-libs feature not enabled".to_string())
-            }
         }
-        "get_active_group_ids" => {
-            #[cfg(feature = "ffmpeg-libs")]
-            {
-                Ok(json!(libs_group_ids(state)))
-            }
-            #[cfg(not(feature = "ffmpeg-libs"))]
-            {
-                Err("ffmpeg-libs feature not enabled".to_string())
-            }
-        }
+        "get_active_group_ids" => Ok(json!(libs_group_ids(state))),
         "toggle_stream_target" => {
             let target_id: String = get_arg(&payload, "targetId")?;
             let enabled: bool = get_arg(&payload, "enabled")?;
             let group: OutputGroup = get_arg(&payload, "group")?;
             let incoming_url: String = get_arg(&payload, "incomingUrl")?;
             let expected_stream_key: Option<String> = get_opt_arg(&payload, "expectedStreamKey")?;
-            #[cfg(feature = "ffmpeg-libs")]
             {
                 if enabled {
                     enable_target(state, &target_id);
@@ -1602,7 +1577,12 @@ async fn invoke_command(
                     disable_target(state, &target_id);
                 }
 
-                store_stream_session(state, group.clone(), &incoming_url, expected_stream_key.as_deref());
+                store_stream_session(
+                    state,
+                    group.clone(),
+                    &incoming_url,
+                    expected_stream_key.as_deref(),
+                );
 
                 let libs_running = libs_active_group_count(state) > 0;
                 let libs_has_group = libs_has_group(state, &group.id);
@@ -1613,20 +1593,16 @@ async fn invoke_command(
                     restart_libs_groups(state, group_ids)?;
                     Ok(json!(0))
                 } else if !libs_running {
-                    let pid = start_libs_pipeline(state, group, &incoming_url, expected_stream_key.as_deref())?;
+                    let pid = start_libs_pipeline(
+                        state,
+                        group,
+                        &incoming_url,
+                        expected_stream_key.as_deref(),
+                    )?;
                     Ok(json!(pid))
                 } else {
                     Ok(json!(0))
                 }
-            }
-            #[cfg(not(feature = "ffmpeg-libs"))]
-            {
-                let _ = target_id;
-                let _ = enabled;
-                let _ = group;
-                let _ = incoming_url;
-                let _ = expected_stream_key;
-                Err("ffmpeg-libs feature not enabled".to_string())
             }
         }
         "is_target_disabled" => {
@@ -1647,7 +1623,10 @@ async fn invoke_command(
         }
         "get_recent_logs" => {
             let max_lines: Option<usize> = get_opt_arg(&payload, "maxLines")?;
-            Ok(json!(read_recent_logs(&state.log_dir, max_lines.unwrap_or(500))?))
+            Ok(json!(read_recent_logs(
+                &state.log_dir,
+                max_lines.unwrap_or(500)
+            )?))
         }
         "export_logs" => {
             let path: String = get_arg(&payload, "path")?;
@@ -1675,7 +1654,9 @@ async fn invoke_command(
             // Check if encryption was just enabled
             let old_settings = state.settings_manager.load().ok();
             let encryption_just_enabled = new_settings.encrypt_stream_keys
-                && old_settings.as_ref().is_some_and(|s| !s.encrypt_stream_keys);
+                && old_settings
+                    .as_ref()
+                    .is_some_and(|s| !s.encrypt_stream_keys);
 
             // Save the new settings
             state.settings_manager.save(&new_settings)?;
@@ -1861,9 +1842,15 @@ async fn invoke_command(
 
             // Parse direction
             let dir = match direction.as_str() {
-                "obs-to-spiritstream" => spiritstream_server::services::IntegrationDirection::ObsToSpiritstream,
-                "spiritstream-to-obs" => spiritstream_server::services::IntegrationDirection::SpiritstreamToObs,
-                "bidirectional" => spiritstream_server::services::IntegrationDirection::Bidirectional,
+                "obs-to-spiritstream" => {
+                    spiritstream_server::services::IntegrationDirection::ObsToSpiritstream
+                }
+                "spiritstream-to-obs" => {
+                    spiritstream_server::services::IntegrationDirection::SpiritstreamToObs
+                }
+                "bidirectional" => {
+                    spiritstream_server::services::IntegrationDirection::Bidirectional
+                }
                 _ => spiritstream_server::services::IntegrationDirection::Disabled,
             };
 
@@ -1885,10 +1872,18 @@ async fn invoke_command(
             settings.obs_password = encrypted_password;
             settings.obs_use_auth = use_auth;
             settings.obs_direction = match dir {
-                spiritstream_server::services::IntegrationDirection::ObsToSpiritstream => ObsIntegrationDirection::ObsToSpiritstream,
-                spiritstream_server::services::IntegrationDirection::SpiritstreamToObs => ObsIntegrationDirection::SpiritstreamToObs,
-                spiritstream_server::services::IntegrationDirection::Bidirectional => ObsIntegrationDirection::Bidirectional,
-                spiritstream_server::services::IntegrationDirection::Disabled => ObsIntegrationDirection::Disabled,
+                spiritstream_server::services::IntegrationDirection::ObsToSpiritstream => {
+                    ObsIntegrationDirection::ObsToSpiritstream
+                }
+                spiritstream_server::services::IntegrationDirection::SpiritstreamToObs => {
+                    ObsIntegrationDirection::SpiritstreamToObs
+                }
+                spiritstream_server::services::IntegrationDirection::Bidirectional => {
+                    ObsIntegrationDirection::Bidirectional
+                }
+                spiritstream_server::services::IntegrationDirection::Disabled => {
+                    ObsIntegrationDirection::Disabled
+                }
             };
             settings.obs_auto_connect = auto_connect;
             state.settings_manager.save(&settings)?;
@@ -1900,7 +1895,10 @@ async fn invoke_command(
             Ok(Value::Null)
         }
         "obs_disconnect" => {
-            state.obs_handler.disconnect(state.event_bus.clone()).await?;
+            state
+                .obs_handler
+                .disconnect(state.event_bus.clone())
+                .await?;
             Ok(Value::Null)
         }
         "obs_start_stream" => {
@@ -1911,9 +1909,7 @@ async fn invoke_command(
             state.obs_handler.stop_stream().await?;
             Ok(Value::Null)
         }
-        "obs_is_connected" => {
-            Ok(json!(state.obs_handler.is_connected().await))
-        }
+        "obs_is_connected" => Ok(json!(state.obs_handler.is_connected().await)),
 
         // ============================================================================
         // Discord Webhook Commands
@@ -1921,7 +1917,10 @@ async fn invoke_command(
         "discord_test_webhook" => {
             log::info!("[discord_test_webhook] Received payload: {:?}", payload);
             let url: String = get_arg(&payload, "url")?;
-            log::info!("[discord_test_webhook] Testing URL: {}", if url.len() > 50 { &url[..50] } else { &url });
+            log::info!(
+                "[discord_test_webhook] Testing URL: {}",
+                if url.len() > 50 { &url[..50] } else { &url }
+            );
             let result = state.discord_service.test_webhook(&url).await;
             log::info!("[discord_test_webhook] Result: {:?}", result);
             Ok(json!(result))
@@ -1940,13 +1939,16 @@ async fn invoke_command(
             } else {
                 Some(settings.discord_image_path.as_str())
             };
-            let result = state.discord_service.send_go_live_notification(
-                &settings.discord_webhook_url,
-                &settings.discord_go_live_message,
-                image_path,
-                settings.discord_cooldown_enabled,
-                settings.discord_cooldown_seconds,
-            ).await;
+            let result = state
+                .discord_service
+                .send_go_live_notification(
+                    &settings.discord_webhook_url,
+                    &settings.discord_go_live_message,
+                    image_path,
+                    settings.discord_cooldown_enabled,
+                    settings.discord_cooldown_seconds,
+                )
+                .await;
             Ok(json!(result))
         }
         "discord_reset_cooldown" => {
@@ -2039,7 +2041,10 @@ fn find_themes_dir_fallback() -> Option<String> {
     None
 }
 
-fn init_logger(log_dir: &std::path::Path, event_bus: EventBus) -> Result<(), Box<dyn std::error::Error>> {
+fn init_logger(
+    log_dir: &std::path::Path,
+    event_bus: EventBus,
+) -> Result<(), Box<dyn std::error::Error>> {
     let logger = ServerLogger::new(log_dir, event_bus)?;
     log::set_boxed_logger(Box::new(logger))?;
     log::set_max_level(LevelFilter::Info);
@@ -2050,8 +2055,7 @@ fn init_logger(log_dir: &std::path::Path, event_bus: EventBus) -> Result<(), Box
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load configuration from environment
     let data_dir = env::var("SPIRITSTREAM_DATA_DIR").unwrap_or_else(|_| "data".to_string());
-    let log_dir = env::var("SPIRITSTREAM_LOG_DIR")
-        .unwrap_or_else(|_| format!("{data_dir}/logs"));
+    let log_dir = env::var("SPIRITSTREAM_LOG_DIR").unwrap_or_else(|_| format!("{data_dir}/logs"));
     // Resolve themes directory with fallback logic
     // Check if env var path exists and has theme files, otherwise try fallback paths
     let themes_dir = match env::var("SPIRITSTREAM_THEMES_DIR") {
@@ -2151,10 +2155,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .as_ref()
             .map(|s| s.backend_host.clone())
             .unwrap_or_else(|| "127.0.0.1".to_string());
-        let settings_port = settings
-            .as_ref()
-            .map(|s| s.backend_port)
-            .unwrap_or(8008);
+        let settings_port = settings.as_ref().map(|s| s.backend_port).unwrap_or(8008);
 
         // Check if env var was explicitly set before consuming it
         let env_host_was_set = env_host.is_some();
@@ -2185,14 +2186,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let themes_path = PathBuf::from(&themes_dir);
     let themes_exist = themes_path.exists();
     let env_was_set = env::var("SPIRITSTREAM_THEMES_DIR").is_ok();
-    log::info!(
-        "Themes directory: {themes_dir} (exists={themes_exist}, env_set={env_was_set})"
-    );
+    log::info!("Themes directory: {themes_dir} (exists={themes_exist}, env_set={env_was_set})");
     if !themes_exist {
         log::warn!("Themes directory does not exist - custom themes may not load");
     }
 
-    let theme_manager = Arc::new(ThemeManager::new(app_data_dir.clone(), PathBuf::from(&themes_dir)));
+    let theme_manager = Arc::new(ThemeManager::new(
+        app_data_dir.clone(),
+        PathBuf::from(&themes_dir),
+    ));
 
     // Sync themes and verify sync worked
     log::info!("Starting theme sync from {themes_dir:?} to user data");
@@ -2257,13 +2259,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let state = AppState {
         profile_manager,
         settings_manager,
-        #[cfg(feature = "ffmpeg-libs")]
         ffmpeg_libs_pipelines: Arc::new(Mutex::new(std::collections::HashMap::new())),
         ffmpeg_downloader: Arc::new(AsyncMutex::new(FFmpegDownloader::new())),
-        #[cfg(feature = "ffmpeg-libs")]
         platform_registry: Arc::new(PlatformRegistry::new()),
         disabled_targets: Arc::new(Mutex::new(HashSet::new())),
-        #[cfg(feature = "ffmpeg-libs")]
         stream_sessions: Arc::new(Mutex::new(HashMap::new())),
         theme_manager,
         obs_handler,
@@ -2295,7 +2294,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/files/browse", get(files_browse))
         .route("/api/files/home", get(files_home))
         .route("/api/files/open", post(files_open))
-        .layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth_middleware,
+        ));
 
     // Public routes (no auth required)
     let public_routes = Router::new()
@@ -2310,7 +2312,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(public_routes)
         .merge(protected_routes)
         .with_state(state.clone())
-        .layer(middleware::from_fn_with_state(state.clone(), rate_limit_middleware))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            rate_limit_middleware,
+        ))
         .layer(CookieManagerLayer::new())
         .layer(cors)
         .layer(SetResponseHeaderLayer::if_not_present(

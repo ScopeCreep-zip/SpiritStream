@@ -141,33 +141,6 @@ function getExplicitTarget(): string | null {
   return null;
 }
 
-function getFeatures(): string | null {
-  const fromEnv = process.env['SPIRITSTREAM_SERVER_FEATURES']
-    || process.env['npm_config_features']
-    || '';
-  const args = process.argv;
-
-  let fromArgs = '';
-  const featuresIndex = args.indexOf('--features');
-  if (featuresIndex !== -1 && args[featuresIndex + 1]) {
-    fromArgs = args[featuresIndex + 1];
-  } else {
-    const inline = args.find((arg) => arg.startsWith('--features='));
-    if (inline) {
-      fromArgs = inline.split('=')[1] || '';
-    }
-  }
-
-  const raw = [fromArgs, fromEnv].filter(Boolean).join(',');
-  const normalized = raw
-    .split(/[,\s]+/)
-    .map((feature) => feature.trim())
-    .filter(Boolean)
-    .join(',');
-
-  return normalized.length > 0 ? normalized : null;
-}
-
 // Detect platform and architecture
 const platform = process.platform;
 const arch = process.arch;
@@ -193,7 +166,6 @@ function getRustTarget(): string {
 const target = getRustTarget();
 const explicitTarget = getExplicitTarget();
 const ext = platform === 'win32' ? '.exe' : '';
-const features = getFeatures();
 
 console.log(`Building server binary for ${target} (${profile})...`);
 
@@ -215,10 +187,9 @@ if (!existsSync(destPath)) {
 // Build the server binary from /server/ (using absolute path to manifest)
 const manifestPath = join(projectRoot, 'server', 'Cargo.toml');
 const targetFlag = explicitTarget ? `--target ${explicitTarget}` : '';
-const featuresFlag = features ? `--features ${features}` : '';
 const buildCmd = isRelease
-  ? `cargo build --manifest-path "${manifestPath}" --release ${targetFlag} ${featuresFlag}`.trim()
-  : `cargo build --manifest-path "${manifestPath}" ${targetFlag} ${featuresFlag}`.trim();
+  ? `cargo build --manifest-path "${manifestPath}" --release ${targetFlag}`.trim()
+  : `cargo build --manifest-path "${manifestPath}" ${targetFlag}`.trim();
 
 try {
   runCargoCommand(buildCmd, projectRoot);
@@ -236,43 +207,41 @@ const sourcePath = explicitTarget
 console.log(`Copying ${sourcePath} to ${destPath}...`);
 copyFileSync(sourcePath, destPath);
 
-// Copy FFmpeg DLLs when building with ffmpeg-libs feature (Windows only)
-if (features?.includes('ffmpeg-libs') && platform === 'win32') {
-  const ffmpegLibsDir =
-    process.env['FFMPEG_DIR'] ||
-    join(process.env['LOCALAPPDATA'] || join(homedir(), 'AppData', 'Local'), 'SpiritStream', 'ffmpeg-libs');
-  const ffmpegBinDir = join(ffmpegLibsDir, 'bin');
+const ffmpegLibsDir = process.env['FFMPEG_DIR']
+  || (platform === 'win32'
+    ? join(process.env['LOCALAPPDATA'] || join(homedir(), 'AppData', 'Local'), 'SpiritStream', 'ffmpeg-libs')
+    : platform === 'darwin'
+      ? join(homedir(), 'Library', 'Application Support', 'SpiritStream', 'ffmpeg-libs')
+      : join(homedir(), '.local', 'share', 'spiritstream', 'ffmpeg-libs'));
 
-  if (existsSync(ffmpegBinDir)) {
-    console.log(`Copying FFmpeg DLLs from ${ffmpegBinDir}...`);
+const runtimeDir = platform === 'win32' ? join(ffmpegLibsDir, 'bin') : join(ffmpegLibsDir, 'lib');
+const runtimeExt = platform === 'win32' ? '.dll' : platform === 'darwin' ? '.dylib' : '.so';
 
-    // Get all DLL files
-    const dllFiles = readdirSync(ffmpegBinDir).filter((f) => f.endsWith('.dll'));
+if (existsSync(runtimeDir)) {
+  const runtimeFiles = readdirSync(runtimeDir).filter((f) =>
+    f.endsWith(runtimeExt) || (runtimeExt === '.so' && f.includes('.so.'))
+  );
 
-    // Copy to binaries/ (for production bundling)
-    for (const dll of dllFiles) {
-      const src = join(ffmpegBinDir, dll);
-      const dest = join(binariesDir, dll);
+  if (runtimeFiles.length > 0) {
+    console.log(`Copying FFmpeg runtime libraries from ${runtimeDir}...`);
+    for (const file of runtimeFiles) {
+      const src = join(runtimeDir, file);
+      const dest = join(binariesDir, file);
       copyFileSync(src, dest);
     }
-    console.log(`Copied ${dllFiles.length} DLLs to binaries/`);
-
-    // Also copy to target/{profile}/ for dev mode
-    const targetDir = explicitTarget
-      ? join(projectRoot, 'apps', 'desktop', 'src-tauri', 'target', explicitTarget, profile)
-      : join(projectRoot, 'apps', 'desktop', 'src-tauri', 'target', profile);
-
-    if (existsSync(targetDir)) {
-      for (const dll of dllFiles) {
-        const src = join(ffmpegBinDir, dll);
-        const dest = join(targetDir, dll);
-        copyFileSync(src, dest);
-      }
-      console.log(`Copied ${dllFiles.length} DLLs to target/${profile}/`);
-    }
+    console.log(`Copied ${runtimeFiles.length} runtime libraries to binaries/`);
   } else {
-    console.warn(`Warning: FFmpeg libs directory not found at ${ffmpegBinDir}`);
-    console.warn('Run scripts/setup-ffmpeg-libs.ps1 first to download FFmpeg shared libraries.');
+    console.warn(`Warning: no FFmpeg runtime libraries with extension ${runtimeExt} found in ${runtimeDir}`);
+  }
+} else {
+  const message = `FFmpeg runtime library directory not found: ${runtimeDir}`;
+  if (platform === 'win32') {
+    console.error(message);
+    console.error('Run scripts/setup-ffmpeg-libs.ps1 first.');
+    process.exit(1);
+  } else {
+    console.warn(`Warning: ${message}`);
+    console.warn('If relying on system ffmpeg libs, ensure runtime package includes equivalent libraries.');
   }
 }
 

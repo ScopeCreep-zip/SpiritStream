@@ -4,20 +4,21 @@ use std::fs;
 use std::path::PathBuf;
 
 fn main() {
-    // Configure FFmpeg shared libs path for ffmpeg-sys-next when the feature is enabled
-    #[cfg(feature = "ffmpeg-libs")]
+    // Configure FFmpeg shared libs path for ffmpeg-sys-next.
     configure_ffmpeg_libs();
 
     // Read the streaming platforms JSON
-    let json_path = PathBuf::from("..").join("data").join("streaming-platforms.json");
+    let json_path = PathBuf::from("..")
+        .join("data")
+        .join("streaming-platforms.json");
 
     println!("cargo:rerun-if-changed={}", json_path.display());
 
-    let json_content = fs::read_to_string(&json_path)
-        .expect("Failed to read streaming-platforms.json");
+    let json_content =
+        fs::read_to_string(&json_path).expect("Failed to read streaming-platforms.json");
 
-    let data: serde_json::Value = serde_json::from_str(&json_content)
-        .expect("Failed to parse streaming-platforms.json");
+    let data: serde_json::Value =
+        serde_json::from_str(&json_content).expect("Failed to parse streaming-platforms.json");
 
     let services = data["services"]
         .as_array()
@@ -29,16 +30,14 @@ fn main() {
          // DO NOT EDIT MANUALLY\n\n\
          #[allow(clippy::enum_variant_names, clippy::upper_case_acronyms)]\n\
          #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]\n\
-         pub enum Platform {\n"
+         pub enum Platform {\n",
     );
 
     let mut variant_counts: HashMap<String, usize> = HashMap::new();
     let mut first_variant: Option<String> = None;
 
     for service in services {
-        let name = service["name"]
-            .as_str()
-            .expect("Expected 'name' field");
+        let name = service["name"].as_str().expect("Expected 'name' field");
 
         let default_url = service["defaultUrl"]
             .as_str()
@@ -124,12 +123,11 @@ fn sanitize_to_variant(name: &str) -> String {
     result
 }
 
-/// Configure FFMPEG_DIR for ffmpeg-sys-next when the ffmpeg-libs feature is enabled.
+/// Configure FFMPEG_DIR for ffmpeg-sys-next.
 /// This function looks for FFmpeg shared libs in the standard locations:
 /// 1. FFMPEG_DIR environment variable (if already set)
 /// 2. Downloaded libs in app data directory
 /// 3. System-installed libs (vcpkg, pkg-config)
-#[cfg(feature = "ffmpeg-libs")]
 fn configure_ffmpeg_libs() {
     // If FFMPEG_DIR is already set, use it
     if env::var("FFMPEG_DIR").is_ok() {
@@ -140,9 +138,15 @@ fn configure_ffmpeg_libs() {
     // Get the expected location for downloaded FFmpeg shared libs
     let ffmpeg_libs_dir = get_ffmpeg_libs_dir();
 
-    if ffmpeg_libs_dir.exists() && ffmpeg_libs_dir.join("lib").exists() && ffmpeg_libs_dir.join("include").exists() {
+    if ffmpeg_libs_dir.exists()
+        && ffmpeg_libs_dir.join("lib").exists()
+        && ffmpeg_libs_dir.join("include").exists()
+    {
         let ffmpeg_dir = ffmpeg_libs_dir.to_string_lossy();
-        println!("cargo:warning=Using FFmpeg shared libs from: {}", ffmpeg_dir);
+        println!(
+            "cargo:warning=Using FFmpeg shared libs from: {}",
+            ffmpeg_dir
+        );
         println!("cargo:rustc-env=FFMPEG_DIR={}", ffmpeg_dir);
 
         // Also need to tell the linker where to find the libs at runtime
@@ -181,7 +185,6 @@ fn configure_ffmpeg_libs() {
 }
 
 /// Get the directory for FFmpeg shared libs (mirrors FFmpegDownloader::get_ffmpeg_libs_dir)
-#[cfg(feature = "ffmpeg-libs")]
 fn get_ffmpeg_libs_dir() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
