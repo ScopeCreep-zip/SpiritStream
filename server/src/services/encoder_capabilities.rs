@@ -5,7 +5,7 @@
 // rather than just checking FFmpeg compilation flags. This ensures we only show
 // encoders that will actually work on the user's system.
 
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::env;
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -252,6 +252,10 @@ impl EncoderCapabilities {
     /// Probe NVENC using native detection plus FFmpeg libs availability checks.
     fn probe_nvenc(probe_errors: &mut Vec<String>) -> NvencCaps {
         log::debug!("  Attempting native NVENC probe...");
+        #[cfg(target_os = "windows")]
+        let mut native_caps = Self::probe_backend_isolated::<NvencCaps>("nvenc", probe_errors)
+            .unwrap_or_default();
+        #[cfg(not(target_os = "windows"))]
         let mut native_caps = native_nvenc::probe();
 
         let ffmpeg_h264 = Self::encoder_available_for_probe("h264_nvenc");
@@ -286,6 +290,10 @@ impl EncoderCapabilities {
     /// Probe AMF - native first, CLI fallback
     fn probe_amf(probe_errors: &mut Vec<String>) -> AmfCaps {
         log::debug!("  Attempting native AMF probe...");
+        #[cfg(target_os = "windows")]
+        let mut native_caps = Self::probe_backend_isolated::<AmfCaps>("amf", probe_errors)
+            .unwrap_or_default();
+        #[cfg(not(target_os = "windows"))]
         let mut native_caps = native_amf::probe();
 
         let ffmpeg_h264 = Self::encoder_available_for_probe("h264_amf");
@@ -320,6 +328,10 @@ impl EncoderCapabilities {
     /// Probe QSV - native first, CLI fallback
     fn probe_qsv(probe_errors: &mut Vec<String>) -> QsvCaps {
         log::debug!("  Attempting native QSV probe...");
+        #[cfg(target_os = "windows")]
+        let mut native_caps = Self::probe_backend_isolated::<QsvCaps>("qsv", probe_errors)
+            .unwrap_or_default();
+        #[cfg(not(target_os = "windows"))]
         let mut native_caps = native_qsv::probe();
 
         let ffmpeg_h264 = Self::encoder_available_for_probe("h264_qsv");
@@ -382,6 +394,69 @@ impl EncoderCapabilities {
         log::debug!("  Native VideoToolbox probe failed (CLI disabled)");
         probe_errors.push("videotoolbox: native probe failed".to_string());
         VideoToolboxCaps::default()
+    }
+
+    #[cfg(target_os = "windows")]
+    fn probe_backend_isolated<T: DeserializeOwned>(
+        backend: &str,
+        probe_errors: &mut Vec<String>,
+    ) -> Option<T> {
+        match Self::run_native_probe_worker::<T>(backend) {
+            Ok(caps) => Some(caps),
+            Err(error) => {
+                probe_errors.push(format!("{backend}: native probe worker failed: {error}"));
+                None
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn run_native_probe_worker<T: DeserializeOwned>(backend: &str) -> Result<T, String> {
+        use std::process::{Command, Stdio};
+        use std::thread;
+        use std::time::{Duration, Instant};
+
+        let exe = env::current_exe().map_err(|e| format!("current_exe failed: {e}"))?;
+        let mut child = Command::new(exe)
+            .arg("--native-probe-worker")
+            .arg(backend)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("spawn failed: {e}"))?;
+
+        let timeout = Duration::from_secs(3);
+        let start = Instant::now();
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) => {
+                    if start.elapsed() >= timeout {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return Err(format!("timed out after {}ms", timeout.as_millis()));
+                    }
+                    thread::sleep(Duration::from_millis(20));
+                }
+                Err(e) => return Err(format!("try_wait failed: {e}")),
+            }
+        }
+
+        let output = child
+            .wait_with_output()
+            .map_err(|e| format!("wait_with_output failed: {e}"))?;
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+        if !output.status.success() {
+            return Err(format!(
+                "worker exited {} (stderr: {}; stdout: {})",
+                output.status, stderr, stdout
+            ));
+        }
+
+        serde_json::from_str::<T>(&stdout)
+            .map_err(|e| format!("invalid worker JSON: {e}; stdout: {stdout}; stderr: {stderr}"))
     }
 
     /// Get list of available H.264 encoders for UI
@@ -624,6 +699,20 @@ impl EncoderCapabilities {
         );
 
         caps
+    }
+}
+
+/// Run exactly one native backend probe and return the capability struct as JSON.
+/// Used by the subprocess worker mode to isolate unsafe hardware probing.
+pub fn run_native_probe_worker_backend(backend: &str) -> Result<String, String> {
+    match backend {
+        "nvenc" => serde_json::to_string(&native_nvenc::probe()).map_err(|e| e.to_string()),
+        "amf" => serde_json::to_string(&native_amf::probe()).map_err(|e| e.to_string()),
+        "qsv" => serde_json::to_string(&native_qsv::probe()).map_err(|e| e.to_string()),
+        "videotoolbox" => {
+            serde_json::to_string(&native_videotoolbox::probe()).map_err(|e| e.to_string())
+        }
+        _ => Err(format!("unknown native probe backend: {backend}")),
     }
 }
 

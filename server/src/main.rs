@@ -48,7 +48,7 @@ use spiritstream_server::services::PlatformRegistry;
 use spiritstream_server::services::{
     prune_logs, read_recent_logs, validate_extension, validate_path_within_any,
     DiscordWebhookService, Encryption, EventSink, FFmpegDownloader, ObsConfig, ObsWebSocketHandler,
-    ProfileManager, SettingsManager, ThemeManager,
+    ProfileManager, SettingsManager, ThemeManager, run_native_probe_worker_backend,
 };
 use spiritstream_server::services::{
     InputPipeline, InputPipelineConfig, OutputGroupConfig, OutputGroupMode,
@@ -2053,6 +2053,27 @@ fn init_logger(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Subprocess mode for isolating native encoder probes from the main server process.
+    let mut args = env::args();
+    let _bin = args.next();
+    if matches!(args.next().as_deref(), Some("--native-probe-worker")) {
+        #[cfg(target_os = "windows")]
+        unsafe {
+            use winapi::um::errhandlingapi::SetErrorMode;
+            use winapi::um::winbase::{SEM_FAILCRITICALERRORS, SEM_NOGPFAULTERRORBOX};
+            // Prevent Windows from showing a fatal-error dialog if a native probe crashes.
+            SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
+        }
+
+        let backend = args
+            .next()
+            .ok_or_else(|| "missing backend for --native-probe-worker".to_string())?;
+        let payload = run_native_probe_worker_backend(&backend)
+            .map_err(|e| format!("native probe worker failed: {e}"))?;
+        println!("{payload}");
+        return Ok(());
+    }
+
     // Load configuration from environment
     let data_dir = env::var("SPIRITSTREAM_DATA_DIR").unwrap_or_else(|_| "data".to_string());
     let log_dir = env::var("SPIRITSTREAM_LOG_DIR").unwrap_or_else(|_| format!("{data_dir}/logs"));
