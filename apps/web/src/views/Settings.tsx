@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Download, Trash2, Github, BookOpen, RefreshCw, Globe, User } from 'lucide-react';
+import { Download, Trash2, Github, BookOpen, RefreshCw, Globe, User, FolderOpen } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';

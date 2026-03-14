@@ -129,14 +129,10 @@ fn sanitize_to_variant(name: &str) -> String {
 /// 2. Downloaded libs in app data directory
 /// 3. System-installed libs (vcpkg, pkg-config)
 fn configure_ffmpeg_libs() {
-    // If FFMPEG_DIR is already set, use it
-    if env::var("FFMPEG_DIR").is_ok() {
-        println!("cargo:rerun-if-env-changed=FFMPEG_DIR");
-        return;
-    }
-
-    // Get the expected location for downloaded FFmpeg shared libs
-    let ffmpeg_libs_dir = get_ffmpeg_libs_dir();
+    // If FFMPEG_DIR is explicitly set, prefer that. Otherwise use the default app-data location.
+    let ffmpeg_libs_dir = env::var("FFMPEG_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| get_ffmpeg_libs_dir());
 
     if ffmpeg_libs_dir.exists()
         && ffmpeg_libs_dir.join("lib").exists()
@@ -160,6 +156,8 @@ fn configure_ffmpeg_libs() {
             if lib_dir.exists() {
                 println!("cargo:rustc-link-search=native={}", lib_dir.display());
             }
+
+            copy_ffmpeg_dlls_to_target_dirs(&bin_dir);
         }
 
         #[cfg(target_os = "linux")]
@@ -182,6 +180,49 @@ fn configure_ffmpeg_libs() {
     }
 
     println!("cargo:rerun-if-env-changed=FFMPEG_DIR");
+}
+
+#[cfg(target_os = "windows")]
+fn copy_ffmpeg_dlls_to_target_dirs(bin_dir: &PathBuf) {
+    if !bin_dir.exists() {
+        return;
+    }
+
+    let out_dir = match env::var("OUT_DIR") {
+        Ok(path) => PathBuf::from(path),
+        Err(_) => return,
+    };
+
+    // OUT_DIR looks like: target\debug\build\<crate-hash>\out
+    let profile_dir = match out_dir.ancestors().nth(3) {
+        Some(path) => path.to_path_buf(),
+        None => return,
+    };
+
+    let destinations = [profile_dir.clone(), profile_dir.join("deps")];
+
+    let entries = match fs::read_dir(bin_dir) {
+        Ok(entries) => entries,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let source_path = entry.path();
+        if source_path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("dll"))
+            != Some(true)
+        {
+            continue;
+        }
+
+        for destination in &destinations {
+            let _ = fs::create_dir_all(destination);
+            let target_path = destination.join(entry.file_name());
+            let _ = fs::copy(&source_path, target_path);
+        }
+    }
 }
 
 /// Get the directory for FFmpeg shared libs (mirrors FFmpegDownloader::get_ffmpeg_libs_dir)

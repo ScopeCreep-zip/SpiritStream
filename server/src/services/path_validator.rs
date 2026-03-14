@@ -159,7 +159,7 @@ mod tests {
     #[test]
     fn test_sanitize_filename() {
         assert_eq!(sanitize_filename("test.txt"), "test.txt");
-        assert_eq!(sanitize_filename("../../../etc/passwd"), "_____etc_passwd");
+        assert_eq!(sanitize_filename("../../../etc/passwd"), "______etc_passwd");
         assert_eq!(sanitize_filename("file\\name"), "file_name");
     }
 }

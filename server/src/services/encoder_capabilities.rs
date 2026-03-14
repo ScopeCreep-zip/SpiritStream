@@ -6,6 +6,7 @@
 // encoders that will actually work on the user's system.
 
 use serde::{Deserialize, Serialize};
+use std::env;
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
@@ -136,50 +137,60 @@ impl EncoderCapabilities {
 
         // Use native probing (OBS-style) plus FFmpeg libs encoder-availability checks.
         // Native probing directly queries vendor APIs for accurate hardware detection.
+        if Self::native_probes_enabled() {
+            log::info!("Probing NVENC (NVIDIA)...");
+            caps.nvenc = Self::probe_nvenc(&mut caps.probe_errors);
+            log::info!(
+                "  NVENC: available={}, h264={}, hevc={}, av1={}, gpu={:?}",
+                caps.nvenc.available,
+                caps.nvenc.h264,
+                caps.nvenc.hevc,
+                caps.nvenc.av1,
+                caps.nvenc.gpu_name
+            );
 
-        log::info!("Probing NVENC (NVIDIA)...");
-        caps.nvenc = Self::probe_nvenc(&mut caps.probe_errors);
-        log::info!(
-            "  NVENC: available={}, h264={}, hevc={}, av1={}, gpu={:?}",
-            caps.nvenc.available,
-            caps.nvenc.h264,
-            caps.nvenc.hevc,
-            caps.nvenc.av1,
-            caps.nvenc.gpu_name
-        );
+            log::info!("Probing AMF (AMD)...");
+            caps.amf = Self::probe_amf(&mut caps.probe_errors);
+            log::info!(
+                "  AMF: available={}, h264={}, hevc={}, av1={}, gpu={:?}",
+                caps.amf.available,
+                caps.amf.h264,
+                caps.amf.hevc,
+                caps.amf.av1,
+                caps.amf.gpu_name
+            );
 
-        log::info!("Probing AMF (AMD)...");
-        caps.amf = Self::probe_amf(&mut caps.probe_errors);
-        log::info!(
-            "  AMF: available={}, h264={}, hevc={}, av1={}, gpu={:?}",
-            caps.amf.available,
-            caps.amf.h264,
-            caps.amf.hevc,
-            caps.amf.av1,
-            caps.amf.gpu_name
-        );
+            log::info!("Probing QSV (Intel)...");
+            caps.qsv = Self::probe_qsv(&mut caps.probe_errors);
+            log::info!(
+                "  QSV: available={}, h264={}, hevc={}, av1={}, low_power={}, device={:?}",
+                caps.qsv.available,
+                caps.qsv.h264,
+                caps.qsv.hevc,
+                caps.qsv.av1,
+                caps.qsv.low_power,
+                caps.qsv.device_name
+            );
 
-        log::info!("Probing QSV (Intel)...");
-        caps.qsv = Self::probe_qsv(&mut caps.probe_errors);
-        log::info!(
-            "  QSV: available={}, h264={}, hevc={}, av1={}, low_power={}, device={:?}",
-            caps.qsv.available,
-            caps.qsv.h264,
-            caps.qsv.hevc,
-            caps.qsv.av1,
-            caps.qsv.low_power,
-            caps.qsv.device_name
-        );
-
-        log::info!("Probing VideoToolbox (Apple)...");
-        caps.videotoolbox = Self::probe_videotoolbox(&mut caps.probe_errors);
-        log::info!(
-            "  VideoToolbox: available={}, h264={}, hevc={}, hw_accel={}",
-            caps.videotoolbox.available,
-            caps.videotoolbox.h264,
-            caps.videotoolbox.hevc,
-            caps.videotoolbox.hardware_accelerated
-        );
+            log::info!("Probing VideoToolbox (Apple)...");
+            caps.videotoolbox = Self::probe_videotoolbox(&mut caps.probe_errors);
+            log::info!(
+                "  VideoToolbox: available={}, h264={}, hevc={}, hw_accel={}",
+                caps.videotoolbox.available,
+                caps.videotoolbox.h264,
+                caps.videotoolbox.hevc,
+                caps.videotoolbox.hardware_accelerated
+            );
+        } else {
+            caps.probe_errors.push(
+                "native encoder probing disabled; reporting FFmpeg encoder availability only"
+                    .to_string(),
+            );
+            caps.nvenc = Self::probe_nvenc_ffmpeg_only();
+            caps.amf = Self::probe_amf_ffmpeg_only();
+            caps.qsv = Self::probe_qsv_ffmpeg_only();
+            caps.videotoolbox = Self::probe_videotoolbox_ffmpeg_only();
+        }
 
         log::info!("Probing software encoders...");
         caps.software = Self::probe_software_via_libs(&mut caps.probe_errors);
@@ -211,6 +222,32 @@ impl EncoderCapabilities {
     // =========================================================================
     // Combined probing (native hardware API + FFmpeg libs availability checks)
     // =========================================================================
+
+    fn native_probes_enabled() -> bool {
+        match env::var("SPIRITSTREAM_ENABLE_NATIVE_ENCODER_PROBES") {
+            Ok(value) => {
+                let value = value.trim().to_ascii_lowercase();
+                matches!(value.as_str(), "1" | "true" | "yes" | "on")
+            }
+            Err(_) => !cfg!(target_os = "windows"),
+        }
+    }
+
+    fn probe_nvenc_ffmpeg_only() -> NvencCaps {
+        NvencCaps::default()
+    }
+
+    fn probe_amf_ffmpeg_only() -> AmfCaps {
+        AmfCaps::default()
+    }
+
+    fn probe_qsv_ffmpeg_only() -> QsvCaps {
+        QsvCaps::default()
+    }
+
+    fn probe_videotoolbox_ffmpeg_only() -> VideoToolboxCaps {
+        VideoToolboxCaps::default()
+    }
 
     /// Probe NVENC using native detection plus FFmpeg libs availability checks.
     fn probe_nvenc(probe_errors: &mut Vec<String>) -> NvencCaps {
