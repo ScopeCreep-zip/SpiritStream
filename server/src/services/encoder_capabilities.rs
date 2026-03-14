@@ -1248,14 +1248,18 @@ mod native_amf {
 
         if !amf_deep_probe_enabled() {
             trace_step("amf:skip_deep_probe");
-            // Conservative fallback: AMF runtime initialized, but avoid deeper vtable calls
-            // unless explicitly enabled for debugging.
-            caps.available = true;
-            caps.h264 = true;
-            caps.hevc = true;
-            caps.av1 = true;
-            caps.b_frames = true;
+            // Safer fallback: avoid deep AMF vtable calls, but still confirm each codec by
+            // attempting to open the FFmpeg AMF encoder contexts.
+            trace_step("amf:ffmpeg_probe_h264");
+            caps.h264 = probe_amf_encoder_via_ffmpeg("h264_amf");
+            trace_step("amf:ffmpeg_probe_hevc");
+            caps.hevc = probe_amf_encoder_via_ffmpeg("hevc_amf");
+            trace_step("amf:ffmpeg_probe_av1");
+            caps.av1 = probe_amf_encoder_via_ffmpeg("av1_amf");
+            caps.available = caps.h264 || caps.hevc || caps.av1;
             caps.gpu_name = get_amd_gpu_name();
+            // AMF can support B-frames for H.264; gate this on H.264 availability.
+            caps.b_frames = caps.h264;
             cleanup_amf_factory(factory);
             log::info!("Native AMF: runtime initialized (deep probe disabled)");
             return;
@@ -1430,6 +1434,44 @@ mod native_amf {
         std::env::var("SPIRITSTREAM_AMF_DEEP_PROBE")
             .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
             .unwrap_or(false)
+    }
+
+    #[cfg(target_os = "windows")]
+    fn probe_amf_encoder_via_ffmpeg(encoder_name: &str) -> bool {
+        use std::ffi::CString;
+        use std::ptr;
+
+        let c_name = match CString::new(encoder_name) {
+            Ok(v) => v,
+            Err(_) => return false,
+        };
+
+        let codec = unsafe { super::ffi::avcodec_find_encoder_by_name(c_name.as_ptr()) };
+        if codec.is_null() {
+            return false;
+        }
+
+        let mut ctx = unsafe { super::ffi::avcodec_alloc_context3(codec) };
+        if ctx.is_null() {
+            return false;
+        }
+
+        unsafe {
+            (*ctx).width = 1280;
+            (*ctx).height = 720;
+            (*ctx).time_base = super::ffi::AVRational { num: 1, den: 30 };
+            (*ctx).framerate = super::ffi::AVRational { num: 30, den: 1 };
+            (*ctx).bit_rate = 2_500_000;
+            if !(*codec).pix_fmts.is_null() {
+                (*ctx).pix_fmt = *(*codec).pix_fmts;
+            }
+        }
+
+        let ret = unsafe { super::ffi::avcodec_open2(ctx, codec, ptr::null_mut()) };
+        unsafe {
+            super::ffi::avcodec_free_context(&mut ctx);
+        }
+        ret >= 0
     }
 
     #[cfg(target_os = "windows")]
