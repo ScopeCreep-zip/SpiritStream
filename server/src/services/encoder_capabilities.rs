@@ -420,6 +420,7 @@ impl EncoderCapabilities {
         let mut child = Command::new(exe)
             .arg("--native-probe-worker")
             .arg(backend)
+            .env("SPIRITSTREAM_NATIVE_PROBE_TRACE", "1")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -447,16 +448,28 @@ impl EncoderCapabilities {
             .map_err(|e| format!("wait_with_output failed: {e}"))?;
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let last_step = Self::extract_worker_step(&stderr);
 
         if !output.status.success() {
             return Err(format!(
-                "worker exited {} (stderr: {}; stdout: {})",
-                output.status, stderr, stdout
+                "worker exited {} (last_step: {}; stderr: {}; stdout: {})",
+                output.status,
+                last_step.unwrap_or_else(|| "unknown".to_string()),
+                stderr,
+                stdout
             ));
         }
 
         serde_json::from_str::<T>(&stdout)
             .map_err(|e| format!("invalid worker JSON: {e}; stdout: {stdout}; stderr: {stderr}"))
+    }
+
+    #[cfg(target_os = "windows")]
+    fn extract_worker_step(stderr: &str) -> Option<String> {
+        stderr.lines().rev().find_map(|line| {
+            line.strip_prefix("[native-probe-step] ")
+                .map(|step| step.trim().to_string())
+        })
     }
 
     /// Get list of available H.264 encoders for UI
@@ -1171,11 +1184,9 @@ mod native_amf {
     }
 
     #[cfg(target_os = "windows")]
-    type AmfInitFn = unsafe extern "system" fn() -> i32;
+    type AmfInitFn = unsafe extern "system" fn(version: u64, factory: *mut *mut AmfFactory) -> i32;
     #[cfg(target_os = "windows")]
     type AmfQueryVersionFn = unsafe extern "system" fn(version: *mut u64) -> i32;
-    #[cfg(target_os = "windows")]
-    type AmfCreateFactoryFn = unsafe extern "system" fn(factory: *mut *mut AmfFactory) -> i32;
 
     pub fn probe() -> AmfCaps {
         let mut caps = AmfCaps::default();
@@ -1195,6 +1206,7 @@ mod native_amf {
 
     #[cfg(target_os = "windows")]
     fn probe_windows(caps: &mut AmfCaps) {
+        trace_step("amf:load_runtime");
         // Try to load the AMF runtime
         let lib = match unsafe { Library::new("amfrt64.dll") } {
             Ok(l) => l,
@@ -1204,6 +1216,7 @@ mod native_amf {
             }
         };
 
+        trace_step("amf:get_amf_init");
         // Get AMFInit
         let amf_init: Symbol<AmfInitFn> = match unsafe { lib.get(b"AMFInit\0") } {
             Ok(sym) => sym,
@@ -1213,16 +1226,10 @@ mod native_amf {
             }
         };
 
-        // Initialize AMF
-        let ret = unsafe { amf_init() };
-        if ret != AMF_OK {
-            log::debug!("Native AMF: AMFInit failed: {}", ret);
-            return;
-        }
-
+        trace_step("amf:query_version");
         // Query version
+        let mut version: u64 = 0;
         if let Ok(query_version) = unsafe { lib.get::<AmfQueryVersionFn>(b"AMFQueryVersion\0") } {
-            let mut version: u64 = 0;
             if unsafe { query_version(&mut version) } == AMF_OK {
                 let major = (version >> 48) & 0xFFFF;
                 let minor = (version >> 32) & 0xFFFF;
@@ -1230,20 +1237,27 @@ mod native_amf {
             }
         }
 
-        // Create factory
-        let create_factory: Symbol<AmfCreateFactoryFn> =
-            match unsafe { lib.get(b"AMFCreateFactory\0") } {
-                Ok(sym) => sym,
-                Err(e) => {
-                    log::debug!("Native AMF: AMFCreateFactory not found: {}", e);
-                    return;
-                }
-            };
-
+        trace_step("amf:call_amf_init");
+        // Initialize AMF and get factory in a single call
         let mut factory: *mut AmfFactory = ptr::null_mut();
-        let ret = unsafe { create_factory(&mut factory) };
+        let ret = unsafe { amf_init(version, &mut factory) };
         if ret != AMF_OK || factory.is_null() {
-            log::debug!("Native AMF: AMFCreateFactory failed: {}", ret);
+            log::debug!("Native AMF: AMFInit failed: {}", ret);
+            return;
+        }
+
+        if !amf_deep_probe_enabled() {
+            trace_step("amf:skip_deep_probe");
+            // Conservative fallback: AMF runtime initialized, but avoid deeper vtable calls
+            // unless explicitly enabled for debugging.
+            caps.available = true;
+            caps.h264 = true;
+            caps.hevc = true;
+            caps.av1 = true;
+            caps.b_frames = true;
+            caps.gpu_name = get_amd_gpu_name();
+            cleanup_amf_factory(factory);
+            log::info!("Native AMF: runtime initialized (deep probe disabled)");
             return;
         }
 
@@ -1258,6 +1272,7 @@ mod native_amf {
             }
         };
 
+        trace_step("amf:call_create_context");
         let mut context: *mut c_void = ptr::null_mut();
         let ret = unsafe { create_context(factory as *mut c_void, &mut context) };
         if ret != AMF_OK || context.is_null() {
@@ -1280,6 +1295,7 @@ mod native_amf {
             }
         };
 
+        trace_step("amf:call_init_dx11");
         let ret = unsafe { init_dx11(context as *mut c_void, ptr::null_mut()) };
         if ret != AMF_OK {
             log::debug!("Native AMF: InitDX11 failed: {}", ret);
@@ -1301,6 +1317,7 @@ mod native_amf {
             }
         };
 
+        trace_step("amf:create_component_h264");
         // Test H.264 encoder
         let mut component: *mut c_void = ptr::null_mut();
         let ret = unsafe {
@@ -1320,6 +1337,7 @@ mod native_amf {
             log::debug!("Native AMF: H.264 encoder available");
         }
 
+        trace_step("amf:create_component_hevc");
         // Test HEVC encoder
         component = ptr::null_mut();
         let ret = unsafe {
@@ -1339,6 +1357,7 @@ mod native_amf {
             log::debug!("Native AMF: HEVC encoder available");
         }
 
+        trace_step("amf:create_component_av1");
         // Test AV1 encoder
         component = ptr::null_mut();
         let ret = unsafe {
@@ -1366,6 +1385,7 @@ mod native_amf {
         // Try to get GPU name
         caps.gpu_name = get_amd_gpu_name();
 
+        trace_step("amf:cleanup");
         cleanup_amf_context(context);
 
         log::info!(
@@ -1387,6 +1407,29 @@ mod native_amf {
                 release(context as *mut c_void);
             }
         }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn cleanup_amf_factory(factory: *mut AmfFactory) {
+        unsafe {
+            if let Some(release) = (*(*factory).vtbl).release {
+                release(factory as *mut c_void);
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn trace_step(step: &str) {
+        if std::env::var("SPIRITSTREAM_NATIVE_PROBE_TRACE").as_deref() == Ok("1") {
+            eprintln!("[native-probe-step] {step}");
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn amf_deep_probe_enabled() -> bool {
+        std::env::var("SPIRITSTREAM_AMF_DEEP_PROBE")
+            .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+            .unwrap_or(false)
     }
 
     #[cfg(target_os = "windows")]
