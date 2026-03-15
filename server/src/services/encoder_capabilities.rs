@@ -897,6 +897,7 @@ mod native_nvenc {
 
     pub fn probe() -> NvencCaps {
         let mut caps = NvencCaps::default();
+        trace_step("nvenc:load_library");
 
         // Try to load the NVENC library
         #[cfg(target_os = "windows")]
@@ -918,6 +919,7 @@ mod native_nvenc {
             }
         };
 
+        trace_step("nvenc:get_create_instance");
         // Get the API creation function
         let create_instance: Symbol<NvEncodeApiCreateInstanceFn> =
             match unsafe { lib.get(b"NvEncodeAPICreateInstance\0") } {
@@ -934,12 +936,14 @@ mod native_nvenc {
             ..Default::default()
         };
 
+        trace_step("nvenc:call_create_instance");
         let ret = unsafe { create_instance(&mut func_list) };
         if ret != 0 {
             log::debug!("Native NVENC: NvEncodeAPICreateInstance failed: {}", ret);
             return caps;
         }
 
+        trace_step("nvenc:validate_api_functions");
         // Try to open an encode session (without a real CUDA device, we use device type 0)
         // This validates driver availability
         // Verify key functions are available
@@ -980,8 +984,15 @@ mod native_nvenc {
             caps.gpu_name = get_nvidia_gpu_name_linux();
         }
 
+        trace_step("nvenc:done");
         log::info!("Native NVENC: Available, GPU: {:?}", caps.gpu_name);
         caps
+    }
+
+    fn trace_step(step: &str) {
+        if std::env::var("SPIRITSTREAM_NATIVE_PROBE_TRACE").as_deref() == Ok("1") {
+            eprintln!("[native-probe-step] {step}");
+        }
     }
 
     #[cfg(target_os = "windows")]
@@ -1646,6 +1657,7 @@ mod native_qsv {
 
     pub fn probe() -> QsvCaps {
         let mut caps = QsvCaps::default();
+        trace_step("qsv:start");
 
         // QSV is not available on macOS
         #[cfg(target_os = "macos")]
@@ -1657,7 +1669,9 @@ mod native_qsv {
         #[cfg(not(target_os = "macos"))]
         {
             // Try oneVPL first (newer), then fall back to legacy Media SDK
+            trace_step("qsv:try_onevpl");
             if !try_onevpl_probe(&mut caps) {
+                trace_step("qsv:try_legacy");
                 try_legacy_mfx_probe(&mut caps);
             }
             caps
@@ -1666,6 +1680,7 @@ mod native_qsv {
 
     #[cfg(not(target_os = "macos"))]
     fn try_onevpl_probe(caps: &mut QsvCaps) -> bool {
+        trace_step("qsv:onevpl:load_library");
         // oneVPL library names
         #[cfg(target_os = "windows")]
         let lib_names = ["libvpl.dll", "vpl.dll"];
@@ -1686,6 +1701,7 @@ mod native_qsv {
 
         log::debug!("Native QSV: Using oneVPL");
 
+        trace_step("qsv:onevpl:get_symbols");
         // Get loader functions
         let mfx_load: Symbol<MfxLoadFn> = match unsafe { lib.get(b"MFXLoad\0") } {
             Ok(sym) => sym,
@@ -1704,6 +1720,7 @@ mod native_qsv {
                 Err(_) => return false,
             };
 
+        trace_step("qsv:onevpl:create_session");
         let mfx_create_session: Symbol<MfxCreateSessionFn> =
             match unsafe { lib.get(b"MFXCreateSession\0") } {
                 Ok(sym) => sym,
@@ -1749,6 +1766,7 @@ mod native_qsv {
             }
         };
 
+        trace_step("qsv:onevpl:query_codecs");
         caps.available = true;
 
         // Query H.264 support
@@ -1776,6 +1794,7 @@ mod native_qsv {
             mfx_unload(loader);
         }
 
+        trace_step("qsv:onevpl:done");
         log::info!(
             "Native QSV (oneVPL): h264={}, hevc={}, av1={}, low_power={}, device={:?}",
             caps.h264,
@@ -1790,6 +1809,7 @@ mod native_qsv {
 
     #[cfg(not(target_os = "macos"))]
     fn try_legacy_mfx_probe(caps: &mut QsvCaps) -> bool {
+        trace_step("qsv:legacy:load_library");
         // Legacy Media SDK library names
         #[cfg(target_os = "windows")]
         let lib_names = ["libmfx.dll", "libmfxhw64.dll", "mfx.dll"];
@@ -1810,6 +1830,7 @@ mod native_qsv {
 
         log::debug!("Native QSV: Using legacy Media SDK");
 
+        trace_step("qsv:legacy:get_symbols");
         // Get MFXInit
         let mfx_init: Symbol<MfxInitFn> = match unsafe { lib.get(b"MFXInit\0") } {
             Ok(sym) => sym,
@@ -1825,6 +1846,7 @@ mod native_qsv {
         let mut version = MfxVersion { major: 1, minor: 0 };
         let mut session: MfxSession = ptr::null_mut();
 
+        trace_step("qsv:legacy:init_session");
         let ret = unsafe { mfx_init(MFX_IMPL_HARDWARE_ANY, &mut version, &mut session) };
         if ret != MFX_ERR_NONE || session.is_null() {
             log::debug!("Native QSV: MFXInit failed: {}", ret);
@@ -1841,6 +1863,7 @@ mod native_qsv {
                 }
             };
 
+        trace_step("qsv:legacy:query_codecs");
         caps.available = true;
 
         // Query codec support
@@ -1854,6 +1877,7 @@ mod native_qsv {
 
         unsafe { mfx_close(session) };
 
+        trace_step("qsv:legacy:done");
         log::info!(
             "Native QSV (legacy): h264={}, hevc={}, av1={}, low_power={}, device={:?}",
             caps.h264,
@@ -1864,6 +1888,12 @@ mod native_qsv {
         );
 
         true
+    }
+
+    fn trace_step(step: &str) {
+        if std::env::var("SPIRITSTREAM_NATIVE_PROBE_TRACE").as_deref() == Ok("1") {
+            eprintln!("[native-probe-step] {step}");
+        }
     }
 
     fn query_encoder_support(
