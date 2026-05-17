@@ -1,0 +1,46 @@
+# SpiritStream code owners.
+#
+# Branch protection (configured in repo settings) requires CODEOWNERS
+# review on every PR to `main`. Until additional maintainers join, the
+# whole tree falls to @radicalkjax; update this file in the same PR that
+# onboards a new owner so review responsibility is clear.
+#
+# Syntax: https://docs.github.com/articles/about-code-owners
+
+* @radicalkjax
+
+# Security-critical directories — keep explicit even when wholesale-owned
+# above. Future maintainers added here must demonstrate threat-model and
+# crypto-review competence before getting write access.
+/crates/core/src/services/safety_service*           @radicalkjax
+/crates/core/src/services/audit_log*                @radicalkjax
+/crates/core/src/services/encryption*               @radicalkjax
+/crates/core/src/services/secret_store*             @radicalkjax
+/crates/core/src/services/pii_filter*               @radicalkjax
+/crates/core/src/services/auth*                     @radicalkjax
+/crates/transport-http/src/middleware/              @radicalkjax
+
+# CI/CD and supply-chain config — any change here can compromise the
+# whole pipeline. Required review even if other paths in the PR are not
+# security-sensitive.
+/.github/workflows/                                 @radicalkjax
+/.github/dependabot.yml                             @radicalkjax
+/deny.toml                                          @radicalkjax
+/rust-toolchain.toml                                @radicalkjax
+/.nvmrc                                             @radicalkjax
+/lefthook.yml                                       @radicalkjax
+/commitlint.config.cjs                              @radicalkjax
+
+# Release / signing — maintainer-only.
+/scripts/build-ffmpeg/                              @radicalkjax
+/scripts/ffmpeg-pins.json                           @radicalkjax
+/apps/tauri/src-tauri/tauri.conf.json               @radicalkjax
+
+# Governance + security policy.
+/SECURITY.md                                        @radicalkjax
+/CONTRIBUTING.md                                    @radicalkjax
+/GOVERNANCE.md                                      @radicalkjax
+/REVIEWERS.md                                       @radicalkjax
+/CODEOWNERS                                         @radicalkjax
+/.github/CODEOWNERS                                 @radicalkjax
+/docs/06-governance/                                @radicalkjax

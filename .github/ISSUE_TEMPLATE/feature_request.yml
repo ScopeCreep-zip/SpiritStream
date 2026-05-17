@@ -1,0 +1,54 @@
+name: ✨ Feature request
+description: Suggest a new capability or change.
+title: 'feat: '
+labels: [enhancement, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a change. SpiritStream prioritizes safety
+        for vulnerable creator communities — features that introduce
+        identity-leak risk, harassment surface, or platform-takedown
+        risk will be weighed against that.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the underlying need, not just a proposed solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: who
+    attributes:
+      label: Which users would benefit?
+      description: |
+        Be specific. "Streamers" is too broad; "adult creators on Twitch
+        who multistream to a privacy-respecting platform" tells us how
+        to design the feature.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed approach (optional)
+      description: What you would build, or what you would change.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Existing workarounds, third-party tools, etc.
+
+  - type: textarea
+    id: risk
+    attributes:
+      label: Safety / threat-model considerations
+      description: |
+        Could this feature be misused against the user (e.g. leak their
+        location, expose stream keys, enable harassment)? List any
+        concerns; "none" is a valid answer if you've thought about it.
+    validations:
+      required: true

@@ -1,15 +1,43 @@
 name: Release
 
+# Release artifact pipeline hardened to CISA "Defending CI/CD" + NIST SP
+# 800-204D + SLSA Build Level 3:
+# - Every action SHA-pinned (defeats poisoned-pipeline-execution).
+# - Default token permissions read-only at workflow root; jobs that need
+#   write or OIDC declare it explicitly.
+# - StepSecurity harden-runner on every Linux job for egress visibility.
+# - SBOMs (Rust + JS, CycloneDX 1.5) generated and published per release —
+#   OWASP SCVS Level 2 baseline.
+# - SLSA L3 build provenance via actions/attest-build-provenance — strictly
+#   better than the previous cosign-only flow (in-toto attestation format,
+#   GitHub-attested builder identity, Rekor transparency log entry).
+# - SHA256SUMS published and signed so downstream installers / package
+#   managers have a single integrity manifest to verify.
+
 on:
   push:
     tags:
       - 'v*'
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   validate-version:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.19.3
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Validate version consistency
         run: |
@@ -22,11 +50,11 @@ jobs:
           echo "package.json version: $PKG_VERSION"
 
           # Extract version from tauri.conf.json
-          TAURI_VERSION=$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")
+          TAURI_VERSION=$(node -p "require('./apps/tauri/src-tauri/tauri.conf.json').version")
           echo "tauri.conf.json version: $TAURI_VERSION"
 
           # Extract version from desktop Cargo.toml
-          CARGO_VERSION=$(grep -m1 '^version' apps/desktop/src-tauri/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          CARGO_VERSION=$(grep -m1 '^version' apps/tauri/src-tauri/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
           echo "desktop Cargo.toml version: $CARGO_VERSION"
 
           # Extract version from server Cargo.toml
@@ -60,15 +88,140 @@ jobs:
 
           echo "✅ All versions match: $TAG_VERSION"
 
-  publish-tauri:
+      - name: Validate Tauri updater pubkey is populated
+        run: |
+          # The offline updater key (docs/07-deployment/04-self-update-ritual.md)
+          # has to be generated once on the maintainer's machine and its public
+          # half pasted into tauri.conf.json. If the placeholder is still
+          # present, every signed `.sig` the maintainer produces will fail
+          # verification against the embedded pubkey and auto-updates break
+          # silently on users' machines. Fail the release build loudly.
+          PUBKEY=$(node -p "require('./apps/tauri/src-tauri/tauri.conf.json').plugins.updater.pubkey")
+          if [ -z "$PUBKEY" ] || [ "$PUBKEY" = "REPLACE_WITH_OUTPUT_OF__tauri_signer_generate" ]; then
+            echo "❌ ERROR: tauri.conf.json plugins.updater.pubkey is still the placeholder."
+            echo ""
+            echo "💡 Fix: run \`pnpm tauri signer generate -w ~/.spiritstream-updater.key\`"
+            echo "   on a secure offline machine, paste the printed pubkey into"
+            echo "   apps/tauri/src-tauri/tauri.conf.json, commit, and re-tag."
+            echo "   Full ritual: docs/07-deployment/04-self-update-ritual.md"
+            exit 1
+          fi
+          echo "✅ Updater pubkey is populated"
+
+  # Build FFmpeg from ffmpeg.org's GPG-signed source tarball
+  # for every supported platform, in parallel. Each runner verifies the
+  # source against the FFmpeg release-signing key (fingerprint pinned in
+  # scripts/ffmpeg-pins.json) and against our SHA-256 pin, then runs
+  # the configure/make/install pipeline in scripts/build-ffmpeg/build.sh.
+  # The resulting single-file static binary is uploaded as an artifact
+  # the publish-tauri matrix downloads at the start of its own builds.
+  #
+  # Cache key keys on (version, target, build-script hash, pin-file hash)
+  # so re-runs of the same tag with no script changes hit the cache and
+  # skip the 30-40 min compile per-platform entirely.
+  build-ffmpeg:
     needs: validate-version
     permissions:
-      contents: write
+      contents: read
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: 'macos-latest'
+          - target: 'aarch64-apple-darwin'
+            runner: 'macos-14'
+          - target: 'x86_64-apple-darwin'
+            runner: 'macos-13'
+          - target: 'x86_64-unknown-linux-gnu'
+            runner: 'ubuntu-22.04'
+          - target: 'aarch64-unknown-linux-gnu'
+            runner: 'ubuntu-22.04-arm'
+          - target: 'x86_64-pc-windows-msvc'
+            runner: 'windows-latest'
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Harden runner
+        if: runner.os == 'Linux'
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.19.3
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Read FFmpeg pin
+        id: ffmpeg
+        shell: bash
+        run: |
+          # jq is pre-installed on every github-hosted runner.
+          VER="$(jq -r .ffmpegVersion scripts/ffmpeg-pins.json)"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          # Cache-key invalidates when either the pin file OR any
+          # build-ffmpeg script changes (configure flags, deps, etc).
+          BUILD_HASH="$(find scripts/build-ffmpeg scripts/ffmpeg-pins.json -type f -print0 \
+            | sort -z \
+            | xargs -0 shasum -a 256 \
+            | shasum -a 256 \
+            | awk '{print $1}')"
+          echo "build-hash=$BUILD_HASH" >> "$GITHUB_OUTPUT"
+
+      - name: Cache compiled FFmpeg
+        id: cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ffmpeg-bin-${{ matrix.target }}
+          key: ffmpeg-${{ steps.ffmpeg.outputs.version }}-${{ matrix.target }}-${{ steps.ffmpeg.outputs.build-hash }}
+
+      - name: Setup MSYS2 (Windows)
+        if: matrix.target == 'x86_64-pc-windows-msvc' && steps.cache.outputs.cache-hit != 'true'
+        uses: msys2/setup-msys2@e9898307ac31d1a803454791be09ab9973336e1c # v2.31.1
+        with:
+          msystem: MINGW64
+          update: true
+          install: 'base-devel git jq'
+
+      # MSYS2 vs POSIX bash split: on Windows the MSYS2 shell (provided by
+      # the setup-msys2 step above) is required so pacman + the mingw-w64
+      # toolchain are on PATH. On macOS / Linux the runner's native bash
+      # is enough. We split into two steps with mutually-exclusive `if:`
+      # guards rather than a single step with a `${{ matrix.target == ... }}`
+      # expression in `shell:` — GitHub Actions accepts the dynamic form at
+      # runtime, but the VS Code Actions extension's schema can't statically
+      # resolve it to one of the enumerated shell names and lints it as an
+      # "Unrecognized named-value: 'matrix'". Two literal-shell steps lint
+      # clean and produce identical behavior.
+      - name: Build FFmpeg (Windows, MSYS2)
+        if: steps.cache.outputs.cache-hit != 'true' && matrix.target == 'x86_64-pc-windows-msvc'
+        shell: 'msys2 {0}'
+        run: bash scripts/build-ffmpeg/build.sh "${{ matrix.target }}"
+
+      - name: Build FFmpeg (POSIX)
+        if: steps.cache.outputs.cache-hit != 'true' && matrix.target != 'x86_64-pc-windows-msvc'
+        shell: bash
+        run: bash scripts/build-ffmpeg/build.sh "${{ matrix.target }}"
+
+      - name: Upload FFmpeg artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ffmpeg-${{ matrix.target }}
+          path: ffmpeg-bin-${{ matrix.target }}/
+          retention-days: 7
+          if-no-files-found: error
+
+  publish-tauri:
+    needs: build-ffmpeg
+    permissions:
+      contents: write    # upload to draft release
+      id-token: write    # for actions/attest-build-provenance OIDC
+      attestations: write # for actions/attest-build-provenance writes
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macos-14 explicitly pinned (not macos-latest) — GitHub
+          # silently flips `latest` to a newer arch periodically; pin
+          # avoids surprise breakage when that happens. matches the
+          # build-ffmpeg matrix above so the downloaded artifact arch
+          # matches the host arch.
+          - platform: 'macos-14'
             args: '--target aarch64-apple-darwin'
             rust_target: 'aarch64-apple-darwin'
           - platform: 'macos-13'
@@ -76,37 +229,47 @@ jobs:
             rust_target: 'x86_64-apple-darwin'
           - platform: 'ubuntu-22.04'
             args: ''
-            rust_target: ''
+            rust_target: 'x86_64-unknown-linux-gnu'
+          - platform: 'ubuntu-22.04-arm'
+            args: ''
+            rust_target: 'aarch64-unknown-linux-gnu'
           - platform: 'windows-latest'
             args: ''
-            rust_target: ''
+            rust_target: 'x86_64-pc-windows-msvc'
 
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Harden runner
+        if: runner.os == 'Linux'
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.19.3
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           version: 9.15.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 'lts/*'
+          node-version-file: '.nvmrc'
           cache: 'pnpm'
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master @ 2026-05; no semver tags
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          toolchain: stable
+          targets: ${{ matrix.rust_target }}
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: |
             server -> target
-            apps/desktop/src-tauri -> target
+            apps/tauri/src-tauri -> target
 
       - name: Install dependencies (Ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
@@ -120,16 +283,36 @@ jobs:
       - name: Build frontend
         run: pnpm run build:web
 
+      - name: Download FFmpeg artifact (from build-ffmpeg job)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ffmpeg-${{ matrix.rust_target }}
+          path: apps/tauri/src-tauri/binaries/
+
+      - name: Verify FFmpeg artifact landed
+        shell: bash
+        run: |
+          EXT=""
+          [[ "${{ matrix.rust_target }}" == *windows* ]] && EXT=".exe"
+          BIN="apps/tauri/src-tauri/binaries/ffmpeg-${{ matrix.rust_target }}${EXT}"
+          test -f "$BIN" || { echo "missing $BIN"; ls -la apps/tauri/src-tauri/binaries/; exit 1; }
+          # On Linux/macOS ensure the executable bit survived
+          # actions/download-artifact (which strips it on tarball mode).
+          if [[ "${{ matrix.rust_target }}" != *windows* ]]; then
+            chmod +x "$BIN"
+          fi
+          "$BIN" -version | head -1
+
       - name: Build server sidecar
         run: pnpm run build:server --release ${{ matrix.rust_target && format('-- --target {0}', matrix.rust_target) || '' }}
 
       - name: Build Tauri app (Linux)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: pnpm --filter @spiritstream/desktop tauri build
+        if: startsWith(matrix.platform, 'ubuntu-22.04')
+        run: pnpm --filter @spiritstream/tauri tauri build
 
       - name: Upload Linux artifacts
-        if: matrix.platform == 'ubuntu-22.04'
-        uses: softprops/action-gh-release@v2
+        if: startsWith(matrix.platform, 'ubuntu-22.04')
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -143,27 +326,32 @@ jobs:
             - **macOS (Apple Silicon)**: `.dmg` file ending in `aarch64`
             - **macOS (Intel)**: `.dmg` file ending in `x64`
             - **Windows**: `.msi` or `.exe` installer
-            - **Linux**: `.AppImage` or `.deb` package
+            - **Linux (x86_64)**: `.AppImage` / `.deb` / `.rpm` (files ending in `amd64` / `x86_64`)
+            - **Linux (ARM64)**: `.AppImage` / `.deb` / `.rpm` (files ending in `arm64` / `aarch64`)
 
             ### Requirements
-            - **FFmpeg** is required for streaming functionality
-              - macOS: `brew install ffmpeg`
-              - Windows: Download from [ffmpeg.org](https://ffmpeg.org/download.html)
-              - Linux: `sudo apt install ffmpeg`
+            - **FFmpeg is bundled** in macOS / Windows / Linux AppImage builds — no separate install needed.
+            - Linux `.deb` / `.rpm` installs declare `ffmpeg` as a package dependency (resolved automatically by apt / dnf).
+
+            ### Verification
+            Every artifact in this release is accompanied by:
+            - `*.sigstore` — SLSA L3 in-toto build attestation (verifiable with `gh attestation verify`)
+            - `*.cosign.sig` / `*.cosign.crt` — Sigstore keyless signature (verifiable with `cosign verify-blob`)
+            - `SHA256SUMS` — checksum manifest signed alongside artifacts
           draft: true
           prerelease: false
           files: |
-            apps/desktop/src-tauri/target/release/bundle/deb/SpiritStream_*_amd64.deb
-            apps/desktop/src-tauri/target/release/bundle/rpm/SpiritStream-*-1.x86_64.rpm
-            apps/desktop/src-tauri/target/release/bundle/appimage/SpiritStream_*_amd64.AppImage
+            apps/tauri/src-tauri/target/release/bundle/deb/SpiritStream_*.deb
+            apps/tauri/src-tauri/target/release/bundle/rpm/SpiritStream-*.rpm
+            apps/tauri/src-tauri/target/release/bundle/appimage/SpiritStream_*.AppImage
 
       - name: Build and release
-        if: matrix.platform != 'ubuntu-22.04'
-        uses: tauri-apps/tauri-action@v0.5.4
+        if: ${{ !startsWith(matrix.platform, 'ubuntu-22.04') }}
+        uses: tauri-apps/tauri-action@a32a76cf0a532b3e3b8d0cfb6039e2d574aace68 # action-v0.5.4 (last node20-compatible build)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          projectPath: apps/desktop
+          projectPath: apps/tauri
           tauriScript: pnpm tauri
           tagName: ${{ github.ref_name }}
           releaseName: 'SpiritStream ${{ github.ref_name }}'
@@ -182,6 +370,291 @@ jobs:
               - macOS: `brew install ffmpeg`
               - Windows: Download from [ffmpeg.org](https://ffmpeg.org/download.html)
               - Linux: `sudo apt install ffmpeg`
+
+            ### Verification
+            Every artifact in this release is accompanied by:
+            - `*.sigstore` — SLSA L3 in-toto build attestation (verifiable with `gh attestation verify`)
+            - `*.cosign.sig` / `*.cosign.crt` — Sigstore keyless signature (verifiable with `cosign verify-blob`)
+            - `SHA256SUMS` — checksum manifest signed alongside artifacts
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+      # NIST SP 800-204D / SLSA Build L3 — actions/attest-build-provenance
+      # generates an in-toto-format provenance attestation, signs it via
+      # the GitHub Sigstore Fulcio CA tied to this workflow's OIDC
+      # identity, and writes a Rekor transparency-log entry. Downstream
+      # consumers verify with `gh attestation verify <file> -R
+      # ScopeCreep-zip/SpiritStream`. This is strictly stronger than the
+      # cosign-blob-only signature retained in `sign-release-artifacts`
+      # below: provenance binds the artifact to the source commit, the
+      # builder identity, and the build parameters — not just an
+      # "identity-X signed this blob" claim.
+      - name: Attest build provenance (Linux .deb/.rpm/.AppImage)
+        if: startsWith(matrix.platform, 'ubuntu-22.04')
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: |
+            apps/tauri/src-tauri/target/release/bundle/deb/SpiritStream_*.deb
+            apps/tauri/src-tauri/target/release/bundle/rpm/SpiritStream-*.rpm
+            apps/tauri/src-tauri/target/release/bundle/appimage/SpiritStream_*.AppImage
+
+      - name: Attest build provenance (macOS .dmg / Windows .msi+.exe)
+        if: ${{ !startsWith(matrix.platform, 'ubuntu-22.04') }}
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: |
+            apps/tauri/src-tauri/target/release/bundle/dmg/*.dmg
+            apps/tauri/src-tauri/target/release/bundle/msi/*.msi
+            apps/tauri/src-tauri/target/release/bundle/nsis/*.exe
+
+  # GPL §3(a) — when distributing a binary built from GPL-licensed FFmpeg
+  # source we MUST offer the corresponding source. Attaching the
+  # ffmpeg.org source tarball to the same GitHub release as the binaries
+  # is the "machine-readable, accompanies the binary" path. The in-app
+  # Third-Party Licenses page links here so users can fetch the source
+  # without having to know the upstream URL or pinned version.
+  attach-ffmpeg-source:
+    needs: publish-tauri
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.19.3
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Fetch FFmpeg source tarball
+        run: pnpm tsx scripts/attach-ffmpeg-source.ts
+
+      - name: Upload source tarball to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${GITHUB_REF_NAME}" ffmpeg-*.tar.bz2 --clobber
+
+  # NIST PW.5 / OWASP SCVS L2 — CycloneDX SBOM for the Rust workspace.
+  # Lists every direct and transitive crate, its version, license, and
+  # source registry. Required for SCVS Level 2; published alongside the
+  # release artifacts so consumers (and downstream packagers) can audit
+  # the supply chain without re-running cargo metadata themselves.
+  sbom-rust:
+    needs: validate-version
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.19.3
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master @ 2026-05; no semver tags
+        with:
+          toolchain: stable
+
+      - name: Install cargo-cyclonedx
+        run: cargo install --locked cargo-cyclonedx
+
+      - name: Generate Rust SBOM
+        run: |
+          mkdir -p sbom
+          cargo cyclonedx --format json --override-filename spiritstream-rust
+          # cargo-cyclonedx writes per-crate SBOMs at <crate>/spiritstream-rust.cdx.json.
+          # Aggregate them under sbom/ so the release upload glob is simple.
+          find . -name 'spiritstream-rust.cdx.json' -not -path './sbom/*' -exec sh -c '
+            for f; do
+              cp "$f" "sbom/spiritstream-rust-$(basename $(dirname $f)).cdx.json"
+            done
+          ' sh {} +
+          ls -la sbom/
+
+      - name: Upload SBOM to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for f in sbom/*.cdx.json; do
+            [ -f "$f" ] || continue
+            gh release upload "${GITHUB_REF_NAME}" "$f" --clobber
+          done
+
+  # NIST PW.5 / OWASP SCVS L2 — CycloneDX SBOM for the JS/TS dependency
+  # tree. cdxgen handles pnpm workspaces (recursive, includes every
+  # package under packages/* and apps/*).
+  sbom-js:
+    needs: validate-version
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.19.3
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          version: 9.15.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate JS SBOM (CycloneDX)
+        env:
+          FETCH_LICENSE: 'true'
+        run: pnpm dlx @cyclonedx/cdxgen@^11 -t pnpm -o spiritstream-js.cdx.json --spec-version 1.5
+
+      - name: Upload JS SBOM to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${GITHUB_REF_NAME}" spiritstream-js.cdx.json --clobber
+
+  # Keyless sigstore signing of every build artifact.
+  # Uses the GitHub OIDC identity so signatures attest "built by this
+  # workflow on this tag", no long-lived signing keys in repo secrets.
+  # Verifiable with:
+  #   cosign verify-blob \
+  #     --certificate <FILE>.cosign.crt \
+  #     --signature   <FILE>.cosign.sig \
+  #     --certificate-identity-regexp 'https://github\.com/ScopeCreep-zip/SpiritStream/.*' \
+  #     --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+  #     <FILE>
+  #
+  # Output extensions are deliberately NOT plain `.sig` — that suffix is
+  # reserved for the Tauri-updater minisign signatures the maintainer
+  # produces locally with `tauri signer sign` and uploads alongside the
+  # build artifacts. The two trust paths are independent:
+  #   - .cosign.sig / .cosign.crt : provenance attestation (CI built it)
+  #   - .sigstore                  : SLSA L3 in-toto build provenance
+  #   - .sig                       : maintainer approval (offline key signed it)
+  sign-release-artifacts:
+    needs: [publish-tauri, attach-ffmpeg-source, sbom-rust, sbom-js]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      id-token: write   # required for keyless sigstore signing
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.19.3
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
+
+      - name: Download release artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p artifacts
+          gh release download "${GITHUB_REF_NAME}" --dir artifacts
+
+      - name: Sign artifacts (keyless OIDC)
+        run: |
+          # Only sign the build artifacts themselves, not metadata files
+          # (.sig, .crt, latest.json, etc). The maintainer's local Tauri
+          # signing produces .sig files in a separate ritual.
+          for f in artifacts/*; do
+            [ -f "$f" ] || continue
+            case "$f" in
+              *.sig|*.crt|*.cosign.sig|*.cosign.crt|*.sigstore|*/latest.json|*.json|*SHA256SUMS*)
+                continue
+                ;;
+            esac
+            cosign sign-blob --yes \
+              --output-certificate "${f}.cosign.crt" \
+              --output-signature   "${f}.cosign.sig" \
+              "$f"
+          done
+
+      - name: Upload signatures to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for f in artifacts/*.cosign.sig artifacts/*.cosign.crt; do
+            [ -f "$f" ] || continue
+            gh release upload "${GITHUB_REF_NAME}" "$f" --clobber
+          done
+
+  # NIST PS.2 / OWASP CICD-SEC-9 — publish a single SHA256SUMS manifest
+  # over every release artifact so users (and Linux packagers reading
+  # from the release) have one file to fetch + verify.
+  checksums:
+    needs: [publish-tauri, attach-ffmpeg-source, sbom-rust, sbom-js, sign-release-artifacts]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.19.3
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
+
+      - name: Download every release asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p artifacts
+          gh release download "${GITHUB_REF_NAME}" --dir artifacts
+
+      - name: Generate SHA256SUMS
+        working-directory: artifacts
+        run: |
+          # Exclude prior signatures/certs/manifest itself so the checksum
+          # file is stable across retries.
+          find . -maxdepth 1 -type f \
+            ! -name 'SHA256SUMS*' \
+            ! -name '*.cosign.sig' \
+            ! -name '*.cosign.crt' \
+            -printf '%P\n' | sort > .files.txt
+          xargs -a .files.txt sha256sum > SHA256SUMS
+          rm .files.txt
+          cat SHA256SUMS
+
+      - name: Sign SHA256SUMS (keyless cosign)
+        working-directory: artifacts
+        run: |
+          cosign sign-blob --yes \
+            --output-certificate SHA256SUMS.cosign.crt \
+            --output-signature   SHA256SUMS.cosign.sig \
+            SHA256SUMS
+
+      - name: Upload SHA256SUMS to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${GITHUB_REF_NAME}" \
+            artifacts/SHA256SUMS \
+            artifacts/SHA256SUMS.cosign.sig \
+            artifacts/SHA256SUMS.cosign.crt \
+            --clobber

@@ -1,0 +1,95 @@
+name: 🐛 Bug report
+description: Something is broken in SpiritStream.
+title: 'bug: '
+labels: [bug, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report.
+
+        ⚠️ **If this is a security vulnerability, do NOT open an issue here.**
+        Use [Private Vulnerability Reporting](https://github.com/ScopeCreep-zip/SpiritStream/security/advisories/new) instead.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug.
+      placeholder: When I X, Y happens instead of Z.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Minimum steps to reproduce.
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: dropdown
+    id: shell
+    attributes:
+      label: Where are you running SpiritStream?
+      options:
+        - Tauri desktop app (macOS)
+        - Tauri desktop app (Windows)
+        - Tauri desktop app (Linux)
+        - Tauri mobile app (iOS)
+        - Tauri mobile app (Android)
+        - Docker / browser
+        - spiritstream-cli only
+        - Other (please describe)
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: SpiritStream version
+      description: 'Run `spiritstream-cli --version` or check Help > About.'
+      placeholder: 'e.g. v0.4.2'
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS version
+      placeholder: 'e.g. macOS 14.5 / Ubuntu 22.04 / Windows 11 23H2'
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: |
+        Include relevant log output. **Redact stream keys, OAuth tokens,
+        and anything that could identify you or another person.** Logs
+        live at the path shown in Settings > About.
+      render: shell
+
+  - type: checkboxes
+    id: confirms
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and didn't find a duplicate.
+          required: true
+        - label: I redacted secrets, tokens, and PII from logs and screenshots.
+          required: true
+        - label: This is not a security vulnerability (those go through Private Vulnerability Reporting).
+          required: true

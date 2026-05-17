@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🔒 Security vulnerability
+    url: https://github.com/ScopeCreep-zip/SpiritStream/security/advisories/new
+    about: |
+      DO NOT open a public issue for security problems. Use GitHub
+      Private Vulnerability Reporting so we can triage and patch
+      before the details become public. See SECURITY.md for the full
+      policy.
+  - name: 💬 General question
+    url: https://github.com/ScopeCreep-zip/SpiritStream/discussions
+    about: |
+      Ask in Discussions for usage questions, configuration help, or
+      open-ended topics that aren't bug reports or feature proposals.

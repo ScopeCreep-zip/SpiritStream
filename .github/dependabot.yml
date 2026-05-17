@@ -1,0 +1,81 @@
+# Supply-chain hygiene — weekly bump of every ecosystem we depend on.
+# Cargo + npm + GitHub Actions + Docker all surface through the same
+# weekly PR cadence so a maintainer reviews them as a batch.
+#
+# Pairs with .github/workflows/cargo-deny.yml + dependency-review.yml:
+# Dependabot ships the bumps, the review workflows gate them on
+# license / advisory / source policy before merge.
+#
+# SHA-pinning of actions (per CISA "Defending CI/CD") is preserved
+# across bumps: Dependabot rewrites the SHA AND the trailing version
+# comment, so `chore(deps,ci)` PRs are still single-line audit-able.
+
+version: 2
+updates:
+  # Rust workspace at the repo root.
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    groups:
+      # Patch / minor security bumps batched into one PR per week.
+      security:
+        applies-to: security-updates
+      # Non-security minor bumps grouped to keep PR noise down.
+      rust-deps:
+        applies-to: version-updates
+        update-types: [minor, patch]
+    labels: ["dependencies", "rust"]
+    commit-message:
+      prefix: "chore(deps,rust)"
+      include: scope
+
+  # pnpm workspace (frontend + shared packages).
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    groups:
+      security:
+        applies-to: security-updates
+      js-deps:
+        applies-to: version-updates
+        update-types: [minor, patch]
+    labels: ["dependencies", "javascript"]
+    commit-message:
+      prefix: "chore(deps,js)"
+      include: scope
+
+  # GitHub Actions versions. With SHA-pinning in workflows, Dependabot
+  # rewrites the SHA pin AND the trailing version comment, so the
+  # weekly batch stays both auditable and current.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      ci-actions:
+        applies-to: version-updates
+        update-types: [minor, patch]
+    labels: ["dependencies", "ci"]
+    commit-message:
+      prefix: "chore(deps,ci)"
+      include: scope
+
+  # Docker base image bumps (Dockerfile in deploy/docker).
+  - package-ecosystem: docker
+    directory: "/deploy/docker"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "docker"]
+    commit-message:
+      prefix: "chore(deps,docker)"
+      include: scope
