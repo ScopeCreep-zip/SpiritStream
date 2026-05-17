@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "valid": {
+      "description": "`true` when every output group passes bound checks. `false` when one\nor more `ValidationIssue`s would be returned by `POST /streams`.",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "valid"
+  ],
+  "title": "StreamValidateResponse",
+  "type": "object"
+}

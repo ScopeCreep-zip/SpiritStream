@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "password": {
+      "description": "Optional password \u2014 when present the profile is encrypted on disk.",
+      "nullable": true,
+      "type": "string"
+    },
+    "profile": {
+      "description": "Full profile body (matches the `Profile` ts-rs export)."
+    }
+  },
+  "required": [
+    "profile"
+  ],
+  "title": "ProfileSaveRequest",
+  "type": "object"
+}

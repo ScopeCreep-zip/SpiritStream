@@ -1,0 +1,20 @@
+{
+  "name": "@spiritstream/validation",
+  "version": "1.0.0",
+  "private": true,
+  "description": "JSON Schemas extracted from the spiritstream-core utoipa annotations. Decorative form-level validation for the frontend — the backend is the source of truth.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./openapi": "./src/openapi.json"
+  },
+  "scripts": {
+    "regenerate": "../../scripts/regenerate-validation.sh",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  }
+}

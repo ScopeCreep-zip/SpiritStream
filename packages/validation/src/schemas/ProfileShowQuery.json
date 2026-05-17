@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "password": {
+      "description": "Password for encrypted profiles. Plaintext profiles ignore this field.",
+      "nullable": true,
+      "type": "string"
+    }
+  },
+  "title": "ProfileShowQuery",
+  "type": "object"
+}

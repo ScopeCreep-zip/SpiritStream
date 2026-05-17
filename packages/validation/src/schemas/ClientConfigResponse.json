@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "autoSaveDelayMs": {
+      "description": "Auto-save debounce delay (ms).",
+      "format": "int32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "chatMaxChars": {
+      "additionalProperties": {
+        "format": "int32",
+        "minimum": 0,
+        "type": "integer"
+      },
+      "description": "Per-platform chat message max length (already exposed via\n`ChatPlatform::max_message_chars`, mirrored here for convenience).",
+      "type": "object"
+    },
+    "chatOverlayPollMs": {
+      "description": "Polling interval for chat overlay state (ms).",
+      "format": "int32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "chatPollIntervalMs": {
+      "description": "Polling interval for refreshing chat platform status (ms).",
+      "format": "int32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "chatPopupHeight": {
+      "format": "int32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "chatPopupWidth": {
+      "description": "Chat overlay popup window dimensions.",
+      "format": "int32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "obsTriggerDelayMs": {
+      "description": "Delay before triggering SpiritStream when OBS starts streaming (ms).",
+      "format": "int32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "retryBaseDelayMs": {
+      "description": "Base delay for HTTP retry with exponential back-off (ms).",
+      "format": "int32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "themeInitTimeoutMs": {
+      "description": "Hard timeout for theme initialization on app start (ms). After this,\nthe UI falls back to the default theme rather than blocking forever.",
+      "format": "int32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "themeTokenRetryDelayMs": {
+      "description": "Delay between theme-token fetch retry attempts (ms).",
+      "format": "int32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "toastDurationMs": {
+      "description": "Default toast duration (ms).",
+      "format": "int32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "obsTriggerDelayMs",
+    "autoSaveDelayMs",
+    "chatPollIntervalMs",
+    "toastDurationMs",
+    "chatPopupWidth",
+    "chatPopupHeight",
+    "chatOverlayPollMs",
+    "retryBaseDelayMs",
+    "themeInitTimeoutMs",
+    "themeTokenRetryDelayMs",
+    "chatMaxChars"
+  ],
+  "title": "ClientConfigResponse",
+  "type": "object"
+}

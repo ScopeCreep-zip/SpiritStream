@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "exportPath": {
+      "description": "Absolute path of the destination directory. Must resolve inside the\napp data dir or the user's home \u2014 anything else is rejected with\n`path_outside_allowed_root`.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "exportPath"
+  ],
+  "title": "SettingsExportRequest",
+  "type": "object"
+}

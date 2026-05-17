@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "settings": {
+      "description": "Full settings body (matches the `Settings` ts-rs export)."
+    }
+  },
+  "required": [
+    "settings"
+  ],
+  "title": "SettingsSaveRequest",
+  "type": "object"
+}

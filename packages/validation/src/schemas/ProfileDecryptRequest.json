@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "password": {
+      "description": "Password protecting the on-disk encrypted profile.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "password"
+  ],
+  "title": "ProfileDecryptRequest",
+  "type": "object"
+}

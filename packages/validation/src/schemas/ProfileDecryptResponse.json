@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "decrypted": {
+      "description": "`true` once the profile is re-saved unencrypted on disk.",
+      "type": "boolean"
+    },
+    "name": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "decrypted"
+  ],
+  "title": "ProfileDecryptResponse",
+  "type": "object"
+}

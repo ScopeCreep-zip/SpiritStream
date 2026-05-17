@@ -1,0 +1,19 @@
+{
+  "name": "@spiritstream/types",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Domain types generated from spiritstream-core via ts-rs. Do not edit generated files directly.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "regenerate": "cd ../../ && cargo test -p spiritstream-core --lib",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  }
+}

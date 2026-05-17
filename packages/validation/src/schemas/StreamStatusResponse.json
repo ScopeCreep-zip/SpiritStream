@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "activeCount": {
+      "description": "Convenience count \u2014 same as `active_group_ids.len()`.",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "activeGroupIds": {
+      "description": "Group IDs of every output group with at least one active FFmpeg process.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "activeGroupIds",
+    "activeCount"
+  ],
+  "title": "StreamStatusResponse",
+  "type": "object"
+}

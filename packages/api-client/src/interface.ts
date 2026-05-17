@@ -1,0 +1,260 @@
+// The transport-polymorphic `ApiClient` interface. `HttpClient` is the only
+// implementation today; a future Veilid-backed implementation will satisfy
+// the same contract. Frontends program against this interface only; they
+// never see HTTP details (URLs, fetch options, cookie credentials).
+//
+// The shape mirrors the SpiritStream domain resources: profiles, streams,
+// chat, oauth, system, settings, theme, obs, discord. Each resource is a
+// nested namespace of typed async methods that throw on failure (caller
+// catches `Error`; the underlying body is the JSON-serialized `CoreError`
+// shape from `@spiritstream/types`).
+//
+// Method signatures are stable and outlive the transition from invoke-bridge
+// to typed REST: the `HttpClient` implementation delegates to whichever
+// concrete endpoint exists today, and that delegation site updates in lockstep
+// with the service migrations.
+
+import type {
+  Profile,
+  ProfileSummary,
+  OutputGroup,
+  RtmpInput,
+  Encoders,
+  ThemeSummary,
+  FFmpegVersionInfo,
+  RotationReport,
+  RtmpTestResult,
+  ObsConfig,
+  ObsState,
+  ObsIntegrationDirection,
+  Settings,
+  ChatConfig,
+  ChatPlatform,
+  ChatPlatformStatus,
+  ChatSendResult,
+  ChatMessage,
+  ChatLogStatus,
+  OAuthAccountStatus,
+  OAuthFlowResult,
+  ValidationIssue,
+  FileBrowseResponse,
+  FileHomeResponse,
+} from '@spiritstream/types';
+import type {
+  EncoderPresetsResponse,
+  ClientConfigResponse,
+} from './api';
+
+export interface ProfileApi {
+  getAll(): Promise<string[]>;
+  getSummaries(): Promise<ProfileSummary[]>;
+  load(name: string, password?: string, setActive?: boolean): Promise<Profile>;
+  /** Load + set-active + emit `profile_activated` consolidated event. */
+  activate(name: string, password?: string): Promise<Profile>;
+  unlock(name: string, password: string): Promise<{ name: string; unlocked: boolean }>;
+  /** Atomic encryption-removal (load with password + save unencrypted in one call). */
+  decrypt(name: string, password: string): Promise<{ name: string; decrypted: boolean }>;
+  lock(name: string): Promise<{ name: string; locked: boolean }>;
+  lockedList(): Promise<{ unlocked: string[] }>;
+  save(profile: Profile, password?: string): Promise<void>;
+  delete(name: string): Promise<void>;
+  isEncrypted(name: string): Promise<boolean>;
+  validateInput(profileId: string, input: RtmpInput): Promise<void>;
+  setProfileOrder(orderedNames: string[]): Promise<void>;
+  getOrderIndexMap(): Promise<Record<string, number>>;
+  ensureOrderIndexes(): Promise<Record<string, number>>;
+}
+
+export interface StreamApi {
+  start(group: OutputGroup, incomingUrl: string): Promise<number>;
+  startAll(groups: OutputGroup[], incomingUrl: string): Promise<number[]>;
+  stop(groupId: string): Promise<void>;
+  stopAll(): Promise<void>;
+  getActiveCount(): Promise<number>;
+  isGroupStreaming(groupId: string): Promise<boolean>;
+  getActiveGroupIds(): Promise<string[]>;
+  toggleTarget(targetId: string, enabled: boolean, group: OutputGroup, incomingUrl: string): Promise<number>;
+  isTargetDisabled(targetId: string): Promise<boolean>;
+  retry(groupId: string): Promise<{ pid: number; nextDelaySecs: number | null }>;
+  /**
+   * Server-side encoding-config validation. Throws when invalid; caller can
+   * read `(err as Error & { kind?: string; details?: { reasons?: ValidationIssue[] } })`
+   * to surface field-level messages.
+   */
+  validate(profile: Profile): Promise<{ valid: boolean }>;
+}
+
+/** Convenience alias for the wire shape of `CoreError::InvalidStreamConfig`. */
+export type StreamValidationFailure = Error & {
+  kind?: string;
+  details?: { reasons?: ValidationIssue[] };
+};
+
+export interface SystemApi {
+  getEncoders(): Promise<Encoders>;
+  testFfmpeg(): Promise<string>;
+  getFfmpegPath(): Promise<string | null>;
+  checkFfmpegUpdate(installedVersion?: string): Promise<FFmpegVersionInfo>;
+  validateFfmpegPath(path: string): Promise<string>;
+  testRtmpTarget(url: string, streamKey: string): Promise<RtmpTestResult>;
+  getRecentLogs(maxLines?: number): Promise<string[]>;
+  exportLogs(path: string, content: string): Promise<void>;
+  encoderPresets(): Promise<EncoderPresetsResponse>;
+  clientConfig(): Promise<ClientConfigResponse>;
+  /**
+   * Running app version (semver). Sourced from Cargo metadata at
+   * compile time. Used by the About section so bug reports show the
+   * actual running version rather than a hardcoded constant.
+   */
+  appVersion(): Promise<{ version: string }>;
+  /**
+   * Record a self-updater signature / download failure into the
+   * HMAC-chained audit log. Called by the frontend when the Tauri
+   * updater rejects a `.sig` or otherwise fails — gives operators a
+   * single grep target (`app_update_signature_failed`) for tampered-
+   * update attempts.
+   */
+  recordAppUpdateFailure(detail: string): Promise<void>;
+}
+
+export interface SettingsApi {
+  get(): Promise<Settings>;
+  save(settings: Settings): Promise<void>;
+  getProfilesPath(): Promise<string>;
+  exportData(exportPath: string): Promise<void>;
+  clearData(): Promise<void>;
+  rotateMachineKey(unlockedPasswords?: Record<string, string>): Promise<RotationReport>;
+}
+
+export interface ThemeApi {
+  list(): Promise<ThemeSummary[]>;
+  getTokens(themeId: string): Promise<Record<string, string>>;
+  install(themePath: string): Promise<ThemeSummary>;
+  refresh(): Promise<ThemeSummary[]>;
+}
+
+export interface ObsApi {
+  getState(): Promise<ObsState>;
+  getConfig(): Promise<ObsConfig>;
+  setConfig(config: {
+    host: string;
+    port: number;
+    password?: string;
+    useAuth: boolean;
+    direction: ObsIntegrationDirection;
+    autoConnect: boolean;
+  }): Promise<void>;
+  connect(): Promise<void>;
+  disconnect(): Promise<void>;
+  startStream(): Promise<void>;
+  stopStream(): Promise<void>;
+  isConnected(): Promise<boolean>;
+}
+
+export interface DiscordApi {
+  testWebhook(url: string): Promise<{ success: boolean; message: string; skippedCooldown: boolean }>;
+  sendNotification(): Promise<{ success: boolean; message: string; skippedCooldown: boolean }>;
+  resetCooldown(): Promise<void>;
+}
+
+export interface ChatApi {
+  connect(config: ChatConfig): Promise<void>;
+  sendMessage(message: string): Promise<ChatSendResult[]>;
+  disconnect(platform: ChatPlatform): Promise<void>;
+  retryConnection(platform: ChatPlatform): Promise<void>;
+  disconnectAll(): Promise<void>;
+  getStatus(): Promise<ChatPlatformStatus[]>;
+  getLogStatus(): Promise<ChatLogStatus>;
+  exportLog(path: string): Promise<void>;
+  searchSession(query: string, limit?: number): Promise<ChatMessage[]>;
+  getPlatformStatus(platform: ChatPlatform): Promise<ChatPlatformStatus | null>;
+  isConnected(): Promise<boolean>;
+}
+
+export interface FilesApi {
+  browse(path?: string): Promise<FileBrowseResponse>;
+  home(): Promise<FileHomeResponse>;
+  open(path: string): Promise<void>;
+}
+
+export interface OAuthApi {
+  isConfigured(provider: string): Promise<boolean>;
+  startFlow(provider: string): Promise<OAuthFlowResult>;
+  completeFlow(provider: string, code: string, state: string): Promise<{
+    provider: string;
+    userId: string;
+    username: string;
+    displayName: string;
+  }>;
+  getAccount(provider: string): Promise<OAuthAccountStatus>;
+  disconnect(provider: string): Promise<void>;
+  forget(provider: string): Promise<void>;
+  refreshToken(provider: string, refreshToken: string): Promise<{
+    accessToken: string;
+    refreshToken?: string;
+    expiresIn?: number;
+  }>;
+  getConfig(): Promise<{ twitchConfigured: boolean; youtubeConfigured: boolean }>;
+  setConfig(config: {
+    twitchClientId?: string;
+    twitchClientSecret?: string;
+    youtubeClientId?: string;
+    youtubeClientSecret?: string;
+  }): Promise<void>;
+}
+
+/// The transport-polymorphic SpiritStream client contract.
+///
+/// **Implementations**:
+/// - `HttpClient` (this package, `./http-client.ts`) — REST over `/api/v1/*`.
+/// - Future: `VeilidClient` — DHT-routed RPC. Same interface.
+///
+/// **Stability**: methods may add fields to inputs/outputs (additive only).
+/// Removing or renaming a method is a breaking change for every frontend.
+export interface ApiClient {
+  profile: ProfileApi;
+  stream: StreamApi;
+  system: SystemApi;
+  settings: SettingsApi;
+  theme: ThemeApi;
+  obs: ObsApi;
+  discord: DiscordApi;
+  chat: ChatApi;
+  oauth: OAuthApi;
+  files: FilesApi;
+  // Safety/audit endpoints.
+  safety: {
+    panic(): Promise<{ streamsStopped: number; elapsedMs: number }>;
+  };
+  audit: {
+    log(opts?: { skip?: number; limit?: number; kind?: string }): Promise<{
+      total: number;
+      entries: unknown[];
+    }>;
+  };
+  // Destructive-op confirmation tokens.
+  security: {
+    /**
+     * Low-level: request a one-shot confirm token for `intent`.
+     * Most callers use the wrapped destructive methods
+     * (`settings.clearData`, `settings.rotateMachineKey`,
+     * `security.revokeAllSessions`) which do the dance internally.
+     */
+    requestConfirmToken(intent: string): Promise<{ token: string; expiresInSeconds: number }>;
+    /**
+     * Revoke every active server-side session. The caller's own
+     * session is invalidated by this call.
+     */
+    revokeAllSessions(): Promise<{ revoked: number }>;
+  };
+}
+
+export type Transport = 'http';
+
+export interface HttpTransportOptions {
+  transport: 'http';
+  /** Override the inferred backend URL. Falls back to localStorage / VITE_BACKEND_URL / `http://127.0.0.1:8008`. */
+  url?: string;
+}
+
+export type ApiClientOptions = HttpTransportOptions;

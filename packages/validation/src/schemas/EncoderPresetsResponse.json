@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "audioBitrates": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "audioChannels": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "audioSampleRates": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "containerFormats": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "fpsValues": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "h264Profiles": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "presets": {
+      "additionalProperties": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "description": "Map of encoder kind \u2192 preset list. Keys: `libx264`, `libx265`,\n`nvenc`, `amf`. Frontend maps the user's selected codec to the\nmatching list.",
+      "type": "object"
+    },
+    "resolutions": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "resolutions",
+    "fpsValues",
+    "audioBitrates",
+    "audioChannels",
+    "audioSampleRates",
+    "containerFormats",
+    "h264Profiles",
+    "presets"
+  ],
+  "title": "EncoderPresetsResponse",
+  "type": "object"
+}

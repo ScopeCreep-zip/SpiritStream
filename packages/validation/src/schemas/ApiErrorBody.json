@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "kind": {
+      "description": "Stable error kind from `spiritstream_core::CoreError`.",
+      "type": "string"
+    },
+    "message": {
+      "description": "Optional human-readable message. Internal details are never included.",
+      "nullable": true,
+      "type": "string"
+    }
+  },
+  "required": [
+    "kind"
+  ],
+  "title": "ApiErrorBody",
+  "type": "object"
+}

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "nextDelaySecs": {
+      "format": "int64",
+      "minimum": 0,
+      "nullable": true,
+      "type": "integer"
+    },
+    "pid": {
+      "format": "int32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "pid"
+  ],
+  "title": "StreamRetryResponse",
+  "type": "object"
+}
