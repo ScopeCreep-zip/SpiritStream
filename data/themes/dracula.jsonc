@@ -1,4 +1,4 @@
-{
+﻿{
   "id": "dracula",
   "name": "Dracula",
   "mode": "dark",
@@ -46,6 +46,7 @@
     "--border-interactive": "#BFA3FF",
     "--border-interactive-hover": "#D1BAFF",
     "--border-muted": "#2B243D",
+    "--border-subtle": "#2B243D",
     "--border-strong": "#4B3A6A",
     "--border-stronger": "#5D4A80",
     "--success": "#50FA7B",
@@ -182,3 +183,4 @@
     "--scrollbar-thumb-hover": "#4B3A6A"
   }
 }
+

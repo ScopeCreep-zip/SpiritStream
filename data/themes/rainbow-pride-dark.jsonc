@@ -1,4 +1,4 @@
-{
+﻿{
   "id": "rainbow-pride-dark",
   "name": "Rainbow Pride Dark",
   "mode": "dark",
@@ -55,6 +55,7 @@
     "--text-on-brand": "#FFFFFF",
     "--border-default": "#2A0F3D",
     "--border-muted": "#1F0B2E",
+    "--border-subtle": "#1F0B2E",
     "--border-strong": "#4A1C6A",
     "--border-stronger": "#6A2A90",
     "--border-interactive": "#FF2FB2",
@@ -122,3 +123,4 @@
     "--font-mono": "'Fira Code', 'JetBrains Mono', monospace"
   }
 }
+

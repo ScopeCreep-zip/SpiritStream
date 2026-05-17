@@ -1,0 +1,136 @@
+// High-Contrast Light — WCAG AAA 7:1+ contrast.
+// Pure-black text on pure-white background hits 21:1. Deep blue
+// primary on white hits 12.6:1 (>7:1 AAA threshold). Built-in,
+// ships alongside the regular light/dark themes for users who need
+// stronger contrast than the default.
+{
+  "id": "high-contrast-light",
+  "name": "High Contrast (light)",
+  "mode": "light",
+  "tokens": {
+    "--bg-base": "#FFFFFF",
+    "--bg-surface": "#FFFFFF",
+    "--bg-surface-secondary": "#F5F5F5",
+    "--bg-elevated": "#FFFFFF",
+    "--bg-muted": "#F0F0F0",
+    "--bg-sunken": "#F5F5F5",
+    "--bg-canvas": "#FFFFFF",
+    "--bg-overlay": "rgba(0, 0, 0, 0.7)",
+    "--bg-overlay-light": "rgba(0, 0, 0, 0.3)",
+    "--bg-hover": "rgba(0, 0, 0, 0.08)",
+    "--bg-active": "rgba(0, 0, 0, 0.12)",
+    "--bg-selected": "#E0E0FF",
+    "--bg-selected-hover": "#C0C0FF",
+
+    "--text-primary": "#000000",
+    "--text-secondary": "#000000",
+    "--text-tertiary": "#202020",
+    "--text-muted": "#404040",
+    "--text-disabled": "#808080",
+    "--text-inverse": "#FFFFFF",
+    "--text-on-brand": "#FFFFFF",
+
+    "--primary": "#0000AA",
+    "--primary-hover": "#000088",
+    "--primary-active": "#000066",
+    "--primary-subtle": "#E0E0FF",
+    "--primary-subtle-hover": "#C0C0FF",
+    "--primary-muted": "#F0F0FF",
+    "--primary-foreground": "#FFFFFF",
+
+    "--secondary": "#AA0066",
+    "--secondary-hover": "#880055",
+    "--secondary-active": "#660044",
+    "--secondary-subtle": "#FFE0F0",
+    "--secondary-subtle-hover": "#FFD0E8",
+    "--secondary-muted": "#FFF0F8",
+    "--secondary-foreground": "#FFFFFF",
+
+    "--accent": "#660066",
+    "--accent-hover": "#550055",
+    "--accent-active": "#440044",
+    "--accent-subtle": "#FFE0FF",
+    "--accent-subtle-hover": "#FFD0FF",
+    "--accent-muted": "#FFF0FF",
+    "--accent-foreground": "#FFFFFF",
+
+    "--border-default": "#000000",
+    "--border-muted": "#808080",
+    "--border-subtle": "#808080",
+    "--border-strong": "#000000",
+    "--border-stronger": "#000000",
+    "--border-interactive": "#0000AA",
+    "--border-interactive-hover": "#000088",
+    "--border-disabled": "#C0C0C0",
+
+    "--ring-default": "#0000AA",
+    "--ring-offset": "#FFFFFF",
+    "--ring-offset-width": "3px",
+    "--ring-width": "3px",
+
+    "--shadow-color": "0 0% 0%",
+    "--shadow-xs": "0 0 0 1px hsl(var(--shadow-color))",
+    "--shadow-sm": "0 0 0 1px hsl(var(--shadow-color)), 0 1px 0 0 hsl(var(--shadow-color))",
+    "--shadow-md": "0 0 0 1px hsl(var(--shadow-color)), 0 2px 0 0 hsl(var(--shadow-color))",
+    "--shadow-lg": "0 0 0 2px hsl(var(--shadow-color)), 0 4px 0 0 hsl(var(--shadow-color))",
+    "--shadow-xl": "0 0 0 2px hsl(var(--shadow-color)), 0 6px 0 0 hsl(var(--shadow-color))",
+    "--shadow-2xl": "0 0 0 3px hsl(var(--shadow-color)), 0 8px 0 0 hsl(var(--shadow-color))",
+    "--shadow-inner": "inset 0 0 0 2px hsl(var(--shadow-color))",
+
+    "--success": "#006600",
+    "--success-hover": "#005500",
+    "--success-subtle": "#E0FFE0",
+    "--success-muted": "#F0FFF0",
+    "--success-foreground": "#FFFFFF",
+    "--success-text": "#004400",
+    "--success-border": "#006600",
+
+    "--warning": "#AA5500",
+    "--warning-hover": "#884400",
+    "--warning-subtle": "#FFF5E0",
+    "--warning-muted": "#FFFAF0",
+    "--warning-foreground": "#FFFFFF",
+    "--warning-text": "#663300",
+    "--warning-border": "#AA5500",
+
+    "--error": "#AA0000",
+    "--error-hover": "#880000",
+    "--error-subtle": "#FFE0E0",
+    "--error-muted": "#FFF0F0",
+    "--error-foreground": "#FFFFFF",
+    "--error-text": "#660000",
+    "--error-border": "#AA0000",
+
+    "--info": "#0066AA",
+    "--info-hover": "#005588",
+    "--info-subtle": "#E0F0FF",
+    "--info-muted": "#F0F8FF",
+    "--info-foreground": "#FFFFFF",
+    "--info-text": "#003366",
+    "--info-border": "#0066AA",
+
+    "--status-live": "#006600",
+    "--status-live-bg": "#E0FFE0",
+    "--status-live-text": "#004400",
+
+    "--status-connecting": "#AA5500",
+    "--status-connecting-bg": "#FFF5E0",
+    "--status-connecting-text": "#663300",
+
+    "--status-offline": "#404040",
+    "--status-offline-bg": "#F0F0F0",
+    "--status-offline-text": "#202020",
+
+    "--status-error": "#AA0000",
+    "--status-error-bg": "#FFE0E0",
+    "--status-error-text": "#660000",
+
+    "--gradient-brand": "linear-gradient(135deg, #0000AA 0%, #AA0066 100%)",
+    "--gradient-brand-subtle": "linear-gradient(135deg, #E0E0FF 0%, #FFE0F0 100%)",
+    "--gradient-surface": "linear-gradient(180deg, #FFFFFF 0%, #F5F5F5 100%)",
+
+    "--scrollbar-track": "#FFFFFF",
+    "--scrollbar-thumb": "#000000",
+    "--scrollbar-thumb-hover": "#0000AA"
+  }
+}

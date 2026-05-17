@@ -1,4 +1,4 @@
-{
+﻿{
   "id": "rainbow-pride-light",
   "name": "Rainbow Pride Light",
   "mode": "light",
@@ -55,6 +55,7 @@
     "--text-on-brand": "#FFFFFF",
     "--border-default": "#F7E0F3",
     "--border-muted": "#FCEFFA",
+    "--border-subtle": "#FCEFFA",
     "--border-strong": "#F2C9EA",
     "--border-stronger": "#E5A8D9",
     "--border-interactive": "#FF2FB2",
@@ -122,3 +123,4 @@
     "--font-mono": "'Fira Code', 'JetBrains Mono', monospace"
   }
 }
+
