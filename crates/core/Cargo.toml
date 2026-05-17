@@ -1,0 +1,97 @@
+[package]
+name = "spiritstream-core"
+description = "SpiritStream core domain — services, models, traits. Transport-agnostic."
+version = "1.2.1"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+# This crate MUST NOT depend on axum, tower, tower-cookies, tauri, or any
+# transport-specific framework. Adding such a dependency is a contract bug.
+# See .claude/rules/architecture.md.
+
+[dependencies]
+# Async runtime — narrow features only. No HTTP server runtime here.
+tokio = { version = "1.0", features = [
+    "rt", "rt-multi-thread", "macros", "sync", "fs", "process",
+    "time", "io-util", "net", "signal",
+] }
+async-trait = "0.1"
+futures-util = "0.3"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Encryption + crypto primitives
+# aes-gcm 0.10 stays for legacy (V1) read-only decryption of legacy blobs.
+# aes-gcm-siv 0.11 is nonce-misuse-resistant (RFC 8452) and is what all
+# new writes use. Both share aead 0.5.
+aes-gcm = "0.10"
+aes-gcm-siv = "0.11"
+argon2 = "0.5"
+# Keyed HMAC for the anonymous-mode pseudonymizer.
+hmac = "0.12"
+# HKDF for deriving audit-log HMAC keys + per-day
+# encryption keys from the per-machine key.
+hkdf = "0.12"
+# OS keyring — macOS Keychain, Windows Credential Manager,
+# Linux Secret Service. Selected at startup by `build_secret_store`
+# alongside the encrypted-file impl. No runtime fallback between them.
+keyring = "3"
+# Image-metadata sanitizer. img-parts handles JPEG/PNG/WebP
+# container-level EXIF + ICC stripping; little_exif covers JPEG APP12 /
+# APP13 (Photoshop / IPTC) segments that img-parts leaves alone.
+img-parts = "0.3"
+little_exif = "0.6"
+rand = "0.8"
+base64 = "0.22"
+zeroize = { version = "1.7", features = ["derive"] }
+sha2 = "0.10"
+hex = "0.4"
+
+# Utilities
+uuid = { version = "1.0", features = ["v4", "serde"] }
+log = { version = "0.4", features = ["std"] }
+thiserror = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+regex = "1.10"
+notify = "6"
+dirs-next = "2.0"
+opener = "0.7"
+urlencoding = "2.1"
+dotenvy = "0.15"
+tempfile = "3.10"
+url = "2.5"
+
+# TypeScript type generation. `cargo test --workspace` emits `.ts` files
+# into `packages/types/src/` for every type marked with `#[ts(export)]`.
+ts-rs = { version = "10", features = ["serde-compat", "chrono-impl", "uuid-impl"] }
+
+# External-service clients (HTTP CLIENT — not HTTP server)
+reqwest = { version = "0.11", features = ["stream", "json", "multipart"] }
+tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
+obws = { version = "0.14", features = ["events"] }
+twitch-irc = "5.0"
+
+# Archive formats (FFmpeg downloader). `zip` is Windows + macOS; `tar`
+# + `xz2` is Linux. Each is gated at the use site so a wrong-platform
+# extractor never compiles into the binary.
+[target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
+zip = "0.6"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+tar = "0.4"
+xz2 = "0.1"
+
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["fileapi", "winnt"] }
+
+[dev-dependencies]
+# Test-time PNG construction for media_sanitizer fixtures.
+png = "0.17"
+
+[build-dependencies]
+serde_json = "1.0"
