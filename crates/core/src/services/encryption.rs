@@ -1195,10 +1195,9 @@ mod tests {
                 application: "live".into(),
             },
             output_groups: vec![og],
-            settings: {
-                let mut s = ProfileSettings::default();
-                s.encrypt_stream_keys = true;
-                s
+            settings: ProfileSettings {
+                encrypt_stream_keys: true,
+                ..ProfileSettings::default()
             },
             pii_blocklist: vec![],
             pii_fuzzy: false,
