@@ -16,6 +16,13 @@ export interface TargetModalProps {
   mode: 'create' | 'edit';
   groupId: string;
   target?: StreamTarget;
+  /**
+   * In create mode: pre-fill the service dropdown (and the corresponding
+   * default URL + suggested name) with this platform. The AppDrawer hands
+   * this in after the user picks a service from the catalog. Ignored in
+   * edit mode.
+   */
+  initialService?: Platform;
 }
 
 // Platform values - dynamically loaded from JSON
@@ -36,7 +43,7 @@ const defaultFormData: FormData = {
   streamKey: '',
 };
 
-export function TargetModal({ open, onClose, mode, groupId, target }: TargetModalProps) {
+export function TargetModal({ open, onClose, mode, groupId, target, initialService }: TargetModalProps) {
   const { t } = useTranslation();
   const { current, addStreamTarget, updateStreamTarget, moveStreamTarget } = useProfileStore();
   const form = useFormState<FormData>(defaultFormData);
@@ -70,6 +77,15 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
           url: target.url,
           streamKey: target.streamKey,
         });
+      } else if (mode === 'create' && initialService) {
+        // AppDrawer handoff: pre-fill the service + its default URL + a
+        // suggested name. User still confirms / overrides everything before save.
+        form.reset({
+          service: initialService,
+          name: platformConfig[initialService].displayName,
+          url: platformConfig[initialService].defaultServer,
+          streamKey: '',
+        });
       } else {
         form.reset(defaultFormData);
       }
@@ -79,7 +95,7 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
       setServerError(undefined);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, target, groupId]);
+  }, [open, mode, target, groupId, initialService]);
 
   // Update URL when service changes (only in create mode)
   const handleServiceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {

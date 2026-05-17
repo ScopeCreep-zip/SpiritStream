@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SquareArrowOutUpRight, SquareArrowDownLeft, Trash2, Send, Download, Search } from 'lucide-react';
 import { emit } from '@tauri-apps/api/event';
-import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
+import { Card, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Toggle } from '@/components/ui/Toggle';
 import { Input } from '@/components/ui/Input';
@@ -358,65 +358,84 @@ export function Chat() {
     <>
       <FileBrowser />
       <Card>
-      <CardHeader>
-        <div>
+      <div className="border-b border-border-muted py-5 px-6 flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-3">
           <CardTitle>{t('chat.viewTitle', { defaultValue: 'Unified Chat' })}</CardTitle>
-          <CardDescription>
-            {t('chat.viewDescription', {
-              defaultValue: 'Unified chat from your connected platforms. Sending uses your enabled accounts.',
-            })}
-          </CardDescription>
-        </div>
-      </CardHeader>
-      <CardBody>
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-6">
-            <Toggle
-              checked={overlayTransparent}
-              onChange={handleTransparentToggle}
-              label={t('chat.transparentOverlay', { defaultValue: 'Transparent overlay' })}
-              description={t('chat.transparentOverlayDescription', {
-                defaultValue: 'Makes the pop-out window background transparent.',
-              })}
-            />
-            <Toggle
-              checked={overlayAlwaysOnTop}
-              onChange={handleAlwaysOnTopToggle}
-              label={t('chat.alwaysOnTop', { defaultValue: 'Always on top' })}
-              description={t('chat.alwaysOnTopDescription', {
-                defaultValue: 'Keeps the pop-out window above other windows.',
-              })}
-            />
-          </div>
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={clearMessages}>
-              <Trash2 className="w-4 h-4" />
-              {t('common.clear')}
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <Button
+              size="icon"
+              onClick={openChatOverlay}
+              aria-label={t('chat.popOut', { defaultValue: 'Pop out' })}
+              title={t('chat.popOut', { defaultValue: 'Pop out' })}
+            >
+              <SquareArrowOutUpRight className="w-4 h-4" />
             </Button>
             <Button
               variant="ghost"
-              size="sm"
-              onClick={handleExportLog}
-              disabled={activeStreamCount === 0}
+              size="icon"
+              onClick={closeChatOverlay}
+              aria-label={t('chat.dockChat', { defaultValue: 'Dock chat' })}
+              title={t('chat.dockChat', { defaultValue: 'Dock chat' })}
             >
-              <Download className="w-4 h-4" />
-              {t('chat.exportLog', { defaultValue: 'Export chat' })}
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => setSearchOpen(true)}>
-              <Search className="w-4 h-4" />
-              {t('chat.search', { defaultValue: 'Search' })}
-            </Button>
-            <Button size="sm" onClick={openChatOverlay}>
-              <SquareArrowOutUpRight className="w-4 h-4" />
-              {t('chat.popOut', { defaultValue: 'Pop out' })}
-            </Button>
-            <Button variant="ghost" size="sm" onClick={closeChatOverlay}>
               <SquareArrowDownLeft className="w-4 h-4" />
-              {t('chat.dockChat', { defaultValue: 'Dock chat' })}
             </Button>
           </div>
         </div>
-        <div className="mt-6 rounded-xl border border-border-subtle bg-bg-elevated p-4">
+        <CardDescription className="mt-0">
+          {t('chat.viewDescription', {
+            defaultValue:
+              'Unified chat from your connected platforms. Sending uses your enabled accounts.',
+          })}
+        </CardDescription>
+      </div>
+      <CardBody className="p-4">
+        {/* Pop-out toggles (compact: labels only — descriptions live in tooltips). */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <Toggle
+            checked={overlayTransparent}
+            onChange={handleTransparentToggle}
+            label={t('chat.transparentOverlay', { defaultValue: 'Transparent overlay' })}
+          />
+          <Toggle
+            checked={overlayAlwaysOnTop}
+            onChange={handleAlwaysOnTopToggle}
+            label={t('chat.alwaysOnTop', { defaultValue: 'Always on top' })}
+          />
+        </div>
+
+        {/* Compact icon-only action row. */}
+        <div className="mt-3 flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={clearMessages}
+            aria-label={t('common.clear')}
+            title={t('common.clear')}
+          >
+            <Trash2 className="w-4 h-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleExportLog}
+            disabled={activeStreamCount === 0}
+            aria-label={t('chat.exportLog', { defaultValue: 'Export chat' })}
+            title={t('chat.exportLog', { defaultValue: 'Export chat' })}
+          >
+            <Download className="w-4 h-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setSearchOpen(true)}
+            aria-label={t('chat.search', { defaultValue: 'Search' })}
+            title={t('chat.search', { defaultValue: 'Search' })}
+          >
+            <Search className="w-4 h-4" />
+          </Button>
+        </div>
+
+        <div className="mt-3 rounded-lg border border-border-subtle bg-bg-elevated p-2">
           <ChatList
             messages={messages}
             className="max-h-[520px]"
@@ -424,13 +443,14 @@ export function Chat() {
             showTimestamps
           />
         </div>
-        <div className="mt-4 space-y-2">
-          <div className="flex items-center gap-3">
+
+        <div className="mt-3 space-y-2">
+          <div className="flex items-center gap-2">
             <div className="flex-1 min-w-0">
               <Input
                 value={draftMessage}
                 onChange={(event) => setDraftMessage(event.target.value)}
-                placeholder={t('chat.sendPlaceholder', { defaultValue: 'Send a message to all enabled chats...' })}
+                placeholder={t('chat.sendPlaceholder', { defaultValue: 'Send a message…' })}
                 disabled={sendTargets.length === 0}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && !event.shiftKey) {
@@ -441,53 +461,51 @@ export function Chat() {
               />
             </div>
             <Button
-              size="sm"
+              size="icon"
               disabled={!canSend || isSending}
               onClick={handleSend}
-              className="gap-2"
+              aria-label={t('chat.send', { defaultValue: 'Send' })}
+              title={t('chat.send', { defaultValue: 'Send' })}
             >
               <Send className="w-4 h-4" />
-              {t('chat.send', { defaultValue: 'Send' })}
             </Button>
           </div>
-          {sendTargets.length === 0 ? (
-            <p className="text-xs text-text-tertiary">
-              {sendDisabledReason}
-            </p>
-          ) : (
-            <p className="text-xs text-text-tertiary">
-              {t('chat.sendTargets', {
-                defaultValue: 'Sending to: {{targets}}',
-                targets: sendTargetLabel,
-              })}
-            </p>
-          )}
+
+          <p className="text-xs text-text-tertiary">
+            {sendTargets.length === 0
+              ? sendDisabledReason
+              : t('chat.sendTargets', {
+                  defaultValue: 'Sending to: {{targets}}',
+                  targets: sendTargetLabel,
+                })}
+          </p>
+
           {platformStates.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 text-xs text-text-tertiary">
-              <span className="font-medium text-text-secondary">
-                {t('chat.sendStatus', { defaultValue: 'Send status:' })}
-              </span>
-              {platformStates.map((platform) => (
-                <div
-                  key={platform.id}
-                  className="flex items-center gap-2 rounded-full border border-border-subtle bg-bg-elevated px-2 py-1"
-                >
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              {platformStates.map((platform) => {
+                const stateLabel = !platform.configured
+                  ? t('chat.platformNotConfigured', { defaultValue: 'not configured' })
+                  : platform.sendEnabled
+                    ? t('chat.sendOn', { defaultValue: 'on' })
+                    : t('chat.sendOff', { defaultValue: 'off' });
+                return (
                   <span
-                    className={cn('inline-block h-2 w-2 rounded-full', statusDotClass(platform.status))}
-                  />
-                  <span className="text-text-primary">{platform.label}</span>
-                  <span>
-                    {platform.configured
-                      ? t('chat.platformConfigured', { defaultValue: 'Configured' })
-                      : t('chat.platformNotConfigured', { defaultValue: 'Not configured' })}
+                    key={platform.id}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-border-subtle bg-bg-elevated px-2 py-0.5"
+                    title={`${platform.label} — ${stateLabel}`}
+                  >
+                    <span
+                      className={cn(
+                        'inline-block h-2 w-2 rounded-full',
+                        statusDotClass(platform.status),
+                      )}
+                      aria-hidden="true"
+                    />
+                    <span className="text-text-primary">{platform.label}</span>
+                    <span className="text-text-tertiary">· {stateLabel}</span>
                   </span>
-                  <span>
-                    {platform.sendEnabled
-                      ? t('chat.sendOn', { defaultValue: 'Send on' })
-                      : t('chat.sendOff', { defaultValue: 'Send off' })}
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

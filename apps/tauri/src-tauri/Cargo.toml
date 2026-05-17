@@ -25,6 +25,11 @@ tauri-plugin-notification = "2"
 # this plugin to verify the `.sig` files attached to each release.
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+# Global system-wide hotkeys. Used by the panic shortcut so it fires
+# from anywhere on the system — not only when SpiritStream has focus.
+# Frontend registers the binding via `@tauri-apps/plugin-global-shortcut`;
+# this exposes the OS-level hook.
+tauri-plugin-global-shortcut = "2"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }

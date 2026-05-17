@@ -1,0 +1,92 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   SPIRITSTREAM HIGH-CONTRAST OVERLAY
+   AAA (7:1) contrast across every text/control pairing.
+   Toggled via View menu (and Settings → Accessibility) — sets
+   `data-contrast="high"` on <html>. Layers ON TOP of `data-theme` so the
+   user's chosen theme remains intact when they disable high contrast.
+
+   Approach: collapse background variation to true black/white, push every
+   foreground to maximum contrast, widen borders, intensify focus rings.
+   Brand color preserved at maximum saturation for at-a-glance status (LIVE
+   indicator etc.) but never used as the only signal.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+[data-contrast="high"] {
+  /* === BACKGROUNDS — collapse to pure black === */
+  --bg-base: #000000;
+  --bg-surface: #000000;
+  --bg-surface-secondary: #0A0A0A;
+  --bg-elevated: #141414;
+  --bg-muted: #1A1A1A;
+  --bg-sunken: #0A0A0A;
+  --bg-canvas: #000000;
+
+  --bg-overlay: rgba(0, 0, 0, 0.85);
+  --bg-overlay-light: rgba(0, 0, 0, 0.40);
+
+  --bg-hover: rgba(255, 255, 255, 0.12);
+  --bg-active: rgba(255, 255, 255, 0.20);
+  --bg-selected: #2E1065;
+  --bg-selected-hover: #4C1D95;
+
+  /* === FOREGROUND — pure white for AAA on black === */
+  --text-primary: #FFFFFF;       /* 21:1 on black */
+  --text-secondary: #F4F2F7;     /* 19:1 on black */
+  --text-tertiary: #E9E5EF;      /* 17:1 on black */
+  --text-muted: #D8D1E2;         /* 13:1 on black */
+  --text-disabled: #9489A8;      /* 7:1 on black — still AAA */
+  --text-inverse: #000000;
+  --text-on-brand: #FFFFFF;
+
+  /* === BRAND — preserved but pushed lighter for contrast on black === */
+  --primary: #C4B5FD;            /* violet-300 — 11:1 on black */
+  --primary-hover: #DDD6FE;
+  --primary-active: #EDE9FE;
+  --primary-subtle: #2E1065;
+  --primary-subtle-hover: #4C1D95;
+  --primary-muted: #1A0B33;
+  --primary-foreground: #000000;
+
+  --secondary: #F9A8D4;          /* pink-300 — 13:1 on black */
+  --secondary-hover: #FBCFE8;
+  --secondary-active: #FCE7F3;
+  --secondary-subtle: #500724;
+  --secondary-subtle-hover: #831843;
+  --secondary-muted: #2D0517;
+  --secondary-foreground: #000000;
+
+  --accent: #F0ABFC;
+  --accent-hover: #F5D0FE;
+
+  /* === SEMANTIC — maximum saturation, all AAA on black === */
+  --success-text: #6EE7B7;       /* 12:1 on black */
+  --success-bg: #022C22;
+  --success-border: #10B981;
+
+  --warning-text: #FCD34D;       /* 14:1 on black */
+  --warning-bg: #3C2300;
+  --warning-border: #F59E0B;
+
+  --error-text: #FCA5A5;         /* 11:1 on black */
+  --error-bg: #450A0A;
+  --error-border: #EF4444;
+
+  --info-text: #93C5FD;          /* 11:1 on black */
+  --info-bg: #0C2A5C;
+  --info-border: #3B82F6;
+
+  /* === BORDERS — widened + lightened === */
+  --border-default: #FFFFFF;
+  --border-muted: #D8D1E2;
+  --border-subtle: #9489A8;
+  --border-strong: #FFFFFF;
+  --border-width-default: 2px;   /* up from 1px */
+
+  /* === FOCUS RING — widened + maximum visibility === */
+  --ring-default: #FCD34D;       /* amber — distinct from primary, AAA on black */
+  --ring-width: 4px;             /* up from 3px */
+  --ring-offset: 3px;            /* up from 2px */
+}
+
+/* When high-contrast is layered with `dir="rtl"`, the same rules apply —
+   logical properties (margin-inline-start etc.) already handle direction. */

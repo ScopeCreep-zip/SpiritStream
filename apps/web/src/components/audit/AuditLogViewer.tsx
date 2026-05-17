@@ -29,7 +29,7 @@ const KIND_FILTERS: { value: string; labelKey: string }[] = [
   { value: 'machine_key_rotated', labelKey: 'audit.filterMachineKey' },
 ];
 
-export function AuditLogView(): React.ReactElement {
+export function AuditLogViewer(): React.ReactElement {
   const { t } = useTranslation();
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [total, setTotal] = useState(0);

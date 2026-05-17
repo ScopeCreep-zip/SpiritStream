@@ -12,7 +12,7 @@ import { dialogs } from '@spiritstream/api-client';
 import { logger } from '@/lib/logger';
 import { toast } from '@/hooks/useToast';
 
-export function Logs() {
+export function LogsViewer() {
   const { t, i18n } = useTranslation();
   const {
     logs,

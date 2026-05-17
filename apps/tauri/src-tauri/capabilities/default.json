@@ -69,6 +69,10 @@
     "updater:default",
     "process:default",
     "process:allow-restart",
+    "global-shortcut:default",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister",
+    "global-shortcut:allow-is-registered",
     {
       "identifier": "http:default",
       "allow": [

@@ -70,6 +70,11 @@ fn main() {
         // present.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        // Global system-wide hotkeys (panic shortcut). The frontend
+        // registers / unregisters bindings via the JS side of the
+        // plugin; this initializer just exposes the OS hook so the
+        // shortcut fires even when SpiritStream isn't focused.
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(ServerProcess(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![updater_supported])
         .setup(|app| {
