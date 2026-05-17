@@ -547,10 +547,10 @@ verify_installation() {
     fi
 
     # Verify Cargo.toml exists (sanity check we're in right directory)
-    if [[ -f "apps/desktop/src-tauri/Cargo.toml" ]]; then
-        print_pass "apps/desktop/src-tauri/Cargo.toml found"
+    if [[ -f "apps/tauri/src-tauri/Cargo.toml" ]]; then
+        print_pass "apps/tauri/src-tauri/Cargo.toml found"
     else
-        print_fail "apps/desktop/src-tauri/Cargo.toml not found (wrong directory?)"
+        print_fail "apps/tauri/src-tauri/Cargo.toml not found (wrong directory?)"
     fi
 
     echo ""
@@ -585,7 +585,7 @@ main() {
         check_sudo_access
     fi
 
-    # Step 1: Platform-specific dependencies
+    # Platform-specific dependencies
     echo -e "\n${BLUE}[1/7]${NC} Platform Dependencies"
     case "${OS}" in
         macos) install_macos_deps ;;
@@ -597,11 +597,11 @@ main() {
             ;;
     esac
 
-    # Step 2: Install Rust
+    # Install Rust
     echo -e "\n${BLUE}[2/7]${NC} Rust"
     install_rust
 
-    # Step 3: Check Node.js
+    # Check Node.js
     echo -e "\n${BLUE}[3/7]${NC} Node.js"
     # SC2310: Invoke function separately to preserve set -e behavior
     local node_found=true
@@ -636,19 +636,19 @@ main() {
 
     print_success "Node.js already installed: ${node_version_str}"
 
-    # Step 4: Install FFmpeg
+    # Install FFmpeg
     echo -e "\n${BLUE}[4/7]${NC} FFmpeg"
     install_ffmpeg "${OS}"
 
-    # Step 5: Install Tauri CLI
+    # Install Tauri CLI
     echo -e "\n${BLUE}[5/7]${NC} Tauri CLI"
     install_tauri_cli
 
-    # Step 6: Install pnpm dependencies
+    # Install pnpm dependencies
     echo -e "\n${BLUE}[6/7]${NC} pnpm Dependencies"
     install_pnpm_deps
 
-    # Step 7: Verify installation
+    # Verify installation
     echo -e "\n${BLUE}[7/7]${NC} Verification"
     verify_installation
 

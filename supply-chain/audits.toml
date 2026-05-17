@@ -1,0 +1,31 @@
+# Our own audit ledger.
+#
+# Add an entry here when we have personally read and approved a crate
+# version for use in SpiritStream. Generated and updated by:
+#
+#   cargo vet certify <crate> <version> --criteria safe-to-deploy
+#
+# Each entry produces a hash-chained record that downstream users
+# (other Rust projects importing our audits) can verify.
+
+[criteria.safe-to-deploy]
+description = """
+This crate has been read in full by a SpiritStream maintainer, contains
+no unsafe code we did not expressly approve, makes no network calls
+unless documented, and follows the project's no-fallback-without-loud-
+failure principle. Approved for use in code paths that touch streaming
+data, secrets, or vulnerable-user PII.
+"""
+implies = "safe-to-run"
+
+[criteria.safe-to-run]
+description = """
+Reviewed enough to be confident the crate will not silently exfiltrate,
+brick the build, or violate the project's license policy. Suitable for
+build tools, test harnesses, and developer CLIs — not for production
+data paths.
+"""
+
+# Audits accumulate via `cargo vet certify` over time. Leaving this
+# section empty is intentional on bootstrap; the imports in config.toml
+# cover the common dependency surface immediately.

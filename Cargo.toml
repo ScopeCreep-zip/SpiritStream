@@ -1,0 +1,31 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/transport-http",
+    "crates/transport-cli",
+    "crates/transport-veilid",
+    "server",
+    "apps/tauri/src-tauri",
+]
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.77.2"
+license = "ISC"
+repository = "https://github.com/ScopeCreep-zip/SpiritStream"
+authors = ["SpiritStream Contributors"]
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+# Tighten as the rewrite lands; CI already runs `cargo clippy -D warnings`.
+unwrap_used = "warn"
+expect_used = "warn"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true

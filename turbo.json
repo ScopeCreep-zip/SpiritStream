@@ -10,7 +10,7 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**", "target/**"]
     },
-    "@spiritstream/desktop#build": {
+    "@spiritstream/tauri#build": {
       "dependsOn": ["^build"],
       "inputs": [
         "$TURBO_DEFAULT$",

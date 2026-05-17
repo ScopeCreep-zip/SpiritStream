@@ -1,0 +1,26 @@
+# clippy thresholds — these complement the workspace-level lints in
+# Cargo.toml (`[workspace.lints.clippy]`) by adjusting the numeric
+# thresholds clippy uses for complexity heuristics.
+#
+# Rationale: AI-generated code reliably overshoots cognitive complexity
+# and per-function line count, while human-written SpiritStream code
+# tends to stay under these defaults. Failing CI on these thresholds is
+# a cheap, false-positive-rare anti-slop signal.
+
+cognitive-complexity-threshold = 30
+too-many-arguments-threshold = 8
+too-many-lines-threshold = 200
+type-complexity-threshold = 250
+
+# Match the project's "no allow attributes" rule: clippy should not
+# silently accept `dead_code`, `unused`, or `unreachable_code` allows
+# in source. The workspace lint `unsafe_code = "deny"` enforces the
+# unsafe rule; this file enforces the complexity ceilings only.
+
+# Filter MSRV-aware lints to the workspace minimum.
+msrv = "1.77.2"
+
+# Allow `unwrap` / `expect` in tests where appropriate. Production code
+# is gated by `workspace.lints.clippy.unwrap_used = "warn"` already.
+allow-expect-in-tests = true
+allow-unwrap-in-tests = true

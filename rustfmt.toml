@@ -1,0 +1,16 @@
+# Workspace rustfmt config. Pinned so CI, lefthook, and contributor
+# editors all agree on a single line shape. Stable-channel options only
+# — nightly-only knobs (imports_granularity, group_imports,
+# wrap_comments, etc.) are intentionally absent so this file is
+# effective under our pinned rust-toolchain.toml.
+
+edition = "2021"
+max_width = 100
+hard_tabs = false
+tab_spaces = 4
+newline_style = "Unix"
+use_small_heuristics = "Default"
+reorder_imports = true
+reorder_modules = true
+use_field_init_shorthand = true
+use_try_shorthand = true

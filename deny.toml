@@ -1,0 +1,161 @@
+# cargo-deny configuration — supply-chain policy for the Rust workspace.
+#
+# Maps to:
+#   - OWASP CICD-SEC-3 (Dependency Chain Abuse) — license + advisory gates
+#   - NIST SSDF PW.3 (vet reusable components)
+#   - CISA Defending CI/CD CSI §Software Supply Chain Security
+#
+# Run locally:    cargo deny check
+# Run in CI:      .github/workflows/cargo-deny.yml
+#
+# Updating: when this file changes, bump the workflow check name in the
+# branch protection ruleset so reviewers still see the gate.
+
+[graph]
+# Check every architecture/feature combination we actually compile for.
+# Empty target list means "all" but at this size that's wasted CPU.
+targets = [
+    { triple = "x86_64-unknown-linux-gnu" },
+    { triple = "aarch64-unknown-linux-gnu" },
+    { triple = "x86_64-apple-darwin" },
+    { triple = "aarch64-apple-darwin" },
+    { triple = "x86_64-pc-windows-msvc" },
+]
+all-features = false
+no-default-features = false
+
+[output]
+feature-depth = 1
+
+# ─── Advisories (RustSec) ────────────────────────────────────────────
+# https://rustsec.org/advisories/
+[advisories]
+db-path = "$CARGO_HOME/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+# Yanked crates and CVE-class vulnerabilities always fail the build.
+# "Unmaintained" warnings are only failing when we directly depend on
+# the crate ourselves (workspace scope) — transitive unmaintained
+# warnings (the gtk-rs GTK3 chain pulled in by Tauri's Linux backend,
+# the unic-* chain pulled in by ICU, etc.) are upstream's problem and
+# tracked separately rather than blocking every PR.
+yanked = "deny"
+unmaintained = "workspace"
+
+# Per-advisory overrides. Add an entry here ONLY when we have actively
+# read the advisory and decided the impact is acceptable for our use,
+# OR the fix is genuinely upstream and we're tracking the upstream PR.
+# Each ignore MUST cite the upstream tracking link in a comment so a
+# future reviewer can re-evaluate.
+ignore = [
+    # GTK3 bindings — the entire gtk-rs GTK3 family was archived in 2024
+    # in favor of gtk4-rs. Tauri 2.x still uses the GTK3 backend on
+    # Linux via muda + wry + webkit2gtk. Upstream tracking:
+    #   https://github.com/tauri-apps/tauri/issues/9077
+    # When Tauri moves to gtk4, drop these.
+    "RUSTSEC-2024-0411", # atk-sys
+    "RUSTSEC-2024-0412", # gdk
+    "RUSTSEC-2024-0413", # atk
+    "RUSTSEC-2024-0414", # gdk-sys
+    "RUSTSEC-2024-0415", # gdkx11
+    "RUSTSEC-2024-0416", # atk (duplicate id from older db)
+    "RUSTSEC-2024-0417", # gdkx11-sys
+    "RUSTSEC-2024-0418", # gdkwayland-sys
+    "RUSTSEC-2024-0419", # gtk
+    "RUSTSEC-2024-0420", # gtk-sys
+
+    # `paste` — used by many proc-macro DSLs, no replacement, no
+    # exploitable surface beyond the proc-macro itself. Upstream is
+    # waiting for a community fork.
+    "RUSTSEC-2024-0436", # paste
+
+    # `proc-macro-error` — unmaintained since 2021; replaced by
+    # `proc-macro-error2` which is itself less polished. Pulled in
+    # transitively via syn-based macro crates we don't directly own.
+    "RUSTSEC-2024-0370", # proc-macro-error
+
+    # `rustls-pemfile` — superseded by rustls-pki-types in newer
+    # rustls releases. We'll inherit the fix when our HTTP stack
+    # upgrades its rustls dep.
+    "RUSTSEC-2025-0134", # rustls-pemfile
+
+    # `unic-*` family — replaced by ICU4X. Pulled in transitively by
+    # idna / icu_locid; will drop when those publish ICU4X migrations.
+    "RUSTSEC-2025-0075", # unic-char-range
+    "RUSTSEC-2025-0080", # unic-common
+    "RUSTSEC-2025-0081", # unic-char-property
+    "RUSTSEC-2025-0098", # unic-ucd-version
+    "RUSTSEC-2025-0100", # unic-ucd-ident
+]
+
+# ─── License gate ────────────────────────────────────────────────────
+# Allowlist mirrors what `.github/workflows/dependency-review.yml`
+# enforces on the JS side so both ecosystems agree on what's legal.
+# SpiritStream itself ships ISC; we accept permissive + a couple of
+# carefully-scoped weak-copyleft licenses where the tooling is
+# unavoidable (MPL-2.0 for some crypto crates, etc).
+[licenses]
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    # CDLA-Permissive-2.0 is the Linux Foundation's permissive data
+    # license; webpki-roots ships under it from 1.0 onwards (it's the
+    # root certificate bundle, which is data, not code). Permissive,
+    # no copyleft, OK for our use.
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+]
+confidence-threshold = 0.93
+
+# Crates with no SPDX expression in Cargo.toml get an explicit allow here
+# so a missing-metadata bump doesn't pretend to be a license-policy
+# violation. Add with comment explaining why each was vetted.
+exceptions = []
+
+# ─── Source allowlist ────────────────────────────────────────────────
+# crates-io only. No git deps in production code (use a published crate
+# or vendor it explicitly). Local-path deps in the workspace are fine
+# (they're not "external" by definition).
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
+
+[sources.allow-org]
+github = []
+
+# ─── Bans / duplicates ───────────────────────────────────────────────
+# Wildcards in workspace member Cargo.toml are denied — they make
+# `cargo update` non-deterministic and defeat lockfile pinning.
+# Duplicate semver-incompatible versions are flagged as warnings; this
+# is informational because some duplicates are unavoidable in a large
+# tree, but a sudden jump in count is worth a closer look.
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Workspace cross-crate refs (`{ path = "../core" }` without a version)
+# legitimately look like wildcards but are how Cargo workspaces are
+# wired. `allow-wildcard-paths` exempts path-only deps; registry deps
+# with `version = "*"` still fail loud.
+allow-wildcard-paths = true
+highlight = "all"
+workspace-default-features = "allow"
+external-default-features = "allow"
+allow = []
+deny = [
+    # Known-unmaintained / known-supply-chain-incident crates we never
+    # want to pull back in. Add with date + URL when blocking a crate.
+]
+skip = []
+skip-tree = []

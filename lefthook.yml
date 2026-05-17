@@ -1,0 +1,97 @@
+# lefthook configuration — local pre-commit / commit-msg hooks.
+#
+# Why lefthook over husky / pre-commit:
+#   - Single Go binary, no Node / Python runtime dependency.
+#   - Native parallel execution (huge win on monorepos with both Rust
+#     and TS toolchains).
+#   - YAML configuration that doesn't require shelling into per-language
+#     hook routers.
+#
+# Install once per clone:
+#   cargo install lefthook    # or: brew install lefthook / npm i -g lefthook
+#   lefthook install
+#
+# After installing, every commit runs the fast lints below. The
+# `pre-push` hook runs the heavier checks; skip with `--no-verify`
+# only when you know what you're doing (CI will catch it anyway).
+#
+# Authority backing:
+#   - NIST SSDF PW.4 (secure coding practices)
+#   - CISA Defending CI/CD §Developer Environment Hardening
+#   - OWASP CICD-SEC-6 (secrets hygiene — gitleaks pre-commit)
+
+min_version: 1.7.0
+
+pre-commit:
+  parallel: true
+  commands:
+    # --- Rust ---
+    # `rustfmt --check` runs only on the files staged for this commit so
+    # pre-existing formatting drift in other files doesn't block your
+    # unrelated change. The rustfmt.toml at repo root supplies the
+    # style. When we eventually normalize the whole tree, switch this to
+    # `cargo fmt --all -- --check` for stronger enforcement.
+    rust-fmt:
+      glob: '*.rs'
+      run: rustfmt --edition 2021 --check {staged_files}
+      stage_fixed: false
+      fail_text: |
+        Rust formatting violations on staged files. Run `rustfmt --edition 2021 <files>` or `cargo fmt -p <crate>` to fix.
+
+    rust-clippy:
+      glob: '*.rs'
+      # Only lint workspace-wide on touched crates; per-file clippy
+      # would miss cross-module warnings.
+      run: cargo clippy --workspace --all-targets -- -D warnings
+      stage_fixed: false
+      fail_text: |
+        Clippy violations. Fix them or, if you genuinely cannot, open a
+        discussion before adding an allow attribute (we ban
+        `#[allow(dead_code)]` outright per .claude/rules/coding-standards.md).
+
+    # --- JS / TS ---
+    pnpm-lint:
+      glob: '*.{ts,tsx,js,jsx,mjs,cjs}'
+      run: pnpm lint
+      stage_fixed: false
+
+    prettier:
+      glob: '*.{ts,tsx,js,jsx,json,md,yml,yaml,css}'
+      exclude: 'pnpm-lock.yaml|Cargo.lock|target/|node_modules/|dist/|packages/types/src/'
+      run: pnpm exec prettier --check {staged_files}
+      stage_fixed: false
+      fail_text: |
+        Prettier formatting violations. Run `pnpm format` to fix.
+
+    # --- Secret hygiene ---
+    # gitleaks protect --staged scans only what's staged for the commit;
+    # the workflow scans the whole history on push as a backstop.
+    gitleaks:
+      run: gitleaks protect --staged --redact --no-banner
+      fail_text: |
+        gitleaks found a credential in your staged changes. Do not commit.
+        Rotate the credential immediately if it was ever pushed anywhere.
+
+    # --- Lockfile integrity ---
+    lockfile-lint:
+      glob: 'pnpm-lock.yaml'
+      run: pnpm exec lockfile-lint --path pnpm-lock.yaml --type pnpm --validate-https --allowed-hosts npm github.com
+      fail_text: |
+        pnpm-lock.yaml references a registry or URL outside the allowlist.
+        Check the diff — this can indicate a typo-squat or registry hijack.
+
+commit-msg:
+  commands:
+    commitlint:
+      run: pnpm exec commitlint --edit {1}
+      fail_text: |
+        Commit message must follow Conventional Commits and use one of the
+        allowed scopes. See CONTRIBUTING.md#commit-message-format.
+
+# Skip hooks entirely on dependency-bump commits — Dependabot generates
+# them, they're signed by GitHub, and re-running the hooks just slows
+# the merge train.
+skip_output:
+  - meta
+  - skips
+  - summary

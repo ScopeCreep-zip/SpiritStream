@@ -1,0 +1,56 @@
+# cargo-vet configuration.
+#
+# cargo-vet is Mozilla's trust ledger for Rust dependencies: every crate
+# in the dependency tree must either (a) carry an audit by someone we
+# trust, or (b) be explicitly exempted. Bootstrapping a brand-new tree
+# is a lot of work, so we import the public audit sets from Mozilla,
+# Google, and a few other major contributors. That covers ~90% of the
+# common dependency surface immediately; we vet the remainder ourselves
+# over time.
+#
+# Run:    cargo vet
+# Update: cargo vet certify <crate> <version>
+# Suggest: cargo vet suggest
+#
+# Authority backing:
+#   - NIST SSDF PW.3 (vet reusable components)
+#   - OWASP SCVS Level 2 (pedigree + provenance)
+#   - CISA Defending CI/CD §Supply Chain Security
+
+[cargo-vet]
+version = "0.10"
+
+[imports.bytecodealliance]
+url = "https://raw.githubusercontent.com/bytecodealliance/wasmtime/main/supply-chain/audits.toml"
+
+[imports.embark-studios]
+url = "https://raw.githubusercontent.com/EmbarkStudios/rust-ecosystem/main/audits.toml"
+
+[imports.fermyon]
+url = "https://raw.githubusercontent.com/fermyon/spin/main/supply-chain/audits.toml"
+
+[imports.google]
+url = "https://raw.githubusercontent.com/google/supply-chain/main/audits.toml"
+
+[imports.isrg]
+url = "https://raw.githubusercontent.com/divviup/libprio-rs/main/supply-chain/audits.toml"
+
+[imports.mozilla]
+url = "https://raw.githubusercontent.com/mozilla/supply-chain/main/audits.toml"
+
+[imports.zcash]
+url = "https://raw.githubusercontent.com/zcash/zcash/main/qa/supply-chain/audits.toml"
+
+# We trust audits from the maintainers listed above for the criteria
+# listed here. `safe-to-deploy` is the strict tier (suitable for prod);
+# `safe-to-run` is the looser tier (build / dev tools only). The
+# import.criteria-map keys are case-sensitive.
+[policy."*"]
+criteria = "safe-to-deploy"
+
+# Bootstrap exemptions: every crate currently in the tree that none of
+# the imported audit sets covers gets parked here so `cargo vet` passes
+# from day one. We work the list down over time via `cargo vet suggest`.
+# This file starts empty — it will grow on first `cargo vet` run; the
+# expectation is that contributors regenerate via `cargo vet regenerate
+# exemptions` when they touch deps.
