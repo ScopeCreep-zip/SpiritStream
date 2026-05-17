@@ -8,6 +8,7 @@ import { createDefaultProfile } from '@/lib/profile-helpers';
 import { useThemeStore } from '@/stores/themeStore';
 import { useLanguageStore, type Language } from '@/stores/languageStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { toast } from '@/hooks/useToast';
 
 interface ProfileState {
   // State
@@ -576,15 +577,7 @@ export async function subscribeOAuthTokenExpired(): Promise<() => void> {
     logger.warn(
       `[ProfileStore] OAuth token expired for ${payload.provider}; re-auth required.`,
     );
-    // Surface as a non-blocking toast. Lazy import to avoid pulling the
-    // toast module into profileStore's tight bundle on app boot.
-    import('@/hooks/useToast')
-      .then(({ toast }) => {
-        const label = payload.provider.charAt(0).toUpperCase() + payload.provider.slice(1);
-        toast.info(`${label} sign-in expired — reconnect to send chat or stream.`);
-      })
-      .catch(() => {
-        // Toast module unavailable — log-only fallback is fine.
-      });
+    const label = payload.provider.charAt(0).toUpperCase() + payload.provider.slice(1);
+    toast.info(`${label} sign-in expired — reconnect to send chat or stream.`);
   });
 }

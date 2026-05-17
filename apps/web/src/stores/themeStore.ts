@@ -3,6 +3,8 @@ import { persist } from 'zustand/middleware';
 import { api } from '@/lib/client';
 import { events } from '@spiritstream/api-client';
 import { clientConfig } from '@/lib/constants';
+import { toast } from '@/hooks/useToast';
+import { logger } from '@/lib/logger';
 import type { ThemeSummary, ThemeMode } from '@spiritstream/types';
 
 interface ThemeState {
@@ -20,7 +22,6 @@ interface ThemeState {
   waitForInit: () => Promise<void>;
 }
 
-const DEFAULT_THEME_LIGHT = 'spirit-light';
 const DEFAULT_THEME_DARK = 'spirit-dark';
 const THEME_STYLE_ID = 'spiritstream-theme-overrides';
 
@@ -30,6 +31,21 @@ const initPromise = new Promise<void>((resolve) => {
   initResolve = resolve;
 });
 
+// Bundled themes are always present in the catalog because their tokens live
+// in `tokens.css`. The store starts with these and merges backend additions on
+// refresh, so the picker is never empty even when the backend is unreachable.
+const BUNDLED_THEMES: ReadonlyArray<ThemeSummary> = [
+  { id: 'spirit-dark', name: 'Spirit Dark', mode: 'dark', source: 'builtin', builtIn: true, valid: true, error: null },
+  { id: 'spirit-light', name: 'Spirit Light', mode: 'light', source: 'builtin', builtIn: true, valid: true, error: null },
+];
+
+/**
+ * Apply a theme. Owns ONLY `data-theme`, `data-theme-id`, and the
+ * `<style id="spiritstream-theme-overrides">` token tag. The `data-contrast`
+ * attribute is the exclusive domain of `useHighContrast` — never touch it here.
+ * Theme and contrast are orthogonal axes; they must not read or write each
+ * other's attributes.
+ */
 function applyTheme(themeId: string, mode: ThemeMode, tokens?: Record<string, string>) {
   if (typeof document === 'undefined') return;
 
@@ -82,7 +98,9 @@ export const useThemeStore = create<ThemeState>()(
   persist(
     (set, get) => ({
       currentThemeId: DEFAULT_THEME_DARK,
-      themes: [],
+      // Start with the bundled themes — they're always installed (tokens live
+      // in tokens.css). Backend additions get merged in on refreshThemes().
+      themes: [...BUNDLED_THEMES],
       currentTokens: undefined,
       currentMode: 'dark',
       isInitialized: false,
@@ -139,10 +157,9 @@ export const useThemeStore = create<ThemeState>()(
             theme = themes.find((t) => t.id === themeId);
 
             if (!theme) {
-              const fallback = DEFAULT_THEME_DARK;
-              applyTheme(fallback, 'dark', undefined);
-              set({ currentThemeId: fallback, currentMode: 'dark', currentTokens: undefined });
-              return;
+              const err = new Error(`Theme "${themeId}" is not installed.`);
+              toast.error(err.message);
+              throw err;
             }
           }
 
@@ -171,64 +188,62 @@ export const useThemeStore = create<ThemeState>()(
 
           applyTheme(themeId, theme.mode, tokens);
           set({ currentThemeId: themeId, currentMode: theme.mode, currentTokens: tokens });
-        } catch {
-          // Fall back to default
-          const fallback = DEFAULT_THEME_DARK;
-          applyTheme(fallback, 'dark', undefined);
-          set({ currentThemeId: fallback, currentMode: 'dark', currentTokens: undefined });
+        } catch (err) {
+          logger.error('[themeStore] setTheme failed', err);
+          // Surface unless we already toasted from the not-installed branch.
+          const message = err instanceof Error ? err.message : String(err);
+          if (!message.startsWith('Theme "')) {
+            toast.error(`Failed to load theme: ${message}`);
+          }
+          throw err;
         }
       },
 
       refreshThemes: async () => {
         try {
-          const themes = await api.theme.list();
-          set({ themes, isInitialized: true });
+          const fromBackend = await api.theme.list();
+          // Merge backend themes with the always-present bundled ones.
+          // Backend entries take precedence on id collision so any backend-
+          // overridden metadata wins.
+          const backendIds = new Set(fromBackend.map((t) => t.id));
+          const merged: ThemeSummary[] = [
+            ...fromBackend,
+            ...BUNDLED_THEMES.filter((t) => !backendIds.has(t.id)),
+          ];
+          set({ themes: merged, isInitialized: true });
 
-          // Resolve the init promise so any waiting setTheme calls can proceed
           if (initResolve) {
             initResolve();
             initResolve = null;
           }
 
-          // Check if current theme still exists
+          // If the user's current theme was uninstalled, switch to the default
+          // and tell them — never silently swap.
           const { currentThemeId, currentTokens } = get();
-          if (!themes.find((theme) => theme.id === currentThemeId)) {
-            // If we have cached tokens, trust them - theme data is valid even if not in list
-            if (!currentTokens || Object.keys(currentTokens).length === 0) {
-              const fallback = DEFAULT_THEME_DARK;
-              await get().setTheme(fallback);
+          if (!merged.find((theme) => theme.id === currentThemeId)) {
+            // Cached tokens still let the current theme render; trust them.
+            const hasCached = currentTokens && Object.keys(currentTokens).length > 0;
+            if (!hasCached) {
+              toast.info(
+                `Theme "${currentThemeId}" was uninstalled. Switched to Spirit Dark.`,
+              );
+              await get().setTheme(DEFAULT_THEME_DARK);
             }
           }
-        } catch {
-          const { currentThemeId, currentTokens } = get();
-          // Include current theme in fallback list if we have cached tokens for it
-          const fallbackThemes: ThemeSummary[] = [
-            { id: DEFAULT_THEME_DARK, name: 'Spirit Dark', mode: 'dark', source: 'builtin', builtIn: true, valid: true, error: null },
-            { id: DEFAULT_THEME_LIGHT, name: 'Spirit Light', mode: 'light', source: 'builtin', builtIn: true, valid: true, error: null },
-          ];
-          // Add current theme to list if it has cached tokens (so it won't be considered "missing")
-          if (currentTokens && Object.keys(currentTokens).length > 0 &&
-              !fallbackThemes.find(t => t.id === currentThemeId)) {
-            const mode: ThemeMode = currentThemeId.includes('-light') ? 'light' : 'dark';
-            fallbackThemes.push({
-              id: currentThemeId,
-              name: currentThemeId,
-              mode,
-              source: 'builtin', // bundled embedded theme
-              builtIn: true,
-              valid: true,
-              error: null,
-            });
-          }
-          set({
-            themes: fallbackThemes,
-            isInitialized: true,
-          });
-          // Resolve even on error so we don't block forever
+        } catch (err) {
+          logger.error('[themeStore] refreshThemes failed', err);
+          toast.error(
+            `Could not load themes from backend: ${err instanceof Error ? err.message : String(err)}`,
+          );
+          // Mark as initialized so callers don't block forever; existing
+          // `themes` state (at minimum the bundled themes from initial state)
+          // remains untouched — no manufactured catalog.
+          set({ isInitialized: true });
           if (initResolve) {
             initResolve();
             initResolve = null;
           }
+          throw err;
         }
       },
     }),
@@ -269,12 +284,18 @@ export const useThemeStore = create<ThemeState>()(
  */
 export async function subscribeThemesUpdated(): Promise<() => void> {
   return events.on<ThemeSummary[]>('themes_updated', (payload) => {
-    const themes = payload;
-    useThemeStore.setState({ themes });
+    const backendIds = new Set(payload.map((t) => t.id));
+    const merged: ThemeSummary[] = [
+      ...payload,
+      ...BUNDLED_THEMES.filter((t) => !backendIds.has(t.id)),
+    ];
+    useThemeStore.setState({ themes: merged });
     const state = useThemeStore.getState();
-    if (!themes.find((theme) => theme.id === state.currentThemeId)) {
-      const fallback = DEFAULT_THEME_DARK;
-      state.setTheme(fallback);
+    if (!merged.find((theme) => theme.id === state.currentThemeId)) {
+      toast.info(
+        `Theme "${state.currentThemeId}" was uninstalled. Switched to Spirit Dark.`,
+      );
+      void state.setTheme(DEFAULT_THEME_DARK);
     }
   });
 }

@@ -8,18 +8,24 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* https://*.spiritstream.io wss://*.spiritstream.io"
     />
-    <!-- STEP 1: Detect saved theme BEFORE any CSS loads -->
-    <!-- This guarantees data-theme is set before CSS parses - zero flash -->
+    <!-- STEP 1: Restore persisted theme + contrast BEFORE any CSS loads -->
+    <!--
+      Guarantees data-theme / data-theme-id / data-contrast are set before
+      CSS parses — zero flash for users with a custom theme or high contrast.
+      Theme and contrast are orthogonal axes; this script restores both
+      independently from their separate localStorage keys.
+    -->
     <script>
       (function() {
         var themeId = null;
         var mode = 'dark';
         var tokens = null;
+        var highContrast = false;
 
         try {
-          var stored = localStorage.getItem('spiritstream-theme');
-          if (stored) {
-            var parsed = JSON.parse(stored);
+          var storedTheme = localStorage.getItem('spiritstream-theme');
+          if (storedTheme) {
+            var parsed = JSON.parse(storedTheme);
             themeId = parsed.state && parsed.state.currentThemeId;
             tokens = parsed.state && parsed.state.currentTokens;
             if (themeId) {
@@ -27,19 +33,24 @@
               mode = themeId.includes('-light') ? 'light' : 'dark';
             }
           }
+          highContrast = localStorage.getItem('ss-high-contrast') === '1';
         } catch (e) {
-          // Silently fail - will use defaults
+          // localStorage genuinely unavailable (sandbox, private mode, etc.).
+          // Surface to console so bugs aren't silenced; the boot continues
+          // with safe defaults (dark + no contrast override).
+          console.error('[theme-init] failed to read localStorage', e);
         }
 
-        // Set defaults if nothing found
         if (!themeId) {
           themeId = 'spirit-dark';
           mode = 'dark';
         }
 
-        // Apply theme attributes
         document.documentElement.setAttribute('data-theme', mode);
         document.documentElement.setAttribute('data-theme-id', themeId);
+        if (highContrast) {
+          document.documentElement.setAttribute('data-contrast', 'high');
+        }
 
         // Apply cached tokens immediately if available (prevents flash for custom themes)
         if (tokens && typeof tokens === 'object' && Object.keys(tokens).length > 0) {
