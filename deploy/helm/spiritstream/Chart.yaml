@@ -1,0 +1,29 @@
+apiVersion: v2
+name: spiritstream
+description: |
+  SpiritStream — multi-output RTMP streaming for vulnerable creators.
+  Single-tenant, self-hosted. Caddy or a cluster-native ingress
+  controller (cert-manager) terminates TLS; the backend never sees
+  plaintext from the public internet.
+
+  Built for adult/sex-work creators, harassment-prone streamers,
+  trans/queer/journalist communities, new and disabled streamers.
+  Safety, audit-ability, and least-privilege are first-class.
+
+type: application
+version: 0.1.0
+appVersion: "1.2.1"
+
+keywords:
+  - rtmp
+  - streaming
+  - multistream
+  - self-hosted
+
+home: https://github.com/ScopeCreep-zip/SpiritStream
+sources:
+  - https://github.com/ScopeCreep-zip/SpiritStream
+
+maintainers:
+  - name: SpiritStream Contributors
+    url: https://github.com/ScopeCreep-zip/SpiritStream

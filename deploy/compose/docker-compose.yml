@@ -1,0 +1,178 @@
+# =============================================================================
+# SpiritStream Production Compose.
+#
+# Single-tenant self-hosted deployment. Caddy fronts SpiritStream with
+# automatic Let's Encrypt TLS; the backend never sees plaintext from the
+# public internet.
+#
+# REQUIRED environment variables (refuses to start otherwise):
+#
+#   SPIRITSTREAM_API_TOKEN   — operator-generated, ≥ 32 chars.
+#                              Generate with: `openssl rand -base64 32`
+#   SPIRITSTREAM_HOSTNAME    — public hostname Caddy obtains a cert for,
+#                              e.g. `spiritstream.example.com`.
+#                              Must be reachable on ports 80/443.
+#   SPIRITSTREAM_ACME_EMAIL  — Let's Encrypt account email for cert
+#                              expiry notifications.
+#
+# OPTIONAL:
+#   SPIRITSTREAM_THEMES_PATH — host path to mount as /themes (default ./themes).
+#   SPIRITSTREAM_UI_PATH     — host path to mount as /dist  (default ./dist).
+#
+# Usage:
+#   cd deploy/compose
+#   SPIRITSTREAM_API_TOKEN=$(openssl rand -base64 32) \
+#   SPIRITSTREAM_HOSTNAME=your.domain \
+#   SPIRITSTREAM_ACME_EMAIL=you@example.com \
+#     docker compose up -d
+# =============================================================================
+
+services:
+  # --------------------------------------------------------------------------
+  # SpiritStream backend — never exposed to the public internet directly.
+  # Caddy is the only ingress.
+  # --------------------------------------------------------------------------
+  spiritstream:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    image: spiritstream/server:latest
+    container_name: spiritstream-server
+    restart: unless-stopped
+
+    # No `ports:` — backend is reachable only from inside the
+    # `spiritstream-internal` network. Caddy proxies in.
+    expose:
+      - "8008"
+
+    environment:
+      # Bind inside the container; Caddy reaches us by service name.
+      - SPIRITSTREAM_HOST=0.0.0.0
+      - SPIRITSTREAM_PORT=8008
+
+      # Cloud-mode preconditions. The server refuses to start without
+      # both of these set.
+      - SPIRITSTREAM_DEPLOY_MODE=cloud
+      - SPIRITSTREAM_BEHIND_TLS_PROXY=1
+
+      # Cookie mode auto-detected as CrossOrigin under cloud deploy.
+      # Override here if the UI is served from the same host
+      # (SameOrigin would be tighter).
+      - SPIRITSTREAM_COOKIE_MODE=cross_origin
+
+      # Allowed origins for CORS + CSRF. Tighten to the actual UI
+      # host(s) — wildcards are not permitted.
+      - SPIRITSTREAM_CORS_ORIGINS=https://${SPIRITSTREAM_HOSTNAME}
+
+      # JSON-structured logs for downstream log shippers.
+      - SPIRITSTREAM_LOG_FORMAT=json
+
+      # Data directories (inside container).
+      - SPIRITSTREAM_DATA_DIR=/data
+      - SPIRITSTREAM_LOG_DIR=/data/logs
+      - SPIRITSTREAM_THEMES_DIR=/themes
+      - SPIRITSTREAM_UI_DIR=/dist
+
+      # Feature flags
+      - SPIRITSTREAM_UI_ENABLED=${SPIRITSTREAM_UI_ENABLED:-1}
+
+      # Strong API token — required in cloud mode (≥ 32 chars).
+      - SPIRITSTREAM_API_TOKEN=${SPIRITSTREAM_API_TOKEN:?must set SPIRITSTREAM_API_TOKEN}
+
+    volumes:
+      - spiritstream-data:/data
+      - spiritstream-logs:/data/logs
+      - ${SPIRITSTREAM_THEMES_PATH:-./themes}:/themes:ro
+      - ${SPIRITSTREAM_UI_PATH:-./dist}:/dist:ro
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8008/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Defence in depth on the container itself.
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+    networks:
+      - spiritstream-internal
+
+  # --------------------------------------------------------------------------
+  # Caddy reverse proxy — terminates TLS, redirects HTTP→HTTPS,
+  # forwards to spiritstream on the internal network.
+  # --------------------------------------------------------------------------
+  caddy:
+    image: caddy:2-alpine
+    container_name: spiritstream-caddy
+    restart: unless-stopped
+
+    ports:
+      - "80:80"
+      - "443:443"
+      # QUIC / HTTP/3 — Caddy speaks both automatically.
+      - "443:443/udp"
+
+    environment:
+      - SPIRITSTREAM_HOSTNAME=${SPIRITSTREAM_HOSTNAME:?must set SPIRITSTREAM_HOSTNAME}
+      - SPIRITSTREAM_ACME_EMAIL=${SPIRITSTREAM_ACME_EMAIL:?must set SPIRITSTREAM_ACME_EMAIL}
+
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data       # ACME certs + account keys
+      - caddy-config:/config
+
+    depends_on:
+      spiritstream:
+        condition: service_healthy
+
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+
+    networks:
+      - spiritstream-internal
+      - spiritstream-public
+
+volumes:
+  spiritstream-data:
+    name: spiritstream-data
+  spiritstream-logs:
+    name: spiritstream-logs
+  caddy-data:
+    name: spiritstream-caddy-data
+  caddy-config:
+    name: spiritstream-caddy-config
+
+networks:
+  # Backend ↔ Caddy only. SpiritStream has no direct internet exposure.
+  spiritstream-internal:
+    name: spiritstream-internal
+    internal: true
+  # Caddy ↔ public internet (for ACME challenges + user traffic).
+  spiritstream-public:
+    name: spiritstream-public

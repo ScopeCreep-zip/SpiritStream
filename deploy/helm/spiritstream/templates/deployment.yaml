@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "spiritstream.fullname" . }}
+  labels:
+    {{- include "spiritstream.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: Recreate   # SpiritStream is single-tenant + stateful; no rolling update.
+  selector:
+    matchLabels:
+      {{- include "spiritstream.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "spiritstream.selectorLabels" . | nindent 8 }}
+    spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: spiritstream
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8008
+              protocol: TCP
+          env:
+            - name: SPIRITSTREAM_HOST
+              value: "0.0.0.0"
+            - name: SPIRITSTREAM_PORT
+              value: "8008"
+            - name: SPIRITSTREAM_DEPLOY_MODE
+              value: "cloud"
+            {{- if .Values.behindTlsProxy }}
+            - name: SPIRITSTREAM_BEHIND_TLS_PROXY
+              value: "1"
+            {{- end }}
+            - name: SPIRITSTREAM_COOKIE_MODE
+              value: {{ .Values.cookieMode | quote }}
+            - name: SPIRITSTREAM_CORS_ORIGINS
+              value: {{ .Values.corsOrigins | quote }}
+            - name: SPIRITSTREAM_LOG_FORMAT
+              value: {{ .Values.logFormat | quote }}
+            - name: SPIRITSTREAM_DATA_DIR
+              value: "/data"
+            - name: SPIRITSTREAM_LOG_DIR
+              value: "/data/logs"
+            - name: SPIRITSTREAM_THEMES_DIR
+              value: "/themes"
+            - name: SPIRITSTREAM_UI_DIR
+              value: "/dist"
+            - name: SPIRITSTREAM_API_TOKEN
+              {{- if .Values.apiTokenSecretRef.name }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.apiTokenSecretRef.name | quote }}
+                  key: {{ .Values.apiTokenSecretRef.key | quote }}
+              {{- else if .Values.apiToken }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "spiritstream.fullname" . }}-token
+                  key: token
+              {{- else }}
+              {{- fail "set values.apiToken or values.apiTokenSecretRef — cloud mode refuses to start without a strong API token" -}}
+              {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: logs
+              mountPath: /data/logs
+            - name: tmp
+              mountPath: /tmp
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.liveness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readiness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: data
+          {{- if .Values.persistence.data.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "spiritstream.fullname" . }}-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: logs
+          {{- if .Values.persistence.logs.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "spiritstream.fullname" . }}-logs
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        # tmpfs for /tmp because readOnlyRootFilesystem is set.
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi

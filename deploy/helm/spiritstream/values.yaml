@@ -1,0 +1,156 @@
+# =============================================================================
+# SpiritStream Helm values.
+#
+# Defaults assume single-tenant deploy with cert-manager handling TLS
+# at the ingress. Tighten before going live: at minimum set the API
+# token via an external secret manager, not raw `apiToken` here.
+# =============================================================================
+
+image:
+  repository: spiritstream/server
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# Number of replicas. SpiritStream is single-tenant by design; the
+# extra replicas don't share state (file-backed profiles) so leave at 1
+# unless you've wired durable shared storage.
+replicaCount: 1
+
+# Public hostname the ingress serves. cert-manager / nginx-ingress
+# expects this in its TLS spec.
+hostname: spiritstream.example.com
+
+# Cloud-mode preconditions.
+# `apiToken` must be ≥ 32 characters; the server refuses to start
+# otherwise. For production, use `apiTokenSecretRef` instead so the
+# token comes from an external secret manager.
+apiToken: ""
+apiTokenSecretRef:
+  name: ""
+  key: token
+
+# When true, the Helm release sets SPIRITSTREAM_BEHIND_TLS_PROXY=1.
+# Set to false ONLY when running without any TLS-terminating front
+# (cluster-internal eval / dev). The server refuses to start in cloud
+# mode without this declaration.
+behindTlsProxy: true
+
+# CORS / CSRF origin allow-list. Tighten to the actual UI hostname(s).
+# Wildcards are not permitted.
+corsOrigins: "https://spiritstream.example.com"
+
+# Cookie attributes.
+#   same_origin   — UI served from the same host as the API
+#   cross_origin  — UI on a separate host (the default cloud shape)
+#   localhost_dev — never use in a cluster deploy
+cookieMode: cross_origin
+
+# Structured JSON logs for downstream collectors.
+logFormat: json
+
+# Persistent storage.
+persistence:
+  data:
+    enabled: true
+    size: 10Gi
+    storageClass: ""   # blank = cluster default
+  logs:
+    enabled: true
+    size: 5Gi
+    storageClass: ""
+
+# Resource requests / limits. Tune to your workload; defaults track
+# the docker-compose limits.
+resources:
+  limits:
+    cpu: "2"
+    memory: 1Gi
+  requests:
+    cpu: 500m
+    memory: 256Mi
+
+# Service shape. ClusterIP is enough — the ingress fronts the public
+# hostname. The HTTP port 8008 is intentionally never exposed
+# externally without TLS in front.
+service:
+  type: ClusterIP
+  port: 8008
+
+# Ingress (cert-manager + nginx-ingress is the assumed setup;
+# Caddy-on-cluster is fine too). Disable here if you front the service
+# with a sidecar Caddy from the compose layer instead.
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+  tls: true
+
+# Pod security context. Non-root, read-only-rootfs, no privilege
+# escalation, drop ALL capabilities.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  capabilities:
+    drop:
+      - ALL
+
+# NetworkPolicy egress allow-list. SpiritStream phones home to:
+#   * RTMP destinations (Twitch, YouTube, Trovo, Kick, Facebook,
+#     Stripchat, TikTok, custom).
+#   * OAuth providers for token refresh.
+#   * Chat platforms via WebSocket / IRC.
+#   * Let's Encrypt for ACME challenges (if not fronted by an external
+#     ingress that handles ACME itself).
+# Anything else is denied — no DNS exfiltration, no analytics calls.
+networkPolicy:
+  enabled: true
+  # Allow outbound to anything by default? Set false to lock down to
+  # the explicit egress rules below.
+  allowAllEgress: false
+  egress:
+    # DNS — required, no-op if you let it through allowAllEgress.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+    # HTTPS (OAuth, chat-platform APIs, ACME).
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+    # RTMP (1935) + RTMPS (443; covered above).
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 1935
+
+# Health probes — backed by /api/v1/health + /api/v1/ready.
+probes:
+  liveness:
+    path: /api/v1/health
+    initialDelaySeconds: 15
+    periodSeconds: 30
+  readiness:
+    path: /api/v1/ready
+    initialDelaySeconds: 5
+    periodSeconds: 10

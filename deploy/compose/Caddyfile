@@ -1,0 +1,54 @@
+# =============================================================================
+# Caddy reverse proxy for SpiritStream.
+#
+# Substituted at startup by the compose env-variable indirection:
+#   {$SPIRITSTREAM_HOSTNAME} → e.g. spiritstream.example.com
+#   {$SPIRITSTREAM_ACME_EMAIL} → Let's Encrypt account email
+#
+# Caddy auto-provisions a Let's Encrypt cert on first run, renews
+# automatically, and redirects HTTP→HTTPS. HTTP/2 + HTTP/3 are on by
+# default; no extra flags needed.
+# =============================================================================
+
+{
+    email {$SPIRITSTREAM_ACME_EMAIL}
+    # Set to staging while wiring up to avoid hitting Let's Encrypt rate
+    # limits. Remove this line for production.
+    # acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+{$SPIRITSTREAM_HOSTNAME} {
+    # WebSocket-aware reverse proxy. SpiritStream's `/api/v1/events`
+    # endpoint upgrades; the rest is plain HTTP.
+    reverse_proxy spiritstream:8008 {
+        # Forward client headers downstream so the backend logs
+        # something useful instead of the Caddy IP.
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        header_up Host {host}
+
+        # WebSocket upgrade handling is automatic in Caddy 2.x.
+    }
+
+    # Security headers. The backend already sets CSP — Caddy lets it
+    # pass through. The headers below are pure transport hygiene that
+    # doesn't conflict with the backend's policy.
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        # X-Frame-Options handled by the backend's CSP frame-ancestors.
+        -Server
+    }
+
+    # Structured access logs go to stdout so docker logs / journalctl
+    # surface them with the backend's own JSON output.
+    log {
+        output stdout
+        format json
+    }
+
+    # Encode responses (gzip + zstd).
+    encode zstd gzip
+}

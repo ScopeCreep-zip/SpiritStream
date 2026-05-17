@@ -26,7 +26,7 @@ docker compose down
 
 ```bash
 # Build the image
-docker build -t spiritstream/server -f docker/Dockerfile .
+docker build -t spiritstream/server -f deploy/docker/Dockerfile .
 
 # Run the container
 docker run -d \
@@ -132,22 +132,38 @@ docker run -d \
 ### Health Check
 
 ```bash
-curl http://localhost:8008/health
-# Response: {"ok":true}
+curl http://localhost:8008/api/v1/health
+# Response: {"status":"ok"}
 ```
 
-### Invoke Commands
+### Readiness
 
-All SpiritStream commands are available via the invoke endpoint:
+```bash
+curl http://localhost:8008/api/v1/ready
+# 200 + {"ready":true,...} when every subsystem is healthy.
+# 503 + {"ready":false,"failed":[...],"errors":[...]} otherwise.
+```
+
+### OpenAPI
+
+```bash
+curl http://localhost:8008/api/v1/openapi.json
+```
+
+The OpenAPI document describes every typed endpoint. `@hey-api/openapi-ts` consumes it to generate the typed `packages/api-client`.
+
+### Invoke Commands (transitional)
+
+While the rewrite progressively replaces each command with a typed REST handler, commands remain reachable through a single dispatch endpoint:
 
 ```bash
 # Without authentication
-curl -X POST http://localhost:8008/api/invoke/get_all_profiles \
+curl -X POST http://localhost:8008/api/v1/invoke/get_all_profiles \
   -H "Content-Type: application/json" \
   -d '{}'
 
 # With authentication
-curl -X POST http://localhost:8008/api/invoke/get_all_profiles \
+curl -X POST http://localhost:8008/api/v1/invoke/get_all_profiles \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your-token" \
   -d '{}'
@@ -155,14 +171,14 @@ curl -X POST http://localhost:8008/api/invoke/get_all_profiles \
 
 ### WebSocket Connection
 
-Connect to `/ws` for real-time events:
+Connect to `/api/v1/events` for real-time server-push events:
 
 ```javascript
 // Without authentication
-const ws = new WebSocket('ws://localhost:8008/ws');
+const ws = new WebSocket('ws://localhost:8008/api/v1/events');
 
 // With authentication
-const ws = new WebSocket('ws://localhost:8008/ws?token=your-token');
+const ws = new WebSocket('ws://localhost:8008/api/v1/events?token=your-token');
 
 ws.onmessage = (event) => {
   const data = JSON.parse(event.data);
@@ -175,13 +191,13 @@ ws.onmessage = (event) => {
 ### Build for Local Architecture
 
 ```bash
-docker build -t spiritstream/server -f docker/Dockerfile .
+docker build -t spiritstream/server -f deploy/docker/Dockerfile .
 ```
 
 ### Build with Specific Tag
 
 ```bash
-docker build -t spiritstream/server:v0.1.0 -f docker/Dockerfile .
+docker build -t spiritstream/server:v0.1.0 -f deploy/docker/Dockerfile .
 ```
 
 ### Multi-Platform Build (requires Docker Buildx)
@@ -190,7 +206,7 @@ docker build -t spiritstream/server:v0.1.0 -f docker/Dockerfile .
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
   -t spiritstream/server:latest \
-  -f docker/Dockerfile \
+  -f deploy/docker/Dockerfile \
   --push .
 ```
 
