@@ -21,10 +21,17 @@
     "noFallthroughCasesInSwitch": true,
 
     /* Paths */
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
-    }
+    },
+
+    /* TS 6.0.3 language-service (what VS Code runs) emits a suggestion-level
+       deprecation on `paths` because TS treats it as triggering the implicit
+       baseUrl fallback that's removed in 7.0. The batch CLI compiler at the
+       same TS version doesn't surface this diagnostic — `tsc -p tsconfig.json
+       --noEmit` exits 0 here. Silence the editor warning until we migrate
+       off the implicit-baseUrl model entirely (TS 7.0 work). */
+    "ignoreDeprecations": "6.0"
   },
   "include": ["src"],
   "references": [{ "path": "./tsconfig.node.json" }]

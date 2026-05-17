@@ -8,7 +8,14 @@ export interface MainContentProps {
 export function MainContent({ children, className }: MainContentProps) {
   return (
     <main
-      className={cn('flex-1 flex flex-col min-h-screen ml-[260px]', className)}
+      id="main-content"
+      // `ms-[260px]` is the logical-property form of
+      // `ml-[260px]`. Under RTL the sidebar lives on the right and
+      // the main column needs margin-inline-start (which becomes
+      // margin-right). Using the logical property means the layout
+      // mirrors correctly without per-direction CSS branches.
+      className={cn('flex-1 flex flex-col min-h-screen ms-[260px]', className)}
+      tabIndex={-1}
     >
       {children}
     </main>

@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
-import { events } from '@/lib/backend';
+import { events } from '@spiritstream/api-client';
 import { logger } from '@/lib/logger';
 import { useChatStore } from '@/stores/chatStore';
-import type { ChatMessage } from '@/types/chat';
+import type { ChatMessage } from '@spiritstream/types';
 import { CHAT_MESSAGE_EVENT, CHAT_OVERLAY_SETTINGS_EVENT } from '@/lib/chatEvents';
 
 type UnlistenFn = () => void;

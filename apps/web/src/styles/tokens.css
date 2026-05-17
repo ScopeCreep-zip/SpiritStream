@@ -241,6 +241,61 @@
   --letter-spacing-tight: -0.025em;
   --letter-spacing-normal: 0;
   --letter-spacing-wide: 0.025em;
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     Z-INDEX LADDER
+     Stacking layers, lowest to highest. Inline z-index values in
+     components are smells — use these tokens via `style="z-index: var(...)"`
+     or Tailwind's `[z:var(--z-modal)]` arbitrary-value syntax.
+     ───────────────────────────────────────────────────────────────────────── */
+  --z-base: 0;
+  --z-sidebar: 100;
+  --z-dropdown: 500;
+  --z-modal-overlay: 999;
+  --z-modal: 1000;
+  --z-popover: 1100;
+  --z-toast: 9000;
+  --z-emergency: 10000;
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     TRANSITION DURATIONS
+     Standardised motion timings. Magic-number durations in components
+     should reach for these tokens.
+     ───────────────────────────────────────────────────────────────────────── */
+  --transition-instant: 0ms;
+  --transition-fast: 150ms;
+  --transition-normal: 200ms;
+  --transition-slow: 300ms;
+  --transition-slower: 500ms;
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     PLATFORM COLORS
+     Each streaming platform's brand colors, declared once so chat panels
+     and platform badges can reference them by name instead of hard-coding
+     hex literals. `--platform-X-bg` is the background color, `--platform-X-fg`
+     is the legible foreground for text on that background (WCAG AA).
+     Replaces `CHAT_PLATFORM_STYLES` in `apps/web/src/components/chat/ChatList.tsx`.
+     ───────────────────────────────────────────────────────────────────────── */
+  --platform-twitch-bg: #9146FF;
+  --platform-twitch-fg: #FFFFFF;
+  --platform-youtube-bg: #FF0000;
+  --platform-youtube-fg: #FFFFFF;
+  --platform-trovo-bg: #1FA01F;
+  --platform-trovo-fg: #FFFFFF;
+  --platform-kick-bg: #53FC18;
+  --platform-kick-fg: #000000;
+  --platform-facebook-bg: #1877F2;
+  --platform-facebook-fg: #FFFFFF;
+  --platform-tiktok-bg: #000000;
+  --platform-tiktok-fg: #FFFFFF;
+  --platform-stripchat-bg: #FF6B35;
+  --platform-stripchat-fg: #FFFFFF;
+  --platform-rumble-bg: #85C742;
+  --platform-rumble-fg: #FFFFFF;
+  --platform-discord-bg: #5865F2;
+  --platform-discord-fg: #FFFFFF;
+  --platform-default-bg: var(--neutral-500);
+  --platform-default-fg: #FFFFFF;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

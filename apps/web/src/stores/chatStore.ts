@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { ChatMessage } from '@/types/chat';
+import type { ChatMessage } from '@spiritstream/types';
 
 const MAX_MESSAGES = 500;
 

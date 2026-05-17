@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { api, events } from '@/lib/backend';
+import { api } from '@/lib/client';
+import { events } from '@spiritstream/api-client';
 import { logger } from '@/lib/logger';
 import { useLogStore } from '@/stores/logStore';
 import { createLogEntry, mapLogLevelFromNumber, parseLogLine } from '@/lib/logging';

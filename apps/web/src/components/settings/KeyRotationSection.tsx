@@ -1,31 +1,35 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RotateCw } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/Button';
 import { KeyRotationModal } from '@/components/modals/KeyRotationModal';
 import { toast } from '@/hooks/useToast';
-import { api } from '@/lib/backend';
-import type { RotationReport } from '@/types/api';
+import { SETTINGS_QUERY_KEY } from '@/hooks/useSettings';
+import { api } from '@/lib/client';
+import { formatDateTime } from '@/lib/locale';
+import { useProfileStore } from '@/stores/profileStore';
+import type { RotationReport } from '@spiritstream/types';
 
 interface KeyRotationSectionProps {
   encryptStreamKeys: boolean;
   disabled?: boolean;
 }
 
+// Delegate to the locale-aware helper so the timestamp
+// honours the user's active language for date / time separators.
 const formatRotationTimestamp = (timestamp: string) => {
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) {
-    return timestamp;
-  }
-  return date.toLocaleString();
+  return formatDateTime(timestamp) || timestamp;
 };
 
 export function KeyRotationSection({ encryptStreamKeys, disabled = false }: KeyRotationSectionProps) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
   const [rotationError, setRotationError] = useState<string | null>(null);
   const [lastRotated, setLastRotated] = useState<string | null>(null);
+  const [encryptedProfiles, setEncryptedProfiles] = useState<string[]>([]);
 
   const lastRotatedLabel = useMemo(() => {
     if (!lastRotated) {
@@ -34,8 +38,18 @@ export function KeyRotationSection({ encryptStreamKeys, disabled = false }: KeyR
     return formatRotationTimestamp(lastRotated);
   }, [lastRotated, t]);
 
-  const handleOpen = () => {
+  const handleOpen = async () => {
     setRotationError(null);
+    try {
+      const summaries = await api.profile.getSummaries();
+      setEncryptedProfiles(
+        summaries.filter((s) => s.isEncrypted).map((s) => s.name).sort(),
+      );
+    } catch {
+      // Best-effort pre-flight; rotation will still refuse server-side if a
+      // password is missing, surfacing the structured error in the modal.
+      setEncryptedProfiles([]);
+    }
     setConfirmOpen(true);
   };
 
@@ -45,7 +59,7 @@ export function KeyRotationSection({ encryptStreamKeys, disabled = false }: KeyR
     setRotationError(null);
   };
 
-  const handleConfirm = async () => {
+  const handleConfirm = async (passwords: Record<string, string>) => {
     setRotationError(null);
     setIsRotating(true);
 
@@ -66,7 +80,7 @@ export function KeyRotationSection({ encryptStreamKeys, disabled = false }: KeyR
         return;
       }
 
-      const report: RotationReport = await api.settings.rotateMachineKey();
+      const report: RotationReport = await api.settings.rotateMachineKey(passwords);
       setLastRotated(report.timestamp);
       toast.success(
         t('toast.keyRotationSuccess', {
@@ -74,6 +88,10 @@ export function KeyRotationSection({ encryptStreamKeys, disabled = false }: KeyR
           keys: report.keysReencrypted,
         })
       );
+      // Settings depends on server-decrypted state; profile catalog needs to
+      // re-fetch because the active profile cache was invalidated server-side.
+      queryClient.invalidateQueries({ queryKey: SETTINGS_QUERY_KEY });
+      void useProfileStore.getState().loadProfiles();
       setConfirmOpen(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -110,6 +128,7 @@ export function KeyRotationSection({ encryptStreamKeys, disabled = false }: KeyR
         open={confirmOpen}
         onClose={handleClose}
         onConfirm={handleConfirm}
+        encryptedProfiles={encryptedProfiles}
         inProgress={isRotating}
         error={rotationError}
       />

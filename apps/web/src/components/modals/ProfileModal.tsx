@@ -7,9 +7,12 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Toggle } from '@/components/ui/Toggle';
 import { useProfileStore } from '@/stores/profileStore';
-import { api } from '@/lib/backend';
-import type { Profile, RtmpInput } from '@/types/profile';
-import { createDefaultProfile } from '@/types/profile';
+import { api } from '@/lib/client';
+import { PasswordInput, useFormState, useFormValidation } from '@spiritstream/ui';
+import type { ValidationRule } from '@spiritstream/ui';
+import type { Profile, RtmpInput } from '@spiritstream/types';
+import { createDefaultProfile } from '@/lib/profile-helpers';
+import { clientConfig } from '@/lib/constants';
 
 export interface ProfileModalProps {
   open: boolean;
@@ -44,18 +47,46 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
   const { t } = useTranslation();
   const tDynamic = t as (key: string, options?: { defaultValue?: string }) => string;
   const { updateProfile, saveProfile, current } = useProfileStore();
-  const [formData, setFormData] = useState<FormData>(defaultFormData);
-  const [errors, setErrors] = useState<Partial<FormData>>({});
+  const form = useFormState<FormData>(defaultFormData);
+  const formData = form.values;
   const [portConflictMessage, setPortConflictMessage] = useState<string | undefined>();
   const [portConflictOpen, setPortConflictOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  // Validation rules via useFormValidation. UI-state checks only —
+  // semantic validation (port conflicts, weak-password policy) stays on
+  // the backend and surfaces via `CoreError::ValidationFailed`.
+  const rules: Partial<Record<keyof FormData, ValidationRule<FormData>>> = {
+    name: (v) => (!v.name.trim() ? t('validation.profileNameRequired') : null),
+    bindAddress: (v) => (!v.bindAddress.trim() ? t('validation.bindAddressRequired') : null),
+    port: (v) => {
+      const p = parseInt(v.port);
+      return isNaN(p) || p < 1 || p > 65535 ? t('validation.portRange') : null;
+    },
+    application: (v) => (!v.application.trim() ? t('validation.applicationRequired') : null),
+    password: (v) => {
+      if (!v.usePassword) return null;
+      if (!v.password) return t('validation.passwordRequired');
+      if (v.password.length < clientConfig.PASSWORD_MIN_LENGTH) {
+        return t('validation.passwordMinLength', { min: clientConfig.PASSWORD_MIN_LENGTH });
+      }
+      return null;
+    },
+    confirmPassword: (v) => {
+      if (!v.usePassword) return null;
+      return v.password !== v.confirmPassword ? t('validation.passwordsDoNotMatch') : null;
+    },
+  };
+
+  const validation = useFormValidation<FormData>(formData, rules);
+  const { errors, validate, clear: clearErrors } = validation;
+
   // Initialize form data when modal opens or profile changes
   useEffect(() => {
     if (open) {
       if (mode === 'edit' && profile) {
-        setFormData({
+        form.reset({
           name: profile.name,
           bindAddress: profile.input.bindAddress,
           port: String(profile.input.port),
@@ -65,52 +96,14 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
           confirmPassword: '',
         });
       } else {
-        setFormData(defaultFormData);
+        form.reset(defaultFormData);
       }
-      setErrors({});
+      clearErrors();
       setPortConflictMessage(undefined);
       setPortConflictOpen(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, mode, profile]);
-
-  const validate = (): boolean => {
-    const newErrors: Partial<FormData> = {};
-
-    if (!formData.name.trim()) {
-      newErrors.name = t('validation.profileNameRequired');
-    }
-
-    // Validate bind address
-    if (!formData.bindAddress.trim()) {
-      newErrors.bindAddress = t('validation.bindAddressRequired');
-    }
-
-    // Validate port
-    const port = parseInt(formData.port);
-    if (isNaN(port) || port < 1 || port > 65535) {
-      newErrors.port = t('validation.portRange');
-    }
-
-    // Validate application name
-    if (!formData.application.trim()) {
-      newErrors.application = t('validation.applicationRequired');
-    }
-
-    // Validate password when protection is enabled
-    if (formData.usePassword) {
-      if (!formData.password) {
-        newErrors.password = t('validation.passwordRequired');
-      } else if (formData.password.length < 8) {
-        newErrors.password = t('validation.passwordMinLength');
-      }
-      if (formData.password !== formData.confirmPassword) {
-        newErrors.confirmPassword = t('validation.passwordsDoNotMatch');
-      }
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
 
   // Validate port conflict with other profiles (Story 2.2)
   const validatePortConflict = async (): Promise<{
@@ -175,8 +168,14 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
     onClose();
   };
 
+  // Server-side errors (port conflict, save failure) surface via toast/conflict
+  // modal rather than the per-field rule map — we use a small bypass state
+  // for the "save returned an error string" case so the user still sees it.
+  const [serverError, setServerError] = useState<string | undefined>();
+
   const handleSave = async (skipPortCheck: boolean = false) => {
     if (!validate()) return;
+    setServerError(undefined);
 
     setSaving(true);
     try {
@@ -184,7 +183,7 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
         // Validate port conflict before saving (Story 2.2)
         const { conflictMessage, errorMessage } = await validatePortConflict();
         if (errorMessage) {
-          setErrors((prev) => ({ ...prev, port: errorMessage }));
+          setServerError(errorMessage);
           return;
         }
         if (conflictMessage) {
@@ -196,7 +195,7 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
 
       await persistProfile();
     } catch (error) {
-      setErrors({ name: String(error) });
+      setServerError(String(error));
     } finally {
       setSaving(false);
     }
@@ -204,15 +203,12 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
 
   const handleChange =
     (field: keyof FormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-      setFormData((prev) => ({ ...prev, [field]: e.target.value }));
-      // Clear error when user starts typing
-      if (errors[field]) {
-        setErrors((prev) => ({ ...prev, [field]: undefined }));
-      }
+      form.set(field, e.target.value as FormData[typeof field]);
       if ((field === 'bindAddress' || field === 'port') && portConflictMessage) {
         setPortConflictMessage(undefined);
         setPortConflictOpen(false);
       }
+      if (field === 'port' && serverError) setServerError(undefined);
     };
 
   const title = mode === 'create' ? t('modals.createNewProfile') : t('modals.editProfile');
@@ -239,6 +235,11 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
       }
     >
       <div className="flex flex-col gap-4">
+        {serverError && (
+          <div className="p-3 rounded-lg bg-error-subtle border border-error-border text-error-text text-sm">
+            {serverError}
+          </div>
+        )}
         <Input
           label={t('modals.profileName')}
           placeholder={t('modals.profileNamePlaceholder')}
@@ -302,14 +303,16 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
               <Toggle
                 checked={formData.usePassword}
                 onChange={(checked) => {
-                  setFormData(prev => ({
-                    ...prev,
+                  form.merge({
                     usePassword: checked,
-                    password: checked ? prev.password : '',
-                    confirmPassword: checked ? prev.confirmPassword : ''
-                  }));
+                    password: checked ? formData.password : '',
+                    confirmPassword: checked ? formData.confirmPassword : '',
+                  });
                   if (!checked) {
-                    setErrors(prev => ({ ...prev, password: undefined, confirmPassword: undefined }));
+                    // Re-running validate after merge would also re-display
+                    // errors for other untouched fields; instead let the
+                    // next submit refresh them.
+                    clearErrors();
                   }
                 }}
               />
@@ -317,38 +320,37 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
 
             {formData.usePassword && (
               <div className="flex flex-col gap-3">
-                <div className="relative">
-                  <Input
-                    label={t('modals.password.password')}
-                    type={showPassword ? 'text' : 'password'}
-                    value={formData.password}
-                    onChange={handleChange('password')}
-                    error={errors.password}
-                    placeholder={t('modals.enterStrongPassword')}
-                    autoComplete="new-password"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-[34px] bg-transparent border-none cursor-pointer p-1 text-text-tertiary hover:text-text-primary transition-colors"
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
+                <PasswordInput
+                  label={t('modals.password.password')}
+                  value={formData.password}
+                  onChange={handleChange('password')}
+                  error={errors.password}
+                  placeholder={t('modals.enterStrongPassword')}
+                  autoComplete="new-password"
+                  visible={showPassword}
+                  onVisibilityChange={setShowPassword}
+                  renderToggleIcon={(visible) =>
+                    visible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />
+                  }
+                />
 
-                <Input
+                <PasswordInput
                   label={t('modals.confirmPassword')}
-                  type={showPassword ? 'text' : 'password'}
                   value={formData.confirmPassword}
                   onChange={handleChange('confirmPassword')}
                   error={errors.confirmPassword}
                   placeholder={t('modals.confirmYourPassword')}
                   autoComplete="new-password"
+                  visible={showPassword}
+                  onVisibilityChange={setShowPassword}
+                  renderToggleIcon={(visible) =>
+                    visible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />
+                  }
                 />
 
                 <div className="text-xs text-text-tertiary">
                   <p className="font-medium mb-1">{t('modals.passwordRequirements')}:</p>
-                  <ul className="m-0 pl-4">
+                  <ul className="m-0 ps-4">
                     <li>{t('modals.passwordReq8Chars')}</li>
                     <li>{t('modals.passwordReqNoRecovery')}</li>
                   </ul>

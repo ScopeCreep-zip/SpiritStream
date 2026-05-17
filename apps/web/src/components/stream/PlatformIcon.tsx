@@ -1,5 +1,6 @@
 import { cn } from '@/lib/cn';
-import { type Platform, PLATFORMS } from '@/types/profile';
+import type { Platform } from '@spiritstream/types';
+import { PLATFORMS } from '@/lib/profile-helpers';
 
 export interface PlatformIconProps {
   platform: Platform;

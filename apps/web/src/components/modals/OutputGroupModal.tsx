@@ -6,10 +6,13 @@ import { Select, SelectOption } from '@/components/ui/Select';
 import { Button } from '@/components/ui/Button';
 import { Toggle } from '@/components/ui/Toggle';
 import { useProfileStore } from '@/stores/profileStore';
-import { api } from '@/lib/backend';
+import { api } from '@/lib/client';
 import { logger } from '@/lib/logger';
-import type { OutputGroup, VideoSettings, AudioSettings, ContainerSettings } from '@/types/profile';
+import { clientConfig } from '@/lib/constants';
+import type { OutputGroup, VideoSettings, AudioSettings, ContainerSettings } from '@spiritstream/types';
 import type { Encoders } from '@/types/stream';
+import { useFormState, useFormValidation } from '@spiritstream/ui';
+import type { ValidationRule } from '@spiritstream/ui';
 
 export interface OutputGroupModalProps {
   open: boolean;
@@ -18,23 +21,9 @@ export interface OutputGroupModalProps {
   group?: OutputGroup;
 }
 
-// Resolution option values (labels added with translation in component)
-const RESOLUTION_VALUES = ['1920x1080', '1280x720', '2560x1440', '3840x2160', '854x480'];
-
-// Frame rate option values
-const FPS_VALUES = ['60', '30', '24', '25', '50'];
-
-// Audio bitrate option values (with 'k' suffix for new structure)
-const AUDIO_BITRATE_VALUES = ['320k', '256k', '192k', '160k', '128k', '96k', '64k'];
-
-// Audio channels options
-const AUDIO_CHANNELS_VALUES = ['1', '2', '6', '8'];
-
-// Audio sample rate options
-const AUDIO_SAMPLE_RATE_VALUES = ['48000', '44100', '32000'];
-
-// Container format options
-const CONTAINER_FORMAT_VALUES = ['flv', 'mpegts', 'mp4'];
+// Encoder option values are server-tuned and hydrated at app start from
+// `GET /api/v1/system/encoders/presets`. See `lib/encoderPresets.ts`.
+import { encoderPresets, getPresetValues, getDefaultPreset } from '@/lib/encoderPresets';
 
 interface FormData {
   name: string;
@@ -56,58 +45,10 @@ interface FormData {
   containerFormat: string;
 }
 
-// Preset option values
-const PRESET_VALUES = [
-  'ultrafast',
-  'superfast',
-  'veryfast',
-  'faster',
-  'fast',
-  'medium',
-  'slow',
-  'slower',
-  'veryslow',
-];
-
-const NVENC_PRESET_VALUES = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'];
-
-const AMF_PRESET_VALUES = ['quality', 'balanced', 'speed'];
-
 const ENCODER_DEFAULT_LABELS: Record<string, string> = {
   h264_vaapi: 'VAAPI (Linux)',
   hevc_vaapi: 'VAAPI HEVC (Linux)',
   av1_vaapi: 'VAAPI AV1 (Linux)',
-};
-
-// Profile option values
-const PROFILE_VALUES = ['baseline', 'main', 'high'];
-
-const getPresetValues = (codec: string): string[] => {
-  const normalized = codec.toLowerCase();
-  if (normalized.includes('nvenc')) {
-    return NVENC_PRESET_VALUES;
-  }
-  if (normalized === 'libx264' || normalized === 'libx265') {
-    return PRESET_VALUES;
-  }
-  if (normalized.includes('amf')) {
-    return AMF_PRESET_VALUES;
-  }
-  return [];
-};
-
-const getDefaultPreset = (codec: string, presetValues: string[]): string => {
-  const normalized = codec.toLowerCase();
-  if (normalized.includes('nvenc')) {
-    return 'p4';
-  }
-  if (normalized.includes('amf')) {
-    return 'balanced';
-  }
-  if (presetValues.includes('veryfast')) {
-    return 'veryfast';
-  }
-  return presetValues[0] || '';
 };
 
 const defaultFormData: FormData = {
@@ -130,9 +71,10 @@ const defaultFormData: FormData = {
 export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModalProps) {
   const { t } = useTranslation();
   const { addOutputGroup, updateOutputGroup } = useProfileStore();
-  const [formData, setFormData] = useState<FormData>(defaultFormData);
-  const [errors, setErrors] = useState<Partial<FormData>>({});
+  const form = useFormState<FormData>(defaultFormData);
+  const formData = form.values;
   const [saving, setSaving] = useState(false);
+  const [serverError, setServerError] = useState<string | undefined>();
   const [encoders, setEncoders] = useState<Encoders>({ video: ['libx264'], audio: ['aac'] });
   const [loadingEncoders, setLoadingEncoders] = useState(false);
 
@@ -156,11 +98,10 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
           setEncoders(enc);
           // If no encoder set yet, use first available
           if (mode === 'create' && enc.video.length > 0) {
-            setFormData((prev) => ({
-              ...prev,
+            form.merge({
               videoCodec: enc.video[0],
               audioCodec: enc.audio[0] || 'aac',
-            }));
+            });
           }
         })
         .catch((err) => {
@@ -181,7 +122,7 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
         // Build resolution string from width x height
         const resolution = `${group.video.width}x${group.video.height}`;
 
-        setFormData({
+        form.reset({
           name: group.name || '',
           generatePts: group.generatePts !== false, // Default to true if undefined
           videoCodec: group.video.codec,
@@ -200,10 +141,12 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
           containerFormat: group.container.format,
         });
       } else {
-        setFormData(defaultFormData);
+        form.reset(defaultFormData);
       }
-      setErrors({});
+      clearErrors();
+      setServerError(undefined);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, mode, group]);
 
   // Create encoder options from loaded encoders with translations
@@ -241,7 +184,7 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
   // Create translated options arrays (memoized to avoid re-creating on every render)
   const resolutionOptions: SelectOption[] = useMemo(
     () =>
-      RESOLUTION_VALUES.map((value) => ({
+      encoderPresets.RESOLUTION_VALUES.map((value) => ({
         value,
         label: tDynamic(`encoder.resolutions.${value}`, { defaultValue: value }),
       })),
@@ -250,7 +193,7 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
 
   const fpsOptions: SelectOption[] = useMemo(
     () =>
-      FPS_VALUES.map((value) => ({
+      encoderPresets.FPS_VALUES.map((value) => ({
         value,
         label: tDynamic(`encoder.frameRates.${value}`, { defaultValue: `${value} fps` }),
       })),
@@ -259,7 +202,7 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
 
   const audioBitrateOptions: SelectOption[] = useMemo(
     () =>
-      AUDIO_BITRATE_VALUES.map((value) => ({
+      encoderPresets.AUDIO_BITRATE_VALUES.map((value) => ({
         value,
         label: tDynamic(`audio.bitrates.${value}`, { defaultValue: value }),
       })),
@@ -268,7 +211,7 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
 
   const audioChannelsOptions: SelectOption[] = useMemo(
     () =>
-      AUDIO_CHANNELS_VALUES.map((value) => {
+      encoderPresets.AUDIO_CHANNELS_VALUES.map((value) => {
         if (value === '1') {
           return {
             value,
@@ -294,7 +237,7 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
 
   const audioSampleRateOptions: SelectOption[] = useMemo(
     () =>
-      AUDIO_SAMPLE_RATE_VALUES.map((value) => {
+      encoderPresets.AUDIO_SAMPLE_RATE_VALUES.map((value) => {
         const khz = parseInt(value, 10) / 1000;
         return {
           value,
@@ -306,7 +249,7 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
 
   const containerFormatOptions: SelectOption[] = useMemo(
     () =>
-      CONTAINER_FORMAT_VALUES.map((value) => ({
+      encoderPresets.CONTAINER_FORMAT_VALUES.map((value) => ({
         value,
         label: value.toUpperCase(),
       })),
@@ -328,54 +271,62 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
 
   const profileOptions: SelectOption[] = useMemo(
     () =>
-      PROFILE_VALUES.map((value) => ({
+      encoderPresets.H264_PROFILE_VALUES.map((value) => ({
         value,
         label: value.charAt(0).toUpperCase() + value.slice(1),
       })),
     []
   );
 
-  const validate = (): boolean => {
-    const newErrors: Partial<FormData> = {};
-
-    if (!formData.name.trim()) {
-      newErrors.name = t('validation.outputGroupNameRequired');
-    }
-
-    const bitrate = parseInt(formData.videoBitrate);
-    if (isNaN(bitrate) || bitrate < 500 || bitrate > 50000) {
-      newErrors.videoBitrate = t('validation.bitrateRange');
-    }
-
-    if (formData.keyframeIntervalSeconds.trim()) {
-      const interval = Number(formData.keyframeIntervalSeconds);
-      if (!Number.isFinite(interval) || interval <= 0 || !Number.isInteger(interval)) {
-        newErrors.keyframeIntervalSeconds = tDynamic('errors.invalidInput', {
-          defaultValue: 'Invalid input',
-        });
+  const rules: Partial<Record<keyof FormData, ValidationRule<FormData>>> = {
+    name: (v) => (!v.name.trim() ? t('validation.outputGroupNameRequired') : null),
+    // Bounds come from `GET /api/v1/system/client-config` —
+    // `StreamService::validate_config` enforces the same range on save.
+    // The check here only short-circuits the network roundtrip with an
+    // inline error message; the backend always re-validates.
+    videoBitrate: (v) => {
+      const bitrate = parseInt(v.videoBitrate);
+      if (
+        isNaN(bitrate)
+        || bitrate < clientConfig.BITRATE_MIN
+        || bitrate > clientConfig.BITRATE_MAX
+      ) {
+        return t('validation.bitrateRange');
       }
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+      return null;
+    },
+    keyframeIntervalSeconds: (v) => {
+      if (!v.keyframeIntervalSeconds.trim()) return null;
+      const interval = Number(v.keyframeIntervalSeconds);
+      if (
+        !Number.isFinite(interval)
+        || !Number.isInteger(interval)
+        || interval < clientConfig.KEYFRAME_MIN
+        || interval > clientConfig.KEYFRAME_MAX
+      ) {
+        return tDynamic('errors.invalidInput', { defaultValue: 'Invalid input' });
+      }
+      return null;
+    },
   };
+  const { errors, validate, clear: clearErrors } = useFormValidation<FormData>(formData, rules);
 
   useEffect(() => {
     if (!presetSupported) {
-      if (formData.preset) {
-        setFormData((prev) => ({ ...prev, preset: '' }));
-      }
+      if (formData.preset) form.set('preset', '');
       return;
     }
 
     if (!presetValues.includes(formData.preset)) {
       const nextPreset = getDefaultPreset(formData.videoCodec, presetValues);
-      setFormData((prev) => ({ ...prev, preset: nextPreset }));
+      form.set('preset', nextPreset);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presetSupported, presetValues, formData.preset, formData.videoCodec]);
 
   const handleSave = async () => {
     if (!validate()) return;
+    setServerError(undefined);
 
     setSaving(true);
     try {
@@ -389,11 +340,11 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
         height,
         fps: parseInt(formData.fps),
         bitrate: `${formData.videoBitrate}k`,
-        preset: presetSupported && formData.preset ? formData.preset : undefined,
-        profile: formData.profile,
+        preset: presetSupported && formData.preset ? formData.preset : null,
+        profile: formData.profile || null,
         keyframeIntervalSeconds: formData.keyframeIntervalSeconds.trim()
           ? Number(formData.keyframeIntervalSeconds)
-          : undefined,
+          : null,
       };
 
       // Build nested audio settings
@@ -412,6 +363,7 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
       const groupData: OutputGroup = {
         id: mode === 'edit' && group ? group.id : crypto.randomUUID(),
         name: formData.name,
+        isDefault: mode === 'edit' && group ? group.isDefault : false,
         generatePts: formData.generatePts,
         video,
         audio,
@@ -427,7 +379,7 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
       // Note: saveProfile() is called internally by the store functions
       onClose();
     } catch (error) {
-      setErrors({ name: String(error) });
+      setServerError(String(error));
     } finally {
       setSaving(false);
     }
@@ -435,11 +387,9 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
 
   const handleChange = useCallback(
     (field: keyof FormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-      setFormData((prev) => ({ ...prev, [field]: e.target.value }));
-      // Clear error when user starts typing
-      setErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev));
+      form.set(field, e.target.value as FormData[typeof field]);
     },
-    []
+    [form]
   );
 
   const title = mode === 'create' ? t('modals.createOutputGroup') : t('modals.editOutputGroup');
@@ -480,6 +430,12 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
           </div>
         )}
 
+        {serverError && (
+          <div className="p-3 rounded-lg bg-error-subtle border border-error-border text-error-text text-sm">
+            {serverError}
+          </div>
+        )}
+
         <Input
           label={t('modals.outputGroupName')}
           placeholder={t('modals.outputGroupNamePlaceholder')}
@@ -492,7 +448,7 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
         <div className="p-3 bg-bg-muted rounded-lg">
           <Toggle
             checked={formData.generatePts}
-            onChange={(checked) => setFormData((prev) => ({ ...prev, generatePts: checked }))}
+            onChange={(checked) => form.set('generatePts', checked)}
             label={t('encoder.generatePts')}
             description={t('encoder.generatePtsDescription')}
           />

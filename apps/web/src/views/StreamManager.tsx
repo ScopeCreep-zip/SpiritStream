@@ -14,8 +14,9 @@ import { useStreamStore } from '@/stores/streamStore';
 import { formatUptime, formatBitrate } from '@/hooks/useStreamStats';
 import { toast } from '@/hooks/useToast';
 import type { View } from '@/App';
-import type { OutputGroup as OutputGroupType, StreamTarget } from '@/types/profile';
-import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValidation';
+import type { OutputGroup as OutputGroupType, StreamTarget } from '@spiritstream/types';
+import { api } from '@/lib/client';
+import { displayValidationError } from '@/lib/validationToast';
 import { logger } from '@/lib/logger';
 
 interface StreamManagerProps {
@@ -71,20 +72,15 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
     setIsValidating(true);
 
     try {
-      // Run comprehensive validation (including FFmpeg check)
-      const result = await validateStreamConfig(current, {
-        checkFfmpeg: true,
-        checkEnabledTargetsOnly: true,
-        enabledTargetIds: enabledTargets,
-      });
-
-      if (!result.valid) {
-        displayValidationIssues(result.issues, toast);
+      // Backend is authoritative: it validates the same shape during start.
+      // This call is decorative live feedback for the user before we kick FFmpeg.
+      try {
+        await api.stream.validate(current);
+      } catch (validationErr) {
+        displayValidationError(validationErr, toast);
         return;
       }
 
-      // Validation passed, start streaming
-      // Build incoming URL from structured input
       const incomingUrl = `rtmp://${current.input.bindAddress}:${current.input.port}/${current.input.application}`;
       await startAllGroups(current.outputGroups, incomingUrl);
       toast.success(t('toast.streamStarted'));
@@ -297,7 +293,7 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
               <Upload className="w-4 h-4 text-text-tertiary" />
               <div className="text-sm">
                 <span className="text-text-tertiary">{t('streams.totalBandwidth')}:</span>
-                <span className="font-semibold text-text-primary ml-1">
+                <span className="font-semibold text-text-primary ms-1">
                   {formatTotalBandwidth(totalBandwidth)}
                 </span>
               </div>

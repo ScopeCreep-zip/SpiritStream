@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { FileBrowserModal, type FileBrowserModalProps } from '@/components/modals/FileBrowserModal';
-import type { DialogFilter } from '@/lib/backend/dialogTypes';
+import type { DialogFilter } from '@spiritstream/api-client';
 
 // Re-export for consumers who need the type
 export type { FileBrowserModalProps };

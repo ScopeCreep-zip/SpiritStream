@@ -1,11 +1,8 @@
-import { useEffect, useRef, useCallback } from 'react';
-import { events } from '@/lib/backend';
+import { useEffect } from 'react';
+import { events } from '@spiritstream/api-client';
 import { logger } from '@/lib/logger';
-import { OBS_TRIGGER_DELAY_MS } from '@/lib/constants';
 import { useObsStore } from '@/stores/obsStore';
-import { useStreamStore } from '@/stores/streamStore';
-import { useProfileStore } from '@/stores/profileStore';
-import type { ObsConnectionStatus, ObsStreamStatus, ObsIntegrationDirection } from '@/types/api';
+import type { ObsConnectionStatus, ObsStreamStatus } from '@spiritstream/types';
 
 interface ObsStatusEvent {
   status: 'connecting' | 'connected' | 'disconnected' | 'error';
@@ -20,50 +17,21 @@ interface ObsStatusEvent {
 interface ObsStreamStateEvent {
   status: ObsStreamStatus;
   active: boolean;
+  /** Backend-owned loop-prevention flag (see `ObsWebSocketHandler::triggered_by_us`). */
+  triggeredByUs?: boolean;
 }
 
-// Auto-connect retry settings
-const INITIAL_RETRY_DELAY = 2000; // 2 seconds
-const MAX_RETRY_DELAY = 30000; // 30 seconds
-const RETRY_BACKOFF_MULTIPLIER = 1.5;
-
-// Delay before triggering SpiritStream when OBS starts streaming
-const OBS_TO_SPIRITSTREAM_DELAY_MS = OBS_TRIGGER_DELAY_MS;
-
 /**
- * Hook that listens for OBS WebSocket events and handles:
- * 1. Connection status updates to the OBS store
- * 2. Stream state changes that may trigger SpiritStream start/stop
- *    (when direction is obs-to-spiritstream or bidirectional)
- * 3. Auto-connect on startup and reconnection on disconnect
+ * Mirror backend OBS events into the OBS store for display.
+ *
+ * The cascade decisions ("should we start SpiritStream when OBS
+ * starts?", "should we trigger OBS when SpiritStream starts?",
+ * auto-connect retry policy) all live in `crates/core/src/services/obs_websocket.rs`
+ * — this hook is a thin event-to-store wrapper. The frontend
+ * answers "how should this look?", never "should this action happen?".
  */
 export function useObsEvents() {
-  const {
-    updateFromEvent,
-    config,
-    loadConfig,
-    triggeredByUs,
-    setTriggeredByUs,
-    connectionStatus,
-    connect,
-  } = useObsStore();
-  const { startAllGroups, stopAllGroups, isStreaming, activeGroups } = useStreamStore();
-  const { current: currentProfile } = useProfileStore();
-
-  // Track previous stream status to detect changes
-  const prevStreamStatus = useRef<ObsStreamStatus>('unknown');
-
-  // Auto-connect state
-  const autoConnectAttempted = useRef(false);
-  const retryTimeoutRef = useRef<number | null>(null);
-  const currentRetryDelay = useRef(INITIAL_RETRY_DELAY);
-  const manuallyDisconnected = useRef(false);
-  const connectRef = useRef(connect);
-
-  // Keep connect ref up to date
-  useEffect(() => {
-    connectRef.current = connect;
-  }, [connect]);
+  const { updateFromEvent, config, loadConfig } = useObsStore();
 
   // Load OBS config on mount if not already loaded
   useEffect(() => {
@@ -72,144 +40,19 @@ export function useObsEvents() {
     }
   }, [config, loadConfig]);
 
-  // Schedule a retry with exponential backoff
-  const scheduleRetry = useCallback(() => {
-    if (manuallyDisconnected.current) {
-      return;
-    }
-
-    if (retryTimeoutRef.current) {
-      window.clearTimeout(retryTimeoutRef.current);
-    }
-
-    logger.debug(`[useObsEvents] Scheduling retry in ${currentRetryDelay.current}ms`);
-
-    retryTimeoutRef.current = window.setTimeout(async () => {
-      retryTimeoutRef.current = null;
-
-      if (manuallyDisconnected.current) {
-        logger.debug('[useObsEvents] Skipping auto-connect - manually disconnected');
-        return;
-      }
-
-      try {
-        logger.debug('[useObsEvents] Attempting OBS auto-connect...');
-        await connectRef.current(false); // false = not manual, this is auto-connect
-        // Reset retry delay on successful connection
-        currentRetryDelay.current = INITIAL_RETRY_DELAY;
-      } catch (error) {
-        logger.debug('[useObsEvents] Auto-connect failed, will retry:', error);
-        scheduleRetry();
-      }
-    }, currentRetryDelay.current);
-
-    // Increase delay for next retry (exponential backoff)
-    currentRetryDelay.current = Math.min(
-      currentRetryDelay.current * RETRY_BACKOFF_MULTIPLIER,
-      MAX_RETRY_DELAY
-    );
-  }, []);
-
-  // Attempt to connect to OBS (isManual=false for auto-connect)
-  const attemptConnect = useCallback(async () => {
-    if (manuallyDisconnected.current) {
-      logger.debug('[useObsEvents] Skipping auto-connect - manually disconnected');
-      return;
-    }
-
-    try {
-      logger.debug('[useObsEvents] Attempting OBS auto-connect...');
-      await connectRef.current(false); // false = not manual, this is auto-connect
-      // Reset retry delay on successful connection
-      currentRetryDelay.current = INITIAL_RETRY_DELAY;
-    } catch (error) {
-      logger.debug('[useObsEvents] Auto-connect failed, will retry:', error);
-      scheduleRetry();
-    }
-  }, [scheduleRetry]);
-
-  // Auto-connect on startup if enabled
-  useEffect(() => {
-    if (!config || autoConnectAttempted.current) {
-      return;
-    }
-
-    if (config.autoConnect && connectionStatus === 'disconnected') {
-      autoConnectAttempted.current = true;
-      // Small delay to let the app fully initialize
-      const timeout = window.setTimeout(() => {
-        attemptConnect();
-      }, 1000);
-
-      return () => window.clearTimeout(timeout);
-    }
-  }, [config, connectionStatus, attemptConnect]);
-
-  // Handle disconnection - retry if auto-connect is enabled
-  useEffect(() => {
-    if (!config?.autoConnect) {
-      return;
-    }
-
-    // If we were connected and now disconnected (not manually), schedule retry
-    if (connectionStatus === 'disconnected' && !manuallyDisconnected.current) {
-      scheduleRetry();
-    }
-
-    // If we're connected, clear any pending retry
-    if (connectionStatus === 'connected' && retryTimeoutRef.current) {
-      window.clearTimeout(retryTimeoutRef.current);
-      retryTimeoutRef.current = null;
-    }
-  }, [connectionStatus, config?.autoConnect, scheduleRetry]);
-
-  // Cleanup retry timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (retryTimeoutRef.current) {
-        window.clearTimeout(retryTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  // Track manual disconnection to prevent auto-reconnect
-  useEffect(() => {
-    const handleManualDisconnect = () => {
-      manuallyDisconnected.current = true;
-      if (retryTimeoutRef.current) {
-        window.clearTimeout(retryTimeoutRef.current);
-        retryTimeoutRef.current = null;
-      }
-    };
-
-    const handleManualConnect = () => {
-      manuallyDisconnected.current = false;
-    };
-
-    // These events are triggered by the obsStore when user clicks connect/disconnect
-    window.addEventListener('obs:manual-disconnect', handleManualDisconnect);
-    window.addEventListener('obs:manual-connect', handleManualConnect);
-
-    return () => {
-      window.removeEventListener('obs:manual-disconnect', handleManualDisconnect);
-      window.removeEventListener('obs:manual-connect', handleManualConnect);
-    };
-  }, []);
-
   useEffect(() => {
     let unlistenStatus: (() => void) | null = null;
     let unlistenStreamState: (() => void) | null = null;
+    let unlistenStartedByObs: (() => void) | null = null;
+    let unlistenStoppedByObs: (() => void) | null = null;
 
     const setupListeners = async () => {
-      // Listen for OBS connection status changes
       unlistenStatus = await events.on<ObsStatusEvent>('obs://status', (payload) => {
-        logger.debug('[useObsEvents] Received obs://status:', payload);
-
+        logger.debug('[useObsEvents] obs://status', payload);
         const connectionStatus: ObsConnectionStatus =
           payload.status === 'connecting' ? 'connecting' :
           payload.status === 'connected' ? 'connected' :
           payload.status === 'error' ? 'error' : 'disconnected';
-
         updateFromEvent({
           connectionStatus,
           obsVersion: payload.obsVersion ?? undefined,
@@ -219,90 +62,21 @@ export function useObsEvents() {
         });
       });
 
-      // Listen for OBS stream state changes
-      unlistenStreamState = await events.on<ObsStreamStateEvent>('obs://stream_state', (payload) => {
-        logger.debug('[useObsEvents] Received obs://stream_state:', payload);
+      unlistenStreamState = await events.on<ObsStreamStateEvent>(
+        'obs://stream_state',
+        (payload) => {
+          logger.debug('[useObsEvents] obs://stream_state', payload);
+          updateFromEvent({ streamStatus: payload.status });
+        },
+      );
 
-        const newStatus = payload.status;
-        const wasActive = prevStreamStatus.current === 'active';
-        const isNowActive = newStatus === 'active';
-        const isNowInactive = newStatus === 'inactive';
-
-        // Update store
-        updateFromEvent({ streamStatus: newStatus });
-
-        // Skip if this change was triggered by us (SpiritStream -> OBS)
-        if (triggeredByUs) {
-          logger.debug('[useObsEvents] Ignoring state change triggered by SpiritStream');
-          setTriggeredByUs(false);
-          prevStreamStatus.current = newStatus;
-          return;
-        }
-
-        // Check if we should trigger SpiritStream
-        const direction: ObsIntegrationDirection = config?.direction ?? 'disabled';
-        const shouldObsTrigger = direction === 'obs-to-spiritstream' || direction === 'bidirectional';
-
-        if (!shouldObsTrigger) {
-          prevStreamStatus.current = newStatus;
-          return;
-        }
-
-        // OBS started streaming -> Start SpiritStream
-        if (!wasActive && isNowActive) {
-          logger.info('[useObsEvents] OBS started streaming, triggering SpiritStream');
-
-          if (!currentProfile) {
-            logger.warn('[useObsEvents] No profile loaded, cannot start SpiritStream');
-            prevStreamStatus.current = newStatus;
-            return;
-          }
-
-          if (isStreaming || activeGroups.size > 0) {
-            logger.debug('[useObsEvents] SpiritStream already streaming, skipping trigger');
-            prevStreamStatus.current = newStatus;
-            return;
-          }
-
-          // Start SpiritStream with current profile
-          const eligibleGroups = currentProfile.outputGroups.filter(
-            (g) => g.streamTargets.length > 0
-          );
-
-          if (eligibleGroups.length === 0) {
-            logger.warn('[useObsEvents] No eligible output groups to stream');
-            prevStreamStatus.current = newStatus;
-            return;
-          }
-
-          // Build incoming URL from structured input
-          const { bindAddress, port, application } = currentProfile.input;
-          const incomingUrl = `rtmp://${bindAddress}:${port}/${application}`;
-
-          // Add delay before starting SpiritStream to let OBS stabilize
-          setTimeout(() => {
-            startAllGroups(eligibleGroups, incomingUrl).catch((error) => {
-              logger.error('[useObsEvents] Failed to start SpiritStream:', error);
-            });
-          }, OBS_TO_SPIRITSTREAM_DELAY_MS);
-        }
-
-        // OBS stopped streaming -> Stop SpiritStream
-        if (wasActive && isNowInactive) {
-          logger.info('[useObsEvents] OBS stopped streaming, triggering SpiritStream stop');
-
-          if (!isStreaming && activeGroups.size === 0) {
-            logger.debug('[useObsEvents] SpiritStream not streaming, skipping stop trigger');
-            prevStreamStatus.current = newStatus;
-            return;
-          }
-
-          stopAllGroups().catch((error) => {
-            logger.error('[useObsEvents] Failed to stop SpiritStream:', error);
-          });
-        }
-
-        prevStreamStatus.current = newStatus;
+      // Informational: core ran the OBS→SpiritStream cascade. UI may
+      // surface a brief toast / indicator. No decision-making here.
+      unlistenStartedByObs = await events.on('stream_started_by_obs', (payload) => {
+        logger.info('[useObsEvents] stream_started_by_obs', payload);
+      });
+      unlistenStoppedByObs = await events.on('stream_stopped_by_obs', (payload) => {
+        logger.info('[useObsEvents] stream_stopped_by_obs', payload);
       });
     };
 
@@ -311,6 +85,8 @@ export function useObsEvents() {
     return () => {
       if (unlistenStatus) unlistenStatus();
       if (unlistenStreamState) unlistenStreamState();
+      if (unlistenStartedByObs) unlistenStartedByObs();
+      if (unlistenStoppedByObs) unlistenStoppedByObs();
     };
-  }, [config, currentProfile, isStreaming, activeGroups, updateFromEvent, startAllGroups, stopAllGroups, triggeredByUs, setTriggeredByUs]);
+  }, [updateFromEvent]);
 }

@@ -2,7 +2,7 @@ import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from './Button';
 import { Logo } from '../layout/Logo';
-import { getBackendBaseUrl } from '@/lib/backend/env';
+import { getBackendBaseUrl } from '@spiritstream/api-client';
 
 interface ConnectionErrorProps {
   onRetry: () => void;

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Modal, ModalBody, ModalFooter } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
+import { clientConfig } from '@/lib/constants';
 import { Lock, Eye, EyeOff } from 'lucide-react';
 
 interface PasswordModalProps {
@@ -48,8 +49,10 @@ export function PasswordModal({
     }
 
     if (mode === 'encrypt') {
-      if (password.length < 8) {
-        setLocalError(t('validation.passwordMinLength'));
+      if (password.length < clientConfig.PASSWORD_MIN_LENGTH) {
+        setLocalError(
+          t('validation.passwordMinLength', { min: clientConfig.PASSWORD_MIN_LENGTH }),
+        );
         return;
       }
       if (password !== confirmPassword) {
@@ -97,7 +100,7 @@ export function PasswordModal({
                 onClick={() => setShowPassword(!showPassword)}
                 aria-label={showPassword ? t('common.hidePassword') : t('common.showPassword')}
                 aria-pressed={showPassword}
-                className="absolute right-3 top-[34px] text-text-tertiary hover:text-text-primary transition-colors"
+                className="absolute end-3 top-[34px] text-text-tertiary hover:text-text-primary transition-colors"
               >
                 {showPassword ? (
                   <EyeOff className="w-4 h-4" aria-hidden="true" />

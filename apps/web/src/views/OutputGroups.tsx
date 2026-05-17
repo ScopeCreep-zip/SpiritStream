@@ -7,9 +7,9 @@ import { OutputGroupCard } from '@/components/stream/OutputGroupCard';
 import { OutputGroupModal, TargetModal } from '@/components/modals';
 import { useProfileStore } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
-import { api } from '@/lib/backend';
+import { api } from '@/lib/client';
 import { logger } from '@/lib/logger';
-import type { OutputGroup } from '@/types/profile';
+import type { OutputGroup } from '@spiritstream/types';
 import type { Encoders } from '@/types/stream';
 
 export function OutputGroups() {
@@ -166,7 +166,7 @@ export function OutputGroups() {
       >
         <CardBody className="flex items-center justify-center py-8 px-6">
           <Button variant="ghost">
-            <Plus className="w-5 h-5 mr-2" />
+            <Plus className="w-5 h-5 me-2" />
             {t('outputs.addOutputGroup')}
           </Button>
         </CardBody>

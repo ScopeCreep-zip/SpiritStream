@@ -12,11 +12,11 @@ import {
   CHAT_OVERLAY_SYNC_EVENT,
   CHAT_OVERLAY_SYNC_REQUEST_EVENT,
 } from '@/lib/chatEvents';
-import { isTauri } from '@/lib/backend/env';
+import { isTauri } from '@spiritstream/api-client';
 import { logger } from '@/lib/logger';
 import { setupOverlayAutoClose } from '@/lib/chatWindow';
 import { useChatStore } from '@/stores/chatStore';
-import type { ChatMessage } from '@/types/chat';
+import type { ChatMessage } from '@spiritstream/types';
 
 export function ChatOverlay() {
   const messages = useChatStore((state) => state.messages);

@@ -2,7 +2,7 @@ import { memo } from 'react';
 import { cn } from '@/lib/cn';
 import { StreamStatus } from '@/components/ui/StreamStatus';
 import { PlatformIcon } from '@/components/stream/PlatformIcon';
-import type { Platform } from '@/types/profile';
+import type { Platform } from '@spiritstream/types';
 import type { StreamStatusType } from '@/types/stream';
 
 export interface StreamStat {

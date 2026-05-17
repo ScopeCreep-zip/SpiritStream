@@ -1,118 +1,107 @@
 import { useTranslation } from 'react-i18next';
-import { Wifi, WifiOff, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/cn';
-import { useConnectionStore, type ConnectionStatus as ConnectionStatusType } from '@/stores/connectionStore';
-import { backendMode } from '@/lib/backend/env';
+import { isTauri } from '@spiritstream/api-client';
+import {
+  useConnectionStore,
+  type ConnectionStatus as ConnectionStatusType,
+} from '@/stores/connectionStore';
 
+/**
+ * Browser-only WebSocket connection indicator. Renders nothing in the
+ * Tauri desktop shell because:
+ *   1. The shell co-spawns the backend sidecar on localhost — connection
+ *      failure means the entire shell is broken, not a soft state worth
+ *      a corner badge.
+ *   2. The shell's `wait_for_tcp_listening` already gates the webview
+ *      from existing before the backend is reachable.
+ *
+ * In browser / Docker, the WebSocket runs over a real network and can
+ * legitimately drop. This badge tells the user whether server-pushed
+ * updates (chat messages, stream stats, OBS state) are still live.
+ *
+ * Strictly single-purpose: this badge reflects ONLY the
+ * `ws://.../api/v1/events` socket state from `connectionStore`. Other
+ * error surfaces (toasts, `ConnectionError` overlay, `ErrorBoundary`)
+ * handle their own concerns.
+ */
 export interface ConnectionStatusProps {
   className?: string;
-  showLabel?: boolean;
 }
 
-const statusConfig: Record<
-  ConnectionStatusType,
-  {
-    icon: typeof Wifi;
-    bgClass: string;
-    textClass: string;
-    dotClass: string;
-    animate?: boolean;
-  }
-> = {
+interface DotConfig {
+  /** Tailwind class for the colored dot. */
+  dotClass: string;
+  /** Tailwind class for the label text. */
+  textClass: string;
+  /** Whether the dot should pulse — used for in-flight states. */
+  animate: boolean;
+}
+
+const DOT_CONFIG: Record<ConnectionStatusType, DotConfig> = {
   connected: {
-    icon: Wifi,
-    bgClass: 'bg-success-subtle',
-    textClass: 'text-success-text',
     dotClass: 'bg-success',
+    textClass: 'text-text-secondary',
+    animate: false,
   },
   connecting: {
-    icon: Loader2,
-    bgClass: 'bg-warning-subtle',
-    textClass: 'text-warning-text',
     dotClass: 'bg-warning',
+    textClass: 'text-text-secondary',
     animate: true,
   },
   disconnected: {
-    icon: WifiOff,
-    bgClass: 'bg-error-subtle',
-    textClass: 'text-error-text',
     dotClass: 'bg-error',
+    textClass: 'text-error-text',
+    animate: false,
   },
 };
 
-export function ConnectionStatus({ className, showLabel = true }: ConnectionStatusProps) {
+export function ConnectionStatus({ className }: ConnectionStatusProps) {
   const { t } = useTranslation();
-  const { status, reconnectAttempts } = useConnectionStore();
+  const { status, lastConnected } = useConnectionStore();
 
-  // In Tauri mode, always show as connected (local IPC)
-  const effectiveStatus = backendMode === 'tauri' ? 'connected' : status;
-  const config = statusConfig[effectiveStatus];
-  const Icon = config.icon;
-
-  // Don't show anything in Tauri mode unless user explicitly wants it
-  if (backendMode === 'tauri') {
+  // Tauri shell guarantees backend reachability; the badge has no signal
+  // there and would only add visual noise.
+  if (isTauri()) {
     return null;
   }
 
-  const labels: Record<ConnectionStatusType, string> = {
-    connected: t('connection.connected', 'Connected'),
-    connecting:
-      reconnectAttempts > 0
-        ? t('connection.reconnecting', 'Reconnecting...')
-        : t('connection.connecting', 'Connecting...'),
-    disconnected: t('connection.disconnected', 'Disconnected'),
-  };
+  const config = DOT_CONFIG[status];
+
+  // "Connecting" vs "Reconnecting" is decided by whether we've ever
+  // connected before — `lastConnected` is null until the first
+  // successful connect, then non-null forever. Avoids the prior bug
+  // where a per-attempt counter mis-classified the first connect as a
+  // reconnect (which produced a spurious "reconnecting…" label flash).
+  let label: string;
+  if (status === 'connected') {
+    label = t('connection.serverBadge.connected');
+  } else if (status === 'disconnected') {
+    label = t('connection.serverBadge.disconnected');
+  } else if (lastConnected !== null) {
+    label = t('connection.serverBadge.reconnecting');
+  } else {
+    label = t('connection.serverBadge.connecting');
+  }
 
   return (
     <div
       className={cn(
-        'inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium',
-        config.bgClass,
+        'inline-flex items-center gap-2 text-xs font-medium',
         config.textClass,
-        className
+        className,
       )}
-    >
-      <Icon className={cn('w-4 h-4', config.animate && 'animate-spin')} />
-      {showLabel && <span>{labels[effectiveStatus]}</span>}
-    </div>
-  );
-}
-
-/**
- * Compact connection indicator - just a dot with tooltip
- */
-export function ConnectionIndicator({ className }: { className?: string }) {
-  const { t } = useTranslation();
-  const { status, reconnectAttempts } = useConnectionStore();
-
-  // In Tauri mode, don't show indicator
-  if (backendMode === 'tauri') {
-    return null;
-  }
-
-  const config = statusConfig[status];
-
-  const labels: Record<ConnectionStatusType, string> = {
-    connected: t('connection.connected', 'Connected'),
-    connecting:
-      reconnectAttempts > 0
-        ? t('connection.reconnecting', 'Reconnecting...')
-        : t('connection.connecting', 'Connecting...'),
-    disconnected: t('connection.disconnected', 'Disconnected'),
-  };
-
-  return (
-    <div
-      className={cn('flex items-center gap-2', className)}
-      title={labels[status]}
+      role="status"
+      aria-live="polite"
     >
       <span
         className={cn(
-          'w-2 h-2 rounded-full',
+          'w-2 h-2 rounded-full shrink-0',
           config.dotClass,
-          status === 'connecting' && 'animate-pulse'
+          config.animate && 'animate-pulse',
         )}
+        aria-hidden="true"
       />
+      <span>{label}</span>
     </div>
   );
 }

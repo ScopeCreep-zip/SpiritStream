@@ -24,14 +24,12 @@ import { useProfileStore } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
 import { formatUptime, formatBitrate } from '@/hooks/useStreamStats';
 import { toast } from '@/hooks/useToast';
-import { api, dialogs } from '@/lib/backend';
-import {
-  validateStreamConfig,
-  displayValidationIssues,
-  testStreamConnectivity,
-} from '@/lib/streamValidation';
+import { api } from '@/lib/client';
+import { dialogs } from '@spiritstream/api-client';
+import { testStreamConnectivity } from '@/lib/streamConnectivity';
+import { displayValidationError } from '@/lib/validationToast';
 import type { View } from '@/App';
-import type { Profile, OutputGroup } from '@/types/profile';
+import type { Profile, OutputGroup } from '@spiritstream/types';
 
 interface DashboardProps {
   onNavigate: (view: View) => void;
@@ -125,19 +123,16 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
     setTestingTarget(null);
 
     try {
-      // Step 1: Configuration validation (FFmpeg, required fields)
+      // Configuration validation — backend is authoritative.
       toast.info(t('toast.validatingConfig', 'Validating configuration...'));
-      const validationResult = await validateStreamConfig(currentProfile, {
-        checkFfmpeg: true,
-        checkEnabledTargetsOnly: false,
-      });
-
-      if (!validationResult.valid) {
-        displayValidationIssues(validationResult.issues, toast);
+      try {
+        await api.stream.validate(currentProfile);
+      } catch (validationErr) {
+        displayValidationError(validationErr, toast);
         return;
       }
 
-      // Step 2: Real RTMP connectivity tests
+      // Real RTMP connectivity tests
       const targetCount = currentProfile.outputGroups.flatMap((g) => g.streamTargets).length;
       if (targetCount === 0) {
         toast.success(t('toast.configValidNoTargets', 'Configuration valid (no targets to test)'));

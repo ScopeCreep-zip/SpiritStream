@@ -12,20 +12,9 @@ import {
   FolderOpen,
   CornerDownLeft,
 } from 'lucide-react';
-import { getBackendBaseUrl, getAuthHeaders, safeFetch } from '@/lib/backend/env';
+import { api } from '@/lib/client';
 import { logger } from '@/lib/logger';
-
-interface FileEntry {
-  name: string;
-  type: 'file' | 'directory';
-  size?: number;
-}
-
-interface BrowseResponse {
-  path: string;
-  entries: FileEntry[];
-  parent?: string | null;
-}
+import type { FileEntry } from '@spiritstream/api-client';
 
 export interface FileBrowserModalProps {
   open: boolean;
@@ -177,29 +166,7 @@ export function FileBrowserModal({
       setSelectedEntry(null);
 
       try {
-        const baseUrl = getBackendBaseUrl();
-        const params = new URLSearchParams();
-        if (path) params.set('path', path);
-
-        const response = await safeFetch(
-          `${baseUrl}/api/files/browse?${params.toString()}`,
-          {
-            method: 'GET',
-            headers: getAuthHeaders(),
-            credentials: 'include',
-          }
-        );
-
-        if (!response.ok) {
-          const text = await response.text();
-          throw new Error(text || `HTTP ${response.status}`);
-        }
-
-        const json = await response.json();
-        if (!json.ok) {
-          throw new Error(json.error || 'Unknown error');
-        }
-        const data: BrowseResponse = json.data;
+        const data = await api.files.browse(path);
         setCurrentPath(data.path);
         setPathInput(data.path);
         setIsEditingPath(false);
@@ -264,23 +231,8 @@ export function FileBrowserModal({
       // Otherwise fetch home directory
       const fetchHome = async () => {
         try {
-          const baseUrl = getBackendBaseUrl();
-          const response = await safeFetch(`${baseUrl}/api/files/home`, {
-            method: 'GET',
-            headers: getAuthHeaders(),
-            credentials: 'include',
-          });
-
-          if (response.ok) {
-            const json = await response.json();
-            if (json.ok && json.data?.path) {
-              browse(json.data.path);
-            } else {
-              browse('');
-            }
-          } else {
-            browse('');
-          }
+          const { path: homePath } = await api.files.home();
+          browse(homePath || '');
         } catch {
           browse('');
         }
@@ -313,19 +265,8 @@ export function FileBrowserModal({
   // Navigate to home directory
   const goHome = async () => {
     try {
-      const baseUrl = getBackendBaseUrl();
-      const response = await safeFetch(`${baseUrl}/api/files/home`, {
-        method: 'GET',
-        headers: getAuthHeaders(),
-        credentials: 'include',
-      });
-
-      if (response.ok) {
-        const json = await response.json();
-        if (json.ok && json.data?.path) {
-          browse(json.data.path);
-        }
-      }
+      const { path: homePath } = await api.files.home();
+      if (homePath) browse(homePath);
     } catch {
       // Ignore
     }
@@ -527,7 +468,7 @@ export function FileBrowserModal({
                   <span className="flex-1 text-sm text-text-primary truncate">
                     {entry.name}
                   </span>
-                  {entry.type === 'file' && entry.size !== undefined && (
+                  {entry.type === 'file' && entry.size != null && (
                     <span className="text-xs text-text-muted">
                       {formatSize(entry.size)}
                     </span>

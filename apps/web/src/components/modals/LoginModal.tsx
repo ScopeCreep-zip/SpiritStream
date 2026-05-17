@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Modal, ModalBody, ModalFooter } from '@/components/ui/Modal';
-import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { ShieldCheck, Eye, EyeOff } from 'lucide-react';
-import { login } from '@/lib/backend/env';
+import { login } from '@spiritstream/api-client';
+import { PasswordInput } from '@spiritstream/ui';
 
 interface LoginModalProps {
   open: boolean;
@@ -18,7 +18,6 @@ interface LoginModalProps {
 export function LoginModal({ open, onSuccess }: LoginModalProps) {
   const { t } = useTranslation();
   const [token, setToken] = useState('');
-  const [showToken, setShowToken] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -26,7 +25,6 @@ export function LoginModal({ open, onSuccess }: LoginModalProps) {
   useEffect(() => {
     if (open) {
       setToken('');
-      setShowToken(false);
       setError('');
       setLoading(false);
     }
@@ -78,32 +76,24 @@ export function LoginModal({ open, onSuccess }: LoginModalProps) {
           </div>
 
           <div className="space-y-4">
-            <div className="relative">
-              <Input
-                label={t('login.tokenLabel', 'API Token')}
-                type={showToken ? 'text' : 'password'}
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                placeholder={t('login.tokenPlaceholder', 'Enter your API token')}
-                autoFocus
-                autoComplete="off"
-                disabled={loading}
-              />
-              <button
-                type="button"
-                onClick={() => setShowToken(!showToken)}
-                aria-label={showToken ? t('common.hidePassword') : t('common.showPassword')}
-                aria-pressed={showToken}
-                className="absolute right-3 top-[34px] text-text-tertiary hover:text-text-primary transition-colors"
-                disabled={loading}
-              >
-                {showToken ? (
+            <PasswordInput
+              label={t('login.tokenLabel', 'API Token')}
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder={t('login.tokenPlaceholder', 'Enter your API token')}
+              autoFocus
+              autoComplete="off"
+              disabled={loading}
+              showLabel={t('common.showPassword')}
+              hideLabel={t('common.hidePassword')}
+              renderToggleIcon={(visible) =>
+                visible ? (
                   <EyeOff className="w-4 h-4" aria-hidden="true" />
                 ) : (
                   <Eye className="w-4 h-4" aria-hidden="true" />
-                )}
-              </button>
-            </div>
+                )
+              }
+            />
 
             {error && (
               <div className="p-3 bg-error-subtle border border-error-border rounded-lg">

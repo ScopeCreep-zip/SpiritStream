@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { SquareArrowOutUpRight, Trash2, Send, Download, Search } from 'lucide-react';
+import { SquareArrowOutUpRight, SquareArrowDownLeft, Trash2, Send, Download, Search } from 'lucide-react';
 import { emit } from '@tauri-apps/api/event';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -9,19 +9,21 @@ import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { ChatList } from '@/components/chat/ChatList';
 import { CHAT_OVERLAY_SETTINGS_EVENT, CHAT_OVERLAY_ALWAYS_ON_TOP_EVENT } from '@/lib/chatEvents';
-import { openChatOverlay, setOverlayAlwaysOnTop } from '@/lib/chatWindow';
-import { CHAT_POLL_INTERVAL_MS } from '@/lib/constants';
+import { closeChatOverlay, openChatOverlay, setOverlayAlwaysOnTop } from '@/lib/chatWindow';
+import { clientConfig } from '@/lib/constants';
 import { useChatStore } from '@/stores/chatStore';
 import { useProfileStore } from '@/stores/profileStore';
-import { api, dialogs } from '@/lib/backend';
-import type { ChatMessage, ChatPlatformStatus } from '@/types/chat';
-import { createDefaultChatSettings } from '@/types/profile';
+import { api } from '@/lib/client';
+import { useFileBrowser } from '@/hooks/useFileBrowser';
+import type { ChatMessage, ChatPlatformStatus } from '@spiritstream/types';
+import { createDefaultChatSettings } from '@/lib/profile-helpers';
 import { toast } from '@/hooks/useToast';
 import { logger } from '@/lib/logger';
 import { cn } from '@/lib/cn';
 
 export function Chat() {
   const { t } = useTranslation();
+  const { FileBrowser, saveFilePath: browserSaveFile } = useFileBrowser();
   const messages = useChatStore((state) => state.messages);
   const overlayTransparent = useChatStore((state) => state.overlayTransparent);
   const setOverlayTransparent = useChatStore((state) => state.setOverlayTransparent);
@@ -86,7 +88,7 @@ export function Chat() {
       } catch (error) {
         logger.error('Failed to refresh chat status:', error);
       }
-    }, CHAT_POLL_INTERVAL_MS);
+    }, clientConfig.CHAT_POLL_INTERVAL_MS);
 
     return () => clearInterval(interval);
   }, []);
@@ -170,7 +172,7 @@ export function Chat() {
       }
 
       const status = await api.chat.getLogStatus();
-      if (!status.active || !status.startedAt) {
+      if (!status.active || status.startedAt === 0) {
         toast.error(
           t('chat.exportNoSession', {
             defaultValue: 'No active chat session to export.',
@@ -179,13 +181,16 @@ export function Chat() {
         return;
       }
 
-      const start = new Date(status.startedAt);
+      // `startedAt` is `bigint` (ts-rs maps Rust `i64` to bigint). The
+      // `Date` constructor needs a `number` — Unix epoch ms safely fits
+      // in JS `number` for any timestamp before year ~285,000.
+      const start = new Date(Number(status.startedAt));
       const end = new Date();
       const defaultName = `chatlog_${formatTimestampForFile(start)}_to_${formatTimestampForFile(
         end
       )}.jsonl`;
 
-      const path = await dialogs.saveFilePath({
+      const path = await browserSaveFile({
         defaultPath: defaultName,
         filters: [{ name: 'JSONL', extensions: ['jsonl'] }],
       });
@@ -350,7 +355,9 @@ export function Chat() {
   };
 
   return (
-    <Card>
+    <>
+      <FileBrowser />
+      <Card>
       <CardHeader>
         <div>
           <CardTitle>{t('chat.viewTitle', { defaultValue: 'Unified Chat' })}</CardTitle>
@@ -402,6 +409,10 @@ export function Chat() {
             <Button size="sm" onClick={openChatOverlay}>
               <SquareArrowOutUpRight className="w-4 h-4" />
               {t('chat.popOut', { defaultValue: 'Pop out' })}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={closeChatOverlay}>
+              <SquareArrowDownLeft className="w-4 h-4" />
+              {t('chat.dockChat', { defaultValue: 'Dock chat' })}
             </Button>
           </div>
         </div>
@@ -554,5 +565,6 @@ export function Chat() {
         </div>
       </Modal>
     </Card>
+    </>
   );
 }

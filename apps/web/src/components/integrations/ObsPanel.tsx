@@ -16,13 +16,14 @@ import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/compon
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Toggle } from '@/components/ui/Toggle';
+import { PasswordInput } from '@spiritstream/ui';
 import { useObsStore } from '@/stores/obsStore';
 import { useProfileStore } from '@/stores/profileStore';
 import { toast } from '@/hooks/useToast';
 import { logger } from '@/lib/logger';
 import { cn } from '@/lib/cn';
-import { AUTO_SAVE_DELAY_MS } from '@/lib/constants';
-import type { ObsIntegrationDirection } from '@/types/api';
+import { clientConfig } from '@/lib/constants';
+import type { ObsIntegrationDirection } from '@spiritstream/types';
 
 const directionOptions: { value: ObsIntegrationDirection; labelKey: string; descKey: string }[] = [
   {
@@ -128,7 +129,7 @@ export function ObsPanel() {
         } catch (error) {
           logger.error('Failed to save OBS config:', error);
         }
-      }, AUTO_SAVE_DELAY_MS);
+      }, clientConfig.AUTO_SAVE_DELAY_MS);
     },
     [updateConfig]
   );
@@ -307,25 +308,22 @@ export function ObsPanel() {
             {useAuth && (
               <div className="flex items-end gap-1">
                 <div className="flex-1">
-                  <Input
+                  <PasswordInput
                     label={t('obs.password')}
-                    type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     onBlur={handlePasswordBlur}
                     placeholder={t('obs.passwordPlaceholder')}
                     disabled={isConnected}
+                    visible={showPassword}
+                    onVisibilityChange={setShowPassword}
+                    showLabel={t('obs.showPassword')}
+                    hideLabel={t('obs.hidePassword')}
+                    renderToggleIcon={(visible) =>
+                      visible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />
+                    }
                   />
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setShowPassword(!showPassword)}
-                  aria-label={showPassword ? t('obs.hidePassword') : t('obs.showPassword')}
-                  disabled={isConnected}
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </Button>
                 <Button
                   variant="ghost"
                   size="icon"

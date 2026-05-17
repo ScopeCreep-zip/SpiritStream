@@ -5,10 +5,10 @@ import { Grid } from '@/components/ui/Grid';
 import { ProfileCard } from '@/components/dashboard/ProfileCard';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody } from '@/components/ui/Card';
-import { Modal } from '@/components/ui/Modal';
+import { ConfirmDialog } from '@spiritstream/ui';
 import { ProfileModal, PasswordModal } from '@/components/modals';
 import { useProfileStore } from '@/stores/profileStore';
-import { api } from '@/lib/backend';
+import { api } from '@/lib/client';
 import { cn } from '@/lib/cn';
 import {DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent} from "@dnd-kit/core";
 import {SortableContext, rectSortingStrategy} from "@dnd-kit/sortable";
@@ -31,25 +31,39 @@ export function Profiles() {
   const [deletingProfileName, setDeletingProfileName] = useState<string | null>(null);
   const [pendingDeleteProfileName, setPendingDeleteProfileName] = useState<string | null>(null);
 
-  // Track which encrypted profiles have been unlocked (password entered) in this session
+  // Mirror of the backend's session unlock set
+  // (`POST /api/v1/profiles/{name}/decrypt`, `/lock`, `GET /locked`).
+  // The server is authoritative; this local set is a cache for synchronous
+  // UI checks. Plan: "unlockedProfiles Set in component state →
+  // server-side session state tied to the auth cookie."
   const [unlockedProfiles, setUnlockedProfiles] = useState<Set<string>>(new Set());
+
+  const refreshUnlocked = async () => {
+    try {
+      const { unlocked } = await api.profile.lockedList();
+      setUnlockedProfiles(new Set(unlocked));
+    } catch {
+      // Non-fatal: fall back to existing cache.
+    }
+  };
+
+  useEffect(() => { void refreshUnlocked(); }, []);
 
   // Sensors for DND Kit for Drag and Drop
   const sensors = useSensors( useSensor(PointerSensor, {activationConstraint: {distance: 6 }}));
 
-  // Detect when an encrypted profile is successfully loaded (password was entered)
+  // Detect when an encrypted profile is successfully loaded (password was
+  // entered): notify the backend so the session unlock set stays canonical.
   useEffect(() => {
     const unsubscribe = useProfileStore.subscribe((state, prevState) => {
-      // If current profile changed and new one is loaded
       if (state.current && state.current !== prevState.current) {
         const profileName = state.current.name;
         const profileSummary = state.profiles.find(p => p.name === profileName);
-
-        // If this profile is encrypted, mark it as unlocked in session
         if (profileSummary?.isEncrypted) {
+          // The successful load implies a correct password reached the backend.
+          // Optimistically mirror locally; refresh the canonical list to confirm.
           setUnlockedProfiles(prev => new Set(prev).add(profileName));
-
-          // If this was a pending delete, now show the delete confirmation
+          void refreshUnlocked();
           if (pendingDeleteProfileName === profileName) {
             setPendingDeleteProfileName(null);
             setDeletingProfileName(profileName);
@@ -57,41 +71,42 @@ export function Profiles() {
           }
         }
       }
-
-      // If encryption was removed (pendingUnlock flow completed), also mark as unlocked
       if (prevState.pendingUnlock && !state.pendingUnlock && state.current) {
         setUnlockedProfiles(prev => new Set(prev).add(state.current!.name));
+        void refreshUnlocked();
       }
     });
     return unsubscribe;
   }, [pendingDeleteProfileName]);
 
-  // Clear unlocked state when clicking outside profile cards
-  const handleClickAway = (e: React.MouseEvent) => {
+  const handleClickAway = async (e: React.MouseEvent) => {
     if (e.target === e.currentTarget && unlockedProfiles.size > 0) {
+      const names = Array.from(unlockedProfiles);
       setUnlockedProfiles(new Set());
+      await Promise.all(names.map((name) => api.profile.lock(name).catch(() => undefined)));
     }
   };
 
-  // Clear unlocked state for other profiles when selecting a different one
-  const handleProfileClick = (profileName: string) => {
-    // Keep only the newly selected profile in unlocked set (if it was unlocked)
+  const handleProfileClick = async (profileName: string) => {
     if (unlockedProfiles.has(profileName)) {
+      const toLock = Array.from(unlockedProfiles).filter((n) => n !== profileName);
       setUnlockedProfiles(new Set([profileName]));
+      await Promise.all(toLock.map((name) => api.profile.lock(name).catch(() => undefined)));
     } else {
+      const toLock = Array.from(unlockedProfiles);
       setUnlockedProfiles(new Set());
+      await Promise.all(toLock.map((name) => api.profile.lock(name).catch(() => undefined)));
     }
     selectProfile(profileName);
   };
 
-  // Handle locking a profile with password
-  const handleLockProfile = (profileName: string) => {
-    // Clear from unlocked set when re-locking
+  const handleLockProfile = async (profileName: string) => {
     setUnlockedProfiles(prev => {
       const next = new Set(prev);
       next.delete(profileName);
       return next;
     });
+    await api.profile.lock(profileName).catch(() => undefined);
     setEncryptingProfileName(profileName);
     setEncryptError(undefined);
     setEncryptModalOpen(true);
@@ -396,26 +411,16 @@ export function Profiles() {
         error={encryptError}
       />
 
-      {/* Delete Confirmation Modal */}
-      <Modal
+      {/* Delete Profile confirmation. */}
+      <ConfirmDialog
         open={deleteModalOpen}
-        onClose={handleDeleteCancel}
         title={t('profiles.deleteProfile')}
-        footer={
-          <>
-            <Button variant="ghost" onClick={handleDeleteCancel}>
-              {t('common.cancel')}
-            </Button>
-            <Button variant="destructive" onClick={handleDeleteConfirm}>
-              {t('common.delete')}
-            </Button>
-          </>
-        }
-      >
-        <p className="text-text-secondary">
-          {t('profiles.deleteConfirmation', { name: deletingProfileName })}
-        </p>
-      </Modal>
+        message={t('profiles.deleteConfirmation', { name: deletingProfileName })}
+        confirmLabel={t('common.delete')}
+        cancelLabel={t('common.cancel')}
+        onConfirm={handleDeleteConfirm}
+        onCancel={handleDeleteCancel}
+      />
     </>
   );
 }

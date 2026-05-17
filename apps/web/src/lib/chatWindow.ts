@@ -1,6 +1,6 @@
-import { isTauri } from './backend/env';
+import { isTauri } from '@spiritstream/api-client';
 import { logger } from '@/lib/logger';
-import { CHAT_POPUP_WIDTH, CHAT_POPUP_HEIGHT, CHAT_OVERLAY_POLL_MS } from '@/lib/constants';
+import { clientConfig } from '@/lib/constants';
 import { useChatStore } from '@/stores/chatStore';
 
 const CHAT_OVERLAY_LABEL = 'chat-overlay';
@@ -33,8 +33,8 @@ async function openTauriOverlay() {
 
   const overlay = new WebviewWindow(CHAT_OVERLAY_LABEL, {
     title: 'SpiritStream Chat',
-    width: CHAT_POPUP_WIDTH,
-    height: CHAT_POPUP_HEIGHT,
+    width: clientConfig.CHAT_POPUP_WIDTH,
+    height: clientConfig.CHAT_POPUP_HEIGHT,
     resizable: true,
     decorations: false,
     transparent: true,
@@ -65,8 +65,8 @@ function openBrowserPopup() {
   }
 
   // Calculate center position
-  const width = CHAT_POPUP_WIDTH;
-  const height = CHAT_POPUP_HEIGHT;
+  const width = clientConfig.CHAT_POPUP_WIDTH;
+  const height = clientConfig.CHAT_POPUP_HEIGHT;
   const left = window.screenX + (window.outerWidth - width) / 2;
   const top = window.screenY + (window.outerHeight - height) / 2;
 
@@ -147,12 +147,12 @@ export function setupMainWindowCloseHandler() {
  * Set up listener on the overlay to close when main window is destroyed.
  * Call this from the ChatOverlay component.
  *
- * Uses polling to check if main window still exists, since event-based
- * approaches can block the main window from closing.
- *
- * TODO: Find a more elegant solution - possibly handle this in Rust/main.rs
- * by configuring the app to quit when the main window closes, or use
- * parent-child window relationships in Tauri.
+ * Uses polling rather than Tauri events: event-based teardown can
+ * keep the main window's Drop chain blocked, preventing a clean
+ * close. A parent-child window relationship would be cleaner but
+ * Tauri 2 doesn't yet expose that wiring for runtime-created
+ * webviews; tracked in `crates/transport-veilid/BLOCKERS.md`-style
+ * follow-up.
  */
 export async function setupOverlayAutoClose() {
   if (!isTauri()) return;
@@ -176,7 +176,7 @@ export async function setupOverlayAutoClose() {
         clearInterval(checkInterval);
         overlayWindow.close().catch(() => {});
       }
-    }, CHAT_OVERLAY_POLL_MS);
+    }, clientConfig.CHAT_OVERLAY_POLL_MS);
   } catch (error) {
     logger.error('Failed to set up overlay auto-close:', error);
   }

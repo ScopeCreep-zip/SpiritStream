@@ -1,37 +1,31 @@
 import { create } from 'zustand';
-import { backendMode } from '@/lib/backend/env';
 
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected';
 
 interface ConnectionState {
+  /** Current WebSocket state (`ws://.../api/v1/events`). */
   status: ConnectionStatus;
+  /** Timestamp of the most recent successful connect. `null` until the
+   *  first connect ever completes — used by the badge to distinguish
+   *  "first connect in progress" from "reconnecting after a drop". */
   lastConnected: Date | null;
-  reconnectAttempts: number;
+  /** Last error string from the underlying socket, if any. */
   error: string | null;
 
-  // Actions
-  setStatus: (status: ConnectionStatus) => void;
   setConnected: () => void;
   setDisconnected: (error?: string) => void;
   setConnecting: () => void;
-  incrementReconnectAttempts: () => void;
-  resetReconnectAttempts: () => void;
 }
 
-export const useConnectionStore = create<ConnectionState>((set, get) => ({
-  // In Tauri mode, we're always "connected" since it's local IPC
-  status: backendMode === 'tauri' ? 'connected' : 'disconnected',
-  lastConnected: backendMode === 'tauri' ? new Date() : null,
-  reconnectAttempts: 0,
+export const useConnectionStore = create<ConnectionState>((set) => ({
+  status: 'disconnected',
+  lastConnected: null,
   error: null,
-
-  setStatus: (status) => set({ status }),
 
   setConnected: () =>
     set({
       status: 'connected',
       lastConnected: new Date(),
-      reconnectAttempts: 0,
       error: null,
     }),
 
@@ -44,15 +38,5 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
   setConnecting: () =>
     set({
       status: 'connecting',
-    }),
-
-  incrementReconnectAttempts: () =>
-    set({
-      reconnectAttempts: get().reconnectAttempts + 1,
-    }),
-
-  resetReconnectAttempts: () =>
-    set({
-      reconnectAttempts: 0,
     }),
 }));

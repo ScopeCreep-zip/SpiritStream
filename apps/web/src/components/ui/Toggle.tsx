@@ -55,7 +55,7 @@ export function Toggle({
         />
         <span
           className={cn(
-            'absolute w-[18px] h-[18px] left-[3px] bottom-[3px]',
+            'absolute w-[18px] h-[18px] start-[3px] bottom-[3px]',
             'bg-white rounded-full shadow-sm',
             'transition-transform duration-200',
             'peer-checked:translate-x-5'

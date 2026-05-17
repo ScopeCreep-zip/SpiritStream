@@ -1,20 +1,13 @@
 import { create } from 'zustand';
-import { api } from '@/lib/backend';
+import { api } from '@/lib/client';
+import { events } from '@spiritstream/api-client';
 import { logger } from '@/lib/logger';
 import i18n from '@/lib/i18n';
-import {
-  type Profile,
-  type ProfileSummary,
-  type ProfileSettings,
-  type OutputGroup,
-  type StreamTarget,
-  type Platform,
-  createDefaultProfile,
-} from '@/types/profile';
+import type { Profile, ProfileSummary, ProfileSettings, OutputGroup, StreamTarget, ProfileActivatedEvent } from '@spiritstream/types';
+import { createDefaultProfile } from '@/lib/profile-helpers';
 import { useThemeStore } from '@/stores/themeStore';
 import { useLanguageStore, type Language } from '@/stores/languageStore';
 import { useSettingsStore } from '@/stores/settingsStore';
-import { useObsStore } from '@/stores/obsStore';
 
 interface ProfileState {
   // State
@@ -93,80 +86,15 @@ const applyUiSettings = (settings: ProfileSettings) => {
   useSettingsStore.getState().setShowNotifications(settings.showNotifications);
 };
 
-// Track pending OBS auto-connect timeout so we can cancel it when switching profiles
-let pendingObsAutoConnectTimeout: ReturnType<typeof setTimeout> | null = null;
-
 /**
- * Apply profile settings to the application when switching profiles
- * Disconnects OBS, syncs new config, and optionally auto-connects
+ * Apply the UI-only consequences of a profile activation (theme, language,
+ * notification preference). The backend's `ProfileService::activate()` owns
+ * OBS disconnect/reconfigure/auto-connect — the frontend never orchestrates
+ * those, it just receives the resulting obs:// events through the
+ * `useObsStore` subscription. The frontend just renders.
  */
-const applyProfileSettings = async (settings: ProfileSettings) => {
-  // Cancel any pending auto-connect from a previous profile switch
-  if (pendingObsAutoConnectTimeout) {
-    clearTimeout(pendingObsAutoConnectTimeout);
-    pendingObsAutoConnectTimeout = null;
-  }
-
-  // Apply UI settings first
+const applyProfileSettings = (settings: ProfileSettings) => {
   applyUiSettings(settings);
-
-  // Disconnect OBS if currently connected (so the new profile's config can be applied)
-  const obsStore = useObsStore.getState();
-  if (obsStore.connectionStatus === 'connected' || obsStore.connectionStatus === 'connecting') {
-    try {
-      await obsStore.disconnect(false); // false = not manual, don't disable auto-reconnect permanently
-    } catch (error) {
-      logger.warn('Failed to disconnect OBS when switching profiles:', error);
-    }
-  }
-
-  // Sync OBS config from profile (this also updates the backend)
-  obsStore.syncConfigFromProfile();
-
-  // Auto-connect to OBS if the new profile has auto-connect enabled
-  if (settings.obs.autoConnect) {
-    // Small delay to ensure config is synced to backend first
-    pendingObsAutoConnectTimeout = setTimeout(() => {
-      pendingObsAutoConnectTimeout = null;
-      useObsStore.getState().connect(false).catch((error) => {
-        logger.warn('Failed to auto-connect to OBS:', error);
-      });
-    }, 100);
-  }
-};
-
-// Helper to create a summary from a full profile (using new nested structure)
-const createSummary = (profile: Profile, isEncrypted: boolean = false): ProfileSummary => {
-  const firstGroup = profile.outputGroups[0];
-
-  // Build resolution string from video settings (e.g., "1080p60")
-  const resolution = firstGroup ? `${firstGroup.video.height}p${firstGroup.video.fps}` : '0p0';
-
-  // Parse bitrate from string (e.g., "6000k" -> 6000)
-  const bitrateStr = firstGroup?.video.bitrate || '0k';
-  const bitrate = parseInt(bitrateStr.replace(/[^\d]/g, ''), 10) || 0;
-
-  // Count all stream targets across all groups
-  const targetCount = profile.outputGroups.reduce((sum, g) => sum + g.streamTargets.length, 0);
-
-  // Collect unique services from all targets
-  const servicesSet = new Set<Platform>();
-  for (const group of profile.outputGroups) {
-    for (const target of group.streamTargets) {
-      servicesSet.add(target.service);
-    }
-  }
-  const services = Array.from(servicesSet);
-
-  return {
-    id: profile.id,
-    name: profile.name,
-    resolution,
-    bitrate,
-    targetCount,
-    services,
-    isEncrypted,
-  };
 };
 
 export const useProfileStore = create<ProfileState>((set, get) => ({
@@ -218,8 +146,11 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         return;
       }
 
-      const profile = await api.profile.load(name, password);
-      logger.debug('[ProfileStore] Profile loaded from backend:', {
+      // Use the typed `/activate` endpoint: backend loads, sets active
+      // session state, and emits a single `profile_activated` event whose
+      // consolidated payload the UI stores listen for.
+      const profile = await api.profile.activate(name, password);
+      logger.debug('[ProfileStore] Profile activated via backend:', {
         profileId: profile.id,
         profileName: profile.name,
       });
@@ -229,18 +160,18 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         pendingPasswordProfile: null,
         passwordError: null,
       });
+      // Apply the activated profile's UI-only settings (theme, language,
+      // notifications) synchronously here as well. The backend ALSO emits a
+      // `profile_activated` event that drives the same cascade — both paths
+      // converge, but the synchronous call closes the boot-time race where
+      // the event-bus listener hasn't finished its WS handshake yet.
+      applyProfileSettings(profile.settings);
 
-      // Apply profile settings (theme, language, notifications, OBS disconnect/reconnect)
-      if (profile.settings) {
-        await applyProfileSettings(profile.settings);
-      }
-
-      // Update summary with actual data if it was encrypted
+      // Refresh the summary list from the backend so the parsed numeric
+      // bitrate / resolution / target count come from `Profile::to_summary()`,
+      // not from a duplicated client-side `createSummary`.
       if (isEncrypted) {
-        const summaries = get().profiles.map((s) =>
-          s.name === name ? { ...createSummary(profile), isEncrypted: true } : s
-        );
-        set({ profiles: summaries });
+        await get().loadProfiles();
       }
 
       // Save as last used profile
@@ -277,22 +208,29 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     const isUnlocking = get().pendingUnlock;
     if (!name) return;
 
-    // Load the profile with the password
-    await get().loadProfile(name, password);
-
-    // If we were unlocking and profile loaded successfully, save without password to remove encryption
-    if (isUnlocking && get().current && !get().passwordError) {
+    if (isUnlocking) {
+      // Atomic encryption removal — one round trip. Backend loads with the
+      // password and re-saves without encryption in a single operation.
+      // Replaces the legacy `loadProfile(password) + saveProfile()` flow.
       try {
-        const profile = get().current!;
-        await api.profile.save(profile); // No password = unencrypted
-        // Reload profiles to update encryption status
+        await api.profile.decrypt(name, password);
         await get().loadProfiles();
-        set({ pendingUnlock: false });
+        await get().loadProfile(name);
+        set({ pendingUnlock: false, pendingPasswordProfile: null, passwordError: null });
       } catch (error) {
-        logger.error('[ProfileStore] Failed to remove encryption:', error);
-        set({ error: String(error), pendingUnlock: false });
+        const message = String(error);
+        if (message.toLowerCase().includes('password')) {
+          set({ passwordError: 'Incorrect password', pendingUnlock: false });
+        } else {
+          logger.error('[ProfileStore] Failed to remove encryption:', error);
+          set({ error: message, pendingUnlock: false });
+        }
       }
+      return;
     }
+
+    // Plain unlock for session: load with the password.
+    await get().loadProfile(name, password);
   },
 
   cancelPasswordPrompt: () =>
@@ -331,15 +269,9 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     try {
       await api.profile.save(current, password);
       logger.debug('[ProfileStore] saveProfile completed (backend save successful)');
-      // Update the summary in the list
-      const summaries = get().profiles.map((s) =>
-        s.name === current.name ? createSummary(current) : s
-      );
-      // Add if not exists
-      if (!summaries.find((s) => s.name === current.name)) {
-        summaries.push(createSummary(current));
-      }
-      set({ profiles: summaries });
+      // Refresh the summary list from the backend — `Profile::to_summary()`
+      // is the single source of truth for parsed numeric fields.
+      await get().loadProfiles();
     } catch (error) {
       logger.error('[ProfileStore] saveProfile failed:', error);
       set({ error: String(error) });
@@ -358,6 +290,19 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         current: current?.name === name ? null : current,
         loading: false,
       });
+      // Clear `lastProfile` if it pointed at the deleted name —
+      // otherwise the next boot tries to activate a missing profile and the
+      // user lands on the no-profile UI without explanation. The Rust shape
+      // is `Option<String>` → TS `string | null`; null is the idiomatic
+      // "no last profile" signal (empty string round-trips as `Some("")`).
+      try {
+        const settings = await api.settings.get();
+        if (settings.lastProfile === name) {
+          await api.settings.save({ ...settings, lastProfile: null });
+        }
+      } catch (clearError) {
+        logger.warn('[ProfileStore] Failed to clear lastProfile after delete:', clearError);
+      }
     } catch (error) {
       set({ error: String(error), loading: false });
     }
@@ -370,8 +315,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     // Save to backend
     try {
       await api.profile.save(newProfile);
-      const profiles = [...get().profiles, createSummary(newProfile, false)];
-      set({ profiles });
+      await get().loadProfiles();
     } catch (error) {
       set({ error: String(error) });
     }
@@ -397,8 +341,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         name: `${profile.name} ${i18n.t('common.copySuffix')}`,
       };
       await api.profile.save(newProfile);
-      const profiles = [...get().profiles, createSummary(newProfile)];
-      set({ profiles });
+      await get().loadProfiles();
     } catch (error) {
       set({ error: String(error) });
     }
@@ -588,3 +531,60 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     await get().saveProfile();
   },
 }));
+
+/**
+ * Backend → frontend bridge: the server emits a single `profile_activated`
+ * event with the consolidated settings (theme, language, OBS, etc.) whenever
+ * `ProfileService::activate()` runs. The payload type is generated by ts-rs
+ * from `crates/core/src/services/profile_manager.rs` so the wire shape stays
+ * in sync with Rust without a hand-rolled mirror.
+ *
+ * Subscribed from `AppContent` (after the server-readiness gate passes) —
+ * NOT at module-import time. Subscribing at module-import opened the
+ * WebSocket before the server was listening, producing the
+ * "WebSocket connection failed" cascade in the boot console.
+ */
+export async function subscribeProfileActivated(): Promise<() => void> {
+  return events.on<ProfileActivatedEvent>('profile_activated', (payload) => {
+    const settings = useProfileStore.getState().current?.settings;
+    if (!settings) return;
+    applyProfileSettings({
+      ...settings,
+      themeId: payload.themeId,
+      language: payload.language,
+      showNotifications: payload.showNotifications,
+    });
+  });
+}
+
+/**
+ * Backend → frontend bridge: the server emits `oauth_token_expired` whenever
+ * a proactive refresh inside `refresh_expiring_oauth_tokens` fails — typically
+ * because the refresh token itself was revoked or expired. The frontend just
+ * renders; the recovery action (re-running the OAuth flow) happens when the
+ * user clicks reconnect.
+ *
+ * Subscribed from `AppContent` (after the server-readiness gate passes) —
+ * same rationale as `subscribeProfileActivated`.
+ */
+interface OAuthTokenExpiredPayload {
+  provider: string;
+}
+
+export async function subscribeOAuthTokenExpired(): Promise<() => void> {
+  return events.on<OAuthTokenExpiredPayload>('oauth_token_expired', (payload) => {
+    logger.warn(
+      `[ProfileStore] OAuth token expired for ${payload.provider}; re-auth required.`,
+    );
+    // Surface as a non-blocking toast. Lazy import to avoid pulling the
+    // toast module into profileStore's tight bundle on app boot.
+    import('@/hooks/useToast')
+      .then(({ toast }) => {
+        const label = payload.provider.charAt(0).toUpperCase() + payload.provider.slice(1);
+        toast.info(`${label} sign-in expired — reconnect to send chat or stream.`);
+      })
+      .catch(() => {
+        // Toast module unavailable — log-only fallback is fine.
+      });
+  });
+}

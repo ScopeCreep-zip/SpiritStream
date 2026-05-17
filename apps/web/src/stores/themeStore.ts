@@ -1,8 +1,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { api, events } from '@/lib/backend';
-import { logger } from '@/lib/logger';
-import type { ThemeSummary, ThemeMode } from '@/types/theme';
+import { api } from '@/lib/client';
+import { events } from '@spiritstream/api-client';
+import { clientConfig } from '@/lib/constants';
+import type { ThemeSummary, ThemeMode } from '@spiritstream/types';
 
 interface ThemeState {
   currentThemeId: string;
@@ -77,41 +78,6 @@ function clearThemeOverrides() {
   }
 }
 
-function isLegacyThemeState(value: unknown): value is { state?: { currentThemeId?: string; themeId?: string } } {
-  return typeof value === 'object' && value !== null && 'state' in value;
-}
-
-function hasThemeId(value: unknown): value is { themeId: string } {
-  return typeof value === 'object' && value !== null && 'themeId' in value && typeof (value as Record<string, unknown>).themeId === 'string';
-}
-
-function migrateOldThemeFormat(): { themeId: string } | null {
-  try {
-    const oldData = localStorage.getItem('spiritstream-theme');
-    if (!oldData) return null;
-
-    const parsed: unknown = JSON.parse(oldData);
-    if (isLegacyThemeState(parsed)) {
-      const state = parsed.state;
-      if (state?.currentThemeId) {
-        return null; // Already persisted in the current format
-      }
-    }
-
-    const legacy = isLegacyThemeState(parsed) ? parsed.state : parsed;
-
-    if (!hasThemeId(legacy)) {
-      return null;
-    }
-
-    const themeId = legacy.themeId;
-    return { themeId };
-  } catch (error) {
-    logger.error('Failed to migrate old theme format:', error);
-    return null;
-  }
-}
-
 export const useThemeStore = create<ThemeState>()(
   persist(
     (set, get) => ({
@@ -127,11 +93,33 @@ export const useThemeStore = create<ThemeState>()(
       },
 
       setTheme: async (themeId) => {
+        // Short-circuit when the requested theme is already current AND we
+        // have its tokens cached. The cached path is self-sufficient — it
+        // does not depend on the catalog being loaded. (Previously gated
+        // on `isInitialized`, which made cache-hits block on the network
+        // load of the catalog. Fixed alongside the boot-order rework so
+        // setTheme works correctly before the readiness gate passes.)
+        //
+        // loadProfile fires both a synchronous
+        // applyProfileSettings call AND consumes the `profile_activated`
+        // event, so setTheme can be called twice in quick succession for
+        // the same themeId — without this guard the second call burns a
+        // backend round-trip on `api.theme.getTokens`.
+        {
+          const { currentThemeId, currentTokens } = get();
+          if (
+            currentThemeId === themeId
+            && currentTokens
+            && Object.keys(currentTokens).length > 0
+          ) {
+            return;
+          }
+        }
         try {
           // Wait for themes to be loaded if not initialized (with timeout)
           if (!get().isInitialized) {
             const timeout = new Promise<void>((_, reject) =>
-              setTimeout(() => reject(new Error('Theme initialization timeout')), 10000)
+              setTimeout(() => reject(new Error('Theme initialization timeout')), clientConfig.THEME_INIT_TIMEOUT_MS)
             );
             try {
               await Promise.race([initPromise, timeout]);
@@ -173,7 +161,7 @@ export const useThemeStore = create<ThemeState>()(
 
               // Retry once with delay if tokens are empty (helps with timing issues in production)
               if (!tokens || Object.keys(tokens).length === 0) {
-                await new Promise((r) => setTimeout(r, 500));
+                await new Promise((r) => setTimeout(r, clientConfig.THEME_TOKEN_RETRY_DELAY_MS));
                 tokens = await api.theme.getTokens(themeId);
               }
             } catch {
@@ -215,8 +203,8 @@ export const useThemeStore = create<ThemeState>()(
           const { currentThemeId, currentTokens } = get();
           // Include current theme in fallback list if we have cached tokens for it
           const fallbackThemes: ThemeSummary[] = [
-            { id: DEFAULT_THEME_DARK, name: 'Spirit Dark', mode: 'dark', source: 'builtin' },
-            { id: DEFAULT_THEME_LIGHT, name: 'Spirit Light', mode: 'light', source: 'builtin' },
+            { id: DEFAULT_THEME_DARK, name: 'Spirit Dark', mode: 'dark', source: 'builtin', builtIn: true, valid: true, error: null },
+            { id: DEFAULT_THEME_LIGHT, name: 'Spirit Light', mode: 'light', source: 'builtin', builtIn: true, valid: true, error: null },
           ];
           // Add current theme to list if it has cached tokens (so it won't be considered "missing")
           if (currentTokens && Object.keys(currentTokens).length > 0 &&
@@ -226,7 +214,10 @@ export const useThemeStore = create<ThemeState>()(
               id: currentThemeId,
               name: currentThemeId,
               mode,
-              source: 'builtin', // Use builtin since it's from embedded themes
+              source: 'builtin', // bundled embedded theme
+              builtIn: true,
+              valid: true,
+              error: null,
             });
           }
           set({
@@ -250,39 +241,34 @@ export const useThemeStore = create<ThemeState>()(
       }),
       onRehydrateStorage: () => (state) => {
         if (state) {
-          // Try to migrate old format
-          const migrated = migrateOldThemeFormat();
-          if (migrated) {
-            state.currentThemeId = migrated.themeId;
-            try {
-              localStorage.setItem(
-                'spiritstream-theme',
-                JSON.stringify({ state: { currentThemeId: migrated.themeId, currentTokens: state.currentTokens }, version: 0 })
-              );
-            } catch {
-              // Ignore storage errors
-            }
-          }
-
-          // Apply cached tokens immediately to prevent flash
-          // This ensures React-side tokens match what inline script applied
+          // Mirror the cached theme into React-side state. The inline
+          // <script> in index.html has already set data-theme and the
+          // token <style> on <html> before CSS parsed, so this is just
+          // a React-side mirror — the DOM is already correct.
+          //
+          // NO network call here. Per the next-themes / MUI pattern,
+          // localStorage is the source of truth for first paint; the
+          // server's theme catalog is loaded later (in AppContent,
+          // after the readiness gate) where it can fail without
+          // blocking the boot path.
           if (state.currentTokens && Object.keys(state.currentTokens).length > 0) {
             const mode = state.currentThemeId.includes('-light') ? 'light' : 'dark';
             applyTheme(state.currentThemeId, mode as ThemeMode, state.currentTokens);
           }
-
-          // Load themes list - setTheme will be called by useInitialize
-          // which gets the authoritative themeId from backend settings
-          state.refreshThemes();
         }
       },
     }
   )
 );
 
-if (typeof window !== 'undefined') {
-  // Listen for theme file changes from backend
-  events.on<ThemeSummary[]>('themes_updated', (payload) => {
+/**
+ * Subscribe to backend `themes_updated` events. Called by `AppContent`
+ * after the server-readiness gate passes — calling at module import
+ * raced server startup and opened a WebSocket before the backend was
+ * listening. Returns an unsubscribe function for React `useEffect`.
+ */
+export async function subscribeThemesUpdated(): Promise<() => void> {
+  return events.on<ThemeSummary[]>('themes_updated', (payload) => {
     const themes = payload;
     useThemeStore.setState({ themes });
     const state = useThemeStore.getState();
@@ -290,7 +276,5 @@ if (typeof window !== 'undefined') {
       const fallback = DEFAULT_THEME_DARK;
       state.setTheme(fallback);
     }
-  }).catch(() => {
-    // Ignore listener setup errors
   });
 }

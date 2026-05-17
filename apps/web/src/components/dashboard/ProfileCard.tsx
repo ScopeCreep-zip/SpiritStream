@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
 import { StreamStatus } from '@/components/ui/StreamStatus';
 import { PlatformIcon } from '@/components/stream/PlatformIcon';
-import type { Platform } from '@/types/profile';
+import type { Platform } from '@spiritstream/types';
 
 export interface ProfileCardMeta {
   icon: React.ReactNode;

@@ -1,17 +1,12 @@
 import { create } from 'zustand';
-import { api } from '@/lib/backend/httpApi';
+import { api } from '@/lib/client';
 import { logger } from '@/lib/logger';
 import { showSystemNotification } from '@/lib/notification';
 import { useSettingsStore } from './settingsStore';
 import { useProfileStore } from './profileStore';
 import i18n from '@/lib/i18n';
-import type {
-  ObsConnectionStatus,
-  ObsStreamStatus,
-  ObsConfig,
-  ObsState,
-} from '@/types/api';
-import type { ObsSettings } from '@/types/profile';
+import type { ObsConnectionStatus, ObsStreamStatus, ObsConfig, ObsState } from '@spiritstream/types';
+import type { ObsSettings } from '@spiritstream/types';
 
 interface ObsStoreState {
   // Connection state
@@ -28,20 +23,14 @@ interface ObsStoreState {
   // UI state
   showPassword: boolean;
 
-  // Integration state
-  // When true, the next OBS stream state change was triggered by SpiritStream
-  // and should not trigger SpiritStream back (prevents loops)
-  triggeredByUs: boolean;
-
   // Actions
   setShowPassword: (show: boolean) => void;
-  setTriggeredByUs: (value: boolean) => void;
   loadState: () => Promise<void>;
   loadConfig: () => Promise<void>;
   syncConfigFromProfile: () => void;
   updateConfig: (config: Partial<ObsConfig> & { password?: string }) => Promise<void>;
-  connect: (isManual?: boolean) => Promise<void>;
-  disconnect: (isManual?: boolean) => Promise<void>;
+  connect: () => Promise<void>;
+  disconnect: () => Promise<void>;
   startStream: () => Promise<void>;
   stopStream: () => Promise<void>;
   updateFromEvent: (state: Partial<ObsState>) => void;
@@ -57,8 +46,11 @@ const obsSettingsToConfig = (settings: ObsSettings): ObsConfig => ({
   useAuth: settings.useAuth,
   direction: settings.direction,
   autoConnect: settings.autoConnect,
-  hasPassword: settings.password.length > 0,
 });
+
+// UI helper — derives the "is a password set" flag without exposing the value.
+export const obsHasPassword = (config: ObsConfig | null): boolean =>
+  Boolean(config?.password && config.password.length > 0);
 
 export const useObsStore = create<ObsStoreState>((set, get) => ({
   // Initial state
@@ -70,10 +62,8 @@ export const useObsStore = create<ObsStoreState>((set, get) => ({
   config: null,
   isLoading: false,
   showPassword: false,
-  triggeredByUs: false,
 
   setShowPassword: (show) => set({ showPassword: show }),
-  setTriggeredByUs: (value) => set({ triggeredByUs: value }),
 
   loadState: async () => {
     try {
@@ -91,8 +81,10 @@ export const useObsStore = create<ObsStoreState>((set, get) => ({
   },
 
   /**
-   * Load config from backend API (legacy, for initial load)
-   * This will be replaced by syncConfigFromProfile when a profile is loaded
+   * Read the backend's in-memory OBS config and mirror it into the
+   * store. Called at app startup before any profile is loaded;
+   * `syncConfigFromProfile` then takes over once the active profile
+   * resolves.
    */
   loadConfig: async () => {
     try {
@@ -194,12 +186,10 @@ export const useObsStore = create<ObsStoreState>((set, get) => ({
     }
   },
 
-  connect: async (isManual = true) => {
+  connect: async () => {
+    // Backend owns auto-reconnect (`ObsWebSocketHandler::spawn_auto_connect`),
+    // so the frontend no longer signals "this is a manual connect".
     try {
-      // Notify that this is a manual connect (re-enables auto-reconnect)
-      if (isManual) {
-        window.dispatchEvent(new CustomEvent('obs:manual-connect'));
-      }
       set({ connectionStatus: 'connecting', errorMessage: null });
       await api.obs.connect();
       // State will be updated via WebSocket events
@@ -213,12 +203,8 @@ export const useObsStore = create<ObsStoreState>((set, get) => ({
     }
   },
 
-  disconnect: async (isManual = true) => {
+  disconnect: async () => {
     try {
-      // Notify that this is a manual disconnect (disables auto-reconnect)
-      if (isManual) {
-        window.dispatchEvent(new CustomEvent('obs:manual-disconnect'));
-      }
       await api.obs.disconnect();
       set({
         connectionStatus: 'disconnected',

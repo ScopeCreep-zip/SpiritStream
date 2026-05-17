@@ -5,8 +5,8 @@ import { cn } from '@/lib/cn';
 import { Card, CardHeader, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { StreamStatus } from '@/components/ui/StreamStatus';
-import type { OutputGroup } from '@/types/profile';
-import { formatResolution } from '@/types/profile';
+import type { OutputGroup } from '@spiritstream/types';
+import { formatResolution } from '@/lib/profile-helpers';
 import type { StreamStatusType } from '@/types/stream';
 
 export interface OutputGroupCardProps {
@@ -125,7 +125,7 @@ export const OutputGroupCard = memo(function OutputGroupCard({
                 onClick={onAddTarget}
                 aria-label={tDynamic('outputs.addTarget', { defaultValue: 'Add Target' })}
               >
-                <Plus className="w-3 h-3 mr-1" />
+                <Plus className="w-3 h-3 me-1" />
                 {tDynamic('outputs.addTarget', { defaultValue: 'Add Target' })}
               </Button>
             )}

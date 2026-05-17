@@ -97,7 +97,8 @@ export function Modal({ open, onClose, title, children, footer, maxWidth = '500p
   return (
     <div
       className={cn(
-        'fixed inset-0 z-[1000] flex items-center justify-center',
+        // z-index from the centralised ladder.
+        'fixed inset-0 z-[var(--z-modal-overlay)] flex items-center justify-center',
         'bg-bg-overlay',
         'animate-in fade-in duration-200'
       )}
@@ -107,11 +108,14 @@ export function Modal({ open, onClose, title, children, footer, maxWidth = '500p
         ref={modalRef}
         className={cn(
           'bg-bg-surface rounded-xl shadow-xl',
-          'w-full max-h-[90vh] overflow-hidden',
+          // Width comes from the `--modal-max-width` custom
+          // property injected below. Dynamic, but the JS only ferries
+          // a value; the styling rule lives in CSS.
+          'w-full max-w-[var(--modal-max-width)] max-h-[90vh] overflow-hidden',
           'animate-in zoom-in-95 duration-200',
           'flex flex-col'
         )}
-        style={{ maxWidth }}
+        style={{ '--modal-max-width': maxWidth } as React.CSSProperties}
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"

@@ -8,15 +8,16 @@ import { Input } from '@/components/ui/Input';
 import { Toggle } from '@/components/ui/Toggle';
 import { Grid } from '@/components/ui/Grid';
 import { Modal } from '@/components/ui/Modal';
+import { ConfirmDialog, PasswordInput } from '@spiritstream/ui';
+import { Eye, EyeOff } from 'lucide-react';
 import { Logo } from '@/components/layout/Logo';
-import { FFmpegDownloadProgress } from '@/components/settings/FFmpegDownloadProgress';
 import { KeyRotationSection } from '@/components/settings/KeyRotationSection';
-import { api, dialogs } from '@/lib/backend';
-import { backendMode } from '@/lib/backend/env';
+import { api } from '@/lib/client';
 import { useFileBrowser } from '@/hooks/useFileBrowser';
 import {
   useSettings,
   useFfmpegVersion,
+  useFfmpegUpdateCheck,
   useUpdateSetting,
   useSaveSettings,
   useSettingsSync,
@@ -26,8 +27,8 @@ import {
 import { useThemeStore } from '@/stores/themeStore';
 import { useProfileStore } from '@/stores/profileStore';
 import { useQueryClient } from '@tanstack/react-query';
-import type { AppSettings } from '@/types/api';
-import type { ProfileSettings as ProfileSettingsType, BackendSettings } from '@/types/profile';
+import type { Settings as AppSettings } from '@spiritstream/types';
+import type { ProfileSettings as ProfileSettingsType, BackendSettings } from '@spiritstream/types';
 import { logger } from '@/lib/logger';
 import { cn } from '@/lib/cn';
 
@@ -43,6 +44,7 @@ export function Settings() {
   // TanStack Query hooks for global settings
   const { data: settings, isLoading, isError } = useSettings();
   const { data: ffmpegData, isLoading: ffmpegLoading } = useFfmpegVersion();
+  const { data: ffmpegUpdate } = useFfmpegUpdateCheck(ffmpegData?.version);
   const updateSettingMutation = useUpdateSetting();
   const saveSettingsMutation = useSaveSettings();
   const refreshFfmpegVersion = useRefreshFfmpegVersion();
@@ -64,6 +66,30 @@ export function Settings() {
   const [clearError, setClearError] = useState<string | null>(null);
   const [themeInstallError, setThemeInstallError] = useState<string | null>(null);
   const [themeInstalling, setThemeInstalling] = useState(false);
+  // Updates state machine for the About card.
+  // `appVersion` is the running build's version, fetched once from the
+  // typed `/api/v1/system/app-version` route (no more hardcoded "0.1.0").
+  // `updateState` is the user-visible status of the self-updater.
+  const [appVersion, setAppVersion] = useState<string>('');
+  const [updaterSupported, setUpdaterSupported] = useState<boolean | null>(null);
+  type UpdateState =
+    | { kind: 'idle' }
+    | { kind: 'checking' }
+    | { kind: 'no-update' }
+    | {
+        kind: 'available';
+        version: string;
+        notes: string;
+        update: import('@tauri-apps/plugin-updater').Update;
+      }
+    | { kind: 'downloading'; downloaded: number; total: number | null }
+    | { kind: 'ready-to-restart' }
+    | { kind: 'error'; detail: string };
+  const [updateState, setUpdateState] = useState<UpdateState>({ kind: 'idle' });
+  // GPL compliance — viewing the third-party licenses page (currently
+  // FFmpeg's GPL notice) is a user-visible obligation when the bundle
+  // ships GPL builds. The modal is opened from the About card.
+  const [licensesModalOpen, setLicensesModalOpen] = useState(false);
 
   // File browser hook for HTTP mode
   const {
@@ -76,6 +102,86 @@ export function Settings() {
   useEffect(() => {
     refreshThemes().catch(() => {});
   }, [refreshThemes]);
+
+  // Fetch the running app version + probe whether the
+  // updater is supported for this install (always true on macOS /
+  // Windows; AppImage-only on Linux). Both fire once on mount and
+  // never change for the lifetime of the process.
+  useEffect(() => {
+    let cancelled = false;
+    api.system
+      .appVersion()
+      .then(({ version }) => {
+        if (!cancelled) setAppVersion(version);
+      })
+      .catch(() => {});
+    import('@/utils/selfUpdate')
+      .then(({ isUpdaterSupported }) => isUpdaterSupported())
+      .then((supported) => {
+        if (!cancelled) setUpdaterSupported(supported);
+      })
+      .catch(() => {
+        if (!cancelled) setUpdaterSupported(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleCheckForUpdates = async () => {
+    setUpdateState({ kind: 'checking' });
+    try {
+      const { checkForUpdate } = await import('@/utils/selfUpdate');
+      const update = await checkForUpdate();
+      if (!update) {
+        setUpdateState({ kind: 'no-update' });
+        return;
+      }
+      setUpdateState({
+        kind: 'available',
+        version: update.version,
+        notes: update.body ?? '',
+        update,
+      });
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      // Security-relevant: record verification / network failures into
+      // the audit chain so operators can grep for tampered-update
+      // attempts. Best-effort — don't block the UI on the audit POST.
+      void api.system.recordAppUpdateFailure(detail).catch(() => {});
+      setUpdateState({ kind: 'error', detail });
+    }
+  };
+
+  const handleInstallUpdate = async () => {
+    if (updateState.kind !== 'available') return;
+    const update = updateState.update;
+    setUpdateState({ kind: 'downloading', downloaded: 0, total: null });
+    try {
+      const { downloadAndInstall } = await import('@/utils/selfUpdate');
+      await downloadAndInstall(update, ({ downloaded, total }) => {
+        setUpdateState({ kind: 'downloading', downloaded, total });
+      });
+      setUpdateState({ kind: 'ready-to-restart' });
+    } catch (e) {
+      setUpdateState({
+        kind: 'error',
+        detail: e instanceof Error ? e.message : String(e),
+      });
+    }
+  };
+
+  const handleRelaunch = async () => {
+    try {
+      const { relaunch } = await import('@/utils/selfUpdate');
+      await relaunch();
+    } catch (e) {
+      setUpdateState({
+        kind: 'error',
+        detail: e instanceof Error ? e.message : String(e),
+      });
+    }
+  };
 
   // Helper to update a global setting
   const updateGlobalSetting = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
@@ -104,16 +210,10 @@ export function Settings() {
 
   const handleBrowseFfmpeg = async () => {
     try {
-      const selected =
-        backendMode === 'http'
-          ? await browserOpenFile({
-              filters: [{ name: 'FFmpeg', extensions: ['*'] }],
-              initialPath: settings?.ffmpegPath || undefined,
-            })
-          : await dialogs.openFilePath({
-              multiple: false,
-              filters: [{ name: 'FFmpeg', extensions: ['*'] }],
-            });
+      const selected = await browserOpenFile({
+        filters: [{ name: 'FFmpeg', extensions: ['*'] }],
+        initialPath: settings?.ffmpegPath || undefined,
+      });
       if (!selected) return;
       if (typeof selected === 'string') {
         try {
@@ -131,14 +231,10 @@ export function Settings() {
 
   const handleOpenProfileStorage = async () => {
     try {
-      if (backendMode === 'http') {
-        await browserOpenDirectory({
-          title: t('settings.profileStorage'),
-          initialPath: settings?.profileStoragePath,
-        });
-      } else {
-        await dialogs.openExternal(settings?.profileStoragePath || '');
-      }
+      await browserOpenDirectory({
+        title: t('settings.profileStorage'),
+        initialPath: settings?.profileStoragePath,
+      });
     } catch (error) {
       logger.error('Failed to open profile storage:', error);
     }
@@ -146,16 +242,10 @@ export function Settings() {
 
   const handleExportData = async () => {
     try {
-      const selected =
-        backendMode === 'http'
-          ? await browserOpenDirectory({
-              title: t('settings.selectExportLocation'),
-              initialPath: settings?.profileStoragePath || undefined,
-            })
-          : await dialogs.openDirectoryPath({
-              multiple: false,
-              title: t('settings.selectExportLocation'),
-            });
+      const selected = await browserOpenDirectory({
+        title: t('settings.selectExportLocation'),
+        initialPath: settings?.profileStoragePath || undefined,
+      });
       if (!selected) return;
       await api.settings.exportData(selected);
       alert(t('toast.dataExported'));
@@ -169,17 +259,10 @@ export function Settings() {
     setThemeInstallError(null);
     setThemeInstalling(true);
     try {
-      const selected =
-        backendMode === 'http'
-          ? await browserOpenFile({
-              filters: [{ name: 'Theme', extensions: ['json', 'jsonc'] }],
-              title: t('settings.installTheme', { defaultValue: 'Install Theme' }),
-            })
-          : await dialogs.openFilePath({
-              multiple: false,
-              filters: [{ name: 'Theme', extensions: ['json', 'jsonc'] }],
-              title: t('settings.installTheme', { defaultValue: 'Install Theme' }),
-            });
+      const selected = await browserOpenFile({
+        filters: [{ name: 'Theme', extensions: ['json', 'jsonc'] }],
+        title: t('settings.installTheme', { defaultValue: 'Install Theme' }),
+      });
       if (!selected) {
         setThemeInstalling(false);
         return;
@@ -479,9 +562,8 @@ export function Settings() {
                           }
                         }}
                       />
-                      <Input
+                      <PasswordInput
                         label={t('settings.remoteAccessToken', { defaultValue: 'Access token (optional)' })}
-                        type="password"
                         value={profileSettings?.backend?.token ?? ''}
                         onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                           updateBackendSetting('token', e.target.value)
@@ -489,6 +571,10 @@ export function Settings() {
                         helper={t('settings.remoteAccessTokenHelper', {
                           defaultValue: 'Clients must send this token as a Bearer auth header when enabled.',
                         })}
+                        autoComplete="off"
+                        renderToggleIcon={(visible) =>
+                          visible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />
+                        }
                       />
                     </div>
                   </div>
@@ -539,16 +625,31 @@ export function Settings() {
                 disabled
                 helper={t('settings.detectedVersion')}
               />
-              <div className="border-t border-border-muted pt-4">
-                <FFmpegDownloadProgress
-                  installedVersion={ffmpegVersion || undefined}
-                  autoDownload={settings.autoDownloadFfmpeg}
-                  onComplete={(path: string) => {
-                    saveSettingsMutation.mutate({ ffmpegPath: path });
-                    refreshFfmpegVersion();
-                  }}
-                />
-              </div>
+              {ffmpegVersion && ffmpegUpdate?.updateAvailable && (
+                <div
+                  className="rounded-md border border-status-warning/40 bg-status-warning/10 px-3 py-2 text-sm text-status-warning"
+                  role="status"
+                >
+                  {t('settings.ffmpegUpdateAvailable', {
+                    defaultValue: 'Update available: {{installed}} → {{latest}}',
+                    installed: ffmpegUpdate.installedVersion ?? ffmpegVersion,
+                    latest: ffmpegUpdate.latestVersion ?? '?',
+                  })}
+                </div>
+              )}
+              {/*
+                FFmpeg is delivered per-platform at build time:
+                  - macOS / Windows: bundled as a pinned Tauri 2 sidecar
+                    (version pinned in scripts/ffmpeg-pins.json, SHA-256
+                    verified at build time)
+                  - Linux .deb / .rpm: distro `ffmpeg` package (.deb / .rpm
+                    dep) — gets distro security updates
+                  - Linux AppImage: bundled pinned static build
+                  - Docker / CLI: $PATH (admin installs once)
+                To update FFmpeg the user updates the app — the new release
+                ships a new pinned version. Use the Updates button in the
+                About section below.
+              */}
             </CardBody>
           </Card>
 
@@ -638,7 +739,7 @@ export function Settings() {
                   <Logo size="lg" />
                 </div>
                 <div className="text-sm text-text-secondary mb-1">
-                  {t('settings.version')} 0.1.0
+                  {t('settings.version')} {appVersion || '…'}
                 </div>
                 <div className="text-xs text-text-tertiary mb-6">
                   {t('settings.tagline')}
@@ -647,7 +748,7 @@ export function Settings() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => dialogs.openExternal('https://github.com/ScopeCreep-zip/SpiritStream')}
+                    onClick={() => window.open('https://github.com/ScopeCreep-zip/SpiritStream', '_blank', 'noopener,noreferrer')}
                   >
                     <Github className="w-4 h-4" />
                     {t('settings.github')}
@@ -655,19 +756,130 @@ export function Settings() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => dialogs.openExternal('https://deepwiki.com/ScopeCreep-zip/SpiritStream')}
+                    onClick={() => window.open('https://deepwiki.com/ScopeCreep-zip/SpiritStream', '_blank', 'noopener,noreferrer')}
                   >
                     <BookOpen className="w-4 h-4" />
                     {t('settings.docs')}
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => window.open('https://github.com/ScopeCreep-zip/SpiritStream/releases', '_blank')}
+                  {updaterSupported && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleCheckForUpdates}
+                      disabled={
+                        updateState.kind === 'checking' ||
+                        updateState.kind === 'downloading'
+                      }
+                    >
+                      <RefreshCw
+                        className={`w-4 h-4 ${updateState.kind === 'checking' ? 'animate-spin' : ''}`}
+                      />
+                      {updateState.kind === 'checking'
+                        ? t('settings.updateChecking', {
+                            defaultValue: 'Checking…',
+                          })
+                        : t('settings.updates')}
+                    </Button>
+                  )}
+                </div>
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    className="text-xs text-text-tertiary underline hover:text-text-secondary"
+                    onClick={() => setLicensesModalOpen(true)}
                   >
-                    <RefreshCw className="w-4 h-4" />
-                    {t('settings.updates')}
-                  </Button>
+                    {t('settings.thirdPartyLicenses', {
+                      defaultValue: 'Third-party licenses',
+                    })}
+                  </button>
+                </div>
+                {/* Update state machine surface — sits below the action
+                    buttons inside the About card. Mutually exclusive
+                    states, so we render one block per state. */}
+                <div className="mt-4 text-xs">
+                  {updateState.kind === 'no-update' && (
+                    <div className="text-text-tertiary">
+                      {t('settings.updateNone', {
+                        defaultValue: 'You are running the latest version.',
+                      })}
+                    </div>
+                  )}
+                  {updaterSupported === false && (
+                    <div className="text-text-tertiary">
+                      {t('settings.updateDistroManaged', {
+                        defaultValue:
+                          'Updates are managed by your distribution\'s package manager. Run `apt upgrade spiritstream` or `dnf upgrade spiritstream`.',
+                      })}
+                    </div>
+                  )}
+                  {updateState.kind === 'available' && (
+                    <div className="rounded-md border border-status-info/40 bg-status-info/10 px-3 py-2 text-left">
+                      <div className="font-medium text-status-info mb-1">
+                        {t('settings.updateAvailableTitle', {
+                          defaultValue: 'Update available: {{version}}',
+                          version: updateState.version,
+                        })}
+                      </div>
+                      {updateState.notes && (
+                        <pre className="whitespace-pre-wrap text-text-secondary text-xs mt-2 max-h-32 overflow-auto">
+                          {updateState.notes}
+                        </pre>
+                      )}
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        className="mt-3"
+                        onClick={handleInstallUpdate}
+                      >
+                        {t('settings.updateInstall', {
+                          defaultValue: 'Download and install',
+                        })}
+                      </Button>
+                    </div>
+                  )}
+                  {updateState.kind === 'downloading' && (
+                    <div className="text-text-secondary">
+                      {t('settings.updateDownloading', {
+                        defaultValue: 'Downloading update…',
+                      })}
+                      {updateState.total && updateState.total > 0 && (
+                        <span>
+                          {' '}
+                          {Math.round(
+                            (updateState.downloaded / updateState.total) * 100,
+                          )}
+                          %
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {updateState.kind === 'ready-to-restart' && (
+                    <div className="rounded-md border border-status-info/40 bg-status-info/10 px-3 py-2">
+                      <div className="text-status-info mb-2">
+                        {t('settings.updateReady', {
+                          defaultValue:
+                            'Update installed. Restart to apply.',
+                        })}
+                      </div>
+                      <Button variant="primary" size="sm" onClick={handleRelaunch}>
+                        {t('settings.updateRestart', {
+                          defaultValue: 'Restart now',
+                        })}
+                      </Button>
+                    </div>
+                  )}
+                  {updateState.kind === 'error' && (
+                    <div className="rounded-md border border-error-border bg-error-subtle px-3 py-2 text-left">
+                      <div className="font-medium text-error-text mb-1">
+                        {t('settings.updateErrorTitle', {
+                          defaultValue: 'Update check failed',
+                        })}
+                      </div>
+                      <div className="text-error-text text-xs break-words">
+                        {updateState.detail}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </CardBody>
@@ -675,28 +887,102 @@ export function Settings() {
         </Grid>
       )}
 
-      {/* Clear Data Modal */}
-      <Modal
+      {/* Clear Data — ConfirmDialog with confirm-token flow. */}
+      <ConfirmDialog
         open={clearConfirmOpen}
-        onClose={handleClearCancel}
         title={t('settings.clearAllData')}
-        footer={
+        confirmLabel={clearInProgress ? t('common.loading') : t('common.confirm')}
+        cancelLabel={t('common.cancel')}
+        confirmDisabled={clearInProgress}
+        onConfirm={handleClearConfirm}
+        onCancel={handleClearCancel}
+        message={
           <>
-            <Button variant="ghost" onClick={handleClearCancel} disabled={clearInProgress}>
-              {t('common.cancel')}
-            </Button>
-            <Button variant="destructive" onClick={handleClearConfirm} disabled={clearInProgress}>
-              {clearInProgress ? t('common.loading') : t('common.confirm')}
-            </Button>
+            <p>{t('settings.clearConfirm')}</p>
+            {clearError && (
+              <div className="mt-4 p-3 rounded-lg bg-error-subtle border border-error-border">
+                <p className="text-sm text-error-text">{clearError}</p>
+              </div>
+            )}
           </>
         }
+      />
+
+      {/* GPL compliance — Third-party licenses modal. FFmpeg is the
+          load-bearing GPL dep (we ship the BtbN GPL build for hardware
+          encoders on Windows / Linux, and evermeet's GPL build on
+          macOS). The modal displays the bundled version + a link to
+          the matching source tarball attached to the GitHub release. */}
+      <Modal
+        open={licensesModalOpen}
+        onClose={() => setLicensesModalOpen(false)}
+        title={t('settings.thirdPartyLicensesTitle', {
+          defaultValue: 'Third-party licenses',
+        })}
+        footer={
+          <Button variant="ghost" onClick={() => setLicensesModalOpen(false)}>
+            {t('common.close', { defaultValue: 'Close' })}
+          </Button>
+        }
       >
-        <p className="text-text-secondary">{t('settings.clearConfirm')}</p>
-        {clearError && (
-          <div className="mt-4 p-3 rounded-lg bg-error-subtle border border-error-border">
-            <p className="text-sm text-error-text">{clearError}</p>
+        <div className="flex flex-col gap-4 text-sm">
+          <p className="text-text-secondary">
+            {t('settings.thirdPartyLicensesIntro', {
+              defaultValue:
+                'SpiritStream bundles the following third-party software. License notices and corresponding source code are linked below.',
+            })}
+          </p>
+          <div className="rounded-md border border-border-subtle p-3">
+            <div className="flex items-baseline justify-between gap-2">
+              <div className="font-medium">FFmpeg</div>
+              <div className="text-xs text-text-tertiary">GPL v2 or later</div>
+            </div>
+            <div className="text-xs text-text-tertiary mt-1">
+              {t('settings.thirdPartyLicensesFfmpegBundled', {
+                defaultValue: 'Bundled with this build of SpiritStream.',
+              })}
+            </div>
+            <ul className="mt-3 text-xs flex flex-col gap-1">
+              <li>
+                <a
+                  href="https://www.ffmpeg.org/legal.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-accent-text underline"
+                >
+                  {t('settings.thirdPartyLicensesFfmpegLicense', {
+                    defaultValue: 'License (ffmpeg.org/legal.html)',
+                  })}
+                </a>
+              </li>
+              <li>
+                <a
+                  href={`https://github.com/ScopeCreep-zip/SpiritStream/releases/tag/v${appVersion || '0.0.0'}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-accent-text underline"
+                >
+                  {t('settings.thirdPartyLicensesFfmpegSource', {
+                    defaultValue:
+                      'Matching source tarball (attached to this release)',
+                  })}
+                </a>
+              </li>
+              <li>
+                <a
+                  href="https://www.ffmpeg.org/download.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-accent-text underline"
+                >
+                  {t('settings.thirdPartyLicensesFfmpegUpstream', {
+                    defaultValue: 'Upstream binary distributors',
+                  })}
+                </a>
+              </li>
+            </ul>
           </div>
-        )}
+        </div>
       </Modal>
 
       {/* File browser modal for HTTP mode */}

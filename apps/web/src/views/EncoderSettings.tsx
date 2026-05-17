@@ -7,7 +7,7 @@ import { EncoderCard } from '@/components/encoder';
 import { OutputGroupModal } from '@/components/modals';
 import { useProfileStore } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
-import type { OutputGroup } from '@/types/profile';
+import type { OutputGroup } from '@spiritstream/types';
 
 export function EncoderSettings() {
   const { t } = useTranslation();
@@ -155,7 +155,7 @@ export function EncoderSettings() {
       >
         <CardBody className="flex items-center justify-center py-8 px-6">
           <Button variant="ghost">
-            <Plus className="w-5 h-5 mr-2" />
+            <Plus className="w-5 h-5 me-2" />
             {tDynamic('encoder.addEncoder', { defaultValue: 'Add Encoder' })}
           </Button>
         </CardBody>

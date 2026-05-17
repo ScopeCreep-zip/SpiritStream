@@ -4,8 +4,9 @@ import { cn } from '@/lib/cn';
 import { Card, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { StreamStatus } from '@/components/ui/StreamStatus';
-import type { OutputGroup } from '@/types/profile';
+import type { OutputGroup } from '@spiritstream/types';
 import type { StreamStatusType } from '@/types/stream';
+import { getEncoderKind } from '@/lib/encoderPresets';
 
 export interface EncoderCardProps {
   group: OutputGroup;
@@ -34,19 +35,9 @@ const ENCODER_DEFAULT_LABELS: Record<string, string> = {
   av1_vaapi: 'VAAPI AV1',
 };
 
-const HARDWARE_ENCODERS = new Set([
-  'h264_nvenc',
-  'hevc_nvenc',
-  'h264_videotoolbox',
-  'hevc_videotoolbox',
-  'h264_qsv',
-  'hevc_qsv',
-  'h264_amf',
-  'hevc_amf',
-  'h264_vaapi',
-  'hevc_vaapi',
-  'av1_vaapi',
-]);
+// `HARDWARE_ENCODERS` Set was retired — the kind classification now
+// ships from the backend via `GET /api/v1/system/encoders` (`metadata`
+// map, hydrated into `encoderMetadata`). See `getEncoderKind` below.
 
 const PRESET_DEFAULT_LABELS: Record<string, string> = {
   ultrafast: 'Ultrafast',
@@ -84,7 +75,7 @@ function getEncoderLabel(
       type: 'passthrough',
     };
   }
-  const type = HARDWARE_ENCODERS.has(codec) ? 'hardware' : 'software';
+  const type = getEncoderKind(codec);
   const defaultLabel = ENCODER_DEFAULT_LABELS[codec] || codec;
   return {
     label: t(`encoder.encoders.${codec}`, { defaultValue: defaultLabel }),
@@ -95,7 +86,7 @@ function getEncoderLabel(
 /**
  * Get a human-readable label for an encoder preset
  */
-function getPresetLabel(preset: string | undefined, t: TranslateFn): string {
+function getPresetLabel(preset: string | null | undefined, t: TranslateFn): string {
   if (!preset) return t('common.notAvailable');
   const defaultLabel = PRESET_DEFAULT_LABELS[preset] || preset;
   return t(`encoder.presets.${preset}`, { defaultValue: defaultLabel });
@@ -155,7 +146,7 @@ export function EncoderCard({
               <h3 className="font-semibold text-text-primary">
                 {group.name || tDynamic('encoder.defaultEncoderName', { defaultValue: 'Encoder' })}
                 {isDefaultGroup && (
-                  <span className="ml-2 text-xs font-normal text-text-tertiary">
+                  <span className="ms-2 text-xs font-normal text-text-tertiary">
                     ({tDynamic('encoder.readonly', { defaultValue: 'Read-only' })})
                   </span>
                 )}

@@ -1,5 +1,2 @@
-// Re-export all types
-export * from './profile';
+// Frontend-only UI types. Domain types live in @spiritstream/types.
 export * from './stream';
-export * from './api';
-export * from './chat';

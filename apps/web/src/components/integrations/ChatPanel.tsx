@@ -19,15 +19,15 @@ import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/compon
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Toggle } from '@/components/ui/Toggle';
-import { api, events } from '@/lib/backend';
+import { api } from '@/lib/client';
+import { events } from '@spiritstream/api-client';
 import { logger } from '@/lib/logger';
 import { toast } from '@/hooks/useToast';
 import { cn } from '@/lib/cn';
 import { useProfileStore } from '@/stores/profileStore';
-import { CHAT_POLL_INTERVAL_MS } from '@/lib/constants';
-import type { ChatPlatform, ChatPlatformStatus, OAuthAccount } from '@/types/chat';
-import type { ChatSettings } from '@/types/profile';
-import { createDefaultChatSettings } from '@/types/profile';
+import { clientConfig } from '@/lib/constants';
+import type { ChatPlatform, ChatPlatformStatus, ChatSettings, OAuthAccountStatus } from '@spiritstream/types';
+import { createDefaultChatSettings } from '@/lib/profile-helpers';
 
 // ============================================================================
 // Types
@@ -35,7 +35,7 @@ import { createDefaultChatSettings } from '@/types/profile';
 
 interface TwitchCardProps {
   status: ChatPlatformStatus | null;
-  account: OAuthAccount | null;
+  account: OAuthAccountStatus | null;
   channel: string;
   sendEnabled: boolean;
   onSendEnabledChange: (enabled: boolean) => void;
@@ -50,7 +50,7 @@ interface TwitchCardProps {
 
 interface YouTubeCardProps {
   status: ChatPlatformStatus | null;
-  account: OAuthAccount | null;
+  account: OAuthAccountStatus | null;
   channelId: string;
   apiKey: string;
   useApiKey: boolean;
@@ -273,7 +273,7 @@ function TwitchCard({
         {/* Message count */}
         {isConnected && status && (
           <div className="text-sm text-text-secondary">
-            {t('chat.messageCount', { count: status.messageCount })}
+            {t('chat.messageCount', { count: Number(status.messageCount) })}
           </div>
         )}
 
@@ -568,7 +568,7 @@ function YouTubeCard({
               type="button"
               onClick={() => setShowApiKey(!showApiKey)}
               className={cn(
-                'absolute right-3 top-[34px]',
+                'absolute end-3 top-[34px]',
                 'p-1 rounded-md',
                 'text-text-tertiary hover:text-text-primary',
                 'transition-colors'
@@ -604,7 +604,7 @@ function YouTubeCard({
         {/* Message count */}
         {isConnected && status && (
           <div className="text-sm text-text-secondary">
-            {t('chat.messageCount', { count: status.messageCount })}
+            {t('chat.messageCount', { count: Number(status.messageCount) })}
           </div>
         )}
 
@@ -684,8 +684,8 @@ export function ChatPanel() {
     [currentProfile]
   );
   const [platformStatuses, setPlatformStatuses] = useState<ChatPlatformStatus[]>([]);
-  const [twitchAccount, setTwitchAccount] = useState<OAuthAccount | null>(null);
-  const [youtubeAccount, setYoutubeAccount] = useState<OAuthAccount | null>(null);
+  const [twitchAccount, setTwitchAccount] = useState<OAuthAccountStatus | null>(null);
+  const [youtubeAccount, setYoutubeAccount] = useState<OAuthAccountStatus | null>(null);
 
   // Local state for form fields
   const [twitchChannel, setTwitchChannel] = useState('');
@@ -754,7 +754,7 @@ export function ChatPanel() {
     setTrovoSendEnabled(chatSettings.trovoSendEnabled || false);
     setStripchatSendEnabled(chatSettings.stripchatSendEnabled || false);
     setCrosspostEnabled(chatSettings.crosspostEnabled || false);
-    setVisiblePlatforms(chatSettings.visiblePlatforms || []);
+    setVisiblePlatforms((chatSettings.visiblePlatforms || []) as ChatPlatform[]);
     setVisibilityPanelCollapsed(chatSettings.visibilityPanelCollapsed ?? true);
   }, [chatSettings]);
 
@@ -802,7 +802,7 @@ export function ChatPanel() {
       } catch (error) {
         logger.error('Failed to load chat status:', error);
       }
-    }, CHAT_POLL_INTERVAL_MS);
+    }, clientConfig.CHAT_POLL_INTERVAL_MS);
 
     return () => clearInterval(interval);
   }, []);
@@ -814,6 +814,7 @@ export function ChatPanel() {
     let unlistenAutoDisconnect: (() => void) | null = null;
     let unlistenConnectionLost: (() => void) | null = null;
     let unlistenConnectionRestored: (() => void) | null = null;
+    let unlistenAutoConnectFailed: (() => void) | null = null;
 
     const setup = async () => {
       // OAuth login completed -- update account state
@@ -894,6 +895,32 @@ export function ChatPanel() {
           );
         }
       );
+
+      // Auto-connect FAILED during stream start. Backend emits this from
+      // `auto_connect_chat_platforms` per-platform; the stream itself keeps
+      // running. Refresh the status grid and surface the failure as a
+      // non-blocking toast so the user can re-attempt connection manually.
+      unlistenAutoConnectFailed = await events.on<{ platform: string; kind: string; error: string }>(
+        'chat_auto_connect_failed',
+        async (payload) => {
+          const statuses = await api.chat.getStatus();
+          setPlatformStatuses(statuses);
+          const name =
+            payload.platform === 'twitch'
+              ? 'Twitch'
+              : payload.platform === 'youtube'
+                ? 'YouTube'
+                : payload.platform === 'trovo'
+                  ? 'Trovo'
+                  : payload.platform;
+          toast.error(
+            t('chat.autoConnectFailed', {
+              platform: name,
+              defaultValue: '{{platform}} chat auto-connect failed',
+            }) + (payload.error ? `: ${payload.error}` : '')
+          );
+        }
+      );
     };
 
     setup();
@@ -904,6 +931,7 @@ export function ChatPanel() {
       if (unlistenAutoDisconnect) unlistenAutoDisconnect();
       if (unlistenConnectionLost) unlistenConnectionLost();
       if (unlistenConnectionRestored) unlistenConnectionRestored();
+      if (unlistenAutoConnectFailed) unlistenAutoConnectFailed();
     };
   }, [twitchChannel, youtubeChannelId, t, saveChatSettings]);
 
@@ -935,14 +963,14 @@ export function ChatPanel() {
 
   const handleTwitchLogout = useCallback(async () => {
     await api.oauth.disconnect('twitch');
-    setTwitchAccount({ loggedIn: false });
+    setTwitchAccount({ loggedIn: false, userId: '', username: '', displayName: '' });
     setTwitchSendEnabled(false);
     saveChatSettings({ twitchSendEnabled: false });
   }, [saveChatSettings]);
 
   const handleTwitchForget = useCallback(async () => {
     await api.oauth.forget('twitch');
-    setTwitchAccount({ loggedIn: false });
+    setTwitchAccount({ loggedIn: false, userId: '', username: '', displayName: '' });
     setTwitchChannel('');
     setTwitchSendEnabled(false);
     await saveChatSettings({ twitchChannel: '', twitchSendEnabled: false });
@@ -989,14 +1017,14 @@ export function ChatPanel() {
 
   const handleYoutubeLogout = useCallback(async () => {
     await api.oauth.disconnect('youtube');
-    setYoutubeAccount({ loggedIn: false });
+    setYoutubeAccount({ loggedIn: false, userId: '', username: '', displayName: '' });
     setYoutubeSendEnabled(false);
     saveChatSettings({ youtubeSendEnabled: false });
   }, [saveChatSettings]);
 
   const handleYoutubeForget = useCallback(async () => {
     await api.oauth.forget('youtube');
-    setYoutubeAccount({ loggedIn: false });
+    setYoutubeAccount({ loggedIn: false, userId: '', username: '', displayName: '' });
     setYoutubeChannelId('');
     setYoutubeSendEnabled(false);
     await saveChatSettings({ youtubeChannelId: '', youtubeSendEnabled: false });

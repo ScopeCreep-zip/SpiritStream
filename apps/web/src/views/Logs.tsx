@@ -8,7 +8,7 @@ import { LogConsole } from '@/components/feedback/LogConsole';
 import { LogEntry } from '@/components/feedback/LogEntry';
 import type { LogLevel } from '@/types/stream';
 import { useLogStore } from '@/stores/logStore';
-import { dialogs } from '@/lib/backend';
+import { dialogs } from '@spiritstream/api-client';
 import { logger } from '@/lib/logger';
 import { toast } from '@/hooks/useToast';
 

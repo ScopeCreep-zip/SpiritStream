@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useProfileStore } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
-import { api } from '@/lib/backend';
+import { api } from '@/lib/client';
 
 /**
  * Hook to initialize the application on startup

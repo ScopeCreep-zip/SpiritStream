@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   LayoutDashboard,
@@ -30,7 +30,8 @@ import { ConnectionStatus } from '@/components/ui/ConnectionStatus';
 import { ConnectionError } from '@/components/ui/ConnectionError';
 import { ProfileModal, TargetModal, OutputGroupModal, LoginModal } from '@/components/modals';
 import { PasswordModal } from '@/components/modals/PasswordModal';
-import { useProfileStore } from '@/stores/profileStore';
+import { incomingRtmpUrl } from '@/lib/profile-helpers';
+import { useProfileStore, subscribeProfileActivated, subscribeOAuthTokenExpired } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
 import { useLanguageStore } from '@/stores/languageStore';
 import { useInitialize } from '@/hooks/useInitialize';
@@ -41,16 +42,20 @@ import { useConnectionStatus } from '@/hooks/useConnectionStatus';
 import { useBackendConnection } from '@/hooks/useBackendConnection';
 import { useDataSync } from '@/hooks/useDataSync';
 import { useObsEvents } from '@/hooks/useObsEvents';
-import { validateStreamConfig, displayValidationIssues } from '@/lib/streamValidation';
+import { api } from '@/lib/client';
+import { displayValidationError } from '@/lib/validationToast';
 import { toast } from '@/hooks/useToast';
-import { useThemeStore } from '@/stores/themeStore';
+import { useThemeStore, subscribeThemesUpdated } from '@/stores/themeStore';
+import { hydrateClientConfig } from '@/lib/constants';
+import { hydrateEncoderPresets, hydrateEncoderMetadata } from '@/lib/encoderPresets';
 import { ChatOverlay } from '@/views/ChatOverlay';
-import { checkAuth, checkServerHealth, checkServerReadyDetailed, ServerReadyStatus, isTauri } from '@/lib/backend/env';
-import { initConnection } from '@/lib/backend/httpEvents';
+import { checkAuth, getBackendBaseUrl, ServerReadyStatus, isTauri } from '@spiritstream/api-client';
+import { initConnection } from '@spiritstream/api-client';
 import { setupMainWindowCloseHandler } from '@/lib/chatWindow';
 import { CHAT_OVERLAY_SYNC_EVENT, CHAT_OVERLAY_SYNC_REQUEST_EVENT } from '@/lib/chatEvents';
 import { useChatStore } from '@/stores/chatStore';
 import { logger } from '@/lib/logger';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 // Import all views
 import {
@@ -169,7 +174,7 @@ function MainApp() {
     }
 
     if (typeof details.status === 'number') {
-      return [`HTTP ${details.status} from /ready`];
+      return [`HTTP ${details.status} from /api/v1/ready`];
     }
 
     if (details.lastError) {
@@ -179,65 +184,63 @@ function MainApp() {
     return [];
   };
 
-  // Check server health on mount
-  useEffect(() => {
-    let cancelled = false;
-
-    const checkHealth = async () => {
+  // Wait for server readiness on mount via a single long-poll request.
+  //
+  // The backend's `GET /api/v1/ready` holds the connection (up to 25s)
+  // until `ServerReadiness::ready` flips, then returns 200. If still
+  // initializing past the timeout, it returns 503 + `Retry-After: 1`.
+  //
+  // ONE pattern across all deployments — Tauri desktop, Tauri mobile,
+  // Docker, browser. No deployment-mode branching. No IPC. No polling
+  // loop. No fallback chain. The forward-only architecture surfaces
+  // exactly one source of truth: the server's readiness state.
+  const probeReadiness = useCallback(
+    async (signal: AbortSignal): Promise<void> => {
       setIsCheckingHealth(true);
       setServerStatus('checking');
       setReadyDetails(null);
-
-      // Give the server time to start (especially in Tauri where launcher is spawning it)
-      const healthy = await checkServerHealth(10, 500);
-      if (cancelled) return;
-
-      if (!healthy) {
+      try {
+        const resp = await fetch(`${getBackendBaseUrl()}/api/v1/ready`, {
+          signal,
+          credentials: 'include',
+        });
+        if (signal.aborted) return;
+        if (resp.ok) {
+          setServerStatus('ready');
+          setReadyDetails(null);
+        } else {
+          const body = (await resp.json().catch(() => null)) as ServerReadyStatus | null;
+          setServerStatus('not-ready');
+          setReadyDetails({
+            ready: false,
+            status: resp.status,
+            failed: body?.failed,
+            errors: body?.errors,
+            lastError: body?.lastError,
+          });
+        }
+      } catch (err) {
+        if (signal.aborted) return;
         setServerStatus('unreachable');
-        setIsCheckingHealth(false);
-        return;
+        logger.error('Readiness probe failed:', err);
+      } finally {
+        if (!signal.aborted) setIsCheckingHealth(false);
       }
+    },
+    [],
+  );
 
-      const ready = await checkServerReadyDetailed(15, 400);
-      if (cancelled) return;
+  useEffect(() => {
+    const controller = new AbortController();
+    void probeReadiness(controller.signal);
+    return () => { controller.abort(); };
+  }, [probeReadiness]);
 
-      if (ready.ready) {
-        setServerStatus('ready');
-        setReadyDetails(null);
-      } else {
-        setServerStatus('not-ready');
-        setReadyDetails(ready);
-      }
-      setIsCheckingHealth(false);
-    };
-
-    checkHealth();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Retry handler for connection error
+  // Retry handler for the connection-error overlay. Uses the same
+  // single-shot long-poll as the initial probe.
   const handleRetryConnection = async () => {
-    setIsCheckingHealth(true);
-    setServerStatus('checking');
-    setReadyDetails(null);
-
-    const healthy = await checkServerHealth(15, 500);
-    if (healthy) {
-      const ready = await checkServerReadyDetailed(15, 400);
-      if (ready.ready) {
-        setServerStatus('ready');
-        setReadyDetails(null);
-      } else {
-        setServerStatus('not-ready');
-        setReadyDetails(ready);
-      }
-    } else {
-      setServerStatus('unreachable');
-    }
-    setIsCheckingHealth(false);
+    const controller = new AbortController();
+    await probeReadiness(controller.signal);
   };
 
   // Show connection error overlay if server is unreachable
@@ -282,8 +285,14 @@ function MainApp() {
   }
 
   // Server is healthy - render the main app content
-  // This component contains all the hooks that depend on backend connectivity
-  return <AppContent />;
+  // This component contains all the hooks that depend on backend connectivity.
+  // Wrap the entire content tree in an ErrorBoundary so a
+  // crashed view never leaves the user staring at a blank page.
+  return (
+    <ErrorBoundary>
+      <AppContent />
+    </ErrorBoundary>
+  );
 }
 
 /**
@@ -296,6 +305,56 @@ function AppContent() {
   // Initialize backend connection (HTTP mode only)
   // IMPORTANT: This hook and others below only run after server is confirmed healthy
   useBackendConnection();
+
+  // Hydrate server-tuned client constants (ranges, encoder presets, encoder
+  // metadata). Runs once after the readiness gate passes — this is the
+  // architectural reason these were moved out of main.tsx, where they raced
+  // server startup and produced "could not connect" noise in the console.
+  useEffect(() => {
+    void hydrateClientConfig();
+    void hydrateEncoderPresets();
+    void hydrateEncoderMetadata();
+  }, []);
+
+  // Subscribe to backend WebSocket events. All `events.on(...)` calls are
+  // gated through this hook (and only this hook) so that the WebSocket
+  // opens AFTER the server-readiness gate passes. Subscribing at module-
+  // import time produced the "WebSocket connection failed" cascade in
+  // the boot console — every subscription now lives here instead.
+  useEffect(() => {
+    let unsubscribeThemes: (() => void) | null = null;
+    let unsubscribeProfile: (() => void) | null = null;
+    let unsubscribeOAuth: (() => void) | null = null;
+
+    subscribeThemesUpdated()
+      .then((unsub) => { unsubscribeThemes = unsub; })
+      .catch((err) => logger.error('Failed to subscribe to themes_updated events:', err));
+
+    subscribeProfileActivated()
+      .then((unsub) => { unsubscribeProfile = unsub; })
+      .catch((err) => logger.error('Failed to subscribe to profile_activated events:', err));
+
+    subscribeOAuthTokenExpired()
+      .then((unsub) => { unsubscribeOAuth = unsub; })
+      .catch((err) => logger.error('Failed to subscribe to oauth_token_expired events:', err));
+
+    return () => {
+      if (unsubscribeThemes) unsubscribeThemes();
+      if (unsubscribeProfile) unsubscribeProfile();
+      if (unsubscribeOAuth) unsubscribeOAuth();
+    };
+  }, []);
+
+  // Load the authoritative theme catalog from the backend. Runs after
+  // the readiness gate, NOT during persist rehydration — the previous
+  // architecture fired this at module-import time and raced server
+  // startup. localStorage already supplied the user's chosen theme + its
+  // tokens for first paint (via index.html inline script), so this load
+  // is non-blocking: it only matters for Settings to enumerate themes
+  // and for `themes_updated` to reconcile the cached themeId.
+  useEffect(() => {
+    void useThemeStore.getState().refreshThemes();
+  }, []);
 
   // Initialize app - load profiles from backend
   useInitialize();
@@ -425,21 +484,16 @@ function AppContent() {
     setIsValidating(true);
 
     try {
-      // Run comprehensive validation (including FFmpeg check)
-      // Note: Header button validates ALL targets since we don't have per-target toggles here
-      const result = await validateStreamConfig(current, {
-        checkFfmpeg: true,
-        checkEnabledTargetsOnly: false,
-      });
-
-      if (!result.valid) {
-        displayValidationIssues(result.issues, toast);
+      // Server-side validation (backed by `POST /api/v1/streams/validate`)
+      // is authoritative; the same check runs again inside `start`.
+      try {
+        await api.stream.validate(current);
+      } catch (validationErr) {
+        displayValidationError(validationErr, toast);
         return;
       }
 
-      // Validation passed, start streaming
-      // Build incoming URL from structured input
-      const incomingUrl = `rtmp://${current.input.bindAddress}:${current.input.port}/${current.input.application}`;
+      const incomingUrl = incomingRtmpUrl(current.input);
       await startAllGroups(current.outputGroups, incomingUrl);
       toast.success(t('toast.streamStarted'));
     } catch (err) {

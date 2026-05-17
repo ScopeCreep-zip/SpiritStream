@@ -9,7 +9,7 @@ import { PlatformIcon } from '@/components/stream/PlatformIcon';
 import { TargetModal } from '@/components/modals';
 import { useProfileStore } from '@/stores/profileStore';
 import { toast } from '@/hooks/useToast';
-import type { StreamTarget } from '@/types/profile';
+import type { StreamTarget } from '@spiritstream/types';
 
 export function StreamTargets() {
   const { t } = useTranslation();

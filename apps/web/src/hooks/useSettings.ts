@@ -1,8 +1,8 @@
 import { useQuery, useMutation, useQueryClient, useIsMutating } from '@tanstack/react-query';
 import { useEffect, useCallback } from 'react';
-import { api } from '@/lib/backend';
+import { api } from '@/lib/client';
 import { logger } from '@/lib/logger';
-import type { AppSettings } from '@/types/api';
+import type { Settings as AppSettings } from '@spiritstream/types';
 
 /**
  * Extended settings state including derived data
@@ -72,6 +72,25 @@ export function useFfmpegVersion() {
   });
 }
 
+const FFMPEG_UPDATE_QUERY_KEY = ['ffmpeg-update'] as const;
+
+/**
+ * Check upstream for a newer FFmpeg version. macOS hits evermeet.cx;
+ * Windows / Linux return an empty payload because the BtbN / distro
+ * sources don't expose a version in the same way. Surfaced in
+ * Settings → FFmpeg as an "Update available" indicator alongside the
+ * installed version. Refreshes every 24h.
+ */
+export function useFfmpegUpdateCheck(installedVersion: string | undefined) {
+  return useQuery({
+    queryKey: [...FFMPEG_UPDATE_QUERY_KEY, installedVersion ?? ''],
+    queryFn: () => api.system.checkFfmpegUpdate(installedVersion),
+    staleTime: 24 * 60 * 60_000,
+    retry: false,
+    enabled: !!installedVersion,
+  });
+}
+
 /**
  * Hook for updating individual global settings with optimistic updates
  *
@@ -88,13 +107,10 @@ export function useUpdateSetting() {
         throw new Error('Settings not loaded');
       }
 
-      // Build global settings object (only non-legacy fields)
+      // Spread current settings to preserve unrelated fields the caller
+      // didn't touch. PUT /api/v1/settings replaces the whole document.
       const updated: AppSettings = {
-        startMinimized: current.startMinimized,
-        ffmpegPath: current.ffmpegPath,
-        autoDownloadFfmpeg: current.autoDownloadFfmpeg,
-        logRetentionDays: current.logRetentionDays,
-        lastProfile: current.lastProfile,
+        ...current,
         [key]: value,
       };
 
@@ -143,13 +159,10 @@ export function useSaveSettings() {
         throw new Error('Settings not loaded');
       }
 
-      // Build global settings object (only non-legacy fields)
+      // Spread current settings to preserve unrelated fields the caller
+      // didn't touch. PUT /api/v1/settings replaces the whole document.
       const updated: AppSettings = {
-        startMinimized: current.startMinimized,
-        ffmpegPath: current.ffmpegPath,
-        autoDownloadFfmpeg: current.autoDownloadFfmpeg,
-        logRetentionDays: current.logRetentionDays,
-        lastProfile: current.lastProfile,
+        ...current,
         ...updates,
       };
 

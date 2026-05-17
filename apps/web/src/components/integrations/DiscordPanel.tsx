@@ -20,13 +20,13 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Toggle } from '@/components/ui/Toggle';
 import { useProfileStore } from '@/stores/profileStore';
-import { dialogs } from '@/lib/backend';
-import { api } from '@/lib/backend';
+import { useFileBrowser } from '@/hooks/useFileBrowser';
+import { api } from '@/lib/client';
 import { toast } from '@/hooks/useToast';
 import { logger } from '@/lib/logger';
 import { cn } from '@/lib/cn';
-import { AUTO_SAVE_DELAY_MS } from '@/lib/constants';
-import type { DiscordSettings } from '@/types/profile';
+import { clientConfig } from '@/lib/constants';
+import type { DiscordSettings } from '@spiritstream/types';
 
 // Common emojis for streaming
 const EMOJI_CATEGORIES = [
@@ -46,6 +46,7 @@ const EMOJI_CATEGORIES = [
 
 export function DiscordPanel() {
   const { t } = useTranslation();
+  const { FileBrowser, openFilePath: browserOpenFile } = useFileBrowser();
 
   // Get Discord settings from current profile
   const currentProfile = useProfileStore((state) => state.current);
@@ -138,7 +139,7 @@ export function DiscordPanel() {
         } catch (error) {
           logger.error('Failed to save Discord setting:', error);
         }
-      }, AUTO_SAVE_DELAY_MS);
+      }, clientConfig.AUTO_SAVE_DELAY_MS);
     },
     [discordSettings, updateProfileSettings]
   );
@@ -200,7 +201,7 @@ export function DiscordPanel() {
   // Handle image selection
   const handleSelectImage = useCallback(async () => {
     try {
-      const result = await dialogs.openFilePath({
+      const result = await browserOpenFile({
         title: t('discord.selectImage'),
         filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }],
       });
@@ -289,10 +290,14 @@ export function DiscordPanel() {
     }
   }, [webhookUrl, t]);
 
-  // Validate webhook URL format
-  const isValidWebhookUrl =
-    webhookUrl.startsWith('https://discord.com/api/webhooks/') ||
-    webhookUrl.startsWith('https://discordapp.com/api/webhooks/');
+  // Webhook URL prefix list is backend-authoritative
+  // (`clientConfig.DISCORD_WEBHOOK_PREFIXES`, hydrated from
+  // `GET /api/v1/system/client-config`). Backend is the only source
+  // for "what counts as a Discord webhook" so this stays in lockstep
+  // with `DiscordWebhookService` server-side.
+  const isValidWebhookUrl = clientConfig.DISCORD_WEBHOOK_PREFIXES.some((p) =>
+    webhookUrl.startsWith(p),
+  );
 
   // Get filename from path
   const imageFileName = imagePath ? imagePath.split(/[\\/]/).pop() : null;
@@ -308,6 +313,7 @@ export function DiscordPanel() {
 
   return (
     <div className="space-y-6">
+      <FileBrowser />
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="p-2 rounded-lg bg-bg-elevated">
@@ -473,7 +479,7 @@ export function DiscordPanel() {
                 disabled={!webhookEnabled}
                 rows={4}
                 className={cn(
-                  'w-full px-3 py-2 pr-10 rounded-lg',
+                  'w-full px-3 py-2 pe-10 rounded-lg',
                   'bg-bg-sunken border border-border-default',
                   'text-sm text-text-primary',
                   'placeholder:text-text-muted',
@@ -484,7 +490,7 @@ export function DiscordPanel() {
                 placeholder={t('discord.messagePlaceholder')}
               />
               {/* Emoji Picker Button */}
-              <div className="absolute right-2 top-2" ref={emojiPickerRef}>
+              <div className="absolute end-2 top-2" ref={emojiPickerRef}>
                 <button
                   type="button"
                   onClick={() => setShowEmojiPicker(!showEmojiPicker)}
@@ -502,7 +508,7 @@ export function DiscordPanel() {
 
                 {/* Emoji Picker Dropdown */}
                 {showEmojiPicker && (
-                  <div className="absolute right-0 top-full mt-1 z-50 p-2 rounded-lg bg-bg-surface border border-border-default shadow-lg w-64">
+                  <div className="absolute end-0 top-full mt-1 z-50 p-2 rounded-lg bg-bg-surface border border-border-default shadow-lg w-64">
                     {EMOJI_CATEGORIES.map((category) => (
                       <div key={category.nameKey} className="mb-2 last:mb-0">
                         <div className="text-xs text-text-tertiary mb-1 px-1">

@@ -1,61 +1,18 @@
 import { create } from 'zustand';
-import { api } from '@/lib/backend';
+import { api } from '@/lib/client';
 import { logger } from '@/lib/logger';
 import { showSystemNotification } from '@/lib/notification';
-import { OBS_TRIGGER_DELAY_MS } from '@/lib/constants';
 import { useSettingsStore } from './settingsStore';
-import { api as httpApi } from '@/lib/backend/httpApi';
-import { useObsStore } from '@/stores/obsStore';
 import i18n from '@/lib/i18n';
-import type { OutputGroup } from '@/types/profile';
+import type { OutputGroup } from '@spiritstream/types';
 import type { StreamStats, StreamStatusType, TargetStats } from '@/types/stream';
-import type { ObsIntegrationDirection } from '@/types/api';
 
-/**
- * Trigger OBS stream start/stop based on integration direction
- */
-async function triggerObsIfEnabled(action: 'start' | 'stop'): Promise<void> {
-  try {
-    // Get OBS config to check direction
-    const config = await httpApi.obs.getConfig();
-    const direction: ObsIntegrationDirection = config.direction;
-
-    // Check if SpiritStream should trigger OBS
-    const shouldTrigger =
-      direction === 'spiritstream-to-obs' || direction === 'bidirectional';
-
-    if (!shouldTrigger) {
-      return;
-    }
-
-    // Check if connected to OBS
-    const isConnected = await httpApi.obs.isConnected();
-    if (!isConnected) {
-      logger.debug('[StreamStore] OBS not connected, skipping trigger');
-      return;
-    }
-
-    // Add delay before triggering OBS to allow SpiritStream services to fully start
-    await new Promise((resolve) => setTimeout(resolve, OBS_TRIGGER_DELAY_MS));
-
-    // Mark that we're triggering OBS to prevent loop back
-    useObsStore.getState().setTriggeredByUs(true);
-
-    // Trigger OBS
-    if (action === 'start') {
-      logger.info('[StreamStore] Triggering OBS stream start');
-      await httpApi.obs.startStream();
-    } else {
-      logger.info('[StreamStore] Triggering OBS stream stop');
-      await httpApi.obs.stopStream();
-    }
-  } catch (error) {
-    // Don't fail the main stream action if OBS trigger fails
-    logger.error('[StreamStore] Failed to trigger OBS:', error);
-    // Reset the flag on error
-    useObsStore.getState().setTriggeredByUs(false);
-  }
-}
+// SpiritStream→OBS triggering lives in core
+// (`FFmpegHandler::fire_obs_trigger` →
+// `ObsWebSocketHandler::ss_trigger_obs`). Every successful
+// `start_all` / `stop_all` checks the active profile's
+// `obs.direction` server-side and either drives OBS or no-ops. The
+// frontend never has to decide.
 
 /**
  * Real-time streaming statistics from the FFmpeg backend.
@@ -200,18 +157,13 @@ export const useStreamStore = create<StreamState>((set, get) => ({
     try {
       await api.stream.start(group, incomingUrl);
       const activeGroups = new Set(get().activeGroups);
-      const wasStreaming = activeGroups.size > 0;
       activeGroups.add(group.id);
       set({
         activeGroups,
         isStreaming: true,
       });
       get().setGlobalStatus('live');
-
-      // Trigger OBS if this is the first stream starting
-      if (!wasStreaming) {
-        triggerObsIfEnabled('start');
-      }
+      // SS→OBS trigger runs server-side in core (see top of file).
     } catch (error) {
       set({ error: String(error), globalStatus: 'error' });
     }
@@ -254,9 +206,6 @@ export const useStreamStore = create<StreamState>((set, get) => ({
         throw new Error('At least one enabled output group with stream targets is required');
       }
 
-      // Track if we were already streaming (for OBS trigger)
-      const wasStreaming = get().activeGroups.size > 0;
-
       await api.stream.startAll(eligibleGroups, incomingUrl);
 
       const activeGroups = new Set(get().activeGroups);
@@ -265,11 +214,7 @@ export const useStreamStore = create<StreamState>((set, get) => ({
       }
       set({ activeGroups, isStreaming: true });
       get().setGlobalStatus('live');
-
-      // Trigger OBS if this is the first stream starting
-      if (!wasStreaming) {
-        triggerObsIfEnabled('start');
-      }
+      // SS→OBS trigger runs server-side in core (see top of file).
     } catch (error) {
       set({ error: String(error), globalStatus: 'error' });
       throw error; // Re-throw so UI can catch it
@@ -279,9 +224,6 @@ export const useStreamStore = create<StreamState>((set, get) => ({
   // Stop all streams
   stopAllGroups: async () => {
     try {
-      // Capture if we were live before stopping (for OBS trigger)
-      const wasLive = get().globalStatus === 'live';
-
       await api.stream.stopAll();
       set({
         activeGroups: new Set(),
@@ -291,11 +233,7 @@ export const useStreamStore = create<StreamState>((set, get) => ({
         stats: initialStats,
       });
       get().setGlobalStatus('offline');
-
-      // Trigger OBS stop if we were live
-      if (wasLive) {
-        triggerObsIfEnabled('stop');
-      }
+      // SS→OBS trigger runs server-side in core (see top of file).
     } catch (error) {
       set({ error: String(error) });
     }

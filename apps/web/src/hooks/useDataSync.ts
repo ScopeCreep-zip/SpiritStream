@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { events, backendMode } from '@/lib/backend';
+import { events } from '@spiritstream/api-client';
 import { useProfileStore } from '@/stores/profileStore';
 
 interface ProfileChangedPayload {
@@ -22,9 +22,6 @@ export function useDataSync() {
   currentProfileNameRef.current = currentProfileName;
 
   useEffect(() => {
-    // Only needed in HTTP mode - Tauri mode already has direct state updates
-    if (backendMode !== 'http') return;
-
     const unsubscribers: Array<() => void> = [];
 
     // Listen for profile changes from other clients

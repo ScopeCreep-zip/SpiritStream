@@ -9,8 +9,12 @@ export function Sidebar({ children, className }: SidebarProps) {
   return (
     <aside
       className={cn(
-        'w-[260px] bg-bg-surface border-r border-border-default',
-        'flex flex-col fixed top-0 left-0 bottom-0 z-[100]',
+        // `border-e` and `start-0` (logical) replace
+        // `border-r` and `left-0` so the sidebar mirrors to the right
+        // edge under `dir="rtl"`. `z-[var(--z-sidebar)]` reaches the
+        // centralised z-ladder.
+        'w-[260px] bg-bg-surface border-e border-border-default',
+        'flex flex-col fixed top-0 start-0 bottom-0 z-[var(--z-sidebar)]',
         className
       )}
     >

@@ -204,6 +204,54 @@
     background: var(--primary-subtle);
     color: var(--primary);
   }
+
+  /* Honor the OS-level reduced-motion preference. We don't disable
+     transitions entirely (some controls depend on them for feedback)
+     but we cut them to near-instant so users sensitive to motion
+     don't experience animation, parallax, or auto-play. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /* Strong, visible keyboard focus indicator. The default browser
+     outline is often invisible against branded backgrounds; this
+     puts a 3px ring in the brand color on every keyboard-focused
+     element. Mouse focus stays subtle (browsers don't apply
+     `:focus-visible` for pointer interactions). */
+  :focus-visible {
+    outline: var(--ring-width) solid var(--ring-default);
+    outline-offset: var(--ring-offset-width);
+    border-radius: 0.25rem;
+  }
+
+  /* Skip-to-main-content link. Visually hidden until focused (Tab on
+     page load); first focusable element so keyboard / screen reader
+     users can jump past the persistent sidebar. */
+  .skip-link {
+    position: absolute;
+    top: -100px;
+    left: 0;
+    background: var(--primary);
+    color: var(--primary-foreground);
+    padding: 0.75rem 1rem;
+    z-index: var(--z-emergency);
+    text-decoration: none;
+    border-radius: 0 0 0.5rem 0;
+    font-weight: 500;
+    transition: top var(--transition-fast);
+  }
+  .skip-link:focus {
+    top: 0;
+    outline: none;
+    box-shadow: 0 0 0 var(--ring-width) var(--ring-default);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -293,4 +341,42 @@
   padding: 0.5rem 1rem;
   border-radius: 9999px;
   display: inline-block;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Platform badge color lookup.
+   Components set `data-platform="twitch"` etc.; the styles pull from the
+   `--platform-X-bg` / `--platform-X-fg` tokens in tokens.css.
+   ───────────────────────────────────────────────────────────────────────── */
+.platform-badge {
+  background-color: var(--platform-default-bg);
+  color: var(--platform-default-fg);
+}
+.platform-badge[data-platform='twitch'] {
+  background-color: var(--platform-twitch-bg);
+  color: var(--platform-twitch-fg);
+}
+.platform-badge[data-platform='youtube'] {
+  background-color: var(--platform-youtube-bg);
+  color: var(--platform-youtube-fg);
+}
+.platform-badge[data-platform='trovo'] {
+  background-color: var(--platform-trovo-bg);
+  color: var(--platform-trovo-fg);
+}
+.platform-badge[data-platform='kick'] {
+  background-color: var(--platform-kick-bg);
+  color: var(--platform-kick-fg);
+}
+.platform-badge[data-platform='facebook'] {
+  background-color: var(--platform-facebook-bg);
+  color: var(--platform-facebook-fg);
+}
+.platform-badge[data-platform='tiktok'] {
+  background-color: var(--platform-tiktok-bg);
+  color: var(--platform-tiktok-fg);
+}
+.platform-badge[data-platform='stripchat'] {
+  background-color: var(--platform-stripchat-bg);
+  color: var(--platform-stripchat-fg);
 }

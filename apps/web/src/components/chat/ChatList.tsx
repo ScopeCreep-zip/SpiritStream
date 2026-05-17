@@ -1,31 +1,45 @@
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
-import type { ChatMessage, ChatPlatform } from '@/types/chat';
+import type { ChatMessage, ChatPlatform } from '@spiritstream/types';
 
-const CHAT_PLATFORM_STYLES: Record<ChatPlatform, { abbreviation: string; color: string; textColor: string }> = {
-  twitch: { abbreviation: 'TW', color: '#9146FF', textColor: '#FFFFFF' },
-  youtube: { abbreviation: 'YT', color: '#FF0000', textColor: '#FFFFFF' },
-  trovo: { abbreviation: 'TR', color: '#1ECD97', textColor: '#000000' },
-  stripchat: { abbreviation: 'SC', color: '#F97316', textColor: '#FFFFFF' },
-  tiktok: { abbreviation: 'TK', color: '#000000', textColor: '#FFFFFF' },
-  kick: { abbreviation: 'KK', color: '#53FC18', textColor: '#000000' },
-  facebook: { abbreviation: 'FB', color: '#1877F2', textColor: '#FFFFFF' },
+// Platform → CSS-variable suffix. The colors themselves live in
+// `tokens.css` (`--platform-X-bg` / `--platform-X-fg`).
+// Anything unknown falls through to the `default` token pair.
+const PLATFORM_ABBREVIATIONS: Record<ChatPlatform, string> = {
+  twitch: 'TW',
+  youtube: 'YT',
+  trovo: 'TR',
+  stripchat: 'SC',
+  tiktok: 'TK',
+  kick: 'KK',
+  facebook: 'FB',
 };
 
+const KNOWN_PLATFORM_TOKENS = new Set<string>([
+  'twitch',
+  'youtube',
+  'trovo',
+  'stripchat',
+  'tiktok',
+  'kick',
+  'facebook',
+]);
+
 function ChatPlatformIcon({ platform, size = 'sm' }: { platform: string; size?: 'sm' | 'md' }) {
-  const config = CHAT_PLATFORM_STYLES[platform as ChatPlatform] ?? {
-    abbreviation: platform.slice(0, 2).toUpperCase(),
-    color: '#6B7280',
-    textColor: '#FFFFFF',
-  };
+  const abbreviation =
+    PLATFORM_ABBREVIATIONS[platform as ChatPlatform] ?? platform.slice(0, 2).toUpperCase();
+  const tokenKey = KNOWN_PLATFORM_TOKENS.has(platform) ? platform : 'default';
   const sizeClass = size === 'sm' ? 'w-6 h-6 text-[0.625rem]' : 'w-8 h-8 text-xs';
   return (
     <div
-      className={cn('rounded-md flex items-center justify-center font-semibold shrink-0', sizeClass)}
-      style={{ backgroundColor: config.color, color: config.textColor }}
+      className={cn(
+        'platform-badge rounded-md flex items-center justify-center font-semibold shrink-0',
+        sizeClass,
+      )}
+      data-platform={tokenKey}
     >
-      {config.abbreviation}
+      {abbreviation}
     </div>
   );
 }
@@ -88,7 +102,7 @@ export function ChatList({
             const isOutbound = message.direction === 'outbound';
             const timestamp =
               showTimestamps && message.timestamp
-                ? new Date(message.timestamp).toLocaleTimeString([], {
+                ? new Date(Number(message.timestamp)).toLocaleTimeString([], {
                     hour: '2-digit',
                     minute: '2-digit',
                   })

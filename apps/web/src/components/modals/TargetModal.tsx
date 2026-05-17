@@ -5,8 +5,10 @@ import { Input } from '@/components/ui/Input';
 import { Select, SelectOption } from '@/components/ui/Select';
 import { Button } from '@/components/ui/Button';
 import { useProfileStore } from '@/stores/profileStore';
-import type { StreamTarget, Platform, OutputGroup } from '@/types/profile';
-import { PLATFORMS as platformConfig } from '@/types/profile';
+import type { StreamTarget, Platform, OutputGroup } from '@spiritstream/types';
+import { PLATFORMS as platformConfig } from '@/lib/profile-helpers';
+import { PasswordInput, useFormState, useFormValidation } from '@spiritstream/ui';
+import type { ValidationRule } from '@spiritstream/ui';
 
 export interface TargetModalProps {
   open: boolean;
@@ -37,12 +39,23 @@ const defaultFormData: FormData = {
 export function TargetModal({ open, onClose, mode, groupId, target }: TargetModalProps) {
   const { t } = useTranslation();
   const { current, addStreamTarget, updateStreamTarget, moveStreamTarget } = useProfileStore();
-  const [formData, setFormData] = useState<FormData>(defaultFormData);
-  const [errors, setErrors] = useState<Partial<FormData>>({});
+  const form = useFormState<FormData>(defaultFormData);
+  const formData = form.values;
   const [saving, setSaving] = useState(false);
-  const [showStreamKey, setShowStreamKey] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState(groupId);
   const [originalGroupId, setOriginalGroupId] = useState(groupId);
+  const [serverError, setServerError] = useState<string | undefined>();
+
+  const rules: Partial<Record<keyof FormData, ValidationRule<FormData>>> = {
+    name: (v) => (!v.name.trim() ? t('validation.targetNameRequired') : null),
+    url: (v) => (!v.url.trim() ? t('validation.serverUrlRequired') : null),
+    streamKey: (v) => (!v.streamKey.trim() ? t('validation.streamKeyRequired') : null),
+    // The `rtmp(s)://` prefix check used to live here. It now runs
+    // server-side in `PlatformRegistry::normalize_url` during profile
+    // save, which returns a `ValidationIssue` the modal's existing
+    // error-display path renders — same UX, single source of truth.
+  };
+  const { errors, validate, clear: clearErrors } = useFormValidation<FormData>(formData, rules);
 
   // Get output groups from current profile
   const outputGroups = current?.outputGroups ?? [];
@@ -51,75 +64,48 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
   useEffect(() => {
     if (open) {
       if (mode === 'edit' && target) {
-        setFormData({
+        form.reset({
           service: target.service,
           name: target.name,
           url: target.url,
           streamKey: target.streamKey,
         });
       } else {
-        setFormData(defaultFormData);
+        form.reset(defaultFormData);
       }
       setSelectedGroupId(groupId);
       setOriginalGroupId(groupId);
-      setErrors({});
-      setShowStreamKey(false);
+      clearErrors();
+      setServerError(undefined);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, mode, target, groupId]);
 
   // Update URL when service changes (only in create mode)
   const handleServiceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newService = e.target.value as Platform;
-    setFormData((prev) => ({
-      ...prev,
+    form.merge({
       service: newService,
-      // Only update URL if in create mode or URL hasn't been modified
-      url: mode === 'create' ? platformConfig[newService].defaultServer : prev.url,
-      // Update name suggestion if empty
-      name: prev.name || platformConfig[newService].displayName,
-    }));
-  };
-
-  const validate = (): boolean => {
-    const newErrors: Partial<FormData> = {};
-
-    if (!formData.name.trim()) {
-      newErrors.name = t('validation.targetNameRequired');
-    }
-
-    if (!formData.url.trim()) {
-      newErrors.url = t('validation.serverUrlRequired');
-    } else if (!formData.url.startsWith('rtmp://') && !formData.url.startsWith('rtmps://')) {
-      newErrors.url = t('validation.urlMustStartWithRtmp');
-    }
-
-    if (!formData.streamKey.trim()) {
-      newErrors.streamKey = t('validation.streamKeyRequired');
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  // Normalize URL: trim whitespace and remove trailing slashes
-  const normalizeUrl = (url: string): string => {
-    let normalized = url.trim();
-    while (normalized.endsWith('/')) {
-      normalized = normalized.slice(0, -1);
-    }
-    return normalized;
+      url: mode === 'create' ? platformConfig[newService].defaultServer : formData.url,
+      name: formData.name || platformConfig[newService].displayName,
+    });
   };
 
   const handleSave = async () => {
     if (!validate()) return;
+    setServerError(undefined);
 
     setSaving(true);
     try {
+      // URL normalization happens server-side inside `ProfileService::save`
+      // via `PlatformRegistry::normalize_url`; the frontend used to do its own
+      // trim/strip-trailing-slash here, but that was a stale duplicate that
+      // could drift from the platform registry's per-host rules.
       const targetData: StreamTarget = {
         id: mode === 'edit' && target ? target.id : crypto.randomUUID(),
         service: formData.service,
         name: formData.name,
-        url: normalizeUrl(formData.url),
+        url: formData.url.trim(),
         streamKey: formData.streamKey.trim(),
       };
 
@@ -136,7 +122,7 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
       // Note: saveProfile() is called internally by the store functions
       onClose();
     } catch (error) {
-      setErrors({ name: String(error) });
+      setServerError(String(error));
     } finally {
       setSaving(false);
     }
@@ -144,11 +130,7 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
 
   const handleChange =
     (field: keyof FormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-      setFormData((prev) => ({ ...prev, [field]: e.target.value }));
-      // Clear error when user starts typing
-      if (errors[field]) {
-        setErrors((prev) => ({ ...prev, [field]: undefined }));
-      }
+      form.set(field, e.target.value as FormData[typeof field]);
     };
 
   const title = mode === 'create' ? t('modals.addStreamTarget') : t('modals.editStreamTarget');
@@ -186,6 +168,11 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
       }
     >
       <div className="flex flex-col gap-4">
+        {serverError && (
+          <div className="p-3 rounded-lg bg-error-subtle border border-error-border text-error-text text-sm">
+            {serverError}
+          </div>
+        )}
         {/* Output Group Selector */}
         <Select
           label={t('modals.outputGroupLabel')}
@@ -224,27 +211,20 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
           helper={`${t('modals.default')}: ${platformConfig[formData.service].defaultServer}`}
         />
 
-        <div className="relative">
-          <Input
-            label={t('targets.streamKey')}
-            type={showStreamKey ? 'text' : 'password'}
-            placeholder={t('modals.streamKeyPlaceholder')}
-            value={formData.streamKey}
-            onChange={handleChange('streamKey')}
-            error={errors.streamKey}
-            helper={t('modals.streamKeyHelper')}
-            autoComplete="off"
-          />
-          <button
-            type="button"
-            onClick={() => setShowStreamKey(!showStreamKey)}
-            aria-label={showStreamKey ? t('common.hideStreamKey') : t('common.showStreamKey')}
-            aria-pressed={showStreamKey}
-            className="absolute right-3 top-8 bg-transparent border-none cursor-pointer text-text-tertiary text-xs py-1 px-2 hover:text-text-primary transition-colors"
-          >
-            {showStreamKey ? t('common.hide') : t('common.show')}
-          </button>
-        </div>
+        <PasswordInput
+          label={t('targets.streamKey')}
+          placeholder={t('modals.streamKeyPlaceholder')}
+          value={formData.streamKey}
+          onChange={handleChange('streamKey')}
+          error={errors.streamKey}
+          helper={t('modals.streamKeyHelper')}
+          autoComplete="off"
+          showLabel={t('common.showStreamKey')}
+          hideLabel={t('common.hideStreamKey')}
+          renderToggleIcon={(visible) =>
+            <span className="text-xs">{visible ? t('common.hide') : t('common.show')}</span>
+          }
+        />
       </div>
     </Modal>
   );
