@@ -279,10 +279,10 @@ See [CONTRIBUTORS.md](./CONTRIBUTORS.md) for full details:
 
 ### Scaling Strategy
 
-1. **Phase 1 (Current)**: Solo maintainer, limited scope
-2. **Phase 2**: 2-3 maintainers, full v1 scope
-3. **Phase 3**: Domain specialists, community reviewers
-4. **Phase 4**: If scope exceeds capacity, split into sub-projects
+1. **Current**: Solo maintainer, limited scope
+2. **Next**: 2-3 maintainers, full v1 scope
+3. **Then**: Domain specialists, community reviewers
+4. **Future**: If scope exceeds capacity, split into sub-projects
 
 ---
 

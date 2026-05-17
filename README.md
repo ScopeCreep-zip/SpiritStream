@@ -23,13 +23,13 @@ Comprehensive technical documentation is available in the [`docs/`](./docs/) dir
 | [System Overview](./docs/01-architecture/01-system-overview.md) | Architecture and component diagrams |
 | [FFmpeg Integration](./docs/04-streaming/01-ffmpeg-integration.md) | Relay architecture and process management |
 | [State Management](./docs/03-frontend/02-state-management.md) | Zustand stores and data flow |
-| [Services Layer](./docs/02-backend/02-services-layer.md) | Rust backend services |
+| [`crates/core/README.md`](./crates/core/README.md) | Rust backend services (service catalog, models, traits) |
 | [Glossary](./docs/GLOSSARY.md) | Technical terms and definitions |
 
 ### Reading Paths
 
 - **Beginners**: Start with [Getting Started](./docs/06-tutorials/01-getting-started.md) -> [First Stream](./docs/06-tutorials/02-first-stream.md)
-- **Developers**: [System Overview](./docs/01-architecture/01-system-overview.md) -> [Services Layer](./docs/02-backend/02-services-layer.md) -> [State Management](./docs/03-frontend/02-state-management.md)
+- **Developers**: [System Overview](./docs/01-architecture/01-system-overview.md) -> [`crates/core/README.md`](./crates/core/README.md) -> [State Management](./docs/03-frontend/02-state-management.md)
 - **Complete Documentation**: [docs/README.md](./docs/README.md)
 
 ## Quick Start
@@ -100,7 +100,7 @@ pnpm install
 pnpm build
 ```
 
-Build output: `apps/desktop/src-tauri/target/release/bundle/`
+Build output: `apps/tauri/src-tauri/target/release/bundle/`
 
 ## Usage
 
@@ -111,18 +111,25 @@ Build output: `apps/desktop/src-tauri/target/release/bundle/`
 
 ## Development
 
-This is a pnpm monorepo with multiple workspaces:
-- `apps/web` - React frontend (@spiritstream/web)
-- `apps/desktop` - Tauri desktop wrapper (@spiritstream/desktop)
-- `server` - Standalone Rust HTTP server
+This is a pnpm + Cargo monorepo:
+- `apps/web` — React frontend (`@spiritstream/web`)
+- `apps/tauri` — Tauri 2 shell, desktop and mobile (`@spiritstream/tauri`)
+- `crates/core` — Transport-agnostic Rust core (`spiritstream-core`)
+- `crates/transport-http` — Axum + utoipa HTTP transport
+- `crates/transport-cli` — `spiritstream-cli` binary (headless + integration-test substrate)
+- `crates/transport-veilid` — Contract-validation spike (see `crates/transport-veilid/BLOCKERS.md`)
+- `server` — Thin binary wiring core + transport-http
+- `packages/` — `types` (ts-rs), `api-client` (@hey-api/openapi-ts), `validation`, `ui`
 
 ### Development Modes
 
 | Mode | Command | Description |
 |------|---------|-------------|
-| **Desktop** | `pnpm dev` | Tauri app with embedded webview + server sidecar. The full desktop experience. |
-| **Web + Server** | `pnpm backend:dev` then `VITE_BACKEND_MODE=http pnpm dev:web` | Browser-based UI connecting to standalone HTTP server. For remote access or Docker development. |
+| **Desktop** | `pnpm dev` | Tauri 2 app with embedded webview + server sidecar. The full desktop experience. |
+| **Web + Server** | `pnpm backend:dev` then `pnpm dev:web` | Browser-based UI connecting to the standalone HTTP server. For remote access or Docker development. |
 | **Frontend Only** | `pnpm dev:web` | Just the React frontend (no backend). For UI-only work. |
+| **CLI** | `cargo run -p spiritstream-cli -- <subcommand>` | Headless `spiritstream-cli` against an isolated `--data-dir`. Real client; integration-test substrate. |
+| **Mobile** | `pnpm --filter @spiritstream/tauri tauri ios dev` / `tauri android dev` | Tauri 2 mobile target. Requires Xcode 16+ / Android NDK r27+. |
 
 ### Quick Commands
 
@@ -164,16 +171,15 @@ Sample values live in `.env.example`.
 Frontend configuration for the web UI:
 
 ```bash
-VITE_BACKEND_MODE=http
 VITE_BACKEND_URL=http://127.0.0.1:8008
-VITE_BACKEND_WS_URL=ws://127.0.0.1:8008/ws
+VITE_BACKEND_WS_URL=ws://127.0.0.1:8008/api/v1/events
 VITE_BACKEND_TOKEN=
 ```
 
 Then start the frontend with:
 
 ```bash
-VITE_BACKEND_MODE=http pnpm dev:web
+pnpm dev:web
 ```
 
 ### Launcher (Desktop Host)

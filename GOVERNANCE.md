@@ -338,6 +338,13 @@ The project SHALL maintain the following branch structure:
 | `v*-beta` | `MILESTONES.v*-beta.md` | SHALL pass | Beta release |
 | `v*-stable` | `MILESTONES.v*-stable.md` | SHALL pass | Stable release |
 
+> **CI/CD hardening (post-rewrite):** the SHALL/MAY CI requirements above are
+> enforced at the GitHub level via the branch rulesets documented in
+> [`docs/08-security/branch-protection.md`](docs/08-security/branch-protection.md).
+> That document lists every required status check, the signed-commits
+> requirement, the CODEOWNERS rule, and the audit script for catching
+> protection-drift. Update both together when changing the model.
+
 ### 5.3 Promotion Rules
 
 #### 5.3.1 Automatic Promotion: main → latest
