@@ -29,7 +29,6 @@
     "clean:all": "pnpm clean && rm -rf server/target apps/tauri/src-tauri/target",
     "clean:build": "pnpm clean && pnpm build",
     "clean:build:web": "pnpm clean && pnpm build:web",
-    "lint:lockfile": "lockfile-lint --path pnpm-lock.yaml --type pnpm --validate-https --allowed-hosts npm github.com",
     "lint:commits": "commitlint --from=HEAD~10 --to=HEAD --verbose"
   },
   "repository": {
@@ -60,9 +59,21 @@
     "@commitlint/cli": "^19.6.1",
     "@commitlint/config-conventional": "^19.6.0",
     "@playwright/test": "^1.60.0",
-    "lockfile-lint": "^4.14.0",
     "prettier": "^3.4.0",
     "tsx": "^4.21.0",
     "turbo": "^2.5.4"
+  },
+  "spiritstream:notes:pnpmOverrides": "Workspace-wide transitive-dep version floors. Every entry maps to one or more RustSec / GitHub advisories surfaced by `pnpm audit --audit-level=high`. Each upgrade is the smallest semver-major-compatible bump that clears the advisory; the originating package is on the right of the comment so we can drop the override once it ships a clean release. Re-audit and trim this list quarterly.",
+  "pnpm": {
+    "overrides": {
+      "handlebars": "^4.7.9",
+      "minimatch": "^9.0.7",
+      "rollup": "^4.59.0",
+      "flatted": "^3.4.2",
+      "brace-expansion": "^2.0.3",
+      "picomatch": "^4.0.4",
+      "vite": "^7.3.2",
+      "postcss": "^8.5.10"
+    }
   }
 }

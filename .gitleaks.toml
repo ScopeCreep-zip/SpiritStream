@@ -1,0 +1,44 @@
+# gitleaks repository configuration.
+#
+# Extends the upstream default ruleset (gitleaks ships with ~140 rules
+# covering AWS, Stripe, GitHub PATs, GCP keys, etc.) and ONLY adds an
+# allowlist for known-false-positive test fixtures + documentation
+# placeholders. Every entry is justified inline; do not extend without
+# attaching a comment explaining why the match is not a real credential.
+#
+# Layout reference:
+#   https://github.com/gitleaks/gitleaks/blob/master/config/gitleaks.toml
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures and documentation placeholders that match the default 'generic API key' / 'high-entropy string' shape but are not real credentials."
+
+# Test data baked into encryption.rs unit tests. Used as plain-text
+# inputs to the AES envelope to verify decryption returns what was
+# encrypted — every value matches `live_*_<digits>_<letters>` purely
+# because the suite was written to mimic typical Twitch/YouTube stream
+# key shapes.
+regexes = [
+    '''live_plain_1234567890_abcdef''',
+    '''live_enc_9876543210_zyxwvu''',
+    '''live_abc123_xyz''',
+    '''sk_live_abc123''',
+    '''your-token''',
+    # Example FFmpeg / RTMP URLs used in docs and tests; the
+    # `?stream_key=` shape trips entropy detectors.
+    '''rtmps?://[^\s]*example[^\s]*''',
+]
+
+# File-level allowlist for files that exist purely to demonstrate
+# secret shapes (security playbooks, threat models, contributor docs)
+# or to test the redaction pipeline itself.
+paths = [
+    '''\.claude/commands/secure-secrets\.md''',
+    '''docs/04-streaming/05-platform-registry\.md''',
+    '''docker/README\.md''',
+    '''crates/core/src/services/encryption\.rs''',
+    '''crates/core/src/services/pii_filter\.rs''',
+    '''crates/core/src/services/audit_log\.rs''',
+]

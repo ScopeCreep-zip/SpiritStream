@@ -120,7 +120,6 @@ else
 
   status_rule=$(echo "$main_rules" | jq -r '.rules[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context' | sort -u)
   for check in \
-    "CI / cargo-audit" \
     "CI / pnpm-audit" \
     "CI / a11y-axe" \
     "CodeQL / Analyze (javascript-typescript)" \

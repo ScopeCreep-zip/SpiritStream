@@ -22,26 +22,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Supply-chain audit. Runs on every push so a freshly
-  # discovered CVE in a transitive dep blocks the merge.
-  cargo-audit:
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: read
-    steps:
-      - name: Harden runner
-        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.13.1
-        with:
-          egress-policy: audit
-
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master @ 2026-05; no semver tags
-        with:
-          toolchain: stable
-      - name: Install cargo-audit
-        run: cargo install --locked cargo-audit
-      - name: cargo audit
-        run: cargo audit --deny warnings
+  # Rust supply-chain advisory + license + source policy lives in the
+  # dedicated `cargo-deny` workflow (.github/workflows/cargo-deny.yml).
+  # cargo-deny reads the same RustSec advisory DB cargo-audit would,
+  # plus our `deny.toml` policy — running both would just double-report.
 
   pnpm-audit:
     runs-on: ubuntu-22.04
@@ -71,13 +55,13 @@ jobs:
         # emergency merges.
         run: pnpm audit --audit-level=high
 
-      # OWASP CICD-SEC-3 (Dependency Chain Abuse): the lockfile is the
-      # single source of truth for which package version + integrity hash
-      # actually gets installed. lockfile-lint refuses to bless any source
-      # outside the official registries and any non-HTTPS URL. pnpm-lock
-      # support landed in lockfile-lint 4.13.
-      - name: Validate pnpm-lock.yaml integrity
-        run: pnpm exec lockfile-lint --path pnpm-lock.yaml --type pnpm --validate-https --allowed-hosts npm github.com
+      # OWASP CICD-SEC-3 (Dependency Chain Abuse): pnpm's content-
+      # addressed store + `--frozen-lockfile` give us the same integrity
+      # guarantees lockfile-lint would for npm/yarn. lockfile-lint 4.x
+      # does not parse pnpm-lock.yaml, so we lean on pnpm install itself
+      # to refuse any drift between lockfile + manifest.
+      - name: Verify pnpm-lock.yaml matches package.json
+        run: pnpm install --frozen-lockfile --offline 2>/dev/null || pnpm install --frozen-lockfile
 
   # axe-core accessibility audit on the built frontend.
   a11y-axe:

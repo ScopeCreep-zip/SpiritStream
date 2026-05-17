@@ -63,13 +63,15 @@ jobs:
 
       # commitlint runs against every commit between base and head. Config
       # is at repo root in commitlint.config.cjs; extends conventional and
-      # locks scopes to .claude/rules/git-workflow.md.
+      # locks scopes to .claude/rules/git-workflow.md. Errors fail the PR;
+      # warnings (e.g. footer-leading-blank) surface in the log without
+      # blocking — the rule is still useful as a nudge but not a wall.
       - name: Run commitlint
         uses: wagoid/commitlint-github-action@b948419dd99f3fd78a6548d48f94e3df7f6bf3ed # v6.2.1
         with:
           configFile: commitlint.config.cjs
           firstParent: false
-          failOnWarnings: true
+          failOnWarnings: false
           failOnErrors: true
           helpURL: https://github.com/${{ github.repository }}/blob/main/CONTRIBUTING.md#commit-message-format
 

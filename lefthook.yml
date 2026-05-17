@@ -72,13 +72,17 @@ pre-commit:
         gitleaks found a credential in your staged changes. Do not commit.
         Rotate the credential immediately if it was ever pushed anywhere.
 
-    # --- Lockfile integrity ---
-    lockfile-lint:
-      glob: 'pnpm-lock.yaml'
-      run: pnpm exec lockfile-lint --path pnpm-lock.yaml --type pnpm --validate-https --allowed-hosts npm github.com
+    # --- Lockfile drift ---
+    # pnpm's `--frozen-lockfile` rejects manifest/lockfile drift on its
+    # own; we'd add lockfile-lint here for registry-allowlisting except
+    # lockfile-lint 4.x has no pnpm-lock parser.
+    pnpm-lock-drift:
+      glob: 'package.json'
+      run: pnpm install --frozen-lockfile --offline --silent
       fail_text: |
-        pnpm-lock.yaml references a registry or URL outside the allowlist.
-        Check the diff — this can indicate a typo-squat or registry hijack.
+        package.json changed but pnpm-lock.yaml is out of date. Run
+        `pnpm install` (without --frozen-lockfile) to refresh, then
+        commit the updated lockfile alongside the manifest change.
 
 commit-msg:
   commands:

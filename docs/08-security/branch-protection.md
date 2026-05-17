@@ -87,7 +87,6 @@ Branch rules:
 - **Require status checks to pass** — on, with the following checks
   marked as required. Each is a job name (or matrix entry) from the
   workflows in `.github/workflows/`:
-  - `CI / cargo-audit`
   - `CI / pnpm-audit`
   - `CI / a11y-axe`
   - `CI / test (macos-latest)`
