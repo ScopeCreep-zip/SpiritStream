@@ -158,11 +158,11 @@ export function TargetModal({ open, onClose, mode, groupId, target }: TargetModa
             {t('common.cancel')}
           </Button>
           <Button onClick={handleSave} disabled={saving || outputGroups.length === 0}>
-            {saving
-              ? t('common.saving')
-              : mode === 'create'
-                ? t('modals.addTarget')
-                : t('common.saveChanges')}
+            {(() => {
+              if (saving) return t('common.saving');
+              if (mode === 'create') return t('modals.addTarget');
+              return t('common.saveChanges');
+            })()}
           </Button>
         </>
       }

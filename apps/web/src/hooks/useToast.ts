@@ -15,6 +15,14 @@ interface ToastStore {
   removeToast: (id: string) => void;
 }
 
+const removeToastById = (id: string) => (state: ToastStore) => ({
+  toasts: state.toasts.filter((t) => t.id !== id),
+});
+
+const appendToast = (toast: Toast) => (state: ToastStore) => ({
+  toasts: [...state.toasts, toast],
+});
+
 export const useToast = create<ToastStore>((set) => ({
   toasts: [],
   addToast: (type, message) => {
@@ -25,21 +33,11 @@ export const useToast = create<ToastStore>((set) => ({
     }
 
     const id = crypto.randomUUID();
-    set((state) => ({
-      toasts: [...state.toasts, { id, type, message }],
-    }));
+    set(appendToast({ id, type, message }));
     // Auto-remove after 3 seconds
-    setTimeout(() => {
-      set((state) => ({
-        toasts: state.toasts.filter((t) => t.id !== id),
-      }));
-    }, 3000);
+    setTimeout(() => set(removeToastById(id)), 3000);
   },
-  removeToast: (id) => {
-    set((state) => ({
-      toasts: state.toasts.filter((t) => t.id !== id),
-    }));
-  },
+  removeToast: (id) => set(removeToastById(id)),
 }));
 
 // Helper functions for convenience

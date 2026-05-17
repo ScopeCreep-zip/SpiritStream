@@ -258,14 +258,12 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
   }, [currentProfile, activeGroups, enabledTargets, groupStats]);
 
   // Use backend-verified active stream count, fallback to local calculation
-  const displayActiveCount =
-    activeTargetCount > 0
-      ? activeTargetCount
-      : activeStreamCount > 0
-        ? activeStreamCount
-        : isStreaming
-          ? targets.length
-          : 0;
+  const displayActiveCount = (() => {
+    if (activeTargetCount > 0) return activeTargetCount;
+    if (activeStreamCount > 0) return activeStreamCount;
+    if (isStreaming) return targets.length;
+    return 0;
+  })();
 
   if (loading) {
     return (
@@ -392,11 +390,15 @@ export function Dashboard({ onNavigate, onOpenProfileModal, onOpenTargetModal }:
                 disabled={isTesting || isStreaming || !currentProfile}
               >
                 {isTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                {isTesting
-                  ? testingTarget
-                    ? t('dashboard.testingTarget', 'Testing {{name}}...', { name: testingTarget })
-                    : t('dashboard.testing')
-                  : t('dashboard.testStream')}
+                {(() => {
+                  if (!isTesting) return t('dashboard.testStream');
+                  if (testingTarget) {
+                    return t('dashboard.testingTarget', 'Testing {{name}}...', {
+                      name: testingTarget,
+                    });
+                  }
+                  return t('dashboard.testing');
+                })()}
               </Button>
             </Grid>
           </CardBody>

@@ -15,8 +15,12 @@ export function currentLocale(): string {
   return i18n.language || 'en';
 }
 
+/** Accepted timestamp inputs across the codebase: native `Date`, epoch
+ * milliseconds, or an ISO-8601 string. */
+export type TimestampInput = Date | number | string;
+
 /** Format a Date or epoch-millis as "Sep 14, 2:30 PM" in the active locale. */
-export function formatDateTime(value: Date | number | string, locale = currentLocale()): string {
+export function formatDateTime(value: TimestampInput, locale = currentLocale()): string {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return '';
   return new Intl.DateTimeFormat(locale, {
@@ -26,14 +30,14 @@ export function formatDateTime(value: Date | number | string, locale = currentLo
 }
 
 /** Format a Date as a calendar date only ("Sep 14, 2026"). */
-export function formatDate(value: Date | number | string, locale = currentLocale()): string {
+export function formatDate(value: TimestampInput, locale = currentLocale()): string {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return '';
   return new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(date);
 }
 
 /** Format a Date as a clock time only ("2:30 PM" / "14:30"). */
-export function formatTime(value: Date | number | string, locale = currentLocale()): string {
+export function formatTime(value: TimestampInput, locale = currentLocale()): string {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return '';
   return new Intl.DateTimeFormat(locale, { timeStyle: 'short' }).format(date);

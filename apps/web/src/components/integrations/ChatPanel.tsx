@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import {
   MessageSquare,
   Wifi,
@@ -70,6 +71,139 @@ interface YouTubeCardProps {
 }
 
 // ============================================================================
+// Shared status-label + auth-action helpers
+// ============================================================================
+
+interface StatusFlags {
+  isConnecting: boolean;
+  isConnected: boolean;
+  hasError: boolean;
+  isConfigured: boolean;
+}
+
+/**
+ * Renders the same "connecting / connected / error / waiting / not
+ * configured" cascade in every chat platform card. Centralising it
+ * means a new state (e.g. "rate-limited") only needs to land in one
+ * place and the cards stay readable.
+ */
+function chatStatusLabel(
+  t: TFunction,
+  { isConnecting, isConnected, hasError, isConfigured }: StatusFlags
+): string {
+  if (isConnecting) return t('chat.connecting');
+  if (isConnected) return t('chat.connected', 'Chat connected');
+  if (hasError) return t('chat.error');
+  if (isConfigured) return t('chat.waitingForStream', 'Waiting for stream');
+  return t('chat.notConfigured', 'Not configured');
+}
+
+interface ConnectionFlags {
+  isConnecting: boolean;
+  isConnected: boolean;
+  hasError: boolean;
+}
+
+/** The little icon next to the platform card title. */
+function ChatStatusIcon({ isConnecting, isConnected, hasError }: ConnectionFlags) {
+  if (isConnecting) return <Loader2 className="w-4 h-4 text-status-connecting animate-spin" />;
+  if (isConnected) return <Wifi className="w-4 h-4 text-status-live" />;
+  if (hasError) return <AlertCircle className="w-4 h-4 text-status-error" />;
+  return <WifiOff className="w-4 h-4 text-text-tertiary" />;
+}
+
+/** Tailwind class for the status-label text colour. */
+function chatStatusTextClass({ isConnected, hasError }: Omit<ConnectionFlags, 'isConnecting'>): string {
+  if (isConnected) return 'text-status-live';
+  if (hasError) return 'text-status-error';
+  return 'text-text-tertiary';
+}
+
+const PLATFORM_DISPLAY_NAMES: Record<string, string> = {
+  twitch: 'Twitch',
+  youtube: 'YouTube',
+  trovo: 'Trovo',
+  kick: 'Kick',
+  facebook: 'Facebook',
+  tiktok: 'TikTok',
+  stripchat: 'Stripchat',
+};
+
+/** Friendly name for toast notifications. Falls back to the raw key when
+ * the backend introduces a platform the frontend hasn't been taught yet. */
+function chatPlatformDisplayName(platform: string): string {
+  return PLATFORM_DISPLAY_NAMES[platform] ?? platform;
+}
+
+
+
+interface AuthActions {
+  onLogin: () => Promise<void>;
+  onLogout: () => Promise<void>;
+  onForget: () => Promise<void>;
+}
+
+interface AuthHandlers {
+  isLoggingIn: boolean;
+  isLoggingOut: boolean;
+  handleLogin: () => Promise<void>;
+  handleLogout: () => Promise<void>;
+  handleForget: () => Promise<void>;
+}
+
+/**
+ * Shared login/logout/forget loading-state + error-toast plumbing.
+ * Both the Twitch and YouTube cards wrap the same three async actions
+ * with the same try/catch/finally; this hook collapses the duplication
+ * so the two cards can diverge only on the actions themselves.
+ */
+function useAuthHandlers(
+  actions: AuthActions,
+  t: TFunction,
+  forgetSuccessKey: string,
+  forgetSuccessFallback: string
+): AuthHandlers {
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const handleLogin = useCallback(async () => {
+    setIsLoggingIn(true);
+    try {
+      await actions.onLogin();
+    } catch (error) {
+      toast.error(formatError(error, t));
+    } finally {
+      setIsLoggingIn(false);
+    }
+  }, [actions, t]);
+
+  const handleLogout = useCallback(async () => {
+    setIsLoggingOut(true);
+    try {
+      await actions.onLogout();
+    } catch (error) {
+      toast.error(formatError(error, t));
+    } finally {
+      setIsLoggingOut(false);
+    }
+  }, [actions, t]);
+
+  const handleForget = useCallback(async () => {
+    setIsLoggingOut(true);
+    try {
+      await actions.onForget();
+      toast.success(t(forgetSuccessKey, forgetSuccessFallback));
+    } catch (error) {
+      toast.error(formatError(error, t));
+    } finally {
+      setIsLoggingOut(false);
+    }
+  }, [actions, t, forgetSuccessKey, forgetSuccessFallback]);
+
+  return { isLoggingIn, isLoggingOut, handleLogin, handleLogout, handleForget };
+}
+
+// ============================================================================
 // Twitch Card Component
 // ============================================================================
 
@@ -88,8 +222,6 @@ function TwitchCard({
   onChannelSave,
 }: TwitchCardProps) {
   const { t } = useTranslation();
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const isConnected = status?.status === 'connected';
   const isConnecting = status?.status === 'connecting';
@@ -97,49 +229,19 @@ function TwitchCard({
   const isLoggedIn = account?.loggedIn ?? false;
   const isConfigured = !!channel.trim();
 
-  const statusLabel = isConnecting
-    ? t('chat.connecting')
-    : isConnected
-      ? t('chat.connected', 'Chat connected')
-      : hasError
-        ? t('chat.error')
-        : isConfigured
-          ? t('chat.waitingForStream', 'Waiting for stream')
-          : t('chat.notConfigured', 'Not configured');
+  const statusLabel = chatStatusLabel(t, {
+    isConnecting,
+    isConnected,
+    hasError,
+    isConfigured,
+  });
 
-  const handleLogin = async () => {
-    setIsLoggingIn(true);
-    try {
-      await onLogin();
-    } catch (error) {
-      toast.error(formatError(error, t));
-    } finally {
-      setIsLoggingIn(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    setIsLoggingOut(true);
-    try {
-      await onLogout();
-    } catch (error) {
-      toast.error(formatError(error, t));
-    } finally {
-      setIsLoggingOut(false);
-    }
-  };
-
-  const handleForget = async () => {
-    setIsLoggingOut(true);
-    try {
-      await onForget();
-      toast.success(t('chat.accountForgotten', 'Account forgotten'));
-    } catch (error) {
-      toast.error(formatError(error, t));
-    } finally {
-      setIsLoggingOut(false);
-    }
-  };
+  const { isLoggingIn, isLoggingOut, handleLogin, handleLogout, handleForget } = useAuthHandlers(
+    { onLogin, onLogout, onForget },
+    t,
+    'chat.accountForgotten',
+    'Account forgotten'
+  );
 
   return (
     <Card>
@@ -156,24 +258,9 @@ function TwitchCard({
           </div>
           {/* Connection status indicator */}
           <div className="flex items-center gap-2">
-            {isConnecting ? (
-              <Loader2 className="w-4 h-4 text-status-connecting animate-spin" />
-            ) : isConnected ? (
-              <Wifi className="w-4 h-4 text-status-live" />
-            ) : hasError ? (
-              <AlertCircle className="w-4 h-4 text-status-error" />
-            ) : (
-              <WifiOff className="w-4 h-4 text-text-tertiary" />
-            )}
+            <ChatStatusIcon isConnecting={isConnecting} isConnected={isConnected} hasError={hasError} />
             <span
-              className={cn(
-                'text-sm',
-                isConnected
-                  ? 'text-status-live'
-                  : hasError
-                    ? 'text-status-error'
-                    : 'text-text-tertiary'
-              )}
+              className={cn('text-sm', chatStatusTextClass({ isConnected, hasError }))}
             >
               {statusLabel}
             </span>
@@ -336,10 +423,14 @@ function YouTubeCard({
   onUseApiKeyChange,
 }: YouTubeCardProps) {
   const { t } = useTranslation();
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(useApiKey);
+  const { isLoggingIn, isLoggingOut, handleLogin, handleLogout, handleForget } = useAuthHandlers(
+    { onLogin, onLogout, onForget },
+    t,
+    'chat.accountForgotten',
+    'Account forgotten'
+  );
   useEffect(() => {
     if (useApiKey) {
       setShowAdvanced(true);
@@ -352,49 +443,12 @@ function YouTubeCard({
   const isLoggedIn = account?.loggedIn ?? false;
   const isConfigured = !!channelId.trim();
 
-  const statusLabel = isConnecting
-    ? t('chat.connecting')
-    : isConnected
-      ? t('chat.connected', 'Chat connected')
-      : hasError
-        ? t('chat.error')
-        : isConfigured
-          ? t('chat.waitingForStream', 'Waiting for stream')
-          : t('chat.notConfigured', 'Not configured');
-
-  const handleLogin = async () => {
-    setIsLoggingIn(true);
-    try {
-      await onLogin();
-    } catch (error) {
-      toast.error(formatError(error, t));
-    } finally {
-      setIsLoggingIn(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    setIsLoggingOut(true);
-    try {
-      await onLogout();
-    } catch (error) {
-      toast.error(formatError(error, t));
-    } finally {
-      setIsLoggingOut(false);
-    }
-  };
-
-  const handleForget = async () => {
-    setIsLoggingOut(true);
-    try {
-      await onForget();
-      toast.success(t('chat.accountForgotten', 'Account forgotten'));
-    } catch (error) {
-      toast.error(formatError(error, t));
-    } finally {
-      setIsLoggingOut(false);
-    }
-  };
+  const statusLabel = chatStatusLabel(t, {
+    isConnecting,
+    isConnected,
+    hasError,
+    isConfigured,
+  });
 
   const canSend = !useApiKey && isLoggedIn;
 
@@ -413,24 +467,9 @@ function YouTubeCard({
           </div>
           {/* Connection status indicator */}
           <div className="flex items-center gap-2">
-            {isConnecting ? (
-              <Loader2 className="w-4 h-4 text-status-connecting animate-spin" />
-            ) : isConnected ? (
-              <Wifi className="w-4 h-4 text-status-live" />
-            ) : hasError ? (
-              <AlertCircle className="w-4 h-4 text-status-error" />
-            ) : (
-              <WifiOff className="w-4 h-4 text-text-tertiary" />
-            )}
+            <ChatStatusIcon isConnecting={isConnecting} isConnected={isConnected} hasError={hasError} />
             <span
-              className={cn(
-                'text-sm',
-                isConnected
-                  ? 'text-status-live'
-                  : hasError
-                    ? 'text-status-error'
-                    : 'text-text-tertiary'
-              )}
+              className={cn('text-sm', chatStatusTextClass({ isConnected, hasError }))}
             >
               {statusLabel}
             </span>
@@ -740,6 +779,10 @@ export function ChatPanel() {
     return () => {
       cancelled = true;
     };
+    // Intentionally only depends on profile name — chat settings are
+    // keyed by profile, and re-running on every other profile-field
+    // change would thrash the API and stomp local edits in flight.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProfile?.name]);
 
   useEffect(() => {
@@ -847,14 +890,7 @@ export function ChatPanel() {
         async (payload) => {
           const statuses = await api.chat.getStatus();
           setPlatformStatuses(statuses);
-          const name =
-            payload.platform === 'twitch'
-              ? 'Twitch'
-              : payload.platform === 'youtube'
-                ? 'YouTube'
-                : payload.platform === 'trovo'
-                  ? 'Trovo'
-                  : payload.platform;
+          const name = chatPlatformDisplayName(payload.platform);
           toast.success(t('chat.autoConnected', { platform: name, defaultValue: '{{platform}} chat connected' }));
         }
       );
@@ -905,14 +941,7 @@ export function ChatPanel() {
         async (payload) => {
           const statuses = await api.chat.getStatus();
           setPlatformStatuses(statuses);
-          const name =
-            payload.platform === 'twitch'
-              ? 'Twitch'
-              : payload.platform === 'youtube'
-                ? 'YouTube'
-                : payload.platform === 'trovo'
-                  ? 'Trovo'
-                  : payload.platform;
+          const name = chatPlatformDisplayName(payload.platform);
           toast.error(
             t('chat.autoConnectFailed', {
               platform: name,
@@ -959,7 +988,7 @@ export function ChatPanel() {
     const result = await api.oauth.startFlow('twitch');
     pendingOAuthRef.current = { provider: 'twitch', state: result.state };
     toast.info(t('chat.oauth.browserOpened', 'Check your browser to complete authentication'));
-  }, [twitchChannel, t]);
+  }, [t]);
 
   const handleTwitchLogout = useCallback(async () => {
     await api.oauth.disconnect('twitch');
@@ -1013,7 +1042,7 @@ export function ChatPanel() {
     const result = await api.oauth.startFlow('youtube');
     pendingOAuthRef.current = { provider: 'youtube', state: result.state };
     toast.info(t('chat.oauth.browserOpened', 'Check your browser to complete authentication'));
-  }, [youtubeChannelId, t]);
+  }, [t]);
 
   const handleYoutubeLogout = useCallback(async () => {
     await api.oauth.disconnect('youtube');

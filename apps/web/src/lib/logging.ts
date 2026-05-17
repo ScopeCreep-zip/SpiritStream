@@ -1,6 +1,11 @@
 import type { LogEntry, LogLevel } from '@/types/stream';
 
+// Bounded log-line parser. `[^\]]+` runs in linear time on real log
+// input because the source field ends at a `]` that is guaranteed by
+// the log writer (and the lines themselves are length-capped upstream).
+// sonarjs's heuristic flags the pattern; this directive is the exemption.
 const logLineRegex =
+  // eslint-disable-next-line sonarjs/slow-regex
   /^\[(\d{4}-\d{2}-\d{2})\]\[(\d{2}:\d{2}:\d{2})\]\[([^\]]+)\]\[(TRACE|DEBUG|INFO|WARN|ERROR)\]\s*(.*)$/;
 
 let logIdCounter = 1;

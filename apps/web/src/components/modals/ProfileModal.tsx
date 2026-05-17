@@ -225,11 +225,11 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
             {t('common.cancel')}
           </Button>
           <Button onClick={() => handleSave()} disabled={saving}>
-            {saving
-              ? t('common.saving')
-              : mode === 'create'
-                ? t('modals.createProfile')
-                : t('common.saveChanges')}
+            {(() => {
+              if (saving) return t('common.saving');
+              if (mode === 'create') return t('modals.createProfile');
+              return t('common.saveChanges');
+            })()}
           </Button>
         </>
       }

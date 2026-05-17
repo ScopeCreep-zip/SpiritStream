@@ -92,6 +92,13 @@ function getPresetLabel(preset: string | null | undefined, t: TranslateFn): stri
   return t(`encoder.presets.${preset}`, { defaultValue: defaultLabel });
 }
 
+/** Tailwind classes for the encoder-type badge swatch. */
+function encoderTypeBadgeClass(type: string | undefined): string {
+  if (type === 'passthrough') return 'bg-bg-muted text-text-secondary';
+  if (type === 'hardware') return 'bg-success-subtle text-success-text';
+  return 'bg-primary-subtle text-primary';
+}
+
 export function EncoderCard({
   group,
   status,
@@ -133,11 +140,7 @@ export function EncoderCard({
             <div
               className={cn(
                 'w-10 h-10 rounded-lg flex items-center justify-center',
-                encoder.type === 'passthrough'
-                  ? 'bg-bg-muted text-text-secondary'
-                  : encoder.type === 'hardware'
-                    ? 'bg-success-subtle text-success-text'
-                    : 'bg-primary-subtle text-primary'
+                encoderTypeBadgeClass(encoder.type)
               )}
             >
               <Cpu className="w-5 h-5" />

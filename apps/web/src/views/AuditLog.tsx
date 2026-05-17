@@ -121,20 +121,26 @@ export function AuditLogView(): React.ReactElement {
             </tr>
           </thead>
           <tbody>
-            {loading && entries.length === 0 ? (
-              <tr>
-                <td colSpan={3} className="px-3 py-4 text-text-tertiary text-center">
-                  {t('audit.loading', 'Loading…')}
-                </td>
-              </tr>
-            ) : entries.length === 0 ? (
-              <tr>
-                <td colSpan={3} className="px-3 py-4 text-text-tertiary text-center">
-                  {t('audit.empty', 'No audit entries match this filter.')}
-                </td>
-              </tr>
-            ) : (
-              entries.map((entry, idx) => (
+            {(() => {
+              if (loading && entries.length === 0) {
+                return (
+                  <tr>
+                    <td colSpan={3} className="px-3 py-4 text-text-tertiary text-center">
+                      {t('audit.loading', 'Loading…')}
+                    </td>
+                  </tr>
+                );
+              }
+              if (entries.length === 0) {
+                return (
+                  <tr>
+                    <td colSpan={3} className="px-3 py-4 text-text-tertiary text-center">
+                      {t('audit.empty', 'No audit entries match this filter.')}
+                    </td>
+                  </tr>
+                );
+              }
+              return entries.map((entry, idx) => (
                 <tr
                   key={`${entry.timestamp}-${idx}`}
                   className="border-t border-border-subtle hover:bg-bg-hover"
@@ -149,8 +155,8 @@ export function AuditLogView(): React.ReactElement {
                     {formatActionDetails(entry.action)}
                   </td>
                 </tr>
-              ))
-            )}
+              ));
+            })()}
           </tbody>
         </table>
       </div>

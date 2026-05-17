@@ -353,7 +353,12 @@ function AppContent() {
   // is non-blocking: it only matters for Settings to enumerate themes
   // and for `themes_updated` to reconcile the cached themeId.
   useEffect(() => {
-    void useThemeStore.getState().refreshThemes();
+    // Fire-and-forget: the inline-tokens path already painted the UI,
+    // so a refresh failure here only matters for Settings enumeration.
+    useThemeStore
+      .getState()
+      .refreshThemes()
+      .catch(() => {});
   }, []);
 
   // Initialize app - load profiles from backend
@@ -424,7 +429,6 @@ function AppContent() {
     };
 
     applyProfileSettings();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current, setTheme, setLanguageFromProfile]);
 
   // Modal state
@@ -519,14 +523,6 @@ function AppContent() {
 
   const renderView = () => {
     switch (currentView) {
-      case 'dashboard':
-        return (
-          <Dashboard
-            onNavigate={handleNavigate}
-            onOpenProfileModal={() => setProfileModalOpen(true)}
-            onOpenTargetModal={() => setTargetModalOpen(true)}
-          />
-        );
       case 'profiles':
         return <Profiles />;
       case 'streams':
@@ -545,6 +541,10 @@ function AppContent() {
         return <Settings />;
       case 'integrations':
         return <Integrations />;
+      // `dashboard` shares the default fall-through so unrecognised
+      // values (legacy storage, hand-crafted URLs) still land somewhere
+      // useful.
+      case 'dashboard':
       default:
         return (
           <Dashboard

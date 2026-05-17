@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { Play, Square, Settings2, Activity, Gauge, Clock, Upload, Radio, AlertTriangle } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -21,6 +22,14 @@ import { logger } from '@/lib/logger';
 
 interface StreamManagerProps {
   onNavigate: (view: View) => void;
+}
+
+/** Button label for the "Start all" action: prefers in-flight states
+ * (validating → connecting) before falling back to the rest label. */
+function startAllLabel(isValidating: boolean, isConnecting: boolean, t: TFunction): string {
+  if (isValidating) return t('streams.validating');
+  if (isConnecting) return t('streams.connecting');
+  return t('streams.startAllStreams');
 }
 
 export function StreamManager({ onNavigate }: StreamManagerProps) {
@@ -62,6 +71,10 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
         setTargetEnabled(id, true);
       });
     }
+    // Intentionally only depends on the profile ID — re-enabling every
+    // group / target on each profile mutation would stomp the user's
+    // selection while they're toggling individual rows.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.id, setGroupEnabled, setTargetEnabled]);
 
   const handleStartAll = async () => {
@@ -149,8 +162,11 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
     }, 0);
   }, [current, activeGroups, enabledTargets]);
 
-  const displayActiveCount =
-    activeTargetCount > 0 ? activeTargetCount : activeStreamCount > 0 ? activeStreamCount : activeGroups.size;
+  const displayActiveCount = (() => {
+    if (activeTargetCount > 0) return activeTargetCount;
+    if (activeStreamCount > 0) return activeStreamCount;
+    return activeGroups.size;
+  })();
 
   // Calculate total bandwidth for enabled groups
   const totalBandwidth = useMemo(() => {
@@ -410,11 +426,7 @@ export function StreamManager({ onNavigate }: StreamManagerProps) {
             ) : (
               <Button onClick={handleStartAll} disabled={isConnecting || isValidating}>
                 <Play className="w-4 h-4" />
-                {isValidating
-                  ? t('streams.validating')
-                  : isConnecting
-                    ? t('streams.connecting')
-                    : t('streams.startAllStreams')}
+                {startAllLabel(isValidating, isConnecting, t)}
               </Button>
             )}
           </div>

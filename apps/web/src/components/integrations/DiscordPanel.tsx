@@ -216,7 +216,7 @@ export function DiscordPanel() {
       logger.error('Failed to select image:', error);
       toast.error(t('common.error'));
     }
-  }, [t, discordSettings, updateProfileSettings]);
+  }, [t, discordSettings, updateProfileSettings, browserOpenFile]);
 
   // Handle image removal
   const handleRemoveImage = useCallback(async () => {

@@ -111,6 +111,10 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
           setLoadingEncoders(false);
         });
     }
+    // `form.merge` is intentionally outside the dep array — we only want
+    // to seed default codecs on the create-mode open transition, not
+    // every time the user edits a field (which would clobber input).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, mode]);
 
   // Initialize form data when modal opens or group changes
@@ -411,11 +415,11 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
             {t('common.cancel')}
           </Button>
           <Button onClick={handleSave} disabled={saving || loadingEncoders}>
-            {saving
-              ? t('common.saving')
-              : mode === 'create'
-                ? t('modals.createGroup')
-                : t('common.saveChanges')}
+            {(() => {
+              if (saving) return t('common.saving');
+              if (mode === 'create') return t('modals.createGroup');
+              return t('common.saveChanges');
+            })()}
           </Button>
         </>
       }

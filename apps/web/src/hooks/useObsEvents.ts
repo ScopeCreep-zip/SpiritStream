@@ -21,6 +21,23 @@ interface ObsStreamStateEvent {
   triggeredByUs?: boolean;
 }
 
+/** Normalise the wire-format `status` string to the strict
+ * `ObsConnectionStatus` union. Anything we don't recognise collapses to
+ * `disconnected` so a broken backend ships a closed-looking widget
+ * rather than a stuck-spinner. */
+function toConnectionStatus(status: ObsStatusEvent['status']): ObsConnectionStatus {
+  switch (status) {
+    case 'connecting':
+      return 'connecting';
+    case 'connected':
+      return 'connected';
+    case 'error':
+      return 'error';
+    default:
+      return 'disconnected';
+  }
+}
+
 /**
  * Mirror backend OBS events into the OBS store for display.
  *
@@ -49,10 +66,7 @@ export function useObsEvents() {
     const setupListeners = async () => {
       unlistenStatus = await events.on<ObsStatusEvent>('obs://status', (payload) => {
         logger.debug('[useObsEvents] obs://status', payload);
-        const connectionStatus: ObsConnectionStatus =
-          payload.status === 'connecting' ? 'connecting' :
-          payload.status === 'connected' ? 'connected' :
-          payload.status === 'error' ? 'error' : 'disconnected';
+        const connectionStatus = toConnectionStatus(payload.status);
         updateFromEvent({
           connectionStatus,
           obsVersion: payload.obsVersion ?? undefined,

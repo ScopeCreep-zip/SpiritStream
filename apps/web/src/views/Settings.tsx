@@ -148,7 +148,7 @@ export function Settings() {
       // Security-relevant: record verification / network failures into
       // the audit chain so operators can grep for tampered-update
       // attempts. Best-effort — don't block the UI on the audit POST.
-      void api.system.recordAppUpdateFailure(detail).catch(() => {});
+      api.system.recordAppUpdateFailure(detail).catch(() => {});
       setUpdateState({ kind: 'error', detail });
     }
   };

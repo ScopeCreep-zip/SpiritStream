@@ -91,7 +91,12 @@ export function KeyRotationSection({ encryptStreamKeys, disabled = false }: KeyR
       // Settings depends on server-decrypted state; profile catalog needs to
       // re-fetch because the active profile cache was invalidated server-side.
       queryClient.invalidateQueries({ queryKey: SETTINGS_QUERY_KEY });
-      void useProfileStore.getState().loadProfiles();
+      // Re-fetch is best-effort — the active-profile cache was invalidated
+      // server-side, the next user-driven request will re-pull if this races.
+      useProfileStore
+        .getState()
+        .loadProfiles()
+        .catch(() => {});
       setConfirmOpen(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

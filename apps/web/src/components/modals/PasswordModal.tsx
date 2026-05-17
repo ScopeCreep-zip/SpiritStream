@@ -55,6 +55,13 @@ export function PasswordModal({
         );
         return;
       }
+      // The "passwords match" UI check compares two values typed by the
+      // same user on the same device — there is no attacker on either
+      // side of the comparison, so timing-attack-resistant compare here
+      // is theater. The real password handling lives in
+      // `crates/core/src/services/secret_store/` and uses
+      // `subtle::ConstantTimeEq` for the actual key derivation step.
+      // eslint-disable-next-line security/detect-possible-timing-attacks
       if (password !== confirmPassword) {
         setLocalError(t('validation.passwordsDoNotMatch'));
         return;

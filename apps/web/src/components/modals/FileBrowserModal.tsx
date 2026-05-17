@@ -119,13 +119,12 @@ export function FileBrowserModal({
   const [fileName, setFileName] = useState(defaultFileName || '');
 
   // Get default title based on mode
-  const modalTitle =
-    title ||
-    (mode === 'directory'
-      ? t('fileBrowser.selectDirectory', 'Select Directory')
-      : mode === 'save'
-        ? t('fileBrowser.saveFile', 'Save File')
-        : t('fileBrowser.selectFile', 'Select File'));
+  const defaultTitleByMode = (() => {
+    if (mode === 'directory') return t('fileBrowser.selectDirectory', 'Select Directory');
+    if (mode === 'save') return t('fileBrowser.saveFile', 'Save File');
+    return t('fileBrowser.selectFile', 'Select File');
+  })();
+  const modalTitle = title || defaultTitleByMode;
 
   // Filter entries based on mode and filters
   const filteredEntries = entries.filter((entry) => {
@@ -182,7 +181,7 @@ export function FileBrowserModal({
         setLoading(false);
       }
     },
-    []
+    [t]
   );
 
   const getPathSeparator = (path: string) => (path.includes('\\') ? '\\' : '/');
@@ -196,6 +195,9 @@ export function FileBrowserModal({
   };
 
   const getInitialBrowsePath = (path: string) => {
+    // End-anchored character-class repetition has linear time complexity
+    // — sonarjs's slow-regex heuristic over-fires on the `+$` shape.
+    // eslint-disable-next-line sonarjs/slow-regex
     const trimmed = path.replace(/[\\/]+$/, '');
     const lastSlash = trimmed.lastIndexOf('/');
     const lastBackslash = trimmed.lastIndexOf('\\');
@@ -239,7 +241,7 @@ export function FileBrowserModal({
       };
       fetchHome();
     }
-  }, [open, currentPath, browse, initialPath]);
+  }, [open, currentPath, browse, initialPath, mode]);
 
   // Reset state when modal closes
   useEffect(() => {
@@ -349,6 +351,61 @@ export function FileBrowserModal({
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  const renderBody = () => {
+    if (loading) {
+      return (
+        <div className="flex items-center justify-center h-full text-text-tertiary">
+          {t('common.loading', 'Loading...')}
+        </div>
+      );
+    }
+    if (error) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full p-4 text-center">
+          <p className="text-error-text mb-2">{error}</p>
+          <Button variant="outline" size="sm" onClick={() => browse(currentPath)}>
+            {t('common.retry', 'Retry')}
+          </Button>
+        </div>
+      );
+    }
+    if (filteredEntries.length === 0) {
+      return (
+        <div className="flex items-center justify-center h-full text-text-tertiary">
+          {mode === 'directory'
+            ? t('fileBrowser.noSubdirectories', 'No subdirectories')
+            : t('fileBrowser.noFiles', 'No matching files')}
+        </div>
+      );
+    }
+    return (
+      <div className="divide-y divide-border-muted">
+        {filteredEntries.map((entry) => (
+          <div
+            key={entry.name}
+            onClick={() => handleEntryClick(entry)}
+            onDoubleClick={() => handleEntryDoubleClick(entry)}
+            className={`
+              flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors
+              ${selectedEntry === entry.name ? 'bg-primary-subtle' : 'hover:bg-bg-hover'}
+            `}
+          >
+            {entry.type === 'directory' ? (
+              <FolderOpen className="w-5 h-5 text-warning" />
+            ) : (
+              <File className="w-5 h-5 text-text-tertiary" />
+            )}
+            <span className="flex-1 text-sm text-text-primary truncate">{entry.name}</span>
+            {entry.type === 'file' && entry.size != null && (
+              <span className="text-xs text-text-muted">{formatSize(entry.size)}</span>
+            )}
+            {entry.type === 'directory' && <Folder className="w-4 h-4 text-text-muted" />}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   return (
     <Modal open={open} onClose={handleCancel} title={modalTitle}>
       <ModalBody>
@@ -427,59 +484,7 @@ export function FileBrowserModal({
 
         {/* File list */}
         <div className="border border-border-default rounded-lg bg-bg-sunken h-[300px] overflow-y-auto">
-          {loading ? (
-            <div className="flex items-center justify-center h-full text-text-tertiary">
-              {t('common.loading', 'Loading...')}
-            </div>
-          ) : error ? (
-            <div className="flex flex-col items-center justify-center h-full p-4 text-center">
-              <p className="text-error-text mb-2">{error}</p>
-              <Button variant="outline" size="sm" onClick={() => browse(currentPath)}>
-                {t('common.retry', 'Retry')}
-              </Button>
-            </div>
-          ) : filteredEntries.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-text-tertiary">
-              {mode === 'directory'
-                ? t('fileBrowser.noSubdirectories', 'No subdirectories')
-                : t('fileBrowser.noFiles', 'No matching files')}
-            </div>
-          ) : (
-            <div className="divide-y divide-border-muted">
-              {filteredEntries.map((entry) => (
-                <div
-                  key={entry.name}
-                  onClick={() => handleEntryClick(entry)}
-                  onDoubleClick={() => handleEntryDoubleClick(entry)}
-                  className={`
-                    flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors
-                    ${
-                      selectedEntry === entry.name
-                        ? 'bg-primary-subtle'
-                        : 'hover:bg-bg-hover'
-                    }
-                  `}
-                >
-                  {entry.type === 'directory' ? (
-                    <FolderOpen className="w-5 h-5 text-warning" />
-                  ) : (
-                    <File className="w-5 h-5 text-text-tertiary" />
-                  )}
-                  <span className="flex-1 text-sm text-text-primary truncate">
-                    {entry.name}
-                  </span>
-                  {entry.type === 'file' && entry.size != null && (
-                    <span className="text-xs text-text-muted">
-                      {formatSize(entry.size)}
-                    </span>
-                  )}
-                  {entry.type === 'directory' && (
-                    <Folder className="w-4 h-4 text-text-muted" />
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+          {renderBody()}
         </div>
 
         {/* File name input for save mode */}

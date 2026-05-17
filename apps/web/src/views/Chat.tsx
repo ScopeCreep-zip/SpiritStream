@@ -116,7 +116,7 @@ export function Chat() {
         return target.platform;
       })
       .join(', ');
-  }, [sendTargets]);
+  }, [sendTargets, t]);
 
   const filteredMessages = useMemo(() => {
     if (!searchQuery.trim() || searchScope === 'session') {
@@ -259,7 +259,7 @@ export function Chat() {
         status: getStatus('trovo'),
       },
     ];
-  }, [chatSettings, statuses]);
+  }, [chatSettings, statuses, t]);
 
   const statusDotClass = (status: ChatPlatformStatus['status']) => {
     switch (status) {

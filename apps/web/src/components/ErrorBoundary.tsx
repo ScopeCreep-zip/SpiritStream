@@ -34,6 +34,7 @@ export class ErrorBoundary extends Component<Props, State> {
     // Log to the console for local debugging; do NOT auto-ship anywhere.
     // The audit log captures system-state events; component crashes are
     // ephemeral and surface only when the user clicks "Copy details".
+    // eslint-disable-next-line no-console
     console.error('[ErrorBoundary] Render crash:', error, info);
   }
 

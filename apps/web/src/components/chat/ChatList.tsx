@@ -83,16 +83,14 @@ export function ChatList({
 
   const densityConfig = densityStyles[density];
 
+  const renderEmpty = showEmptyState ? (
+    <div className="text-center text-text-tertiary py-10 px-4">{emptyLabel}</div>
+  ) : null;
+
   return (
     <div ref={listRef} className={cn('overflow-y-auto', className)} {...props}>
       {messages.length === 0 ? (
-        showEmptyState ? (
-          <div
-            className="text-center text-text-tertiary py-10 px-4"
-          >
-            {emptyLabel}
-          </div>
-        ) : null
+        renderEmpty
       ) : (
         <div className={cn('flex flex-col', densityConfig.rowGap)}>
           {messages.map((message) => {

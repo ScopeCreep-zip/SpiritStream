@@ -51,6 +51,11 @@ export function LoginModal({ open, onSuccess }: LoginModalProps) {
         setError(t('login.invalidToken', 'Invalid API token'));
       }
     } catch (err) {
+      // The user sees the generic message; the cause stays in the
+      // dev console so we can diagnose without leaking host / path
+      // hints into the UI.
+      // eslint-disable-next-line no-console
+      console.warn('[LoginModal] connection error', err);
       setError(t('login.connectionError', 'Connection error. Please try again.'));
     } finally {
       setLoading(false);

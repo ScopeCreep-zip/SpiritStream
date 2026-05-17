@@ -4,6 +4,12 @@ import type { ChatMessage } from '@spiritstream/types';
 
 const MAX_MESSAGES = 500;
 
+const hasMessageId = (existing: readonly ChatMessage[], id: string): boolean =>
+  existing.some((m) => m.id === id);
+
+const dedupeAgainst = (existing: readonly ChatMessage[]) =>
+  (incoming: ChatMessage): boolean => !hasMessageId(existing, incoming.id);
+
 interface ChatStore {
   messages: ChatMessage[];
   overlayTransparent: boolean;
@@ -25,19 +31,16 @@ export const useChatStore = create<ChatStore>()(
 
       addMessage: (message) =>
         set((state) => ({
-          messages: state.messages.some((existing) => existing.id === message.id)
+          messages: hasMessageId(state.messages, message.id)
             ? state.messages
             : [...state.messages, message].slice(-MAX_MESSAGES),
         })),
 
       addMessages: (messages) =>
         set((state) => ({
-          messages: [
-            ...state.messages,
-            ...messages.filter(
-              (message) => !state.messages.some((existing) => existing.id === message.id)
-            ),
-          ].slice(-MAX_MESSAGES),
+          messages: [...state.messages, ...messages.filter(dedupeAgainst(state.messages))].slice(
+            -MAX_MESSAGES
+          ),
         })),
 
       clearMessages: () => set({ messages: [] }),
