@@ -601,7 +601,7 @@ Tauri automatically injects nonces and hashes into the CSP at compile time for `
 Add `dangerousDisableAssetCspModification` to prevent Tauri from modifying the `style-src` directive:
 
 ```json
-// apps/desktop/src-tauri/tauri.conf.json
+// apps/tauri/src-tauri/tauri.conf.json
 {
   "app": {
     "security": {

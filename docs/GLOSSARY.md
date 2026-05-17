@@ -14,13 +14,13 @@ Definitions for technical terms, acronyms, and domain-specific vocabulary used t
 A lossy audio compression format standardized as part of MPEG-4. SpiritStream uses AAC as the default audio codec for streaming due to its widespread platform support and efficient compression. See [Encoding Reference](./04-streaming/04-encoding-reference.md).
 
 ### AES-256-GCM (Advanced Encryption Standard with Galois/Counter Mode)
-A symmetric encryption algorithm using 256-bit keys with authenticated encryption. SpiritStream uses AES-256-GCM to encrypt profile data and stream keys at rest. The GCM mode provides both confidentiality and integrity verification. See [Encryption Implementation](./02-backend/05-encryption-implementation.md).
+A symmetric encryption algorithm using 256-bit keys with authenticated encryption. SpiritStream uses AES-256-GCM to encrypt profile data and stream keys at rest. The GCM mode provides both confidentiality and integrity verification. See [`crates/core/README.md`](../crates/core/README.md).
 
 ### API (Application Programming Interface)
-A set of protocols and tools that allow software components to communicate. In SpiritStream, the API refers to the Tauri commands exposed from the Rust backend to the React frontend. See [Commands API](./05-api-reference/01-commands-api.md).
+A set of protocols and tools that allow software components to communicate. In SpiritStream, the API is the versioned REST surface under `/api/v1/*` (Axum + utoipa) and the in-process CLI dispatch — both call into the same `crates/core` `ServiceRegistry`. The OpenAPI spec is served at `/api/v1/openapi.json`; the typed TypeScript client lives at [`@spiritstream/api-client`](../packages/api-client/).
 
 ### Argon2id
-A memory-hard key derivation function (KDF) resistant to GPU-based attacks. SpiritStream uses Argon2id to derive encryption keys from user passwords. It combines Argon2i (data-independent) and Argon2d (data-dependent) modes for optimal security. See [Encryption Implementation](./02-backend/05-encryption-implementation.md).
+A memory-hard key derivation function (KDF) resistant to GPU-based attacks. SpiritStream uses Argon2id to derive encryption keys from user passwords. It combines Argon2i (data-independent) and Argon2d (data-dependent) modes for optimal security. See [`crates/core/README.md`](../crates/core/README.md).
 
 ### Async/Await
 A programming pattern for handling asynchronous operations. In Rust, SpiritStream uses `async`/`await` with the Tokio runtime for non-blocking I/O operations. In TypeScript, Promise-based async operations communicate with the Tauri backend.
@@ -52,7 +52,7 @@ An encoding mode where the output bitrate remains fixed throughout the stream. C
 Software that encodes or decodes digital data streams. Video codecs (H.264, HEVC) compress video frames; audio codecs (AAC, MP3) compress audio. SpiritStream supports both software and hardware codecs. See [Encoding Reference](./04-streaming/04-encoding-reference.md).
 
 ### Container (Tauri)
-The native window wrapper that hosts the web-based frontend. Unlike Electron, Tauri containers use the operating system's native webview rather than bundling Chromium.
+The native window wrapper that hosts the web-based frontend. Tauri containers use the operating system's native webview rather than bundling a browser engine, which keeps bundle size small and inherits OS security updates.
 
 ### CSP (Content Security Policy)
 A security standard that helps prevent cross-site scripting (XSS) and other code injection attacks. SpiritStream's Tauri configuration includes strict CSP headers. See [Security Architecture](./01-architecture/04-security-architecture.md).
@@ -71,8 +71,8 @@ An object used to transfer data between processes or layers. In SpiritStream, DT
 ### Encoder
 Software or hardware that converts raw video/audio into a compressed format. Hardware encoders (NVENC, QuickSync, AMF) offload work to the GPU, reducing CPU usage. See [FFmpeg Integration](./04-streaming/01-ffmpeg-integration.md).
 
-### Event (Tauri)
-A message emitted from the Rust backend and received by the frontend. SpiritStream uses events for real-time updates like `stream_stats`, `stream_ended`, and `themes_updated`. See [Events API](./05-api-reference/02-events-api.md).
+### Event (server-pushed)
+A message emitted from the Rust backend over the WebSocket at `GET /api/v1/events`. SpiritStream uses events for real-time updates like `stream_stats`, `stream_ended`, `panic_triggered`, and `themes_updated`. Backed by the `EventSink` trait in `crates/core/src/traits/event_sink.rs`.
 
 ---
 
@@ -118,10 +118,7 @@ The process of designing software to support multiple languages. SpiritStream us
 The entry point where a streaming service receives video data. SpiritStream receives ingest via RTMP and distributes to multiple output destinations.
 
 ### IPC (Inter-Process Communication)
-Communication between separate processes. In Tauri, IPC occurs between the Rust backend and the webview frontend via the `invoke()` function. See [Tauri Integration](./03-frontend/04-tauri-integration.md).
-
-### Invoke
-The Tauri function that calls a Rust command from the frontend. Syntax: `invoke<ReturnType>('command_name', { params })`. See [Commands API](./05-api-reference/01-commands-api.md).
+Communication between separate processes. In SpiritStream's desktop deployment, the Tauri webview reaches the Rust backend over local HTTP — the Axum server runs as a sidecar process and the webview makes typed REST calls via [`@spiritstream/api-client`](../packages/api-client/). On mobile, the same Axum server runs in-process inside the Tauri Rust shell. There is no Tauri `invoke()` boundary in the rewrite.
 
 ---
 
@@ -138,7 +135,7 @@ JSON with Comments. SpiritStream's theme files use the `.jsonc` extension to all
 ## K
 
 ### KDF (Key Derivation Function)
-A cryptographic function that derives encryption keys from passwords or other input. SpiritStream uses Argon2id as its KDF. See [Encryption Implementation](./02-backend/05-encryption-implementation.md).
+A cryptographic function that derives encryption keys from passwords or other input. SpiritStream uses Argon2id as its KDF. See [`crates/core/README.md`](../crates/core/README.md).
 
 ### Keyframe
 A complete video frame that doesn't depend on other frames for decoding. Also called I-frames. Keyframe interval affects seeking precision and error recovery. See [Encoding Reference](./04-streaming/04-encoding-reference.md).
@@ -197,7 +194,7 @@ A predefined set of encoder parameters balancing quality and performance. Common
 A subset of the codec specification defining feature support. H.264 profiles include Baseline, Main, and High. Higher profiles support more features but require more processing.
 
 ### Profile (SpiritStream)
-A saved configuration containing input settings, output groups, and stream targets. Profiles can be encrypted with a password. See [Models Reference](./02-backend/03-models-reference.md).
+A saved configuration containing input settings, output groups, and stream targets. Profiles can be encrypted with a password. See [`crates/core/README.md`](../crates/core/README.md).
 
 ---
 
@@ -217,7 +214,7 @@ An FFmpeg process that receives the incoming stream and distributes it to multip
 A TCP-based protocol designed for streaming audio, video, and data. RTMP is the standard protocol for ingesting streams to major platforms. Default port: 1935. See [RTMP Fundamentals](./04-streaming/02-rtmp-fundamentals.md).
 
 ### Rust
-A systems programming language emphasizing safety, concurrency, and performance. SpiritStream's backend is written in Rust. See [Rust Overview](./02-backend/01-rust-overview.md).
+A systems programming language emphasizing safety, concurrency, and performance. SpiritStream's backend is written in Rust. See [Architecture rules](../.claude/rules/architecture.md) and [`crates/core/README.md`](../crates/core/README.md).
 
 ---
 
@@ -236,7 +233,7 @@ Centralized application data managed by Zustand stores. SpiritStream has stores 
 A secret token that authenticates a streamer to a platform. Stream keys should never be exposed in logs or transmitted insecurely. SpiritStream supports encrypted storage and environment variable interpolation (`${ENV_VAR}`).
 
 ### Stream Target
-A destination endpoint for the video stream, consisting of a platform, URL, and stream key. See [Models Reference](./02-backend/03-models-reference.md).
+A destination endpoint for the video stream, consisting of a platform, URL, and stream key. See [`crates/core/README.md`](../crates/core/README.md).
 
 ---
 
@@ -246,7 +243,7 @@ A destination endpoint for the video stream, consisting of a platform, URL, and 
 A utility-first CSS framework. SpiritStream uses Tailwind for styling with custom design tokens defined as CSS variables. See [Theming and i18n](./03-frontend/05-theming-i18n.md).
 
 ### Tauri
-A framework for building desktop applications with web technologies (HTML, CSS, JavaScript) and a Rust backend. Tauri provides smaller bundle sizes and better security than Electron. See [System Overview](./01-architecture/01-system-overview.md).
+A framework for building desktop and mobile applications with web technologies (HTML, CSS, JavaScript) wrapped around a Rust backend. SpiritStream uses Tauri 2.x to ship the same React frontend across macOS, Linux, Windows, iOS, and Android. See [System Overview](./01-architecture/01-system-overview.md).
 
 ### Tee Muxer
 An FFmpeg muxer that duplicates output to multiple destinations. SpiritStream uses the tee muxer to send encoded video to multiple RTMP servers simultaneously.
@@ -330,5 +327,5 @@ A lightweight state management library for React. SpiritStream uses Zustand for 
 
 ---
 
-**Related:** [System Overview](./01-architecture/01-system-overview.md) | [Types Reference](./05-api-reference/03-types-reference.md)
+**Related:** [System Overview](./01-architecture/01-system-overview.md) | [`crates/core/README.md`](../crates/core/README.md) | [`@spiritstream/types`](../packages/types/)
 

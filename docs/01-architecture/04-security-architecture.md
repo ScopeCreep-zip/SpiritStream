@@ -67,21 +67,21 @@ flowchart TB
 
 ### Context Isolation
 
-Unlike Electron, Tauri provides strong isolation between the frontend and backend:
+Tauri 2.x provides strong isolation between the frontend (webview) and backend (Rust core):
 
-| Feature | Tauri | Electron |
-|---------|-------|----------|
-| Node.js in renderer | No | Possible |
-| Direct file system access | No | Possible |
-| Native module loading | No | Possible |
-| Context isolation | Always | Optional |
+| Boundary | Enforcement |
+|---|---|
+| Node.js in renderer | Not present — the webview runs no Node runtime |
+| Direct file system access from JS | Blocked — only allowed via explicitly declared Tauri commands |
+| Native module loading from JS | Blocked |
+| Context isolation | Always on |
 
 ### Capability-Based Permissions
 
 Tauri 2.x uses a capability system to control what the frontend can access:
 
 ```json
-// apps/desktop/src-tauri/capabilities/default.json
+// apps/tauri/src-tauri/capabilities/default.json
 {
   "identifier": "default",
   "description": "Default capabilities for SpiritStream",
@@ -112,7 +112,7 @@ Tauri 2.x uses a capability system to control what the frontend can access:
 The CSP restricts what resources the frontend can load:
 
 ```json
-// apps/desktop/src-tauri/tauri.conf.json
+// apps/tauri/src-tauri/tauri.conf.json
 {
   "app": {
     "security": {
@@ -168,7 +168,7 @@ sequenceDiagram
 ### Implementation
 
 ```rust
-// apps/desktop/src-tauri/src/services/encryption.rs
+// crates/core/src/services/encryption.rs
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use argon2::{Argon2, password_hash::SaltString};
 
@@ -455,5 +455,5 @@ When reviewing SpiritStream security:
 
 ---
 
-**Related:** [System Overview](./01-system-overview.md) | [Encryption Implementation](../02-backend/05-encryption-implementation.md) | [Services Layer](../02-backend/02-services-layer.md)
+**Related:** [System Overview](./01-system-overview.md) | [Core crate README](../../crates/core/README.md) | [Architecture rules](../../.claude/rules/architecture.md)
 

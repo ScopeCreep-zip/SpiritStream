@@ -109,13 +109,13 @@ App
 ### Service Layer
 
 ```
-apps/desktop/src-tauri/src/services/
-├── mod.rs              # Service exports
-├── profile_manager.rs  # Profile CRUD
-├── ffmpeg_handler.rs   # Stream processing
-├── encryption.rs       # Encryption/decryption
-├── settings_manager.rs # App settings
-└── theme_manager.rs    # Theme persistence
+crates/core/src/services/
+├── mod.rs               # Service exports
+├── profile_manager.rs   # Profile CRUD
+├── ffmpeg_handler.rs    # Stream processing
+├── encryption.rs        # AES-256-GCM-SIV envelope
+├── settings_manager.rs  # Bound-checked global settings
+└── theme_manager.rs     # Theme catalog and hot-reload
 ```
 
 ### Service Responsibilities
@@ -270,61 +270,40 @@ interface Store {
 
 ---
 
-## Tauri Commands
+## HTTP API
 
-### Command Registration
+The Tauri `invoke()` transitional dispatch is retired. All API calls go through REST under `/api/v1/*` (Axum + utoipa) — see [`crates/transport-http/README.md`](../../crates/transport-http/README.md). The CLI is an in-process dispatch substrate that calls the same `ServiceRegistry` directly.
+
+### Route registration (excerpt)
 
 ```rust
-// apps/desktop/src-tauri/src/main.rs
-fn main() {
-    tauri::Builder::default()
-        .setup(|app| {
-            let app_data = app.path().app_data_dir().unwrap();
-            app.manage(ProfileManager::new(app_data.clone()));
-            app.manage(FFmpegHandler::new());
-            app.manage(SettingsManager::new(app_data));
-            Ok(())
-        })
-        .invoke_handler(tauri::generate_handler![
-            // Profile commands
-            commands::profile::get_all_profiles,
-            commands::profile::load_profile,
-            commands::profile::save_profile,
-            commands::profile::delete_profile,
-
-            // Stream commands
-            commands::stream::start_stream,
-            commands::stream::stop_stream,
-            commands::stream::stop_all_streams,
-
-            // System commands
-            commands::system::get_video_encoders,
-            commands::system::get_settings,
-            commands::system::save_settings,
-        ])
-        .run(tauri::generate_context!())
-        .expect("error running application");
-}
+// crates/transport-http/src/lib.rs
+let router = Router::new()
+    .route("/api/v1/profiles", get(get_all_profiles).post(save_profile))
+    .route("/api/v1/profiles/:name", get(load_profile).delete(delete_profile))
+    .route("/api/v1/streams", post(start_stream))
+    .route("/api/v1/streams/:id/stop", post(stop_stream))
+    .route("/api/v1/settings", get(get_settings).put(save_settings))
+    .layer(middleware::from_fn(auth_middleware))
+    .layer(middleware::from_fn(csrf_middleware))
+    .with_state(registry);
 ```
 
-### Command Pattern
+### Handler pattern
 
 ```rust
-// apps/desktop/src-tauri/src/commands/profile.rs
-use tauri::State;
-use crate::services::ProfileManager;
-use crate::models::Profile;
-
-#[tauri::command]
+// crates/transport-http/src/handlers/profile.rs
+#[utoipa::path(get, path = "/api/v1/profiles/{name}", ...)]
 pub async fn load_profile(
-    name: String,
-    password: Option<String>,
-    state: State<'_, ProfileManager>,
-) -> Result<Profile, String> {
-    state
-        .load(&name, password.as_deref())
-        .await
-        .map_err(|e| e.to_string())
+    State(registry): State<Arc<ServiceRegistry>>,
+    Path(name): Path<String>,
+    Query(params): Query<LoadProfileQuery>,
+) -> Result<Json<Profile>, ApiError> {
+    let profile = registry
+        .profiles
+        .load(&name, params.password.as_deref())
+        .await?;
+    Ok(Json(profile))
 }
 ```
 
@@ -332,30 +311,19 @@ pub async fn load_profile(
 
 ## Event System
 
-### Backend Events
+### Server-push events
 
-```rust
-// Emit event from Rust
-app_handle.emit("stream_stats", stats)?;
-app_handle.emit("stream_ended", group_id)?;
-app_handle.emit("stream_error", error_info)?;
-```
+`GET /api/v1/events` is a one-way WebSocket the server uses to push `stream_stats`, `stream_ended`, and `stream_error` updates. CSRF runs on upgrade.
 
-### Frontend Listeners
+### Frontend listeners
 
 ```typescript
-// Listen in React
-import { listen } from '@tauri-apps/api/event';
+// apps/web/src/hooks/useEvents.ts (excerpt)
+import { useEvents } from '@/hooks/useEvents';
 
-useEffect(() => {
-  const unlisten = listen<StreamStats>('stream_stats', (event) => {
-    updateStats(event.payload);
-  });
-
-  return () => {
-    unlisten.then((fn) => fn());
-  };
-}, []);
+useEvents('stream_stats', (payload) => {
+  updateStats(payload);
+});
 ```
 
 ---

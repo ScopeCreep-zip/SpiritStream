@@ -661,5 +661,5 @@ ffmpeg \
 
 ---
 
-**Related:** [System Overview](../01-architecture/01-system-overview.md) | [Services Layer](../02-backend/02-services-layer.md) | [RTMP Fundamentals](./02-rtmp-fundamentals.md) | [Commands API](../05-api-reference/01-commands-api.md)
+**Related:** [System Overview](../01-architecture/01-system-overview.md) | [Core crate README](../../crates/core/README.md) | [RTMP Fundamentals](./02-rtmp-fundamentals.md) | [Transport-HTTP README](../../crates/transport-http/README.md)
 

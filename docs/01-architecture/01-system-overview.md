@@ -394,7 +394,7 @@ flowchart TB
 
 | Technology | Alternative Considered | Rationale for Choice |
 |------------|----------------------|---------------------|
-| **Tauri** | Electron | 10x smaller bundle size, better security model, native performance |
+| **Tauri 2** | — | Native webview (no bundled Chromium), strong webview/Rust isolation, single codebase for desktop + iOS + Android |
 | **Rust** | Go, C++ | Memory safety without GC, excellent FFI, Tauri native language |
 | **Axum** | Actix-web, Warp | Tower ecosystem, ergonomic API, excellent async support |
 | **React** | Vue, Svelte | Largest ecosystem, team familiarity, excellent TypeScript support |
@@ -533,8 +533,8 @@ SpiritStream's architecture provides a robust foundation for multi-destination s
 
 | Decision | Trade-off |
 |----------|-----------|
-| Tauri over Electron | Smaller bundle but requires native webview installation |
-| HTTP API over Tauri-only | Universal access but additional API surface to maintain |
+| Native webview via Tauri 2 | Requires platform webview to be present (universally available on supported OSes) |
+| HTTP API over Tauri-only | Universal access (desktop, mobile, web, CLI) but additional API surface to maintain |
 | FFmpeg as external process | Flexibility but requires user installation |
 | Zustand over Redux | Simpler but less ecosystem tooling |
 | AES-GCM over alternatives | Hardware acceleration but requires unique nonces |

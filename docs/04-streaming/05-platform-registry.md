@@ -142,7 +142,7 @@ Edit `data/streaming-platforms.json`:
 ### 2. Rebuild
 
 ```bash
-cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml
+cargo build --workspace
 ```
 
 The `Platform::Rumble` enum variant is automatically generated.
@@ -183,7 +183,7 @@ The masking uses the `stream_key_position` field from the platform config, which
 
 ### Encrypted Storage
 
-Stream keys are encrypted at rest using AES-256-GCM when profiles are password-protected. See [Encryption Implementation](../02-backend/05-encryption-implementation.md) for details.
+Stream keys are encrypted at rest using AES-256-GCM-SIV when profiles are password-protected. See [`crates/core/README.md`](../../crates/core/README.md) for details on the encryption envelope.
 
 ---
 
@@ -211,5 +211,5 @@ Some platforms require specific path segments. If streams fail:
 
 ---
 
-**Related:** [Multi-Destination Streaming](./03-multi-destination.md) | [Platform Registry Backend](../02-backend/06-platform-registry.md) | [Models Reference](../02-backend/03-models-reference.md)
+**Related:** [Multi-Destination Streaming](./03-multi-destination.md) | [Core crate README](../../crates/core/README.md) | [Architecture rules](../../.claude/rules/architecture.md)
 

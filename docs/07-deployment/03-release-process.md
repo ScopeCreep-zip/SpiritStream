@@ -47,8 +47,8 @@ Update version in:
 
 ```
 server/Cargo.toml                       → version = "1.0.0"
-apps/desktop/src-tauri/Cargo.toml       → version = "1.0.0"
-apps/desktop/src-tauri/tauri.conf.json  → "version": "1.0.0"
+apps/tauri/src-tauri/Cargo.toml       → version = "1.0.0"
+apps/tauri/src-tauri/tauri.conf.json  → "version": "1.0.0"
 package.json                            → "version": "1.0.0"
 ```
 
@@ -83,7 +83,7 @@ package.json                            → "version": "1.0.0"
 
 ```bash
 # Clean previous builds
-rm -rf apps/desktop/src-tauri/target/release
+rm -rf apps/tauri/src-tauri/target/release
 rm -rf server/target/release
 rm -rf apps/web/dist
 
@@ -100,8 +100,7 @@ pnpm install --frozen-lockfile
 pnpm test
 
 # Rust tests
-cargo test --manifest-path server/Cargo.toml
-cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
+cargo test --workspace
 
 # Type checking
 pnpm typecheck
@@ -194,7 +193,7 @@ jobs:
         with:
           name: binaries-${{ matrix.target }}
           path: |
-            apps/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/
+            apps/tauri/src-tauri/target/${{ matrix.target }}/release/bundle/
 
   release:
     needs: build
@@ -410,14 +409,14 @@ fi
 
 # Update Cargo.toml files
 sed -i "s/^version = .*/version = \"$VERSION\"/" server/Cargo.toml
-sed -i "s/^version = .*/version = \"$VERSION\"/" apps/desktop/src-tauri/Cargo.toml
+sed -i "s/^version = .*/version = \"$VERSION\"/" apps/tauri/src-tauri/Cargo.toml
 
 # Update package.json
 pnpm version $VERSION --no-git-tag-version
 
 # Update tauri.conf.json
-jq ".version = \"$VERSION\"" apps/desktop/src-tauri/tauri.conf.json > tmp.json
-mv tmp.json apps/desktop/src-tauri/tauri.conf.json
+jq ".version = \"$VERSION\"" apps/tauri/src-tauri/tauri.conf.json > tmp.json
+mv tmp.json apps/tauri/src-tauri/tauri.conf.json
 
 echo "Version bumped to $VERSION"
 ```

@@ -723,5 +723,5 @@ export const mockApi = {
 
 ---
 
-**Related:** [React Architecture](./01-react-architecture.md) | [State Management](./02-state-management.md) | [Commands API](../05-api-reference/01-commands-api.md)
+**Related:** [React Architecture](./01-react-architecture.md) | [State Management](./02-state-management.md) | [Transport-HTTP README](../../crates/transport-http/README.md) | [`@spiritstream/api-client`](../../packages/api-client/)
 

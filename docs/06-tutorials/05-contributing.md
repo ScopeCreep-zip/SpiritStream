@@ -134,19 +134,20 @@ SpiritStream/
 │   │   ├── package.json          # @spiritstream/web
 │   │   └── vite.config.ts
 │   │
-│   └── desktop/                   # Tauri wrapper (minimal)
-│       ├── package.json          # @spiritstream/desktop
-│       └── apps/desktop/src-tauri/
-│           ├── src/main.rs       # Launcher (spawns server)
-│           ├── Cargo.toml        # Minimal deps (launcher only)
-│           └── tauri.conf.json   # Sidecar configuration
+│   └── tauri/                     # Tauri 2 shell (desktop + mobile)
+│       ├── package.json          # @spiritstream/tauri
+│       └── src-tauri/
+│           ├── src/main.rs       # Launcher (spawns server sidecar on desktop; links core on mobile)
+│           ├── Cargo.toml        # Tauri shell crate
+│           └── tauri.conf.json   # Sidecar / bundle configuration
 │
-├── server/                        # Standalone Rust backend
-│   ├── src/
-│   │   ├── main.rs               # Axum HTTP server
-│   │   ├── commands/             # Business logic
-│   │   ├── services/             # Service layer
-│   │   └── models/               # Domain models
+├── crates/                        # Rust workspace
+│   ├── core/                     # spiritstream-core (services, models, traits, errors)
+│   ├── transport-http/           # Axum + utoipa adapter (REST /api/v1/*)
+│   ├── transport-cli/            # spiritstream-cli binary
+│   └── transport-veilid/         # Contract-validation spike
+├── server/                        # Thin binary wiring core + transport-http
+│   ├── src/main.rs               # Axum HTTP server entry point
 │   └── Cargo.toml
 │
 ├── docs/                          # Documentation
@@ -164,8 +165,8 @@ SpiritStream/
 | `apps/web/src/App.tsx` | React root component |
 | `apps/web/src/stores/` | Application state management |
 | `apps/web/src/lib/backend/` | Backend abstraction layer |
-| `apps/desktop/src-tauri/src/main.rs` | Desktop launcher |
-| `apps/desktop/src-tauri/tauri.conf.json` | App configuration, permissions |
+| `apps/tauri/src-tauri/src/main.rs` | Tauri shell launcher (desktop + mobile) |
+| `apps/tauri/src-tauri/tauri.conf.json` | App configuration, permissions |
 
 ---
 
@@ -263,22 +264,16 @@ const MAX_RETRY_COUNT = 3;
 **Formatting:** Use rustfmt:
 
 ```bash
-# Server
-cargo fmt --manifest-path server/Cargo.toml
-cargo fmt --manifest-path server/Cargo.toml -- --check
-
-# Desktop launcher
-cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml
+# Workspace (core + all transports + Tauri shell)
+cargo fmt --all
+cargo fmt --all -- --check
 ```
 
 **Linting:** Clippy catches common issues:
 
 ```bash
-# Server
-cargo clippy --manifest-path server/Cargo.toml
-
-# Desktop launcher
-cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml
+# Workspace (core + all transports + Tauri shell)
+cargo clippy --workspace --all-targets
 ```
 
 **Conventions:**
@@ -400,13 +395,11 @@ flowchart TD
 
 3. **Test your changes:**
    ```bash
-   pnpm dev                                  # Manual testing
-   pnpm lint                                 # Frontend linting
-   cargo clippy --manifest-path server/Cargo.toml  # Backend linting
-   pnpm run tauri dev    # Manual testing
-   pnpm run lint         # Frontend linting
-   cd apps/desktop/src-tauri && cargo clippy  # Backend linting
->>>>>>> origin/main
+   pnpm dev                          # Manual testing
+   pnpm lint                         # Frontend linting
+   pnpm typecheck                    # TypeScript checking
+   cargo clippy --workspace --all-targets  # Rust linting
+   cargo test --workspace            # Rust tests
    ```
 
 4. **Commit with conventional format:**
@@ -484,12 +477,9 @@ Most testing is currently manual:
 ```bash
 # Frontend
 pnpm typecheck
-pnpm run typecheck
->>>>>>> origin/main
 
 # Backend
-cargo check --manifest-path server/Cargo.toml
-cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
+cargo check --workspace
 ```
 
 ### Building for Production
@@ -498,8 +488,6 @@ Test that production builds work:
 
 ```bash
 pnpm build:desktop
-pnpm run tauri build
->>>>>>> origin/main
 ```
 
 ---
@@ -598,5 +586,5 @@ By contributing to SpiritStream, you agree that your contributions will be licen
 
 ---
 
-**Related:** [System Overview](../01-architecture/01-system-overview.md) | [React Architecture](../03-frontend/01-react-architecture.md) | [Services Layer](../02-backend/02-services-layer.md)
+**Related:** [System Overview](../01-architecture/01-system-overview.md) | [React Architecture](../03-frontend/01-react-architecture.md) | [Core crate README](../../crates/core/README.md) | [Architecture rules](../../.claude/rules/architecture.md)
 

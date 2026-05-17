@@ -19,13 +19,18 @@ spiritstream/
 │   │   ├── package.json        # @spiritstream/web
 │   │   ├── vite.config.ts
 │   │   └── src/
-│   └── desktop/                # Tauri wrapper (minimal)
-│       ├── package.json        # @spiritstream/desktop
-│       └── apps/desktop/src-tauri/
+│   └── tauri/                  # Tauri 2 shell (desktop + mobile)
+│       ├── package.json        # @spiritstream/tauri
+│       └── src-tauri/
 │           ├── Cargo.toml
 │           ├── tauri.conf.json
-│           └── binaries/       # Server sidecar
-├── server/                     # Standalone Rust backend
+│           └── binaries/       # Server sidecar (desktop only)
+├── crates/                     # Rust workspace
+│   ├── core/                   # spiritstream-core (transport-agnostic)
+│   ├── transport-http/         # Axum + utoipa adapter
+│   ├── transport-cli/          # spiritstream-cli binary
+│   └── transport-veilid/       # Contract-validation spike
+├── server/                     # Thin binary wiring core + transport-http
 │   ├── Cargo.toml
 │   └── src/
 ├── docker/                     # Docker configuration
@@ -161,7 +166,7 @@ pnpm run tauri build
 ### Desktop Build Output
 
 ```
-apps/desktop/src-tauri/target/release/
+apps/tauri/src-tauri/target/release/
 ├── spiritstream              # Linux binary
 ├── spiritstream.exe          # Windows binary
 └── bundle/
@@ -261,7 +266,7 @@ SpiritStream can be deployed as a Docker container for self-hosted streaming.
 
 ```bash
 # Build from project root
-docker build -t spiritstream:latest -f docker/Dockerfile .
+docker build -t spiritstream:latest -f deploy/docker/Dockerfile .
 
 # Or use docker-compose
 cd docker
@@ -299,7 +304,7 @@ See [Distribution Strategy](./03-distribution-strategy.md) for complete Docker d
 
 ## Build Configuration
 
-### tauri.conf.json (apps/desktop/src-tauri/)
+### tauri.conf.json (apps/tauri/src-tauri/)
 
 ```json
 {
@@ -450,7 +455,7 @@ pnpm build:server
 cargo build --release --manifest-path server/Cargo.toml
 ```
 
-The `build-server.ts` script copies the built binary to `apps/desktop/src-tauri/binaries/` with the correct platform triple naming.
+The `build-server.ts` script copies the built binary to `apps/tauri/src-tauri/binaries/` with the correct platform triple naming.
 
 ---
 
@@ -468,7 +473,7 @@ pnpm run tauri build
 >>>>>>> origin/main
 
 # Notarize (requires Apple Developer account)
-xcrun notarytool submit apps/desktop/src-tauri/target/release/bundle/dmg/SpiritStream.dmg \
+xcrun notarytool submit apps/tauri/src-tauri/target/release/bundle/dmg/SpiritStream.dmg \
   --apple-id "your@email.com" \
   --password "app-specific-password" \
   --team-id "XXXXXXXXXX" \
@@ -576,7 +581,7 @@ jobs:
         with:
           name: binaries-${{ matrix.platform }}
           path: |
-            apps/desktop/src-tauri/target/release/bundle/
+            apps/tauri/src-tauri/target/release/bundle/
 ```
 
 ### Docker CI
@@ -600,7 +605,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: docker/Dockerfile
+          file: deploy/docker/Dockerfile
           push: true
           tags: ghcr.io/scopecreep-zip/spiritstream:latest
 ```
@@ -629,7 +634,7 @@ pnpm run tauri build -- --debug
 >>>>>>> origin/main
 
 # Check binary size
-ls -la apps/desktop/src-tauri/target/release/spiritstream*
+ls -la apps/tauri/src-tauri/target/release/spiritstream*
 
 # Check server binary
 ls -la server/target/release/spiritstream-server*
@@ -642,8 +647,7 @@ ls -la server/target/release/spiritstream-server*
 pnpm typecheck
 
 # Check Rust
-cargo check --manifest-path server/Cargo.toml
-cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
+cargo check --workspace
 ```
 
 ---

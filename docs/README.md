@@ -14,10 +14,10 @@ SpiritStream is a multi-destination streaming application that lets you stream t
 |--------------|------------|
 | Install and run SpiritStream | [Getting Started](./06-tutorials/01-getting-started.md) |
 | Understand the architecture | [System Overview](./01-architecture/01-system-overview.md) |
-| Learn about backend services | [Services Layer](./02-backend/02-services-layer.md) |
+| Learn about backend services | [`crates/core/README.md`](../crates/core/README.md) |
 | Understand frontend state | [State Management](./03-frontend/02-state-management.md) |
 | Configure streaming | [FFmpeg Integration](./04-streaming/01-ffmpeg-integration.md) |
-| Reference the API | [Commands API](./05-api-reference/01-commands-api.md) |
+| Reference the API | OpenAPI spec at `GET /api/v1/openapi.json` (served by the backend); typed client at [`@spiritstream/api-client`](../packages/api-client/) |
 | Deploy with Docker | [Building](./07-deployment/01-building.md#docker-build) |
 | Look up a term | [Glossary](./GLOSSARY.md) |
 
@@ -28,13 +28,13 @@ SpiritStream is a multi-destination streaming application that lets you stream t
 | Metric | Value |
 |--------|-------|
 | **Framework** | Tauri 2.x + Axum |
-| **Backend** | Rust (10,000+ lines) |
-| **Frontend** | React 19 + TypeScript (8,700+ lines) |
-| **Tauri Commands** | 30+ |
-| **UI Components** | 40+ |
-| **Supported Platforms** | Windows, macOS, Linux |
-| **Deployment Modes** | Desktop, Docker, Cloud (future) |
-| **Supported Languages** | 5 (en, es, fr, de, ja) |
+| **Backend** | Rust workspace — `spiritstream-core` + transport adapters |
+| **Frontend** | React 19 + TypeScript 5.9 strict |
+| **REST endpoints** | `/api/v1/*` (Axum + utoipa, OpenAPI 3.0) |
+| **Supported Platforms** | macOS, Windows, Linux (desktop); iOS, Android (mobile via Tauri 2) |
+| **Deployment Modes** | Desktop, Mobile, Docker / self-hosted cloud, headless CLI |
+| **Supported Languages** | 11 (af, ar, de, en, es, fr, ja, ko, ru, uk, zh-CN) |
+| **Encryption** | AES-256-GCM-SIV under Argon2id; HMAC-SHA256 audit chain |
 
 ---
 
@@ -60,9 +60,9 @@ Comfortable with React and TypeScript? Go deeper:
 Ready for implementation details and security?
 
 9. [Security Architecture](./01-architecture/04-security-architecture.md)
-10. [Services Layer](./02-backend/02-services-layer.md)
-11. [Encryption Implementation](./02-backend/05-encryption-implementation.md)
-12. [Commands API](./05-api-reference/01-commands-api.md)
+10. [`crates/core/README.md`](../crates/core/README.md) — service catalog and architectural rules
+11. [`crates/transport-http/README.md`](../crates/transport-http/README.md) — HTTP transport, middleware, OpenAPI
+12. OpenAPI spec at `/api/v1/openapi.json` — generated from `utoipa` annotations, consumed by [`@spiritstream/api-client`](../packages/api-client/)
 
 ---
 
@@ -79,12 +79,14 @@ Ready for implementation details and security?
 - [Security Architecture](./01-architecture/04-security-architecture.md) — Security model, encryption, Tauri permissions
 
 ### Backend (Rust)
-- [Section Overview](./02-backend/README.md)
-- [Rust Overview](./02-backend/01-rust-overview.md) — Crate structure, dependencies
-- [Services Layer](./02-backend/02-services-layer.md) — ProfileManager, FFmpegHandler, Encryption
-- [Models Reference](./02-backend/03-models-reference.md) — Profile, OutputGroup, StreamTarget
-- [Tauri Commands](./02-backend/04-tauri-commands.md) — All 30+ command signatures
-- [Encryption Implementation](./02-backend/05-encryption-implementation.md) — AES-256-GCM + Argon2id
+
+The backend is a Cargo workspace with per-crate READMEs. Read those, plus the architecture rules, instead of section docs:
+
+- [Architecture rules](../.claude/rules/architecture.md) — layered architecture, service catalog, deployment modes
+- [`crates/core/README.md`](../crates/core/README.md) — transport-agnostic library: services, models, traits, errors
+- [`crates/transport-http/README.md`](../crates/transport-http/README.md) — Axum + utoipa adapter, middleware, cloud-mode guard
+- [`crates/transport-cli/README.md`](../crates/transport-cli/README.md) — `spiritstream-cli` subcommand catalog, exit codes
+- [`crates/transport-veilid/README.md`](../crates/transport-veilid/README.md) — contract-validation spike (see `BLOCKERS.md`)
 
 ### Frontend (React)
 - [Section Overview](./03-frontend/README.md)
@@ -102,11 +104,14 @@ Ready for implementation details and security?
 - [Encoding Reference](./04-streaming/04-encoding-reference.md) — Codecs, presets, hardware acceleration
 
 ### API Reference
-- [Section Overview](./05-api-reference/README.md)
-- [Commands API](./05-api-reference/01-commands-api.md) — Complete Tauri command reference
-- [Events API](./05-api-reference/02-events-api.md) — Event system documentation
-- [Types Reference](./05-api-reference/03-types-reference.md) — TypeScript and Rust type definitions
-- [Error Handling](./05-api-reference/04-error-handling.md) — Error codes and recovery patterns
+
+The REST surface is auto-documented from `utoipa` annotations on every handler; the typed TypeScript client is generated from that spec by `@hey-api/openapi-ts`. There is no hand-written API reference to keep in sync.
+
+- **OpenAPI spec**: `GET /api/v1/openapi.json` (served by the backend at runtime)
+- **Typed client**: [`@spiritstream/api-client`](../packages/api-client/)
+- **Domain types**: [`@spiritstream/types`](../packages/types/) — generated from Rust via `ts-rs`
+- **Error model**: `CoreError` enum in [`crates/core/src/errors.rs`](../crates/core/src/errors.rs); HTTP mapping in [`crates/transport-http/src/lib.rs`](../crates/transport-http/src/lib.rs)
+- **CLI surface**: [`crates/transport-cli/README.md`](../crates/transport-cli/README.md) — subcommand catalog and exit codes
 
 ### Tutorials
 - [Section Overview](./06-tutorials/README.md)
@@ -127,34 +132,29 @@ Ready for implementation details and security?
 
 ## Technology Stack
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────┐
-│                     CLIENT LAYER                                     │
-│  ┌──────────────────────────┐  ┌──────────────────────────┐        │
-│  │     Tauri Desktop        │  │      Web Browser         │        │
-│  │    (Embedded Webview)    │  │    (Remote Access)       │        │
-│  └────────────┬─────────────┘  └────────────┬─────────────┘        │
-│               │                             │                       │
-│               └──────────────┬──────────────┘                       │
-│                              │                                      │
-├──────────────────────────────┼──────────────────────────────────────┤
-│                     API LAYER│                                      │
-│              HTTP/WebSocket API (Axum)                              │
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐                │
-│  │ POST /api/*  │ │   WS /ws     │ │  Static UI   │                │
-│  └──────────────┘ └──────────────┘ └──────────────┘                │
+│  CLIENT LAYER                                                       │
+│    Tauri 2 desktop  │  Tauri 2 mobile  │  Web browser  │  CLI       │
+│    (sidecar HTTP)   │  (in-process)    │  (HTTP)       │  (in-proc) │
 ├─────────────────────────────────────────────────────────────────────┤
-│                     APPLICATION LAYER                                │
-│                     Rust Services                                    │
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐                 │
-│  │ProfileManager│ │FFmpegHandler │ │  Encryption  │                 │
-│  └──────────────┘ └──────────────┘ └──────────────┘                 │
+│  TRANSPORT LAYER                                                    │
+│    transport-http  (Axum + utoipa, REST /api/v1/*, WS /api/v1/events)│
+│    transport-cli   (in-process dispatch, JSON / --pretty / --quiet) │
+│    transport-veilid (contract spike — see crates/.../BLOCKERS.md)   │
 ├─────────────────────────────────────────────────────────────────────┤
-│                     INFRASTRUCTURE                                   │
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐                 │
-│  │   FFmpeg     │ │  File System │ │   Crypto     │                 │
-│  │  Processes   │ │   (Profiles) │ │ (AES-256)    │                 │
-│  └──────────────┘ └──────────────┘ └──────────────┘                 │
+│  CORE LAYER — spiritstream-core (transport-agnostic library)        │
+│    services/   ProfileService, StreamService, ChatService,          │
+│                ObsService, OAuthService, SettingsService,           │
+│                SafetyService, AuditLogService, …                    │
+│    traits/     Transport, SecretStore, EventSink, MediaProcessor,   │
+│                IdentityProvider, Clock                              │
+│    models/     ts-rs-derived domain types → @spiritstream/types     │
+├─────────────────────────────────────────────────────────────────────┤
+│  INFRASTRUCTURE                                                     │
+│    FFmpeg processes (desktop)  │  Native encoders (mobile follow-up)│
+│    Keyring OR encrypted-file secret store (chosen once at startup)  │
+│    AES-256-GCM-SIV envelope  │  HMAC-SHA256 audit chain             │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -165,10 +165,11 @@ Ready for implementation details and security?
 | Mode | Use Case | Setup |
 |------|----------|-------|
 | **Desktop** | Local streaming with GPU acceleration | Download installer |
-| **Docker** | Self-hosted on your server | `docker pull` + compose |
-| **Cloud** | Managed service (future) | Sign up |
+| **Mobile** | iOS / Android via Tauri 2 | AltStore PAL (EU/JP) · F-Droid · direct APK |
+| **Docker / self-hosted cloud** | Single-tenant on your own VPS or home server | `docker compose` + Caddy + Let's Encrypt; see [self-hosting](./07-deployment/self-hosting.md) |
+| **CLI** | Scriptable, headless management | `cargo run -p spiritstream-cli` |
 
-See [Distribution Strategy](./07-deployment/03-distribution-strategy.md) for details.
+See [self-hosting guide](./07-deployment/self-hosting.md) for cloud deploys; mobile distribution notes live in the rewrite plan and `apps/tauri/`.
 
 ---
 
