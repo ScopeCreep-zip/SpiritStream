@@ -31,7 +31,7 @@ Diagnose and troubleshoot common issues based on the type provided:
 - Check environment variables (SPIRITSTREAM_HOST, SPIRITSTREAM_PORT)
 
 ## Desktop (Tauri) Issues
-- Check Tauri sidecar configuration in `apps/desktop/src-tauri/tauri.conf.json`
+- Check Tauri sidecar configuration in `apps/tauri/src-tauri/tauri.conf.json`
 - Verify server binary exists in sidecar path
 - Check Tauri logs for launcher errors
 - Verify webview can connect to `http://127.0.0.1:8008`

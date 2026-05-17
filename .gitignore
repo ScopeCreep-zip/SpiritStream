@@ -55,6 +55,7 @@ screenshots/
 # Claude Code documentation (session-specific)
 .claude/claudedocs/
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # IDE and editor
 .vscode/

@@ -5,46 +5,64 @@ These rules apply to all code modifications in this project.
 ## TypeScript Conventions
 
 ### Naming
-- **Classes/Interfaces/Types**: PascalCase (`ProfileManager`, `OutputGroup`)
-- **Variables/Functions/Methods**: camelCase (`loadProfile`, `streamTargets`)
+
+- **Classes / Interfaces / Types**: PascalCase (`ProfileService`, `OutputGroup`)
+- **Variables / Functions / Methods**: camelCase (`loadProfile`, `streamTargets`)
 - **Constants**: UPPER_SNAKE_CASE (`MAX_RETRY_COUNT`)
 - **Files**: camelCase for utilities (`profileStore.ts`), PascalCase for components (`StreamStatus.tsx`)
 
 ### Types
-- Always use explicit return types for public methods
-- Use `interface` for object shapes, `type` for unions/aliases
-- Prefer `readonly` for properties that shouldn't change
-- Use strict null checks — handle `undefined` and `null` explicitly
+
+- Explicit return types on every public function/method.
+- `interface` for object shapes, `type` for unions/aliases.
+- `readonly` on properties that shouldn't change.
+- Strict null checks — handle `undefined` and `null` explicitly.
+- Import domain types only from `@spiritstream/types`. Never re-declare a Rust-side type in TypeScript.
 
 ## Rust Conventions
 
-### Service Pattern
-- Services are `Arc<ServiceManager>` fields in `AppState`, shared across routes
-- Service methods return `Result<T, String>` — the `invoke()` handler wraps results in `InvokeResponse { ok, data, error }`
-- Error handling: `log::error!()` + return `Err(string)`; let `invoke()` handle serialization
+### Service pattern
 
-### Sensitive Data
-- Use `mask_sensitive()` / `redact_payload()` before logging any request or response that may contain stream keys or tokens
-- Path inputs validated via `validate_path_within_any()` to prevent traversal
+- Services live in `crates/core/src/services/` and are constructed once at startup, held in `ServiceRegistry`, and shared as `Arc<...>` across all active transports.
+- Service methods return `Result<T, CoreError>` using the structured enum at `crates/core/src/errors.rs`. **No `Result<T, String>` in new code.**
+- HTTP handlers wrap errors via `ApiError(CoreError)`'s single `IntoResponse` impl in `crates/transport-http`. CLI commands map `CoreError` → exit code in `crates/transport-cli`. Mapping lives in the transport, not in core.
+- Core compiles without `axum`, `tower`, `hyper`, `tauri`, or `clap`. Adding a transport-specific dependency to `crates/core/Cargo.toml` is a bug.
+
+### Sensitive data
+
+- Use `mask_sensitive()` / `redact_payload()` (in `crates/transport-http/src/lib.rs`) before logging any request or response that may contain stream keys, OAuth tokens, or session cookies. The `tracing` redaction layer enforces this at the boundary.
+- Encrypt at-rest secrets through the `SecretStore` trait — either `KeyringSecretStore` or `EncryptedFileSecretStore`. The choice is made once at startup in `build_secret_store(app_data_dir, override_kind)`; never call platform keyring or file APIs directly.
+- New encrypted payloads use AES-256-GCM-SIV (the V2 envelope). The V1 AES-GCM envelope is read-only and re-saves auto-upgrade.
+- Path inputs validated via `validate_path_within_any()` to prevent traversal.
+- Audit-log entries go through `AuditLogService::record` — never write log files directly. The HMAC chain depends on the service owning every append.
 
 ### Naming
-- **Structs/Enums/Traits**: PascalCase (`ProfileManager`, `InvokeResponse`)
-- **Functions/Methods**: snake_case (`get_all_profiles`, `start_stream`)
+
+- **Structs / Enums / Traits**: PascalCase (`ProfileService`, `CoreError`)
+- **Functions / Methods**: snake_case (`get_all_profiles`, `start_stream`)
 - **Constants**: UPPER_SNAKE_CASE (`DEFAULT_PORT`)
-- **Modules**: snake_case (`ffmpeg_handler`, `profile_manager`)
+- **Modules**: snake_case (`profile_service`, `audit_log`)
+
+### DTOs
+
+- Write transport DTOs with `#[serde(rename_all = "camelCase")]` from the first draft. Don't reactively add it after test failures.
+- ts-rs `#[derive(TS)]` + `#[ts(export, export_to = "../../packages/types/src/")]` on every domain type that crosses the transport boundary.
 
 ## Frontend Patterns
 
-### Backend Abstraction
-- All API calls go through `api.*` from `lib/backend/api.ts` — never call `fetch()` directly
-- `api.ts` selects `httpApi` (default) or `tauriApi` (legacy) based on detected mode
-- HTTP calls use `safeFetch()` with retry logic and cookie-based auth
+### Backend abstraction
 
-### State Management
-- Zustand stores in `stores/`, one store per domain (e.g., `profileStore`, `settingsStore`)
+- All API calls go through the `api` client from `@spiritstream/api-client`. Never call `fetch()` directly from a component.
+- The HTTP client owns retry logic, cookie-based auth, and CSRF token attachment. Components only see typed methods returning typed results.
+
+### State management
+
+- Zustand stores in `apps/web/src/stores/`, one store per domain (`profileStore`, `settingsStore`, …).
+- Stores hold **UI state only**. Validation, orchestration, side-effect decisions all live in `crates/core`.
 - Stores export hooks: `useProfileStore`, `useSettingsStore`, etc.
 
-### Error Handling
+### Error handling
+
 ```typescript
 try {
   const result = await api.profile.load(name);
@@ -55,19 +73,26 @@ try {
 ```
 
 ### Components
-- Functional components only, one per file
-- Props interface defined above the component
-- Use `forwardRef` when exposing refs
-- Memoize expensive computations
+
+- Functional components only, one per file.
+- Props interface defined above the component.
+- Use `forwardRef` when exposing refs.
+- Memoize expensive computations.
+- Subscribe to server events via the `useEvents` hook; every effect that subscribes must return a cleanup function — no leaked listeners.
 
 ## CSS / Tailwind
-- Use design tokens via `var(--token)`
-- Semantic class names for custom CSS
-- Mobile-first responsive design
-- Dark mode via `data-theme="dark"`
+
+- Tailwind v4 with design tokens via `var(--token)`.
+- Semantic class names for custom CSS.
+- Mobile-first responsive design.
+- Dark mode via `data-theme="dark"`.
+- No `style={{}}` attributes, no hardcoded hex colors, no magic z-indices. Use CSS custom properties from `apps/web/src/styles/tokens.css`.
 
 ## Comments
-- Don't add comments for obvious code
-- Do add comments for complex logic or non-obvious decisions
-- Use JSDoc for public TS APIs, `///` for public Rust APIs
-- Keep comments up to date when code changes
+
+- Default to writing no comments. Well-named identifiers carry the WHAT.
+- Add a comment only when the WHY is non-obvious — a hidden constraint, a subtle invariant, a workaround for a specific upstream bug.
+- Use JSDoc for public TS APIs, `///` for public Rust APIs.
+- Keep comments up to date when code changes.
+- **No TODO / FIXME / XXX markers in source.** Future work tracks in plans, GitHub issues, or `crates/transport-veilid/BLOCKERS.md` — never in code.
+- **No `#[allow(dead_code)]`.** Every type, field, and function must have a live caller in the same change.

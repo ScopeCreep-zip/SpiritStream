@@ -20,7 +20,7 @@ Run type checking across the full stack:
 
 3. **Rust** (desktop launcher):
    ```bash
-   cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
+   cargo check --manifest-path apps/tauri/src-tauri/Cargo.toml
    ```
 
 If there are type errors:

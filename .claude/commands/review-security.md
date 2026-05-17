@@ -9,8 +9,8 @@ allowed-tools:
 Perform a security review of the codebase focusing on:
 
 ## Tauri Security
-- [ ] Capabilities are minimal in `apps/desktop/src-tauri/capabilities/default.json`
-- [ ] CSP headers configured in `apps/desktop/src-tauri/tauri.conf.json`
+- [ ] Capabilities are minimal in `apps/tauri/src-tauri/capabilities/default.json`
+- [ ] CSP headers configured in `apps/tauri/src-tauri/tauri.conf.json`
 - [ ] No unnecessary Tauri permissions granted
 
 ## Server Security
@@ -40,7 +40,7 @@ Check files:
 - `server/src/services/encryption.rs` — encryption implementation
 - `server/src/services/path_validator.rs` — path validation
 - `server/src/services/oauth.rs` — OAuth token handling
-- `apps/desktop/src-tauri/capabilities/` — Tauri permissions
-- `apps/desktop/src-tauri/tauri.conf.json` — CSP headers
+- `apps/tauri/src-tauri/capabilities/` — Tauri permissions
+- `apps/tauri/src-tauri/tauri.conf.json` — CSP headers
 
 Report any findings with severity and recommended fixes.
