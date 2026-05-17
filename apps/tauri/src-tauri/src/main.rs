@@ -3,7 +3,7 @@
 // Spawns the backend server and displays the UI
 
 use serde::{Deserialize, Serialize};
-use std::{env, fs, path::PathBuf, sync::Mutex, time::Duration};
+use std::{env, sync::Mutex, time::Duration};
 use tauri::{image::Image, AppHandle, Emitter, Manager, RunEvent, Runtime};
 use tauri_plugin_log::{Target, TargetKind};
 use tauri_plugin_shell::{
@@ -17,195 +17,40 @@ struct ServerProcess(Mutex<Option<CommandChild>>);
 const DEFAULT_HOST: &str = "127.0.0.1";
 const DEFAULT_PORT: &str = "8008";
 
+/// Slim shadow of `crates/core/src/models/Settings` — only the fields
+/// the Tauri shell itself needs at launch time. Backend host/port/token
+/// live in `ProfileSettings.backend` and are resolved server-side by
+/// `crates/transport-http`; the shell never injects them as env vars
+/// (it used to, which silently masked the profile-based resolution).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct Settings {
     #[serde(default)]
     start_minimized: bool,
-    #[serde(default)]
-    backend_remote_enabled: bool,
-    #[serde(default)]
-    backend_host: String,
-    #[serde(default)]
-    backend_port: u16,
-    #[serde(default)]
-    backend_token: String,
 }
 
-/// Migrate user data from legacy locations to the new Tauri data directory.
-/// This is a safety net in case the installer migration doesn't run (portable installs, dev builds).
+/// Whether the running build supports the self-updater. Returns:
+/// - `true` on macOS, Windows, and Linux AppImage installs.
+/// - `false` on Linux `.deb` / `.rpm` installs (system package manager
+///   owns updates — running our updater there fights the distro and
+///   leaves files orphaned in `/usr/...` outside `apt`/`dnf`'s tracking).
 ///
-/// Legacy locations checked (in order):
-/// - `%APPDATA%\SpiritStream\`
-/// - `%APPDATA%\spirit-stream\`
-/// - `%LOCALAPPDATA%\SpiritStream\`
+/// AppImage detection is per appimage.org's runtime contract: the
+/// AppImage runtime sets `APPIMAGE` to the mounted .AppImage's absolute
+/// path before launching the embedded binary. `.deb`/`.rpm` users never
+/// see this env var, so `is_some()` cleanly separates the two install
+/// types without heuristics on `argv[0]` paths.
 ///
-/// After successful migration, the legacy directory is removed.
-fn migrate_legacy_data(new_data_dir: &PathBuf) {
-    // Skip if new location already has profiles
-    let new_profiles_dir = new_data_dir.join("profiles");
-    if new_profiles_dir.exists()
-        && fs::read_dir(&new_profiles_dir)
-            .map(|mut entries| entries.next().is_some())
-            .unwrap_or(false)
+/// docs: https://docs.appimage.org/packaging-guide/environment-variables.html
+#[tauri::command]
+fn updater_supported() -> bool {
+    #[cfg(target_os = "linux")]
     {
-        log::debug!("New data directory already has profiles, skipping migration");
-        return;
+        std::env::var_os("APPIMAGE").is_some()
     }
-
-    // Skip if already migrated (marker file exists)
-    let migration_marker = new_data_dir.join(".migrated_from_legacy");
-    if migration_marker.exists() {
-        log::debug!("Migration marker exists, skipping migration");
-        return;
-    }
-
-    // Get base directories
-    let roaming_appdata = dirs_next::data_dir(); // %APPDATA%
-    let local_appdata = dirs_next::data_local_dir(); // %LOCALAPPDATA%
-
-    // Check legacy locations in order of preference
-    let legacy_locations: Vec<PathBuf> = [
-        roaming_appdata.as_ref().map(|p| p.join("SpiritStream")),
-        roaming_appdata.as_ref().map(|p| p.join("spirit-stream")),
-        local_appdata.as_ref().map(|p| p.join("SpiritStream")),
-    ]
-    .into_iter()
-    .flatten()
-    .collect();
-
-    let mut legacy_source: Option<PathBuf> = None;
-    for location in &legacy_locations {
-        let profiles_dir = location.join("profiles");
-        if profiles_dir.exists()
-            && fs::read_dir(&profiles_dir)
-                .map(|mut entries| entries.next().is_some())
-                .unwrap_or(false)
-        {
-            legacy_source = Some(location.clone());
-            break;
-        }
-    }
-
-    let Some(source) = legacy_source else {
-        log::debug!("No legacy data found to migrate");
-        return;
-    };
-
-    log::info!("Found legacy data at {:?}, migrating to {:?}", source, new_data_dir);
-
-    // Create target directories
-    fs::create_dir_all(&new_profiles_dir).ok();
-    fs::create_dir_all(new_data_dir.join("themes")).ok();
-    fs::create_dir_all(new_data_dir.join("logs")).ok();
-    fs::create_dir_all(new_data_dir.join("indexes")).ok();
-
-    // Track number of profiles migrated for verification
-    let mut profiles_migrated = 0;
-
-    // Copy profiles (critical user data)
-    if let Ok(entries) = fs::read_dir(source.join("profiles")) {
-        for entry in entries.flatten() {
-            let target = new_profiles_dir.join(entry.file_name());
-            if let Err(e) = fs::copy(entry.path(), &target) {
-                log::warn!("Failed to migrate profile {:?}: {}", entry.file_name(), e);
-            } else {
-                profiles_migrated += 1;
-            }
-        }
-        log::info!("Migrated {} profile(s)", profiles_migrated);
-    }
-
-    // Copy settings.json
-    let settings_src = source.join("settings.json");
-    if settings_src.exists() {
-        let target = new_data_dir.join("settings.json");
-        if let Err(e) = fs::copy(&settings_src, &target) {
-            log::warn!("Failed to migrate settings.json: {}", e);
-        } else {
-            log::info!("Migrated settings.json");
-        }
-    }
-
-    // Copy machine encryption key (critical for encrypted profiles)
-    let key_src = source.join(".stream_key");
-    if key_src.exists() {
-        let target = new_data_dir.join(".stream_key");
-        if let Err(e) = fs::copy(&key_src, &target) {
-            log::warn!("Failed to migrate .stream_key: {}", e);
-        } else {
-            log::info!("Migrated encryption key");
-        }
-    }
-
-    // Copy custom themes
-    let themes_src = source.join("themes");
-    if themes_src.exists() {
-        if let Ok(entries) = fs::read_dir(&themes_src) {
-            for entry in entries.flatten() {
-                let target = new_data_dir.join("themes").join(entry.file_name());
-                if let Err(e) = fs::copy(entry.path(), &target) {
-                    log::warn!("Failed to migrate theme {:?}: {}", entry.file_name(), e);
-                }
-            }
-            log::info!("Migrated themes directory");
-        }
-    }
-
-    // Copy profile order indexes
-    let indexes_src = source.join("indexes");
-    if indexes_src.exists() {
-        if let Ok(entries) = fs::read_dir(&indexes_src) {
-            for entry in entries.flatten() {
-                let target = new_data_dir.join("indexes").join(entry.file_name());
-                if let Err(e) = fs::copy(entry.path(), &target) {
-                    log::warn!("Failed to migrate index {:?}: {}", entry.file_name(), e);
-                }
-            }
-            log::info!("Migrated indexes directory");
-        }
-    }
-
-    // Verify migration by checking profiles exist in new location
-    let migration_verified = profiles_migrated == 0 || (
-        new_profiles_dir.exists()
-        && fs::read_dir(&new_profiles_dir)
-            .map(|entries| entries.count() >= profiles_migrated)
-            .unwrap_or(false)
-    );
-
-    if migration_verified {
-        // Create migration marker with success status
-        let marker_content = format!(
-            "Migrated from: {:?}\nMigration date: {}\nProfiles migrated: {}\nStatus: Success - legacy directory removed\n",
-            source,
-            chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-            profiles_migrated
-        );
-        if let Err(e) = fs::write(&migration_marker, marker_content) {
-            log::warn!("Failed to write migration marker: {}", e);
-        }
-
-        // Delete the legacy directory now that migration is confirmed
-        log::info!("Migration verified, removing legacy directory: {:?}", source);
-        if let Err(e) = fs::remove_dir_all(&source) {
-            log::warn!("Failed to remove legacy directory {:?}: {}", source, e);
-        } else {
-            log::info!("Legacy directory removed successfully");
-        }
-
-        log::info!("Legacy data migration completed successfully");
-    } else {
-        // Migration failed verification - keep legacy data
-        log::warn!("Migration verification failed - keeping legacy data at {:?}", source);
-
-        let marker_content = format!(
-            "Migrated from: {:?}\nMigration date: {}\nProfiles migrated: {}\nStatus: FAILED - legacy directory preserved\n",
-            source,
-            chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-            profiles_migrated
-        );
-        fs::write(&migration_marker, marker_content).ok();
+    #[cfg(not(target_os = "linux"))]
+    {
+        true
     }
 }
 
@@ -216,8 +61,17 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
+        // App self-update via GitHub Releases. The plugin
+        // verifies each `.sig` file (locally signed by the maintainer)
+        // against the `pubkey` embedded in `tauri.conf.json`. Linux
+        // .deb/.rpm installs opt out at the UI layer via the
+        // `updater_supported` command below; the plugin itself is
+        // always registered so any platform can call into it if
+        // present.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(ServerProcess(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![])
+        .invoke_handler(tauri::generate_handler![updater_supported])
         .setup(|app| {
             let mut targets = vec![
                 Target::new(TargetKind::LogDir {
@@ -235,17 +89,14 @@ fn main() {
                     .build(),
             )?;
 
-            // Set window icon (window starts hidden, shown after server is ready)
-            if let Some(window) = app.get_webview_window("main") {
-                let icon_bytes = include_bytes!("../icons/icon.png").to_vec();
-                if let Ok(icon) = Image::from_bytes(&icon_bytes) {
-                    if let Err(e) = window.set_icon(icon) {
-                        log::warn!("Failed to set window icon: {e}");
-                    }
-                }
-            }
-
-            // Launch the backend server
+            // No window declared in `tauri.conf.json` — we build it
+            // programmatically below, AFTER the backend's TCP socket is
+            // accepting connections. This is the only architecture in
+            // Tauri 2 that prevents the React bundle from executing
+            // before the backend exists: `visible: false` doesn't stop
+            // JS execution (per Tauri issues #5583, #7669, #10950), and
+            // there is no `navigate_later` API. The webview must not
+            // exist at all until the gate passes.
             launch(app.handle());
 
             log::info!("SpiritStream Desktop initialized");
@@ -284,66 +135,83 @@ fn launch<R: Runtime>(app: &AppHandle<R>) {
 async fn run_launcher<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let settings = load_settings(app).unwrap_or_default();
 
-    let settings_host =
-        if settings.backend_remote_enabled && !settings.backend_host.trim().is_empty() {
-            settings.backend_host.clone()
-        } else {
-            DEFAULT_HOST.to_string()
-        };
-
-    let settings_port = if settings.backend_port == 0 {
-        DEFAULT_PORT.to_string()
-    } else {
-        settings.backend_port.to_string()
-    };
-
-    let settings_token = if settings.backend_token.trim().is_empty() {
-        None
-    } else {
-        Some(settings.backend_token.clone())
-    };
-
-    let host = env::var("SPIRITSTREAM_HOST").unwrap_or(settings_host);
-    let port = env::var("SPIRITSTREAM_PORT").unwrap_or(settings_port);
+    // Bind args (host/port/token) are resolved server-side from the
+    // active profile's `settings.backend` (`crates/transport-http/src/lib.rs`
+    // ~2403). The shell never invents host/port/token defaults; the
+    // server owns that decision exclusively. Operator overrides via
+    // `SPIRITSTREAM_HOST` / `SPIRITSTREAM_PORT` / `SPIRITSTREAM_API_TOKEN`
+    // in the launcher's parent environment are inherited by the
+    // spawned child automatically (process-default env-var inheritance).
+    //
+    // The webview always loads from `127.0.0.1:8008` regardless of
+    // server bind: the CSP allow-list in `tauri.conf.json` hardcodes
+    // that origin, and the server always answers on localhost too —
+    // toggling "Allow remote web access" widens the bind from
+    // `127.0.0.1:8008` to `0.0.0.0:8008`, never moves the port.
+    let host = DEFAULT_HOST;
+    let port = DEFAULT_PORT;
 
     // Kill any zombie server processes from previous runs to avoid port conflicts
     kill_existing_servers();
 
-    spawn_server(app, &host, &port, settings_token.as_deref())?;
+    spawn_server(app)?;
 
-    wait_for_health(&host, &port).await;
+    // Wait until the server's TCP socket is accepting connections. The
+    // webview is NOT created yet — the React bundle is not running and
+    // cannot fire any HTTP requests. Once this returns, we build the
+    // window programmatically; React mounts knowing the backend is
+    // reachable, and `/api/v1/ready` either returns 200 immediately
+    // (fast path) or long-polls until services finish initializing.
+    //
+    // This ordering is the entire reason there are no console errors
+    // during boot: nothing in the webview exists to make a failed
+    // request. Tauri's `visible: false` does not provide this guarantee
+    // (issues #5583 / #7669 / #10950) — only deferred window creation
+    // does.
+    wait_for_tcp_listening(host, port).await;
 
-    // Emit event BEFORE showing window so frontend knows server is ready
-    // This prevents race condition where React fails before window shows
-    app.emit("server-ready", ()).ok();
-    log::info!("Emitted server-ready event to frontend");
+    // Build the main webview window. `WebviewUrl::default()` resolves
+    // to `App("index.html".into())`, which Tauri swaps to the dev URL
+    // (`http://localhost:1420`) in `tauri dev` and to the bundled SPA
+    // in release. Same call site, both modes.
+    let window = match tauri::WebviewWindowBuilder::new(
+        app,
+        "main",
+        tauri::WebviewUrl::default(),
+    )
+    .title("SpiritStream")
+    .inner_size(1500.0, 1000.0)
+    .min_inner_size(1024.0, 600.0)
+    .resizable(true)
+    .center()
+    .background_color(tauri::utils::config::Color(0x0F, 0x0A, 0x14, 0xFF))
+    .build()
+    {
+        Ok(w) => w,
+        Err(e) => return Err(format!("failed to create main window: {e}")),
+    };
 
-    // Show the main window now that the server is ready
-    if let Some(window) = app.get_webview_window("main") {
-        if let Err(e) = window.show() {
-            log::warn!("Failed to show main window: {e}");
-        } else {
-            log::info!("Main window shown - server is ready");
-        }
-
-        // If user wants to start minimized, minimize after showing
-        if settings.start_minimized {
-            if let Err(e) = window.minimize() {
-                log::warn!("Failed to minimize window: {e}");
-            }
-            log::info!("Window minimized per user settings");
+    // Apply the embedded icon. Failure is non-fatal — the platform
+    // default icon is acceptable.
+    let icon_bytes = include_bytes!("../icons/icon.png").to_vec();
+    if let Ok(icon) = Image::from_bytes(&icon_bytes) {
+        if let Err(e) = window.set_icon(icon) {
+            log::warn!("Failed to set window icon: {e}");
         }
     }
 
+    if settings.start_minimized {
+        if let Err(e) = window.minimize() {
+            log::warn!("Failed to minimize window: {e}");
+        }
+        log::info!("Window minimized per user settings");
+    }
+
+    log::info!("Main window created — backend was reachable when bundle loaded");
     Ok(())
 }
 
-fn spawn_server<R: Runtime>(
-    app: &AppHandle<R>,
-    host: &str,
-    port: &str,
-    auth_token: Option<&str>,
-) -> Result<(), String> {
+fn spawn_server<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let mut command = if let Ok(server_path) = env::var("SPIRITSTREAM_SERVER_PATH") {
         app.shell().command(server_path)
     } else {
@@ -359,9 +227,6 @@ fn spawn_server<R: Runtime>(
         .path()
         .app_local_data_dir()
         .map_err(|e| format!("Failed to resolve app local data dir: {e}"))?;
-
-    // Migrate legacy data from old locations (safety net for portable/dev installs)
-    migrate_legacy_data(&app_data_dir);
 
     // Put logs in a subdirectory of the local data dir
     let log_dir = app_data_dir.join("logs");
@@ -410,11 +275,7 @@ fn spawn_server<R: Runtime>(
         // Log detailed info about bundled path for debugging production issues
         if let Some(ref path) = bundled {
             log::info!("Checking bundled themes at: {:?}", path);
-            log::info!(
-                "  exists: {}, is_dir: {}",
-                path.exists(),
-                path.is_dir()
-            );
+            log::info!("  exists: {}, is_dir: {}", path.exists(), path.is_dir());
 
             // List contents if exists
             if path.exists() {
@@ -453,7 +314,7 @@ fn spawn_server<R: Runtime>(
                 log::info!("Using CWD themes directory: {:?}", cwd_themes);
                 cwd_themes
             } else {
-                // Option 2: ../../themes from apps/desktop
+                // Option 2: ../../themes from apps/tauri (Tauri dev launch)
                 let parent_themes = cwd
                     .as_ref()
                     .and_then(|d| d.join("../../themes").canonicalize().ok());
@@ -465,7 +326,7 @@ fn spawn_server<R: Runtime>(
                     log::info!("Using parent themes directory: {:?}", parent_themes);
                     parent_themes
                 } else {
-                    // Option 3: ../../../themes from apps/desktop/src-tauri
+                    // Option 3: ../../../themes from apps/tauri/src-tauri (cargo run -p spiritstream-desktop)
                     let grandparent_themes = cwd
                         .as_ref()
                         .and_then(|d| d.join("../../../themes").canonicalize().ok());
@@ -506,23 +367,66 @@ fn spawn_server<R: Runtime>(
         }
         // If themes don't exist, let server use its default handling
     }
-    if env::var("SPIRITSTREAM_HOST").is_err() {
-        command = command.env("SPIRITSTREAM_HOST", host);
-    }
-    if env::var("SPIRITSTREAM_PORT").is_err() {
-        command = command.env("SPIRITSTREAM_PORT", port);
-    }
-    if env::var("SPIRITSTREAM_API_TOKEN").is_err() && env::var("SPIRITSTREAM_DEV_TOKEN").is_err() {
-        if let Some(token) = auth_token {
-            command = command.env("SPIRITSTREAM_API_TOKEN", token);
-        }
-    }
+    // SPIRITSTREAM_HOST / SPIRITSTREAM_PORT / SPIRITSTREAM_API_TOKEN
+    // are deliberately NOT set here. The server resolves bind args
+    // from the active profile's `settings.backend` (`crates/transport-http/src/lib.rs`
+    // ~2403) — injecting env-var defaults from the shell would silently
+    // override that resolution and was the root cause of remote-access
+    // being silently broken pre-fix. Operator overrides in the parent
+    // launcher's environment still propagate via standard env-var
+    // inheritance to the spawned child.
 
     if env::var("SPIRITSTREAM_UI_DIR").is_err() {
         if let Ok(resource_dir) = app.path().resource_dir() {
             let dist_dir = resource_dir.join("dist");
             if dist_dir.exists() {
                 command = command.env("SPIRITSTREAM_UI_DIR", dist_dir);
+            }
+        }
+    }
+
+    // Tauri 2 sidecar FFmpeg (Option A — no runtime download).
+    //
+    // On macOS / Windows the build pipeline fetches FFmpeg from the
+    // ffmpeg.org-recommended source (evermeet.cx / BtbN) and places it
+    // at `binaries/ffmpeg-<TARGET>(.exe)`. The bundler copies that into
+    // the .app / install dir alongside `spiritstream-server`. We
+    // resolve the path here and inject `SPIRITSTREAM_FFMPEG_PATH` so
+    // the server picks it up without doing its own discovery.
+    //
+    // On Linux the placeholder file is empty (~0 bytes) — the .deb /
+    // .rpm dependency on `ffmpeg` is what actually delivers the
+    // binary, and the server falls through to `$PATH` lookup. We
+    // detect the placeholder by file size and skip the env injection.
+    if env::var("SPIRITSTREAM_FFMPEG_PATH").is_err() {
+        // Tauri 2's `app.shell().sidecar(name)` resolves the sidecar
+        // path internally during spawn but doesn't expose it. We need
+        // the resolved path explicitly so the server (spawned as a
+        // separate process) can pick it up via the env var. So we
+        // recompute the same path Tauri would use:
+        //
+        // - **prod**: bundled next to the main executable, with the
+        //   target-triple suffix stripped during packaging
+        //   (`<bundle>/Contents/MacOS/ffmpeg`, etc.).
+        // - **dev**: `apps/tauri/src-tauri/binaries/ffmpeg-<TARGET>`
+        //   relative to the workspace. `BUILD_TARGET` is set in
+        //   `build.rs` from Cargo's `TARGET` env var.
+        //
+        // Linux distro packaging leaves a zero-byte placeholder (the
+        // .deb/.rpm dep on `ffmpeg` delivers the real binary), which
+        // we detect by file size and skip — the server then falls
+        // through to `$PATH` lookup.
+        let resolved = resolve_ffmpeg_sidecar();
+        match resolved {
+            Some(path) => {
+                log::info!("Injecting bundled FFmpeg sidecar path: {path:?}");
+                command = command.env("SPIRITSTREAM_FFMPEG_PATH", &path);
+            }
+            None => {
+                log::info!(
+                    "No bundled FFmpeg sidecar resolved (placeholder, missing, or unknown target); \
+                     server will look up `ffmpeg` on $PATH (Linux distro dep or `brew install`)."
+                );
             }
         }
     }
@@ -594,6 +498,66 @@ fn spawn_server<R: Runtime>(
     Ok(())
 }
 
+/// Resolve the FFmpeg sidecar path for both `tauri dev` and packaged builds.
+/// Returns `None` when the resolved path is missing OR a zero-byte placeholder
+/// (Linux `.deb` / `.rpm` ships placeholders because the distro `ffmpeg` package
+/// supplies the real binary).
+///
+/// **Debug builds prefer the dev path first.** `tauri build` leaves a stale
+/// `target/debug/ffmpeg` next to the dev exe when run on the same workspace
+/// (the bundler renames sidecars in place during packaging, and `cargo clean`
+/// is the only thing that removes them). If the dev resolver checked
+/// `target/debug/ffmpeg` first, it would resolve to that stale copy — which
+/// might be the wrong architecture, an outdated version, or otherwise
+/// mismatched against the suffixed sidecar in `binaries/`. So in debug we
+/// check the target-triple-suffixed sidecar first.
+///
+/// **Release builds prefer the bundled path** next to the exe — that's where
+/// Tauri's installer lands the renamed sidecar. `BUILD_TARGET` is injected by
+/// `build.rs` from Cargo's `TARGET` env var (still used for fallback in case
+/// a release-build user manually places a suffixed binary).
+fn resolve_ffmpeg_sidecar() -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let exe_dir = exe.parent()?;
+
+    let bundled_name = if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" };
+    let target_triple: &str = env!("BUILD_TARGET");
+    let dev_name = if cfg!(windows) {
+        format!("ffmpeg-{target_triple}.exe")
+    } else {
+        format!("ffmpeg-{target_triple}")
+    };
+
+    let workspace_root_candidate = exe_dir.parent().and_then(|p| p.parent());
+    let dev_candidate = workspace_root_candidate.map(|root| {
+        root.join("apps")
+            .join("tauri")
+            .join("src-tauri")
+            .join("binaries")
+            .join(&dev_name)
+    });
+
+    let prod_candidate = exe_dir.join(bundled_name);
+
+    // Probe order: debug → dev-first then prod-fallback; release → prod-first
+    // then dev-fallback. The `cfg!(debug_assertions)` branch is a runtime
+    // check rather than a `#[cfg]` so the dev-mode fix applies to any build
+    // that compiled with debug symbols, even when launched outside `cargo run`.
+    let order: [&Option<std::path::PathBuf>; 2] = if cfg!(debug_assertions) {
+        [&dev_candidate, &Some(prod_candidate.clone())]
+    } else {
+        [&Some(prod_candidate.clone()), &dev_candidate]
+    };
+    for candidate in order {
+        let Some(path) = candidate.as_ref() else { continue };
+        let Ok(meta) = std::fs::metadata(path) else { continue };
+        if meta.is_file() && meta.len() > 0 {
+            return Some(path.clone());
+        }
+    }
+    None
+}
+
 fn load_settings<R: Runtime>(app: &AppHandle<R>) -> Option<Settings> {
     let app_data_dir = app.path().app_data_dir().ok()?;
     let settings_path = app_data_dir.join("settings.json");
@@ -657,74 +621,27 @@ fn is_port_available(port: u16) -> bool {
     TcpListener::bind(format!("127.0.0.1:{}", port)).is_ok()
 }
 
-async fn wait_for_health(host: &str, port: &str) {
-    let health_url = format!("http://{host}:{port}/health");
-    let ready_url = format!("http://{host}:{port}/ready");
-
-    // Phase 1: Wait for server to be alive (health check)
-    for _ in 0..25 {
-        if let Ok(response) = reqwest::get(&health_url).await {
-            if response.status().is_success() {
-                log::info!("Backend server is alive at {health_url}");
-                break;
-            }
+/// Wait for the server's TCP socket to be accepting connections.
+///
+/// Fast (~10–200ms typical, since spawn_server only returns after the
+/// child has been fork-execed and the server binds immediately on startup).
+/// 5-second worst-case bound; on giveup, the webview will surface the
+/// `/api/v1/ready` failure path itself via the React `unreachable` overlay.
+///
+/// This is the entire shell-side readiness coordination — services
+/// initialization is observed *through the server*, not the shell, via the
+/// long-poll on `/api/v1/ready`. Single source of readiness truth.
+async fn wait_for_tcp_listening(host: &str, port: &str) {
+    let addr = format!("{host}:{port}");
+    for attempt in 0..50 {
+        if tokio::net::TcpStream::connect(&addr).await.is_ok() {
+            log::info!("Backend listening at {addr} (attempt {})", attempt + 1);
+            return;
         }
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
-
-    // Phase 2: Wait for server to be ready (services initialized)
-    let mut last_ready_details: Option<String> = None;
-    for attempt in 1..=15 {
-        if let Ok(response) = reqwest::get(&ready_url).await {
-            let status = response.status();
-            let data = response.json::<serde_json::Value>().await.ok();
-
-            if let Some(data) = data {
-                if data.get("ready").and_then(|v| v.as_bool()).unwrap_or(false) {
-                    log::info!("Backend server is ready");
-                    return;
-                }
-
-                let failed = data.get("failed").and_then(|v| v.as_array()).map(|items| {
-                    items
-                        .iter()
-                        .filter_map(|item| item.as_str())
-                        .collect::<Vec<_>>()
-                });
-                let errors = data.get("errors").and_then(|v| v.as_array()).map(|items| {
-                    items
-                        .iter()
-                        .filter_map(|item| {
-                            let check = item.get("check")?.as_str()?;
-                            let error = item.get("error")?.as_str()?;
-                            Some(format!("{check}: {error}"))
-                        })
-                        .collect::<Vec<_>>()
-                });
-
-                if let Some(errors) = errors {
-                    last_ready_details = Some(format!("status={status}, errors={errors:?}"));
-                } else if let Some(failed) = failed {
-                    last_ready_details = Some(format!("status={status}, failed={failed:?}"));
-                } else {
-                    last_ready_details = Some(format!("status={status}, ready=false"));
-                }
-            } else {
-                last_ready_details = Some(format!("status={status}, non-json response"));
-            }
-        } else {
-            last_ready_details = Some("request failed".to_string());
-        }
-
-        if attempt % 5 == 0 {
-            log::info!("Waiting for backend readiness ({attempt}/15)...");
-        }
-        tokio::time::sleep(Duration::from_millis(300)).await;
-    }
-
-    if let Some(details) = last_ready_details {
-        log::warn!("Could not confirm backend readiness at {ready_url}. Last response: {details}");
-    } else {
-        log::warn!("Could not confirm backend readiness at {ready_url}");
-    }
+    log::warn!(
+        "Backend did not begin listening at {addr} within 5s — \
+         the webview's /ready long-poll will surface the failure to the user"
+    );
 }

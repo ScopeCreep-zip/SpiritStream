@@ -30,6 +30,10 @@
         {
           "name": "spiritstream-server",
           "sidecar": true
+        },
+        {
+          "name": "ffmpeg",
+          "sidecar": true
         }
       ]
     },
@@ -62,17 +66,18 @@
     "dialog:allow-open",
     "dialog:allow-save",
     "log:default",
+    "updater:default",
+    "process:default",
+    "process:allow-restart",
     {
       "identifier": "http:default",
       "allow": [
         { "url": "http://127.0.0.1:8008" },
         { "url": "http://127.0.0.1:8008/*" },
         { "url": "http://127.0.0.1:8008/api/*" },
-        { "url": "http://127.0.0.1:8008/api/invoke/*" },
         { "url": "http://localhost:8008" },
         { "url": "http://localhost:8008/*" },
-        { "url": "http://localhost:8008/api/*" },
-        { "url": "http://localhost:8008/api/invoke/*" }
+        { "url": "http://localhost:8008/api/*" }
       ]
     }
   ]

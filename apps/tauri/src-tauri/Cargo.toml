@@ -19,19 +19,21 @@ tauri-plugin-shell = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
+# App self-update via GitHub Releases. Signing happens locally on the
+# maintainer's machine (private key never enters CI); the public key is
+# embedded in `tauri.conf.json` `plugins.updater.pubkey` and used by
+# this plugin to verify the `.sig` files attached to each release.
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
-# Async
-tokio = { version = "1.0", features = ["process", "time", "rt-multi-thread"] }
-
-# HTTP client (for health checks)
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+# Async — `net` is required by the TCP-listening probe in run_launcher
+# (TcpStream::connect); other features are for the existing process/timer use.
+tokio = { version = "1.0", features = ["process", "time", "net", "rt-multi-thread"] }
 
 # Utilities
 log = "0.4"
 tauri-plugin-http = "2"
-dirs-next = "2.0"
-chrono = "0.4"

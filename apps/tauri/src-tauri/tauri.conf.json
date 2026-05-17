@@ -10,20 +10,7 @@
     "beforeBuildCommand": "pnpm --filter @spiritstream/web build"
   },
   "app": {
-    "windows": [
-      {
-        "title": "SpiritStream",
-        "visible": false,
-        "backgroundColor": "#0F0A14",
-        "width": 1500,
-        "height": 1000,
-        "minWidth": 1024,
-        "minHeight": 600,
-        "resizable": true,
-        "fullscreen": false,
-        "center": true
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:8008 http://localhost:8008 ws://127.0.0.1:8008 ws://localhost:8008",
       "devCsp": "default-src 'self' http://localhost:1420 http://127.0.0.1:1420; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost http://localhost:1420 http://127.0.0.1:1420 ws://localhost:1420 ws://127.0.0.1:1420 http://localhost:8008 http://127.0.0.1:8008 ws://localhost:8008 ws://127.0.0.1:8008",
@@ -39,7 +26,8 @@
     "licenseFile": "../../../LICENSE",
     "copyright": "Copyright (c) 2024-2025 SpiritStream Contributors",
     "externalBin": [
-      "binaries/spiritstream-server"
+      "binaries/spiritstream-server",
+      "binaries/ffmpeg"
     ],
     "resources": {
       "../../../themes/*.jsonc": "themes/"
@@ -85,6 +73,18 @@
     },
     "shortDescription": "Multi-destination streaming application",
     "longDescription": "SpiritStream allows you to stream to multiple platforms simultaneously at different bitrates. Configure output groups with custom encoding settings and stream to YouTube, Twitch, Kick, Facebook, and custom RTMP servers.",
-    "category": "Video"
+    "category": "Video",
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/ScopeCreep-zip/SpiritStream/releases/latest/download/latest.json"
+      ],
+      "pubkey": "REPLACE_WITH_OUTPUT_OF__tauri_signer_generate",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }
