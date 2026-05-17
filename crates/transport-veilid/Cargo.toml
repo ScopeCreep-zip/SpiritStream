@@ -1,0 +1,28 @@
+[package]
+name = "spiritstream-transport-veilid"
+description = "Veilid transport adapter for spiritstream-core (contract-validation spike — no working transport)."
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lib]
+name = "spiritstream_transport_veilid"
+path = "src/lib.rs"
+
+# This crate exists to prove the `Transport` trait
+# generalises beyond HTTP. The contract validation is itself the
+# deliverable; a real Veilid implementation is post-rewrite. The
+# crate intentionally takes no Veilid dependencies — adding them
+# would imply we're trying to ship working DHT routing here,
+# which we are not.
+[dependencies]
+spiritstream-core = { path = "../core" }
+async-trait = "0.1"
+log = "0.4"
+
+[dev-dependencies]
+tokio = { version = "1.0", features = ["macros", "rt"] }
