@@ -1,0 +1,6 @@
+{
+  "_": "Build-from-source pin: which ffmpeg.org release tarball CI compiles for every platform. The source SHA-256 is verified against ffmpeg.org's GPG-signed tarball at build time (scripts/build-ffmpeg/verify-source.sh). No per-platform binary URLs — CI produces every platform's static binary from this one source. Trust chain: ffmpeg.org → us. Bumped via `pnpm tsx scripts/bump-ffmpeg-pin.ts --to <version>`.",
+  "ffmpegVersion": "8.1.1",
+  "sourceSha256": "b6863adde98898f42602017462871b5f6333e65aec803fdd7a6308639c52edf3",
+  "gpgFingerprint": "FCF986EA15E6E293A5644F10B4322F04D67658D8"
+}

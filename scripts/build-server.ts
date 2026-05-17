@@ -169,8 +169,8 @@ const ext = platform === 'win32' ? '.exe' : '';
 
 console.log(`Building server binary for ${target} (${profile})...`);
 
-// Create binaries directory in desktop app (using absolute paths)
-const binariesDir = join(projectRoot, 'apps', 'desktop', 'src-tauri', 'binaries');
+// Create binaries directory in the Tauri shell (post-rewrite layout).
+const binariesDir = join(projectRoot, 'apps', 'tauri', 'src-tauri', 'binaries');
 if (!existsSync(binariesDir)) {
   mkdirSync(binariesDir, { recursive: true });
 }
@@ -198,11 +198,13 @@ try {
   process.exit(1);
 }
 
-// Copy binary with platform-specific name (using absolute paths)
-// When cross-compiling with --target, binary is in target/{target}/{profile}/
+// Copy binary with platform-specific name (using absolute paths).
+// The server crate lives inside the Cargo workspace, so cargo writes the
+// binary to the workspace target dir (`target/`), not `server/target/`.
+// When cross-compiling with --target, binary is in target/{target}/{profile}/.
 const sourcePath = explicitTarget
-  ? join(projectRoot, 'server', 'target', explicitTarget, profile, `spiritstream-server${ext}`)
-  : join(projectRoot, 'server', 'target', profile, `spiritstream-server${ext}`);
+  ? join(projectRoot, 'target', explicitTarget, profile, `spiritstream-server${ext}`)
+  : join(projectRoot, 'target', profile, `spiritstream-server${ext}`);
 
 console.log(`Copying ${sourcePath} to ${destPath}...`);
 copyFileSync(sourcePath, destPath);
