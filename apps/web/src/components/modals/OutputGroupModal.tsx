@@ -1,8 +1,7 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
-import { Select, SelectOption } from '@/components/ui/Select';
 import { Button } from '@/components/ui/Button';
 import { Toggle } from '@/components/ui/Toggle';
 import { useProfileStore } from '@/stores/profileStore';
@@ -13,6 +12,20 @@ import type { OutputGroup, VideoSettings, AudioSettings, ContainerSettings } fro
 import type { Encoders } from '@/types/stream';
 import { useFormState, useFormValidation } from '@spiritstream/ui';
 import type { ValidationRule } from '@spiritstream/ui';
+import {
+  VideoSettingsForm,
+  isPresetSupportedFor,
+  type VideoFormValues,
+  type VideoFormErrors,
+} from '@/components/encoder/VideoSettingsForm';
+import {
+  AudioSettingsForm,
+  type AudioFormValues,
+} from '@/components/encoder/AudioSettingsForm';
+import {
+  ContainerSettingsForm,
+  type ContainerFormValues,
+} from '@/components/encoder/ContainerSettingsForm';
 
 export interface OutputGroupModalProps {
   open: boolean;
@@ -21,35 +34,10 @@ export interface OutputGroupModalProps {
   group?: OutputGroup;
 }
 
-// Encoder option values are server-tuned and hydrated at app start from
-// `GET /api/v1/system/encoders/presets`. See `lib/encoderPresets.ts`.
-import { encoderPresets, getPresetValues, getDefaultPreset } from '@/lib/encoderPresets';
-
-interface FormData {
+interface FormData extends VideoFormValues, AudioFormValues, ContainerFormValues {
   name: string;
   generatePts: boolean;
-  // Video settings (nested)
-  videoCodec: string;
-  resolution: string;
-  fps: string;
-  videoBitrate: string;
-  preset: string;
-  profile: string;
-  keyframeIntervalSeconds: string;
-  // Audio settings (nested)
-  audioCodec: string;
-  audioBitrate: string;
-  audioChannels: string;
-  audioSampleRate: string;
-  // Container settings (nested)
-  containerFormat: string;
 }
-
-const ENCODER_DEFAULT_LABELS: Record<string, string> = {
-  h264_vaapi: 'VAAPI (Linux)',
-  hevc_vaapi: 'VAAPI HEVC (Linux)',
-  av1_vaapi: 'VAAPI AV1 (Linux)',
-};
 
 const defaultFormData: FormData = {
   name: '',
@@ -68,6 +56,16 @@ const defaultFormData: FormData = {
   containerFormat: 'flv',
 };
 
+/**
+ * Custom output group editor — orchestrator. Owns form state, validation,
+ * encoder fetch, and persistence. Visible sections (Video / Audio /
+ * Container) are self-contained modules under `components/encoder/`,
+ * each owning its own option-building memos and Select wiring.
+ *
+ * Backend authority: every value here is re-validated by
+ * `StreamService::validate_config`; the inline checks only short-circuit
+ * the network roundtrip with a user-visible error.
+ */
 export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModalProps) {
   const { t } = useTranslation();
   const { addOutputGroup, updateOutputGroup } = useProfileStore();
@@ -78,17 +76,15 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
   const [encoders, setEncoders] = useState<Encoders>({ video: ['libx264'], audio: ['aac'] });
   const [loadingEncoders, setLoadingEncoders] = useState(false);
 
-  // Check if trying to edit the default (immutable) group
   const isDefaultGroup = mode === 'edit' && group?.isDefault === true;
 
-  // Close modal when attempting to edit the default (immutable) group
   useEffect(() => {
     if (isDefaultGroup && open) {
       onClose();
     }
   }, [isDefaultGroup, open, onClose]);
 
-  // Load available encoders when modal opens
+  // Load available encoders when modal opens; seed codecs in create mode.
   useEffect(() => {
     if (open) {
       setLoadingEncoders(true);
@@ -96,7 +92,6 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
         .getEncoders()
         .then((enc) => {
           setEncoders(enc);
-          // If no encoder set yet, use first available
           if (mode === 'create' && enc.video.length > 0) {
             form.merge({
               videoCodec: enc.video[0],
@@ -111,24 +106,20 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
           setLoadingEncoders(false);
         });
     }
-    // `form.merge` is intentionally outside the dep array — we only want
-    // to seed default codecs on the create-mode open transition, not
-    // every time the user edits a field (which would clobber input).
+    // `form.merge` is intentionally outside the dep array — seeding only
+    // runs on the create-mode open transition, not on every field edit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, mode]);
 
-  // Initialize form data when modal opens or group changes
   useEffect(() => {
     if (open) {
       if (mode === 'edit' && group) {
-        // Parse video bitrate from string (e.g., "6000k" -> "6000")
         const videoBitrate = group.video.bitrate.replace(/[^\d]/g, '') || '6000';
-        // Build resolution string from width x height
         const resolution = `${group.video.width}x${group.video.height}`;
 
         form.reset({
           name: group.name || '',
-          generatePts: group.generatePts !== false, // Default to true if undefined
+          generatePts: group.generatePts !== false,
           videoCodec: group.video.codec,
           resolution,
           fps: String(group.video.fps),
@@ -153,141 +144,8 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, mode, group]);
 
-  // Create encoder options from loaded encoders with translations
-  // Use type assertion to bypass strict i18n key checking for dynamic keys
-  const tDynamic = t as (
-    key: string,
-    options?: { defaultValue?: string; [key: string]: string | number | undefined }
-  ) => string;
-
-  const videoCodecOptions: SelectOption[] = useMemo(
-    () =>
-      encoders.video.map((enc) => {
-        const defaultLabel = ENCODER_DEFAULT_LABELS[enc] || enc;
-        const label = tDynamic(`encoder.encoders.${enc}`, { defaultValue: defaultLabel });
-        return { value: enc, label };
-      }),
-    [encoders.video, tDynamic]
-  );
-
-  const audioCodecOptions: SelectOption[] = useMemo(
-    () =>
-      encoders.audio.map((enc) => {
-        const label = tDynamic(`audio.codecs.${enc}`, { defaultValue: enc });
-        return { value: enc, label };
-      }),
-    [encoders.audio, tDynamic]
-  );
-
-  const presetValues = useMemo(
-    () => getPresetValues(formData.videoCodec),
-    [formData.videoCodec]
-  );
-  const presetSupported = presetValues.length > 0;
-
-  // Create translated options arrays (memoized to avoid re-creating on every render)
-  const resolutionOptions: SelectOption[] = useMemo(
-    () =>
-      encoderPresets.RESOLUTION_VALUES.map((value) => ({
-        value,
-        label: tDynamic(`encoder.resolutions.${value}`, { defaultValue: value }),
-      })),
-    [tDynamic]
-  );
-
-  const fpsOptions: SelectOption[] = useMemo(
-    () =>
-      encoderPresets.FPS_VALUES.map((value) => ({
-        value,
-        label: tDynamic(`encoder.frameRates.${value}`, { defaultValue: `${value} fps` }),
-      })),
-    [tDynamic]
-  );
-
-  const audioBitrateOptions: SelectOption[] = useMemo(
-    () =>
-      encoderPresets.AUDIO_BITRATE_VALUES.map((value) => ({
-        value,
-        label: tDynamic(`audio.bitrates.${value}`, { defaultValue: value }),
-      })),
-    [tDynamic]
-  );
-
-  const audioChannelsOptions: SelectOption[] = useMemo(
-    () =>
-      encoderPresets.AUDIO_CHANNELS_VALUES.map((value) => {
-        if (value === '1') {
-          return {
-            value,
-            label: tDynamic('audio.channels.mono', { defaultValue: 'Mono' }),
-          };
-        }
-        if (value === '2') {
-          return {
-            value,
-            label: tDynamic('audio.channels.stereo', { defaultValue: 'Stereo' }),
-          };
-        }
-        return {
-          value,
-          label: tDynamic('audio.channels.multiple', {
-            defaultValue: '{{count}} channels',
-            count: value,
-          }),
-        };
-      }),
-    [tDynamic]
-  );
-
-  const audioSampleRateOptions: SelectOption[] = useMemo(
-    () =>
-      encoderPresets.AUDIO_SAMPLE_RATE_VALUES.map((value) => {
-        const khz = parseInt(value, 10) / 1000;
-        return {
-          value,
-          label: tDynamic('audio.sampleRateKHz', { defaultValue: '{{value}} kHz', value: khz }),
-        };
-      }),
-    [tDynamic]
-  );
-
-  const containerFormatOptions: SelectOption[] = useMemo(
-    () =>
-      encoderPresets.CONTAINER_FORMAT_VALUES.map((value) => ({
-        value,
-        label: value.toUpperCase(),
-      })),
-    []
-  );
-
-  const presetOptions: SelectOption[] = useMemo(
-    () =>
-      presetSupported
-        ? presetValues.map((value) => ({
-            value,
-            label: tDynamic(`encoder.presets.${value}`, {
-              defaultValue: value.charAt(0).toUpperCase() + value.slice(1),
-            }),
-          }))
-        : [],
-    [presetSupported, presetValues, tDynamic]
-  );
-
-  const profileOptions: SelectOption[] = useMemo(
-    () =>
-      encoderPresets.H264_PROFILE_VALUES.map((value) => ({
-        value,
-        label: value.charAt(0).toUpperCase() + value.slice(1),
-      })),
-    []
-  );
-
   const rules: Partial<Record<keyof FormData, ValidationRule<FormData>>> = {
     name: (v) => (!v.name.trim() ? t('validation.outputGroupNameRequired') : null),
-    // Bounds come from `GET /api/v1/system/client-config` —
-    // `StreamService::validate_config` enforces the same range on save.
-    // The check here only short-circuits the network roundtrip with an
-    // inline error message; the backend always re-validates.
     videoBitrate: (v) => {
       const bitrate = parseInt(v.videoBitrate);
       if (
@@ -308,36 +166,43 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
         || interval < clientConfig.KEYFRAME_MIN
         || interval > clientConfig.KEYFRAME_MAX
       ) {
-        return tDynamic('errors.invalidInput', { defaultValue: 'Invalid input' });
+        return t('errors.invalidInput', { defaultValue: 'Invalid input' });
       }
       return null;
     },
   };
   const { errors, validate, clear: clearErrors } = useFormValidation<FormData>(formData, rules);
 
-  useEffect(() => {
-    if (!presetSupported) {
-      if (formData.preset) form.set('preset', '');
-      return;
-    }
+  const handleVideoChange = useCallback(
+    <K extends keyof VideoFormValues>(field: K, value: VideoFormValues[K]): void => {
+      form.set(field, value as FormData[K]);
+    },
+    [form],
+  );
 
-    if (!presetValues.includes(formData.preset)) {
-      const nextPreset = getDefaultPreset(formData.videoCodec, presetValues);
-      form.set('preset', nextPreset);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [presetSupported, presetValues, formData.preset, formData.videoCodec]);
+  const handleAudioChange = useCallback(
+    <K extends keyof AudioFormValues>(field: K, value: AudioFormValues[K]): void => {
+      form.set(field, value as FormData[K]);
+    },
+    [form],
+  );
 
-  const handleSave = async () => {
+  const handleContainerChange = useCallback(
+    <K extends keyof ContainerFormValues>(field: K, value: ContainerFormValues[K]): void => {
+      form.set(field, value as FormData[K]);
+    },
+    [form],
+  );
+
+  const handleSave = async (): Promise<void> => {
     if (!validate()) return;
     setServerError(undefined);
 
     setSaving(true);
     try {
-      // Parse resolution into width/height
       const [width, height] = formData.resolution.split('x').map(Number);
+      const presetSupported = isPresetSupportedFor(formData.videoCodec);
 
-      // Build nested video settings
       const video: VideoSettings = {
         codec: formData.videoCodec,
         width,
@@ -351,7 +216,6 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
           : null,
       };
 
-      // Build nested audio settings
       const audio: AudioSettings = {
         codec: formData.audioCodec,
         bitrate: formData.audioBitrate,
@@ -359,7 +223,6 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
         sampleRate: parseInt(formData.audioSampleRate),
       };
 
-      // Build nested container settings
       const container: ContainerSettings = {
         format: formData.containerFormat,
       };
@@ -380,7 +243,6 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
       } else if (mode === 'edit' && group) {
         await updateOutputGroup(group.id, groupData);
       }
-      // Note: saveProfile() is called internally by the store functions
       onClose();
     } catch (error) {
       setServerError(String(error));
@@ -389,19 +251,34 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
     }
   };
 
-  const handleChange = useCallback(
-    (field: keyof FormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-      form.set(field, e.target.value as FormData[typeof field]);
-    },
-    [form]
-  );
-
   const title = mode === 'create' ? t('modals.createOutputGroup') : t('modals.editOutputGroup');
 
-  // Don't render anything for the immutable default group
   if (isDefaultGroup) {
     return null;
   }
+
+  const videoValues: VideoFormValues = {
+    videoCodec: formData.videoCodec,
+    resolution: formData.resolution,
+    fps: formData.fps,
+    videoBitrate: formData.videoBitrate,
+    preset: formData.preset,
+    profile: formData.profile,
+    keyframeIntervalSeconds: formData.keyframeIntervalSeconds,
+  };
+  const videoErrors: VideoFormErrors = {
+    videoBitrate: errors.videoBitrate,
+    keyframeIntervalSeconds: errors.keyframeIntervalSeconds,
+  };
+  const audioValues: AudioFormValues = {
+    audioCodec: formData.audioCodec,
+    audioBitrate: formData.audioBitrate,
+    audioChannels: formData.audioChannels,
+    audioSampleRate: formData.audioSampleRate,
+  };
+  const containerValues: ContainerFormValues = {
+    containerFormat: formData.containerFormat,
+  };
 
   return (
     <Modal
@@ -425,11 +302,11 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
       }
     >
       <div className="flex flex-col gap-4">
-        {/* Info message explaining custom output groups */}
         {mode === 'create' && (
           <div className="p-3 bg-primary-muted rounded-lg text-sm text-text-secondary leading-normal">
-            {tDynamic('modals.outputGroupExplanation', {
-              defaultValue: 'Custom output groups re-encode your incoming stream to different settings. Use these when you need to send different quality streams to different platforms. The default passthrough group relays your stream as-is without re-encoding.'
+            {t('modals.outputGroupExplanation', {
+              defaultValue:
+                'Custom output groups re-encode your incoming stream to different settings. Use these when you need to send different quality streams to different platforms. The default passthrough group relays your stream as-is without re-encoding.',
             })}
           </div>
         )}
@@ -444,11 +321,10 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
           label={t('modals.outputGroupName')}
           placeholder={t('modals.outputGroupNamePlaceholder')}
           value={formData.name}
-          onChange={handleChange('name')}
+          onChange={(e) => form.set('name', e.target.value)}
           error={errors.name}
         />
 
-        {/* Timestamp & Sync Settings */}
         <div className="p-3 bg-bg-muted rounded-lg">
           <Toggle
             checked={formData.generatePts}
@@ -458,135 +334,25 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
           />
         </div>
 
-        {/* Video Settings Section */}
-        <div className="p-3 bg-bg-muted rounded-lg">
-          <div className="mb-3 text-sm font-medium text-text-primary">
-            {t('modals.videoSettings')}
-          </div>
+        <VideoSettingsForm
+          values={videoValues}
+          errors={videoErrors}
+          encoders={encoders}
+          loadingEncoders={loadingEncoders}
+          onChange={handleVideoChange}
+        />
 
-          <div className="grid grid-cols-2 gap-3 mb-3">
-            <Select
-              label={t('encoder.videoEncoder')}
-              value={formData.videoCodec}
-              onChange={handleChange('videoCodec')}
-              options={videoCodecOptions}
-              disabled={loadingEncoders}
-            />
+        <AudioSettingsForm
+          values={audioValues}
+          encoders={encoders}
+          loadingEncoders={loadingEncoders}
+          onChange={handleAudioChange}
+        />
 
-            <Select
-              label={t('encoder.resolution')}
-              value={formData.resolution}
-              onChange={handleChange('resolution')}
-              options={resolutionOptions}
-            />
-          </div>
-
-          <div className="grid grid-cols-3 gap-3 mb-3">
-            <Select
-              label={t('encoder.frameRate')}
-              value={formData.fps}
-              onChange={handleChange('fps')}
-              options={fpsOptions}
-            />
-
-            <Input
-              label={t('encoder.videoBitrate')}
-              type="number"
-              placeholder={t('modals.videoBitratePlaceholder')}
-              value={formData.videoBitrate}
-              onChange={handleChange('videoBitrate')}
-              error={errors.videoBitrate}
-            />
-
-            <Select
-              label={t('encoder.profile')}
-              value={formData.profile}
-              onChange={handleChange('profile')}
-              options={profileOptions}
-            />
-          </div>
-
-          <Select
-            label={t('encoder.preset')}
-            value={formData.preset}
-            onChange={handleChange('preset')}
-            options={presetOptions}
-            disabled={!presetSupported}
-          />
-          {!presetSupported && (
-            <div className="mt-1.5 text-xs text-text-secondary">
-              {tDynamic('encoder.presetUnsupported', {
-                defaultValue: 'Presets are not available for this encoder.',
-              })}
-            </div>
-          )}
-
-          <Input
-            label={t('encoder.keyframeIntervalSeconds')}
-            type="number"
-            min="1"
-            step="1"
-            placeholder={t('modals.keyframeIntervalPlaceholder')}
-            value={formData.keyframeIntervalSeconds}
-            onChange={handleChange('keyframeIntervalSeconds')}
-            helper={t('encoder.keyframeIntervalHelper')}
-            error={errors.keyframeIntervalSeconds}
-          />
-        </div>
-
-        {/* Audio Settings Section */}
-        <div className="p-3 bg-bg-muted rounded-lg">
-          <div className="mb-3 text-sm font-medium text-text-primary">
-            {t('modals.audioSettings')}
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 mb-3">
-            <Select
-              label={t('modals.audioCodec')}
-              value={formData.audioCodec}
-              onChange={handleChange('audioCodec')}
-              options={audioCodecOptions}
-              disabled={loadingEncoders}
-            />
-
-            <Select
-              label={t('modals.audioBitrate')}
-              value={formData.audioBitrate}
-              onChange={handleChange('audioBitrate')}
-              options={audioBitrateOptions}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Select
-              label={t('modals.audioChannels')}
-              value={formData.audioChannels}
-              onChange={handleChange('audioChannels')}
-              options={audioChannelsOptions}
-            />
-
-            <Select
-              label={t('modals.audioSampleRate')}
-              value={formData.audioSampleRate}
-              onChange={handleChange('audioSampleRate')}
-              options={audioSampleRateOptions}
-            />
-          </div>
-        </div>
-
-        {/* Container Settings Section */}
-        <div className="p-3 bg-bg-muted rounded-lg">
-          <div className="mb-3 text-sm font-medium text-text-primary">
-            {t('modals.containerSettings')}
-          </div>
-
-          <Select
-            label={t('modals.containerFormat')}
-            value={formData.containerFormat}
-            onChange={handleChange('containerFormat')}
-            options={containerFormatOptions}
-          />
-        </div>
+        <ContainerSettingsForm
+          values={containerValues}
+          onChange={handleContainerChange}
+        />
       </div>
     </Modal>
   );
