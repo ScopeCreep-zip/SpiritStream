@@ -227,10 +227,11 @@ export interface ApiClient {
     panic(): Promise<{ streamsStopped: number; elapsedMs: number }>;
   };
   audit: {
-    log(opts?: { skip?: number; limit?: number; kind?: string }): Promise<{
-      total: number;
-      entries: unknown[];
-    }>;
+    log(opts?: {
+      skip?: number;
+      limit?: number;
+      kind?: string;
+    }): Promise<import('./api/audit').AuditLogResponse>;
   };
   // Destructive-op confirmation tokens.
   security: {

@@ -35,6 +35,8 @@ export type {
   FileHomeResponse,
   EncoderPresetsResponse,
   ClientConfigResponse,
+  AuditChainStatus,
+  AuditLogResponse,
 } from './api';
 
 /// Build an `ApiClient` for the given transport. The current implementation

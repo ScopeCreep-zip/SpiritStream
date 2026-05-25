@@ -16,6 +16,7 @@ export type {
   ClientConfigResponse,
   RangeU32,
 } from './api/system';
+export type { AuditChainStatus, AuditLogResponse } from './api/audit';
 
 import { profile } from './api/profile';
 import { stream } from './api/stream';

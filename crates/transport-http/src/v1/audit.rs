@@ -8,7 +8,57 @@ use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use spiritstream_core::services::AuditChainStatus;
+
 use crate::AppState;
+
+/// Wire-mirror of [`AuditChainStatus`] with `ToSchema` for OpenAPI.
+/// utoipa is a transport-only dep — keeping `ToSchema` on a core type
+/// would leak the transport into core. The variants and field shapes
+/// must stay in lockstep; the `From<AuditChainStatus>` impl below is
+/// the single conversion point so any drift surfaces at compile time.
+///
+/// Serialises as a discriminated union on `state` so the TS client
+/// reads `chain.state === 'tampered'` directly:
+///
+/// ```json
+/// {"state": "ok", "entriesVerified": 42}
+/// {"state": "tampered", "lastValidSequence": 5, "reason": "hmac mismatch at seq 6"}
+/// {"state": "empty"}
+/// ```
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(tag = "state", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum AuditChainStatusWire {
+    /// Every entry's HMAC verified.
+    Ok { entries_verified: u64 },
+    /// Verification failed at the named sequence. The red banner
+    /// displays `lastValidSequence` so the user knows how much of the
+    /// log they can still trust.
+    Tampered {
+        last_valid_sequence: u64,
+        reason: String,
+    },
+    /// Log file does not exist yet (fresh install).
+    Empty,
+}
+
+impl From<AuditChainStatus> for AuditChainStatusWire {
+    fn from(value: AuditChainStatus) -> Self {
+        match value {
+            AuditChainStatus::Ok { entries_verified } => {
+                AuditChainStatusWire::Ok { entries_verified }
+            }
+            AuditChainStatus::Tampered {
+                last_valid_sequence,
+                reason,
+            } => AuditChainStatusWire::Tampered {
+                last_valid_sequence,
+                reason,
+            },
+            AuditChainStatus::Empty => AuditChainStatusWire::Empty,
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Audit log — read endpoint.
@@ -41,7 +91,7 @@ pub struct AuditLogResponse {
     /// every fetch; a `tampered` value triggers the red banner.
     /// Always computed server-side against the on-disk log;
     /// clients cannot influence it.
-    pub chain: serde_json::Value,
+    pub chain: AuditChainStatusWire,
 }
 
 /// `GET /api/v1/audit/log` — paginated, filterable read of the audit
@@ -73,12 +123,12 @@ pub async fn v1_audit_log(
     // the tamper banner even when the user has filtered the page to
     // an empty result.
     let chain_status = state.audit.verify_chain().unwrap_or_else(|e| {
-        spiritstream_core::services::AuditChainStatus::Tampered {
+        AuditChainStatus::Tampered {
             last_valid_sequence: 0,
             reason: format!("verify error: {e}"),
         }
     });
-    let chain = serde_json::to_value(&chain_status).unwrap_or(serde_json::Value::Null);
+    let chain: AuditChainStatusWire = chain_status.into();
 
     let entries = state.audit.entries()?;
     let filtered: Vec<serde_json::Value> = entries

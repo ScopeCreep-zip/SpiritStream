@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '@/lib/client';
+import type { AuditChainStatus } from '@spiritstream/api-client';
 import { formatDateTime } from '@/lib/locale';
 
 /**
  * Audit log view.
  *
  * Reads from `GET /api/v1/audit/log`. Paginated + filterable by event
- * kind. A tamper banner that fires when HMAC chain verification fails
- * wires in later; the placeholder slot is reserved below.
+ * kind. Renders a red tamper banner when the server-computed HMAC
+ * chain status returns `tampered` — the verification runs on every
+ * fetch (see `AuditLogService::verify_chain`).
  */
 interface AuditEntry {
   timestamp: string;
@@ -21,7 +23,7 @@ const PAGE_SIZE = 100;
 const KIND_FILTERS: { value: string; labelKey: string }[] = [
   { value: '', labelKey: 'audit.filterAll' },
   { value: 'panic_triggered', labelKey: 'audit.filterPanic' },
-  { value: 'pii_filter_fired', labelKey: 'audit.filterPii' },
+  { value: 'chat_message_pii_blocked', labelKey: 'audit.filterPii' },
   { value: 'oauth_refresh', labelKey: 'audit.filterOauthRefresh' },
   { value: 'oauth_refresh_unusual_location', labelKey: 'audit.filterOauthUnusual' },
   { value: 'profile_saved', labelKey: 'audit.filterProfileSaved' },
@@ -37,6 +39,7 @@ export function AuditLogViewer(): React.ReactElement {
   const [kind, setKind] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [chain, setChain] = useState<AuditChainStatus | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,6 +51,7 @@ export function AuditLogViewer(): React.ReactElement {
         if (cancelled) return;
         setEntries(res.entries as AuditEntry[]);
         setTotal(res.total);
+        setChain(res.chain);
       })
       .catch((e: Error) => {
         if (cancelled) return;
@@ -72,8 +76,30 @@ export function AuditLogViewer(): React.ReactElement {
         </p>
       </header>
 
-      {/* Reserved slot for a future tamper-check status banner. */}
-      <div className="hidden" data-testid="audit-tamper-slot" aria-hidden="true" />
+      {/* Tamper banner — driven by the server-computed HMAC chain status.
+          `audit-tamper-slot` is the historical hook the test suite uses to
+          assert the banner is reachable; keep the data-testid on the always-
+          rendered wrapper so it survives the conditional inside. */}
+      <div data-testid="audit-tamper-slot">
+        {chain?.state === 'tampered' && (
+          <div
+            role="alert"
+            className="bg-error-subtle border border-error-border rounded-lg p-4"
+          >
+            <h3 className="text-error-text font-semibold">
+              {t('audit.tampered.title', 'Audit log tampered')}
+            </h3>
+            <p className="text-text-secondary text-sm mt-1">
+              {t('audit.tampered.message', {
+                defaultValue:
+                  'HMAC chain verification failed at sequence {{lastValid}}. Entries before this point can still be trusted; entries after may have been modified, inserted, or deleted out of band. Reason: {{reason}}.',
+                lastValid: chain.lastValidSequence,
+                reason: chain.reason,
+              })}
+            </p>
+          </div>
+        )}
+      </div>
 
       <div className="flex flex-wrap gap-2 items-center">
         <label className="text-sm text-text-secondary" htmlFor="audit-kind">

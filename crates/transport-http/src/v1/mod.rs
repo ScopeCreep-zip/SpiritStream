@@ -160,6 +160,7 @@ pub use themes::*;
         SettingsClearDataResponse,
         SafetyPanicResponse,
         AuditLogResponse,
+        AuditChainStatusWire,
         SubsystemStatus,
         StreamValidateRequest,
         StreamValidateResponse,
