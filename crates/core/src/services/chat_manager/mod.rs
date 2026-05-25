@@ -51,7 +51,6 @@ pub(super) fn chat_validation(code: &'static str, message: impl Into<String>) ->
 pub struct ChatManager {
     pub(super) event_sink: Arc<dyn EventSink>,
     pub(super) platforms: Arc<Mutex<HashMap<ChatPlatform, BoxedPlatform>>>,
-    pub(super) last_errors: Arc<Mutex<HashMap<ChatPlatform, String>>>,
     pub(super) last_statuses: Arc<Mutex<HashMap<ChatPlatform, ChatConnectionStatus>>>,
     pub(super) message_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<ChatMessage>>>>,
     pub(super) message_tx: mpsc::UnboundedSender<ChatMessage>,
@@ -86,7 +85,6 @@ impl ChatManager {
         let manager = Self {
             event_sink,
             platforms: Arc::new(Mutex::new(HashMap::new())),
-            last_errors: Arc::new(Mutex::new(HashMap::new())),
             last_statuses: Arc::new(Mutex::new(HashMap::new())),
             message_rx: Arc::new(Mutex::new(Some(message_rx))),
             message_tx,
@@ -124,20 +122,20 @@ impl ChatManager {
         self.audit_log.read().ok().and_then(|g| g.clone())
     }
 
-    /// Get status of all platforms
+    /// Get status of all platforms. `connector.last_error()` is the single
+    /// source — every implemented connector tracks its own error state in
+    /// `self.last_error`; the trait default returns `None` for unimplemented
+    /// connectors. The prior stale `last_errors` cache was redundant and
+    /// surfaced stale errors after a connector recovered.
     pub async fn get_status(&self) -> Vec<ChatPlatformStatus> {
         let platforms = self.platforms.lock().await;
-        let last_errors = self.last_errors.lock().await;
-
         platforms
             .iter()
             .map(|(platform, connector)| ChatPlatformStatus {
                 platform: *platform,
                 status: connector.status(),
                 message_count: connector.message_count(),
-                error: connector
-                    .last_error()
-                    .or_else(|| last_errors.get(platform).cloned()),
+                error: connector.last_error(),
             })
             .collect()
     }
@@ -145,18 +143,12 @@ impl ChatManager {
     /// Get status of a specific platform.
     pub async fn get_platform_status(&self, platform: ChatPlatform) -> Option<ChatPlatformStatus> {
         let platforms = self.platforms.lock().await;
-        let last_errors = self.last_errors.lock().await;
-
-        platforms
-            .get(&platform)
-            .map(|connector| ChatPlatformStatus {
-                platform,
-                status: connector.status(),
-                message_count: connector.message_count(),
-                error: connector
-                    .last_error()
-                    .or_else(|| last_errors.get(&platform).cloned()),
-            })
+        platforms.get(&platform).map(|connector| ChatPlatformStatus {
+            platform,
+            status: connector.status(),
+            message_count: connector.message_count(),
+            error: connector.last_error(),
+        })
     }
 
     /// Check if any platform is connected.

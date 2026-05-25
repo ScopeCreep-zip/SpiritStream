@@ -45,22 +45,18 @@ impl super::ChatManager {
             })?,
         };
 
-        // Connect to the platform.
+        // Connect to the platform. The connector itself tracks its own
+        // `last_error` (see `ChatPlatform::last_error` trait impls); re-
+        // inserting the failed connector lets the UI surface that error
+        // through `get_platform_status` without a separate stale cache.
         let message_tx = self.message_tx.clone();
         if let Err(e) = connector.connect(config.credentials, message_tx).await {
             let error = format!("Failed to connect to {}: {}", config.platform.as_str(), e);
-            let mut last_errors = self.last_errors.lock().await;
-            last_errors.insert(config.platform, error.clone());
-            // Preserve the connector so status/errors can be surfaced in UI.
             platforms.insert(config.platform, connector);
             return Err(CoreError::Internal { context: error });
         }
 
         platforms.insert(config.platform, connector);
-
-        // Clear last error on success.
-        let mut last_errors = self.last_errors.lock().await;
-        last_errors.remove(&config.platform);
 
         info!("Successfully connected to {}", config.platform.as_str());
 
@@ -90,9 +86,6 @@ impl super::ChatManager {
 
             // Re-insert the disconnected connector.
             platforms.insert(platform, connector);
-
-            let mut last_errors = self.last_errors.lock().await;
-            last_errors.remove(&platform);
 
             info!("Successfully disconnected from {}", platform.as_str());
 
@@ -161,8 +154,6 @@ impl super::ChatManager {
         }
 
         if errors.is_empty() {
-            let mut last_errors = self.last_errors.lock().await;
-            last_errors.clear();
             info!("Successfully disconnected from all platforms");
             Ok(())
         } else {
