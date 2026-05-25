@@ -49,6 +49,16 @@ updates:
     commit-message:
       prefix: "chore(deps,js)"
       include: scope
+    ignore:
+      # Vite dev-server CVEs (GHSA-4w7w-66w2-5vf9, GHSA-p9ff-h696-f583,
+      # GHSA-v2wj-q39q-566r) only reachable when server.host exposes the
+      # port to the network. SpiritStream binds 127.0.0.1 (Tauri sidecar
+      # + localhost-only browser dev). Production-equivalent risk = zero,
+      # so the vulnerable version range is ignored. The pnpm.overrides
+      # block in package.json still pins to 7.3.2+; this stops Dependabot
+      # from re-raising alerts when a sub-7.3.2 transitive sneaks in.
+      - dependency-name: "vite"
+        versions: [">=7.0.0 <7.3.2"]
 
   # GitHub Actions versions. With SHA-pinning in workflows, Dependabot
   # rewrites the SHA pin AND the trailing version comment, so the

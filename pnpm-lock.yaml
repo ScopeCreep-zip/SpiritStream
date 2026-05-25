@@ -13,6 +13,8 @@ overrides:
   picomatch: ^4.0.4
   vite: ^7.3.2
   postcss: ^8.5.10
+  ip-address: ^10.1.1
+  basic-ftp: ^5.2.2
 
 importers:
 
