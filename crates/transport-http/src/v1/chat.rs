@@ -4,6 +4,11 @@
 //! status/export/search. The handlers here are thin shims over
 //! `ChatManager` (in `spiritstream-core`); the OAuth-refresh-on-connect
 //! and per-platform credential enrichment is the only real logic.
+//!
+//! Wire-mirror types (`*Wire`) below: utoipa is transport-only, so a
+//! `ToSchema` derive on a core type would leak the transport. The
+//! mirrors are thin newtypes with `From` impls — see the same pattern
+//! in `v1/audit.rs::AuditChainStatusWire`.
 
 use axum::{
     extract::{Path as AxumPath, State},
@@ -12,30 +17,159 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use spiritstream_core::models::{
+    ChatConnectionStatus, ChatLogStatus, ChatPlatform, ChatPlatformStatus, ChatSendResult,
+};
 use spiritstream_core::services::EventSink;
 
 use crate::AppState;
 
+// ---------------------------------------------------------------------------
+// Wire-mirror types for utoipa.
+// ---------------------------------------------------------------------------
+
+/// Mirror of [`ChatPlatform`] with `ToSchema`.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ChatPlatformWire {
+    Twitch,
+    #[serde(rename = "tiktok")]
+    TikTok,
+    YouTube,
+    Trovo,
+    Stripchat,
+    Kick,
+    Facebook,
+}
+
+impl From<ChatPlatform> for ChatPlatformWire {
+    fn from(value: ChatPlatform) -> Self {
+        match value {
+            ChatPlatform::Twitch => Self::Twitch,
+            ChatPlatform::TikTok => Self::TikTok,
+            ChatPlatform::YouTube => Self::YouTube,
+            ChatPlatform::Trovo => Self::Trovo,
+            ChatPlatform::Stripchat => Self::Stripchat,
+            ChatPlatform::Kick => Self::Kick,
+            ChatPlatform::Facebook => Self::Facebook,
+        }
+    }
+}
+
+/// Mirror of [`ChatConnectionStatus`] with `ToSchema`.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ChatConnectionStatusWire {
+    Disconnected,
+    Connecting,
+    Connected,
+    Error,
+}
+
+impl From<ChatConnectionStatus> for ChatConnectionStatusWire {
+    fn from(value: ChatConnectionStatus) -> Self {
+        match value {
+            ChatConnectionStatus::Disconnected => Self::Disconnected,
+            ChatConnectionStatus::Connecting => Self::Connecting,
+            ChatConnectionStatus::Connected => Self::Connected,
+            ChatConnectionStatus::Error => Self::Error,
+        }
+    }
+}
+
+/// Mirror of [`ChatPlatformStatus`] with `ToSchema`.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatPlatformStatusWire {
+    pub platform: ChatPlatformWire,
+    pub status: ChatConnectionStatusWire,
+    pub message_count: u64,
+    pub error: Option<String>,
+}
+
+impl From<ChatPlatformStatus> for ChatPlatformStatusWire {
+    fn from(value: ChatPlatformStatus) -> Self {
+        Self {
+            platform: value.platform.into(),
+            status: value.status.into(),
+            message_count: value.message_count,
+            error: value.error,
+        }
+    }
+}
+
+/// Mirror of [`ChatSendResult`] with `ToSchema`.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatSendResultWire {
+    pub platform: ChatPlatformWire,
+    pub success: bool,
+    pub error: Option<String>,
+    pub error_code: Option<String>,
+}
+
+impl From<ChatSendResult> for ChatSendResultWire {
+    fn from(value: ChatSendResult) -> Self {
+        Self {
+            platform: value.platform.into(),
+            success: value.success,
+            error: value.error,
+            error_code: value.error_code,
+        }
+    }
+}
+
+/// Mirror of [`ChatLogStatus`] with `ToSchema`. The core type already
+/// has `serde` derives; the mirror exists purely to add `ToSchema`.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatLogStatusWire {
+    pub active: bool,
+    pub started_at: i64,
+}
+
+impl From<ChatLogStatus> for ChatLogStatusWire {
+    fn from(value: ChatLogStatus) -> Self {
+        Self {
+            active: value.active,
+            started_at: value.started_at,
+        }
+    }
+}
+
+/// Empty 200 OK response — used for handlers whose success payload is
+/// just acknowledgement (`connect`, `disconnect`, `retry`, `export`).
+/// Serialises as `{}`.
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct ChatAckResponse {}
+
+/// `GET /chat/connected` response.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatConnectedResponse {
+    pub connected: bool,
+}
+
 // Chat.
 
 #[utoipa::path(get, path = "/chat/connections", tag = "chat",
-    responses((status = 200, body = serde_json::Value)),
+    responses((status = 200, body = Vec<ChatPlatformStatusWire>)),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_chat_status_proxy(
     State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<Vec<ChatPlatformStatusWire>>, crate::ApiError> {
     let status = state.chat_manager.get_status().await;
-    Ok(Json(serde_json::json!(status)))
+    Ok(Json(status.into_iter().map(Into::into).collect()))
 }
 
 #[utoipa::path(post, path = "/chat/connections", tag = "chat",
     request_body = serde_json::Value,
-    responses((status = 200), (status = 400, body = ApiErrorBody)),
+    responses((status = 200, body = ChatAckResponse), (status = 400, body = ApiErrorBody)),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_chat_connect_proxy(
     State(state): State<AppState>,
     axum::Json(req): axum::Json<serde_json::Value>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<ChatAckResponse>, crate::ApiError> {
     use spiritstream_core::models::{ChatConfig, ChatCredentials, TwitchAuth, YouTubeAuth};
 
     let mut config: ChatConfig = serde_json::from_value(req.get("config").cloned().unwrap_or(req))
@@ -188,31 +322,31 @@ pub async fn v1_chat_connect_proxy(
     };
 
     state.chat_manager.connect(config).await?;
-    Ok(Json(serde_json::Value::Null))
+    Ok(Json(ChatAckResponse {}))
 }
 
 #[utoipa::path(delete, path = "/chat/connections", tag = "chat",
-    responses((status = 200)),
+    responses((status = 200, body = ChatAckResponse)),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_chat_disconnect_all_proxy(
     State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<ChatAckResponse>, crate::ApiError> {
     state.chat_manager.disconnect_all("user_requested").await?;
-    Ok(Json(serde_json::Value::Null))
+    Ok(Json(ChatAckResponse {}))
 }
 
 #[utoipa::path(get, path = "/chat/connections/{platform}", tag = "chat",
     params(("platform" = String, Path, description = "Chat platform")),
-    responses((status = 200, body = serde_json::Value)),
+    responses((status = 200, body = Option<ChatPlatformStatusWire>)),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_chat_platform_status_proxy(
     State(state): State<AppState>,
     AxumPath(platform): AxumPath<String>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<Option<ChatPlatformStatusWire>>, crate::ApiError> {
     let platform_enum: spiritstream_core::models::ChatPlatform =
         serde_json::from_value(serde_json::json!(platform))?;
     let status = state.chat_manager.get_platform_status(platform_enum).await;
-    Ok(Json(serde_json::json!(status)))
+    Ok(Json(status.map(Into::into)))
 }
 
 #[utoipa::path(delete, path = "/chat/connections/{platform}", tag = "chat",
@@ -227,17 +361,17 @@ pub async fn v1_chat_platform_status_proxy(
 pub async fn v1_chat_disconnect_proxy(
     State(state): State<AppState>,
     AxumPath(platform): AxumPath<String>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<ChatAckResponse>, crate::ApiError> {
     let platform_enum: spiritstream_core::models::ChatPlatform =
         serde_json::from_value(serde_json::json!(platform))?;
     state.chat_manager.disconnect(platform_enum).await?;
-    Ok(Json(serde_json::Value::Null))
+    Ok(Json(ChatAckResponse {}))
 }
 
 #[utoipa::path(post, path = "/chat/connections/{platform}/retry", tag = "chat",
     params(("platform" = String, Path, description = "Chat platform")),
     responses(
-        (status = 200, description = "Reconnect triggered."),
+        (status = 200, description = "Reconnect triggered.", body = ChatAckResponse),
         (status = 400, body = ApiErrorBody, description = "Validation: chat not configured / retry unsupported / no active stream."),
         (status = 409, body = ApiErrorBody, description = "No active profile."),
     ),
@@ -245,7 +379,7 @@ pub async fn v1_chat_disconnect_proxy(
 pub async fn v1_chat_retry_proxy(
     State(state): State<AppState>,
     AxumPath(platform): AxumPath<String>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<ChatAckResponse>, crate::ApiError> {
     use spiritstream_core::models::ChatPlatform;
     let platform_enum: ChatPlatform = serde_json::from_value(serde_json::json!(platform))?;
     let chat_settings = state.chat_manager.profile_chat_settings().await;
@@ -323,7 +457,7 @@ pub async fn v1_chat_retry_proxy(
             .into())
         }
     }
-    Ok(Json(serde_json::Value::Null))
+    Ok(Json(ChatAckResponse {}))
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -335,7 +469,7 @@ pub struct ChatSendRequest {
 #[utoipa::path(post, path = "/chat/messages", tag = "chat",
     request_body = ChatSendRequest,
     responses(
-        (status = 200, body = serde_json::Value, description = "Per-platform send results."),
+        (status = 200, body = Vec<ChatSendResultWire>, description = "Per-platform send results."),
         (status = 400, body = ApiErrorBody, description = "Empty message or no platforms enabled."),
         (status = 500, body = ApiErrorBody, description = "Internal error.")
     ),
@@ -343,7 +477,7 @@ pub struct ChatSendRequest {
 pub async fn v1_chat_send_proxy(
     State(state): State<AppState>,
     axum::Json(req): axum::Json<ChatSendRequest>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<Vec<ChatSendResultWire>>, crate::ApiError> {
     use spiritstream_core::models::{ChatMessage, ChatPlatform, ChatSendResult};
 
     let trimmed = req.message.trim().to_string();
@@ -443,27 +577,27 @@ pub async fn v1_chat_send_proxy(
             state.event_bus.emit("chat_message", payload);
         }
     }
-    Ok(Json(serde_json::json!(send_results)))
+    Ok(Json(send_results.into_iter().map(Into::into).collect()))
 }
 
 #[utoipa::path(get, path = "/chat/connected", tag = "chat",
-    responses((status = 200, body = serde_json::Value)),
+    responses((status = 200, body = ChatConnectedResponse)),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_chat_is_connected_proxy(
     State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<ChatConnectedResponse>, crate::ApiError> {
     let connected = state.chat_manager.is_any_connected().await;
-    Ok(Json(serde_json::json!(connected)))
+    Ok(Json(ChatConnectedResponse { connected }))
 }
 
 #[utoipa::path(get, path = "/chat/log", tag = "chat",
-    responses((status = 200, body = serde_json::Value)),
+    responses((status = 200, body = ChatLogStatusWire)),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_chat_log_status_proxy(
     State(state): State<AppState>,
-) -> Result<Json<spiritstream_core::models::ChatLogStatus>, crate::ApiError> {
+) -> Result<Json<ChatLogStatusWire>, crate::ApiError> {
     let start_ms = state.chat_manager.log_session_start_ms();
-    Ok(Json(spiritstream_core::models::ChatLogStatus {
+    Ok(Json(ChatLogStatusWire {
         active: start_ms.is_some(),
         started_at: start_ms.unwrap_or(0),
     }))
@@ -478,7 +612,7 @@ pub struct ChatExportRequest {
 #[utoipa::path(post, path = "/chat/log/export", tag = "chat",
     request_body = ChatExportRequest,
     responses(
-        (status = 200, description = "Chat log exported."),
+        (status = 200, description = "Chat log exported.", body = ChatAckResponse),
         (status = 400, body = ApiErrorBody, description = "No active chat session."),
         (status = 403, body = ApiErrorBody, description = "Export path outside allowed root."),
         (status = 500, body = ApiErrorBody, description = "Internal error writing export."),
@@ -487,7 +621,7 @@ pub struct ChatExportRequest {
 pub async fn v1_chat_export_log_proxy(
     State(state): State<AppState>,
     axum::Json(req): axum::Json<ChatExportRequest>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<ChatAckResponse>, crate::ApiError> {
     use chrono::{Local, TimeZone};
     use spiritstream_core::models::ChatMessage;
     use std::fs::File;
@@ -565,7 +699,7 @@ pub async fn v1_chat_export_log_proxy(
         .map_err(|e| spiritstream_core::CoreError::Internal {
             context: format!("Failed to finalize export file: {e}"),
         })?;
-    Ok(Json(serde_json::Value::Null))
+    Ok(Json(ChatAckResponse {}))
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -576,9 +710,18 @@ pub struct ChatSearchRequest {
     pub limit: Option<usize>,
 }
 
+// Search response is `Vec<ChatMessage>`. `ChatMessage` lives in
+// `spiritstream-core` and has no `ToSchema` (utoipa is transport-only).
+// Mirroring it would mean duplicating ~30 nested fragment/payload variants
+// that are actively in flux per the in-flight chat-features branch; the
+// schema lands once that work settles. The wire format is still typed by
+// serde (the `ChatMessage` Serialize impl); only the OpenAPI surface is
+// loose for now, matching what `@hey-api/openapi-ts` already emits as
+// `unknown[]` for the api-client.
 #[utoipa::path(post, path = "/chat/log/search", tag = "chat",
     request_body = ChatSearchRequest,
-    responses((status = 200, body = serde_json::Value)),
+    responses((status = 200, body = Vec<serde_json::Value>,
+        description = "Matching ChatMessage entries (typed schema deferred until in-flight ChatMessage shape stabilises).")),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_chat_search_session_proxy(
     State(state): State<AppState>,

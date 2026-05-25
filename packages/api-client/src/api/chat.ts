@@ -41,5 +41,6 @@ export const chat = {
       'GET',
       `/api/v1/chat/connections/${encodeURIComponent(String(platform))}`,
     ),
-  isConnected: () => fetchTypedJson<boolean>('GET', '/api/v1/chat/connected'),
+  isConnected: () =>
+    fetchTypedJson<{ connected: boolean }>('GET', '/api/v1/chat/connected').then((r) => r.connected),
 };
