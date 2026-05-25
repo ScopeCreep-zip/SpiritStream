@@ -8,6 +8,17 @@ repository = "https://github.com/ScopeCreep-zip/SpiritStream"
 edition = "2021"
 rust-version = "1.77.2"
 
+[lib]
+name = "spiritstream_desktop_lib"
+path = "src/lib.rs"
+# `cdylib` + `staticlib` keep this lib linkable from the Tauri mobile
+# shells (iOS / Android) without changing the desktop binary build.
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[[bin]]
+name = "spiritstream-desktop"
+path = "src/main.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
