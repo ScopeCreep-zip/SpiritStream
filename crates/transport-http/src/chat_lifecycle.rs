@@ -329,7 +329,7 @@ pub(crate) async fn auto_connect_chat_platforms(state: AppState) {
         }
     }
 
-    // Trovo: read-only websocket chat (requires TROVO_CLIENT_ID + channel ID)
+    // Trovo: read-only websocket chat (requires SPIRITSTREAM_TROVO_CLIENT_ID + channel ID)
     if !chat_settings.trovo_channel_id.is_empty() {
         let already_connected = state
             .chat_manager

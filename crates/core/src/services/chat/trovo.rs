@@ -134,22 +134,23 @@ impl ChatPlatform for TrovoConnector {
             }
         };
 
-        let client_id = env::var("SPIRITSTREAM_TROVO_CLIENT_ID")
-            .or_else(|_| env::var("TROVO_CLIENT_ID"))
-            .map_err(|_| {
-                self.status
-                    .store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
-                if let Ok(mut guard) = self.last_error.lock() {
-                    *guard = Some(
-                        "Missing SPIRITSTREAM_TROVO_CLIENT_ID (or TROVO_CLIENT_ID) in environment"
-                            .to_string(),
-                    );
-                }
-                PlatformError::InvalidConfig(
-                    "Missing SPIRITSTREAM_TROVO_CLIENT_ID (or TROVO_CLIENT_ID) in environment"
-                        .to_string(),
-                )
-            })?;
+        // Canonical env var name: every SPIRITSTREAM_* secret follows the
+        // prefixed convention. The unprefixed `TROVO_CLIENT_ID` fallback was
+        // a holdover that violated `feedback_no_fallback_streaming.md` — two
+        // names is a footgun for operators (which one wins, why isn't mine
+        // working, etc).
+        let client_id = env::var("SPIRITSTREAM_TROVO_CLIENT_ID").map_err(|_| {
+            self.status
+                .store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
+            if let Ok(mut guard) = self.last_error.lock() {
+                *guard = Some(
+                    "Missing SPIRITSTREAM_TROVO_CLIENT_ID in environment".to_string(),
+                );
+            }
+            PlatformError::InvalidConfig(
+                "Missing SPIRITSTREAM_TROVO_CLIENT_ID in environment".to_string(),
+            )
+        })?;
 
         let token = fetch_chat_token(&client_id, &channel_id)
             .await
