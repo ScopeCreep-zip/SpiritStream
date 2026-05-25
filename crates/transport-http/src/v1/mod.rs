@@ -29,11 +29,15 @@ use utoipa::{OpenApi, ToSchema};
 use crate::AppState;
 
 mod chat;
+mod discord;
 mod oauth;
 mod obs;
+mod themes;
 pub use chat::*;
+pub use discord::*;
 pub use oauth::*;
 pub use obs::*;
+pub use themes::*;
 
 /// Aggregated OpenAPI document for the `/api/v1/*` surface.
 #[derive(OpenApi)]
@@ -2365,145 +2369,6 @@ pub async fn v1_profile_order_ensure_proxy(
 ) -> Result<Json<serde_json::Value>, crate::ApiError> {
     let map = state.profile_manager.ensure_order_indexes().await?;
     Ok(Json(serde_json::json!(map)))
-}
-
-// --------------------------------------------------------------------------
-// Themes.
-
-#[utoipa::path(get, path = "/themes", tag = "themes",
-    responses((status = 200, body = serde_json::Value)),
-    security(("session_cookie" = []), ("bearer" = [])))]
-pub async fn v1_themes_list_proxy(
-    State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
-    let themes = state.theme_manager.list_themes();
-    Ok(Json(serde_json::json!(themes)))
-}
-
-#[utoipa::path(post, path = "/themes/refresh", tag = "themes",
-    responses((status = 200, body = serde_json::Value)),
-    security(("session_cookie" = []), ("bearer" = [])))]
-pub async fn v1_themes_refresh_proxy(
-    State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
-    state.theme_manager.sync_project_themes();
-    let themes = state.theme_manager.list_themes();
-    Ok(Json(serde_json::json!(themes)))
-}
-
-#[derive(Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ThemeInstallRequest {
-    pub theme_path: String,
-}
-
-#[utoipa::path(post, path = "/themes", tag = "themes",
-    request_body = ThemeInstallRequest,
-    responses(
-        (status = 200, body = serde_json::Value, description = "Theme installed."),
-        (status = 400, body = ApiErrorBody, description = "Theme file invalid (bad JSON, missing required tokens, etc.)."),
-        (status = 403, body = ApiErrorBody, description = "Theme path outside allowed root."),
-        (status = 500, body = ApiErrorBody, description = "Internal error reading or copying the file."),
-    ),
-    security(("session_cookie" = []), ("bearer" = [])))]
-pub async fn v1_themes_install_proxy(
-    State(state): State<AppState>,
-    axum::Json(req): axum::Json<ThemeInstallRequest>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
-    let path = std::path::PathBuf::from(&req.theme_path);
-    spiritstream_core::services::validate_extension(&path, &["json", "jsonc"])?;
-    if req.theme_path.contains("..") {
-        return Err(spiritstream_core::CoreError::PathOutsideAllowedRoot {
-            path: req.theme_path,
-        }
-        .into());
-    }
-    let summary = state.theme_manager.install_theme(&path)?;
-    Ok(Json(serde_json::json!(summary)))
-}
-
-#[utoipa::path(get, path = "/themes/{theme_id}/tokens", tag = "themes",
-    params(("theme_id" = String, Path, description = "Theme ID")),
-    responses(
-        (status = 200, body = serde_json::Value, description = "Theme token map."),
-        (status = 400, body = ApiErrorBody, description = "Theme not found or invalid."),
-    ),
-    security(("session_cookie" = []), ("bearer" = [])))]
-pub async fn v1_theme_tokens_proxy(
-    State(state): State<AppState>,
-    AxumPath(theme_id): AxumPath<String>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
-    let tokens = state.theme_manager.get_theme_tokens(&theme_id)?;
-    Ok(Json(serde_json::json!(tokens)))
-}
-
-// --------------------------------------------------------------------------
-// Discord.
-
-#[derive(Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct DiscordWebhookTestRequest {
-    pub url: String,
-}
-
-#[utoipa::path(post, path = "/discord/webhook/test", tag = "discord",
-    request_body = DiscordWebhookTestRequest,
-    responses((status = 200, body = serde_json::Value)),
-    security(("session_cookie" = []), ("bearer" = [])))]
-pub async fn v1_discord_test_webhook_proxy(
-    State(state): State<AppState>,
-    axum::Json(req): axum::Json<DiscordWebhookTestRequest>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
-    let result = state.discord_service.test_webhook(&req.url).await;
-    Ok(Json(serde_json::json!(result)))
-}
-
-#[utoipa::path(post, path = "/discord/webhook/send", tag = "discord",
-    responses((status = 200, body = serde_json::Value)),
-    security(("session_cookie" = []), ("bearer" = [])))]
-pub async fn v1_discord_send_notification_proxy(
-    State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
-    let profile_settings = state
-        .active_profile_settings
-        .lock()
-        .await
-        .clone()
-        .ok_or(spiritstream_core::CoreError::NoActiveProfile)?;
-    let discord_settings = profile_settings.discord;
-    if !discord_settings.webhook_enabled {
-        return Ok(Json(serde_json::json!({
-            "success": false,
-            "message": "Discord webhook is not enabled",
-            "skippedCooldown": false
-        })));
-    }
-    let image_path = if discord_settings.image_path.is_empty() {
-        None
-    } else {
-        Some(discord_settings.image_path.as_str())
-    };
-    let result = state
-        .discord_service
-        .send_go_live_notification(
-            &discord_settings.webhook_url,
-            &discord_settings.go_live_message,
-            image_path,
-            discord_settings.cooldown_enabled,
-            discord_settings.cooldown_seconds,
-        )
-        .await;
-    Ok(Json(serde_json::json!(result)))
-}
-
-#[utoipa::path(delete, path = "/discord/webhook/cooldown", tag = "discord",
-    responses((status = 200)),
-    security(("session_cookie" = []), ("bearer" = [])))]
-pub async fn v1_discord_reset_cooldown_proxy(
-    State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
-    state.discord_service.reset_cooldown().await;
-    Ok(Json(serde_json::Value::Null))
 }
 
 
