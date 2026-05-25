@@ -120,9 +120,18 @@ impl super::Encryption {
                     .file_stem()
                     .and_then(|s| s.to_str())
                     .unwrap_or("<unknown>");
-                let pw = encrypted_passwords
-                    .get(name)
-                    .expect("pre-flight ensured password is present");
+                // Pre-flight (step 2 above) verified every .mgs profile has a
+                // matching password, but the password map is passed in by the
+                // caller and could in principle be mutated between pre-flight
+                // and re-encrypt by a future refactor. Surface that as a
+                // structured error rather than panicking mid-rotation — the
+                // post-rollback state stays consistent because step 6's
+                // restore_from_backup runs on every Err path below.
+                let pw = encrypted_passwords.get(name).ok_or_else(|| CoreError::Internal {
+                    context: format!(
+                        "rotate: password for encrypted profile '{name}' disappeared between pre-flight and re-encrypt"
+                    ),
+                })?;
                 reencrypt_mgs_profile(profile_path, pw, &old_key, &new_key)
             } else {
                 reencrypt_json_profile(profile_path, &old_key, &new_key)
