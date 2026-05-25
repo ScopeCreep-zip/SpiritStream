@@ -347,6 +347,65 @@ pkg-config --modversion webkit2gtk-4.1
 
 ---
 
+## Build-tool version decisions
+
+Long-form notes on why specific build-tool versions are pinned in
+`package.json` → `pnpm.overrides`. Every entry should explain the
+trigger to revisit.
+
+### vite — pinned to `^7.3.2`
+
+Vite 7.3.x is the version with patches for GHSA-4w7w-66w2-5vf9 +
+GHSA-p9ff-h696-f583 + GHSA-v2wj-q39q-566r (all dev-server CVEs, none
+reachable in our deployment — see `.github/dependabot.yml` ignore
+block).
+
+Vite 8.0+ is a **breaking** release: Rolldown replaces Rollup
+internally, `import.meta.hot.accept` resolution fallback is removed,
+and the default browser target is bumped. The CVE fixes are already
+in 7.3.x; no migration pressure today.
+
+**Revisit when**:
+- Vite 8.1+ ships and the Rolldown plugin ecosystem matches Rollup
+  coverage for our actual plugin set (`@tailwindcss/vite`,
+  `@vitejs/plugin-react`); OR
+- Vite 7 enters LTS sunset (track <https://vite.dev/blog>).
+
+### rollup — pinned to `^4.59.0` (watching)
+
+Rollup 4.59.0 is the path-traversal fix for GHSA-mw96-cpmx-2vgc. As
+of 2026-05-17, Rollup 5.x is **not released** — only milestone work
+on the rollup/rollup repo.
+
+**Revisit when**:
+- Rollup 5.0.0 final is tagged at
+  <https://github.com/rollup/rollup/releases>; AND
+- A Vite release consumes Rollup 5 (since Vite drives Rollup in our
+  stack — direct upgrade without Vite alignment risks plugin breakage).
+
+If Vite 8 → Rolldown lands first and obsoletes Rollup entirely, this
+pin can be dropped instead of bumped.
+
+### picomatch / minimatch / flatted / handlebars / brace-expansion / postcss
+
+Smallest patch-range bump that clears the originating advisory. Each
+is a quarterly re-audit candidate — drop the override when the parent
+dep ships a clean release.
+
+### ip-address / basic-ftp
+
+Pre-pinned (not currently in lockfile) to defend against future
+re-introduction via a Playwright re-add or similar. Drop the override
+if they re-enter the tree at the patched version.
+
+---
+
+*Last Updated: 2025-01-18*
+*SpiritStream Version: 0.1.0*
+*Tauri Version: 2.x*
+
+---
+
 *Last Updated: 2025-01-18*
 *SpiritStream Version: 0.1.0*
 *Tauri Version: 2.x*
