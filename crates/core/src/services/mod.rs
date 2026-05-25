@@ -20,6 +20,7 @@ mod obs_websocket;
 mod path_validator;
 pub mod pii_filter;
 mod platform_registry;
+mod profile;
 mod profile_activation;
 mod profile_manager;
 pub mod pseudonymizer;
