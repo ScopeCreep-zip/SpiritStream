@@ -23,24 +23,29 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use spiritstream_core::services::EventSink;
 use utoipa::{OpenApi, ToSchema};
 
 use crate::AppState;
 
+mod audit;
 mod chat;
 mod discord;
 mod oauth;
 mod obs;
 mod profiles;
+mod safety;
+mod settings;
 mod streams;
 mod system;
 mod themes;
+pub use audit::*;
 pub use chat::*;
 pub use discord::*;
 pub use oauth::*;
 pub use obs::*;
 pub use profiles::*;
+pub use safety::*;
+pub use settings::*;
 pub use streams::*;
 pub use system::*;
 pub use themes::*;
@@ -607,340 +612,8 @@ pub async fn v1_ready(State(state): State<AppState>) -> impl IntoResponse {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Settings.
-// ---------------------------------------------------------------------------
 
-#[derive(Serialize, Deserialize, ToSchema)]
-pub struct SettingsSaveRequest {
-    /// Full settings body (matches the `Settings` ts-rs export).
-    pub settings: serde_json::Value,
-}
 
-#[derive(Serialize, Deserialize, ToSchema)]
-pub struct SettingsSaveResponse {
-    pub saved: bool,
-}
-
-#[derive(Serialize, Deserialize, ToSchema)]
-pub struct SettingsProfilesPathResponse {
-    pub path: String,
-}
-
-#[derive(Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct SettingsExportRequest {
-    /// Absolute path of the destination directory. Must resolve inside the
-    /// app data dir or the user's home — anything else is rejected with
-    /// `path_outside_allowed_root`.
-    pub export_path: String,
-}
-
-#[derive(Serialize, Deserialize, ToSchema)]
-pub struct SettingsExportResponse {
-    pub exported: bool,
-}
-
-#[derive(Serialize, Deserialize, ToSchema)]
-pub struct SettingsClearDataResponse {
-    pub cleared: bool,
-}
-
-/// `GET /settings` — return the resolved (cached) global settings document.
-#[utoipa::path(
-    get,
-    path = "/settings",
-    tag = "settings",
-    responses(
-        (status = 200, description = "Resolved settings.", body = serde_json::Value),
-        (status = 500, description = "Internal error.", body = ApiErrorBody),
-    ),
-    security(("session_cookie" = []), ("bearer" = [])),
-)]
-pub async fn v1_settings_get(
-    State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
-    let settings = state.settings_manager.load()?;
-    Ok(Json(serde_json::to_value(settings)?))
-}
-
-/// `PUT /settings` — replace the global settings document. Field-level bound
-/// checks (`log_retention_days` ∈ [1, 365], `discord_cooldown_seconds`
-/// ∈ [0, 86400], `backend_port` ∈ [1, 65535]) run inside
-/// `SettingsManager::save`. Out-of-range values return 400
-/// `validation_failed` with the full list of offending fields.
-#[utoipa::path(
-    put,
-    path = "/settings",
-    tag = "settings",
-    request_body = SettingsSaveRequest,
-    responses(
-        (status = 200, description = "Settings saved.", body = SettingsSaveResponse),
-        (status = 400, description = "Bound-check failed.", body = ApiErrorBody),
-        (status = 500, description = "Internal error.", body = ApiErrorBody),
-    ),
-    security(("session_cookie" = []), ("bearer" = [])),
-)]
-pub async fn v1_settings_save(
-    State(state): State<AppState>,
-    axum::Json(req): axum::Json<SettingsSaveRequest>,
-) -> Result<Json<SettingsSaveResponse>, crate::ApiError> {
-    let new_settings: spiritstream_core::models::Settings = serde_json::from_value(req.settings)
-        .map_err(|e| spiritstream_core::CoreError::ValidationFailed {
-            reasons: vec![spiritstream_core::errors::ValidationIssue {
-                code: "invalid_settings_shape".into(),
-                message: format!("could not parse settings body: {e}"),
-                path: None,
-            }],
-        })?;
-
-    state.settings_manager.save(&new_settings)?;
-
-    // Per-profile `encrypt_stream_keys` is enforced inside
-    // `ProfileManager::save_with_key_encryption`; flipping the
-    // global-settings flag no longer rewrites every profile (that
-    // bulk-rewrite would silently fall back through a global toggle
-    // we no longer carry — per-profile encrypt-on-save is the
-    // forward-only replacement).
-
-    let _ = crate::prune_logs(&state.log_dir, new_settings.log_retention_days);
-    state
-        .event_bus
-        .emit("settings_changed", serde_json::json!({}));
-
-    Ok(Json(SettingsSaveResponse { saved: true }))
-}
-
-/// `GET /settings/profiles-path` — return the absolute on-disk path of the
-/// profiles directory for the active install. The frontend uses it for the
-/// "open profiles folder" affordance.
-#[utoipa::path(
-    get,
-    path = "/settings/profiles-path",
-    tag = "settings",
-    responses(
-        (status = 200, description = "Profiles directory path.", body = SettingsProfilesPathResponse),
-    ),
-    security(("session_cookie" = []), ("bearer" = [])),
-)]
-pub async fn v1_settings_profiles_path(
-    State(state): State<AppState>,
-) -> Json<SettingsProfilesPathResponse> {
-    let path = state.settings_manager.get_profiles_path();
-    Json(SettingsProfilesPathResponse {
-        path: path.to_string_lossy().to_string(),
-    })
-}
-
-/// `POST /settings/export` — copy `settings.json` and every profile under
-/// `<export_path>/`. The destination must resolve inside the app data dir or
-/// the user's home; anything else returns 403 `path_outside_allowed_root`.
-#[utoipa::path(
-    post,
-    path = "/settings/export",
-    tag = "settings",
-    request_body = SettingsExportRequest,
-    responses(
-        (status = 200, description = "Export complete.", body = SettingsExportResponse),
-        (status = 403, description = "Export path outside allowed roots.", body = ApiErrorBody),
-        (status = 500, description = "Internal error.", body = ApiErrorBody),
-    ),
-    security(("session_cookie" = []), ("bearer" = [])),
-)]
-pub async fn v1_settings_export(
-    State(state): State<AppState>,
-    axum::Json(req): axum::Json<SettingsExportRequest>,
-) -> Result<Json<SettingsExportResponse>, crate::ApiError> {
-    let path = std::path::PathBuf::from(&req.export_path);
-
-    let mut allowed_dirs: Vec<&std::path::Path> = vec![state.app_data_dir.as_path()];
-    if let Some(ref home) = state.home_dir {
-        allowed_dirs.push(home.as_path());
-    }
-
-    crate::validate_path_within_any(&path, &allowed_dirs)?;
-
-    state.settings_manager.export_data(&path)?;
-    Ok(Json(SettingsExportResponse { exported: true }))
-}
-
-/// `DELETE /settings/data` — wipe every persisted setting + every profile.
-/// A future change will gate this behind a per-call confirmation token;
-/// for now the authenticated session is the only gate.
-#[utoipa::path(
-    delete,
-    path = "/settings/data",
-    tag = "settings",
-    responses(
-        (status = 200, description = "Data cleared.", body = SettingsClearDataResponse),
-        (status = 500, description = "Internal error.", body = ApiErrorBody),
-    ),
-    security(("session_cookie" = []), ("bearer" = [])),
-)]
-pub async fn v1_settings_clear_data(
-    State(state): State<AppState>,
-    headers: axum::http::HeaderMap,
-) -> Result<Json<SettingsClearDataResponse>, crate::ApiError> {
-    crate::require_confirm_token(&state, &headers, "clear_data")?;
-    state.settings_manager.clear_data()?;
-    Ok(Json(SettingsClearDataResponse { cleared: true }))
-}
-
-// ---------------------------------------------------------------------------
-// Safety — panic disconnect.
-// ---------------------------------------------------------------------------
-
-#[derive(Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct SafetyPanicResponse {
-    /// Number of active streams that were stopped by the panic.
-    pub streams_stopped: usize,
-    /// Wall-clock duration of the panic flow, in milliseconds.
-    pub elapsed_ms: u64,
-}
-
-/// `POST /api/v1/safety/panic` — trigger the panic-disconnect flow.
-///
-/// Coordinates: stop every active stream, disconnect every chat
-/// platform, disconnect OBS, wipe in-memory secret caches, record an
-/// audit-log entry, emit `panic_triggered`. See
-/// [`spiritstream_core::services::SafetyService`] for the contract.
-///
-/// **No confirmation token is required** — that defeats the purpose of
-/// a panic button. The rate limiter applies (`default_auth`) so a
-/// malicious script can't burn the panic call to mask real intent.
-#[utoipa::path(
-    post,
-    path = "/safety/panic",
-    tag = "safety",
-    responses(
-        (status = 200, description = "Panic completed.", body = SafetyPanicResponse),
-        (status = 500, description = "Internal error.", body = ApiErrorBody),
-    ),
-    security(("session_cookie" = []), ("bearer" = [])),
-)]
-pub async fn v1_safety_panic(
-    State(state): State<AppState>,
-) -> Result<Json<SafetyPanicResponse>, crate::ApiError> {
-    let svc = state.safety.clone();
-    let result = svc.panic().await?;
-    Ok(Json(SafetyPanicResponse {
-        streams_stopped: result.streams_stopped,
-        elapsed_ms: result.elapsed_ms,
-    }))
-}
-
-// ---------------------------------------------------------------------------
-// Audit log — read endpoint.
-// ---------------------------------------------------------------------------
-
-#[derive(Deserialize)]
-pub struct AuditLogQuery {
-    /// Skip this many leading entries (oldest first). Defaults to 0.
-    #[serde(default)]
-    skip: usize,
-    /// Maximum entries to return. Defaults to 200. Hard-capped at 1000
-    /// so a careless client can't OOM the server.
-    #[serde(default)]
-    limit: Option<usize>,
-    /// When set, only entries whose `action.kind` matches this string
-    /// are returned. Used to filter by kind
-    /// (panic_triggered, chat_message_pii_blocked, oauth_refresh, …).
-    #[serde(default)]
-    kind: Option<String>,
-}
-
-#[derive(Serialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct AuditLogResponse {
-    /// Total entries that survive the filter (before paging).
-    pub total: usize,
-    /// Page slice (oldest-first within the returned window).
-    pub entries: Vec<serde_json::Value>,
-    /// HMAC chain status. The audit-log UI inspects this on
-    /// every fetch; a `tampered` value triggers the red banner.
-    /// Always computed server-side against the on-disk log;
-    /// clients cannot influence it.
-    pub chain: serde_json::Value,
-}
-
-/// `GET /api/v1/audit/log` — paginated, filterable read of the audit
-/// log. Entries are serialised as-is from
-/// [`spiritstream_core::services::AuditEntry`]. The response is wrapped
-/// in an HMAC-verification status (`tampered: bool` + last known-good
-/// sequence) so the UI can render the red banner.
-#[utoipa::path(
-    get,
-    path = "/audit/log",
-    tag = "safety",
-    params(
-        ("skip" = Option<usize>, Query, description = "Skip N entries (oldest first)."),
-        ("limit" = Option<usize>, Query, description = "Max entries per page (≤ 1000)."),
-        ("kind" = Option<String>, Query, description = "Filter by action kind."),
-    ),
-    responses(
-        (status = 200, description = "Audit entries.", body = AuditLogResponse),
-        (status = 500, description = "Internal error.", body = ApiErrorBody),
-    ),
-    security(("session_cookie" = []), ("bearer" = [])),
-)]
-pub async fn v1_audit_log(
-    State(state): State<AppState>,
-    axum::extract::Query(q): axum::extract::Query<AuditLogQuery>,
-) -> Result<Json<AuditLogResponse>, crate::ApiError> {
-    // Verify the HMAC chain before serving entries. We
-    // surface the status to the client either way so the UI can show
-    // the tamper banner even when the user has filtered the page to
-    // an empty result.
-    let chain_status = state.audit.verify_chain().unwrap_or_else(|e| {
-        spiritstream_core::services::AuditChainStatus::Tampered {
-            last_valid_sequence: 0,
-            reason: format!("verify error: {e}"),
-        }
-    });
-    let chain = serde_json::to_value(&chain_status).unwrap_or(serde_json::Value::Null);
-
-    let entries = state.audit.entries()?;
-    let filtered: Vec<serde_json::Value> = entries
-        .into_iter()
-        .filter(|e| match &q.kind {
-            None => true,
-            Some(k) => action_kind_str(&e.action) == k.as_str(),
-        })
-        .map(|e| serde_json::to_value(&e).unwrap_or(serde_json::Value::Null))
-        .collect();
-    let total = filtered.len();
-    let skip = q.skip.min(total);
-    let limit = q.limit.unwrap_or(200).min(1000);
-    let page = filtered.into_iter().skip(skip).take(limit).collect();
-    Ok(Json(AuditLogResponse {
-        total,
-        entries: page,
-        chain,
-    }))
-}
-
-fn action_kind_str(action: &spiritstream_core::services::AuditAction) -> &'static str {
-    use spiritstream_core::services::AuditAction::*;
-    match action {
-        PanicTriggered { .. } => "panic_triggered",
-        ChatMessagePiiBlocked { .. } => "chat_message_pii_blocked",
-        ProfileSaved { .. } => "profile_saved",
-        ProfileDeleted { .. } => "profile_deleted",
-        OauthRefresh { .. } => "oauth_refresh",
-        OauthRefreshUnusualLocation { .. } => "oauth_refresh_unusual_location",
-        MachineKeyRotated { .. } => "machine_key_rotated",
-        AnonymousModeToggled { .. } => "anonymous_mode_toggled",
-        AppStarted => "app_started",
-        AppStopped => "app_stopped",
-        AuditLogTamperDetected { .. } => "audit_log_tamper_detected",
-        ThemeValidationFailed { .. } => "theme_validation_failed",
-        AppUpdateSignatureFailed { .. } => "app_update_signature_failed",
-        ChatMessageSent { .. } => "chat_message_sent",
-        ChatPlatformConnected { .. } => "chat_platform_connected",
-        ChatPlatformDisconnected { .. } => "chat_platform_disconnected",
-    }
-}
 
 
 
