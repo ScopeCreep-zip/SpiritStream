@@ -1,53 +1,22 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Radio,
-  Wifi,
-  WifiOff,
-  Loader2,
-  Square,
-  Eye,
-  EyeOff,
-  AlertCircle,
-  CheckCircle2,
-  Copy,
-} from 'lucide-react';
-import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { Toggle } from '@/components/ui/Toggle';
-import { PasswordInput } from '@spiritstream/ui';
+import { Radio } from 'lucide-react';
 import { useObsStore } from '@/stores/obsStore';
 import { useProfileStore } from '@/stores/profileStore';
 import { toast } from '@/hooks/useToast';
 import { logger } from '@/lib/logger';
-import { cn } from '@/lib/cn';
 import { clientConfig } from '@/lib/constants';
+import { ObsConnectionForm } from '@/components/obs/ObsConnectionForm';
+import { ObsStatusCard } from '@/components/obs/ObsStatusCard';
+import { ObsDirectionSelector } from '@/components/obs/ObsDirectionSelector';
 import type { ObsIntegrationDirection } from '@spiritstream/types';
 
-const directionOptions: { value: ObsIntegrationDirection; labelKey: string; descKey: string }[] = [
-  {
-    value: 'disabled',
-    labelKey: 'obs.directions.disabled',
-    descKey: 'obs.directions.disabledDescription',
-  },
-  {
-    value: 'obs-to-spiritstream',
-    labelKey: 'obs.directions.obsToSpiritstream',
-    descKey: 'obs.directions.obsToSpiritstreamDescription',
-  },
-  {
-    value: 'spiritstream-to-obs',
-    labelKey: 'obs.directions.spiritstreamToObs',
-    descKey: 'obs.directions.spiritstreamToObsDescription',
-  },
-  {
-    value: 'bidirectional',
-    labelKey: 'obs.directions.bidirectional',
-    descKey: 'obs.directions.bidirectionalDescription',
-  },
-];
-
+/**
+ * OBS integration orchestrator. Owns the form state, debounced auto-save,
+ * unmount-flush, and store wiring. Renders three focused cards (connection
+ * form, status, direction selector) — each is its own component under
+ * `components/obs/`.
+ */
 export function ObsPanel() {
   const { t } = useTranslation();
   const currentProfile = useProfileStore((state) => state.current);
@@ -67,7 +36,7 @@ export function ObsPanel() {
     disconnect,
   } = useObsStore();
 
-  // Local form state
+  // Local form state — mirrors the obsStore config; saved via autoSave / immediate update.
   const [host, setHost] = useState('localhost');
   const [port, setPort] = useState('4455');
   const [password, setPassword] = useState('');
@@ -75,16 +44,16 @@ export function ObsPanel() {
   const [direction, setDirection] = useState<ObsIntegrationDirection>('disabled');
   const [autoConnect, setAutoConnect] = useState(false);
 
-  // Debounce timer ref
+  // Debounced save infrastructure.
   const saveTimeoutRef = useRef<number | null>(null);
   const pendingUpdatesRef = useRef<Parameters<typeof updateConfig>[0] | null>(null);
 
-  // Load initial OBS connection state (not config - that comes from profile)
+  // Load initial OBS connection state (not config — that comes from profile).
   useEffect(() => {
     loadState();
   }, [loadState]);
 
-  // Sync form with config when loaded
+  // Sync form with config when loaded.
   useEffect(() => {
     if (config) {
       setHost(config.host || 'localhost');
@@ -96,13 +65,12 @@ export function ObsPanel() {
     }
   }, [config]);
 
-  // Flush pending saves on unmount (don't lose unsaved changes)
+  // Flush pending saves on unmount.
   useEffect(() => {
     return () => {
       if (saveTimeoutRef.current) {
         window.clearTimeout(saveTimeoutRef.current);
       }
-      // Flush any pending updates
       if (pendingUpdatesRef.current) {
         updateConfig(pendingUpdatesRef.current).catch((error) => {
           logger.error('Failed to flush OBS config on unmount:', error);
@@ -112,10 +80,9 @@ export function ObsPanel() {
     };
   }, [updateConfig]);
 
-  // Auto-save with debounce
+  // Auto-save with debounce.
   const autoSave = useCallback(
     (updates: Parameters<typeof updateConfig>[0]) => {
-      // Track pending updates for flush on unmount
       pendingUpdatesRef.current = { ...pendingUpdatesRef.current, ...updates };
 
       if (saveTimeoutRef.current) {
@@ -125,38 +92,29 @@ export function ObsPanel() {
       saveTimeoutRef.current = window.setTimeout(async () => {
         try {
           await updateConfig(pendingUpdatesRef.current!);
-          pendingUpdatesRef.current = null; // Clear after successful save
+          pendingUpdatesRef.current = null;
         } catch (error) {
           logger.error('Failed to save OBS config:', error);
         }
       }, clientConfig.AUTO_SAVE_DELAY_MS);
     },
-    [updateConfig]
+    [updateConfig],
   );
 
-  // Handle host change with auto-save on blur
+  // Field-level handlers.
   const handleHostBlur = useCallback(() => {
-    if (config && host !== config.host) {
-      autoSave({ host });
-    }
+    if (config && host !== config.host) autoSave({ host });
   }, [host, config, autoSave]);
 
-  // Handle port change with auto-save on blur
   const handlePortBlur = useCallback(() => {
     const portNum = parseInt(port, 10) || 4455;
-    if (config && portNum !== config.port) {
-      autoSave({ port: portNum });
-    }
+    if (config && portNum !== config.port) autoSave({ port: portNum });
   }, [port, config, autoSave]);
 
-  // Handle password change with auto-save on blur
   const handlePasswordBlur = useCallback(() => {
-    if (config && password !== config.password) {
-      autoSave({ password });
-    }
+    if (config && password !== config.password) autoSave({ password });
   }, [password, config, autoSave]);
 
-  // Copy password to clipboard
   const handleCopyPassword = useCallback(async () => {
     if (!password) return;
     try {
@@ -167,24 +125,20 @@ export function ObsPanel() {
     }
   }, [password, t]);
 
-  // Handle useAuth toggle with immediate save (no debounce to avoid race conditions)
+  // Immediate-save handlers (no debounce — avoid race conditions on toggles).
   const handleUseAuthChange = useCallback(
     async (checked: boolean) => {
       setUseAuth(checked);
-      // Clear password field when disabling auth
-      if (!checked) {
-        setPassword('');
-      }
+      if (!checked) setPassword('');
       try {
         await updateConfig({ useAuth: checked });
       } catch (error) {
         logger.error('Failed to save useAuth:', error);
       }
     },
-    [updateConfig]
+    [updateConfig],
   );
 
-  // Handle autoConnect toggle with immediate save (no debounce)
   const handleAutoConnectChange = useCallback(
     async (checked: boolean) => {
       setAutoConnect(checked);
@@ -194,7 +148,15 @@ export function ObsPanel() {
         logger.error('Failed to save autoConnect:', error);
       }
     },
-    [updateConfig]
+    [updateConfig],
+  );
+
+  const handleDirectionSelect = useCallback(
+    (next: ObsIntegrationDirection) => {
+      setDirection(next);
+      updateConfig({ direction: next }).catch(logger.error);
+    },
+    [updateConfig],
   );
 
   const handleConnect = useCallback(async () => {
@@ -216,33 +178,6 @@ export function ObsPanel() {
   }, [disconnect, t]);
 
   const isConnected = connectionStatus === 'connected';
-  const isConnecting = connectionStatus === 'connecting';
-
-  const getStatusIcon = () => {
-    switch (connectionStatus) {
-      case 'connected':
-        return <Wifi className="w-4 h-4 text-status-live" />;
-      case 'connecting':
-        return <Loader2 className="w-4 h-4 text-status-connecting animate-spin" />;
-      case 'error':
-        return <AlertCircle className="w-4 h-4 text-status-error" />;
-      default:
-        return <WifiOff className="w-4 h-4 text-text-tertiary" />;
-    }
-  };
-
-  const getStatusText = () => {
-    switch (connectionStatus) {
-      case 'connected':
-        return t('obs.connected');
-      case 'connecting':
-        return t('obs.connecting');
-      case 'error':
-        return t('obs.error');
-      default:
-        return t('obs.disconnected');
-    }
-  };
 
   if (!currentProfile) {
     return (
@@ -254,7 +189,6 @@ export function ObsPanel() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center gap-3">
         <div className="p-2 rounded-lg bg-bg-elevated">
           <Radio className="w-5 h-5 text-primary" />
@@ -266,191 +200,38 @@ export function ObsPanel() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Connection Settings Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('obs.connectionSettings')}</CardTitle>
-          </CardHeader>
-          <CardBody className="space-y-4">
-            {/* Host and Port */}
-            <div className="grid grid-cols-3 gap-3">
-              <div className="col-span-2">
-                <Input
-                  label={t('obs.host')}
-                  value={host}
-                  onChange={(e) => setHost(e.target.value)}
-                  onBlur={handleHostBlur}
-                  placeholder={t('obs.hostPlaceholder')}
-                  disabled={isConnected}
-                />
-              </div>
-              <div>
-                <Input
-                  label={t('obs.port')}
-                  type="number"
-                  value={port}
-                  onChange={(e) => setPort(e.target.value)}
-                  onBlur={handlePortBlur}
-                  disabled={isConnected}
-                />
-              </div>
-            </div>
-
-            {/* Authentication Toggle */}
-            <Toggle
-              checked={useAuth}
-              onChange={handleUseAuthChange}
-              label={t('obs.useAuthentication')}
-              disabled={isConnected}
-            />
-
-            {/* Password Field */}
-            {useAuth && (
-              <div className="flex items-end gap-1">
-                <div className="flex-1">
-                  <PasswordInput
-                    label={t('obs.password')}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    onBlur={handlePasswordBlur}
-                    placeholder={t('obs.passwordPlaceholder')}
-                    disabled={isConnected}
-                    visible={showPassword}
-                    onVisibilityChange={setShowPassword}
-                    showLabel={t('obs.showPassword')}
-                    hideLabel={t('obs.hidePassword')}
-                    renderToggleIcon={(visible) =>
-                      visible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />
-                    }
-                  />
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleCopyPassword}
-                  aria-label={t('common.copy')}
-                  disabled={isConnected || !password}
-                >
-                  <Copy className="w-4 h-4" />
-                </Button>
-              </div>
-            )}
-
-            {/* Auto-connect Toggle */}
-            <Toggle
-              checked={autoConnect}
-              onChange={handleAutoConnectChange}
-              label={t('obs.autoConnect')}
-            />
-          </CardBody>
-        </Card>
-
-        {/* Status and Control Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('obs.status')}</CardTitle>
-          </CardHeader>
-          <CardBody className="space-y-4">
-            {/* Connection Status */}
-            <div className="flex items-center justify-between p-3 rounded-lg bg-bg-base">
-              <div className="flex items-center gap-3">
-                {getStatusIcon()}
-                <div>
-                  <div className="text-sm font-medium text-text-primary">
-                    {getStatusText()}
-                  </div>
-                  {isConnected && obsVersion && (
-                    <div className="text-xs text-text-tertiary">
-                      {t('obs.versionInfo', { obsVersion, wsVersion: websocketVersion })}
-                    </div>
-                  )}
-                </div>
-              </div>
-              {isConnected ? (
-                <Button
-                  variant="outline"
-                  onClick={handleDisconnect}
-                  disabled={isLoading}
-                >
-                  <WifiOff className="w-4 h-4" />
-                  {t('obs.disconnect')}
-                </Button>
-              ) : (
-                <Button
-                  variant="primary"
-                  onClick={handleConnect}
-                  disabled={isConnecting || isLoading}
-                >
-                  {isConnecting ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Wifi className="w-4 h-4" />
-                  )}
-                  {t('obs.connect')}
-                </Button>
-              )}
-            </div>
-
-            {/* Error Message */}
-            {errorMessage && (
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-status-error/10 border border-status-error/20">
-                <AlertCircle className="w-4 h-4 text-status-error flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-status-error">{errorMessage}</p>
-              </div>
-            )}
-
-            {/* OBS Stream Status (read-only indicator) */}
-            {isConnected && (
-              <div className="flex items-center gap-2 p-3 rounded-lg bg-bg-base">
-                {streamStatus === 'active' ? (
-                  <CheckCircle2 className="w-4 h-4 text-status-live" />
-                ) : (
-                  <Square className="w-4 h-4 text-text-tertiary" />
-                )}
-                <span className="text-sm text-text-primary">
-                  {streamStatus === 'active' ? t('obs.streaming') : t('obs.notStreaming')}
-                </span>
-              </div>
-            )}
-          </CardBody>
-        </Card>
+        <ObsConnectionForm
+          isConnected={isConnected}
+          host={host}
+          setHost={setHost}
+          onHostBlur={handleHostBlur}
+          port={port}
+          setPort={setPort}
+          onPortBlur={handlePortBlur}
+          useAuth={useAuth}
+          onUseAuthChange={handleUseAuthChange}
+          password={password}
+          setPassword={setPassword}
+          onPasswordBlur={handlePasswordBlur}
+          showPassword={showPassword}
+          setShowPassword={setShowPassword}
+          onCopyPassword={handleCopyPassword}
+          autoConnect={autoConnect}
+          onAutoConnectChange={handleAutoConnectChange}
+        />
+        <ObsStatusCard
+          connectionStatus={connectionStatus}
+          streamStatus={streamStatus}
+          errorMessage={errorMessage}
+          obsVersion={obsVersion}
+          websocketVersion={websocketVersion}
+          isLoading={isLoading}
+          onConnect={handleConnect}
+          onDisconnect={handleDisconnect}
+        />
       </div>
 
-      {/* Integration Direction Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('obs.integration')}</CardTitle>
-          <CardDescription>{t('obs.integrationDirectionDescription')}</CardDescription>
-        </CardHeader>
-        <CardBody>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {directionOptions.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => {
-                  setDirection(option.value);
-                  // Auto-save direction changes
-                  updateConfig({ direction: option.value }).catch(logger.error);
-                }}
-                className={cn(
-                  'p-4 rounded-lg border text-left transition-all cursor-pointer',
-                  direction === option.value
-                    ? 'border-primary bg-primary/10'
-                    : 'border-border-default bg-bg-base hover:border-border-strong'
-                )}
-              >
-                <div className="text-sm font-medium text-text-primary">
-                  {t(option.labelKey as 'obs.directions.disabled')}
-                </div>
-                <div className="text-xs text-text-tertiary mt-1">
-                  {t(option.descKey as 'obs.directions.disabledDescription')}
-                </div>
-              </button>
-            ))}
-          </div>
-        </CardBody>
-      </Card>
+      <ObsDirectionSelector direction={direction} onSelect={handleDirectionSelect} />
     </div>
   );
 }
