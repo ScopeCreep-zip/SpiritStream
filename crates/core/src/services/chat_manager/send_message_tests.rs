@@ -73,7 +73,9 @@ fn fixture() -> (TempDir, Arc<ChatManager>, SafetyService, Arc<AuditLogService>)
     let mgr = Arc::new(ChatManager::new(event_sink.clone(), data_dir.clone()));
     let audit = Arc::new(AuditLogService::new(data_dir.clone()).unwrap());
     mgr.set_audit_log(audit.clone());
-    let ffmpeg = Arc::new(FFmpegHandler::new_with_custom_path(data_dir.clone(), None));
+    let ffmpeg = Arc::new(
+        FFmpegHandler::new_with_custom_path(data_dir.clone(), None).expect("test fixture"),
+    );
     let obs = Arc::new(ObsWebSocketHandler::new(data_dir.clone()));
     let safety = SafetyService::new(
         ffmpeg,

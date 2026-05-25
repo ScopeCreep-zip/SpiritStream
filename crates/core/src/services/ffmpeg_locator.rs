@@ -73,14 +73,23 @@ pub struct FFmpegLocator {
 }
 
 impl FFmpegLocator {
-    pub fn new() -> Self {
-        Self {
+    /// Construct the locator. macOS builds initialize a reqwest client for
+    /// auto-update downloads; that's the only fallible part. Failure is rare
+    /// (TLS backend init issues — musl libc, missing roots) but we surface it
+    /// as `CoreError::Internal` rather than panic, matching every other
+    /// service constructor in the registry.
+    pub fn new() -> Result<Self, crate::errors::CoreError> {
+        #[cfg(target_os = "macos")]
+        let client = Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .map_err(|e| crate::errors::CoreError::Internal {
+                context: format!("ffmpeg locator reqwest client init failed: {e}"),
+            })?;
+        Ok(Self {
             #[cfg(target_os = "macos")]
-            client: Client::builder()
-                .timeout(Duration::from_secs(10))
-                .build()
-                .expect("reqwest client"),
-        }
+            client,
+        })
     }
 
     /// Resolve the FFmpeg binary path for this process. Returns `None`
@@ -240,12 +249,6 @@ impl FFmpegLocator {
     }
 }
 
-impl Default for FFmpegLocator {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Walk `$PATH` for the FFmpeg binary. No external crate; deliberately
 /// uses only `std` so the dependency graph stays minimal.
 fn which_ffmpeg() -> Option<PathBuf> {
@@ -302,7 +305,7 @@ mod tests {
     fn version_info_reports_up_to_date() {
         // Sync wrapper because the function is async.
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let locator = FFmpegLocator::new();
+        let locator = FFmpegLocator::new().expect("test fixture");
         let info = rt.block_on(locator.check_version_status(Some("7.1")));
         assert_eq!(info.installed_version, Some("7.1".to_string()));
         // Latest may or may not be available depending on platform; status

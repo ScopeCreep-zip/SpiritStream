@@ -197,7 +197,10 @@ impl FFmpegHandler {
     /// If discovery fails the handler keeps the canonical missing-path
     /// string (`ffmpeg`) so spawn calls surface "FFmpeg missing" cleanly
     /// rather than crashing on empty.
-    pub fn new_with_custom_path(_app_data_dir: std::path::PathBuf, custom_path: Option<String>) -> Self {
+    pub fn new_with_custom_path(
+        _app_data_dir: std::path::PathBuf,
+        custom_path: Option<String>,
+    ) -> Result<Self, CoreError> {
         use crate::services::{FFmpegLocator, SettingsManager};
         let resolved = if let Some(p) = custom_path.as_deref().filter(|s| !s.is_empty()) {
             if std::path::Path::new(p).exists() {
@@ -217,7 +220,7 @@ impl FFmpegHandler {
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|| FFMPEG_MISSING_SENTINEL.to_string());
 
-        Self {
+        Ok(Self {
             ffmpeg_path,
             processes: Arc::new(Mutex::new(HashMap::new())),
             stopping_groups: Arc::new(Mutex::new(HashSet::new())),
@@ -225,12 +228,12 @@ impl FFmpegHandler {
             relay: Arc::new(Mutex::new(None)),
             active_groups: Arc::new(Mutex::new(HashMap::new())),
             relay_refcount: Arc::new(AtomicUsize::new(0)),
-            platform_registry: PlatformRegistry::new(),
+            platform_registry: PlatformRegistry::new()?,
             reconnection_config: ReconnectionConfig::default(),
             port_assignments: Arc::new(Mutex::new(HashMap::new())),
             next_port_offset: Arc::new(AtomicU16::new(0)),
             obs_trigger: std::sync::RwLock::new(None),
-        }
+        })
     }
 
     /// Install the SpiritStream→OBS trigger handle. Called once at

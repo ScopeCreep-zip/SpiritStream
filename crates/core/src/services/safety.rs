@@ -33,7 +33,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::errors::CoreError;
-use crate::models::{ChatPlatform, Profile};
+use crate::models::ChatPlatform;
 use crate::services::{
     pii_filter, AuditAction, AuditLogService, ChatManager, FFmpegHandler, ObsWebSocketHandler,
     PiiCheck, PiiMatchMode,
@@ -77,50 +77,46 @@ impl SafetyService {
         }
     }
 
-    /// Check an outbound chat message against the active
-    /// profile's PII blocklist. Returns `Ok(())` if the message is
-    /// clear, or `Err(CoreError::ChatBlockedByPii)` if a phrase
-    /// matched. On match, an audit entry is recorded with the stable
-    /// `phrase_id` (never the matched text) so a forensic trail exists.
+    /// Check an outbound chat message against a PII blocklist snapshot.
+    /// Returns `Ok(())` if the message is clear, or
+    /// `Err(CoreError::ChatBlockedByPii)` if a phrase matched. On match,
+    /// an audit entry is recorded with the stable `phrase_id` (never
+    /// the matched text) so a forensic trail exists.
+    ///
+    /// Takes the blocklist + fuzzy flag directly so callers can pass a
+    /// cached snapshot (HTTP holds the active-profile pii cache on
+    /// `AppState`; CLI loads the profile per-command) without re-loading
+    /// the full `Profile` on every send.
     ///
     /// `platforms` is only used for the audit entry — the filter
     /// decision itself is platform-agnostic.
     pub fn check_outbound_pii(
         &self,
-        profile: &Profile,
+        blocklist: &[String],
+        fuzzy: bool,
         platforms: &[ChatPlatform],
         message: &str,
     ) -> Result<(), CoreError> {
-        if profile.pii_blocklist.is_empty() {
+        if blocklist.is_empty() {
             return Ok(());
         }
-        let mode = if profile.pii_fuzzy {
+        let mode = if fuzzy {
             PiiMatchMode::Fuzzy
         } else {
             PiiMatchMode::Strict
         };
-        if let PiiCheck::Match { phrase_id } =
-            pii_filter::check(message, &profile.pii_blocklist, mode)
-        {
-            // Audit every targeted platform separately. Single-platform
-            // chat messages will be the common case (one row); the
-            // multi-platform branch records each so a forensic
-            // reconstructor can see what would have gone where. If no
-            // platforms were specified (defensive — the caller already
-            // validated), record one bookkeeping entry under "unknown".
-            if platforms.is_empty() {
-                let _ = self.audit.record(AuditAction::PiiFilterFired {
-                    platform: "unknown".into(),
-                    phrase_id: phrase_id.clone(),
-                });
-            } else {
-                for platform in platforms {
-                    let _ = self.audit.record(AuditAction::PiiFilterFired {
-                        platform: platform.as_str().to_string(),
-                        phrase_id: phrase_id.clone(),
-                    });
-                }
-            }
+        if let PiiCheck::Match { phrase_id } = pii_filter::check(message, blocklist, mode) {
+            // One aggregate audit entry per send call. The decision is
+            // platform-agnostic (same phrase, multiple destinations);
+            // per-platform records would inflate the chain without
+            // adding forensic signal. `platforms` captures the full
+            // target set the send attempted.
+            let target_strs: Vec<String> =
+                platforms.iter().map(|p| p.as_str().to_string()).collect();
+            let _ = self.audit.record(AuditAction::ChatMessagePiiBlocked {
+                platforms: target_strs,
+                phrase_id: phrase_id.clone(),
+            });
             self.events.emit(
                 "pii_filter_fired",
                 serde_json::json!({
@@ -153,7 +149,7 @@ impl SafetyService {
         }
 
         // 2. Disconnect every connected chat platform.
-        if let Err(e) = self.chat.disconnect_all().await {
+        if let Err(e) = self.chat.disconnect_all("panic_triggered").await {
             log::error!("panic: chat.disconnect_all failed: {e}");
         }
 
@@ -238,7 +234,8 @@ mod tests {
         data_dir: &TempDir,
     ) -> (SafetyService, Arc<CountingSink>, Arc<AuditLogService>) {
         let dir = data_dir.path().to_path_buf();
-        let ffmpeg = Arc::new(FFmpegHandler::new_with_custom_path(dir.clone(), None));
+        let ffmpeg =
+            Arc::new(FFmpegHandler::new_with_custom_path(dir.clone(), None).expect("test fixture"));
         let events_for_chat: Arc<dyn EventSink> = Arc::new(NoopEventSink);
         let chat = Arc::new(ChatManager::new(events_for_chat, dir.clone()));
         let obs = Arc::new(ObsWebSocketHandler::new(dir.clone()));
@@ -288,33 +285,11 @@ mod tests {
 
     // --- check_outbound_pii -----------------------------------
 
-    fn fixture_profile(blocklist: Vec<String>, fuzzy: bool) -> Profile {
-        use crate::models::{ProfileSettings, RtmpInput};
-        Profile {
-            id: "p".into(),
-            name: "p".into(),
-            encrypted: false,
-            input: RtmpInput {
-                input_type: "rtmp".into(),
-                bind_address: "127.0.0.1".into(),
-                port: 1935,
-                application: "live".into(),
-            },
-            output_groups: vec![],
-            settings: ProfileSettings::default(),
-            pii_blocklist: blocklist,
-            pii_fuzzy: fuzzy,
-            anonymous_logging: true,
-            anonymous_salt: crate::services::pseudonymizer::generate_salt(),
-        }
-    }
-
     #[tokio::test]
     async fn pii_check_clears_when_blocklist_empty() {
         let dir = TempDir::new().unwrap();
         let (svc, _sink, _audit) = build_service(&dir);
-        let profile = fixture_profile(vec![], false);
-        let result = svc.check_outbound_pii(&profile, &[ChatPlatform::Twitch], "anything");
+        let result = svc.check_outbound_pii(&[], false, &[ChatPlatform::Twitch], "anything");
         assert!(result.is_ok());
     }
 
@@ -322,26 +297,31 @@ mod tests {
     async fn pii_check_blocks_matching_message_and_records_audit() {
         let dir = TempDir::new().unwrap();
         let (svc, _sink, audit) = build_service(&dir);
-        let profile = fixture_profile(vec!["realname".into()], false);
-        let result =
-            svc.check_outbound_pii(&profile, &[ChatPlatform::Twitch], "hi I'm RealName here");
+        let blocklist = vec!["realname".into()];
+        let result = svc.check_outbound_pii(
+            &blocklist,
+            false,
+            &[ChatPlatform::Twitch],
+            "hi I'm RealName here",
+        );
         let err = result.unwrap_err();
         let CoreError::ChatBlockedByPii { phrase_id } = err else {
             panic!("expected ChatBlockedByPii, got {err:?}");
         };
         assert!(!phrase_id.is_empty());
-        // Audit must include a PiiFilterFired entry for the targeted platform
-        // with the same phrase_id, NOT the matched text.
+        // Audit must include exactly ONE ChatMessagePiiBlocked entry with
+        // the targeted platform set + matching phrase_id — never the
+        // matched text itself.
         let entries = audit.entries().unwrap();
         assert_eq!(entries.len(), 1);
-        let AuditAction::PiiFilterFired {
-            platform,
+        let AuditAction::ChatMessagePiiBlocked {
+            platforms,
             phrase_id: logged_id,
         } = &entries[0].action
         else {
-            panic!("expected PiiFilterFired: {:?}", entries[0].action);
+            panic!("expected ChatMessagePiiBlocked: {:?}", entries[0].action);
         };
-        assert_eq!(platform, "twitch");
+        assert_eq!(platforms, &vec!["twitch".to_string()]);
         assert_eq!(logged_id, &phrase_id);
         let raw = std::fs::read_to_string(audit.log_path()).unwrap();
         assert!(
@@ -351,25 +331,35 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pii_check_audits_each_targeted_platform_on_match() {
+    async fn pii_check_records_single_aggregate_entry_for_multi_platform_send() {
         let dir = TempDir::new().unwrap();
         let (svc, _sink, audit) = build_service(&dir);
-        let profile = fixture_profile(vec!["alex".into()], false);
+        let blocklist = vec!["alex".into()];
         let _ = svc.check_outbound_pii(
-            &profile,
+            &blocklist,
+            false,
             &[ChatPlatform::Twitch, ChatPlatform::YouTube],
             "hi alex",
         );
+        // One aggregate entry covering both platforms — not two.
         let entries = audit.entries().unwrap();
-        assert_eq!(entries.len(), 2);
+        assert_eq!(entries.len(), 1);
+        let AuditAction::ChatMessagePiiBlocked { platforms, .. } = &entries[0].action else {
+            panic!("expected ChatMessagePiiBlocked: {:?}", entries[0].action);
+        };
+        assert_eq!(
+            platforms,
+            &vec!["twitch".to_string(), "youtube".to_string()]
+        );
     }
 
     #[tokio::test]
     async fn pii_check_fuzzy_catches_leet_when_enabled() {
         let dir = TempDir::new().unwrap();
         let (svc, _sink, _audit) = build_service(&dir);
-        let profile = fixture_profile(vec!["alex".into()], true);
-        let result = svc.check_outbound_pii(&profile, &[ChatPlatform::Twitch], "hi @l3x");
+        let blocklist = vec!["alex".into()];
+        let result =
+            svc.check_outbound_pii(&blocklist, true, &[ChatPlatform::Twitch], "hi @l3x");
         assert!(matches!(result, Err(CoreError::ChatBlockedByPii { .. })));
     }
 
@@ -377,8 +367,9 @@ mod tests {
     async fn pii_check_strict_misses_leet_by_default() {
         let dir = TempDir::new().unwrap();
         let (svc, _sink, _audit) = build_service(&dir);
-        let profile = fixture_profile(vec!["alex".into()], false);
-        let result = svc.check_outbound_pii(&profile, &[ChatPlatform::Twitch], "hi @l3x");
+        let blocklist = vec!["alex".into()];
+        let result =
+            svc.check_outbound_pii(&blocklist, false, &[ChatPlatform::Twitch], "hi @l3x");
         assert!(result.is_ok(), "strict mode must not match leet variants");
     }
 

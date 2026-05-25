@@ -98,8 +98,8 @@ impl ServiceRegistry {
         let ffmpeg = Arc::new(FFmpegHandler::new_with_custom_path(
             opts.data_dir.clone(),
             opts.custom_ffmpeg_path,
-        ));
-        let ffmpeg_locator = Arc::new(FFmpegLocator::new());
+        )?);
+        let ffmpeg_locator = Arc::new(FFmpegLocator::new()?);
         let obs = Arc::new(ObsWebSocketHandler::new(opts.data_dir.clone()));
         let discord = Arc::new(DiscordWebhookService::new());
         let chat = Arc::new(ChatManager::new(opts.events.clone(), opts.log_dir.clone()));
@@ -122,6 +122,7 @@ impl ServiceRegistry {
         // participant so each Arc is cloned exactly once into the service.
         let profile_activation = Arc::new(ProfileActivationService::new(
             profiles.clone(),
+            settings.clone(),
             oauth.clone(),
             chat.clone(),
             obs.clone(),
@@ -149,6 +150,13 @@ impl ServiceRegistry {
         // or `GET /api/v1/audit/log` — operators get a queryable
         // trace of accessibility / theme regressions.
         themes.set_audit_log(audit.clone());
+
+        // Same post-construction pattern for ChatManager so chat
+        // mutations (`ChatMessageSent`, `ChatPlatformConnected`,
+        // `ChatPlatformDisconnected`) reach the HMAC chain. Without
+        // this wiring chat operations still succeed — they just don't
+        // record. Matches the ThemeManager degraded-mode behavior.
+        chat.set_audit_log(audit.clone());
 
         Ok(ServiceRegistry {
             profiles,

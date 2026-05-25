@@ -248,7 +248,7 @@ impl super::ProfileManager {
         // `PlatformRegistry::normalize_url()` exists in core but was never
         // called on save. Pull it in. Server is now the authoritative place
         // URL normalization happens.
-        let registry = crate::services::PlatformRegistry::new();
+        let registry = crate::services::PlatformRegistry::new()?;
         for group in &mut profile_to_save.output_groups {
             for target in &mut group.stream_targets {
                 let normalized = registry.normalize_url(&target.service, &target.url);

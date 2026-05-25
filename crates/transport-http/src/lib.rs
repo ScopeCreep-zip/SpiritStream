@@ -537,7 +537,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(FFmpegHandler::new_with_custom_path(
             app_data_dir.clone(),
             custom_ffmpeg_path,
-        ))
+        )?)
     } else {
         registry.ffmpeg.clone()
     };
