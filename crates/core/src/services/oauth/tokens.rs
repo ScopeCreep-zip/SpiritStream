@@ -70,6 +70,21 @@ pub struct YouTubeChannel {
     pub title: String,
 }
 
+/// Kick user info from `GET /public/v1/users` (the "me" endpoint —
+/// returns the user identified by the bearer token). `user_id` is the
+/// numeric broadcaster id Kick's REST `POST /chat` expects as
+/// `broadcaster_user_id`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct KickUser {
+    pub user_id: u64,
+    pub name: String,
+    #[serde(default)]
+    pub email: Option<String>,
+    #[serde(default)]
+    pub profile_picture: Option<String>,
+}
+
 impl super::OAuthService {
     /// Pre-flight check: does this token expire within `leeway_secs` of now?
     /// Callers about to use an access token should call this and request a
@@ -132,7 +147,7 @@ impl super::OAuthService {
     ) -> Result<OAuthRefreshOutcome, CoreError> {
         let mut outcome = OAuthRefreshOutcome::default();
 
-        for provider in ["twitch", "youtube"] {
+        for provider in ["twitch", "youtube", "kick"] {
             let (access, refresh, expires_at) = match provider {
                 "twitch" => (
                     profile.settings.oauth.twitch.access_token.clone(),
@@ -143,6 +158,11 @@ impl super::OAuthService {
                     profile.settings.oauth.youtube.access_token.clone(),
                     profile.settings.oauth.youtube.refresh_token.clone(),
                     profile.settings.oauth.youtube.expires_at,
+                ),
+                "kick" => (
+                    profile.settings.oauth.kick.access_token.clone(),
+                    profile.settings.oauth.kick.refresh_token.clone(),
+                    profile.settings.oauth.kick.expires_at,
                 ),
                 _ => continue,
             };
@@ -180,6 +200,13 @@ impl super::OAuthService {
                             }
                             profile.settings.oauth.youtube.expires_at = new_expires;
                         }
+                        "kick" => {
+                            profile.settings.oauth.kick.access_token = tokens.access_token;
+                            if let Some(rt) = tokens.refresh_token {
+                                profile.settings.oauth.kick.refresh_token = rt;
+                            }
+                            profile.settings.oauth.kick.expires_at = new_expires;
+                        }
                         _ => {}
                     }
                     outcome.refreshed.push(provider.to_string());
@@ -215,6 +242,11 @@ impl super::OAuthService {
                 OAuthProvider::youtube(),
                 config.get_youtube_client_id(),
                 config.get_youtube_client_secret(),
+            ),
+            "kick" => (
+                OAuthProvider::kick(),
+                config.get_kick_client_id(),
+                config.get_kick_client_secret(),
             ),
             _ => return Err(unknown_provider(provider_name)),
         };
@@ -366,6 +398,44 @@ impl super::OAuthService {
         self.fetch_twitch_user(access_token).await
     }
 
+    /// Fetch the bearer-identified Kick user. Kick exposes a `users` REST
+    /// endpoint that returns the broadcaster id needed to address
+    /// `POST /public/v1/chat`.
+    pub async fn fetch_kick_user(&self, access_token: &str) -> Result<KickUser, CoreError> {
+        let response = self
+            .http_client
+            .get("https://api.kick.com/public/v1/users")
+            .header("Authorization", format!("Bearer {access_token}"))
+            .header("Accept", "application/json")
+            .send()
+            .await
+            .map_err(|e| network(format!("Kick user request failed: {e}")))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let _ = response.text().await;
+            error!("Kick user fetch failed: {}", status);
+            return Err(CoreError::Unauthorized);
+        }
+
+        #[derive(Deserialize)]
+        struct KickEnvelope {
+            data: Vec<KickUser>,
+        }
+
+        let envelope: KickEnvelope = response.json().await.map_err(|e| CoreError::Internal {
+            context: format!("Failed to parse Kick user response: {e}"),
+        })?;
+
+        envelope
+            .data
+            .into_iter()
+            .next()
+            .ok_or_else(|| CoreError::Internal {
+                context: "No user data in Kick response".into(),
+            })
+    }
+
     /// Revoke a token (best effort — not all providers support this).
     pub async fn revoke_token(&self, provider_name: &str, token: &str) -> Result<(), CoreError> {
         match provider_name {
@@ -398,6 +468,25 @@ impl super::OAuthService {
 
                 if !response.status().is_success() {
                     warn!("YouTube token revocation returned non-success status");
+                }
+                Ok(())
+            }
+            "kick" => {
+                let config = self.config.lock().await;
+                let client_id = config.get_kick_client_id();
+                drop(config);
+
+                // Kick's id.kick.com supports token revocation per RFC 7009.
+                let response = self
+                    .http_client
+                    .post("https://id.kick.com/oauth/revoke")
+                    .form(&[("client_id", client_id.as_str()), ("token", token)])
+                    .send()
+                    .await
+                    .map_err(|e| network(format!("Token revoke request failed: {e}")))?;
+
+                if !response.status().is_success() {
+                    warn!("Kick token revocation returned non-success status");
                 }
                 Ok(())
             }

@@ -217,6 +217,11 @@ pub struct ChatSettings {
     #[serde(default)]
     pub stripchat_username: String,
 
+    /// Kick channel name (also used as the broadcaster handle for
+    /// chatroom-id lookup at activation time).
+    #[serde(default)]
+    pub kick_channel: String,
+
     /// YouTube API key (optional if using OAuth)
     #[serde(default)]
     pub youtube_api_key: String,
@@ -236,6 +241,10 @@ pub struct ChatSettings {
     /// Allow sending to Stripchat chat
     #[serde(default)]
     pub stripchat_send_enabled: bool,
+
+    /// Allow sending to Kick chat (requires OAuth + chat:write scope)
+    #[serde(default)]
+    pub kick_send_enabled: bool,
 
     /// Send messages to all enabled platforms
     #[serde(default)]
@@ -265,11 +274,13 @@ impl Default for ChatSettings {
             youtube_channel_id: String::new(),
             trovo_channel_id: String::new(),
             stripchat_username: String::new(),
+            kick_channel: String::new(),
             youtube_api_key: String::new(),
             twitch_send_enabled: false,
             youtube_send_enabled: false,
             trovo_send_enabled: false,
             stripchat_send_enabled: false,
+            kick_send_enabled: false,
             send_all_enabled: true,
             crosspost_enabled: false,
             youtube_use_api_key: false,
@@ -344,6 +355,8 @@ pub struct OAuthSettings {
     pub twitch: OAuthAccount,
     #[serde(default)]
     pub youtube: OAuthAccount,
+    #[serde(default)]
+    pub kick: OAuthAccount,
 }
 
 // ============================================================================

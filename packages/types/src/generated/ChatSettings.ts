@@ -21,6 +21,11 @@ trovoChannelId: string,
  */
 stripchatUsername: string, 
 /**
+ * Kick channel name (also used as the broadcaster handle for
+ * chatroom-id lookup at activation time).
+ */
+kickChannel: string, 
+/**
  * YouTube API key (optional if using OAuth)
  */
 youtubeApiKey: string, 
@@ -40,6 +45,10 @@ trovoSendEnabled: boolean,
  * Allow sending to Stripchat chat
  */
 stripchatSendEnabled: boolean, 
+/**
+ * Allow sending to Kick chat (requires OAuth + chat:write scope)
+ */
+kickSendEnabled: boolean, 
 /**
  * Send messages to all enabled platforms
  */

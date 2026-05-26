@@ -132,6 +132,11 @@ impl super::OAuthService {
                 config.get_youtube_client_id(),
                 config.get_youtube_client_secret(),
             ),
+            "kick" => (
+                OAuthProvider::kick(),
+                config.get_kick_client_id(),
+                config.get_kick_client_secret(),
+            ),
             _ => return Err(unknown_provider(provider_name)),
         };
 
@@ -144,6 +149,8 @@ impl super::OAuthService {
             // Twitch requires client secret for auth-code token exchange.
             // Fall back to implicit flow when no secret is configured.
             "twitch" => (client_secret.is_none(), false),
+            // Kick mandates auth code + PKCE (OAuth 2.1 — no implicit flow).
+            "kick" => (false, true),
             // YouTube uses auth code + PKCE.
             _ => (false, true),
         };
@@ -253,6 +260,11 @@ impl super::OAuthService {
                 config.get_youtube_client_id(),
                 config.get_youtube_client_secret(),
             ),
+            "kick" => (
+                OAuthProvider::kick(),
+                config.get_kick_client_id(),
+                config.get_kick_client_secret(),
+            ),
             _ => return Err(unknown_provider(provider_name)),
         };
 
@@ -333,6 +345,15 @@ impl super::OAuthService {
                     user_id: channel.id.clone(),
                     username: channel.id,
                     display_name: channel.title,
+                }
+            }
+            "kick" => {
+                let user = self.fetch_kick_user(&tokens.access_token).await?;
+                OAuthUserInfo {
+                    provider: "kick".to_string(),
+                    user_id: user.user_id.to_string(),
+                    username: user.name.clone(),
+                    display_name: user.name,
                 }
             }
             _ => return Err(unknown_provider(provider_name)),

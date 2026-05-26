@@ -25,4 +25,18 @@ impl OAuthProvider {
             scopes: vec!["https://www.googleapis.com/auth/youtube.force-ssl"],
         }
     }
+
+    /// Kick OAuth 2.1 + PKCE (mandatory for Kick; no implicit flow).
+    /// Endpoints from id.kick.com/.well-known/openid-configuration —
+    /// Kick uses its own identity host separate from api.kick.com.
+    /// `chat:write` is needed for outbound chat messages; `user:read`
+    /// is needed to resolve the broadcaster user id.
+    pub fn kick() -> Self {
+        Self {
+            name: "kick",
+            auth_url: "https://id.kick.com/oauth/authorize",
+            token_url: "https://id.kick.com/oauth/token",
+            scopes: vec!["user:read", "chat:write"],
+        }
+    }
 }

@@ -4,4 +4,4 @@ import type { OAuthAccount } from "./OAuthAccount";
 /**
  * OAuth configuration per profile
  */
-export type OAuthSettings = { twitch: OAuthAccount, youtube: OAuthAccount, };
+export type OAuthSettings = { twitch: OAuthAccount, youtube: OAuthAccount, kick: OAuthAccount, };

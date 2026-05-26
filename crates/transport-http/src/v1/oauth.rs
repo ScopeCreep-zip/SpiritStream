@@ -30,6 +30,7 @@ use crate::AppState;
 pub struct OAuthConfiguredFlagsResponse {
     pub twitch_configured: bool,
     pub youtube_configured: bool,
+    pub kick_configured: bool,
 }
 
 /// `{"configured": bool}` — single-provider variant of the flags response.
@@ -57,6 +58,10 @@ pub struct OAuthConfigRequest {
     pub youtube_client_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub youtube_client_secret: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kick_client_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kick_client_secret: Option<String>,
 }
 
 impl From<OAuthConfigRequest> for OAuthConfig {
@@ -66,6 +71,8 @@ impl From<OAuthConfigRequest> for OAuthConfig {
             twitch_client_secret: r.twitch_client_secret,
             youtube_client_id: r.youtube_client_id,
             youtube_client_secret: r.youtube_client_secret,
+            kick_client_id: r.kick_client_id,
+            kick_client_secret: r.kick_client_secret,
         }
     }
 }
@@ -156,6 +163,7 @@ pub async fn v1_oauth_get_config_proxy(
     Ok(Json(OAuthConfiguredFlagsResponse {
         twitch_configured: true,
         youtube_configured: true,
+        kick_configured: true,
     }))
 }
 

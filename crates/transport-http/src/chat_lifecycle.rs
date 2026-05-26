@@ -207,6 +207,16 @@ pub(crate) async fn update_profile_oauth_account(
             profile_settings.oauth.youtube.username = user_info.username.clone();
             profile_settings.oauth.youtube.display_name = user_info.display_name.clone();
         }
+        "kick" => {
+            profile_settings.oauth.kick.access_token = access_token;
+            if let Some(rt) = refresh_token {
+                profile_settings.oauth.kick.refresh_token = rt;
+            }
+            profile_settings.oauth.kick.expires_at = expires_at;
+            profile_settings.oauth.kick.user_id = user_info.user_id.clone();
+            profile_settings.oauth.kick.username = user_info.username.clone();
+            profile_settings.oauth.kick.display_name = user_info.display_name.clone();
+        }
         _ => {
             return Err(spiritstream_core::CoreError::NotImplemented {
                 feature: format!("Unknown provider: {provider}"),
@@ -232,6 +242,9 @@ pub(crate) async fn clear_profile_oauth_account(
         "youtube" => {
             profile_settings.oauth.youtube = Default::default();
         }
+        "kick" => {
+            profile_settings.oauth.kick = Default::default();
+        }
         _ => {
             return Err(spiritstream_core::CoreError::NotImplemented {
                 feature: format!("Unknown provider: {provider}"),
@@ -249,6 +262,7 @@ pub(crate) async fn auto_connect_chat_platforms(state: AppState) {
     if chat_settings.twitch_channel.trim().is_empty()
         && chat_settings.youtube_channel_id.trim().is_empty()
         && chat_settings.trovo_channel_id.trim().is_empty()
+        && chat_settings.kick_channel.trim().is_empty()
     {
         return;
     }
@@ -342,6 +356,56 @@ pub(crate) async fn auto_connect_chat_platforms(state: AppState) {
             connect_trovo_chat(&state.chat_manager, &chat_settings, &state.event_bus).await;
         } else {
             log::debug!("Trovo chat already connected, skipping auto-connect");
+        }
+    }
+
+    // Kick: Pusher-protocol websocket. Anonymous read; OAuth bearer needed for send.
+    if !chat_settings.kick_channel.is_empty() {
+        let already_connected = state
+            .chat_manager
+            .get_platform_status(ChatPlatform::Kick)
+            .await
+            .map(|s| s.status == spiritstream_core::models::ChatConnectionStatus::Connected)
+            .unwrap_or(false);
+
+        if !already_connected {
+            // Refresh the Kick OAuth token if it's about to expire; do this
+            // before capturing the bearer for the connector so a stale token
+            // doesn't get baked in for the session.
+            if !profile_settings.oauth.kick.access_token.is_empty() {
+                if let Ok(fresh) = ensure_fresh_oauth_token(
+                    "kick",
+                    &profile_settings.oauth.kick.access_token,
+                    &profile_settings.oauth.kick.refresh_token,
+                    profile_settings.oauth.kick.expires_at,
+                    &state.oauth_service,
+                )
+                .await
+                {
+                    if fresh.refreshed {
+                        profile_settings.oauth.kick.access_token = fresh.access_token.clone();
+                        if let Some(rt) = fresh.refresh_token {
+                            profile_settings.oauth.kick.refresh_token = rt;
+                        }
+                        profile_settings.oauth.kick.expires_at = fresh.expires_at;
+                        if let Err(err) =
+                            persist_active_profile_settings(&state, profile_settings.clone())
+                                .await
+                        {
+                            log::warn!("Failed to persist Kick OAuth refresh: {err}");
+                        }
+                    }
+                }
+            }
+            connect_kick_chat(
+                &state.chat_manager,
+                &chat_settings,
+                &profile_settings,
+                &state.event_bus,
+            )
+            .await;
+        } else {
+            log::debug!("Kick chat already connected, skipping auto-connect");
         }
     }
 
@@ -446,6 +510,60 @@ pub(crate) async fn connect_trovo_chat(
                 event_bus.emit(
                     "chat_auto_connect_failed",
                     json!({ "platform": "trovo", "kind": e.kind(), "error": e.to_string() }),
+                );
+            }
+        }
+    }
+}
+
+/// Auto-connect Kick chat. Anonymous Pusher subscription works
+/// without auth; if `chat_settings.kick_send_enabled` is on and the
+/// profile has a Kick OAuth account, the send-path credentials get
+/// captured at `connect()` time so outbound chat works without a
+/// reconnect dance. `oauth.kick.user_id` doubles as the
+/// `broadcaster_user_id` Kick's REST POST expects (Kick's "me" user
+/// IS the broadcaster from the sender's perspective).
+pub(crate) async fn connect_kick_chat(
+    chat_manager: &Arc<ChatManager>,
+    chat_settings: &ChatSettings,
+    profile_settings: &ProfileSettings,
+    event_bus: &EventBus,
+) {
+    let (oauth_token, broadcaster_user_id) = if chat_settings.kick_send_enabled
+        && !profile_settings.oauth.kick.access_token.is_empty()
+        && !profile_settings.oauth.kick.user_id.is_empty()
+    {
+        let broadcaster = profile_settings.oauth.kick.user_id.parse::<u64>().ok();
+        (
+            Some(profile_settings.oauth.kick.access_token.clone()),
+            broadcaster,
+        )
+    } else {
+        (None, None)
+    };
+
+    let config = ChatConfig {
+        platform: ChatPlatform::Kick,
+        enabled: true,
+        credentials: ChatCredentials::Kick {
+            channel: chat_settings.kick_channel.clone(),
+            oauth_token,
+            broadcaster_user_id,
+        },
+    };
+    match chat_manager.connect(config).await {
+        Ok(()) => {
+            log::info!("Auto-connected to Kick chat");
+            event_bus.emit("chat_auto_connected", json!({ "platform": "kick" }));
+        }
+        Err(e) => {
+            if e.to_string().to_lowercase().contains("already connected") {
+                log::debug!("Kick chat already connected");
+            } else {
+                log::warn!("Failed to auto-connect Kick chat: {e}");
+                event_bus.emit(
+                    "chat_auto_connect_failed",
+                    json!({ "platform": "kick", "kind": e.kind(), "error": e.to_string() }),
                 );
             }
         }

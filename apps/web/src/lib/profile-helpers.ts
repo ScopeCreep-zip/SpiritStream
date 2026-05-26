@@ -119,11 +119,13 @@ export const createDefaultChatSettings = (): ChatSettings => ({
   youtubeChannelId: '',
   trovoChannelId: '',
   stripchatUsername: '',
+  kickChannel: '',
   youtubeApiKey: '',
   twitchSendEnabled: false,
   youtubeSendEnabled: false,
   trovoSendEnabled: false,
   stripchatSendEnabled: false,
+  kickSendEnabled: false,
   sendAllEnabled: true,
   crosspostEnabled: false,
   youtubeUseApiKey: false,
@@ -143,6 +145,7 @@ export const createDefaultOAuthAccount = (): OAuthAccount => ({
 export const createDefaultOAuthSettings = (): OAuthSettings => ({
   twitch: createDefaultOAuthAccount(),
   youtube: createDefaultOAuthAccount(),
+  kick: createDefaultOAuthAccount(),
 });
 
 export const createDefaultProfileSettings = (): ProfileSettings => ({

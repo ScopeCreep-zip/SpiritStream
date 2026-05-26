@@ -40,9 +40,21 @@ channelId: string, } | { "type": "stripchat",
  */
 username: string, } | { "type": "kick", 
 /**
- * Kick channel name
+ * Kick channel name (case-insensitive — Kick normalises internally).
  */
-channel: string, } | { "type": "facebook", 
+channel: string, 
+/**
+ * OAuth bearer for the user account doing the chatting. `None`
+ * means read-only (anonymous Pusher subscription works without
+ * auth); `Some(token)` enables send via `api.kick.com/public/v1/chat`.
+ */
+oauthToken: string | null, 
+/**
+ * Kick broadcaster user id (Kick's REST POST /chat expects the
+ * numeric broadcaster id, NOT the username). The chat lifecycle
+ * fetches this once when activating the profile.
+ */
+broadcasterUserId: bigint | null, } | { "type": "facebook", 
 /**
  * Facebook Live video ID
  */

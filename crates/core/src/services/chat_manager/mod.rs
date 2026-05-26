@@ -32,8 +32,8 @@ use crate::models::{
     ChatConnectionStatus, ChatMessage, ChatPlatform, ChatPlatformStatus, ChatSettings,
 };
 use crate::services::chat::{
-    BoxedPlatform, StripchatConnector, TikTokConnector, TrovoConnector, TwitchConnector,
-    YouTubeConnector,
+    BoxedPlatform, KickConnector, StripchatConnector, TikTokConnector, TrovoConnector,
+    TwitchConnector, YouTubeConnector,
 };
 use crate::services::{AuditLogService, EventSink};
 
@@ -168,7 +168,8 @@ impl ChatManager {
             ChatPlatform::YouTube => Box::new(YouTubeConnector::new()),
             ChatPlatform::Trovo => Box::new(TrovoConnector::new()),
             ChatPlatform::Stripchat => Box::new(StripchatConnector::new()),
-            ChatPlatform::Kick | ChatPlatform::Facebook => return None,
+            ChatPlatform::Kick => Box::new(KickConnector::new()),
+            ChatPlatform::Facebook => return None,
         };
         debug_assert_eq!(
             boxed.platform_name(),
