@@ -39,8 +39,12 @@ export interface ClientConfigResponse {
 
 export const system = {
   getEncoders: () => fetchTypedJson<Encoders>('GET', '/api/v1/system/encoders'),
-  testFfmpeg: () => fetchTypedJson<string>('GET', '/api/v1/system/ffmpeg/test'),
-  getFfmpegPath: () => fetchTypedJson<string | null>('GET', '/api/v1/system/ffmpeg/path'),
+  testFfmpeg: () =>
+    fetchTypedJson<{ version: string }>('GET', '/api/v1/system/ffmpeg/test').then((r) => r.version),
+  getFfmpegPath: () =>
+    fetchTypedJson<{ path: string | null }>('GET', '/api/v1/system/ffmpeg/path').then(
+      (r) => r.path,
+    ),
   checkFfmpegUpdate: (installedVersion?: string) =>
     fetchTypedJson<FFmpegVersionInfo>(
       'GET',
@@ -48,23 +52,30 @@ export const system = {
       installedVersion ? { installedVersion } : undefined,
     ),
   validateFfmpegPath: (path: string) =>
-    fetchTypedJson<string>('POST', '/api/v1/system/ffmpeg/validate-path', undefined, { path }),
+    fetchTypedJson<{ validated: string }>(
+      'POST',
+      '/api/v1/system/ffmpeg/validate-path',
+      undefined,
+      { path },
+    ).then((r) => r.validated),
   testRtmpTarget: (url: string, streamKey: string) =>
     fetchTypedJson<RtmpTestResult>('POST', '/api/v1/system/rtmp/test', undefined, {
       url,
       streamKey,
     }),
   getRecentLogs: (maxLines?: number) =>
-    fetchTypedJson<string[]>(
+    fetchTypedJson<{ lines: string[] }>(
       'GET',
       '/api/v1/system/logs',
       maxLines ? { maxLines: String(maxLines) } : undefined,
-    ),
+    ).then((r) => r.lines),
   exportLogs: async (path: string, content: string) => {
-    await fetchTypedJson<unknown>('POST', '/api/v1/system/logs/export', undefined, {
-      path,
-      content,
-    });
+    await fetchTypedJson<Record<string, never>>(
+      'POST',
+      '/api/v1/system/logs/export',
+      undefined,
+      { path, content },
+    );
   },
   /** Encoder preset matrix replacing `OutputGroupModal.tsx`'s hardcoded lists. */
   encoderPresets: () =>
@@ -73,7 +84,7 @@ export const system = {
   clientConfig: () => fetchTypedJson<ClientConfigResponse>('GET', '/api/v1/system/client-config'),
   appVersion: () => fetchTypedJson<{ version: string }>('GET', '/api/v1/system/app-version'),
   recordAppUpdateFailure: async (detail: string) => {
-    await fetchTypedJson<unknown>(
+    await fetchTypedJson<{ recorded: boolean }>(
       'POST',
       '/api/v1/system/audit/app-update-failure',
       undefined,

@@ -4,6 +4,8 @@
 //! FFmpeg discovery / test / update / validate, RTMP test, logs
 //! query + export, and the machine-key rotation surface.
 
+use std::collections::HashMap;
+
 use axum::{
     extract::{Query as AxumQuery, State},
     Json,
@@ -11,9 +13,171 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use spiritstream_core::services::EventSink;
+use spiritstream_core::models::{EncoderKind, EncoderMeta, Encoders};
+use spiritstream_core::services::{EventSink, FFmpegVersionInfo, RotationReport};
 
 use crate::AppState;
+
+// ---------------------------------------------------------------------------
+// Wire-mirror types for utoipa.
+// ---------------------------------------------------------------------------
+
+/// `{"recorded": true}` ack body for `system/audit/app-update-failure`.
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct AuditRecordedResponse {
+    pub recorded: bool,
+}
+
+/// Empty 200 ack body — used by handlers whose success payload is just
+/// acknowledgement (logs export). Serialises as `{}`.
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct SystemAckResponse {}
+
+/// Wraps `Vec<String>` log-line responses so OpenAPI gets a named schema.
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct LogsResponse {
+    pub lines: Vec<String>,
+}
+
+/// `{"version": "ffmpeg 7.x.x..."}` from `/system/ffmpeg/test`.
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct FFmpegVersionResponse {
+    pub version: String,
+}
+
+/// `{"path": "/usr/bin/ffmpeg"}` (or null) from `/system/ffmpeg/path`.
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct FFmpegPathResponse {
+    pub path: Option<String>,
+}
+
+/// `{"validated": "<resolved-path>"}` from `/system/ffmpeg/validate-path`.
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct FFmpegValidatePathResponse {
+    pub validated: String,
+}
+
+/// Mirror of [`EncoderKind`] with `ToSchema`.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum EncoderKindWire {
+    Software,
+    Hardware,
+    Passthrough,
+}
+
+impl From<EncoderKind> for EncoderKindWire {
+    fn from(value: EncoderKind) -> Self {
+        match value {
+            EncoderKind::Software => Self::Software,
+            EncoderKind::Hardware => Self::Hardware,
+            EncoderKind::Passthrough => Self::Passthrough,
+        }
+    }
+}
+
+/// Mirror of [`EncoderMeta`] with `ToSchema`.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct EncoderMetaWire {
+    pub kind: EncoderKindWire,
+    pub family: String,
+}
+
+impl From<EncoderMeta> for EncoderMetaWire {
+    fn from(value: EncoderMeta) -> Self {
+        Self {
+            kind: value.kind.into(),
+            family: value.family,
+        }
+    }
+}
+
+/// Mirror of [`Encoders`] with `ToSchema`.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct EncodersWire {
+    pub video: Vec<String>,
+    pub audio: Vec<String>,
+    pub metadata: HashMap<String, EncoderMetaWire>,
+}
+
+impl From<Encoders> for EncodersWire {
+    fn from(value: Encoders) -> Self {
+        Self {
+            video: value.video,
+            audio: value.audio,
+            metadata: value
+                .metadata
+                .into_iter()
+                .map(|(k, v)| (k, v.into()))
+                .collect(),
+        }
+    }
+}
+
+/// Mirror of [`FFmpegVersionInfo`] with `ToSchema`.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct FFmpegVersionInfoWire {
+    pub installed_version: Option<String>,
+    pub latest_version: Option<String>,
+    pub update_available: bool,
+    pub status: String,
+}
+
+impl From<FFmpegVersionInfo> for FFmpegVersionInfoWire {
+    fn from(value: FFmpegVersionInfo) -> Self {
+        Self {
+            installed_version: value.installed_version,
+            latest_version: value.latest_version,
+            update_available: value.update_available,
+            status: value.status,
+        }
+    }
+}
+
+/// Mirror of [`spiritstream_core::commands::RtmpTestResult`] with `ToSchema`.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RtmpTestResultWire {
+    pub success: bool,
+    pub message: String,
+    pub latency_ms: Option<u64>,
+}
+
+impl From<spiritstream_core::commands::RtmpTestResult> for RtmpTestResultWire {
+    fn from(value: spiritstream_core::commands::RtmpTestResult) -> Self {
+        Self {
+            success: value.success,
+            message: value.message,
+            latency_ms: value.latency_ms,
+        }
+    }
+}
+
+/// Mirror of [`RotationReport`] with `ToSchema`. Carries the post-rotation
+/// summary the UI surfaces to the user; the chrono `DateTime<Utc>` becomes
+/// an ISO-8601 string per serde-default.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RotationReportWire {
+    pub profiles_updated: usize,
+    pub keys_reencrypted: usize,
+    pub total_profiles: usize,
+    pub timestamp: String,
+}
+
+impl From<RotationReport> for RotationReportWire {
+    fn from(value: RotationReport) -> Self {
+        Self {
+            profiles_updated: value.profiles_updated,
+            keys_reencrypted: value.keys_reencrypted,
+            total_profiles: value.total_profiles,
+            timestamp: value.timestamp.to_rfc3339(),
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // System metadata replacing hardcoded frontend constants.
@@ -246,18 +410,18 @@ pub struct AppUpdateFailureRequest {
     path = "/system/audit/app-update-failure",
     tag = "system",
     request_body = AppUpdateFailureRequest,
-    responses((status = 200, description = "Failure recorded in audit chain.")),
+    responses((status = 200, description = "Failure recorded in audit chain.", body = AuditRecordedResponse)),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_system_audit_app_update_failure(
     State(state): State<AppState>,
     axum::Json(req): axum::Json<AppUpdateFailureRequest>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<AuditRecordedResponse>, crate::ApiError> {
     state
         .audit
         .record(spiritstream_core::services::AuditAction::AppUpdateSignatureFailed {
             detail: req.detail,
         })?;
-    Ok(Json(serde_json::json!({ "recorded": true })))
+    Ok(Json(AuditRecordedResponse { recorded: true }))
 }
 
 /// `GET /system/client-config` — replaces hardcoded `apps/web/src/lib/constants.ts`.
@@ -371,37 +535,37 @@ mod tests {
 /// `/system/ffmpeg/test` to check whether FFmpeg itself is installed.
 #[utoipa::path(get, path = "/system/encoders", tag = "system",
     responses(
-        (status = 200, description = "Detected encoders (empty when FFmpeg missing).", body = serde_json::Value),
+        (status = 200, description = "Detected encoders (empty when FFmpeg missing).", body = EncodersWire),
     ),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_system_encoders_proxy(
     State(_state): State<AppState>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<EncodersWire>, crate::ApiError> {
     let encoders = spiritstream_core::commands::get_encoders()?;
-    Ok(Json(serde_json::json!(encoders)))
+    Ok(Json(encoders.into()))
 }
 
 #[utoipa::path(get, path = "/system/ffmpeg/test", tag = "system",
-    responses((status = 200, description = "FFmpeg version string.", body = serde_json::Value)),
+    responses((status = 200, description = "FFmpeg version string.", body = FFmpegVersionResponse)),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_system_ffmpeg_test_proxy(
     State(_state): State<AppState>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<FFmpegVersionResponse>, crate::ApiError> {
     let version = spiritstream_core::commands::test_ffmpeg()?;
-    Ok(Json(serde_json::json!(version)))
+    Ok(Json(FFmpegVersionResponse { version }))
 }
 
 #[utoipa::path(get, path = "/system/ffmpeg/path", tag = "system",
-    responses((status = 200, description = "Resolved FFmpeg path or null.", body = serde_json::Value)),
+    responses((status = 200, description = "Resolved FFmpeg path or null.", body = FFmpegPathResponse)),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_system_ffmpeg_path_proxy(
     State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<FFmpegPathResponse>, crate::ApiError> {
     use spiritstream_core::services::FFmpegLocator;
     let path = FFmpegLocator::discover(Some(&state.settings_manager));
-    Ok(Json(serde_json::json!(
-        path.map(|p| p.to_string_lossy().to_string())
-    )))
+    Ok(Json(FFmpegPathResponse {
+        path: path.map(|p| p.to_string_lossy().to_string()),
+    }))
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -413,12 +577,12 @@ pub struct FFmpegUpdateQuery {
 
 #[utoipa::path(get, path = "/system/ffmpeg/update", tag = "system",
     params(("installedVersion" = Option<String>, Query, description = "Currently installed FFmpeg version")),
-    responses((status = 200, body = serde_json::Value)),
+    responses((status = 200, body = FFmpegVersionInfoWire)),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_system_ffmpeg_update_proxy(
     State(state): State<AppState>,
     AxumQuery(q): AxumQuery<FFmpegUpdateQuery>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<FFmpegVersionInfoWire>, crate::ApiError> {
     // Auto-detect the installed version by running `-version` on the
     // discovered binary when the client doesn't pass it explicitly —
     // frontend never has to learn the bundled-sidecar path itself.
@@ -433,7 +597,7 @@ pub async fn v1_system_ffmpeg_update_proxy(
         }
     };
     let info = state.ffmpeg_locator.check_version_status(installed).await;
-    Ok(Json(serde_json::json!(info)))
+    Ok(Json(info.into()))
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -444,14 +608,14 @@ pub struct FFmpegValidatePathRequest {
 
 #[utoipa::path(post, path = "/system/ffmpeg/validate-path", tag = "system",
     request_body = FFmpegValidatePathRequest,
-    responses((status = 200, body = serde_json::Value)),
+    responses((status = 200, body = FFmpegValidatePathResponse)),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_system_ffmpeg_validate_proxy(
     State(_state): State<AppState>,
     axum::Json(req): axum::Json<FFmpegValidatePathRequest>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<FFmpegValidatePathResponse>, crate::ApiError> {
     let validated = spiritstream_core::commands::validate_ffmpeg_path(req.path)?;
-    Ok(Json(serde_json::json!(validated)))
+    Ok(Json(FFmpegValidatePathResponse { validated }))
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -463,14 +627,14 @@ pub struct RtmpTestRequest {
 
 #[utoipa::path(post, path = "/system/rtmp/test", tag = "system",
     request_body = RtmpTestRequest,
-    responses((status = 200, body = serde_json::Value)),
+    responses((status = 200, body = RtmpTestResultWire)),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_system_rtmp_test_proxy(
     State(_state): State<AppState>,
     axum::Json(req): axum::Json<RtmpTestRequest>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<RtmpTestResultWire>, crate::ApiError> {
     let result = spiritstream_core::commands::test_rtmp_target(req.url, req.stream_key)?;
-    Ok(Json(serde_json::json!(result)))
+    Ok(Json(result.into()))
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -483,17 +647,17 @@ pub struct LogsQuery {
 #[utoipa::path(get, path = "/system/logs", tag = "system",
     params(("maxLines" = Option<usize>, Query, description = "Maximum log lines to return")),
     responses(
-        (status = 200, body = serde_json::Value, description = "Recent log lines."),
+        (status = 200, body = LogsResponse, description = "Recent log lines."),
         (status = 500, body = ApiErrorBody, description = "Internal error reading log file."),
     ),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_system_logs_proxy(
     State(state): State<AppState>,
     AxumQuery(q): AxumQuery<LogsQuery>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<LogsResponse>, crate::ApiError> {
     let lines =
         spiritstream_core::services::read_recent_logs(&state.log_dir, q.max_lines.unwrap_or(500))?;
-    Ok(Json(serde_json::json!(lines)))
+    Ok(Json(LogsResponse { lines }))
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -505,12 +669,15 @@ pub struct LogsExportRequest {
 
 #[utoipa::path(post, path = "/system/logs/export", tag = "system",
     request_body = LogsExportRequest,
-    responses((status = 200), (status = 403, body = ApiErrorBody)),
+    responses(
+        (status = 200, body = SystemAckResponse, description = "Log file exported."),
+        (status = 403, body = ApiErrorBody),
+    ),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_system_logs_export_proxy(
     State(state): State<AppState>,
     axum::Json(req): axum::Json<LogsExportRequest>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<SystemAckResponse>, crate::ApiError> {
     let export_path = std::path::PathBuf::from(&req.path);
     let mut allowed_dirs: Vec<&std::path::Path> = vec![state.app_data_dir.as_path()];
     if let Some(ref home) = state.home_dir {
@@ -522,7 +689,7 @@ pub async fn v1_system_logs_export_proxy(
             context: format!("Failed to write log file: {e}"),
         }
     })?;
-    Ok(Json(serde_json::Value::Null))
+    Ok(Json(SystemAckResponse {}))
 }
 
 #[derive(Serialize, Deserialize, ToSchema, Default)]
@@ -539,7 +706,7 @@ pub struct RotateMachineKeyRequest {
 #[utoipa::path(post, path = "/security/machine-key/rotate", tag = "security",
     request_body = RotateMachineKeyRequest,
     responses(
-        (status = 200, body = serde_json::Value, description = "Rotation report."),
+        (status = 200, body = RotationReportWire, description = "Rotation report."),
         (status = 400, body = ApiErrorBody, description = "Missing or wrong password for an encrypted profile."),
         (status = 500, body = ApiErrorBody, description = "Rotation aborted; backup restored."),
     ),
@@ -548,7 +715,7 @@ pub async fn v1_security_rotate_machine_key_proxy(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
     body: Option<Json<RotateMachineKeyRequest>>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<RotationReportWire>, crate::ApiError> {
     crate::require_confirm_token(&state, &headers, "rotate_machine_key")?;
     let req = body.map(|Json(r)| r).unwrap_or_default();
     let profiles_dir = state.app_data_dir.join("profiles");
@@ -567,5 +734,5 @@ pub async fn v1_security_rotate_machine_key_proxy(
     state
         .event_bus
         .emit("active_profile_invalidated", serde_json::json!({}));
-    Ok(Json(serde_json::json!(report)))
+    Ok(Json(report.into()))
 }
