@@ -51,6 +51,9 @@ base64 = "0.22"
 zeroize = { version = "1.7", features = ["derive"] }
 sha2 = "0.10"
 hex = "0.4"
+# Chat message flags (Phase B). bitflags 2.x with manual serde so the
+# wire format stays a plain integer for ts-rs/JS consumption.
+bitflags = "2.6"
 
 # Utilities
 uuid = { version = "1.0", features = ["v4", "serde"] }
@@ -75,6 +78,10 @@ reqwest = { version = "0.11", features = ["stream", "json", "multipart"] }
 tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
 obws = { version = "0.14", features = ["events"] }
 twitch-irc = "5.0"
+# TikTok Live chat reader. TikTok rotates the protobuf protocol — when
+# they do, bump this dep + verify the connector still emits messages.
+# TikTok publishes no official Rust SDK; this is the community impl.
+piratetok-live-rs = "0.2"
 
 # Archive formats (FFmpeg downloader). `zip` is Windows + macOS; `tar`
 # + `xz2` is Linux. Each is gated at the use site so a wrong-platform

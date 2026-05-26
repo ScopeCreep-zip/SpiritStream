@@ -222,6 +222,11 @@ pub struct ChatSettings {
     #[serde(default)]
     pub kick_channel: String,
 
+    /// TikTok username (without the leading `@`). Read-only —
+    /// TikTok rejects third-party chat send.
+    #[serde(default)]
+    pub tiktok_username: String,
+
     /// YouTube API key (optional if using OAuth)
     #[serde(default)]
     pub youtube_api_key: String,
@@ -275,6 +280,7 @@ impl Default for ChatSettings {
             trovo_channel_id: String::new(),
             stripchat_username: String::new(),
             kick_channel: String::new(),
+            tiktok_username: String::new(),
             youtube_api_key: String::new(),
             twitch_send_enabled: false,
             youtube_send_enabled: false,

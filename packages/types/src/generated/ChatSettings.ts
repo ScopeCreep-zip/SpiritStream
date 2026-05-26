@@ -26,6 +26,11 @@ stripchatUsername: string,
  */
 kickChannel: string, 
 /**
+ * TikTok username (without the leading `@`). Read-only —
+ * TikTok rejects third-party chat send.
+ */
+tiktokUsername: string, 
+/**
  * YouTube API key (optional if using OAuth)
  */
 youtubeApiKey: string, 

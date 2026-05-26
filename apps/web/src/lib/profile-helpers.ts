@@ -120,6 +120,7 @@ export const createDefaultChatSettings = (): ChatSettings => ({
   trovoChannelId: '',
   stripchatUsername: '',
   kickChannel: '',
+  tiktokUsername: '',
   youtubeApiKey: '',
   twitchSendEnabled: false,
   youtubeSendEnabled: false,

@@ -263,6 +263,7 @@ pub(crate) async fn auto_connect_chat_platforms(state: AppState) {
         && chat_settings.youtube_channel_id.trim().is_empty()
         && chat_settings.trovo_channel_id.trim().is_empty()
         && chat_settings.kick_channel.trim().is_empty()
+        && chat_settings.tiktok_username.trim().is_empty()
     {
         return;
     }
@@ -409,6 +410,23 @@ pub(crate) async fn auto_connect_chat_platforms(state: AppState) {
         }
     }
 
+    // TikTok: read-only via reverse-engineered protobuf-over-WebSocket.
+    // No auth required — connect by username, host must be live.
+    if !chat_settings.tiktok_username.is_empty() {
+        let already_connected = state
+            .chat_manager
+            .get_platform_status(ChatPlatform::TikTok)
+            .await
+            .map(|s| s.status == spiritstream_core::models::ChatConnectionStatus::Connected)
+            .unwrap_or(false);
+
+        if !already_connected {
+            connect_tiktok_chat(&state.chat_manager, &chat_settings, &state.event_bus).await;
+        } else {
+            log::debug!("TikTok chat already connected, skipping auto-connect");
+        }
+    }
+
     // YouTube: connect with retry (broadcast won't be live until OBS starts streaming)
     if !chat_settings.youtube_channel_id.is_empty() {
         let has_oauth = !chat_settings.youtube_use_api_key
@@ -510,6 +528,42 @@ pub(crate) async fn connect_trovo_chat(
                 event_bus.emit(
                     "chat_auto_connect_failed",
                     json!({ "platform": "trovo", "kind": e.kind(), "error": e.to_string() }),
+                );
+            }
+        }
+    }
+}
+
+/// Auto-connect TikTok chat — read-only protobuf-over-WebSocket.
+/// `session_token: None` because the public stream requires no auth;
+/// the connector resolves the room id internally via the upstream
+/// `piratetok-live-rs` crate.
+pub(crate) async fn connect_tiktok_chat(
+    chat_manager: &Arc<ChatManager>,
+    chat_settings: &ChatSettings,
+    event_bus: &EventBus,
+) {
+    let config = ChatConfig {
+        platform: ChatPlatform::TikTok,
+        enabled: true,
+        credentials: ChatCredentials::TikTok {
+            username: chat_settings.tiktok_username.clone(),
+            session_token: None,
+        },
+    };
+    match chat_manager.connect(config).await {
+        Ok(()) => {
+            log::info!("Auto-connected to TikTok chat");
+            event_bus.emit("chat_auto_connected", json!({ "platform": "tiktok" }));
+        }
+        Err(e) => {
+            if e.to_string().to_lowercase().contains("already connected") {
+                log::debug!("TikTok chat already connected");
+            } else {
+                log::warn!("Failed to auto-connect TikTok chat: {e}");
+                event_bus.emit(
+                    "chat_auto_connect_failed",
+                    json!({ "platform": "tiktok", "kind": e.kind(), "error": e.to_string() }),
                 );
             }
         }
