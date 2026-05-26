@@ -12,19 +12,20 @@ export const obs = {
     direction: ObsIntegrationDirection;
     autoConnect: boolean;
   }) => {
-    await fetchTypedJson<unknown>('PUT', '/api/v1/obs/config', undefined, config);
+    await fetchTypedJson<Record<string, never>>('PUT', '/api/v1/obs/config', undefined, config);
   },
   connect: async () => {
-    await fetchTypedJson<unknown>('POST', '/api/v1/obs/connection');
+    await fetchTypedJson<Record<string, never>>('POST', '/api/v1/obs/connection');
   },
   disconnect: async () => {
-    await fetchTypedJson<unknown>('DELETE', '/api/v1/obs/connection');
+    await fetchTypedJson<Record<string, never>>('DELETE', '/api/v1/obs/connection');
   },
   startStream: async () => {
-    await fetchTypedJson<unknown>('POST', '/api/v1/obs/stream');
+    await fetchTypedJson<Record<string, never>>('POST', '/api/v1/obs/stream');
   },
   stopStream: async () => {
-    await fetchTypedJson<unknown>('DELETE', '/api/v1/obs/stream');
+    await fetchTypedJson<Record<string, never>>('DELETE', '/api/v1/obs/stream');
   },
-  isConnected: () => fetchTypedJson<boolean>('GET', '/api/v1/obs/connection'),
+  isConnected: () =>
+    fetchTypedJson<{ connected: boolean }>('GET', '/api/v1/obs/connection').then((r) => r.connected),
 };
