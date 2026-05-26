@@ -352,15 +352,22 @@ pub async fn v1_streams_toggle_target(
 // --------------------------------------------------------------------------
 // Stream extras.
 
+/// `{"disabled": bool}` — single-flag probe used by the UI to render the
+/// per-target enable/disable toggle.
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+pub struct StreamTargetDisabledResponse {
+    pub disabled: bool,
+}
+
 #[utoipa::path(get, path = "/streams/targets/{target_id}/disabled", tag = "streams",
     params(("target_id" = String, Path, description = "Stream target ID")),
-    responses((status = 200, body = serde_json::Value)),
+    responses((status = 200, body = StreamTargetDisabledResponse)),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_stream_target_disabled_proxy(
     State(state): State<AppState>,
     axum::extract::Path(target_id): axum::extract::Path<String>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
-    Ok(Json(serde_json::json!(state
-        .ffmpeg_handler
-        .is_target_disabled(&target_id))))
+) -> Result<Json<StreamTargetDisabledResponse>, crate::ApiError> {
+    Ok(Json(StreamTargetDisabledResponse {
+        disabled: state.ffmpeg_handler.is_target_disabled(&target_id),
+    }))
 }

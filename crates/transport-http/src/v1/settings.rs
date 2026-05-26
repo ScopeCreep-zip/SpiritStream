@@ -56,7 +56,13 @@ pub struct SettingsClearDataResponse {
     path = "/settings",
     tag = "settings",
     responses(
-        (status = 200, description = "Resolved settings.", body = serde_json::Value),
+        // Body is the full `Settings` shape — typed by ts-rs at
+        // `@spiritstream/types/Settings`. utoipa documents the runtime as
+        // a free-form object because the Settings tree is too deep to
+        // mirror by hand and adding `ToSchema` to core would leak utoipa
+        // across the transport boundary. Wire shape is camelCase per
+        // `#[serde(rename_all = "camelCase")]` on `Settings`.
+        (status = 200, description = "Resolved settings (see @spiritstream/types/Settings).", body = serde_json::Value),
         (status = 500, description = "Internal error.", body = ApiErrorBody),
     ),
     security(("session_cookie" = []), ("bearer" = [])),

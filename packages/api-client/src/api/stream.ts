@@ -69,10 +69,10 @@ export const stream = {
     return pid;
   },
   isTargetDisabled: (targetId: string) =>
-    fetchTypedJson<boolean>(
+    fetchTypedJson<{ disabled: boolean }>(
       'GET',
       `/api/v1/streams/targets/${encodeURIComponent(targetId)}/disabled`,
-    ),
+    ).then((r) => r.disabled),
   /** Retry a failed stream. Returns PID and next delay if another retry is needed */
   retry: (groupId: string) =>
     fetchTypedJson<{ pid: number; nextDelaySecs: number | null }>(

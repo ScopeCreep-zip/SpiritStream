@@ -14,6 +14,6 @@ export const discord = {
       '/api/v1/discord/webhook/send',
     ),
   resetCooldown: async () => {
-    await fetchTypedJson<unknown>('DELETE', '/api/v1/discord/webhook/cooldown');
+    await fetchTypedJson<Record<string, never>>('DELETE', '/api/v1/discord/webhook/cooldown');
   },
 };
