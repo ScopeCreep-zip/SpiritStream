@@ -3,18 +3,18 @@ import { useTranslation } from 'react-i18next';
 import { Modal, ModalBody, ModalFooter } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
-import {
-  Folder,
-  File,
-  ChevronUp,
-  Home,
-  RefreshCw,
-  FolderOpen,
-  CornerDownLeft,
-} from 'lucide-react';
 import { api } from '@/lib/client';
 import { logger } from '@/lib/logger';
 import type { FileEntry } from '@spiritstream/api-client';
+import {
+  detectPlatform,
+  getFriendlyError,
+  getInitialBrowsePath,
+  joinPath,
+  quickPathsFor,
+} from './file-browser/platform';
+import { DirectoryTree } from './file-browser/DirectoryTree';
+import { PathBar } from './file-browser/PathBar';
 
 export interface FileBrowserModalProps {
   open: boolean;
@@ -25,46 +25,6 @@ export interface FileBrowserModalProps {
   filters?: { name: string; extensions: string[] }[];
   defaultFileName?: string;
   initialPath?: string;
-}
-
-// Map server error messages to user-friendly messages
-type TFunction = (key: string, defaultValue: string) => string;
-type Platform = 'windows' | 'macos' | 'linux' | 'unknown';
-type QuickPath = { label: string; path: string };
-
-function detectPlatform(): Platform {
-  if (typeof navigator === 'undefined') {
-    return 'unknown';
-  }
-
-  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
-  const platformHint =
-    nav.userAgentData?.platform || nav.platform || nav.userAgent || '';
-
-  if (/windows/i.test(platformHint)) return 'windows';
-  if (/mac/i.test(platformHint)) return 'macos';
-  if (/linux/i.test(platformHint)) return 'linux';
-  return 'unknown';
-}
-
-function getFriendlyError(serverError: string, t: TFunction): string {
-  if (serverError.includes('Access to this directory is not allowed')) {
-    return t(
-      'fileBrowser.accessDenied',
-      'This location is outside the allowed browsing area. You can browse your home directory and common system folders.'
-    );
-  }
-  if (serverError.includes('Directory not found')) {
-    return t('fileBrowser.directoryNotFound', 'Directory not found.');
-  }
-  if (serverError.includes('Path is not a directory')) {
-    return t('fileBrowser.notADirectory', 'The selected path is not a directory.');
-  }
-  if (serverError.includes('Failed to read directory')) {
-    return t('fileBrowser.readError', 'Unable to read directory contents. Check permissions.');
-  }
-  // Return original error if no mapping found
-  return serverError;
 }
 
 /**
@@ -83,31 +43,7 @@ export function FileBrowserModal({
 }: FileBrowserModalProps) {
   const { t } = useTranslation();
   const platform = useMemo(() => detectPlatform(), []);
-  const quickPaths = useMemo<QuickPath[]>(() => {
-    if (platform === 'windows') {
-      return [
-        { label: 'Program Files', path: 'C:\\Program Files' },
-        { label: 'Program Files (x86)', path: 'C:\\Program Files (x86)' },
-      ];
-    }
-
-    if (platform === 'macos') {
-      return [
-        { label: '/usr/local/bin', path: '/usr/local/bin' },
-        { label: '/opt/homebrew/bin', path: '/opt/homebrew/bin' },
-      ];
-    }
-
-    if (platform === 'linux') {
-      return [
-        { label: '/usr/bin', path: '/usr/bin' },
-        { label: '/usr/local/bin', path: '/usr/local/bin' },
-        { label: '/opt', path: '/opt' },
-      ];
-    }
-
-    return [];
-  }, [platform]);
+  const quickPaths = useMemo(() => quickPathsFor(platform), [platform]);
   const [currentPath, setCurrentPath] = useState('');
   const [pathInput, setPathInput] = useState('');
   const [isEditingPath, setIsEditingPath] = useState(false);
@@ -118,7 +54,6 @@ export function FileBrowserModal({
   const [selectedEntry, setSelectedEntry] = useState<string | null>(null);
   const [fileName, setFileName] = useState(defaultFileName || '');
 
-  // Get default title based on mode
   const defaultTitleByMode = (() => {
     if (mode === 'directory') return t('fileBrowser.selectDirectory', 'Select Directory');
     if (mode === 'save') return t('fileBrowser.saveFile', 'Save File');
@@ -126,23 +61,15 @@ export function FileBrowserModal({
   })();
   const modalTitle = title || defaultTitleByMode;
 
-  // Filter entries based on mode and filters
   const filteredEntries = entries.filter((entry) => {
-    // Always show directories
     if (entry.type === 'directory') return true;
 
-    // Show files in directory mode too (so users can see directory contents)
-    // They just can't select files - only the current directory is selected
-
-    // Apply extension filters
     if (filters && filters.length > 0) {
-      // Check if any filter allows all files (wildcard)
       const hasWildcard = filters.some((f) =>
-        f.extensions.some((e) => e === '*' || e === '.*')
+        f.extensions.some((e) => e === '*' || e === '.*'),
       );
       if (hasWildcard) return true;
 
-      // Get file extension (empty string if no extension)
       const lastDot = entry.name.lastIndexOf('.');
       const ext = lastDot > 0 ? entry.name.slice(lastDot + 1).toLowerCase() : '';
 
@@ -150,14 +77,13 @@ export function FileBrowserModal({
         f.extensions.some((e) => {
           const filterExt = e.toLowerCase().replace(/^\./, '');
           return filterExt === ext;
-        })
+        }),
       );
     }
 
     return true;
   });
 
-  // Fetch directory contents
   const browse = useCallback(
     async (path: string) => {
       setLoading(true);
@@ -173,64 +99,27 @@ export function FileBrowserModal({
         setParentPath(data.parent ?? null);
       } catch (err) {
         logger.error('[FileBrowser] Browse failed:', err);
-        // Map server errors to user-friendly messages
         const errorMessage = err instanceof Error ? err.message : 'Failed to browse directory';
-        const friendlyError = getFriendlyError(errorMessage, t);
-        setError(friendlyError);
+        setError(getFriendlyError(errorMessage, t));
       } finally {
         setLoading(false);
       }
     },
-    [t]
+    [t],
   );
 
-  const getPathSeparator = (path: string) => (path.includes('\\') ? '\\' : '/');
-
-  const joinPath = (base: string, entry: string) => {
-    const separator = getPathSeparator(base);
-    if (!base || base.endsWith(separator)) {
-      return `${base}${entry}`;
-    }
-    return `${base}${separator}${entry}`;
-  };
-
-  const getInitialBrowsePath = (path: string) => {
-    // End-anchored character-class repetition has linear time complexity
-    // — sonarjs's slow-regex heuristic over-fires on the `+$` shape.
-    // eslint-disable-next-line sonarjs/slow-regex
-    const trimmed = path.replace(/[\\/]+$/, '');
-    const lastSlash = trimmed.lastIndexOf('/');
-    const lastBackslash = trimmed.lastIndexOf('\\');
-    const lastSep = Math.max(lastSlash, lastBackslash);
-    if (lastSep > 0) {
-      return trimmed.substring(0, lastSep);
-    }
-
-    const driveMatch = trimmed.match(/^[A-Za-z]:/);
-    if (driveMatch) {
-      return `${driveMatch[0]}\\`;
-    }
-
-    return '/';
-  };
-
-  // Get initial directory on mount
   useEffect(() => {
     if (open && !currentPath) {
-      // If initialPath is provided, navigate to it
       if (initialPath) {
         if (mode === 'directory') {
-          // For directory mode, browse directly to the specified directory
           browse(initialPath);
         } else {
-          // For file/save mode, browse to the parent directory
           const dirPath = getInitialBrowsePath(initialPath);
           browse(dirPath);
         }
         return;
       }
 
-      // Otherwise fetch home directory
       const fetchHome = async () => {
         try {
           const { path: homePath } = await api.files.home();
@@ -243,7 +132,6 @@ export function FileBrowserModal({
     }
   }, [open, currentPath, browse, initialPath, mode]);
 
-  // Reset state when modal closes
   useEffect(() => {
     if (!open) {
       setCurrentPath('');
@@ -257,14 +145,12 @@ export function FileBrowserModal({
     }
   }, [open, defaultFileName]);
 
-  // Navigate to parent directory
   const goUp = () => {
     if (parentPath) {
       browse(parentPath);
     }
   };
 
-  // Navigate to home directory
   const goHome = async () => {
     try {
       const { path: homePath } = await api.files.home();
@@ -274,14 +160,12 @@ export function FileBrowserModal({
     }
   };
 
-  // Navigate to typed path
   const goToPath = () => {
     if (pathInput.trim()) {
       browse(pathInput.trim());
     }
   };
 
-  // Handle path input key press
   const handlePathKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       goToPath();
@@ -291,13 +175,10 @@ export function FileBrowserModal({
     }
   };
 
-  // Handle entry click
   const handleEntryClick = (entry: FileEntry) => {
     if (entry.type === 'directory') {
-      // Navigate into directory
       browse(joinPath(currentPath, entry.name));
     } else if (mode !== 'directory') {
-      // Select file (not allowed in directory mode)
       setSelectedEntry(entry.name);
       if (mode === 'save') {
         setFileName(entry.name);
@@ -305,17 +186,13 @@ export function FileBrowserModal({
     }
   };
 
-  // Handle entry double-click
   const handleEntryDoubleClick = (entry: FileEntry) => {
     if (entry.type === 'directory') {
-      // Already navigated on single click
       return;
     }
-    // Confirm selection on double-click
     handleConfirm();
   };
 
-  // Handle selection confirmation
   const handleConfirm = () => {
     if (mode === 'directory') {
       onSelect(currentPath);
@@ -337,133 +214,39 @@ export function FileBrowserModal({
     onClose();
   };
 
-  // Handle cancel
   const handleCancel = () => {
     onSelect(null);
     onClose();
   };
 
-  // Format file size
-  const formatSize = (bytes?: number): string => {
-    if (bytes === undefined) return '';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
-  const renderBody = () => {
-    if (loading) {
-      return (
-        <div className="flex items-center justify-center h-full text-text-tertiary">
-          {t('common.loading', 'Loading...')}
-        </div>
-      );
-    }
-    if (error) {
-      return (
-        <div className="flex flex-col items-center justify-center h-full p-4 text-center">
-          <p className="text-error-text mb-2">{error}</p>
-          <Button variant="outline" size="sm" onClick={() => browse(currentPath)}>
-            {t('common.retry', 'Retry')}
-          </Button>
-        </div>
-      );
-    }
-    if (filteredEntries.length === 0) {
-      return (
-        <div className="flex items-center justify-center h-full text-text-tertiary">
-          {mode === 'directory'
-            ? t('fileBrowser.noSubdirectories', 'No subdirectories')
-            : t('fileBrowser.noFiles', 'No matching files')}
-        </div>
-      );
-    }
-    return (
-      <div className="divide-y divide-border-muted">
-        {filteredEntries.map((entry) => (
-          <div
-            key={entry.name}
-            onClick={() => handleEntryClick(entry)}
-            onDoubleClick={() => handleEntryDoubleClick(entry)}
-            className={`
-              flex items-center gap-3 px-3 py-2 cursor-pointer transition-colors
-              ${selectedEntry === entry.name ? 'bg-primary-subtle' : 'hover:bg-bg-hover'}
-            `}
-          >
-            {entry.type === 'directory' ? (
-              <FolderOpen className="w-5 h-5 text-warning" />
-            ) : (
-              <File className="w-5 h-5 text-text-tertiary" />
-            )}
-            <span className="flex-1 text-sm text-text-primary truncate">{entry.name}</span>
-            {entry.type === 'file' && entry.size != null && (
-              <span className="text-xs text-text-muted">{formatSize(entry.size)}</span>
-            )}
-            {entry.type === 'directory' && <Folder className="w-4 h-4 text-text-muted" />}
-          </div>
-        ))}
-      </div>
-    );
-  };
-
   return (
     <Modal open={open} onClose={handleCancel} title={modalTitle}>
       <ModalBody>
-        {/* Toolbar */}
-        <div className="flex items-center gap-2 mb-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={goUp}
-            disabled={loading || !parentPath}
-            title={t('fileBrowser.goUp', 'Go up')}
-          >
-            <ChevronUp className="w-4 h-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={goHome}
-            disabled={loading}
-            title={t('fileBrowser.goHome', 'Go home')}
-          >
-            <Home className="w-4 h-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => browse(currentPath)}
-            disabled={loading}
-            title={t('fileBrowser.refresh', 'Refresh')}
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </Button>
-          <input
-            type="text"
-            value={pathInput}
-            onChange={(e) => {
-              setPathInput(e.target.value);
-              setIsEditingPath(true);
-            }}
-            onKeyDown={handlePathKeyDown}
-            onFocus={() => setIsEditingPath(true)}
-            placeholder={t('fileBrowser.typePath', 'Type a path and press Enter...')}
-            className="flex-1 px-3 py-1.5 bg-bg-sunken rounded text-sm font-mono text-text-secondary border border-transparent focus:border-primary focus:outline-none"
-          />
-          {isEditingPath && pathInput !== currentPath && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={goToPath}
-              disabled={loading || !pathInput.trim()}
-              title={t('fileBrowser.goToPath', 'Go to path (Enter)')}
-            >
-              <CornerDownLeft className="w-4 h-4" />
-            </Button>
-          )}
-        </div>
+        <PathBar
+          pathInput={pathInput}
+          currentPath={currentPath}
+          isEditingPath={isEditingPath}
+          loading={loading}
+          parentPath={parentPath}
+          onPathInputChange={(value) => {
+            setPathInput(value);
+            setIsEditingPath(true);
+          }}
+          onPathInputFocus={() => setIsEditingPath(true)}
+          onPathKeyDown={handlePathKeyDown}
+          onGoUp={goUp}
+          onGoHome={goHome}
+          onRefresh={() => browse(currentPath)}
+          onGoToPath={goToPath}
+          labels={{
+            goUp: t('fileBrowser.goUp', 'Go up'),
+            goHome: t('fileBrowser.goHome', 'Go home'),
+            refresh: t('fileBrowser.refresh', 'Refresh'),
+            typePath: t('fileBrowser.typePath', 'Type a path and press Enter...'),
+            goToPath: t('fileBrowser.goToPath', 'Go to path (Enter)'),
+          }}
+        />
 
-        {/* Quick path shortcuts */}
         {quickPaths.length > 0 && (
           <div className="flex items-center gap-2 mb-3 flex-wrap">
             <span className="text-xs text-text-muted">
@@ -482,12 +265,25 @@ export function FileBrowserModal({
           </div>
         )}
 
-        {/* File list */}
         <div className="border border-border-default rounded-lg bg-bg-sunken h-[300px] overflow-y-auto">
-          {renderBody()}
+          <DirectoryTree
+            loading={loading}
+            error={error}
+            entries={filteredEntries}
+            selectedEntry={selectedEntry}
+            onEntryClick={handleEntryClick}
+            onEntryDoubleClick={handleEntryDoubleClick}
+            onRetry={() => browse(currentPath)}
+            loadingLabel={t('common.loading', 'Loading...')}
+            emptyLabel={
+              mode === 'directory'
+                ? t('fileBrowser.noSubdirectories', 'No subdirectories')
+                : t('fileBrowser.noFiles', 'No matching files')
+            }
+            retryLabel={t('common.retry', 'Retry')}
+          />
         </div>
 
-        {/* File name input for save mode */}
         {mode === 'save' && (
           <div className="mt-3">
             <Input
@@ -499,7 +295,6 @@ export function FileBrowserModal({
           </div>
         )}
 
-        {/* Current selection info */}
         {mode === 'directory' && currentPath && (
           <div className="mt-3 p-2 bg-bg-muted rounded text-sm">
             <span className="text-text-tertiary">
@@ -519,9 +314,7 @@ export function FileBrowserModal({
           onClick={handleConfirm}
           disabled={mode === 'file' && !selectedEntry}
         >
-          {mode === 'save'
-            ? t('common.save', 'Save')
-            : t('common.select', 'Select')}
+          {mode === 'save' ? t('common.save', 'Save') : t('common.select', 'Select')}
         </Button>
       </ModalFooter>
     </Modal>
