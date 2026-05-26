@@ -227,6 +227,11 @@ pub use themes::*;
         ObsSetConfigRequest,
         ObsConnectedResponse,
         ObsAckResponse,
+        ProfileSummaryWire,
+        ProfileAckResponse,
+        ProfileOrderMapResponse,
+        ProfileValidateInputRequest,
+        ProfileOrderSetRequest,
         ApiErrorBody,
         RotateMachineKeyRequest,
     ))

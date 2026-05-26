@@ -76,16 +76,28 @@ export const profile = {
     return encrypted;
   },
   validateInput: async (profileId: string, input: RtmpInput) => {
-    await fetchTypedJson<unknown>('POST', '/api/v1/profiles/validate-input', undefined, {
-      profileId,
-      input,
-    });
+    await fetchTypedJson<Record<string, never>>(
+      'POST',
+      '/api/v1/profiles/validate-input',
+      undefined,
+      { profileId, input },
+    );
   },
   setProfileOrder: async (orderedNames: string[]) => {
-    await fetchTypedJson<unknown>('PATCH', '/api/v1/profiles/order', undefined, { orderedNames });
+    await fetchTypedJson<Record<string, never>>(
+      'PATCH',
+      '/api/v1/profiles/order',
+      undefined,
+      { orderedNames },
+    );
   },
   getOrderIndexMap: () =>
-    fetchTypedJson<Record<string, number>>('GET', '/api/v1/profiles/order'),
+    fetchTypedJson<{ indices: Record<string, number> }>('GET', '/api/v1/profiles/order').then(
+      (r) => r.indices,
+    ),
   ensureOrderIndexes: () =>
-    fetchTypedJson<Record<string, number>>('POST', '/api/v1/profiles/order/ensure'),
+    fetchTypedJson<{ indices: Record<string, number> }>(
+      'POST',
+      '/api/v1/profiles/order/ensure',
+    ).then((r) => r.indices),
 };

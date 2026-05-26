@@ -97,7 +97,14 @@ pub struct ProfileIsEncryptedResponse {
         ("name" = String, Path, description = "Profile name"),
     ),
     responses(
-        (status = 200, description = "Profile body.", body = serde_json::Value),
+        // Body is the full `Profile` shape — typed by ts-rs at
+        // `@spiritstream/types/Profile`. utoipa documents the runtime as
+        // a free-form object because the Profile tree (OutputGroup,
+        // ProfileSettings, generated Platform enum, …) is too deep to
+        // mirror by hand and adding `ToSchema` to core would leak utoipa
+        // across the transport boundary. The wire shape is camelCase per
+        // `#[serde(rename_all = "camelCase")]` on `Profile`.
+        (status = 200, description = "Profile body (see @spiritstream/types/Profile).", body = serde_json::Value),
         (status = 401, description = "Password required or incorrect.", body = ApiErrorBody),
         (status = 404, description = "Profile not found.", body = ApiErrorBody),
         (status = 500, description = "Internal server error.", body = ApiErrorBody),
@@ -277,7 +284,10 @@ pub struct ProfileLockedListResponse {
     params(("name" = String, Path, description = "Profile name")),
     request_body = ProfileActivateRequest,
     responses(
-        (status = 200, description = "Profile activated.", body = serde_json::Value),
+        // Same Profile shape as GET /profiles/{name} — typed by ts-rs at
+        // `@spiritstream/types/Profile`; see that handler for why utoipa
+        // documents this as a free-form object.
+        (status = 200, description = "Profile activated; body matches @spiritstream/types/Profile.", body = serde_json::Value),
         (status = 401, description = "Password required / incorrect.", body = ApiErrorBody),
         (status = 404, description = "Profile not found.", body = ApiErrorBody),
         (status = 409, description = "Activation precondition not met (e.g. no active profile resolvable).", body = ApiErrorBody),
@@ -460,14 +470,70 @@ pub async fn v1_profile_locked_list(
 // --------------------------------------------------------------------------
 // Profiles — remaining proxies.
 
+/// Wire mirror of [`spiritstream_core::models::ProfileSummary`]. The core
+/// `services` field is `Vec<Platform>`, where `Platform` is auto-generated
+/// from `data/streaming-platforms.json` at build time — each variant uses
+/// `#[serde(rename = "Twitch")]` etc. so it serialises as the display
+/// string. The wire mirror types that as `Vec<String>`, preserving the
+/// wire shape while keeping utoipa out of core's build script.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileSummaryWire {
+    pub id: String,
+    pub name: String,
+    pub resolution: String,
+    pub bitrate: u32,
+    pub target_count: u32,
+    pub services: Vec<String>,
+    pub is_encrypted: bool,
+}
+
+impl From<spiritstream_core::models::ProfileSummary> for ProfileSummaryWire {
+    fn from(s: spiritstream_core::models::ProfileSummary) -> Self {
+        Self {
+            id: s.id,
+            name: s.name,
+            resolution: s.resolution,
+            bitrate: s.bitrate,
+            target_count: s.target_count,
+            services: s
+                .services
+                .into_iter()
+                .map(|p| serde_json::to_value(&p)
+                    .ok()
+                    .and_then(|v| v.as_str().map(String::from))
+                    .unwrap_or_default())
+                .collect(),
+            is_encrypted: s.is_encrypted,
+        }
+    }
+}
+
+/// Empty 200 ack body for handlers whose success payload is just
+/// acknowledgement (validate / set order). Serialises as `{}`.
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct ProfileAckResponse {}
+
+/// `{indices: {name → order}}` envelope used by the `/profiles/order`
+/// + `/profiles/order/ensure` endpoints. Wraps the raw map so OpenAPI
+/// gets a named schema instead of an inline `additionalProperties`
+/// object.
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct ProfileOrderMapResponse {
+    pub indices: std::collections::HashMap<String, u32>,
+}
+
 #[utoipa::path(get, path = "/profiles/summaries", tag = "profiles",
-    responses((status = 200, body = serde_json::Value)),
+    responses(
+        (status = 200, body = [ProfileSummaryWire], description = "Per-profile summary cards."),
+        (status = 500, body = ApiErrorBody, description = "Internal error enumerating profiles."),
+    ),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_profile_summaries_proxy(
     State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<Vec<ProfileSummaryWire>>, crate::ApiError> {
     let summaries = state.profile_manager.get_all_summaries().await?;
-    Ok(Json(serde_json::json!(summaries)))
+    Ok(Json(summaries.into_iter().map(Into::into).collect()))
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -480,7 +546,7 @@ pub struct ProfileValidateInputRequest {
 #[utoipa::path(post, path = "/profiles/validate-input", tag = "profiles",
     request_body = ProfileValidateInputRequest,
     responses(
-        (status = 200, description = "Input validates against other profiles."),
+        (status = 200, body = ProfileAckResponse, description = "Input validates against other profiles."),
         (status = 400, body = ApiErrorBody, description = "Malformed RtmpInput payload."),
         (status = 409, body = ApiErrorBody, description = "Port conflict with another profile."),
     ),
@@ -488,13 +554,13 @@ pub struct ProfileValidateInputRequest {
 pub async fn v1_profile_validate_input_proxy(
     State(state): State<AppState>,
     axum::Json(req): axum::Json<ProfileValidateInputRequest>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<ProfileAckResponse>, crate::ApiError> {
     let input: spiritstream_core::models::RtmpInput = serde_json::from_value(req.input)?;
     state
         .profile_manager
         .validate_input_conflict(&req.profile_id, &input)
         .await?;
-    Ok(Json(serde_json::Value::Null))
+    Ok(Json(ProfileAckResponse {}))
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -505,21 +571,23 @@ pub struct ProfileOrderSetRequest {
 
 #[utoipa::path(get, path = "/profiles/order", tag = "profiles",
     responses(
-        (status = 200, body = serde_json::Value, description = "Order index map."),
+        (status = 200, body = ProfileOrderMapResponse, description = "Order index map."),
         (status = 500, body = ApiErrorBody, description = "Internal error reading order file."),
     ),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_profile_order_get_proxy(
     State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<ProfileOrderMapResponse>, crate::ApiError> {
     let map = state.profile_manager.read_order_index_map()?;
-    Ok(Json(serde_json::json!(map)))
+    Ok(Json(ProfileOrderMapResponse {
+        indices: map.into_iter().map(|(k, v)| (k, v as u32)).collect(),
+    }))
 }
 
 #[utoipa::path(patch, path = "/profiles/order", tag = "profiles",
     request_body = ProfileOrderSetRequest,
     responses(
-        (status = 200, description = "Order index map written."),
+        (status = 200, body = ProfileAckResponse, description = "Order index map written."),
         (status = 404, body = ApiErrorBody, description = "One of the submitted profile names doesn't exist."),
         (status = 500, body = ApiErrorBody, description = "Internal error writing order file."),
     ),
@@ -527,7 +595,7 @@ pub async fn v1_profile_order_get_proxy(
 pub async fn v1_profile_order_set_proxy(
     State(state): State<AppState>,
     axum::Json(req): axum::Json<ProfileOrderSetRequest>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<ProfileAckResponse>, crate::ApiError> {
     let mut map = state.profile_manager.read_order_index_map()?;
     let existing = state.profile_manager.get_all_names().await?;
     let mut idx = 0;
@@ -539,18 +607,20 @@ pub async fn v1_profile_order_set_proxy(
         map.insert(name, idx);
     }
     state.profile_manager.write_order_index_map(&map)?;
-    Ok(Json(serde_json::Value::Null))
+    Ok(Json(ProfileAckResponse {}))
 }
 
 #[utoipa::path(post, path = "/profiles/order/ensure", tag = "profiles",
     responses(
-        (status = 200, body = serde_json::Value, description = "Order indexes ensured."),
+        (status = 200, body = ProfileOrderMapResponse, description = "Order indexes ensured."),
         (status = 500, body = ApiErrorBody, description = "Internal error reading/writing order file."),
     ),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_profile_order_ensure_proxy(
     State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<ProfileOrderMapResponse>, crate::ApiError> {
     let map = state.profile_manager.ensure_order_indexes().await?;
-    Ok(Json(serde_json::json!(map)))
+    Ok(Json(ProfileOrderMapResponse {
+        indices: map.into_iter().map(|(k, v)| (k, v as u32)).collect(),
+    }))
 }
