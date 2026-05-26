@@ -12,55 +12,184 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use spiritstream_core::services::{
+    OAuthConfig, OAuthFlowResult, OAuthTokens, OAuthUserInfo,
+};
+
 use crate::AppState;
 
 // --------------------------------------------------------------------------
-// OAuth.
+// Wire-mirror types. utoipa is transport-only, so mirror every core
+// payload we hand to / accept from the OAuth router instead of leaking
+// `ToSchema` into the core crate.
+
+/// `{"twitchConfigured": …, "youtubeConfigured": …}` — pre-flight check
+/// the UI runs before showing "Sign in with Twitch / YouTube" buttons.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OAuthConfiguredFlagsResponse {
+    pub twitch_configured: bool,
+    pub youtube_configured: bool,
+}
+
+/// `{"configured": bool}` — single-provider variant of the flags response.
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct OAuthConfiguredResponse {
+    pub configured: bool,
+}
+
+/// Empty 200 ack body for handlers whose success payload is just
+/// acknowledgement (disconnect / forget / config update). Serialises
+/// as `{}`.
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct OAuthAckResponse {}
+
+/// Mirror of [`OAuthConfig`] — accepted by `PUT /oauth/config` and
+/// surfaced in OpenAPI instead of the previous `serde_json::Value`.
+#[derive(Serialize, Deserialize, ToSchema, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct OAuthConfigRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub twitch_client_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub twitch_client_secret: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub youtube_client_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub youtube_client_secret: Option<String>,
+}
+
+impl From<OAuthConfigRequest> for OAuthConfig {
+    fn from(r: OAuthConfigRequest) -> Self {
+        Self {
+            twitch_client_id: r.twitch_client_id,
+            twitch_client_secret: r.twitch_client_secret,
+            youtube_client_id: r.youtube_client_id,
+            youtube_client_secret: r.youtube_client_secret,
+        }
+    }
+}
+
+/// Mirror of [`OAuthFlowResult`] — `POST /oauth/{provider}/flow` returns
+/// the authorization URL + bound callback port + PKCE state nonce.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OAuthFlowResponse {
+    pub auth_url: String,
+    pub callback_port: u16,
+    pub state: String,
+}
+
+impl From<OAuthFlowResult> for OAuthFlowResponse {
+    fn from(r: OAuthFlowResult) -> Self {
+        Self {
+            auth_url: r.auth_url,
+            callback_port: r.callback_port,
+            state: r.state,
+        }
+    }
+}
+
+/// Mirror of [`OAuthUserInfo`] — returned from `POST /oauth/{provider}/complete`
+/// after the token exchange + user-info fetch.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OAuthUserInfoResponse {
+    pub provider: String,
+    pub user_id: String,
+    pub username: String,
+    pub display_name: String,
+}
+
+impl From<OAuthUserInfo> for OAuthUserInfoResponse {
+    fn from(u: OAuthUserInfo) -> Self {
+        Self {
+            provider: u.provider,
+            user_id: u.user_id,
+            username: u.username,
+            display_name: u.display_name,
+        }
+    }
+}
+
+/// Mirror of [`OAuthTokens`] — returned from `POST /oauth/{provider}/refresh`.
+/// Token fields are camelCase on the wire (frontend reads `accessToken`,
+/// `refreshToken`, `expiresIn`). The core `OAuthTokens` keeps snake_case
+/// because it deserialises directly from provider responses (Twitch /
+/// Google OAuth token endpoints all use snake_case); this wire mirror
+/// renames at the API boundary.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OAuthTokensResponse {
+    pub access_token: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refresh_token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_in: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
+}
+
+impl From<OAuthTokens> for OAuthTokensResponse {
+    fn from(t: OAuthTokens) -> Self {
+        Self {
+            access_token: t.access_token,
+            refresh_token: t.refresh_token,
+            expires_in: t.expires_in,
+            token_type: t.token_type,
+            scope: t.scope,
+        }
+    }
+}
+
+// --------------------------------------------------------------------------
+// OAuth handlers.
 
 #[utoipa::path(get, path = "/oauth/config", tag = "oauth",
-    responses((status = 200, body = serde_json::Value)),
+    responses((status = 200, body = OAuthConfiguredFlagsResponse)),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_oauth_get_config_proxy(
     State(_state): State<AppState>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
-    Ok(Json(serde_json::json!({
-        "twitchConfigured": true,
-        "youtubeConfigured": true
-    })))
+) -> Result<Json<OAuthConfiguredFlagsResponse>, crate::ApiError> {
+    Ok(Json(OAuthConfiguredFlagsResponse {
+        twitch_configured: true,
+        youtube_configured: true,
+    }))
 }
 
 #[utoipa::path(put, path = "/oauth/config", tag = "oauth",
-    request_body = serde_json::Value,
+    request_body = OAuthConfigRequest,
     responses(
-        (status = 200, description = "OAuth config persisted."),
+        (status = 200, body = OAuthAckResponse, description = "OAuth config persisted."),
         (status = 400, body = ApiErrorBody, description = "Malformed OAuthConfig payload."),
     ),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_oauth_set_config_proxy(
     State(state): State<AppState>,
-    axum::Json(config): axum::Json<serde_json::Value>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
-    let oauth_config: spiritstream_core::services::OAuthConfig = serde_json::from_value(config)?;
-    state.oauth_service.update_config(oauth_config).await;
-    Ok(Json(serde_json::Value::Null))
+    axum::Json(req): axum::Json<OAuthConfigRequest>,
+) -> Result<Json<OAuthAckResponse>, crate::ApiError> {
+    state.oauth_service.update_config(req.into()).await;
+    Ok(Json(OAuthAckResponse {}))
 }
 
 #[utoipa::path(get, path = "/oauth/{provider}/configured", tag = "oauth",
     params(("provider" = String, Path, description = "OAuth provider")),
-    responses((status = 200, body = serde_json::Value)),
+    responses((status = 200, body = OAuthConfiguredResponse)),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_oauth_is_configured_proxy(
     State(state): State<AppState>,
     AxumPath(provider): AxumPath<String>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<OAuthConfiguredResponse>, crate::ApiError> {
     let configured = state.oauth_service.is_configured(&provider).await;
-    Ok(Json(serde_json::json!(configured)))
+    Ok(Json(OAuthConfiguredResponse { configured }))
 }
 
 #[utoipa::path(post, path = "/oauth/{provider}/flow", tag = "oauth",
     params(("provider" = String, Path, description = "OAuth provider")),
     responses(
-        (status = 200, body = serde_json::Value, description = "Auth URL + callback port issued."),
+        (status = 200, body = OAuthFlowResponse, description = "Auth URL + callback port issued."),
         (status = 409, body = ApiErrorBody, description = "No active profile to bind tokens to."),
         (status = 501, body = ApiErrorBody, description = "Unknown / unsupported provider."),
         (status = 500, body = ApiErrorBody, description = "Internal error starting callback server."),
@@ -69,7 +198,7 @@ pub async fn v1_oauth_is_configured_proxy(
 pub async fn v1_oauth_start_flow_proxy(
     State(state): State<AppState>,
     AxumPath(provider): AxumPath<String>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<OAuthFlowResponse>, crate::ApiError> {
     use spiritstream_core::services::{OAuthCallback, OAuthCallbackServer};
 
     if crate::get_active_profile_name(&state).await.is_none() {
@@ -187,7 +316,7 @@ pub async fn v1_oauth_start_flow_proxy(
     if let Err(e) = opener::open(&result.auth_url) {
         log::warn!("Failed to open browser: {}. URL: {}", e, result.auth_url);
     }
-    Ok(Json(serde_json::json!(result)))
+    Ok(Json(result.into()))
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -201,7 +330,7 @@ pub struct OAuthCompleteRequest {
     params(("provider" = String, Path, description = "OAuth provider")),
     request_body = OAuthCompleteRequest,
     responses(
-        (status = 200, body = serde_json::Value, description = "Tokens + user info persisted to active profile."),
+        (status = 200, body = OAuthUserInfoResponse, description = "Tokens + user info persisted to active profile."),
         (status = 401, body = ApiErrorBody, description = "OAuth provider rejected the code or returned no user data."),
         (status = 409, body = ApiErrorBody, description = "No active profile to bind tokens to."),
         (status = 501, body = ApiErrorBody, description = "Unknown provider."),
@@ -213,7 +342,7 @@ pub async fn v1_oauth_complete_flow_proxy(
     State(app_state): State<AppState>,
     AxumPath(provider): AxumPath<String>,
     axum::Json(req): axum::Json<OAuthCompleteRequest>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<OAuthUserInfoResponse>, crate::ApiError> {
     if crate::get_active_profile_name(&app_state).await.is_none() {
         return Err(spiritstream_core::CoreError::NoActiveProfile.into());
     }
@@ -240,17 +369,39 @@ pub async fn v1_oauth_complete_flow_proxy(
     app_state
         .event_bus
         .emit("oauth_complete", serde_json::json!(result.user_info));
-    Ok(Json(serde_json::json!(result.user_info)))
+    Ok(Json(result.user_info.into()))
+}
+
+/// Wire mirror of [`spiritstream_core::models::OAuthAccountStatus`]. The
+/// core type itself can't derive `ToSchema` (utoipa is transport-only).
+#[derive(Serialize, Deserialize, ToSchema, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct OAuthAccountStatusResponse {
+    pub logged_in: bool,
+    pub user_id: String,
+    pub username: String,
+    pub display_name: String,
+}
+
+impl From<spiritstream_core::models::OAuthAccountStatus> for OAuthAccountStatusResponse {
+    fn from(s: spiritstream_core::models::OAuthAccountStatus) -> Self {
+        Self {
+            logged_in: s.logged_in,
+            user_id: s.user_id,
+            username: s.username,
+            display_name: s.display_name,
+        }
+    }
 }
 
 #[utoipa::path(get, path = "/oauth/{provider}/account", tag = "oauth",
     params(("provider" = String, Path, description = "OAuth provider")),
-    responses((status = 200, body = serde_json::Value)),
+    responses((status = 200, body = OAuthAccountStatusResponse)),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_oauth_get_account_proxy(
     State(state): State<AppState>,
     AxumPath(provider): AxumPath<String>,
-) -> Result<Json<spiritstream_core::models::OAuthAccountStatus>, crate::ApiError> {
+) -> Result<Json<OAuthAccountStatusResponse>, crate::ApiError> {
     use spiritstream_core::models::OAuthAccountStatus;
     let profile_settings = crate::get_active_profile_settings(&state).await;
     let account = match provider.as_str() {
@@ -276,29 +427,29 @@ pub async fn v1_oauth_get_account_proxy(
             .unwrap_or_default(),
         _ => OAuthAccountStatus::default(),
     };
-    Ok(Json(account))
+    Ok(Json(account.into()))
 }
 
 #[utoipa::path(delete, path = "/oauth/{provider}/account", tag = "oauth",
     params(("provider" = String, Path, description = "OAuth provider")),
-    responses((status = 200)),
+    responses((status = 200, body = OAuthAckResponse)),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_oauth_disconnect_proxy(
     State(state): State<AppState>,
     AxumPath(provider): AxumPath<String>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<OAuthAckResponse>, crate::ApiError> {
     crate::clear_profile_oauth_account(&state, &provider).await?;
-    Ok(Json(serde_json::Value::Null))
+    Ok(Json(OAuthAckResponse {}))
 }
 
 #[utoipa::path(post, path = "/oauth/{provider}/forget", tag = "oauth",
     params(("provider" = String, Path, description = "OAuth provider")),
-    responses((status = 200)),
+    responses((status = 200, body = OAuthAckResponse)),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_oauth_forget_proxy(
     State(state): State<AppState>,
     AxumPath(provider): AxumPath<String>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<OAuthAckResponse>, crate::ApiError> {
     let profile_settings = crate::get_active_profile_settings(&state)
         .await
         .ok_or(spiritstream_core::CoreError::NoActiveProfile)?;
@@ -322,7 +473,7 @@ pub async fn v1_oauth_forget_proxy(
         }
     }
     crate::clear_profile_oauth_account(&state, &provider).await?;
-    Ok(Json(serde_json::Value::Null))
+    Ok(Json(OAuthAckResponse {}))
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -335,7 +486,7 @@ pub struct OAuthRefreshRequest {
     params(("provider" = String, Path, description = "OAuth provider")),
     request_body = OAuthRefreshRequest,
     responses(
-        (status = 200, body = serde_json::Value, description = "Refreshed token payload."),
+        (status = 200, body = OAuthTokensResponse, description = "Refreshed token payload."),
         (status = 401, body = ApiErrorBody, description = "Refresh token rejected by provider."),
         (status = 501, body = ApiErrorBody, description = "Unknown provider."),
         (status = 502, body = ApiErrorBody, description = "Network failure reaching the provider."),
@@ -346,10 +497,10 @@ pub async fn v1_oauth_refresh_token_proxy(
     State(state): State<AppState>,
     AxumPath(provider): AxumPath<String>,
     axum::Json(req): axum::Json<OAuthRefreshRequest>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<OAuthTokensResponse>, crate::ApiError> {
     let tokens = state
         .oauth_service
         .refresh_token(&provider, &req.refresh_token)
         .await?;
-    Ok(Json(serde_json::json!(tokens)))
+    Ok(Json(tokens.into()))
 }

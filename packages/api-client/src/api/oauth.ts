@@ -3,7 +3,10 @@ import { fetchTypedJson } from './_internal';
 
 export const oauth = {
   isConfigured: (provider: string) =>
-    fetchTypedJson<boolean>('GET', `/api/v1/oauth/${encodeURIComponent(provider)}/configured`),
+    fetchTypedJson<{ configured: boolean }>(
+      'GET',
+      `/api/v1/oauth/${encodeURIComponent(provider)}/configured`,
+    ).then((r) => r.configured),
   startFlow: (provider: string) =>
     fetchTypedJson<OAuthFlowResult>(
       'POST',
@@ -27,13 +30,13 @@ export const oauth = {
       `/api/v1/oauth/${encodeURIComponent(provider)}/account`,
     ),
   disconnect: async (provider: string) => {
-    await fetchTypedJson<unknown>(
+    await fetchTypedJson<Record<string, never>>(
       'DELETE',
       `/api/v1/oauth/${encodeURIComponent(provider)}/account`,
     );
   },
   forget: async (provider: string) => {
-    await fetchTypedJson<unknown>(
+    await fetchTypedJson<Record<string, never>>(
       'POST',
       `/api/v1/oauth/${encodeURIComponent(provider)}/forget`,
     );
@@ -60,6 +63,6 @@ export const oauth = {
     youtubeClientId?: string;
     youtubeClientSecret?: string;
   }) => {
-    await fetchTypedJson<unknown>('PUT', '/api/v1/oauth/config', undefined, config);
+    await fetchTypedJson<Record<string, never>>('PUT', '/api/v1/oauth/config', undefined, config);
   },
 };
