@@ -1,0 +1,55 @@
+import type {
+  Profile,
+  ProfileSummary,
+  ProfileSettings,
+  OutputGroup,
+  StreamTarget,
+} from '@spiritstream/types';
+
+export interface ProfileState {
+  profiles: ProfileSummary[];
+  current: Profile | null;
+  loading: boolean;
+  error: string | null;
+
+  pendingPasswordProfile: string | null;
+  passwordError: string | null;
+  pendingUnlock: boolean;
+
+  loadProfiles: () => Promise<void>;
+  loadProfile: (name: string, password?: string) => Promise<void>;
+  saveProfile: (password?: string) => Promise<void>;
+  deleteProfile: (name: string) => Promise<void>;
+  createProfile: (name: string) => Promise<void>;
+  isProfileEncrypted: (name: string) => Promise<boolean>;
+  reorderProfiles: (fromIndex: number, toIndex: number) => Promise<void>;
+
+  setPendingPasswordProfile: (name: string | null) => void;
+  clearPasswordError: () => void;
+  submitPassword: (password: string) => Promise<void>;
+  cancelPasswordPrompt: () => void;
+  unlockProfile: (name: string) => void;
+
+  setProfiles: (profiles: ProfileSummary[]) => void;
+  setCurrentProfile: (profile: Profile | null) => void;
+  setLoading: (loading: boolean) => void;
+  setError: (error: string | null) => void;
+  selectProfile: (name: string) => Promise<void>;
+  duplicateProfile: (name: string) => Promise<void>;
+
+  updateProfile: (updates: Partial<Profile>) => Promise<void>;
+  updateProfileSettings: (updates: Partial<ProfileSettings>) => Promise<void>;
+
+  addOutputGroup: (group: OutputGroup) => Promise<void>;
+  updateOutputGroup: (groupId: string, updates: Partial<OutputGroup>) => Promise<void>;
+  removeOutputGroup: (groupId: string) => Promise<void>;
+
+  addStreamTarget: (groupId: string, target: StreamTarget) => Promise<void>;
+  updateStreamTarget: (
+    groupId: string,
+    targetId: string,
+    updates: Partial<StreamTarget>,
+  ) => Promise<void>;
+  removeStreamTarget: (groupId: string, targetId: string) => Promise<void>;
+  moveStreamTarget: (fromGroupId: string, toGroupId: string, targetId: string) => Promise<void>;
+}
