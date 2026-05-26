@@ -4,4 +4,10 @@ import type { OAuthAccount } from "./OAuthAccount";
 /**
  * OAuth configuration per profile
  */
-export type OAuthSettings = { twitch: OAuthAccount, youtube: OAuthAccount, kick: OAuthAccount, };
+export type OAuthSettings = { twitch: OAuthAccount, youtube: OAuthAccount, kick: OAuthAccount, 
+/**
+ * Facebook Page Access Token + user identity. Same shape as
+ * the other providers; `access_token` is used as the Graph API
+ * bearer for both reading live comments and sending them.
+ */
+facebook: OAuthAccount, };

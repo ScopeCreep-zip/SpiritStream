@@ -227,6 +227,13 @@ pub struct ChatSettings {
     #[serde(default)]
     pub tiktok_username: String,
 
+    /// Facebook Live video id for the current broadcast. Identity-
+    /// revealing — connecting binds chat to the streamer's real-name
+    /// Facebook account; the UI's connect path gates this behind an
+    /// explicit confirm-token acknowledgement.
+    #[serde(default)]
+    pub facebook_live_video_id: String,
+
     /// YouTube API key (optional if using OAuth)
     #[serde(default)]
     pub youtube_api_key: String,
@@ -281,6 +288,7 @@ impl Default for ChatSettings {
             stripchat_username: String::new(),
             kick_channel: String::new(),
             tiktok_username: String::new(),
+            facebook_live_video_id: String::new(),
             youtube_api_key: String::new(),
             twitch_send_enabled: false,
             youtube_send_enabled: false,
@@ -363,6 +371,11 @@ pub struct OAuthSettings {
     pub youtube: OAuthAccount,
     #[serde(default)]
     pub kick: OAuthAccount,
+    /// Facebook Page Access Token + user identity. Same shape as
+    /// the other providers; `access_token` is used as the Graph API
+    /// bearer for both reading live comments and sending them.
+    #[serde(default)]
+    pub facebook: OAuthAccount,
 }
 
 // ============================================================================

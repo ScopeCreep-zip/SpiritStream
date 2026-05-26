@@ -121,6 +121,7 @@ export const createDefaultChatSettings = (): ChatSettings => ({
   stripchatUsername: '',
   kickChannel: '',
   tiktokUsername: '',
+  facebookLiveVideoId: '',
   youtubeApiKey: '',
   twitchSendEnabled: false,
   youtubeSendEnabled: false,
@@ -147,6 +148,7 @@ export const createDefaultOAuthSettings = (): OAuthSettings => ({
   twitch: createDefaultOAuthAccount(),
   youtube: createDefaultOAuthAccount(),
   kick: createDefaultOAuthAccount(),
+  facebook: createDefaultOAuthAccount(),
 });
 
 export const createDefaultProfileSettings = (): ProfileSettings => ({

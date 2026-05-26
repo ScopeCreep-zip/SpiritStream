@@ -1,3 +1,4 @@
+mod facebook;
 mod kick;
 mod platform;
 mod stripchat;
@@ -6,6 +7,7 @@ mod trovo;
 mod twitch;
 mod youtube;
 
+pub use facebook::FacebookConnector;
 pub use kick::KickConnector;
 pub use platform::{BoxedPlatform, ChatPlatform, PlatformResult};
 pub use stripchat::StripchatConnector;

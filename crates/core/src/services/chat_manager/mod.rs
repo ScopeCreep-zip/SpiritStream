@@ -32,8 +32,8 @@ use crate::models::{
     ChatConnectionStatus, ChatMessage, ChatPlatform, ChatPlatformStatus, ChatSettings,
 };
 use crate::services::chat::{
-    BoxedPlatform, KickConnector, StripchatConnector, TikTokConnector, TrovoConnector,
-    TwitchConnector, YouTubeConnector,
+    BoxedPlatform, FacebookConnector, KickConnector, StripchatConnector, TikTokConnector,
+    TrovoConnector, TwitchConnector, YouTubeConnector,
 };
 use crate::services::{AuditLogService, EventSink};
 
@@ -161,6 +161,12 @@ impl ChatManager {
     /// SpiritStream has not yet implemented — `connect()` surfaces a
     /// clean validation error instead of fabricating a wrong-platform
     /// connector that would mis-route credentials.
+    /// Build the connector for a `ChatPlatform` variant. Now total —
+    /// every variant maps to a real connector, no more `None` arms.
+    /// The signature stays `Option<BoxedPlatform>` for backward
+    /// compatibility with the call site, and a future "platform was
+    /// removed pending re-implementation" branch can return `None`
+    /// again without re-touching every caller.
     pub(super) fn create_platform_connector(platform: ChatPlatform) -> Option<BoxedPlatform> {
         let boxed: BoxedPlatform = match platform {
             ChatPlatform::Twitch => Box::new(TwitchConnector::new()),
@@ -169,7 +175,7 @@ impl ChatManager {
             ChatPlatform::Trovo => Box::new(TrovoConnector::new()),
             ChatPlatform::Stripchat => Box::new(StripchatConnector::new()),
             ChatPlatform::Kick => Box::new(KickConnector::new()),
-            ChatPlatform::Facebook => return None,
+            ChatPlatform::Facebook => Box::new(FacebookConnector::new()),
         };
         debug_assert_eq!(
             boxed.platform_name(),

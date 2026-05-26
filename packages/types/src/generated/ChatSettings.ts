@@ -31,6 +31,13 @@ kickChannel: string,
  */
 tiktokUsername: string, 
 /**
+ * Facebook Live video id for the current broadcast. Identity-
+ * revealing — connecting binds chat to the streamer's real-name
+ * Facebook account; the UI's connect path gates this behind an
+ * explicit confirm-token acknowledgement.
+ */
+facebookLiveVideoId: string, 
+/**
  * YouTube API key (optional if using OAuth)
  */
 youtubeApiKey: string, 
