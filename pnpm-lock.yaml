@@ -184,9 +184,6 @@ importers:
       '@spiritstream/types':
         specifier: workspace:*
         version: link:../types
-      '@spiritstream/validation':
-        specifier: workspace:*
-        version: link:../validation
     devDependencies:
       '@hey-api/openapi-ts':
         specifier: ^0.85.0
@@ -215,12 +212,6 @@ importers:
       react-dom:
         specifier: ^19.0.0
         version: 19.2.3(react@19.2.3)
-      typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
-
-  packages/validation:
-    devDependencies:
       typescript:
         specifier: ^6.0.3
         version: 6.0.3

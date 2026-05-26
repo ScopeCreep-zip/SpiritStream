@@ -1,16 +1,21 @@
 import React, { useId } from 'react';
 
 /**
- * `FormField` — accessible wrapper that pairs a label, an
- * arbitrary control, and helper/error text with proper ARIA linkage
- * (`aria-describedby` → helper, `aria-invalid` → error). Use this for
- * custom controls (textareas, custom widgets, control composites) where
- * the existing `Input` / `Select` primitives don't apply, since those
- * already own their own label-and-error rendering.
+ * `FormField` — accessible wrapper that pairs a label, an arbitrary
+ * control, and helper/error text with proper ARIA linkage
+ * (`aria-describedby` → helper, `aria-invalid` → error).
  *
- * The `children` render prop receives the id/aria props the control must
- * spread onto itself so screen readers announce label and helper/error
- * together.
+ * **Use directly only when you need a custom control** — textareas,
+ * radio groups, control composites — where the standard `Input` and
+ * `Select` primitives in `apps/web/src/components/ui/` don't apply.
+ * Those already own their own label-and-error rendering, so wrapping
+ * them in `FormField` would double up the label markup. This is the
+ * documented escape-hatch shape (see `apps/web` for the canonical
+ * `Input` / `Select` usage).
+ *
+ * The `children` render prop receives the id/aria props the control
+ * must spread onto itself so screen readers announce label and
+ * helper/error together.
  */
 export interface FormFieldProps {
   label: string;

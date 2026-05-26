@@ -12,11 +12,10 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "regenerate": "../../scripts/regenerate-validation.sh && pnpm exec openapi-ts --input ../validation/src/openapi.json --output ./src/generated --client fetch"
+    "regenerate": "../../scripts/regenerate-openapi.sh ./openapi.json && pnpm exec openapi-ts --input ./openapi.json --output ./src/generated --client fetch && rm ./openapi.json"
   },
   "dependencies": {
-    "@spiritstream/types": "workspace:*",
-    "@spiritstream/validation": "workspace:*"
+    "@spiritstream/types": "workspace:*"
   },
   "devDependencies": {
     "@hey-api/openapi-ts": "^0.85.0",
