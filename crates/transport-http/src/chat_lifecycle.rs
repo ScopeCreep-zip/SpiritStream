@@ -259,12 +259,15 @@ pub(crate) async fn clear_profile_oauth_account(
 /// Runs as a fire-and-forget background task -- errors are logged, never block the stream.
 pub(crate) async fn auto_connect_chat_platforms(state: AppState) {
     let chat_settings = state.chat_manager.profile_chat_settings().await;
+    // Facebook is intentionally excluded from this guard: it never auto-
+    // connects, even with a persisted video_id. Identity-revealing connect
+    // requires a per-session confirm-token + explicit user click — see
+    // v1_chat_connect_proxy's enable_facebook_chat gate.
     if chat_settings.twitch_channel.trim().is_empty()
         && chat_settings.youtube_channel_id.trim().is_empty()
         && chat_settings.trovo_channel_id.trim().is_empty()
         && chat_settings.kick_channel.trim().is_empty()
         && chat_settings.tiktok_username.trim().is_empty()
-        && chat_settings.facebook_live_video_id.trim().is_empty()
     {
         return;
     }
@@ -428,29 +431,11 @@ pub(crate) async fn auto_connect_chat_platforms(state: AppState) {
         }
     }
 
-    // Facebook Live: long-poll read + REST send via Graph API. Real-name
-    // identity is exposed by default; the UI's enable path gates this
-    // behind an explicit confirm-token acknowledgement.
-    if !chat_settings.facebook_live_video_id.is_empty() {
-        let already_connected = state
-            .chat_manager
-            .get_platform_status(ChatPlatform::Facebook)
-            .await
-            .map(|s| s.status == spiritstream_core::models::ChatConnectionStatus::Connected)
-            .unwrap_or(false);
-
-        if !already_connected {
-            connect_facebook_chat(
-                &state.chat_manager,
-                &chat_settings,
-                &profile_settings,
-                &state.event_bus,
-            )
-            .await;
-        } else {
-            log::debug!("Facebook chat already connected, skipping auto-connect");
-        }
-    }
+    // Facebook: deliberately NOT auto-connected. The connect endpoint
+    // requires a per-session `enable_facebook_chat` confirm-token (see
+    // v1_chat_connect_proxy) so the streamer reads the identity warning
+    // and acknowledges it before the connection opens. Auto-connecting
+    // here on every profile activation would bypass that gate.
 
     // YouTube: connect with retry (broadcast won't be live until OBS starts streaming)
     if !chat_settings.youtube_channel_id.is_empty() {
@@ -553,67 +538,6 @@ pub(crate) async fn connect_trovo_chat(
                 event_bus.emit(
                     "chat_auto_connect_failed",
                     json!({ "platform": "trovo", "kind": e.kind(), "error": e.to_string() }),
-                );
-            }
-        }
-    }
-}
-
-/// Auto-connect Facebook Live comments — long-poll read + REST send.
-///
-/// Identity warning: connecting Facebook Live binds chat to the
-/// authenticated user's real-name account. The frontend's connect
-/// flow gates this behind a confirm-token-style acknowledgement; this
-/// helper assumes the user has already consented by the time the
-/// chat-settings field is populated. Connection success is recorded
-/// in the audit chain via `AuditAction::ChatPlatformConnected` so the
-/// user can grep their history later.
-pub(crate) async fn connect_facebook_chat(
-    chat_manager: &Arc<ChatManager>,
-    chat_settings: &ChatSettings,
-    profile_settings: &ProfileSettings,
-    event_bus: &EventBus,
-) {
-    if chat_settings.facebook_live_video_id.trim().is_empty() {
-        return;
-    }
-    if profile_settings.oauth.facebook.access_token.trim().is_empty() {
-        log::warn!(
-            "Facebook chat skipped: facebook_live_video_id set but no \
-             Page Access Token in profile.oauth.facebook"
-        );
-        event_bus.emit(
-            "chat_auto_connect_failed",
-            json!({
-                "platform": "facebook",
-                "kind": "unauthorized",
-                "error": "Facebook Page Access Token missing",
-            }),
-        );
-        return;
-    }
-
-    let config = ChatConfig {
-        platform: ChatPlatform::Facebook,
-        enabled: true,
-        credentials: ChatCredentials::Facebook {
-            video_id: chat_settings.facebook_live_video_id.clone(),
-            access_token: profile_settings.oauth.facebook.access_token.clone(),
-        },
-    };
-    match chat_manager.connect(config).await {
-        Ok(()) => {
-            log::info!("Auto-connected to Facebook chat");
-            event_bus.emit("chat_auto_connected", json!({ "platform": "facebook" }));
-        }
-        Err(e) => {
-            if e.to_string().to_lowercase().contains("already connected") {
-                log::debug!("Facebook chat already connected");
-            } else {
-                log::warn!("Failed to auto-connect Facebook chat: {e}");
-                event_bus.emit(
-                    "chat_auto_connect_failed",
-                    json!({ "platform": "facebook", "kind": e.kind(), "error": e.to_string() }),
                 );
             }
         }

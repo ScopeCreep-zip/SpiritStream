@@ -164,18 +164,32 @@ pub async fn v1_chat_status_proxy(
 
 #[utoipa::path(post, path = "/chat/connections", tag = "chat",
     request_body = serde_json::Value,
-    responses((status = 200, body = ChatAckResponse), (status = 400, body = ApiErrorBody)),
+    responses(
+        (status = 200, body = ChatAckResponse),
+        (status = 400, body = ApiErrorBody),
+        (status = 403, body = ApiErrorBody, description = "Confirm-token required for Facebook connect (intent=enable_facebook_chat)"),
+    ),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_chat_connect_proxy(
     State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
     axum::Json(req): axum::Json<serde_json::Value>,
 ) -> Result<Json<ChatAckResponse>, crate::ApiError> {
-    use spiritstream_core::models::{ChatConfig, ChatCredentials, TwitchAuth, YouTubeAuth};
+    use spiritstream_core::models::{ChatConfig, ChatCredentials, ChatPlatform, TwitchAuth, YouTubeAuth};
 
     let mut config: ChatConfig = serde_json::from_value(req.get("config").cloned().unwrap_or(req))
         .map_err(|e| spiritstream_core::CoreError::Internal {
             context: format!("invalid ChatConfig payload: {e}"),
         })?;
+
+    // Facebook gate: identity-revealing connect path must be deliberate.
+    // The client first calls `POST /api/v1/security/confirm-token { intent:
+    // "enable_facebook_chat" }`, presents the warning, and only on user
+    // ack passes the returned token here via X-Confirm-Token. One-shot,
+    // 30s TTL — same pattern as rotate_machine_key / clear_data.
+    if matches!(config.platform, ChatPlatform::Facebook) {
+        crate::require_confirm_token(&state, &headers, "enable_facebook_chat")?;
+    }
 
     let mut profile_settings = crate::get_active_profile_settings(&state)
         .await

@@ -1,10 +1,33 @@
 use log::info;
 
 use crate::errors::CoreError;
-use crate::models::{ChatConfig, ChatPlatform};
+use crate::models::{ChatConfig, ChatCredentials, ChatPlatform};
 use crate::services::AuditAction;
 
 use super::chat_validation;
+
+/// Extract the platform-side identifier from credentials so we can
+/// stamp it on the `ChatPlatformConnected` audit entry. Different
+/// platforms key on different things:
+/// - Twitch / Trovo / Kick: the channel slug the connector subscribed to.
+/// - YouTube: the channel id (the watch broadcast id is only known once
+///   the live discovery returns; not surfaced at this layer yet).
+/// - TikTok: the username.
+/// - Facebook: the live video id — load-bearing because it doubles as
+///   the audit grep key when reconstructing "did I ever enable Facebook
+///   for this stream" history.
+/// - Stripchat: the model username.
+fn account_id_from_credentials(creds: &ChatCredentials) -> Option<String> {
+    match creds {
+        ChatCredentials::Twitch { channel, .. } => Some(channel.clone()),
+        ChatCredentials::YouTube { channel_id, .. } => Some(channel_id.clone()),
+        ChatCredentials::Trovo { channel_id } => Some(channel_id.clone()),
+        ChatCredentials::Stripchat { username } => Some(username.clone()),
+        ChatCredentials::Kick { channel, .. } => Some(channel.clone()),
+        ChatCredentials::TikTok { username, .. } => Some(username.clone()),
+        ChatCredentials::Facebook { video_id, .. } => Some(video_id.clone()),
+    }
+}
 
 impl super::ChatManager {
     /// Connect to a chat platform.
@@ -30,8 +53,9 @@ impl super::ChatManager {
             }
         }
 
-        // Create or get platform connector. Unimplemented platforms
-        // (Kick, Facebook) return None → clean validation error.
+        // Create or get platform connector. The factory is total over
+        // every ChatPlatform variant; `None` is reserved for a future
+        // "platform pending re-impl" branch.
         let mut connector = match platforms.remove(&config.platform) {
             Some(existing) => existing,
             None => Self::create_platform_connector(config.platform).ok_or_else(|| {
@@ -44,6 +68,10 @@ impl super::ChatManager {
                 )
             })?,
         };
+
+        // Capture the account_id before the connector consumes
+        // `config.credentials`. Powers the audit-log entry below.
+        let account_id = account_id_from_credentials(&config.credentials);
 
         // Connect to the platform. The connector itself tracks its own
         // `last_error` (see `ChatPlatform::last_error` trait impls); re-
@@ -63,7 +91,7 @@ impl super::ChatManager {
         if let Some(audit) = self.audit() {
             let _ = audit.record(AuditAction::ChatPlatformConnected {
                 platform: config.platform.as_str().to_string(),
-                account_id: None,
+                account_id,
             });
         }
 

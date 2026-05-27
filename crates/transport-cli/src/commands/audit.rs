@@ -17,6 +17,13 @@ pub enum AuditCmd {
         /// Only emit entries whose `action.kind` matches this string.
         #[arg(long)]
         filter: Option<String>,
+        /// Only emit entries whose `action.platform` matches this string.
+        /// Combine with `--filter ChatPlatformConnected` to reconstruct
+        /// connect history for a specific platform — e.g. operators
+        /// auditing whether Facebook was ever enabled run
+        /// `audit log --filter ChatPlatformConnected --platform facebook`.
+        #[arg(long)]
+        platform: Option<String>,
         /// Maximum entries to print (most-recent first). Default 200.
         #[arg(long, default_value_t = 200)]
         limit: usize,
@@ -32,6 +39,7 @@ pub async fn run(
         AuditCmd::Log {
             since,
             filter,
+            platform,
             limit,
         } => {
             let entries = registry.audit.entries()?;
@@ -50,12 +58,24 @@ pub async fn run(
                             return false;
                         }
                     }
+                    let action_json = serde_json::to_value(&e.action).ok();
                     if let Some(ref f) = filter {
-                        let kind = serde_json::to_value(&e.action)
-                            .ok()
+                        let kind = action_json
+                            .as_ref()
                             .and_then(|v| v.get("kind").and_then(|k| k.as_str()).map(String::from))
                             .unwrap_or_default();
                         if kind != *f {
+                            return false;
+                        }
+                    }
+                    if let Some(ref p) = platform {
+                        let entry_platform = action_json
+                            .as_ref()
+                            .and_then(|v| {
+                                v.get("platform").and_then(|x| x.as_str()).map(String::from)
+                            })
+                            .unwrap_or_default();
+                        if entry_platform != *p {
                             return false;
                         }
                     }

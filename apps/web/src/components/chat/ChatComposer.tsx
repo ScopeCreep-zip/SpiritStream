@@ -42,6 +42,15 @@ export function ChatComposer({ statuses, activeStreamCount }: ChatComposerProps)
         return chatSettings.youtubeSendEnabled && !chatSettings.youtubeUseApiKey;
       }
       if (status.platform === 'trovo') return chatSettings.trovoSendEnabled;
+      if (status.platform === 'kick') return chatSettings.kickSendEnabled;
+      // Facebook: send is auth-gated server-side — connector exposes
+      // can_send() based on whether a Page Access Token was captured at
+      // connect time. There's no per-profile "facebook_send_enabled"
+      // toggle because connecting Facebook at all already implies
+      // identity exposure; the gate is at the connect step.
+      if (status.platform === 'facebook') return true;
+      // TikTok intentionally excluded: third-party send is rejected by
+      // TikTok; the connector returns PlatformError on send.
       return false;
     });
   }, [chatSettings, statuses]);
@@ -55,6 +64,9 @@ export function ChatComposer({ statuses, activeStreamCount }: ChatComposerProps)
         if (target.platform === 'twitch') return t('chat.platforms.twitch');
         if (target.platform === 'youtube') return t('chat.platforms.youtube');
         if (target.platform === 'trovo') return t('chat.platforms.trovo');
+        if (target.platform === 'kick') return t('chat.platforms.kick');
+        if (target.platform === 'facebook') return t('chat.platforms.facebook');
+        if (target.platform === 'tiktok') return t('chat.platforms.tiktok');
         return target.platform;
       })
       .join(', ');
