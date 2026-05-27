@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { V1HealthData, V1HealthResponses, V1ProfileDeleteData, V1ProfileDeleteErrors, V1ProfileDeleteResponses, V1ProfileIsEncryptedData, V1ProfileIsEncryptedResponses, V1ProfileSaveData, V1ProfileSaveErrors, V1ProfileSaveResponses, V1ProfileShowData, V1ProfileShowErrors, V1ProfileShowResponses, V1ProfilesListData, V1ProfilesListErrors, V1ProfilesListResponses, V1ReadyData, V1ReadyErrors, V1ReadyResponses } from './types.gen';
+import type { V1AuditLogData, V1AuditLogErrors, V1AuditLogResponses, V1ChatConnectProxyData, V1ChatConnectProxyErrors, V1ChatConnectProxyResponses, V1ChatDisconnectAllProxyData, V1ChatDisconnectAllProxyResponses, V1ChatDisconnectProxyData, V1ChatDisconnectProxyErrors, V1ChatDisconnectProxyResponses, V1ChatExportLogProxyData, V1ChatExportLogProxyErrors, V1ChatExportLogProxyResponses, V1ChatIsConnectedProxyData, V1ChatIsConnectedProxyResponses, V1ChatLogStatusProxyData, V1ChatLogStatusProxyResponses, V1ChatPlatformStatusProxyData, V1ChatPlatformStatusProxyResponses, V1ChatRetryProxyData, V1ChatRetryProxyErrors, V1ChatRetryProxyResponses, V1ChatSearchSessionProxyData, V1ChatSearchSessionProxyResponses, V1ChatSendProxyData, V1ChatSendProxyErrors, V1ChatSendProxyResponses, V1ChatStatusProxyData, V1ChatStatusProxyResponses, V1DiscordResetCooldownProxyData, V1DiscordResetCooldownProxyResponses, V1DiscordSendNotificationProxyData, V1DiscordSendNotificationProxyResponses, V1DiscordTestWebhookProxyData, V1DiscordTestWebhookProxyResponses, V1HealthData, V1HealthResponses, V1OauthCompleteFlowProxyData, V1OauthCompleteFlowProxyErrors, V1OauthCompleteFlowProxyResponses, V1OauthDisconnectProxyData, V1OauthDisconnectProxyResponses, V1OauthForgetProxyData, V1OauthForgetProxyResponses, V1OauthGetAccountProxyData, V1OauthGetAccountProxyResponses, V1OauthGetConfigProxyData, V1OauthGetConfigProxyResponses, V1OauthIsConfiguredProxyData, V1OauthIsConfiguredProxyResponses, V1OauthRefreshTokenProxyData, V1OauthRefreshTokenProxyErrors, V1OauthRefreshTokenProxyResponses, V1OauthSetConfigProxyData, V1OauthSetConfigProxyErrors, V1OauthSetConfigProxyResponses, V1OauthStartFlowProxyData, V1OauthStartFlowProxyErrors, V1OauthStartFlowProxyResponses, V1ObsConnectProxyData, V1ObsConnectProxyErrors, V1ObsConnectProxyResponses, V1ObsDisconnectProxyData, V1ObsDisconnectProxyResponses, V1ObsGetConfigProxyData, V1ObsGetConfigProxyResponses, V1ObsIsConnectedProxyData, V1ObsIsConnectedProxyResponses, V1ObsSetConfigProxyData, V1ObsSetConfigProxyErrors, V1ObsSetConfigProxyResponses, V1ObsStartStreamProxyData, V1ObsStartStreamProxyResponses, V1ObsStateProxyData, V1ObsStateProxyResponses, V1ObsStopStreamProxyData, V1ObsStopStreamProxyResponses, V1ProfileActivateData, V1ProfileActivateErrors, V1ProfileActivateResponses, V1ProfileDecryptData, V1ProfileDecryptErrors, V1ProfileDecryptResponses, V1ProfileDeleteData, V1ProfileDeleteErrors, V1ProfileDeleteResponses, V1ProfileIsEncryptedData, V1ProfileIsEncryptedResponses, V1ProfileLockData, V1ProfileLockedListData, V1ProfileLockedListResponses, V1ProfileLockResponses, V1ProfileOrderEnsureProxyData, V1ProfileOrderEnsureProxyErrors, V1ProfileOrderEnsureProxyResponses, V1ProfileOrderGetProxyData, V1ProfileOrderGetProxyErrors, V1ProfileOrderGetProxyResponses, V1ProfileOrderSetProxyData, V1ProfileOrderSetProxyErrors, V1ProfileOrderSetProxyResponses, V1ProfileSaveData, V1ProfileSaveErrors, V1ProfileSaveResponses, V1ProfileShowData, V1ProfileShowErrors, V1ProfileShowResponses, V1ProfilesListData, V1ProfilesListErrors, V1ProfilesListResponses, V1ProfileSummariesProxyData, V1ProfileSummariesProxyErrors, V1ProfileSummariesProxyResponses, V1ProfileUnlockData, V1ProfileUnlockErrors, V1ProfileUnlockResponses, V1ProfileValidateInputProxyData, V1ProfileValidateInputProxyErrors, V1ProfileValidateInputProxyResponses, V1ReadyData, V1ReadyErrors, V1ReadyResponses, V1SafetyPanicData, V1SafetyPanicErrors, V1SafetyPanicResponses, V1SecurityRotateMachineKeyProxyData, V1SecurityRotateMachineKeyProxyErrors, V1SecurityRotateMachineKeyProxyResponses, V1SettingsClearDataData, V1SettingsClearDataErrors, V1SettingsClearDataResponses, V1SettingsExportData, V1SettingsExportErrors, V1SettingsExportResponses, V1SettingsGetData, V1SettingsGetErrors, V1SettingsGetResponses, V1SettingsProfilesPathData, V1SettingsProfilesPathResponses, V1SettingsSaveData, V1SettingsSaveErrors, V1SettingsSaveResponses, V1StreamsRetryData, V1StreamsRetryErrors, V1StreamsRetryResponses, V1StreamsStartAllData, V1StreamsStartAllErrors, V1StreamsStartAllResponses, V1StreamsStartData, V1StreamsStartErrors, V1StreamsStartResponses, V1StreamsStatusData, V1StreamsStatusResponses, V1StreamsStopAllData, V1StreamsStopAllErrors, V1StreamsStopAllResponses, V1StreamsStopData, V1StreamsStopErrors, V1StreamsStopResponses, V1StreamsToggleTargetData, V1StreamsToggleTargetErrors, V1StreamsToggleTargetResponses, V1StreamsValidateData, V1StreamsValidateErrors, V1StreamsValidateResponses, V1StreamTargetDisabledProxyData, V1StreamTargetDisabledProxyResponses, V1SystemAppVersionData, V1SystemAppVersionResponses, V1SystemAuditAppUpdateFailureData, V1SystemAuditAppUpdateFailureResponses, V1SystemClientConfigData, V1SystemClientConfigResponses, V1SystemEncoderPresetsData, V1SystemEncoderPresetsResponses, V1SystemEncodersProxyData, V1SystemEncodersProxyResponses, V1SystemFfmpegPathProxyData, V1SystemFfmpegPathProxyResponses, V1SystemFfmpegTestProxyData, V1SystemFfmpegTestProxyResponses, V1SystemFfmpegUpdateProxyData, V1SystemFfmpegUpdateProxyResponses, V1SystemFfmpegValidateProxyData, V1SystemFfmpegValidateProxyResponses, V1SystemLogsExportProxyData, V1SystemLogsExportProxyErrors, V1SystemLogsExportProxyResponses, V1SystemLogsProxyData, V1SystemLogsProxyErrors, V1SystemLogsProxyResponses, V1SystemRtmpTestProxyData, V1SystemRtmpTestProxyResponses, V1ThemesInstallProxyData, V1ThemesInstallProxyErrors, V1ThemesInstallProxyResponses, V1ThemesListProxyData, V1ThemesListProxyResponses, V1ThemesRefreshProxyData, V1ThemesRefreshProxyResponses, V1ThemeTokensProxyData, V1ThemeTokensProxyErrors, V1ThemeTokensProxyResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -18,9 +18,277 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
     meta?: Record<string, unknown>;
 };
 
+/**
+ * `GET /api/v1/audit/log` — paginated, filterable read of the audit
+ *
+ * log. Entries are serialised as-is from
+ * [`spiritstream_core::services::AuditEntry`]. The response is wrapped
+ * in an HMAC-verification status (`tampered: bool` + last known-good
+ * sequence) so the UI can render the red banner.
+ */
+export const v1AuditLog = <ThrowOnError extends boolean = false>(options?: Options<V1AuditLogData, ThrowOnError>) => {
+    return (options?.client ?? client).get<V1AuditLogResponses, V1AuditLogErrors, ThrowOnError>({
+        url: '/audit/log',
+        ...options
+    });
+};
+
+export const v1ChatIsConnectedProxy = <ThrowOnError extends boolean = false>(options?: Options<V1ChatIsConnectedProxyData, ThrowOnError>) => {
+    return (options?.client ?? client).get<V1ChatIsConnectedProxyResponses, unknown, ThrowOnError>({
+        url: '/chat/connected',
+        ...options
+    });
+};
+
+export const v1ChatDisconnectAllProxy = <ThrowOnError extends boolean = false>(options?: Options<V1ChatDisconnectAllProxyData, ThrowOnError>) => {
+    return (options?.client ?? client).delete<V1ChatDisconnectAllProxyResponses, unknown, ThrowOnError>({
+        url: '/chat/connections',
+        ...options
+    });
+};
+
+export const v1ChatStatusProxy = <ThrowOnError extends boolean = false>(options?: Options<V1ChatStatusProxyData, ThrowOnError>) => {
+    return (options?.client ?? client).get<V1ChatStatusProxyResponses, unknown, ThrowOnError>({
+        url: '/chat/connections',
+        ...options
+    });
+};
+
+export const v1ChatConnectProxy = <ThrowOnError extends boolean = false>(options: Options<V1ChatConnectProxyData, ThrowOnError>) => {
+    return (options.client ?? client).post<V1ChatConnectProxyResponses, V1ChatConnectProxyErrors, ThrowOnError>({
+        url: '/chat/connections',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+export const v1ChatDisconnectProxy = <ThrowOnError extends boolean = false>(options: Options<V1ChatDisconnectProxyData, ThrowOnError>) => {
+    return (options.client ?? client).delete<V1ChatDisconnectProxyResponses, V1ChatDisconnectProxyErrors, ThrowOnError>({
+        url: '/chat/connections/{platform}',
+        ...options
+    });
+};
+
+export const v1ChatPlatformStatusProxy = <ThrowOnError extends boolean = false>(options: Options<V1ChatPlatformStatusProxyData, ThrowOnError>) => {
+    return (options.client ?? client).get<V1ChatPlatformStatusProxyResponses, unknown, ThrowOnError>({
+        url: '/chat/connections/{platform}',
+        ...options
+    });
+};
+
+export const v1ChatRetryProxy = <ThrowOnError extends boolean = false>(options: Options<V1ChatRetryProxyData, ThrowOnError>) => {
+    return (options.client ?? client).post<V1ChatRetryProxyResponses, V1ChatRetryProxyErrors, ThrowOnError>({
+        url: '/chat/connections/{platform}/retry',
+        ...options
+    });
+};
+
+export const v1ChatLogStatusProxy = <ThrowOnError extends boolean = false>(options?: Options<V1ChatLogStatusProxyData, ThrowOnError>) => {
+    return (options?.client ?? client).get<V1ChatLogStatusProxyResponses, unknown, ThrowOnError>({
+        url: '/chat/log',
+        ...options
+    });
+};
+
+export const v1ChatExportLogProxy = <ThrowOnError extends boolean = false>(options: Options<V1ChatExportLogProxyData, ThrowOnError>) => {
+    return (options.client ?? client).post<V1ChatExportLogProxyResponses, V1ChatExportLogProxyErrors, ThrowOnError>({
+        url: '/chat/log/export',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+export const v1ChatSearchSessionProxy = <ThrowOnError extends boolean = false>(options: Options<V1ChatSearchSessionProxyData, ThrowOnError>) => {
+    return (options.client ?? client).post<V1ChatSearchSessionProxyResponses, unknown, ThrowOnError>({
+        url: '/chat/log/search',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+export const v1ChatSendProxy = <ThrowOnError extends boolean = false>(options: Options<V1ChatSendProxyData, ThrowOnError>) => {
+    return (options.client ?? client).post<V1ChatSendProxyResponses, V1ChatSendProxyErrors, ThrowOnError>({
+        url: '/chat/messages',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+export const v1DiscordResetCooldownProxy = <ThrowOnError extends boolean = false>(options?: Options<V1DiscordResetCooldownProxyData, ThrowOnError>) => {
+    return (options?.client ?? client).delete<V1DiscordResetCooldownProxyResponses, unknown, ThrowOnError>({
+        url: '/discord/webhook/cooldown',
+        ...options
+    });
+};
+
+export const v1DiscordSendNotificationProxy = <ThrowOnError extends boolean = false>(options?: Options<V1DiscordSendNotificationProxyData, ThrowOnError>) => {
+    return (options?.client ?? client).post<V1DiscordSendNotificationProxyResponses, unknown, ThrowOnError>({
+        url: '/discord/webhook/send',
+        ...options
+    });
+};
+
+export const v1DiscordTestWebhookProxy = <ThrowOnError extends boolean = false>(options: Options<V1DiscordTestWebhookProxyData, ThrowOnError>) => {
+    return (options.client ?? client).post<V1DiscordTestWebhookProxyResponses, unknown, ThrowOnError>({
+        url: '/discord/webhook/test',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
 export const v1Health = <ThrowOnError extends boolean = false>(options?: Options<V1HealthData, ThrowOnError>) => {
     return (options?.client ?? client).get<V1HealthResponses, unknown, ThrowOnError>({
         url: '/health',
+        ...options
+    });
+};
+
+export const v1OauthGetConfigProxy = <ThrowOnError extends boolean = false>(options?: Options<V1OauthGetConfigProxyData, ThrowOnError>) => {
+    return (options?.client ?? client).get<V1OauthGetConfigProxyResponses, unknown, ThrowOnError>({
+        url: '/oauth/config',
+        ...options
+    });
+};
+
+export const v1OauthSetConfigProxy = <ThrowOnError extends boolean = false>(options: Options<V1OauthSetConfigProxyData, ThrowOnError>) => {
+    return (options.client ?? client).put<V1OauthSetConfigProxyResponses, V1OauthSetConfigProxyErrors, ThrowOnError>({
+        url: '/oauth/config',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+export const v1OauthDisconnectProxy = <ThrowOnError extends boolean = false>(options: Options<V1OauthDisconnectProxyData, ThrowOnError>) => {
+    return (options.client ?? client).delete<V1OauthDisconnectProxyResponses, unknown, ThrowOnError>({
+        url: '/oauth/{provider}/account',
+        ...options
+    });
+};
+
+export const v1OauthGetAccountProxy = <ThrowOnError extends boolean = false>(options: Options<V1OauthGetAccountProxyData, ThrowOnError>) => {
+    return (options.client ?? client).get<V1OauthGetAccountProxyResponses, unknown, ThrowOnError>({
+        url: '/oauth/{provider}/account',
+        ...options
+    });
+};
+
+export const v1OauthCompleteFlowProxy = <ThrowOnError extends boolean = false>(options: Options<V1OauthCompleteFlowProxyData, ThrowOnError>) => {
+    return (options.client ?? client).post<V1OauthCompleteFlowProxyResponses, V1OauthCompleteFlowProxyErrors, ThrowOnError>({
+        url: '/oauth/{provider}/complete',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+export const v1OauthIsConfiguredProxy = <ThrowOnError extends boolean = false>(options: Options<V1OauthIsConfiguredProxyData, ThrowOnError>) => {
+    return (options.client ?? client).get<V1OauthIsConfiguredProxyResponses, unknown, ThrowOnError>({
+        url: '/oauth/{provider}/configured',
+        ...options
+    });
+};
+
+export const v1OauthStartFlowProxy = <ThrowOnError extends boolean = false>(options: Options<V1OauthStartFlowProxyData, ThrowOnError>) => {
+    return (options.client ?? client).post<V1OauthStartFlowProxyResponses, V1OauthStartFlowProxyErrors, ThrowOnError>({
+        url: '/oauth/{provider}/flow',
+        ...options
+    });
+};
+
+export const v1OauthForgetProxy = <ThrowOnError extends boolean = false>(options: Options<V1OauthForgetProxyData, ThrowOnError>) => {
+    return (options.client ?? client).post<V1OauthForgetProxyResponses, unknown, ThrowOnError>({
+        url: '/oauth/{provider}/forget',
+        ...options
+    });
+};
+
+export const v1OauthRefreshTokenProxy = <ThrowOnError extends boolean = false>(options: Options<V1OauthRefreshTokenProxyData, ThrowOnError>) => {
+    return (options.client ?? client).post<V1OauthRefreshTokenProxyResponses, V1OauthRefreshTokenProxyErrors, ThrowOnError>({
+        url: '/oauth/{provider}/refresh',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+export const v1ObsGetConfigProxy = <ThrowOnError extends boolean = false>(options?: Options<V1ObsGetConfigProxyData, ThrowOnError>) => {
+    return (options?.client ?? client).get<V1ObsGetConfigProxyResponses, unknown, ThrowOnError>({
+        url: '/obs/config',
+        ...options
+    });
+};
+
+export const v1ObsSetConfigProxy = <ThrowOnError extends boolean = false>(options: Options<V1ObsSetConfigProxyData, ThrowOnError>) => {
+    return (options.client ?? client).put<V1ObsSetConfigProxyResponses, V1ObsSetConfigProxyErrors, ThrowOnError>({
+        url: '/obs/config',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+export const v1ObsDisconnectProxy = <ThrowOnError extends boolean = false>(options?: Options<V1ObsDisconnectProxyData, ThrowOnError>) => {
+    return (options?.client ?? client).delete<V1ObsDisconnectProxyResponses, unknown, ThrowOnError>({
+        url: '/obs/connection',
+        ...options
+    });
+};
+
+export const v1ObsIsConnectedProxy = <ThrowOnError extends boolean = false>(options?: Options<V1ObsIsConnectedProxyData, ThrowOnError>) => {
+    return (options?.client ?? client).get<V1ObsIsConnectedProxyResponses, unknown, ThrowOnError>({
+        url: '/obs/connection',
+        ...options
+    });
+};
+
+export const v1ObsConnectProxy = <ThrowOnError extends boolean = false>(options?: Options<V1ObsConnectProxyData, ThrowOnError>) => {
+    return (options?.client ?? client).post<V1ObsConnectProxyResponses, V1ObsConnectProxyErrors, ThrowOnError>({
+        url: '/obs/connection',
+        ...options
+    });
+};
+
+export const v1ObsStateProxy = <ThrowOnError extends boolean = false>(options?: Options<V1ObsStateProxyData, ThrowOnError>) => {
+    return (options?.client ?? client).get<V1ObsStateProxyResponses, unknown, ThrowOnError>({
+        url: '/obs/state',
+        ...options
+    });
+};
+
+export const v1ObsStopStreamProxy = <ThrowOnError extends boolean = false>(options?: Options<V1ObsStopStreamProxyData, ThrowOnError>) => {
+    return (options?.client ?? client).delete<V1ObsStopStreamProxyResponses, unknown, ThrowOnError>({
+        url: '/obs/stream',
+        ...options
+    });
+};
+
+export const v1ObsStartStreamProxy = <ThrowOnError extends boolean = false>(options?: Options<V1ObsStartStreamProxyData, ThrowOnError>) => {
+    return (options?.client ?? client).post<V1ObsStartStreamProxyResponses, unknown, ThrowOnError>({
+        url: '/obs/stream',
         ...options
     });
 };
@@ -29,6 +297,61 @@ export const v1ProfilesList = <ThrowOnError extends boolean = false>(options?: O
     return (options?.client ?? client).get<V1ProfilesListResponses, V1ProfilesListErrors, ThrowOnError>({
         url: '/profiles',
         ...options
+    });
+};
+
+/**
+ * `GET /profiles/locked` — list every encrypted profile currently unlocked
+ *
+ * in the session. The frontend uses this to render lock/unlock icons.
+ */
+export const v1ProfileLockedList = <ThrowOnError extends boolean = false>(options?: Options<V1ProfileLockedListData, ThrowOnError>) => {
+    return (options?.client ?? client).get<V1ProfileLockedListResponses, unknown, ThrowOnError>({
+        url: '/profiles/locked',
+        ...options
+    });
+};
+
+export const v1ProfileOrderGetProxy = <ThrowOnError extends boolean = false>(options?: Options<V1ProfileOrderGetProxyData, ThrowOnError>) => {
+    return (options?.client ?? client).get<V1ProfileOrderGetProxyResponses, V1ProfileOrderGetProxyErrors, ThrowOnError>({
+        url: '/profiles/order',
+        ...options
+    });
+};
+
+export const v1ProfileOrderSetProxy = <ThrowOnError extends boolean = false>(options: Options<V1ProfileOrderSetProxyData, ThrowOnError>) => {
+    return (options.client ?? client).patch<V1ProfileOrderSetProxyResponses, V1ProfileOrderSetProxyErrors, ThrowOnError>({
+        url: '/profiles/order',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+export const v1ProfileOrderEnsureProxy = <ThrowOnError extends boolean = false>(options?: Options<V1ProfileOrderEnsureProxyData, ThrowOnError>) => {
+    return (options?.client ?? client).post<V1ProfileOrderEnsureProxyResponses, V1ProfileOrderEnsureProxyErrors, ThrowOnError>({
+        url: '/profiles/order/ensure',
+        ...options
+    });
+};
+
+export const v1ProfileSummariesProxy = <ThrowOnError extends boolean = false>(options?: Options<V1ProfileSummariesProxyData, ThrowOnError>) => {
+    return (options?.client ?? client).get<V1ProfileSummariesProxyResponses, V1ProfileSummariesProxyErrors, ThrowOnError>({
+        url: '/profiles/summaries',
+        ...options
+    });
+};
+
+export const v1ProfileValidateInputProxy = <ThrowOnError extends boolean = false>(options: Options<V1ProfileValidateInputProxyData, ThrowOnError>) => {
+    return (options.client ?? client).post<V1ProfileValidateInputProxyResponses, V1ProfileValidateInputProxyErrors, ThrowOnError>({
+        url: '/profiles/validate-input',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
     });
 };
 
@@ -77,6 +400,47 @@ export const v1ProfileSave = <ThrowOnError extends boolean = false>(options: Opt
 };
 
 /**
+ * `POST /profiles/{name}/activate` — load the profile, set it as the active
+ *
+ * session profile, propagate to chat/OBS handlers, emit the consolidated
+ * `profile_activated` event. The frontend used to do this cascade in
+ * `profileStore.applyProfileSettings`; now it just listens for the event.
+ */
+export const v1ProfileActivate = <ThrowOnError extends boolean = false>(options: Options<V1ProfileActivateData, ThrowOnError>) => {
+    return (options.client ?? client).post<V1ProfileActivateResponses, V1ProfileActivateErrors, ThrowOnError>({
+        url: '/profiles/{name}/activate',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+/**
+ * `POST /profiles/{name}/decrypt` — atomic encryption-removal.
+ *
+ * Replaces the frontend's two-round-trip flow in
+ * `apps/web/src/stores/profileStore.ts` (load with password → save without
+ * password). The server loads the profile with the supplied password and
+ * re-saves it WITHOUT encryption in one operation.
+ *
+ * On success the profile also gets added to the session unlock set so
+ * subsequent reads don't re-prompt for a password before the profile list
+ * refreshes.
+ */
+export const v1ProfileDecrypt = <ThrowOnError extends boolean = false>(options: Options<V1ProfileDecryptData, ThrowOnError>) => {
+    return (options.client ?? client).post<V1ProfileDecryptResponses, V1ProfileDecryptErrors, ThrowOnError>({
+        url: '/profiles/{name}/decrypt',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+/**
  * `GET /profiles/{name}/encrypted` — quick check whether a profile is stored encrypted on disk.
  */
 export const v1ProfileIsEncrypted = <ThrowOnError extends boolean = false>(options: Options<V1ProfileIsEncryptedData, ThrowOnError>) => {
@@ -86,9 +450,417 @@ export const v1ProfileIsEncrypted = <ThrowOnError extends boolean = false>(optio
     });
 };
 
+/**
+ * `POST /profiles/{name}/lock` — remove the profile from the session unlock
+ *
+ * set. After this call, accessing the profile again requires the password.
+ */
+export const v1ProfileLock = <ThrowOnError extends boolean = false>(options: Options<V1ProfileLockData, ThrowOnError>) => {
+    return (options.client ?? client).post<V1ProfileLockResponses, unknown, ThrowOnError>({
+        url: '/profiles/{name}/lock',
+        ...options
+    });
+};
+
+/**
+ * `POST /profiles/{name}/unlock` — validate the password and add the
+ *
+ * profile to the server-side session unlock set, replacing
+ * `Profiles.tsx`'s frontend `unlockedProfiles: Set<string>` state.
+ */
+export const v1ProfileUnlock = <ThrowOnError extends boolean = false>(options: Options<V1ProfileUnlockData, ThrowOnError>) => {
+    return (options.client ?? client).post<V1ProfileUnlockResponses, V1ProfileUnlockErrors, ThrowOnError>({
+        url: '/profiles/{name}/unlock',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
 export const v1Ready = <ThrowOnError extends boolean = false>(options?: Options<V1ReadyData, ThrowOnError>) => {
     return (options?.client ?? client).get<V1ReadyResponses, V1ReadyErrors, ThrowOnError>({
         url: '/ready',
+        ...options
+    });
+};
+
+/**
+ * `POST /api/v1/safety/panic` — trigger the panic-disconnect flow.
+ *
+ * Coordinates: stop every active stream, disconnect every chat
+ * platform, disconnect OBS, wipe in-memory secret caches, record an
+ * audit-log entry, emit `panic_triggered`. See
+ * [`spiritstream_core::services::SafetyService`] for the contract.
+ *
+ * **No confirmation token is required** — that defeats the purpose of
+ * a panic button. The rate limiter applies (`default_auth`) so a
+ * malicious script can't burn the panic call to mask real intent.
+ */
+export const v1SafetyPanic = <ThrowOnError extends boolean = false>(options?: Options<V1SafetyPanicData, ThrowOnError>) => {
+    return (options?.client ?? client).post<V1SafetyPanicResponses, V1SafetyPanicErrors, ThrowOnError>({
+        url: '/safety/panic',
+        ...options
+    });
+};
+
+export const v1SecurityRotateMachineKeyProxy = <ThrowOnError extends boolean = false>(options: Options<V1SecurityRotateMachineKeyProxyData, ThrowOnError>) => {
+    return (options.client ?? client).post<V1SecurityRotateMachineKeyProxyResponses, V1SecurityRotateMachineKeyProxyErrors, ThrowOnError>({
+        url: '/security/machine-key/rotate',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+/**
+ * `GET /settings` — return the resolved (cached) global settings document.
+ */
+export const v1SettingsGet = <ThrowOnError extends boolean = false>(options?: Options<V1SettingsGetData, ThrowOnError>) => {
+    return (options?.client ?? client).get<V1SettingsGetResponses, V1SettingsGetErrors, ThrowOnError>({
+        url: '/settings',
+        ...options
+    });
+};
+
+/**
+ * `PUT /settings` — replace the global settings document. Field-level bound
+ *
+ * checks (`log_retention_days` ∈ [1, 365], `discord_cooldown_seconds`
+ * ∈ [0, 86400], `backend_port` ∈ [1, 65535]) run inside
+ * `SettingsManager::save`. Out-of-range values return 400
+ * `validation_failed` with the full list of offending fields.
+ */
+export const v1SettingsSave = <ThrowOnError extends boolean = false>(options: Options<V1SettingsSaveData, ThrowOnError>) => {
+    return (options.client ?? client).put<V1SettingsSaveResponses, V1SettingsSaveErrors, ThrowOnError>({
+        url: '/settings',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+/**
+ * `DELETE /settings/data` — wipe every persisted setting + every profile.
+ *
+ * A future change will gate this behind a per-call confirmation token;
+ * for now the authenticated session is the only gate.
+ */
+export const v1SettingsClearData = <ThrowOnError extends boolean = false>(options?: Options<V1SettingsClearDataData, ThrowOnError>) => {
+    return (options?.client ?? client).delete<V1SettingsClearDataResponses, V1SettingsClearDataErrors, ThrowOnError>({
+        url: '/settings/data',
+        ...options
+    });
+};
+
+/**
+ * `POST /settings/export` — copy `settings.json` and every profile under
+ *
+ * `<export_path>/`. The destination must resolve inside the app data dir or
+ * the user's home; anything else returns 403 `path_outside_allowed_root`.
+ */
+export const v1SettingsExport = <ThrowOnError extends boolean = false>(options: Options<V1SettingsExportData, ThrowOnError>) => {
+    return (options.client ?? client).post<V1SettingsExportResponses, V1SettingsExportErrors, ThrowOnError>({
+        url: '/settings/export',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+/**
+ * `GET /settings/profiles-path` — return the absolute on-disk path of the
+ *
+ * profiles directory for the active install. The frontend uses it for the
+ * "open profiles folder" affordance.
+ */
+export const v1SettingsProfilesPath = <ThrowOnError extends boolean = false>(options?: Options<V1SettingsProfilesPathData, ThrowOnError>) => {
+    return (options?.client ?? client).get<V1SettingsProfilesPathResponses, unknown, ThrowOnError>({
+        url: '/settings/profiles-path',
+        ...options
+    });
+};
+
+/**
+ * `DELETE /streams` — stop every group and disconnect chat.
+ */
+export const v1StreamsStopAll = <ThrowOnError extends boolean = false>(options?: Options<V1StreamsStopAllData, ThrowOnError>) => {
+    return (options?.client ?? client).delete<V1StreamsStopAllResponses, V1StreamsStopAllErrors, ThrowOnError>({
+        url: '/streams',
+        ...options
+    });
+};
+
+/**
+ * `GET /streams` — snapshot of which output groups are currently streaming.
+ *
+ * The full real-time stats path stays on the WebSocket; this endpoint is
+ * the typed REST shape callers reach for when they only need "is anything
+ * running right now."
+ */
+export const v1StreamsStatus = <ThrowOnError extends boolean = false>(options?: Options<V1StreamsStatusData, ThrowOnError>) => {
+    return (options?.client ?? client).get<V1StreamsStatusResponses, unknown, ThrowOnError>({
+        url: '/streams',
+        ...options
+    });
+};
+
+/**
+ * `POST /streams` — start every output group with at least one enabled
+ *
+ * target. Same chat-side-effect orchestration as the single-group form.
+ */
+export const v1StreamsStartAll = <ThrowOnError extends boolean = false>(options: Options<V1StreamsStartAllData, ThrowOnError>) => {
+    return (options.client ?? client).post<V1StreamsStartAllResponses, V1StreamsStartAllErrors, ThrowOnError>({
+        url: '/streams',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+/**
+ * `DELETE /streams/groups/{group_id}` — stop a single group. Triggers
+ *
+ * chat auto-disconnect when no groups remain.
+ */
+export const v1StreamsStop = <ThrowOnError extends boolean = false>(options: Options<V1StreamsStopData, ThrowOnError>) => {
+    return (options.client ?? client).delete<V1StreamsStopResponses, V1StreamsStopErrors, ThrowOnError>({
+        url: '/streams/groups/{group_id}',
+        ...options
+    });
+};
+
+/**
+ * `POST /streams/groups/{group_id}` — start streaming for a single output
+ *
+ * group. The transport layer wires the chat auto-connect side effects via
+ * Delegates auto-connect-chat-platforms + start-log-session helpers
+ * from the chat module so the start-stream flow brings up chat in
+ * the same call.
+ */
+export const v1StreamsStart = <ThrowOnError extends boolean = false>(options: Options<V1StreamsStartData, ThrowOnError>) => {
+    return (options.client ?? client).post<V1StreamsStartResponses, V1StreamsStartErrors, ThrowOnError>({
+        url: '/streams/groups/{group_id}',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+/**
+ * `POST /streams/groups/{group_id}/retry` — exponential-backoff reconnect.
+ */
+export const v1StreamsRetry = <ThrowOnError extends boolean = false>(options: Options<V1StreamsRetryData, ThrowOnError>) => {
+    return (options.client ?? client).post<V1StreamsRetryResponses, V1StreamsRetryErrors, ThrowOnError>({
+        url: '/streams/groups/{group_id}/retry',
+        ...options
+    });
+};
+
+/**
+ * `PATCH /streams/targets/{target_id}` — toggle an individual target enable
+ *
+ * state and restart its parent group with the updated filter. PATCH (not
+ * PUT) because the body is a partial update — `enabled` flag plus the
+ * group context needed to restart, not a full replacement of the target.
+ */
+export const v1StreamsToggleTarget = <ThrowOnError extends boolean = false>(options: Options<V1StreamsToggleTargetData, ThrowOnError>) => {
+    return (options.client ?? client).patch<V1StreamsToggleTargetResponses, V1StreamsToggleTargetErrors, ThrowOnError>({
+        url: '/streams/targets/{target_id}',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+export const v1StreamTargetDisabledProxy = <ThrowOnError extends boolean = false>(options: Options<V1StreamTargetDisabledProxyData, ThrowOnError>) => {
+    return (options.client ?? client).get<V1StreamTargetDisabledProxyResponses, unknown, ThrowOnError>({
+        url: '/streams/targets/{target_id}/disabled',
+        ...options
+    });
+};
+
+/**
+ * `POST /streams/validate` — decorative live-validation endpoint anchored
+ *
+ * at the plan's "Validation strategy" note: server is authoritative; the
+ * frontend may call this for live feedback in modals, but the same check
+ * runs inside `POST /streams`.
+ *
+ * Returns 200 with `{valid: true}` on success, 400
+ * `invalid_stream_config` with `reasons: Vec<ValidationIssue>` on failure.
+ */
+export const v1StreamsValidate = <ThrowOnError extends boolean = false>(options: Options<V1StreamsValidateData, ThrowOnError>) => {
+    return (options.client ?? client).post<V1StreamsValidateResponses, V1StreamsValidateErrors, ThrowOnError>({
+        url: '/streams/validate',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+export const v1SystemAppVersion = <ThrowOnError extends boolean = false>(options?: Options<V1SystemAppVersionData, ThrowOnError>) => {
+    return (options?.client ?? client).get<V1SystemAppVersionResponses, unknown, ThrowOnError>({
+        url: '/system/app-version',
+        ...options
+    });
+};
+
+export const v1SystemAuditAppUpdateFailure = <ThrowOnError extends boolean = false>(options: Options<V1SystemAuditAppUpdateFailureData, ThrowOnError>) => {
+    return (options.client ?? client).post<V1SystemAuditAppUpdateFailureResponses, unknown, ThrowOnError>({
+        url: '/system/audit/app-update-failure',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+/**
+ * `GET /system/client-config` — replaces hardcoded `apps/web/src/lib/constants.ts`.
+ *
+ * Returned once on app start, cached by the frontend.
+ */
+export const v1SystemClientConfig = <ThrowOnError extends boolean = false>(options?: Options<V1SystemClientConfigData, ThrowOnError>) => {
+    return (options?.client ?? client).get<V1SystemClientConfigResponses, unknown, ThrowOnError>({
+        url: '/system/client-config',
+        ...options
+    });
+};
+
+/**
+ * Discovery endpoint: always 200, returning whatever encoders the local
+ *
+ * FFmpeg install exposes. When FFmpeg is missing the response is the empty
+ * default (the honest answer to "what's available?"). Use
+ * `/system/ffmpeg/test` to check whether FFmpeg itself is installed.
+ */
+export const v1SystemEncodersProxy = <ThrowOnError extends boolean = false>(options?: Options<V1SystemEncodersProxyData, ThrowOnError>) => {
+    return (options?.client ?? client).get<V1SystemEncodersProxyResponses, unknown, ThrowOnError>({
+        url: '/system/encoders',
+        ...options
+    });
+};
+
+/**
+ * `GET /system/encoders/presets` — replaces hardcoded
+ *
+ * `OutputGroupModal.tsx:22-111` constants. Returned once on app start,
+ * cached by the frontend.
+ */
+export const v1SystemEncoderPresets = <ThrowOnError extends boolean = false>(options?: Options<V1SystemEncoderPresetsData, ThrowOnError>) => {
+    return (options?.client ?? client).get<V1SystemEncoderPresetsResponses, unknown, ThrowOnError>({
+        url: '/system/encoders/presets',
+        ...options
+    });
+};
+
+export const v1SystemFfmpegPathProxy = <ThrowOnError extends boolean = false>(options?: Options<V1SystemFfmpegPathProxyData, ThrowOnError>) => {
+    return (options?.client ?? client).get<V1SystemFfmpegPathProxyResponses, unknown, ThrowOnError>({
+        url: '/system/ffmpeg/path',
+        ...options
+    });
+};
+
+export const v1SystemFfmpegTestProxy = <ThrowOnError extends boolean = false>(options?: Options<V1SystemFfmpegTestProxyData, ThrowOnError>) => {
+    return (options?.client ?? client).get<V1SystemFfmpegTestProxyResponses, unknown, ThrowOnError>({
+        url: '/system/ffmpeg/test',
+        ...options
+    });
+};
+
+export const v1SystemFfmpegUpdateProxy = <ThrowOnError extends boolean = false>(options?: Options<V1SystemFfmpegUpdateProxyData, ThrowOnError>) => {
+    return (options?.client ?? client).get<V1SystemFfmpegUpdateProxyResponses, unknown, ThrowOnError>({
+        url: '/system/ffmpeg/update',
+        ...options
+    });
+};
+
+export const v1SystemFfmpegValidateProxy = <ThrowOnError extends boolean = false>(options: Options<V1SystemFfmpegValidateProxyData, ThrowOnError>) => {
+    return (options.client ?? client).post<V1SystemFfmpegValidateProxyResponses, unknown, ThrowOnError>({
+        url: '/system/ffmpeg/validate-path',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+export const v1SystemLogsProxy = <ThrowOnError extends boolean = false>(options?: Options<V1SystemLogsProxyData, ThrowOnError>) => {
+    return (options?.client ?? client).get<V1SystemLogsProxyResponses, V1SystemLogsProxyErrors, ThrowOnError>({
+        url: '/system/logs',
+        ...options
+    });
+};
+
+export const v1SystemLogsExportProxy = <ThrowOnError extends boolean = false>(options: Options<V1SystemLogsExportProxyData, ThrowOnError>) => {
+    return (options.client ?? client).post<V1SystemLogsExportProxyResponses, V1SystemLogsExportProxyErrors, ThrowOnError>({
+        url: '/system/logs/export',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+export const v1SystemRtmpTestProxy = <ThrowOnError extends boolean = false>(options: Options<V1SystemRtmpTestProxyData, ThrowOnError>) => {
+    return (options.client ?? client).post<V1SystemRtmpTestProxyResponses, unknown, ThrowOnError>({
+        url: '/system/rtmp/test',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+export const v1ThemesListProxy = <ThrowOnError extends boolean = false>(options?: Options<V1ThemesListProxyData, ThrowOnError>) => {
+    return (options?.client ?? client).get<V1ThemesListProxyResponses, unknown, ThrowOnError>({
+        url: '/themes',
+        ...options
+    });
+};
+
+export const v1ThemesInstallProxy = <ThrowOnError extends boolean = false>(options: Options<V1ThemesInstallProxyData, ThrowOnError>) => {
+    return (options.client ?? client).post<V1ThemesInstallProxyResponses, V1ThemesInstallProxyErrors, ThrowOnError>({
+        url: '/themes',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+export const v1ThemesRefreshProxy = <ThrowOnError extends boolean = false>(options?: Options<V1ThemesRefreshProxyData, ThrowOnError>) => {
+    return (options?.client ?? client).post<V1ThemesRefreshProxyResponses, unknown, ThrowOnError>({
+        url: '/themes/refresh',
+        ...options
+    });
+};
+
+export const v1ThemeTokensProxy = <ThrowOnError extends boolean = false>(options: Options<V1ThemeTokensProxyData, ThrowOnError>) => {
+    return (options.client ?? client).get<V1ThemeTokensProxyResponses, V1ThemeTokensProxyErrors, ThrowOnError>({
+        url: '/themes/{theme_id}/tokens',
         ...options
     });
 };

@@ -12,7 +12,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "regenerate": "../../scripts/regenerate-openapi.sh ./openapi.json && pnpm exec openapi-ts --input ./openapi.json --output ./src/generated --client fetch && rm ./openapi.json"
+    "regenerate": "../../scripts/regenerate-openapi.sh ./openapi.json && pnpm exec openapi-ts --input ./openapi.json --output ./src/generated --client @hey-api/client-fetch && rm ./openapi.json"
   },
   "dependencies": {
     "@spiritstream/types": "workspace:*"

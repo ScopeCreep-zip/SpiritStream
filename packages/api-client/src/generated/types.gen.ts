@@ -15,11 +15,524 @@ export type ApiErrorBody = {
     message?: string | null;
 };
 
+/**
+ * Body for `POST /system/audit/app-update-failure` — frontend records
+ * any signature-verification or download error from the self-updater
+ * into the HMAC-chained audit log. Operators grep
+ * `app_update_signature_failed` in the chain to spot tampered-update
+ * attempts that the client-side updater caught.
+ */
+export type AppUpdateFailureRequest = {
+    /**
+     * Sanitized error message from the updater. The frontend strips
+     * anything sensitive before posting; this field is appended verbatim
+     * to the audit entry's `detail`.
+     */
+    detail: string;
+};
+
+/**
+ * Response for `GET /system/app-version` — the running app's version
+ * string, sourced from Cargo metadata at compile time via `env!`.
+ * Replaces the hardcoded `"0.1.0"` constant that drifted out of sync
+ * with `package.json` / `tauri.conf.json` / `Cargo.toml`. The About
+ * page reads this so bug reports name the actual running version.
+ */
+export type AppVersionResponse = {
+    version: string;
+};
+
+/**
+ * Wire-mirror of [`AuditChainStatus`] with `ToSchema` for OpenAPI.
+ * utoipa is a transport-only dep — keeping `ToSchema` on a core type
+ * would leak the transport into core. The variants and field shapes
+ * must stay in lockstep; the `From<AuditChainStatus>` impl below is
+ * the single conversion point so any drift surfaces at compile time.
+ *
+ * Serialises as a discriminated union on `state` so the TS client
+ * reads `chain.state === 'tampered'` directly:
+ *
+ * ```json
+ * {"state": "ok", "entriesVerified": 42}
+ * {"state": "tampered", "lastValidSequence": 5, "reason": "hmac mismatch at seq 6"}
+ * {"state": "empty"}
+ * ```
+ */
+export type AuditChainStatusWire = {
+    entries_verified: number;
+    state: 'ok';
+} | {
+    last_valid_sequence: number;
+    reason: string;
+    state: 'tampered';
+} | {
+    state: 'empty';
+};
+
+export type AuditLogResponse = {
+    chain: AuditChainStatusWire;
+    /**
+     * Page slice (oldest-first within the returned window).
+     */
+    entries: Array<unknown>;
+    /**
+     * Total entries that survive the filter (before paging).
+     */
+    total: number;
+};
+
+/**
+ * `{"recorded": true}` ack body for `system/audit/app-update-failure`.
+ */
+export type AuditRecordedResponse = {
+    recorded: boolean;
+};
+
+/**
+ * Empty 200 OK response — used for handlers whose success payload is
+ * just acknowledgement (`connect`, `disconnect`, `retry`, `export`).
+ * Serialises as `{}`.
+ */
+export type ChatAckResponse = {
+    [key: string]: unknown;
+};
+
+/**
+ * `GET /chat/connected` response.
+ */
+export type ChatConnectedResponse = {
+    connected: boolean;
+};
+
+/**
+ * Mirror of [`ChatConnectionStatus`] with `ToSchema`.
+ */
+export type ChatConnectionStatusWire = 'disconnected' | 'connecting' | 'connected' | 'error';
+
+export type ChatExportRequest = {
+    path: string;
+};
+
+/**
+ * Mirror of [`ChatLogStatus`] with `ToSchema`. The core type already
+ * has `serde` derives; the mirror exists purely to add `ToSchema`.
+ */
+export type ChatLogStatusWire = {
+    active: boolean;
+    startedAt: number;
+};
+
+/**
+ * Mirror of [`ChatPlatformStatus`] with `ToSchema`.
+ */
+export type ChatPlatformStatusWire = {
+    error?: string | null;
+    messageCount: number;
+    platform: ChatPlatformWire;
+    status: ChatConnectionStatusWire;
+};
+
+/**
+ * Mirror of [`ChatPlatform`] with `ToSchema`.
+ */
+export type ChatPlatformWire = 'twitch' | 'tiktok' | 'youtube' | 'trovo' | 'stripchat' | 'kick' | 'facebook';
+
+export type ChatSearchRequest = {
+    limit?: number | null;
+    query: string;
+};
+
+export type ChatSendRequest = {
+    message: string;
+};
+
+/**
+ * Mirror of [`ChatSendResult`] with `ToSchema`.
+ */
+export type ChatSendResultWire = {
+    error?: string | null;
+    errorCode?: string | null;
+    platform: ChatPlatformWire;
+    success: boolean;
+};
+
+export type ClientConfigResponse = {
+    /**
+     * Auto-save debounce delay (ms).
+     */
+    autoSaveDelayMs: number;
+    bitrateRange: RangeU32;
+    /**
+     * Per-platform chat message max length (already exposed via
+     * `ChatPlatform::max_message_chars`, mirrored here for convenience).
+     */
+    chatMaxChars: {
+        [key: string]: number;
+    };
+    /**
+     * Polling interval for chat overlay state (ms).
+     */
+    chatOverlayPollMs: number;
+    /**
+     * Polling interval for refreshing chat platform status (ms).
+     */
+    chatPollIntervalMs: number;
+    chatPopupHeight: number;
+    /**
+     * Chat overlay popup window dimensions.
+     */
+    chatPopupWidth: number;
+    /**
+     * Allowed URL prefixes for Discord webhooks. Server-authoritative;
+     * frontend renders the live-validation indicator from this list
+     * rather than hard-coding `discord.com` / `discordapp.com`.
+     */
+    discordWebhookPrefixes: Array<string>;
+    fpsRange: RangeU32;
+    keyframeRange: RangeU32;
+    /**
+     * Delay before triggering SpiritStream when OBS starts streaming (ms).
+     */
+    obsTriggerDelayMs: number;
+    /**
+     * Minimum length for the profile-encryption password. Sourced from
+     * `spiritstream_core::services::encryption::PROFILE_PASSWORD_MIN_LENGTH`;
+     * the frontend uses this for inline form feedback only. The server
+     * is authoritative and rejects shorter passwords with
+     * `CoreError::PasswordTooShort` regardless of what the frontend
+     * accepts.
+     */
+    passwordMinLength: number;
+    /**
+     * Base delay for HTTP retry with exponential back-off (ms).
+     */
+    retryBaseDelayMs: number;
+    /**
+     * Hard timeout for theme initialization on app start (ms). After this,
+     * the UI falls back to the default theme rather than blocking forever.
+     */
+    themeInitTimeoutMs: number;
+    /**
+     * Delay between theme-token fetch retry attempts (ms).
+     */
+    themeTokenRetryDelayMs: number;
+    /**
+     * Default toast duration (ms).
+     */
+    toastDurationMs: number;
+};
+
+/**
+ * Empty 200 ack body for `DELETE /discord/webhook/cooldown`. Serialises
+ * as `{}`.
+ */
+export type DiscordAckResponse = {
+    [key: string]: unknown;
+};
+
+export type DiscordWebhookTestRequest = {
+    url: string;
+};
+
+/**
+ * Mirror of [`EncoderKind`] with `ToSchema`.
+ */
+export type EncoderKindWire = 'software' | 'hardware' | 'passthrough';
+
+/**
+ * Mirror of [`EncoderMeta`] with `ToSchema`.
+ */
+export type EncoderMetaWire = {
+    family: string;
+    kind: EncoderKindWire;
+};
+
+export type EncoderPresetsResponse = {
+    audioBitrates: Array<string>;
+    audioChannels: Array<string>;
+    audioSampleRates: Array<string>;
+    containerFormats: Array<string>;
+    /**
+     * Default preset per encoder kind (same key set as `presets`).
+     * Frontend used to derive this by substring-matching the codec
+     * name (`includes('nvenc')` etc.) — that mapping now ships from
+     * the backend so the codec→family relationship is one constant
+     * to edit, not a regex-shaped lookup duplicated client-side.
+     */
+    defaultPresets: {
+        [key: string]: string;
+    };
+    fpsValues: Array<string>;
+    h264Profiles: Array<string>;
+    /**
+     * Map of encoder kind → preset list. Keys: `libx264`, `libx265`,
+     * `nvenc`, `amf`. Frontend maps the user's selected codec to the
+     * matching list.
+     */
+    presets: {
+        [key: string]: Array<string>;
+    };
+    resolutions: Array<string>;
+};
+
+/**
+ * Mirror of [`Encoders`] with `ToSchema`.
+ */
+export type EncodersWire = {
+    audio: Array<string>;
+    metadata: {
+        [key: string]: EncoderMetaWire;
+    };
+    video: Array<string>;
+};
+
+/**
+ * `{"path": "/usr/bin/ffmpeg"}` (or null) from `/system/ffmpeg/path`.
+ */
+export type FFmpegPathResponse = {
+    path?: string | null;
+};
+
+export type FFmpegUpdateQuery = {
+    installedVersion?: string | null;
+};
+
+export type FFmpegValidatePathRequest = {
+    path: string;
+};
+
+/**
+ * `{"validated": "<resolved-path>"}` from `/system/ffmpeg/validate-path`.
+ */
+export type FFmpegValidatePathResponse = {
+    validated: string;
+};
+
+/**
+ * Mirror of [`FFmpegVersionInfo`] with `ToSchema`.
+ */
+export type FFmpegVersionInfoWire = {
+    installedVersion?: string | null;
+    latestVersion?: string | null;
+    status: string;
+    updateAvailable: boolean;
+};
+
+/**
+ * `{"version": "ffmpeg 7.x.x..."}` from `/system/ffmpeg/test`.
+ */
+export type FFmpegVersionResponse = {
+    version: string;
+};
+
 export type HealthResponse = {
     /**
-     * Always `"ok"` when the server is responsive.
+     * Per-subsystem report. Frontend status views render
+     * each entry as its own row with the corresponding badge.
+     */
+    services: {
+        [key: string]: SubsystemStatus;
+    };
+    /**
+     * Aggregate status string — `"ok"`, `"degraded"`, or `"tampered"`.
+     * Kept for backwards-compat with Tauri sidecar polling + the
+     * Docker `HEALTHCHECK` directive, which just need 200 + a key
+     * they can grep for.
      */
     status: string;
+};
+
+export type IntegrationDirectionWire = 'obs-to-spiritstream' | 'spiritstream-to-obs' | 'bidirectional' | 'disabled';
+
+export type LogsExportRequest = {
+    content: string;
+    path: string;
+};
+
+export type LogsQuery = {
+    maxLines?: number | null;
+};
+
+/**
+ * Wraps `Vec<String>` log-line responses so OpenAPI gets a named schema.
+ */
+export type LogsResponse = {
+    lines: Array<string>;
+};
+
+/**
+ * Wire mirror of [`spiritstream_core::models::OAuthAccountStatus`]. The
+ * core type itself can't derive `ToSchema` (utoipa is transport-only).
+ */
+export type OAuthAccountStatusResponse = {
+    displayName: string;
+    loggedIn: boolean;
+    userId: string;
+    username: string;
+};
+
+/**
+ * Empty 200 ack body for handlers whose success payload is just
+ * acknowledgement (disconnect / forget / config update). Serialises
+ * as `{}`.
+ */
+export type OAuthAckResponse = {
+    [key: string]: unknown;
+};
+
+export type OAuthCompleteRequest = {
+    code: string;
+    state: string;
+};
+
+/**
+ * Mirror of [`OAuthConfig`] — accepted by `PUT /oauth/config` and
+ * surfaced in OpenAPI instead of the previous `serde_json::Value`.
+ */
+export type OAuthConfigRequest = {
+    facebookClientId?: string | null;
+    facebookClientSecret?: string | null;
+    kickClientId?: string | null;
+    kickClientSecret?: string | null;
+    twitchClientId?: string | null;
+    twitchClientSecret?: string | null;
+    youtubeClientId?: string | null;
+    youtubeClientSecret?: string | null;
+};
+
+/**
+ * `{"twitchConfigured": …, "youtubeConfigured": …}` — pre-flight check
+ * the UI runs before showing "Sign in with Twitch / YouTube" buttons.
+ */
+export type OAuthConfiguredFlagsResponse = {
+    facebookConfigured: boolean;
+    kickConfigured: boolean;
+    twitchConfigured: boolean;
+    youtubeConfigured: boolean;
+};
+
+/**
+ * `{"configured": bool}` — single-provider variant of the flags response.
+ */
+export type OAuthConfiguredResponse = {
+    configured: boolean;
+};
+
+/**
+ * Mirror of [`OAuthFlowResult`] — `POST /oauth/{provider}/flow` returns
+ * the authorization URL + bound callback port + PKCE state nonce.
+ */
+export type OAuthFlowResponse = {
+    authUrl: string;
+    callbackPort: number;
+    state: string;
+};
+
+export type OAuthRefreshRequest = {
+    refreshToken: string;
+};
+
+/**
+ * Mirror of [`OAuthTokens`] — returned from `POST /oauth/{provider}/refresh`.
+ * Token fields are camelCase on the wire (frontend reads `accessToken`,
+ * `refreshToken`, `expiresIn`). The core `OAuthTokens` keeps snake_case
+ * because it deserialises directly from provider responses (Twitch /
+ * Google OAuth token endpoints all use snake_case); this wire mirror
+ * renames at the API boundary.
+ */
+export type OAuthTokensResponse = {
+    accessToken: string;
+    expiresIn?: number | null;
+    refreshToken?: string | null;
+    scope?: string | null;
+    tokenType?: string | null;
+};
+
+/**
+ * Mirror of [`OAuthUserInfo`] — returned from `POST /oauth/{provider}/complete`
+ * after the token exchange + user-info fetch.
+ */
+export type OAuthUserInfoResponse = {
+    displayName: string;
+    provider: string;
+    userId: string;
+    username: string;
+};
+
+/**
+ * Empty 200 ack body for handlers whose success payload is just
+ * acknowledgement (connect / disconnect / set-config / start-stream /
+ * stop-stream). Serialises as `{}`.
+ */
+export type ObsAckResponse = {
+    [key: string]: unknown;
+};
+
+export type ObsConfigResponse = {
+    autoConnect: boolean;
+    direction: IntegrationDirectionWire;
+    host: string;
+    password: string;
+    port: number;
+    useAuth: boolean;
+};
+
+/**
+ * `{"connected": bool}` — single-flag connection probe.
+ */
+export type ObsConnectedResponse = {
+    connected: boolean;
+};
+
+export type ObsConnectionStatusWire = 'disconnected' | 'connecting' | 'connected' | 'error';
+
+export type ObsSetConfigRequest = {
+    autoConnect: boolean;
+    direction: string;
+    host: string;
+    password?: string | null;
+    port: number;
+    useAuth: boolean;
+};
+
+export type ObsStateResponse = {
+    connectionStatus: ObsConnectionStatusWire;
+    errorMessage?: string | null;
+    obsVersion?: string | null;
+    streamStatus: ObsStreamStatusWire;
+    websocketVersion?: string | null;
+};
+
+export type ObsStreamStatusWire = 'inactive' | 'starting' | 'active' | 'stopping' | 'unknown';
+
+/**
+ * Empty 200 ack body for handlers whose success payload is just
+ * acknowledgement (validate / set order). Serialises as `{}`.
+ */
+export type ProfileAckResponse = {
+    [key: string]: unknown;
+};
+
+export type ProfileActivateRequest = {
+    /**
+     * Password for encrypted profiles. Plaintext profiles ignore this field.
+     */
+    password?: string | null;
+};
+
+export type ProfileDecryptRequest = {
+    /**
+     * Password protecting the on-disk encrypted profile.
+     */
+    password: string;
+};
+
+export type ProfileDecryptResponse = {
+    /**
+     * `true` once the profile is re-saved unencrypted on disk.
+     */
+    decrypted: boolean;
+    name: string;
 };
 
 export type ProfileDeleteResponse = {
@@ -30,6 +543,34 @@ export type ProfileDeleteResponse = {
 export type ProfileIsEncryptedResponse = {
     encrypted: boolean;
     name: string;
+};
+
+export type ProfileLockResponse = {
+    locked: boolean;
+    name: string;
+};
+
+export type ProfileLockedListResponse = {
+    /**
+     * Names of currently-unlocked encrypted profiles for this session.
+     */
+    unlocked: Array<string>;
+};
+
+/**
+ * `{indices: {name → order}}` envelope used by the `/profiles/order`
+ * + `/profiles/order/ensure` endpoints. Wraps the raw map so OpenAPI
+ * gets a named schema instead of an inline `additionalProperties`
+ * object.
+ */
+export type ProfileOrderMapResponse = {
+    indices: {
+        [key: string]: number;
+    };
+};
+
+export type ProfileOrderSetRequest = {
+    orderedNames: Array<string>;
 };
 
 export type ProfileSaveRequest = {
@@ -55,11 +596,54 @@ export type ProfileShowQuery = {
     password?: string | null;
 };
 
+/**
+ * Wire mirror of [`spiritstream_core::models::ProfileSummary`]. The core
+ * `services` field is `Vec<Platform>`, where `Platform` is auto-generated
+ * from `data/streaming-platforms.json` at build time — each variant uses
+ * `#[serde(rename = "Twitch")]` etc. so it serialises as the display
+ * string. The wire mirror types that as `Vec<String>`, preserving the
+ * wire shape while keeping utoipa out of core's build script.
+ */
+export type ProfileSummaryWire = {
+    bitrate: number;
+    id: string;
+    isEncrypted: boolean;
+    name: string;
+    resolution: string;
+    services: Array<string>;
+    targetCount: number;
+};
+
+export type ProfileUnlockRequest = {
+    /**
+     * Required password — decryption fails on mismatch with 401.
+     */
+    password: string;
+};
+
+export type ProfileUnlockResponse = {
+    name: string;
+    /**
+     * Whether this profile is now in the session's unlocked set.
+     */
+    unlocked: boolean;
+};
+
+export type ProfileValidateInputRequest = {
+    input: unknown;
+    profileId: string;
+};
+
 export type ProfilesListResponse = {
     /**
      * Profile names in user-defined order.
      */
     names: Array<string>;
+};
+
+export type RangeU32 = {
+    max: number;
+    min: number;
 };
 
 export type ReadyCheckFailure = {
@@ -88,6 +672,539 @@ export type ReadyResponse = {
     ready: boolean;
 };
 
+export type RotateMachineKeyRequest = {
+    /**
+     * Password for each password-protected (`.mgs`) profile on disk, keyed
+     * by profile name. Every `.mgs` profile present must have an entry;
+     * rotation refuses to start otherwise. Body may be omitted entirely
+     * when there are no encrypted profiles.
+     */
+    unlockedPasswords?: {
+        [key: string]: string;
+    };
+};
+
+/**
+ * Mirror of [`RotationReport`] with `ToSchema`. Carries the post-rotation
+ * summary the UI surfaces to the user; the chrono `DateTime<Utc>` becomes
+ * an ISO-8601 string per serde-default.
+ */
+export type RotationReportWire = {
+    keysReencrypted: number;
+    profilesUpdated: number;
+    timestamp: string;
+    totalProfiles: number;
+};
+
+export type RtmpTestRequest = {
+    streamKey: string;
+    url: string;
+};
+
+/**
+ * Mirror of [`spiritstream_core::commands::RtmpTestResult`] with `ToSchema`.
+ */
+export type RtmpTestResultWire = {
+    latencyMs?: number | null;
+    message: string;
+    success: boolean;
+};
+
+export type SafetyPanicResponse = {
+    /**
+     * Wall-clock duration of the panic flow, in milliseconds.
+     */
+    elapsedMs: number;
+    /**
+     * Number of active streams that were stopped by the panic.
+     */
+    streamsStopped: number;
+};
+
+export type SettingsClearDataResponse = {
+    cleared: boolean;
+};
+
+export type SettingsExportRequest = {
+    /**
+     * Absolute path of the destination directory. Must resolve inside the
+     * app data dir or the user's home — anything else is rejected with
+     * `path_outside_allowed_root`.
+     */
+    exportPath: string;
+};
+
+export type SettingsExportResponse = {
+    exported: boolean;
+};
+
+export type SettingsProfilesPathResponse = {
+    path: string;
+};
+
+export type SettingsSaveRequest = {
+    /**
+     * Full settings body (matches the `Settings` ts-rs export).
+     */
+    settings: unknown;
+};
+
+export type SettingsSaveResponse = {
+    saved: boolean;
+};
+
+export type StreamRetryResponse = {
+    nextDelaySecs?: number | null;
+    pid: number;
+};
+
+export type StreamStartAllRequest = {
+    groups: unknown;
+    incomingUrl: string;
+};
+
+export type StreamStartAllResponse = {
+    pids: Array<number>;
+};
+
+export type StreamStartRequest = {
+    group: unknown;
+    incomingUrl: string;
+};
+
+export type StreamStartResponse = {
+    pid: number;
+};
+
+export type StreamStatusResponse = {
+    /**
+     * Convenience count — same as `active_group_ids.len()`.
+     */
+    activeCount: number;
+    /**
+     * Group IDs of every output group with at least one active FFmpeg process.
+     */
+    activeGroupIds: Array<string>;
+};
+
+export type StreamStopAllResponse = {
+    stopped: boolean;
+};
+
+/**
+ * `{"disabled": bool}` — single-flag probe used by the UI to render the
+ * per-target enable/disable toggle.
+ */
+export type StreamTargetDisabledResponse = {
+    disabled: boolean;
+};
+
+export type StreamToggleTargetRequest = {
+    enabled: boolean;
+    group: unknown;
+    incomingUrl: string;
+};
+
+export type StreamToggleTargetResponse = {
+    pid: number;
+};
+
+export type StreamValidateRequest = {
+    /**
+     * Full profile body (matches the `Profile` ts-rs export). Encoding-config
+     * rules (bitrate / keyframe / resolution / fps) are evaluated server-side.
+     */
+    profile: unknown;
+};
+
+export type StreamValidateResponse = {
+    /**
+     * `true` when every output group passes bound checks. `false` when one
+     * or more `ValidationIssue`s would be returned by `POST /streams`.
+     */
+    valid: boolean;
+};
+
+/**
+ * Per-subsystem status report.
+ *
+ * Each variant maps cleanly to a UI badge color: `ok` → green,
+ * `degraded` → amber, `disconnected`/`tampered` → red. Adding a new
+ * variant is a deliberate act — every subsystem reports through this
+ * enum so the surface stays bounded.
+ */
+export type SubsystemStatus = {
+    state: 'ok';
+} | {
+    detail: string;
+    state: 'degraded';
+} | {
+    detail: string;
+    state: 'disconnected';
+} | {
+    last_valid_sequence: number;
+    state: 'tampered';
+};
+
+/**
+ * Empty 200 ack body — used by handlers whose success payload is just
+ * acknowledgement (logs export). Serialises as `{}`.
+ */
+export type SystemAckResponse = {
+    [key: string]: unknown;
+};
+
+export type ThemeInstallRequest = {
+    themePath: string;
+};
+
+export type ThemeModeWire = 'light' | 'dark';
+
+export type ThemeSummaryWire = {
+    builtIn: boolean;
+    error?: string | null;
+    id: string;
+    mode: ThemeModeWire;
+    name: string;
+    source: string;
+    valid: boolean;
+};
+
+/**
+ * `{tokens: {name → value}}` envelope used by `/themes/{id}/tokens`.
+ * Wraps the raw token map so OpenAPI gets a named schema instead of
+ * an inline `additionalProperties` object.
+ */
+export type ThemeTokensResponse = {
+    tokens: {
+        [key: string]: string;
+    };
+};
+
+export type WebhookResultResponse = {
+    message: string;
+    skippedCooldown: boolean;
+    success: boolean;
+};
+
+export type V1AuditLogData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Skip N entries (oldest first).
+         */
+        skip?: number | null;
+        /**
+         * Max entries per page (≤ 1000).
+         */
+        limit?: number | null;
+        /**
+         * Filter by action kind.
+         */
+        kind?: string | null;
+    };
+    url: '/audit/log';
+};
+
+export type V1AuditLogErrors = {
+    /**
+     * Internal error.
+     */
+    500: ApiErrorBody;
+};
+
+export type V1AuditLogError = V1AuditLogErrors[keyof V1AuditLogErrors];
+
+export type V1AuditLogResponses = {
+    /**
+     * Audit entries.
+     */
+    200: AuditLogResponse;
+};
+
+export type V1AuditLogResponse = V1AuditLogResponses[keyof V1AuditLogResponses];
+
+export type V1ChatIsConnectedProxyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/chat/connected';
+};
+
+export type V1ChatIsConnectedProxyResponses = {
+    200: ChatConnectedResponse;
+};
+
+export type V1ChatIsConnectedProxyResponse = V1ChatIsConnectedProxyResponses[keyof V1ChatIsConnectedProxyResponses];
+
+export type V1ChatDisconnectAllProxyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/chat/connections';
+};
+
+export type V1ChatDisconnectAllProxyResponses = {
+    200: ChatAckResponse;
+};
+
+export type V1ChatDisconnectAllProxyResponse = V1ChatDisconnectAllProxyResponses[keyof V1ChatDisconnectAllProxyResponses];
+
+export type V1ChatStatusProxyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/chat/connections';
+};
+
+export type V1ChatStatusProxyResponses = {
+    200: Array<ChatPlatformStatusWire>;
+};
+
+export type V1ChatStatusProxyResponse = V1ChatStatusProxyResponses[keyof V1ChatStatusProxyResponses];
+
+export type V1ChatConnectProxyData = {
+    body: unknown;
+    path?: never;
+    query?: never;
+    url: '/chat/connections';
+};
+
+export type V1ChatConnectProxyErrors = {
+    400: ApiErrorBody;
+    /**
+     * Confirm-token required for Facebook connect (intent=enable_facebook_chat)
+     */
+    403: ApiErrorBody;
+};
+
+export type V1ChatConnectProxyError = V1ChatConnectProxyErrors[keyof V1ChatConnectProxyErrors];
+
+export type V1ChatConnectProxyResponses = {
+    200: ChatAckResponse;
+};
+
+export type V1ChatConnectProxyResponse = V1ChatConnectProxyResponses[keyof V1ChatConnectProxyResponses];
+
+export type V1ChatDisconnectProxyData = {
+    body?: never;
+    path: {
+        /**
+         * Chat platform
+         */
+        platform: string;
+    };
+    query?: never;
+    url: '/chat/connections/{platform}';
+};
+
+export type V1ChatDisconnectProxyErrors = {
+    /**
+     * Unknown chat platform string.
+     */
+    400: ApiErrorBody;
+    /**
+     * Platform is not connected.
+     */
+    422: ApiErrorBody;
+    /**
+     * Connector disconnect failed.
+     */
+    500: ApiErrorBody;
+};
+
+export type V1ChatDisconnectProxyError = V1ChatDisconnectProxyErrors[keyof V1ChatDisconnectProxyErrors];
+
+export type V1ChatDisconnectProxyResponses = {
+    /**
+     * Disconnected.
+     */
+    200: unknown;
+};
+
+export type V1ChatPlatformStatusProxyData = {
+    body?: never;
+    path: {
+        /**
+         * Chat platform
+         */
+        platform: string;
+    };
+    query?: never;
+    url: '/chat/connections/{platform}';
+};
+
+export type V1ChatPlatformStatusProxyResponses = {
+    200: ChatPlatformStatusWire | null;
+};
+
+export type V1ChatPlatformStatusProxyResponse = V1ChatPlatformStatusProxyResponses[keyof V1ChatPlatformStatusProxyResponses];
+
+export type V1ChatRetryProxyData = {
+    body?: never;
+    path: {
+        /**
+         * Chat platform
+         */
+        platform: string;
+    };
+    query?: never;
+    url: '/chat/connections/{platform}/retry';
+};
+
+export type V1ChatRetryProxyErrors = {
+    /**
+     * Validation: chat not configured / retry unsupported / no active stream.
+     */
+    400: ApiErrorBody;
+    /**
+     * No active profile.
+     */
+    409: ApiErrorBody;
+};
+
+export type V1ChatRetryProxyError = V1ChatRetryProxyErrors[keyof V1ChatRetryProxyErrors];
+
+export type V1ChatRetryProxyResponses = {
+    /**
+     * Reconnect triggered.
+     */
+    200: ChatAckResponse;
+};
+
+export type V1ChatRetryProxyResponse = V1ChatRetryProxyResponses[keyof V1ChatRetryProxyResponses];
+
+export type V1ChatLogStatusProxyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/chat/log';
+};
+
+export type V1ChatLogStatusProxyResponses = {
+    200: ChatLogStatusWire;
+};
+
+export type V1ChatLogStatusProxyResponse = V1ChatLogStatusProxyResponses[keyof V1ChatLogStatusProxyResponses];
+
+export type V1ChatExportLogProxyData = {
+    body: ChatExportRequest;
+    path?: never;
+    query?: never;
+    url: '/chat/log/export';
+};
+
+export type V1ChatExportLogProxyErrors = {
+    /**
+     * No active chat session.
+     */
+    400: ApiErrorBody;
+    /**
+     * Export path outside allowed root.
+     */
+    403: ApiErrorBody;
+    /**
+     * Internal error writing export.
+     */
+    500: ApiErrorBody;
+};
+
+export type V1ChatExportLogProxyError = V1ChatExportLogProxyErrors[keyof V1ChatExportLogProxyErrors];
+
+export type V1ChatExportLogProxyResponses = {
+    /**
+     * Chat log exported.
+     */
+    200: ChatAckResponse;
+};
+
+export type V1ChatExportLogProxyResponse = V1ChatExportLogProxyResponses[keyof V1ChatExportLogProxyResponses];
+
+export type V1ChatSearchSessionProxyData = {
+    body: ChatSearchRequest;
+    path?: never;
+    query?: never;
+    url: '/chat/log/search';
+};
+
+export type V1ChatSearchSessionProxyResponses = {
+    /**
+     * Matching ChatMessage entries (typed schema deferred until in-flight ChatMessage shape stabilises).
+     */
+    200: Array<unknown>;
+};
+
+export type V1ChatSearchSessionProxyResponse = V1ChatSearchSessionProxyResponses[keyof V1ChatSearchSessionProxyResponses];
+
+export type V1ChatSendProxyData = {
+    body: ChatSendRequest;
+    path?: never;
+    query?: never;
+    url: '/chat/messages';
+};
+
+export type V1ChatSendProxyErrors = {
+    /**
+     * Empty message or no platforms enabled.
+     */
+    400: ApiErrorBody;
+    /**
+     * Internal error.
+     */
+    500: ApiErrorBody;
+};
+
+export type V1ChatSendProxyError = V1ChatSendProxyErrors[keyof V1ChatSendProxyErrors];
+
+export type V1ChatSendProxyResponses = {
+    /**
+     * Per-platform send results.
+     */
+    200: Array<ChatSendResultWire>;
+};
+
+export type V1ChatSendProxyResponse = V1ChatSendProxyResponses[keyof V1ChatSendProxyResponses];
+
+export type V1DiscordResetCooldownProxyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/discord/webhook/cooldown';
+};
+
+export type V1DiscordResetCooldownProxyResponses = {
+    200: DiscordAckResponse;
+};
+
+export type V1DiscordResetCooldownProxyResponse = V1DiscordResetCooldownProxyResponses[keyof V1DiscordResetCooldownProxyResponses];
+
+export type V1DiscordSendNotificationProxyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/discord/webhook/send';
+};
+
+export type V1DiscordSendNotificationProxyResponses = {
+    200: WebhookResultResponse;
+};
+
+export type V1DiscordSendNotificationProxyResponse = V1DiscordSendNotificationProxyResponses[keyof V1DiscordSendNotificationProxyResponses];
+
+export type V1DiscordTestWebhookProxyData = {
+    body: DiscordWebhookTestRequest;
+    path?: never;
+    query?: never;
+    url: '/discord/webhook/test';
+};
+
+export type V1DiscordTestWebhookProxyResponses = {
+    200: WebhookResultResponse;
+};
+
+export type V1DiscordTestWebhookProxyResponse = V1DiscordTestWebhookProxyResponses[keyof V1DiscordTestWebhookProxyResponses];
+
 export type V1HealthData = {
     body?: never;
     path?: never;
@@ -97,12 +1214,380 @@ export type V1HealthData = {
 
 export type V1HealthResponses = {
     /**
-     * Server is healthy.
+     * Per-subsystem health snapshot.
      */
     200: HealthResponse;
 };
 
 export type V1HealthResponse = V1HealthResponses[keyof V1HealthResponses];
+
+export type V1OauthGetConfigProxyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/oauth/config';
+};
+
+export type V1OauthGetConfigProxyResponses = {
+    200: OAuthConfiguredFlagsResponse;
+};
+
+export type V1OauthGetConfigProxyResponse = V1OauthGetConfigProxyResponses[keyof V1OauthGetConfigProxyResponses];
+
+export type V1OauthSetConfigProxyData = {
+    body: OAuthConfigRequest;
+    path?: never;
+    query?: never;
+    url: '/oauth/config';
+};
+
+export type V1OauthSetConfigProxyErrors = {
+    /**
+     * Malformed OAuthConfig payload.
+     */
+    400: ApiErrorBody;
+};
+
+export type V1OauthSetConfigProxyError = V1OauthSetConfigProxyErrors[keyof V1OauthSetConfigProxyErrors];
+
+export type V1OauthSetConfigProxyResponses = {
+    /**
+     * OAuth config persisted.
+     */
+    200: OAuthAckResponse;
+};
+
+export type V1OauthSetConfigProxyResponse = V1OauthSetConfigProxyResponses[keyof V1OauthSetConfigProxyResponses];
+
+export type V1OauthDisconnectProxyData = {
+    body?: never;
+    path: {
+        /**
+         * OAuth provider
+         */
+        provider: string;
+    };
+    query?: never;
+    url: '/oauth/{provider}/account';
+};
+
+export type V1OauthDisconnectProxyResponses = {
+    200: OAuthAckResponse;
+};
+
+export type V1OauthDisconnectProxyResponse = V1OauthDisconnectProxyResponses[keyof V1OauthDisconnectProxyResponses];
+
+export type V1OauthGetAccountProxyData = {
+    body?: never;
+    path: {
+        /**
+         * OAuth provider
+         */
+        provider: string;
+    };
+    query?: never;
+    url: '/oauth/{provider}/account';
+};
+
+export type V1OauthGetAccountProxyResponses = {
+    200: OAuthAccountStatusResponse;
+};
+
+export type V1OauthGetAccountProxyResponse = V1OauthGetAccountProxyResponses[keyof V1OauthGetAccountProxyResponses];
+
+export type V1OauthCompleteFlowProxyData = {
+    body: OAuthCompleteRequest;
+    path: {
+        /**
+         * OAuth provider
+         */
+        provider: string;
+    };
+    query?: never;
+    url: '/oauth/{provider}/complete';
+};
+
+export type V1OauthCompleteFlowProxyErrors = {
+    /**
+     * OAuth provider rejected the code or returned no user data.
+     */
+    401: ApiErrorBody;
+    /**
+     * No active profile to bind tokens to.
+     */
+    409: ApiErrorBody;
+    /**
+     * Internal error persisting tokens.
+     */
+    500: ApiErrorBody;
+    /**
+     * Unknown provider.
+     */
+    501: ApiErrorBody;
+    /**
+     * Network failure reaching the provider.
+     */
+    502: ApiErrorBody;
+};
+
+export type V1OauthCompleteFlowProxyError = V1OauthCompleteFlowProxyErrors[keyof V1OauthCompleteFlowProxyErrors];
+
+export type V1OauthCompleteFlowProxyResponses = {
+    /**
+     * Tokens + user info persisted to active profile.
+     */
+    200: OAuthUserInfoResponse;
+};
+
+export type V1OauthCompleteFlowProxyResponse = V1OauthCompleteFlowProxyResponses[keyof V1OauthCompleteFlowProxyResponses];
+
+export type V1OauthIsConfiguredProxyData = {
+    body?: never;
+    path: {
+        /**
+         * OAuth provider
+         */
+        provider: string;
+    };
+    query?: never;
+    url: '/oauth/{provider}/configured';
+};
+
+export type V1OauthIsConfiguredProxyResponses = {
+    200: OAuthConfiguredResponse;
+};
+
+export type V1OauthIsConfiguredProxyResponse = V1OauthIsConfiguredProxyResponses[keyof V1OauthIsConfiguredProxyResponses];
+
+export type V1OauthStartFlowProxyData = {
+    body?: never;
+    path: {
+        /**
+         * OAuth provider
+         */
+        provider: string;
+    };
+    query?: never;
+    url: '/oauth/{provider}/flow';
+};
+
+export type V1OauthStartFlowProxyErrors = {
+    /**
+     * No active profile to bind tokens to.
+     */
+    409: ApiErrorBody;
+    /**
+     * Internal error starting callback server.
+     */
+    500: ApiErrorBody;
+    /**
+     * Unknown / unsupported provider.
+     */
+    501: ApiErrorBody;
+};
+
+export type V1OauthStartFlowProxyError = V1OauthStartFlowProxyErrors[keyof V1OauthStartFlowProxyErrors];
+
+export type V1OauthStartFlowProxyResponses = {
+    /**
+     * Auth URL + callback port issued.
+     */
+    200: OAuthFlowResponse;
+};
+
+export type V1OauthStartFlowProxyResponse = V1OauthStartFlowProxyResponses[keyof V1OauthStartFlowProxyResponses];
+
+export type V1OauthForgetProxyData = {
+    body?: never;
+    path: {
+        /**
+         * OAuth provider
+         */
+        provider: string;
+    };
+    query?: never;
+    url: '/oauth/{provider}/forget';
+};
+
+export type V1OauthForgetProxyResponses = {
+    200: OAuthAckResponse;
+};
+
+export type V1OauthForgetProxyResponse = V1OauthForgetProxyResponses[keyof V1OauthForgetProxyResponses];
+
+export type V1OauthRefreshTokenProxyData = {
+    body: OAuthRefreshRequest;
+    path: {
+        /**
+         * OAuth provider
+         */
+        provider: string;
+    };
+    query?: never;
+    url: '/oauth/{provider}/refresh';
+};
+
+export type V1OauthRefreshTokenProxyErrors = {
+    /**
+     * Refresh token rejected by provider.
+     */
+    401: ApiErrorBody;
+    /**
+     * Internal error.
+     */
+    500: ApiErrorBody;
+    /**
+     * Unknown provider.
+     */
+    501: ApiErrorBody;
+    /**
+     * Network failure reaching the provider.
+     */
+    502: ApiErrorBody;
+};
+
+export type V1OauthRefreshTokenProxyError = V1OauthRefreshTokenProxyErrors[keyof V1OauthRefreshTokenProxyErrors];
+
+export type V1OauthRefreshTokenProxyResponses = {
+    /**
+     * Refreshed token payload.
+     */
+    200: OAuthTokensResponse;
+};
+
+export type V1OauthRefreshTokenProxyResponse = V1OauthRefreshTokenProxyResponses[keyof V1OauthRefreshTokenProxyResponses];
+
+export type V1ObsGetConfigProxyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/obs/config';
+};
+
+export type V1ObsGetConfigProxyResponses = {
+    200: ObsConfigResponse;
+};
+
+export type V1ObsGetConfigProxyResponse = V1ObsGetConfigProxyResponses[keyof V1ObsGetConfigProxyResponses];
+
+export type V1ObsSetConfigProxyData = {
+    body: ObsSetConfigRequest;
+    path?: never;
+    query?: never;
+    url: '/obs/config';
+};
+
+export type V1ObsSetConfigProxyErrors = {
+    /**
+     * Internal error encrypting password.
+     */
+    500: ApiErrorBody;
+};
+
+export type V1ObsSetConfigProxyError = V1ObsSetConfigProxyErrors[keyof V1ObsSetConfigProxyErrors];
+
+export type V1ObsSetConfigProxyResponses = {
+    /**
+     * OBS config persisted.
+     */
+    200: ObsAckResponse;
+};
+
+export type V1ObsSetConfigProxyResponse = V1ObsSetConfigProxyResponses[keyof V1ObsSetConfigProxyResponses];
+
+export type V1ObsDisconnectProxyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/obs/connection';
+};
+
+export type V1ObsDisconnectProxyResponses = {
+    200: ObsAckResponse;
+};
+
+export type V1ObsDisconnectProxyResponse = V1ObsDisconnectProxyResponses[keyof V1ObsDisconnectProxyResponses];
+
+export type V1ObsIsConnectedProxyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/obs/connection';
+};
+
+export type V1ObsIsConnectedProxyResponses = {
+    200: ObsConnectedResponse;
+};
+
+export type V1ObsIsConnectedProxyResponse = V1ObsIsConnectedProxyResponses[keyof V1ObsIsConnectedProxyResponses];
+
+export type V1ObsConnectProxyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/obs/connection';
+};
+
+export type V1ObsConnectProxyErrors = {
+    /**
+     * Internal error during connect.
+     */
+    500: ApiErrorBody;
+    /**
+     * Network failure reaching OBS.
+     */
+    502: ApiErrorBody;
+};
+
+export type V1ObsConnectProxyError = V1ObsConnectProxyErrors[keyof V1ObsConnectProxyErrors];
+
+export type V1ObsConnectProxyResponses = {
+    /**
+     * Connected to OBS WebSocket.
+     */
+    200: ObsAckResponse;
+};
+
+export type V1ObsConnectProxyResponse = V1ObsConnectProxyResponses[keyof V1ObsConnectProxyResponses];
+
+export type V1ObsStateProxyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/obs/state';
+};
+
+export type V1ObsStateProxyResponses = {
+    200: ObsStateResponse;
+};
+
+export type V1ObsStateProxyResponse = V1ObsStateProxyResponses[keyof V1ObsStateProxyResponses];
+
+export type V1ObsStopStreamProxyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/obs/stream';
+};
+
+export type V1ObsStopStreamProxyResponses = {
+    200: ObsAckResponse;
+};
+
+export type V1ObsStopStreamProxyResponse = V1ObsStopStreamProxyResponses[keyof V1ObsStopStreamProxyResponses];
+
+export type V1ObsStartStreamProxyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/obs/stream';
+};
+
+export type V1ObsStartStreamProxyResponses = {
+    200: ObsAckResponse;
+};
+
+export type V1ObsStartStreamProxyResponse = V1ObsStartStreamProxyResponses[keyof V1ObsStartStreamProxyResponses];
 
 export type V1ProfilesListData = {
     body?: never;
@@ -132,6 +1617,155 @@ export type V1ProfilesListResponses = {
 };
 
 export type V1ProfilesListResponse = V1ProfilesListResponses[keyof V1ProfilesListResponses];
+
+export type V1ProfileLockedListData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/profiles/locked';
+};
+
+export type V1ProfileLockedListResponses = {
+    /**
+     * Session unlock state.
+     */
+    200: ProfileLockedListResponse;
+};
+
+export type V1ProfileLockedListResponse = V1ProfileLockedListResponses[keyof V1ProfileLockedListResponses];
+
+export type V1ProfileOrderGetProxyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/profiles/order';
+};
+
+export type V1ProfileOrderGetProxyErrors = {
+    /**
+     * Internal error reading order file.
+     */
+    500: ApiErrorBody;
+};
+
+export type V1ProfileOrderGetProxyError = V1ProfileOrderGetProxyErrors[keyof V1ProfileOrderGetProxyErrors];
+
+export type V1ProfileOrderGetProxyResponses = {
+    /**
+     * Order index map.
+     */
+    200: ProfileOrderMapResponse;
+};
+
+export type V1ProfileOrderGetProxyResponse = V1ProfileOrderGetProxyResponses[keyof V1ProfileOrderGetProxyResponses];
+
+export type V1ProfileOrderSetProxyData = {
+    body: ProfileOrderSetRequest;
+    path?: never;
+    query?: never;
+    url: '/profiles/order';
+};
+
+export type V1ProfileOrderSetProxyErrors = {
+    /**
+     * One of the submitted profile names doesn't exist.
+     */
+    404: ApiErrorBody;
+    /**
+     * Internal error writing order file.
+     */
+    500: ApiErrorBody;
+};
+
+export type V1ProfileOrderSetProxyError = V1ProfileOrderSetProxyErrors[keyof V1ProfileOrderSetProxyErrors];
+
+export type V1ProfileOrderSetProxyResponses = {
+    /**
+     * Order index map written.
+     */
+    200: ProfileAckResponse;
+};
+
+export type V1ProfileOrderSetProxyResponse = V1ProfileOrderSetProxyResponses[keyof V1ProfileOrderSetProxyResponses];
+
+export type V1ProfileOrderEnsureProxyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/profiles/order/ensure';
+};
+
+export type V1ProfileOrderEnsureProxyErrors = {
+    /**
+     * Internal error reading/writing order file.
+     */
+    500: ApiErrorBody;
+};
+
+export type V1ProfileOrderEnsureProxyError = V1ProfileOrderEnsureProxyErrors[keyof V1ProfileOrderEnsureProxyErrors];
+
+export type V1ProfileOrderEnsureProxyResponses = {
+    /**
+     * Order indexes ensured.
+     */
+    200: ProfileOrderMapResponse;
+};
+
+export type V1ProfileOrderEnsureProxyResponse = V1ProfileOrderEnsureProxyResponses[keyof V1ProfileOrderEnsureProxyResponses];
+
+export type V1ProfileSummariesProxyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/profiles/summaries';
+};
+
+export type V1ProfileSummariesProxyErrors = {
+    /**
+     * Internal error enumerating profiles.
+     */
+    500: ApiErrorBody;
+};
+
+export type V1ProfileSummariesProxyError = V1ProfileSummariesProxyErrors[keyof V1ProfileSummariesProxyErrors];
+
+export type V1ProfileSummariesProxyResponses = {
+    /**
+     * Per-profile summary cards.
+     */
+    200: Array<ProfileSummaryWire>;
+};
+
+export type V1ProfileSummariesProxyResponse = V1ProfileSummariesProxyResponses[keyof V1ProfileSummariesProxyResponses];
+
+export type V1ProfileValidateInputProxyData = {
+    body: ProfileValidateInputRequest;
+    path?: never;
+    query?: never;
+    url: '/profiles/validate-input';
+};
+
+export type V1ProfileValidateInputProxyErrors = {
+    /**
+     * Malformed RtmpInput payload.
+     */
+    400: ApiErrorBody;
+    /**
+     * Port conflict with another profile.
+     */
+    409: ApiErrorBody;
+};
+
+export type V1ProfileValidateInputProxyError = V1ProfileValidateInputProxyErrors[keyof V1ProfileValidateInputProxyErrors];
+
+export type V1ProfileValidateInputProxyResponses = {
+    /**
+     * Input validates against other profiles.
+     */
+    200: ProfileAckResponse;
+};
+
+export type V1ProfileValidateInputProxyResponse = V1ProfileValidateInputProxyResponses[keyof V1ProfileValidateInputProxyResponses];
 
 export type V1ProfileDeleteData = {
     body?: never;
@@ -194,7 +1828,7 @@ export type V1ProfileShowError = V1ProfileShowErrors[keyof V1ProfileShowErrors];
 
 export type V1ProfileShowResponses = {
     /**
-     * Profile body.
+     * Profile body (see @spiritstream/types/Profile).
      */
     200: unknown;
 };
@@ -237,6 +1871,80 @@ export type V1ProfileSaveResponses = {
 
 export type V1ProfileSaveResponse = V1ProfileSaveResponses[keyof V1ProfileSaveResponses];
 
+export type V1ProfileActivateData = {
+    body: ProfileActivateRequest;
+    path: {
+        /**
+         * Profile name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/profiles/{name}/activate';
+};
+
+export type V1ProfileActivateErrors = {
+    /**
+     * Password required / incorrect.
+     */
+    401: ApiErrorBody;
+    /**
+     * Profile not found.
+     */
+    404: ApiErrorBody;
+    /**
+     * Activation precondition not met (e.g. no active profile resolvable).
+     */
+    409: ApiErrorBody;
+    /**
+     * Internal error during chat/OBS propagation.
+     */
+    500: ApiErrorBody;
+};
+
+export type V1ProfileActivateError = V1ProfileActivateErrors[keyof V1ProfileActivateErrors];
+
+export type V1ProfileActivateResponses = {
+    /**
+     * Profile activated; body matches @spiritstream/types/Profile.
+     */
+    200: unknown;
+};
+
+export type V1ProfileDecryptData = {
+    body: ProfileDecryptRequest;
+    path: {
+        /**
+         * Profile name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/profiles/{name}/decrypt';
+};
+
+export type V1ProfileDecryptErrors = {
+    /**
+     * Password incorrect / required.
+     */
+    401: ApiErrorBody;
+    /**
+     * Profile not found.
+     */
+    404: ApiErrorBody;
+};
+
+export type V1ProfileDecryptError = V1ProfileDecryptErrors[keyof V1ProfileDecryptErrors];
+
+export type V1ProfileDecryptResponses = {
+    /**
+     * Encryption removed.
+     */
+    200: ProfileDecryptResponse;
+};
+
+export type V1ProfileDecryptResponse = V1ProfileDecryptResponses[keyof V1ProfileDecryptResponses];
+
 export type V1ProfileIsEncryptedData = {
     body?: never;
     path: {
@@ -258,6 +1966,61 @@ export type V1ProfileIsEncryptedResponses = {
 
 export type V1ProfileIsEncryptedResponse = V1ProfileIsEncryptedResponses[keyof V1ProfileIsEncryptedResponses];
 
+export type V1ProfileLockData = {
+    body?: never;
+    path: {
+        /**
+         * Profile name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/profiles/{name}/lock';
+};
+
+export type V1ProfileLockResponses = {
+    /**
+     * Profile relocked.
+     */
+    200: ProfileLockResponse;
+};
+
+export type V1ProfileLockResponse = V1ProfileLockResponses[keyof V1ProfileLockResponses];
+
+export type V1ProfileUnlockData = {
+    body: ProfileUnlockRequest;
+    path: {
+        /**
+         * Profile name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/profiles/{name}/unlock';
+};
+
+export type V1ProfileUnlockErrors = {
+    /**
+     * Password incorrect / required.
+     */
+    401: ApiErrorBody;
+    /**
+     * Profile not found.
+     */
+    404: ApiErrorBody;
+};
+
+export type V1ProfileUnlockError = V1ProfileUnlockErrors[keyof V1ProfileUnlockErrors];
+
+export type V1ProfileUnlockResponses = {
+    /**
+     * Password verified; profile marked unlocked.
+     */
+    200: ProfileUnlockResponse;
+};
+
+export type V1ProfileUnlockResponse = V1ProfileUnlockResponses[keyof V1ProfileUnlockResponses];
+
 export type V1ReadyData = {
     body?: never;
     path?: never;
@@ -267,7 +2030,7 @@ export type V1ReadyData = {
 
 export type V1ReadyErrors = {
     /**
-     * One or more critical subsystems failed their check.
+     * Still initializing; client should retry after the `Retry-After` interval.
      */
     503: ReadyResponse;
 };
@@ -276,9 +2039,733 @@ export type V1ReadyError = V1ReadyErrors[keyof V1ReadyErrors];
 
 export type V1ReadyResponses = {
     /**
-     * Every critical subsystem reports healthy.
+     * Server fully initialized and ready to serve requests.
      */
     200: ReadyResponse;
 };
 
 export type V1ReadyResponse = V1ReadyResponses[keyof V1ReadyResponses];
+
+export type V1SafetyPanicData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/safety/panic';
+};
+
+export type V1SafetyPanicErrors = {
+    /**
+     * Internal error.
+     */
+    500: ApiErrorBody;
+};
+
+export type V1SafetyPanicError = V1SafetyPanicErrors[keyof V1SafetyPanicErrors];
+
+export type V1SafetyPanicResponses = {
+    /**
+     * Panic completed.
+     */
+    200: SafetyPanicResponse;
+};
+
+export type V1SafetyPanicResponse = V1SafetyPanicResponses[keyof V1SafetyPanicResponses];
+
+export type V1SecurityRotateMachineKeyProxyData = {
+    body: RotateMachineKeyRequest;
+    path?: never;
+    query?: never;
+    url: '/security/machine-key/rotate';
+};
+
+export type V1SecurityRotateMachineKeyProxyErrors = {
+    /**
+     * Missing or wrong password for an encrypted profile.
+     */
+    400: ApiErrorBody;
+    /**
+     * Rotation aborted; backup restored.
+     */
+    500: ApiErrorBody;
+};
+
+export type V1SecurityRotateMachineKeyProxyError = V1SecurityRotateMachineKeyProxyErrors[keyof V1SecurityRotateMachineKeyProxyErrors];
+
+export type V1SecurityRotateMachineKeyProxyResponses = {
+    /**
+     * Rotation report.
+     */
+    200: RotationReportWire;
+};
+
+export type V1SecurityRotateMachineKeyProxyResponse = V1SecurityRotateMachineKeyProxyResponses[keyof V1SecurityRotateMachineKeyProxyResponses];
+
+export type V1SettingsGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/settings';
+};
+
+export type V1SettingsGetErrors = {
+    /**
+     * Internal error.
+     */
+    500: ApiErrorBody;
+};
+
+export type V1SettingsGetError = V1SettingsGetErrors[keyof V1SettingsGetErrors];
+
+export type V1SettingsGetResponses = {
+    /**
+     * Resolved settings (see @spiritstream/types/Settings).
+     */
+    200: unknown;
+};
+
+export type V1SettingsSaveData = {
+    body: SettingsSaveRequest;
+    path?: never;
+    query?: never;
+    url: '/settings';
+};
+
+export type V1SettingsSaveErrors = {
+    /**
+     * Bound-check failed.
+     */
+    400: ApiErrorBody;
+    /**
+     * Internal error.
+     */
+    500: ApiErrorBody;
+};
+
+export type V1SettingsSaveError = V1SettingsSaveErrors[keyof V1SettingsSaveErrors];
+
+export type V1SettingsSaveResponses = {
+    /**
+     * Settings saved.
+     */
+    200: SettingsSaveResponse;
+};
+
+export type V1SettingsSaveResponse = V1SettingsSaveResponses[keyof V1SettingsSaveResponses];
+
+export type V1SettingsClearDataData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/settings/data';
+};
+
+export type V1SettingsClearDataErrors = {
+    /**
+     * Internal error.
+     */
+    500: ApiErrorBody;
+};
+
+export type V1SettingsClearDataError = V1SettingsClearDataErrors[keyof V1SettingsClearDataErrors];
+
+export type V1SettingsClearDataResponses = {
+    /**
+     * Data cleared.
+     */
+    200: SettingsClearDataResponse;
+};
+
+export type V1SettingsClearDataResponse = V1SettingsClearDataResponses[keyof V1SettingsClearDataResponses];
+
+export type V1SettingsExportData = {
+    body: SettingsExportRequest;
+    path?: never;
+    query?: never;
+    url: '/settings/export';
+};
+
+export type V1SettingsExportErrors = {
+    /**
+     * Export path outside allowed roots.
+     */
+    403: ApiErrorBody;
+    /**
+     * Internal error.
+     */
+    500: ApiErrorBody;
+};
+
+export type V1SettingsExportError = V1SettingsExportErrors[keyof V1SettingsExportErrors];
+
+export type V1SettingsExportResponses = {
+    /**
+     * Export complete.
+     */
+    200: SettingsExportResponse;
+};
+
+export type V1SettingsExportResponse = V1SettingsExportResponses[keyof V1SettingsExportResponses];
+
+export type V1SettingsProfilesPathData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/settings/profiles-path';
+};
+
+export type V1SettingsProfilesPathResponses = {
+    /**
+     * Profiles directory path.
+     */
+    200: SettingsProfilesPathResponse;
+};
+
+export type V1SettingsProfilesPathResponse = V1SettingsProfilesPathResponses[keyof V1SettingsProfilesPathResponses];
+
+export type V1StreamsStopAllData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/streams';
+};
+
+export type V1StreamsStopAllErrors = {
+    /**
+     * Internal error during stop.
+     */
+    500: ApiErrorBody;
+};
+
+export type V1StreamsStopAllError = V1StreamsStopAllErrors[keyof V1StreamsStopAllErrors];
+
+export type V1StreamsStopAllResponses = {
+    /**
+     * All stopped.
+     */
+    200: StreamStopAllResponse;
+};
+
+export type V1StreamsStopAllResponse = V1StreamsStopAllResponses[keyof V1StreamsStopAllResponses];
+
+export type V1StreamsStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/streams';
+};
+
+export type V1StreamsStatusResponses = {
+    /**
+     * Active stream snapshot.
+     */
+    200: StreamStatusResponse;
+};
+
+export type V1StreamsStatusResponse = V1StreamsStatusResponses[keyof V1StreamsStatusResponses];
+
+export type V1StreamsStartAllData = {
+    body: StreamStartAllRequest;
+    path?: never;
+    query?: never;
+    url: '/streams';
+};
+
+export type V1StreamsStartAllErrors = {
+    /**
+     * Validation failure.
+     */
+    400: ApiErrorBody;
+    /**
+     * FFmpeg binary missing or encoder unavailable.
+     */
+    422: ApiErrorBody;
+    /**
+     * Spawn error.
+     */
+    500: ApiErrorBody;
+};
+
+export type V1StreamsStartAllError = V1StreamsStartAllErrors[keyof V1StreamsStartAllErrors];
+
+export type V1StreamsStartAllResponses = {
+    /**
+     * FFmpegs started.
+     */
+    200: StreamStartAllResponse;
+};
+
+export type V1StreamsStartAllResponse = V1StreamsStartAllResponses[keyof V1StreamsStartAllResponses];
+
+export type V1StreamsStopData = {
+    body?: never;
+    path: {
+        /**
+         * Output group ID
+         */
+        group_id: string;
+    };
+    query?: never;
+    url: '/streams/groups/{group_id}';
+};
+
+export type V1StreamsStopErrors = {
+    /**
+     * Internal error during stop.
+     */
+    500: ApiErrorBody;
+};
+
+export type V1StreamsStopError = V1StreamsStopErrors[keyof V1StreamsStopErrors];
+
+export type V1StreamsStopResponses = {
+    /**
+     * Stopped.
+     */
+    200: unknown;
+};
+
+export type V1StreamsStartData = {
+    body: StreamStartRequest;
+    path: {
+        /**
+         * Output group ID
+         */
+        group_id: string;
+    };
+    query?: never;
+    url: '/streams/groups/{group_id}';
+};
+
+export type V1StreamsStartErrors = {
+    /**
+     * Validation failure.
+     */
+    400: ApiErrorBody;
+    /**
+     * FFmpeg binary missing or encoder unavailable.
+     */
+    422: ApiErrorBody;
+    /**
+     * Spawn error.
+     */
+    500: ApiErrorBody;
+};
+
+export type V1StreamsStartError = V1StreamsStartErrors[keyof V1StreamsStartErrors];
+
+export type V1StreamsStartResponses = {
+    /**
+     * FFmpeg started.
+     */
+    200: StreamStartResponse;
+};
+
+export type V1StreamsStartResponse = V1StreamsStartResponses[keyof V1StreamsStartResponses];
+
+export type V1StreamsRetryData = {
+    body?: never;
+    path: {
+        /**
+         * Output group ID
+         */
+        group_id: string;
+    };
+    query?: never;
+    url: '/streams/groups/{group_id}/retry';
+};
+
+export type V1StreamsRetryErrors = {
+    /**
+     * Validation: group not in active set / already streaming / retries exhausted.
+     */
+    400: ApiErrorBody;
+    /**
+     * FFmpeg binary missing or encoder unavailable.
+     */
+    422: ApiErrorBody;
+    /**
+     * Spawn error.
+     */
+    500: ApiErrorBody;
+};
+
+export type V1StreamsRetryError = V1StreamsRetryErrors[keyof V1StreamsRetryErrors];
+
+export type V1StreamsRetryResponses = {
+    /**
+     * Retry kicked off.
+     */
+    200: StreamRetryResponse;
+};
+
+export type V1StreamsRetryResponse = V1StreamsRetryResponses[keyof V1StreamsRetryResponses];
+
+export type V1StreamsToggleTargetData = {
+    body: StreamToggleTargetRequest;
+    path: {
+        /**
+         * Target ID
+         */
+        target_id: string;
+    };
+    query?: never;
+    url: '/streams/targets/{target_id}';
+};
+
+export type V1StreamsToggleTargetErrors = {
+    /**
+     * Validation failure.
+     */
+    400: ApiErrorBody;
+};
+
+export type V1StreamsToggleTargetError = V1StreamsToggleTargetErrors[keyof V1StreamsToggleTargetErrors];
+
+export type V1StreamsToggleTargetResponses = {
+    /**
+     * Target toggled, group restarted.
+     */
+    200: StreamToggleTargetResponse;
+};
+
+export type V1StreamsToggleTargetResponse = V1StreamsToggleTargetResponses[keyof V1StreamsToggleTargetResponses];
+
+export type V1StreamTargetDisabledProxyData = {
+    body?: never;
+    path: {
+        /**
+         * Stream target ID
+         */
+        target_id: string;
+    };
+    query?: never;
+    url: '/streams/targets/{target_id}/disabled';
+};
+
+export type V1StreamTargetDisabledProxyResponses = {
+    200: StreamTargetDisabledResponse;
+};
+
+export type V1StreamTargetDisabledProxyResponse = V1StreamTargetDisabledProxyResponses[keyof V1StreamTargetDisabledProxyResponses];
+
+export type V1StreamsValidateData = {
+    body: StreamValidateRequest;
+    path?: never;
+    query?: never;
+    url: '/streams/validate';
+};
+
+export type V1StreamsValidateErrors = {
+    /**
+     * Encoding-config bound check failed.
+     */
+    400: ApiErrorBody;
+};
+
+export type V1StreamsValidateError = V1StreamsValidateErrors[keyof V1StreamsValidateErrors];
+
+export type V1StreamsValidateResponses = {
+    /**
+     * Profile passes encoding-config bounds.
+     */
+    200: StreamValidateResponse;
+};
+
+export type V1StreamsValidateResponse = V1StreamsValidateResponses[keyof V1StreamsValidateResponses];
+
+export type V1SystemAppVersionData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/system/app-version';
+};
+
+export type V1SystemAppVersionResponses = {
+    /**
+     * Running app version (semver).
+     */
+    200: AppVersionResponse;
+};
+
+export type V1SystemAppVersionResponse = V1SystemAppVersionResponses[keyof V1SystemAppVersionResponses];
+
+export type V1SystemAuditAppUpdateFailureData = {
+    body: AppUpdateFailureRequest;
+    path?: never;
+    query?: never;
+    url: '/system/audit/app-update-failure';
+};
+
+export type V1SystemAuditAppUpdateFailureResponses = {
+    /**
+     * Failure recorded in audit chain.
+     */
+    200: AuditRecordedResponse;
+};
+
+export type V1SystemAuditAppUpdateFailureResponse = V1SystemAuditAppUpdateFailureResponses[keyof V1SystemAuditAppUpdateFailureResponses];
+
+export type V1SystemClientConfigData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/system/client-config';
+};
+
+export type V1SystemClientConfigResponses = {
+    /**
+     * Server-tuned client constants.
+     */
+    200: ClientConfigResponse;
+};
+
+export type V1SystemClientConfigResponse = V1SystemClientConfigResponses[keyof V1SystemClientConfigResponses];
+
+export type V1SystemEncodersProxyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/system/encoders';
+};
+
+export type V1SystemEncodersProxyResponses = {
+    /**
+     * Detected encoders (empty when FFmpeg missing).
+     */
+    200: EncodersWire;
+};
+
+export type V1SystemEncodersProxyResponse = V1SystemEncodersProxyResponses[keyof V1SystemEncodersProxyResponses];
+
+export type V1SystemEncoderPresetsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/system/encoders/presets';
+};
+
+export type V1SystemEncoderPresetsResponses = {
+    /**
+     * Encoder preset matrix.
+     */
+    200: EncoderPresetsResponse;
+};
+
+export type V1SystemEncoderPresetsResponse = V1SystemEncoderPresetsResponses[keyof V1SystemEncoderPresetsResponses];
+
+export type V1SystemFfmpegPathProxyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/system/ffmpeg/path';
+};
+
+export type V1SystemFfmpegPathProxyResponses = {
+    /**
+     * Resolved FFmpeg path or null.
+     */
+    200: FFmpegPathResponse;
+};
+
+export type V1SystemFfmpegPathProxyResponse = V1SystemFfmpegPathProxyResponses[keyof V1SystemFfmpegPathProxyResponses];
+
+export type V1SystemFfmpegTestProxyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/system/ffmpeg/test';
+};
+
+export type V1SystemFfmpegTestProxyResponses = {
+    /**
+     * FFmpeg version string.
+     */
+    200: FFmpegVersionResponse;
+};
+
+export type V1SystemFfmpegTestProxyResponse = V1SystemFfmpegTestProxyResponses[keyof V1SystemFfmpegTestProxyResponses];
+
+export type V1SystemFfmpegUpdateProxyData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Currently installed FFmpeg version
+         */
+        installedVersion?: string | null;
+    };
+    url: '/system/ffmpeg/update';
+};
+
+export type V1SystemFfmpegUpdateProxyResponses = {
+    200: FFmpegVersionInfoWire;
+};
+
+export type V1SystemFfmpegUpdateProxyResponse = V1SystemFfmpegUpdateProxyResponses[keyof V1SystemFfmpegUpdateProxyResponses];
+
+export type V1SystemFfmpegValidateProxyData = {
+    body: FFmpegValidatePathRequest;
+    path?: never;
+    query?: never;
+    url: '/system/ffmpeg/validate-path';
+};
+
+export type V1SystemFfmpegValidateProxyResponses = {
+    200: FFmpegValidatePathResponse;
+};
+
+export type V1SystemFfmpegValidateProxyResponse = V1SystemFfmpegValidateProxyResponses[keyof V1SystemFfmpegValidateProxyResponses];
+
+export type V1SystemLogsProxyData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Maximum log lines to return
+         */
+        maxLines?: number | null;
+    };
+    url: '/system/logs';
+};
+
+export type V1SystemLogsProxyErrors = {
+    /**
+     * Internal error reading log file.
+     */
+    500: ApiErrorBody;
+};
+
+export type V1SystemLogsProxyError = V1SystemLogsProxyErrors[keyof V1SystemLogsProxyErrors];
+
+export type V1SystemLogsProxyResponses = {
+    /**
+     * Recent log lines.
+     */
+    200: LogsResponse;
+};
+
+export type V1SystemLogsProxyResponse = V1SystemLogsProxyResponses[keyof V1SystemLogsProxyResponses];
+
+export type V1SystemLogsExportProxyData = {
+    body: LogsExportRequest;
+    path?: never;
+    query?: never;
+    url: '/system/logs/export';
+};
+
+export type V1SystemLogsExportProxyErrors = {
+    403: ApiErrorBody;
+};
+
+export type V1SystemLogsExportProxyError = V1SystemLogsExportProxyErrors[keyof V1SystemLogsExportProxyErrors];
+
+export type V1SystemLogsExportProxyResponses = {
+    /**
+     * Log file exported.
+     */
+    200: SystemAckResponse;
+};
+
+export type V1SystemLogsExportProxyResponse = V1SystemLogsExportProxyResponses[keyof V1SystemLogsExportProxyResponses];
+
+export type V1SystemRtmpTestProxyData = {
+    body: RtmpTestRequest;
+    path?: never;
+    query?: never;
+    url: '/system/rtmp/test';
+};
+
+export type V1SystemRtmpTestProxyResponses = {
+    200: RtmpTestResultWire;
+};
+
+export type V1SystemRtmpTestProxyResponse = V1SystemRtmpTestProxyResponses[keyof V1SystemRtmpTestProxyResponses];
+
+export type V1ThemesListProxyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/themes';
+};
+
+export type V1ThemesListProxyResponses = {
+    200: Array<ThemeSummaryWire>;
+};
+
+export type V1ThemesListProxyResponse = V1ThemesListProxyResponses[keyof V1ThemesListProxyResponses];
+
+export type V1ThemesInstallProxyData = {
+    body: ThemeInstallRequest;
+    path?: never;
+    query?: never;
+    url: '/themes';
+};
+
+export type V1ThemesInstallProxyErrors = {
+    /**
+     * Theme file invalid (bad JSON, missing required tokens, etc.).
+     */
+    400: ApiErrorBody;
+    /**
+     * Theme path outside allowed root.
+     */
+    403: ApiErrorBody;
+    /**
+     * Internal error reading or copying the file.
+     */
+    500: ApiErrorBody;
+};
+
+export type V1ThemesInstallProxyError = V1ThemesInstallProxyErrors[keyof V1ThemesInstallProxyErrors];
+
+export type V1ThemesInstallProxyResponses = {
+    /**
+     * Theme installed.
+     */
+    200: ThemeSummaryWire;
+};
+
+export type V1ThemesInstallProxyResponse = V1ThemesInstallProxyResponses[keyof V1ThemesInstallProxyResponses];
+
+export type V1ThemesRefreshProxyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/themes/refresh';
+};
+
+export type V1ThemesRefreshProxyResponses = {
+    200: Array<ThemeSummaryWire>;
+};
+
+export type V1ThemesRefreshProxyResponse = V1ThemesRefreshProxyResponses[keyof V1ThemesRefreshProxyResponses];
+
+export type V1ThemeTokensProxyData = {
+    body?: never;
+    path: {
+        /**
+         * Theme ID
+         */
+        theme_id: string;
+    };
+    query?: never;
+    url: '/themes/{theme_id}/tokens';
+};
+
+export type V1ThemeTokensProxyErrors = {
+    /**
+     * Theme not found or invalid.
+     */
+    400: ApiErrorBody;
+};
+
+export type V1ThemeTokensProxyError = V1ThemeTokensProxyErrors[keyof V1ThemeTokensProxyErrors];
+
+export type V1ThemeTokensProxyResponses = {
+    /**
+     * Theme token map.
+     */
+    200: ThemeTokensResponse;
+};
+
+export type V1ThemeTokensProxyResponse = V1ThemeTokensProxyResponses[keyof V1ThemeTokensProxyResponses];
