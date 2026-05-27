@@ -185,10 +185,10 @@
       "apiKeyPlaceholder": "AIzaSy...",
       "apiKeyReadOnly": "API-Schlüssel sind schreibgeschützt",
       "authMethod": "Authentifizierungsmethode",
-      "channelId": "Kanal-ID",
+      "channelId": "Kanal-ID oder @Handle",
       "channelIdHint": "Verwenden Sie Ihre YouTube-Kanal-ID",
       "channelIdPlaceholder": "z. B. UCBcRF18a7Qf58cCRy5xuWwQ",
-      "description": "Stellen Sie eine Verbindung zum Live-Chat eines YouTube-Kanals her",
+      "description": "Mit einem YouTube-Live-Chat verbinden",
       "enterApiKey": "Bitte geben Sie einen API-Schlüssel ein",
       "enterChannelId": "Bitte geben Sie eine Kanal-ID oder ein Handle ein",
       "loginRequired": "Zum Lesen des YouTube-Chats ist eine Anmeldung erforderlich",
@@ -196,7 +196,7 @@
       "notLive": "Bei YouTube angemeldet. Der Chat wird verbunden, wenn Sie live gehen.",
       "oauthHint": "Verwendet ein freigegebenes App-Kontingent",
       "title": "YouTube-Live-Chat",
-      "useApiKey": "Verwenden Sie meinen eigenen API-Schlüssel",
+      "useApiKey": "API-Schlüssel (schreibgeschützt) statt OAuth verwenden",
       "useMyChannel": "Benutze meinen Kanal",
       "useOAuth": "Melden Sie sich mit Google an"
     },
@@ -206,11 +206,33 @@
       "connectionFailed": "Verbindung fehlgeschlagen"
     },
     "tiktok": {
-      "readOnlyNotice": "TikTok-Chat ist schreibgeschützt. SpiritStream kann nicht direkt zu TikTok streamen — gehen Sie zuerst in der TikTok-App live, verbinden Sie dann hier den Chat, um Kommentare während des Streamings woanders zu sehen."
+      "readOnlyNotice": "TikTok-Chat ist schreibgeschützt. SpiritStream kann nicht direkt zu TikTok streamen — gehen Sie zuerst in der TikTok-App live, verbinden Sie dann hier den Chat, um Kommentare während des Streamings woanders zu sehen.",
+      "description": "TikTok-Live-Chat per Benutzername lesen (schreibgeschützt)",
+      "username": "TikTok-Benutzername"
     },
     "facebook": {
       "identityWarning": "Die Verbindung mit Facebook Live offenbart Ihr Echtnamen-Konto. Jeder, der den Stream ansieht, sieht Ihren Facebook-Namen, Ihr Profilbild und Freundeslisten-Metadaten, die Meta standardmäßig öffentlich macht. Dies kann nicht pseudonymisiert werden — der anonyme Modus pseudonymisiert nur eingehende Nachrichten.",
-      "confirmEnable": "Ich verstehe, dass meine Echtnamen-Identität offengelegt wird; Facebook-Chat aktivieren"
+      "confirmEnable": "Ich verstehe, dass meine Echtnamen-Identität offengelegt wird; Facebook-Chat aktivieren",
+      "description": "Mit einem Facebook-Live-Video verbinden — Identität wird offenbart",
+      "videoId": "Facebook-Live-Video-ID",
+      "videoIdHint": "Aus der URL Ihrer Facebook-Live-Übertragung (die numerische ID, nicht der Slug).",
+      "accessToken": "Seiten-Zugriffstoken",
+      "accessTokenHint": "Erfordert pages_read_engagement + pages_manage_engagement-Berechtigungen. Langlebige Seitentokens laufen nie ab.",
+      "warningHeading": "Die Verbindung mit Facebook offenbart Ihr Echtnamen-Konto",
+      "connect": "Facebook-Chat aktivieren",
+      "connecting": "Verbinden…",
+      "connectSuccess": "Facebook-Chat verbunden",
+      "connectFailed": "Facebook-Verbindung fehlgeschlagen: {{error}}",
+      "disconnect": "Trennen",
+      "disconnectSuccess": "Facebook-Chat getrennt"
+    },
+    "noProfile": "Aktivieren Sie ein Profil, um den Chat zu konfigurieren.",
+    "saveFailed": "Chat-Einstellungen konnten nicht gespeichert werden",
+    "kick": {
+      "description": "Mit einem Kick-Kanal-Chat verbinden (anonymes Lesen; OAuth zum Senden)",
+      "channel": "Kanalname",
+      "channelPlaceholder": "z. B. kick_streamer",
+      "sendEnabled": "Nachrichten senden erlauben (erfordert Mit Kick anmelden)"
     }
   },
   "common": {
@@ -520,6 +542,11 @@
     "realTimeEvents": "Echtzeit-Anwendungsereignisse und Debug-Informationen",
     "title": "Anwendungsprotokolle",
     "warning": "WARN"
+  },
+  "menu": {
+    "tools": {
+      "chat": "Chat-Plattformen…"
+    }
   },
   "modals": {
     "addStreamTarget": "Stream-Ziel hinzufügen",

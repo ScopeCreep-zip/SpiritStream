@@ -180,15 +180,15 @@
     "waitingForStream": "等待直播",
     "you": "你",
     "youtube": {
-      "apiKey": "API密钥",
+      "apiKey": "API 密钥",
       "apiKeyHint": "使用您的配额 - 建议用于高使用率",
       "apiKeyPlaceholder": "艾扎西...",
       "apiKeyReadOnly": "API 密钥是只读的",
       "authMethod": "认证方式",
-      "channelId": "通道号",
+      "channelId": "频道 ID 或 @handle",
       "channelIdHint": "使用您的 YouTube 频道 ID",
       "channelIdPlaceholder": "例如，UCBcRF18a7Qf58cCRy5xuWwQ",
-      "description": "连接到 YouTube 频道的实时聊天",
+      "description": "连接到 YouTube 直播聊天",
       "enterApiKey": "请输入 API 密钥",
       "enterChannelId": "请输入频道 ID 或句柄",
       "loginRequired": "需要登录才能阅读 YouTube 聊天内容",
@@ -196,7 +196,7 @@
       "notLive": "已登录 YouTube。当您上线时，聊天将连接。",
       "oauthHint": "使用共享应用程序配额",
       "title": "YouTube 实时聊天",
-      "useApiKey": "使用我自己的 API 密钥",
+      "useApiKey": "使用 API 密钥(只读)而非 OAuth",
       "useMyChannel": "使用我的频道",
       "useOAuth": "使用 Google 登录"
     },
@@ -206,11 +206,33 @@
       "connectionFailed": "连接失败"
     },
     "tiktok": {
-      "readOnlyNotice": "TikTok 聊天为只读。SpiritStream 无法直接推流到 TikTok — 请先在 TikTok 应用中开始直播,然后在此处连接聊天,以便在其他平台直播时查看评论。"
+      "readOnlyNotice": "TikTok 聊天为只读。SpiritStream 无法直接推流到 TikTok — 请先在 TikTok 应用中开始直播,然后在此处连接聊天,以便在其他平台直播时查看评论。",
+      "description": "按用户名读取 TikTok Live 聊天(只读)",
+      "username": "TikTok 用户名"
     },
     "facebook": {
       "identityWarning": "连接 Facebook Live 将暴露您的实名账号。任何观看直播的人都能看到您的 Facebook 用户名、头像以及 Meta 默认公开的好友列表元数据。这无法假名化 — 匿名模式仅对收到的消息进行假名化。",
-      "confirmEnable": "我理解我的真实身份将被暴露;启用 Facebook 聊天"
+      "confirmEnable": "我理解我的真实身份将被暴露;启用 Facebook 聊天",
+      "description": "连接到 Facebook Live 视频 — 暴露身份",
+      "videoId": "Facebook Live 视频 ID",
+      "videoIdHint": "来自您 Facebook Live 直播的 URL(数字 ID,而非 slug)。",
+      "accessToken": "页面访问令牌",
+      "accessTokenHint": "需要 pages_read_engagement + pages_manage_engagement 权限。长期页面令牌永不过期。",
+      "warningHeading": "连接 Facebook 会暴露您的实名账户",
+      "connect": "启用 Facebook 聊天",
+      "connecting": "连接中…",
+      "connectSuccess": "Facebook 聊天已连接",
+      "connectFailed": "Facebook 连接失败:{{error}}",
+      "disconnect": "断开连接",
+      "disconnectSuccess": "Facebook 聊天已断开连接"
+    },
+    "noProfile": "激活配置文件以配置聊天。",
+    "saveFailed": "保存聊天设置失败",
+    "kick": {
+      "description": "连接到 Kick 频道聊天(匿名读取;发送需要 OAuth)",
+      "channel": "频道名称",
+      "channelPlaceholder": "例如 kick_streamer",
+      "sendEnabled": "允许发送消息(需要使用 Kick 登录)"
     }
   },
   "common": {
@@ -520,6 +542,11 @@
     "autoScrollDisabled": "自动滚动已禁用",
     "noLogs": "还没有日志条目",
     "logsWillAppear": "当应用程序生成日志时，日志将出现在此处。"
+  },
+  "menu": {
+    "tools": {
+      "chat": "聊天平台…"
+    }
   },
   "modals": {
     "createNewProfile": "创建新的个人资料",

@@ -180,15 +180,15 @@
     "waitingForStream": "في انتظار الدفق",
     "you": "أنت",
     "youtube": {
-      "apiKey": "مفتاح واجهة برمجة التطبيقات",
+      "apiKey": "مفتاح API",
       "apiKeyHint": "يستخدم حصتك - موصى به للاستخدام العالي",
       "apiKeyPlaceholder": "ايزاسي...",
       "apiKeyReadOnly": "مفاتيح API للقراءة فقط",
       "authMethod": "طريقة المصادقة",
-      "channelId": "معرف القناة",
+      "channelId": "معرف القناة أو @المعرف",
       "channelIdHint": "استخدم معرف قناتك على YouTube",
       "channelIdPlaceholder": "على سبيل المثال، UCBcRF18a7Qf58cCRy5xuWwQ",
-      "description": "اتصل بالدردشة المباشرة لقناة على YouTube",
+      "description": "الاتصال بمحادثة بث مباشر على YouTube",
       "enterApiKey": "الرجاء إدخال مفتاح API",
       "enterChannelId": "الرجاء إدخال معرف القناة أو المقبض",
       "loginRequired": "مطلوب تسجيل الدخول لقراءة دردشة يوتيوب",
@@ -196,7 +196,7 @@
       "notLive": "تم تسجيل الدخول إلى YouTube. سيتم توصيل الدردشة عندما تبدأ البث المباشر.",
       "oauthHint": "يستخدم حصة التطبيق المشتركة",
       "title": "يوتيوب الدردشة الحية",
-      "useApiKey": "استخدم مفتاح API الخاص بي",
+      "useApiKey": "استخدام مفتاح API (للقراءة فقط) بدلاً من OAuth",
       "useMyChannel": "استخدم قناتي",
       "useOAuth": "قم بتسجيل الدخول باستخدام جوجل"
     },
@@ -206,11 +206,33 @@
       "connectionFailed": "فشل الاتصال"
     },
     "tiktok": {
-      "readOnlyNotice": "محادثة TikTok للقراءة فقط. لا يستطيع SpiritStream البث المباشر إلى TikTok مباشرة — ابدأ البث المباشر في تطبيق TikTok أولاً، ثم اربط المحادثة هنا لمشاهدة التعليقات أثناء البث في مكان آخر."
+      "readOnlyNotice": "محادثة TikTok للقراءة فقط. لا يستطيع SpiritStream البث المباشر إلى TikTok مباشرة — ابدأ البث المباشر في تطبيق TikTok أولاً، ثم اربط المحادثة هنا لمشاهدة التعليقات أثناء البث في مكان آخر.",
+      "description": "اقرأ محادثة TikTok Live بواسطة اسم المستخدم (للقراءة فقط)",
+      "username": "اسم مستخدم TikTok"
     },
     "facebook": {
       "identityWarning": "يكشف الاتصال بـ Facebook Live حسابك بالاسم الحقيقي. سيرى أي شخص يشاهد البث اسم Facebook الخاص بك وصورة الملف الشخصي وبيانات قائمة الأصدقاء التي يكشفها Meta افتراضيًا. لا يمكن إخفاء هويتك — يقوم الوضع المجهول بإخفاء هوية الرسائل الواردة فقط.",
-      "confirmEnable": "أتفهم أن هويتي الحقيقية ستُكشف؛ تفعيل محادثة Facebook"
+      "confirmEnable": "أتفهم أن هويتي الحقيقية ستُكشف؛ تفعيل محادثة Facebook",
+      "description": "الاتصال بفيديو Facebook Live — يكشف الهوية",
+      "videoId": "معرف فيديو Facebook Live",
+      "videoIdHint": "من رابط بثك المباشر على Facebook (المعرف الرقمي، وليس الاسم النصي).",
+      "accessToken": "رمز الوصول إلى الصفحة",
+      "accessTokenHint": "يتطلب صلاحيات pages_read_engagement + pages_manage_engagement. رموز الصفحات طويلة الأمد لا تنتهي صلاحيتها.",
+      "warningHeading": "الاتصال بـ Facebook يكشف حسابك بالاسم الحقيقي",
+      "connect": "تفعيل محادثة Facebook",
+      "connecting": "جارٍ الاتصال…",
+      "connectSuccess": "تم الاتصال بمحادثة Facebook",
+      "connectFailed": "فشل الاتصال بـ Facebook: {{error}}",
+      "disconnect": "قطع الاتصال",
+      "disconnectSuccess": "تم قطع الاتصال بمحادثة Facebook"
+    },
+    "noProfile": "قم بتنشيط ملف تعريف لتكوين المحادثة.",
+    "saveFailed": "فشل حفظ إعدادات المحادثة",
+    "kick": {
+      "description": "اتصل بمحادثة قناة Kick (قراءة مجهولة؛ OAuth للإرسال)",
+      "channel": "اسم القناة",
+      "channelPlaceholder": "مثلاً kick_streamer",
+      "sendEnabled": "السماح بإرسال الرسائل (يتطلب تسجيل الدخول بواسطة Kick)"
     }
   },
   "common": {
@@ -520,6 +542,11 @@
     "realTimeEvents": "أحداث التطبيق في الوقت الحقيقي ومعلومات التصحيح",
     "title": "سجلات التطبيق",
     "warning": "WARN"
+  },
+  "menu": {
+    "tools": {
+      "chat": "منصات المحادثة…"
+    }
   },
   "modals": {
     "addStreamTarget": "أضف هدف الدفق",

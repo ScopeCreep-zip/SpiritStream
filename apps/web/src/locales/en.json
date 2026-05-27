@@ -93,11 +93,25 @@
       "youtube": "YouTube"
     },
     "tiktok": {
-      "readOnlyNotice": "TikTok chat is read-only. SpiritStream cannot stream to TikTok directly — go live in the TikTok app first, then connect chat here to see comments while you're streaming elsewhere."
+      "readOnlyNotice": "TikTok chat is read-only. SpiritStream cannot stream to TikTok directly — go live in the TikTok app first, then connect chat here to see comments while you're streaming elsewhere.",
+      "description": "Read TikTok Live chat by username (read-only)",
+      "username": "TikTok username"
     },
     "facebook": {
       "identityWarning": "Connecting Facebook Live reveals your real-name account. Anyone watching the stream sees your Facebook handle, profile picture, and friends-list metadata Meta exposes by default. This cannot be pseudonymised — anonymous mode pseudonymises inbound messages only.",
-      "confirmEnable": "I understand my real-name identity will be exposed; enable Facebook chat"
+      "confirmEnable": "I understand my real-name identity will be exposed; enable Facebook chat",
+      "description": "Connect to a Facebook Live video — identity-revealing",
+      "videoId": "Facebook Live video ID",
+      "videoIdHint": "From the URL of your Facebook Live broadcast (the numeric id, not the slug).",
+      "accessToken": "Page Access Token",
+      "accessTokenHint": "Requires pages_read_engagement + pages_manage_engagement scopes. Long-lived Page tokens never expire.",
+      "warningHeading": "Connecting Facebook reveals your real-name account",
+      "connect": "Enable Facebook chat",
+      "connecting": "Connecting…",
+      "connectSuccess": "Facebook chat connected",
+      "connectFailed": "Facebook connect failed: {{error}}",
+      "disconnect": "Disconnect",
+      "disconnectSuccess": "Facebook chat disconnected"
     },
     "popOut": "Pop out",
     "dockChat": "Dock chat",
@@ -187,15 +201,15 @@
     "waitingForStream": "Waiting for stream",
     "you": "You",
     "youtube": {
-      "apiKey": "API Key",
+      "apiKey": "API key",
       "apiKeyHint": "Uses your quota - recommended for high usage",
       "apiKeyPlaceholder": "AIzaSy...",
       "apiKeyReadOnly": "API keys are read-only",
       "authMethod": "Authentication Method",
-      "channelId": "Channel ID",
+      "channelId": "Channel ID or @handle",
       "channelIdHint": "Use your YouTube channel ID",
       "channelIdPlaceholder": "e.g., UCBcRF18a7Qf58cCRy5xuWwQ",
-      "description": "Connect to a YouTube channel's live chat",
+      "description": "Connect to a YouTube live chat",
       "enterApiKey": "Please enter an API key",
       "enterChannelId": "Please enter a channel ID or handle",
       "loginRequired": "Sign in is required to read YouTube chat",
@@ -203,7 +217,7 @@
       "notLive": "Signed in to YouTube. Chat will connect when you go live.",
       "oauthHint": "Uses shared app quota",
       "title": "YouTube Live Chat",
-      "useApiKey": "Use my own API Key",
+      "useApiKey": "Use API key (read-only) instead of OAuth",
       "useMyChannel": "Use my channel",
       "useOAuth": "Sign in with Google"
     },
@@ -211,6 +225,14 @@
       "channelNotFound": "Channel not found",
       "channelNotFoundNamed": "Channel '{{channel}}' not found",
       "connectionFailed": "Connection failed"
+    },
+    "noProfile": "Activate a profile to configure chat.",
+    "saveFailed": "Failed to save chat settings",
+    "kick": {
+      "description": "Connect to a Kick channel chat (anonymous read; OAuth for send)",
+      "channel": "Channel name",
+      "channelPlaceholder": "e.g. kick_streamer",
+      "sendEnabled": "Allow sending messages (requires Sign in with Kick)"
     }
   },
   "common": {
@@ -520,6 +542,11 @@
     "realTimeEvents": "Real-time application events and debug information",
     "title": "Application Logs",
     "warning": "WARN"
+  },
+  "menu": {
+    "tools": {
+      "chat": "Chat platforms…"
+    }
   },
   "modals": {
     "addStreamTarget": "Add Stream Target",

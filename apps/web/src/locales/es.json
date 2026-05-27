@@ -180,15 +180,15 @@
     "waitingForStream": "Esperando transmisión",
     "you": "Tú",
     "youtube": {
-      "apiKey": "Clave API",
+      "apiKey": "Clave de API",
       "apiKeyHint": "Utiliza tu cuota: recomendado para uso elevado",
       "apiKeyPlaceholder": "AizaSy...",
       "apiKeyReadOnly": "Las claves API son de solo lectura",
       "authMethod": "Método de autenticación",
-      "channelId": "ID de canal",
+      "channelId": "ID del canal o @handle",
       "channelIdHint": "Utilice su ID de canal de YouTube",
       "channelIdPlaceholder": "por ejemplo, UCBcRF18a7Qf58cCRy5xuWwQ",
-      "description": "Conéctese al chat en vivo de un canal de YouTube",
+      "description": "Conecta con un chat en vivo de YouTube",
       "enterApiKey": "Por favor ingrese una clave API",
       "enterChannelId": "Por favor ingresa un ID de canal o identificador",
       "loginRequired": "Es necesario iniciar sesión para leer el chat de YouTube.",
@@ -196,7 +196,7 @@
       "notLive": "Iniciado sesión en YouTube. El chat se conectará cuando esté en vivo.",
       "oauthHint": "Utiliza cuota de aplicación compartida",
       "title": "Chat en vivo de YouTube",
-      "useApiKey": "Usar mi propia clave API",
+      "useApiKey": "Usar clave de API (solo lectura) en lugar de OAuth",
       "useMyChannel": "Usa mi canal",
       "useOAuth": "Iniciar sesión con Google"
     },
@@ -206,11 +206,33 @@
       "connectionFailed": "La conexión falló"
     },
     "tiktok": {
-      "readOnlyNotice": "El chat de TikTok es de solo lectura. SpiritStream no puede transmitir directamente a TikTok — primero transmite en vivo desde la aplicación de TikTok, luego conecta el chat aquí para ver comentarios mientras transmites en otro lugar."
+      "readOnlyNotice": "El chat de TikTok es de solo lectura. SpiritStream no puede transmitir directamente a TikTok — primero transmite en vivo desde la aplicación de TikTok, luego conecta el chat aquí para ver comentarios mientras transmites en otro lugar.",
+      "description": "Lee el chat de TikTok Live por nombre de usuario (solo lectura)",
+      "username": "Nombre de usuario de TikTok"
     },
     "facebook": {
       "identityWarning": "Conectar Facebook Live revela tu cuenta de nombre real. Cualquiera que vea la transmisión verá tu identificador de Facebook, foto de perfil y metadatos de lista de amigos que Meta expone por defecto. Esto no se puede pseudonimizar — el modo anónimo solo pseudonimiza los mensajes entrantes.",
-      "confirmEnable": "Entiendo que mi identidad de nombre real será expuesta; activar chat de Facebook"
+      "confirmEnable": "Entiendo que mi identidad de nombre real será expuesta; activar chat de Facebook",
+      "description": "Conecta con un video de Facebook Live — revela tu identidad",
+      "videoId": "ID del video de Facebook Live",
+      "videoIdHint": "Desde la URL de tu transmisión de Facebook Live (el ID numérico, no el slug).",
+      "accessToken": "Token de acceso de página",
+      "accessTokenHint": "Requiere permisos pages_read_engagement + pages_manage_engagement. Los tokens de página de larga duración nunca caducan.",
+      "warningHeading": "Conectar Facebook revela tu cuenta de nombre real",
+      "connect": "Activar chat de Facebook",
+      "connecting": "Conectando…",
+      "connectSuccess": "Chat de Facebook conectado",
+      "connectFailed": "Falló la conexión con Facebook: {{error}}",
+      "disconnect": "Desconectar",
+      "disconnectSuccess": "Chat de Facebook desconectado"
+    },
+    "noProfile": "Activa un perfil para configurar el chat.",
+    "saveFailed": "No se pudo guardar la configuración de chat",
+    "kick": {
+      "description": "Conecta con un chat de canal de Kick (lectura anónima; OAuth para enviar)",
+      "channel": "Nombre del canal",
+      "channelPlaceholder": "ej. kick_streamer",
+      "sendEnabled": "Permitir enviar mensajes (requiere Iniciar sesión con Kick)"
     }
   },
   "common": {
@@ -520,6 +542,11 @@
     "realTimeEvents": "Eventos de la aplicación en tiempo real e información de depuración",
     "title": "Registros de la Aplicación",
     "warning": "WARN"
+  },
+  "menu": {
+    "tools": {
+      "chat": "Plataformas de chat…"
+    }
   },
   "modals": {
     "addStreamTarget": "Añadir Destino de Transmisión",

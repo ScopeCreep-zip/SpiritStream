@@ -185,10 +185,10 @@
       "apiKeyPlaceholder": "아이자시...",
       "apiKeyReadOnly": "API 키는 읽기 전용입니다.",
       "authMethod": "인증 방법",
-      "channelId": "채널 ID",
+      "channelId": "채널 ID 또는 @핸들",
       "channelIdHint": "YouTube 채널 ID 사용",
       "channelIdPlaceholder": "예: UCBcRF18a7Qf58cCRy5xuWwQ",
-      "description": "YouTube 채널의 실시간 채팅에 연결",
+      "description": "YouTube 라이브 채팅에 연결",
       "enterApiKey": "API 키를 입력하세요",
       "enterChannelId": "채널 ID 또는 핸들을 입력하세요.",
       "loginRequired": "YouTube 채팅을 읽으려면 로그인이 필요합니다",
@@ -196,7 +196,7 @@
       "notLive": "YouTube에 로그인했습니다. 실시간 스트리밍을 시작하면 채팅이 연결됩니다.",
       "oauthHint": "공유 앱 할당량을 사용합니다.",
       "title": "YouTube 실시간 채팅",
-      "useApiKey": "내 API 키 사용",
+      "useApiKey": "OAuth 대신 API 키(읽기 전용) 사용",
       "useMyChannel": "내 채널 사용",
       "useOAuth": "Google로 로그인"
     },
@@ -206,11 +206,33 @@
       "connectionFailed": "연결 실패"
     },
     "tiktok": {
-      "readOnlyNotice": "TikTok 채팅은 읽기 전용입니다. SpiritStream은 TikTok으로 직접 스트리밍할 수 없습니다 — 먼저 TikTok 앱에서 라이브를 시작한 다음, 다른 곳에서 스트리밍하는 동안 댓글을 보려면 여기에 채팅을 연결하세요."
+      "readOnlyNotice": "TikTok 채팅은 읽기 전용입니다. SpiritStream은 TikTok으로 직접 스트리밍할 수 없습니다 — 먼저 TikTok 앱에서 라이브를 시작한 다음, 다른 곳에서 스트리밍하는 동안 댓글을 보려면 여기에 채팅을 연결하세요.",
+      "description": "사용자 이름으로 TikTok Live 채팅 읽기 (읽기 전용)",
+      "username": "TikTok 사용자 이름"
     },
     "facebook": {
       "identityWarning": "Facebook Live에 연결하면 실명 계정이 노출됩니다. 스트림을 보는 모든 사람은 Meta가 기본적으로 노출하는 귀하의 Facebook 핸들, 프로필 사진 및 친구 목록 메타데이터를 볼 수 있습니다. 이는 익명화할 수 없습니다 — 익명 모드는 수신 메시지만 익명화합니다.",
-      "confirmEnable": "실명이 노출됨을 이해합니다. Facebook 채팅을 활성화합니다"
+      "confirmEnable": "실명이 노출됨을 이해합니다. Facebook 채팅을 활성화합니다",
+      "description": "Facebook Live 비디오에 연결 — 신원이 공개됩니다",
+      "videoId": "Facebook Live 비디오 ID",
+      "videoIdHint": "Facebook Live 방송의 URL에서 (슬러그가 아닌 숫자 ID).",
+      "accessToken": "페이지 액세스 토큰",
+      "accessTokenHint": "pages_read_engagement + pages_manage_engagement 권한 필요. 장기 페이지 토큰은 만료되지 않습니다.",
+      "warningHeading": "Facebook에 연결하면 실명 계정이 노출됩니다",
+      "connect": "Facebook 채팅 활성화",
+      "connecting": "연결 중…",
+      "connectSuccess": "Facebook 채팅이 연결되었습니다",
+      "connectFailed": "Facebook 연결 실패: {{error}}",
+      "disconnect": "연결 끊기",
+      "disconnectSuccess": "Facebook 채팅 연결이 끊겼습니다"
+    },
+    "noProfile": "채팅을 구성하려면 프로필을 활성화하세요.",
+    "saveFailed": "채팅 설정 저장에 실패했습니다",
+    "kick": {
+      "description": "Kick 채널 채팅에 연결 (익명 읽기; 보내기에는 OAuth)",
+      "channel": "채널 이름",
+      "channelPlaceholder": "예: kick_streamer",
+      "sendEnabled": "메시지 보내기 허용 (Kick으로 로그인 필요)"
     }
   },
   "common": {
@@ -520,6 +542,11 @@
     "realTimeEvents": "실시간 애플리케이션 이벤트 및 디버그 정보",
     "title": "애플리케이션 로그",
     "warning": "WARN"
+  },
+  "menu": {
+    "tools": {
+      "chat": "채팅 플랫폼…"
+    }
   },
   "modals": {
     "addStreamTarget": "스트림 대상 추가",

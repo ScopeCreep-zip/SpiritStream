@@ -185,10 +185,10 @@
       "apiKeyPlaceholder": "AIzaSy...",
       "apiKeyReadOnly": "API-sleutels is leesalleen",
       "authMethod": "Verifikasie metode",
-      "channelId": "Kanaal-ID",
+      "channelId": "Kanaal-ID of @handvatsel",
       "channelIdHint": "Gebruik jou YouTube-kanaal-ID",
       "channelIdPlaceholder": "bv. UCBcRF18a7Qf58cCRy5xuWwQ",
-      "description": "Koppel aan 'n YouTube-kanaal se regstreekse klets",
+      "description": "Verbind met 'n YouTube-liveklets",
       "enterApiKey": "Voer asseblief 'n API-sleutel in",
       "enterChannelId": "Voer asseblief 'n kanaal-ID of -handvatsel in",
       "loginRequired": "Aanmelding word vereis om YouTube-klets te lees",
@@ -196,7 +196,7 @@
       "notLive": "Aangemeld by YouTube. Klets sal koppel wanneer jy regstreeks gaan.",
       "oauthHint": "Gebruik gedeelde toepassingkwota",
       "title": "YouTube regstreekse klets",
-      "useApiKey": "Gebruik my eie API-sleutel",
+      "useApiKey": "Gebruik API-sleutel (lees-alleen) in plaas van OAuth",
       "useMyChannel": "Gebruik my kanaal",
       "useOAuth": "Meld aan met Google"
     },
@@ -206,11 +206,33 @@
       "connectionFailed": "Konneksie het misluk"
     },
     "tiktok": {
-      "readOnlyNotice": "TikTok-klets is lees-alleenlik. SpiritStream kan nie direk na TikTok stroom nie — gaan eers regstreeks in die TikTok-app, koppel dan die klets hier om kommentaar te sien terwyl jy elders stroom."
+      "readOnlyNotice": "TikTok-klets is lees-alleenlik. SpiritStream kan nie direk na TikTok stroom nie — gaan eers regstreeks in die TikTok-app, koppel dan die klets hier om kommentaar te sien terwyl jy elders stroom.",
+      "description": "Lees TikTok Live-klets per gebruikersnaam (lees-alleen)",
+      "username": "TikTok-gebruikersnaam"
     },
     "facebook": {
       "identityWarning": "Om Facebook Live te koppel onthul jou regte-naam-rekening. Enigiemand wat die stroom kyk sien jou Facebook-handvatsel, profielfoto, en vriende-lys-metadata wat Meta by verstek bekend maak. Dit kan nie geanonimiseer word nie — anonieme modus anonimiseer slegs inkomende boodskappe.",
-      "confirmEnable": "Ek verstaan dat my regte identiteit blootgestel sal word; aktiveer Facebook-klets"
+      "confirmEnable": "Ek verstaan dat my regte identiteit blootgestel sal word; aktiveer Facebook-klets",
+      "description": "Verbind met 'n Facebook Live-video — onthul jou identiteit",
+      "videoId": "Facebook Live-video-ID",
+      "videoIdHint": "Vanuit die URL van jou Facebook Live-uitsending (die numeriese ID, nie die slak nie).",
+      "accessToken": "Bladsy-toegangstoken",
+      "accessTokenHint": "Vereis pages_read_engagement + pages_manage_engagement-omvang. Lang-lewende bladsytokens verval nooit.",
+      "warningHeading": "Verbinding met Facebook onthul jou regte-naam-rekening",
+      "connect": "Aktiveer Facebook-klets",
+      "connecting": "Verbind…",
+      "connectSuccess": "Facebook-klets gekoppel",
+      "connectFailed": "Facebook-verbinding misluk: {{error}}",
+      "disconnect": "Ontkoppel",
+      "disconnectSuccess": "Facebook-klets ontkoppel"
+    },
+    "noProfile": "Aktiveer 'n profiel om klets op te stel.",
+    "saveFailed": "Kon nie kletsinstellings stoor nie",
+    "kick": {
+      "description": "Verbind met 'n Kick-kanaal klets (anonieme lees; OAuth vir stuur)",
+      "channel": "Kanaalnaam",
+      "channelPlaceholder": "bv. kick_streamer",
+      "sendEnabled": "Laat stuur van boodskappe toe (vereis Teken aan met Kick)"
     }
   },
   "common": {
@@ -520,6 +542,11 @@
     "realTimeEvents": "Intydse toepassingsgebeurtenisse en ontfoutingsinligting",
     "title": "Aansoek logs",
     "warning": "WAARSKUW"
+  },
+  "menu": {
+    "tools": {
+      "chat": "Klets-platforms…"
+    }
   },
   "modals": {
     "addStreamTarget": "Voeg stroomteiken by",

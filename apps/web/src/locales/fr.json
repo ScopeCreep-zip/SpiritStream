@@ -185,10 +185,10 @@
       "apiKeyPlaceholder": "AIzaSy...",
       "apiKeyReadOnly": "Les clés API sont en lecture seule",
       "authMethod": "Méthode d'authentification",
-      "channelId": "ID de chaîne",
+      "channelId": "ID de chaîne ou @handle",
       "channelIdHint": "Utilisez l'identifiant de votre chaîne YouTube",
       "channelIdPlaceholder": "par exemple, UCBcRF18a7Qf58cCRy5xuWwQ",
-      "description": "Connectez-vous au chat en direct d'une chaîne YouTube",
+      "description": "Se connecter à un chat en direct YouTube",
       "enterApiKey": "Veuillez saisir une clé API",
       "enterChannelId": "Veuillez saisir un identifiant ou un identifiant de chaîne",
       "loginRequired": "La connexion est requise pour lire le chat YouTube",
@@ -196,7 +196,7 @@
       "notLive": "Connectez-vous à YouTube. Le chat se connectera lorsque vous serez en direct.",
       "oauthHint": "Utilise le quota d'applications partagées",
       "title": "Chat en direct sur YouTube",
-      "useApiKey": "Utiliser ma propre clé API",
+      "useApiKey": "Utiliser une clé API (lecture seule) au lieu d'OAuth",
       "useMyChannel": "Utiliser ma chaîne",
       "useOAuth": "Connectez-vous avec Google"
     },
@@ -206,11 +206,33 @@
       "connectionFailed": "La connexion a échoué"
     },
     "tiktok": {
-      "readOnlyNotice": "Le chat TikTok est en lecture seule. SpiritStream ne peut pas diffuser directement vers TikTok — passez d'abord en direct dans l'application TikTok, puis connectez le chat ici pour voir les commentaires pendant que vous diffusez ailleurs."
+      "readOnlyNotice": "Le chat TikTok est en lecture seule. SpiritStream ne peut pas diffuser directement vers TikTok — passez d'abord en direct dans l'application TikTok, puis connectez le chat ici pour voir les commentaires pendant que vous diffusez ailleurs.",
+      "description": "Lire le chat TikTok Live par nom d'utilisateur (lecture seule)",
+      "username": "Nom d'utilisateur TikTok"
     },
     "facebook": {
       "identityWarning": "Connecter Facebook Live révèle votre compte avec votre vrai nom. Toute personne regardant la diffusion verra votre identifiant Facebook, votre photo de profil et les métadonnées de votre liste d'amis que Meta expose par défaut. Cela ne peut pas être pseudonymisé — le mode anonyme ne pseudonymise que les messages entrants.",
-      "confirmEnable": "Je comprends que mon identité réelle sera exposée ; activer le chat Facebook"
+      "confirmEnable": "Je comprends que mon identité réelle sera exposée ; activer le chat Facebook",
+      "description": "Se connecter à une vidéo Facebook Live — révèle votre identité",
+      "videoId": "ID de vidéo Facebook Live",
+      "videoIdHint": "À partir de l'URL de votre diffusion Facebook Live (l'ID numérique, pas le slug).",
+      "accessToken": "Jeton d'accès de page",
+      "accessTokenHint": "Nécessite les autorisations pages_read_engagement + pages_manage_engagement. Les jetons de page longue durée n'expirent jamais.",
+      "warningHeading": "Se connecter à Facebook révèle votre compte avec votre vrai nom",
+      "connect": "Activer le chat Facebook",
+      "connecting": "Connexion…",
+      "connectSuccess": "Chat Facebook connecté",
+      "connectFailed": "Échec de la connexion Facebook : {{error}}",
+      "disconnect": "Déconnecter",
+      "disconnectSuccess": "Chat Facebook déconnecté"
+    },
+    "noProfile": "Activez un profil pour configurer le chat.",
+    "saveFailed": "Impossible d'enregistrer les paramètres de chat",
+    "kick": {
+      "description": "Se connecter à un chat de chaîne Kick (lecture anonyme ; OAuth pour envoyer)",
+      "channel": "Nom de la chaîne",
+      "channelPlaceholder": "ex. kick_streamer",
+      "sendEnabled": "Autoriser l'envoi de messages (nécessite Se connecter avec Kick)"
     }
   },
   "common": {
@@ -520,6 +542,11 @@
     "realTimeEvents": "Événements de l'application en temps réel et informations de débogage",
     "title": "Journaux de l'application",
     "warning": "WARN"
+  },
+  "menu": {
+    "tools": {
+      "chat": "Plateformes de chat…"
+    }
   },
   "modals": {
     "addStreamTarget": "Ajouter une Destination de Diffusion",

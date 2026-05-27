@@ -185,10 +185,10 @@
       "apiKeyPlaceholder": "アイザシ...",
       "apiKeyReadOnly": "API キーは読み取り専用です",
       "authMethod": "認証方式",
-      "channelId": "チャンネルID",
+      "channelId": "チャンネルIDまたは@ハンドル",
       "channelIdHint": "YouTube チャンネル ID を使用する",
       "channelIdPlaceholder": "例: UCBcRF18a7Qf58cCRy5xuWwQ",
-      "description": "YouTube チャンネルのライブチャットに接続する",
+      "description": "YouTubeライブチャットに接続",
       "enterApiKey": "APIキーを入力してください",
       "enterChannelId": "チャンネルIDまたはハンドルを入力してください",
       "loginRequired": "YouTube チャットを読むにはサインインが必要です",
@@ -196,7 +196,7 @@
       "notLive": "YouTube にサインインしました。ライブにするとチャットがつながります。",
       "oauthHint": "共有アプリ割り当てを使用します",
       "title": "YouTube ライブチャット",
-      "useApiKey": "自分の API キーを使用する",
+      "useApiKey": "OAuthの代わりにAPIキー(読み取り専用)を使用",
       "useMyChannel": "私のチャンネルを使用してください",
       "useOAuth": "Googleでサインイン"
     },
@@ -206,11 +206,33 @@
       "connectionFailed": "接続に失敗しました"
     },
     "tiktok": {
-      "readOnlyNotice": "TikTokチャットは読み取り専用です。SpiritStreamからTikTokへ直接配信することはできません — まずTikTokアプリでライブ配信を開始し、別の場所で配信中にコメントを表示するためにここでチャットを接続してください。"
+      "readOnlyNotice": "TikTokチャットは読み取り専用です。SpiritStreamからTikTokへ直接配信することはできません — まずTikTokアプリでライブ配信を開始し、別の場所で配信中にコメントを表示するためにここでチャットを接続してください。",
+      "description": "ユーザー名でTikTok Liveチャットを読み取り(読み取り専用)",
+      "username": "TikTokユーザー名"
     },
     "facebook": {
       "identityWarning": "Facebook Liveに接続すると、本名アカウントが公開されます。配信を視聴している人は誰でも、Metaがデフォルトで公開するあなたのFacebookハンドル、プロフィール写真、友達リストのメタデータを見ることができます。これは匿名化できません — 匿名モードは受信メッセージのみを匿名化します。",
-      "confirmEnable": "本名が公開されることを理解しました。Facebookチャットを有効にする"
+      "confirmEnable": "本名が公開されることを理解しました。Facebookチャットを有効にする",
+      "description": "Facebook Live動画に接続 — 身元が公開されます",
+      "videoId": "Facebook Live動画ID",
+      "videoIdHint": "Facebook LiveブロードキャストのURLから(スラッグではなく数値ID)。",
+      "accessToken": "ページアクセストークン",
+      "accessTokenHint": "pages_read_engagement + pages_manage_engagementスコープが必要。長期ページトークンは期限切れになりません。",
+      "warningHeading": "Facebookに接続すると本名アカウントが公開されます",
+      "connect": "Facebookチャットを有効にする",
+      "connecting": "接続中…",
+      "connectSuccess": "Facebookチャットに接続しました",
+      "connectFailed": "Facebook接続に失敗: {{error}}",
+      "disconnect": "切断",
+      "disconnectSuccess": "Facebookチャットを切断しました"
+    },
+    "noProfile": "チャットを設定するにはプロファイルを有効化してください。",
+    "saveFailed": "チャット設定の保存に失敗しました",
+    "kick": {
+      "description": "Kickチャンネルチャットに接続(匿名読み取り; 送信にはOAuth)",
+      "channel": "チャンネル名",
+      "channelPlaceholder": "例: kick_streamer",
+      "sendEnabled": "メッセージ送信を許可(Kickでサインインが必要)"
     }
   },
   "common": {
@@ -520,6 +542,11 @@
     "realTimeEvents": "リアルタイムのアプリケーションイベントとデバッグ情報",
     "title": "ログ",
     "warning": "WARN"
+  },
+  "menu": {
+    "tools": {
+      "chat": "チャットプラットフォーム…"
+    }
   },
   "modals": {
     "addStreamTarget": "配信先を追加",
