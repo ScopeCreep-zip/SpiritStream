@@ -77,7 +77,10 @@
     "notLoggedIn": "Nie aangemeld nie",
     "oauth": {
       "browserOpened": "Gaan jou blaaier na om stawing te voltooi",
-      "loginSuccess": "Aangemeld by {{platform}}"
+      "loginSuccess": "Aangemeld by {{platform}}",
+      "signedInAs": "Aangemeld as {{username}}",
+      "signedOut": "Afgemeld van {{platform}}",
+      "startFailed": "Kon nie aanmelding begin nie: {{error}}"
     },
     "openOverlay": "Maak oorleg oop",
     "platform": "Kletsplatform",
@@ -198,7 +201,8 @@
       "title": "YouTube regstreekse klets",
       "useApiKey": "Gebruik API-sleutel (lees-alleen) in plaas van OAuth",
       "useMyChannel": "Gebruik my kanaal",
-      "useOAuth": "Meld aan met Google"
+      "useOAuth": "Meld aan met Google",
+      "loginWithYouTube": "Teken in met YouTube"
     },
     "formatError": {
       "channelNotFound": "Kanaal nie gevind nie",
@@ -224,7 +228,8 @@
       "connectSuccess": "Facebook-klets gekoppel",
       "connectFailed": "Facebook-verbinding misluk: {{error}}",
       "disconnect": "Ontkoppel",
-      "disconnectSuccess": "Facebook-klets ontkoppel"
+      "disconnectSuccess": "Facebook-klets ontkoppel",
+      "loginWithFacebook": "Teken in met Facebook"
     },
     "noProfile": "Aktiveer 'n profiel om klets op te stel.",
     "saveFailed": "Kon nie kletsinstellings stoor nie",
@@ -232,7 +237,8 @@
       "description": "Verbind met 'n Kick-kanaal klets (anonieme lees; OAuth vir stuur)",
       "channel": "Kanaalnaam",
       "channelPlaceholder": "bv. kick_streamer",
-      "sendEnabled": "Laat stuur van boodskappe toe (vereis Teken aan met Kick)"
+      "sendEnabled": "Laat stuur van boodskappe toe (vereis Teken aan met Kick)",
+      "loginWithKick": "Teken in met Kick"
     }
   },
   "common": {

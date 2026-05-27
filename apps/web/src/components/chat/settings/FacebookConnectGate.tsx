@@ -5,6 +5,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/compon
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Toggle } from '@/components/ui/Toggle';
+import { PlatformSignInButton } from '@/components/chat/settings/PlatformSignInButton';
 import { useProfileStore } from '@/stores/profileStore';
 import { api } from '@/lib/client';
 import { toast } from '@/hooks/useToast';
@@ -210,6 +211,19 @@ export function FacebookConnectGate(): React.ReactElement {
             helper={t('chat.facebook.accessTokenHint', {
               defaultValue:
                 'Requires pages_read_engagement + pages_manage_engagement scopes. Long-lived Page tokens never expire.',
+            })}
+          />
+          {/* OAuth alternative to manual token entry. Same auth-server
+              flow the Twitch/YouTube/Kick buttons trigger; on
+              successful callback the backend persists tokens to
+              `oauth.facebook` and this form re-reads the access_token
+              via the useEffect below. App-Review-gated for production,
+              but works in dev / for maintainer-issued Page tokens. */}
+          <PlatformSignInButton
+            provider="facebook"
+            signedInAs={currentProfile?.settings?.oauth?.facebook?.username ?? ''}
+            signInLabel={t('chat.facebook.loginWithFacebook', {
+              defaultValue: 'Login with Facebook',
             })}
           />
         </div>

@@ -423,8 +423,8 @@ fn resolve_ffmpeg_sidecar() -> Option<std::path::PathBuf> {
 
 /// Kill any zombie spiritstream-server processes from previous runs to
 /// avoid port conflicts. Unix uses `pkill -f`; Windows uses `taskkill`
-/// + a port-availability re-check loop because taskkill returns before
-/// the kernel actually frees the bound port.
+/// plus a port-availability re-check loop because taskkill returns
+/// before the kernel actually frees the bound port.
 fn kill_existing_servers() {
     #[cfg(unix)]
     {

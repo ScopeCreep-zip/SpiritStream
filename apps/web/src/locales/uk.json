@@ -77,7 +77,10 @@
     "notLoggedIn": "Не ввійшли в систему",
     "oauth": {
       "browserOpened": "Перевірте свій браузер, щоб завершити автентифікацію",
-      "loginSuccess": "Ви ввійшли в {{platform}}"
+      "loginSuccess": "Ви ввійшли в {{platform}}",
+      "signedInAs": "Ви увійшли як {{username}}",
+      "signedOut": "Вихід з {{platform}} виконано",
+      "startFailed": "Не вдалося розпочати вхід: {{error}}"
     },
     "openOverlay": "Відкрийте Overlay",
     "platform": "Платформа",
@@ -198,7 +201,8 @@
       "title": "Живий чат YouTube",
       "useApiKey": "Використовувати API-ключ (лише читання) замість OAuth",
       "useMyChannel": "Використовуйте мій канал",
-      "useOAuth": "Увійдіть за допомогою Google"
+      "useOAuth": "Увійдіть за допомогою Google",
+      "loginWithYouTube": "Увійти через YouTube"
     },
     "formatError": {
       "channelNotFound": "Канал не знайдено",
@@ -224,7 +228,8 @@
       "connectSuccess": "Чат Facebook підключено",
       "connectFailed": "Не вдалося підключитися до Facebook: {{error}}",
       "disconnect": "Відключити",
-      "disconnectSuccess": "Чат Facebook відключено"
+      "disconnectSuccess": "Чат Facebook відключено",
+      "loginWithFacebook": "Увійти через Facebook"
     },
     "noProfile": "Активуйте профіль, щоб налаштувати чат.",
     "saveFailed": "Не вдалося зберегти налаштування чату",
@@ -232,7 +237,8 @@
       "description": "Підключитися до чату каналу Kick (анонімне читання; OAuth для надсилання)",
       "channel": "Назва каналу",
       "channelPlaceholder": "напр. kick_streamer",
-      "sendEnabled": "Дозволити надсилання повідомлень (потрібен Вхід через Kick)"
+      "sendEnabled": "Дозволити надсилання повідомлень (потрібен Вхід через Kick)",
+      "loginWithKick": "Увійти через Kick"
     }
   },
   "common": {

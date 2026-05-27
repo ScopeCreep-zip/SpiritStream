@@ -77,7 +77,10 @@
     "notLoggedIn": "ログインしていません",
     "oauth": {
       "browserOpened": "ブラウザを確認して認証を完了してください",
-      "loginSuccess": "{{platform}} にサインインしました"
+      "loginSuccess": "{{platform}} にサインインしました",
+      "signedInAs": "{{username}}としてログイン中",
+      "signedOut": "{{platform}}からログアウトしました",
+      "startFailed": "サインインの開始に失敗しました: {{error}}"
     },
     "openOverlay": "オーバーレイを開く",
     "platform": "プラットフォーム",
@@ -198,7 +201,8 @@
       "title": "YouTube ライブチャット",
       "useApiKey": "OAuthの代わりにAPIキー(読み取り専用)を使用",
       "useMyChannel": "私のチャンネルを使用してください",
-      "useOAuth": "Googleでサインイン"
+      "useOAuth": "Googleでサインイン",
+      "loginWithYouTube": "YouTubeでログイン"
     },
     "formatError": {
       "channelNotFound": "チャンネルが見つかりません",
@@ -224,7 +228,8 @@
       "connectSuccess": "Facebookチャットに接続しました",
       "connectFailed": "Facebook接続に失敗: {{error}}",
       "disconnect": "切断",
-      "disconnectSuccess": "Facebookチャットを切断しました"
+      "disconnectSuccess": "Facebookチャットを切断しました",
+      "loginWithFacebook": "Facebookでログイン"
     },
     "noProfile": "チャットを設定するにはプロファイルを有効化してください。",
     "saveFailed": "チャット設定の保存に失敗しました",
@@ -232,7 +237,8 @@
       "description": "Kickチャンネルチャットに接続(匿名読み取り; 送信にはOAuth)",
       "channel": "チャンネル名",
       "channelPlaceholder": "例: kick_streamer",
-      "sendEnabled": "メッセージ送信を許可(Kickでサインインが必要)"
+      "sendEnabled": "メッセージ送信を許可(Kickでサインインが必要)",
+      "loginWithKick": "Kickでログイン"
     }
   },
   "common": {

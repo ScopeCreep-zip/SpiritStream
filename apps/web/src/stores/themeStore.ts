@@ -295,7 +295,10 @@ export async function subscribeThemesUpdated(): Promise<() => void> {
       toast.info(
         `Theme "${state.currentThemeId}" was uninstalled. Switched to Spirit Dark.`,
       );
-      void state.setTheme(DEFAULT_THEME_DARK);
+      // Fire-and-forget — caller is an event subscription, can't await.
+      state.setTheme(DEFAULT_THEME_DARK).catch(() => {
+        /* swallow: toast already surfaced the uninstall */
+      });
     }
   });
 }

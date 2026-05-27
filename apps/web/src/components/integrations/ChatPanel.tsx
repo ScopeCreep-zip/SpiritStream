@@ -9,6 +9,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/compon
 import { Input } from '@/components/ui/Input';
 import { Toggle } from '@/components/ui/Toggle';
 import { FacebookConnectGate } from '@/components/chat/settings/FacebookConnectGate';
+import { PlatformSignInButton } from '@/components/chat/settings/PlatformSignInButton';
 
 type ChatField =
   | 'twitch_channel'
@@ -141,6 +142,11 @@ export function ChatPanel(): React.ReactElement {
             onBlur={(e) => handleBlur('twitch_channel', e.target.value)}
             placeholder={t('chat.twitch.channelPlaceholder', { defaultValue: 'e.g. spiritartlife' })}
           />
+          <PlatformSignInButton
+            provider="twitch"
+            signedInAs={currentProfile.settings.oauth.twitch.username}
+            signInLabel={t('chat.twitch.loginWithTwitch', { defaultValue: 'Login with Twitch' })}
+          />
           <div className="mt-3">
             <Toggle
               checked={twitchSend}
@@ -200,16 +206,25 @@ export function ChatPanel(): React.ReactElement {
             </div>
           )}
           {!youtubeUseApiKey && (
-            <div className="mt-3">
-              <Toggle
-                checked={youtubeSend}
-                onChange={(checked) => {
-                  setYoutubeSend(checked);
-                  persist({ youtubeSendEnabled: checked });
-                }}
-                label={t('chat.sendEnabled', { defaultValue: 'Allow sending messages' })}
+            <>
+              <PlatformSignInButton
+                provider="youtube"
+                signedInAs={currentProfile.settings.oauth.youtube.username}
+                signInLabel={t('chat.youtube.loginWithYouTube', {
+                  defaultValue: 'Login with YouTube',
+                })}
               />
-            </div>
+              <div className="mt-3">
+                <Toggle
+                  checked={youtubeSend}
+                  onChange={(checked) => {
+                    setYoutubeSend(checked);
+                    persist({ youtubeSendEnabled: checked });
+                  }}
+                  label={t('chat.sendEnabled', { defaultValue: 'Allow sending messages' })}
+                />
+              </div>
+            </>
           )}
         </CardBody>
       </Card>
@@ -294,6 +309,11 @@ export function ChatPanel(): React.ReactElement {
             onChange={(e) => setKickChannel(e.target.value)}
             onBlur={(e) => handleBlur('kick_channel', e.target.value)}
             placeholder={t('chat.kick.channelPlaceholder', { defaultValue: 'e.g. kick_streamer' })}
+          />
+          <PlatformSignInButton
+            provider="kick"
+            signedInAs={currentProfile.settings.oauth.kick.username}
+            signInLabel={t('chat.kick.loginWithKick', { defaultValue: 'Login with Kick' })}
           />
           <div className="mt-3">
             <Toggle

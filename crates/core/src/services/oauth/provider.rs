@@ -40,13 +40,19 @@ impl OAuthProvider {
         }
     }
 
-    /// Facebook OAuth 2.0 (Meta Graph API). Scopes required for
-    /// reading + posting Live Video comments at the Page level:
-    /// `pages_read_engagement` (read comments), `pages_manage_engagement`
-    /// (post comments + replies), `pages_show_list` (enumerate the
-    /// user's Pages so the UI can resolve which Page's token to use).
+    /// Facebook OAuth 2.0 (Meta Graph API). Scopes the plan enumerated
+    /// for the Live Video Comments use case, plus `pages_show_list`
+    /// which the connector needs to enumerate the user's Pages and
+    /// resolve which Page Access Token to use for a given live video:
+    ///   - `publish_video` — required to manage / interact with Live
+    ///     Video objects (per Meta's Live Video API gate).
+    ///   - `pages_read_engagement` — read comments on Page content.
+    ///   - `pages_manage_posts` — post + edit comments on Page content
+    ///     (including live-video comments).
+    ///   - `pages_show_list` — enumerate the user's Pages so the UI
+    ///     can pick which Page Access Token to use.
     ///
-    /// All three scopes are App-Review-gated for production: the
+    /// All four scopes are App-Review-gated for production: the
     /// maintainer's Meta App must be approved before the OAuth flow
     /// returns a Page-scoped token. Until App Review completes, the
     /// operator can paste a long-lived Page Access Token directly into
@@ -58,8 +64,9 @@ impl OAuthProvider {
             auth_url: "https://www.facebook.com/v18.0/dialog/oauth",
             token_url: "https://graph.facebook.com/v18.0/oauth/access_token",
             scopes: vec![
+                "publish_video",
                 "pages_read_engagement",
-                "pages_manage_engagement",
+                "pages_manage_posts",
                 "pages_show_list",
             ],
         }

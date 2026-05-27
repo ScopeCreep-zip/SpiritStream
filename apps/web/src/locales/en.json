@@ -77,7 +77,10 @@
     "notLoggedIn": "Not logged in",
     "oauth": {
       "browserOpened": "Check your browser to complete authentication",
-      "loginSuccess": "Signed in to {{platform}}"
+      "loginSuccess": "Signed in to {{platform}}",
+      "signedInAs": "Signed in as {{username}}",
+      "signedOut": "Signed out of {{platform}}",
+      "startFailed": "Failed to start sign-in: {{error}}"
     },
     "openOverlay": "Open Overlay",
     "platform": "Platform",
@@ -111,7 +114,8 @@
       "connectSuccess": "Facebook chat connected",
       "connectFailed": "Facebook connect failed: {{error}}",
       "disconnect": "Disconnect",
-      "disconnectSuccess": "Facebook chat disconnected"
+      "disconnectSuccess": "Facebook chat disconnected",
+      "loginWithFacebook": "Login with Facebook"
     },
     "popOut": "Pop out",
     "dockChat": "Dock chat",
@@ -219,7 +223,8 @@
       "title": "YouTube Live Chat",
       "useApiKey": "Use API key (read-only) instead of OAuth",
       "useMyChannel": "Use my channel",
-      "useOAuth": "Sign in with Google"
+      "useOAuth": "Sign in with Google",
+      "loginWithYouTube": "Login with YouTube"
     },
     "formatError": {
       "channelNotFound": "Channel not found",
@@ -232,7 +237,8 @@
       "description": "Connect to a Kick channel chat (anonymous read; OAuth for send)",
       "channel": "Channel name",
       "channelPlaceholder": "e.g. kick_streamer",
-      "sendEnabled": "Allow sending messages (requires Sign in with Kick)"
+      "sendEnabled": "Allow sending messages (requires Sign in with Kick)",
+      "loginWithKick": "Login with Kick"
     }
   },
   "common": {

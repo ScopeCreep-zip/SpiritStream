@@ -193,10 +193,9 @@ impl ChatPlatform for KickConnector {
             ));
         }
 
-        let chatroom_id = fetch_chatroom_id(&channel).await.map_err(|e| {
-            self.set_error(e.to_string());
-            e
-        })?;
+        let chatroom_id = fetch_chatroom_id(&channel)
+            .await
+            .inspect_err(|e| self.set_error(e.to_string()))?;
 
         let (ws_stream, _) = connect_async(KICK_PUSHER_URL).await.map_err(|e| {
             self.set_error(format!("Kick websocket connection failed: {e}"));
@@ -229,10 +228,7 @@ impl ChatPlatform for KickConnector {
             PlatformError::Connection("Timed out waiting for Pusher connection_established".to_string())
         })?;
 
-        established.map_err(|e| {
-            self.set_error(e.to_string());
-            e
-        })?;
+        established.inspect_err(|e| self.set_error(e.to_string()))?;
 
         let channel_name = format!("chatrooms.{chatroom_id}.v2");
         let subscribe_payload = serde_json::json!({

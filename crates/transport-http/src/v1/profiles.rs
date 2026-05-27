@@ -515,9 +515,9 @@ impl From<spiritstream_core::models::ProfileSummary> for ProfileSummaryWire {
 pub struct ProfileAckResponse {}
 
 /// `{indices: {name → order}}` envelope used by the `/profiles/order`
-/// + `/profiles/order/ensure` endpoints. Wraps the raw map so OpenAPI
-/// gets a named schema instead of an inline `additionalProperties`
-/// object.
+/// and `/profiles/order/ensure` endpoints. Wraps the raw map so
+/// OpenAPI gets a named schema instead of an inline
+/// `additionalProperties` object.
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct ProfileOrderMapResponse {
     pub indices: std::collections::HashMap<String, u32>,

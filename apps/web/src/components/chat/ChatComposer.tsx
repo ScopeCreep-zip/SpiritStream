@@ -224,11 +224,14 @@ export function ChatComposer({ statuses, activeStreamCount }: ChatComposerProps)
       {platformStates.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 text-xs">
           {platformStates.map((platform) => {
-            const stateLabel = !platform.configured
-              ? t('chat.platformNotConfigured', { defaultValue: 'not configured' })
-              : platform.sendEnabled
-                ? t('chat.sendOn', { defaultValue: 'on' })
-                : t('chat.sendOff', { defaultValue: 'off' });
+            let stateLabel: string;
+            if (!platform.configured) {
+              stateLabel = t('chat.platformNotConfigured', { defaultValue: 'not configured' });
+            } else if (platform.sendEnabled) {
+              stateLabel = t('chat.sendOn', { defaultValue: 'on' });
+            } else {
+              stateLabel = t('chat.sendOff', { defaultValue: 'off' });
+            }
             return (
               <span
                 key={platform.id}

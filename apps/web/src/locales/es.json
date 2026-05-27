@@ -77,7 +77,10 @@
     "notLoggedIn": "No iniciado sesión",
     "oauth": {
       "browserOpened": "Verifique su navegador para completar la autenticación",
-      "loginSuccess": "Iniciado sesión en {{platform}}"
+      "loginSuccess": "Iniciado sesión en {{platform}}",
+      "signedInAs": "Conectado como {{username}}",
+      "signedOut": "Sesión cerrada en {{platform}}",
+      "startFailed": "Error al iniciar el inicio de sesión: {{error}}"
     },
     "openOverlay": "Abrir superposición",
     "platform": "Plataforma",
@@ -198,7 +201,8 @@
       "title": "Chat en vivo de YouTube",
       "useApiKey": "Usar clave de API (solo lectura) en lugar de OAuth",
       "useMyChannel": "Usa mi canal",
-      "useOAuth": "Iniciar sesión con Google"
+      "useOAuth": "Iniciar sesión con Google",
+      "loginWithYouTube": "Iniciar sesión con YouTube"
     },
     "formatError": {
       "channelNotFound": "Canal no encontrado",
@@ -224,7 +228,8 @@
       "connectSuccess": "Chat de Facebook conectado",
       "connectFailed": "Falló la conexión con Facebook: {{error}}",
       "disconnect": "Desconectar",
-      "disconnectSuccess": "Chat de Facebook desconectado"
+      "disconnectSuccess": "Chat de Facebook desconectado",
+      "loginWithFacebook": "Iniciar sesión con Facebook"
     },
     "noProfile": "Activa un perfil para configurar el chat.",
     "saveFailed": "No se pudo guardar la configuración de chat",
@@ -232,7 +237,8 @@
       "description": "Conecta con un chat de canal de Kick (lectura anónima; OAuth para enviar)",
       "channel": "Nombre del canal",
       "channelPlaceholder": "ej. kick_streamer",
-      "sendEnabled": "Permitir enviar mensajes (requiere Iniciar sesión con Kick)"
+      "sendEnabled": "Permitir enviar mensajes (requiere Iniciar sesión con Kick)",
+      "loginWithKick": "Iniciar sesión con Kick"
     }
   },
   "common": {

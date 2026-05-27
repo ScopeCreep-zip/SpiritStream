@@ -77,7 +77,10 @@
     "notLoggedIn": "로그인되지 않음",
     "oauth": {
       "browserOpened": "브라우저를 확인하여 인증을 완료하세요.",
-      "loginSuccess": "{{platform}}에 로그인됨"
+      "loginSuccess": "{{platform}}에 로그인됨",
+      "signedInAs": "{{username}}으로 로그인됨",
+      "signedOut": "{{platform}}에서 로그아웃됨",
+      "startFailed": "로그인 시작 실패: {{error}}"
     },
     "openOverlay": "오픈 오버레이",
     "platform": "플랫폼",
@@ -198,7 +201,8 @@
       "title": "YouTube 실시간 채팅",
       "useApiKey": "OAuth 대신 API 키(읽기 전용) 사용",
       "useMyChannel": "내 채널 사용",
-      "useOAuth": "Google로 로그인"
+      "useOAuth": "Google로 로그인",
+      "loginWithYouTube": "YouTube로 로그인"
     },
     "formatError": {
       "channelNotFound": "채널을 찾을 수 없습니다",
@@ -224,7 +228,8 @@
       "connectSuccess": "Facebook 채팅이 연결되었습니다",
       "connectFailed": "Facebook 연결 실패: {{error}}",
       "disconnect": "연결 끊기",
-      "disconnectSuccess": "Facebook 채팅 연결이 끊겼습니다"
+      "disconnectSuccess": "Facebook 채팅 연결이 끊겼습니다",
+      "loginWithFacebook": "Facebook으로 로그인"
     },
     "noProfile": "채팅을 구성하려면 프로필을 활성화하세요.",
     "saveFailed": "채팅 설정 저장에 실패했습니다",
@@ -232,7 +237,8 @@
       "description": "Kick 채널 채팅에 연결 (익명 읽기; 보내기에는 OAuth)",
       "channel": "채널 이름",
       "channelPlaceholder": "예: kick_streamer",
-      "sendEnabled": "메시지 보내기 허용 (Kick으로 로그인 필요)"
+      "sendEnabled": "메시지 보내기 허용 (Kick으로 로그인 필요)",
+      "loginWithKick": "Kick으로 로그인"
     }
   },
   "common": {

@@ -77,7 +77,10 @@
     "notLoggedIn": "لم يتم تسجيل الدخول",
     "oauth": {
       "browserOpened": "تحقق من المتصفح الخاص بك لإكمال المصادقة",
-      "loginSuccess": "تم تسجيل الدخول إلى {{platform}}"
+      "loginSuccess": "تم تسجيل الدخول إلى {{platform}}",
+      "signedInAs": "تم تسجيل الدخول كـ {{username}}",
+      "signedOut": "تم تسجيل الخروج من {{platform}}",
+      "startFailed": "فشل بدء تسجيل الدخول: {{error}}"
     },
     "openOverlay": "افتح التراكب",
     "platform": "منصة",
@@ -198,7 +201,8 @@
       "title": "يوتيوب الدردشة الحية",
       "useApiKey": "استخدام مفتاح API (للقراءة فقط) بدلاً من OAuth",
       "useMyChannel": "استخدم قناتي",
-      "useOAuth": "قم بتسجيل الدخول باستخدام جوجل"
+      "useOAuth": "قم بتسجيل الدخول باستخدام جوجل",
+      "loginWithYouTube": "تسجيل الدخول بـ YouTube"
     },
     "formatError": {
       "channelNotFound": "لم يتم العثور على القناة",
@@ -224,7 +228,8 @@
       "connectSuccess": "تم الاتصال بمحادثة Facebook",
       "connectFailed": "فشل الاتصال بـ Facebook: {{error}}",
       "disconnect": "قطع الاتصال",
-      "disconnectSuccess": "تم قطع الاتصال بمحادثة Facebook"
+      "disconnectSuccess": "تم قطع الاتصال بمحادثة Facebook",
+      "loginWithFacebook": "تسجيل الدخول بـ Facebook"
     },
     "noProfile": "قم بتنشيط ملف تعريف لتكوين المحادثة.",
     "saveFailed": "فشل حفظ إعدادات المحادثة",
@@ -232,7 +237,8 @@
       "description": "اتصل بمحادثة قناة Kick (قراءة مجهولة؛ OAuth للإرسال)",
       "channel": "اسم القناة",
       "channelPlaceholder": "مثلاً kick_streamer",
-      "sendEnabled": "السماح بإرسال الرسائل (يتطلب تسجيل الدخول بواسطة Kick)"
+      "sendEnabled": "السماح بإرسال الرسائل (يتطلب تسجيل الدخول بواسطة Kick)",
+      "loginWithKick": "تسجيل الدخول بـ Kick"
     }
   },
   "common": {

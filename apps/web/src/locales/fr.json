@@ -77,7 +77,10 @@
     "notLoggedIn": "Non connecté",
     "oauth": {
       "browserOpened": "Vérifiez votre navigateur pour terminer l'authentification",
-      "loginSuccess": "Connecté à {{platform}}"
+      "loginSuccess": "Connecté à {{platform}}",
+      "signedInAs": "Connecté en tant que {{username}}",
+      "signedOut": "Déconnecté de {{platform}}",
+      "startFailed": "Échec du démarrage de la connexion : {{error}}"
     },
     "openOverlay": "Ouvrir la superposition",
     "platform": "Plate-forme",
@@ -198,7 +201,8 @@
       "title": "Chat en direct sur YouTube",
       "useApiKey": "Utiliser une clé API (lecture seule) au lieu d'OAuth",
       "useMyChannel": "Utiliser ma chaîne",
-      "useOAuth": "Connectez-vous avec Google"
+      "useOAuth": "Connectez-vous avec Google",
+      "loginWithYouTube": "Se connecter avec YouTube"
     },
     "formatError": {
       "channelNotFound": "Chaîne introuvable",
@@ -224,7 +228,8 @@
       "connectSuccess": "Chat Facebook connecté",
       "connectFailed": "Échec de la connexion Facebook : {{error}}",
       "disconnect": "Déconnecter",
-      "disconnectSuccess": "Chat Facebook déconnecté"
+      "disconnectSuccess": "Chat Facebook déconnecté",
+      "loginWithFacebook": "Se connecter avec Facebook"
     },
     "noProfile": "Activez un profil pour configurer le chat.",
     "saveFailed": "Impossible d'enregistrer les paramètres de chat",
@@ -232,7 +237,8 @@
       "description": "Se connecter à un chat de chaîne Kick (lecture anonyme ; OAuth pour envoyer)",
       "channel": "Nom de la chaîne",
       "channelPlaceholder": "ex. kick_streamer",
-      "sendEnabled": "Autoriser l'envoi de messages (nécessite Se connecter avec Kick)"
+      "sendEnabled": "Autoriser l'envoi de messages (nécessite Se connecter avec Kick)",
+      "loginWithKick": "Se connecter avec Kick"
     }
   },
   "common": {

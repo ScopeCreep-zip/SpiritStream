@@ -77,7 +77,10 @@
     "notLoggedIn": "未登录",
     "oauth": {
       "browserOpened": "检查您的浏览器以完成身份验证",
-      "loginSuccess": "已登录 {{platform}}"
+      "loginSuccess": "已登录 {{platform}}",
+      "signedInAs": "已登录为 {{username}}",
+      "signedOut": "已退出 {{platform}}",
+      "startFailed": "无法开始登录:{{error}}"
     },
     "openOverlay": "打开叠加层",
     "platform": "平台",
@@ -198,7 +201,8 @@
       "title": "YouTube 实时聊天",
       "useApiKey": "使用 API 密钥(只读)而非 OAuth",
       "useMyChannel": "使用我的频道",
-      "useOAuth": "使用 Google 登录"
+      "useOAuth": "使用 Google 登录",
+      "loginWithYouTube": "使用 YouTube 登录"
     },
     "formatError": {
       "channelNotFound": "找不到频道",
@@ -224,7 +228,8 @@
       "connectSuccess": "Facebook 聊天已连接",
       "connectFailed": "Facebook 连接失败:{{error}}",
       "disconnect": "断开连接",
-      "disconnectSuccess": "Facebook 聊天已断开连接"
+      "disconnectSuccess": "Facebook 聊天已断开连接",
+      "loginWithFacebook": "使用 Facebook 登录"
     },
     "noProfile": "激活配置文件以配置聊天。",
     "saveFailed": "保存聊天设置失败",
@@ -232,7 +237,8 @@
       "description": "连接到 Kick 频道聊天(匿名读取;发送需要 OAuth)",
       "channel": "频道名称",
       "channelPlaceholder": "例如 kick_streamer",
-      "sendEnabled": "允许发送消息(需要使用 Kick 登录)"
+      "sendEnabled": "允许发送消息(需要使用 Kick 登录)",
+      "loginWithKick": "使用 Kick 登录"
     }
   },
   "common": {

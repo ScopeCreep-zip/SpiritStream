@@ -70,27 +70,30 @@ pub enum ConfigCmd {
     /// Replace the OAuth config. Pass the full JSON via `--json` or
     /// individual fields via `--twitch-client-id`, etc. Fields not
     /// provided clear (set to `None`) — mirrors the HTTP PUT semantics.
-    Set {
-        /// Full JSON payload (overrides individual flags if both given).
-        #[arg(long)]
-        json: Option<String>,
-        #[arg(long)]
-        twitch_client_id: Option<String>,
-        #[arg(long)]
-        twitch_client_secret: Option<String>,
-        #[arg(long)]
-        youtube_client_id: Option<String>,
-        #[arg(long)]
-        youtube_client_secret: Option<String>,
-        #[arg(long)]
-        kick_client_id: Option<String>,
-        #[arg(long)]
-        kick_client_secret: Option<String>,
-        #[arg(long)]
-        facebook_client_id: Option<String>,
-        #[arg(long)]
-        facebook_client_secret: Option<String>,
-    },
+    Set(Box<ConfigSetArgs>),
+}
+
+#[derive(Debug, clap::Args)]
+pub struct ConfigSetArgs {
+    /// Full JSON payload (overrides individual flags if both given).
+    #[arg(long)]
+    pub json: Option<String>,
+    #[arg(long)]
+    pub twitch_client_id: Option<String>,
+    #[arg(long)]
+    pub twitch_client_secret: Option<String>,
+    #[arg(long)]
+    pub youtube_client_id: Option<String>,
+    #[arg(long)]
+    pub youtube_client_secret: Option<String>,
+    #[arg(long)]
+    pub kick_client_id: Option<String>,
+    #[arg(long)]
+    pub kick_client_secret: Option<String>,
+    #[arg(long)]
+    pub facebook_client_id: Option<String>,
+    #[arg(long)]
+    pub facebook_client_secret: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -215,17 +218,18 @@ pub async fn run(
                 out.emit(&config)?;
                 Ok(())
             }
-            ConfigCmd::Set {
-                json,
-                twitch_client_id,
-                twitch_client_secret,
-                youtube_client_id,
-                youtube_client_secret,
-                kick_client_id,
-                kick_client_secret,
-                facebook_client_id,
-                facebook_client_secret,
-            } => {
+            ConfigCmd::Set(args) => {
+                let ConfigSetArgs {
+                    json,
+                    twitch_client_id,
+                    twitch_client_secret,
+                    youtube_client_id,
+                    youtube_client_secret,
+                    kick_client_id,
+                    kick_client_secret,
+                    facebook_client_id,
+                    facebook_client_secret,
+                } = *args;
                 let config: spiritstream_core::services::OAuthConfig = if let Some(raw) = json {
                     serde_json::from_str(&raw)
                         .map_err(|e| CliError::Argument(format!("invalid --json: {e}")))?
