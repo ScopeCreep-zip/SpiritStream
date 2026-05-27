@@ -27,6 +27,9 @@ export function ToolsMenu({ onOpenModal }: ToolsMenuProps): React.ReactElement {
           <Menubar.Item className={ITEM_CLASS} onSelect={() => onOpenModal('obs')}>
             {t('menu.tools.obs', { defaultValue: 'OBS connection…' })}
           </Menubar.Item>
+          <Menubar.Item className={ITEM_CLASS} onSelect={() => onOpenModal('chat')}>
+            {t('menu.tools.chat', { defaultValue: 'Chat platforms…' })}
+          </Menubar.Item>
           <Menubar.Item className={ITEM_CLASS} onSelect={() => onOpenModal('discord')}>
             {t('menu.tools.discord', { defaultValue: 'Discord notifications…' })}
           </Menubar.Item>

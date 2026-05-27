@@ -6,12 +6,30 @@ import type {
   ChatPlatformStatus,
   ChatSendResult,
 } from '@spiritstream/types';
-import { fetchTypedJson } from './_internal';
+import { fetchTypedJson, withConfirmToken } from './_internal';
 
 export const chat = {
   connect: async (config: ChatConfig) => {
     await fetchTypedJson<unknown>('POST', '/api/v1/chat/connections', undefined, { config });
   },
+  /**
+   * Connect a Facebook Live chat, gated by a one-shot `enable_facebook_chat`
+   * confirm-token. The backend's POST /api/v1/chat/connections handler
+   * refuses Facebook payloads without `X-Confirm-Token` for that intent —
+   * the gate exists because connecting Facebook reveals the streamer's
+   * real-name account per Meta's Name Policy, and the warning-acknowledge
+   * → connect dance must be deliberate (no muscle-memory click-through).
+   */
+  connectFacebook: async (config: ChatConfig) =>
+    withConfirmToken('enable_facebook_chat', (headers) =>
+      fetchTypedJson<unknown>(
+        'POST',
+        '/api/v1/chat/connections',
+        undefined,
+        { config },
+        headers,
+      ),
+    ),
   sendMessage: (message: string) =>
     fetchTypedJson<ChatSendResult[]>('POST', '/api/v1/chat/messages', undefined, { message }),
   disconnect: async (platform: ChatPlatform) => {

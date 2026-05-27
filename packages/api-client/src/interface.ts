@@ -159,6 +159,10 @@ export interface DiscordApi {
 
 export interface ChatApi {
   connect(config: ChatConfig): Promise<void>;
+  /** Confirm-token-gated Facebook connect — see api/chat.ts for the
+   *  identity-warning + token flow. Identical payload shape to
+   *  `connect`, separate method so the gate is unmissable. */
+  connectFacebook(config: ChatConfig): Promise<unknown>;
   sendMessage(message: string): Promise<ChatSendResult[]>;
   disconnect(platform: ChatPlatform): Promise<void>;
   retryConnection(platform: ChatPlatform): Promise<void>;

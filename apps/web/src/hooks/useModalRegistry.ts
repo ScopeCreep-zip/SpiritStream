@@ -16,6 +16,7 @@ export type ModalName =
   | 'settings'
   | 'obs'
   | 'discord'
+  | 'chat'
   | 'logs'
   | 'audit'
   | 'shortcuts'
@@ -35,6 +36,7 @@ const MODAL_NAMES: readonly ModalName[] = [
   'settings',
   'obs',
   'discord',
+  'chat',
   'logs',
   'audit',
   'shortcuts',

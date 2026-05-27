@@ -44,6 +44,7 @@ import { LogsViewer } from '@/components/logs/LogsViewer';
 import { AuditLogViewer } from '@/components/audit/AuditLogViewer';
 import { Settings } from '@/views/Settings';
 import { ObsPanel } from '@/components/integrations/ObsPanel';
+import { ChatPanel } from '@/components/integrations/ChatPanel';
 import { DiscordPanel } from '@/components/integrations/DiscordPanel';
 import type { Platform, OutputGroup, StreamTarget } from '@spiritstream/types';
 
@@ -264,6 +265,14 @@ export function SinglePanelShell({
         maxWidth="720px"
       >
         <DiscordPanel />
+      </ViewModal>
+      <ViewModal
+        open={modals.chat}
+        onClose={() => close('chat')}
+        title={t('menu.tools.chat', { defaultValue: 'Chat platforms' })}
+        maxWidth="720px"
+      >
+        <ChatPanel />
       </ViewModal>
       <ViewModal
         open={modals.settings}
