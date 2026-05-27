@@ -42,13 +42,6 @@ export default defineConfig({
         },
       },
     },
-    // The main `index.js` is ~1 MB minified / ~295 kB gzipped after the
-    // vendor splits — dominated by inlined i18n resources (11 locales)
-    // and the chat platform connectors' UI. For a desktop-shipped Tauri
-    // app + the gzip-over-localhost browser case there's no cold-load
-    // concern at that size; the 1100 kB limit silences Vite's arbitrary
-    // 500 kB default without losing the warning if the bundle balloons.
-    chunkSizeWarningLimit: 1100,
   },
 
   // Environment variable prefixes

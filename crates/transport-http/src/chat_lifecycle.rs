@@ -819,7 +819,8 @@ pub(crate) async fn connect_youtube_chat_with_retry(state: AppState) {
                 if lower.contains("already connected") {
                     log::debug!("YouTube chat already connected");
                     return;
-                } else if lower.contains("no active live broadcast") || lower.contains("not live") {
+                }
+                if lower.contains("no active live broadcast") || lower.contains("not live") {
                     if attempt < MAX_RETRIES {
                         log::info!(
                             "YouTube broadcast not live yet (attempt {}/{}), retrying in 15s...",

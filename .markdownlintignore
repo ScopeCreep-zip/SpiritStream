@@ -1,0 +1,3 @@
+# CODEOWNERS is a GitHub-specific file format (hash-prefixed comments
+# look like Markdown headings to markdownlint, but they aren't).
+.github/CODEOWNERS
