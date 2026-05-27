@@ -22,7 +22,7 @@
 //! one-way. The UI's "show me real usernames" affordance works by
 //! re-pseudonymising candidate plaintexts the user already has stored
 //! locally (their connected accounts) and comparing against logged
-//! hashes via [`matches`].
+//! hashes via [`matches()`].
 
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
@@ -33,7 +33,7 @@ const HASH_PREFIX: &str = "hash:";
 const HASH_PREFIX_LEN: usize = 16; // hex chars of HMAC prefix surfaced
 
 /// Generate a fresh 32-byte salt suitable for [`pseudonymize`]. Returns
-/// the salt hex-encoded so it can live on the [`Profile`] struct as a
+/// the salt hex-encoded so it can live on the `Profile` struct as a
 /// plain string (and survive a JSON round-trip without bigint dance).
 pub fn generate_salt() -> String {
     use rand::RngCore;

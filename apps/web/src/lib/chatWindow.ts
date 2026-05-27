@@ -1,7 +1,16 @@
 import { isTauri } from '@spiritstream/api-client';
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { logger } from '@/lib/logger';
 import { clientConfig } from '@/lib/constants';
 import { useChatStore } from '@/stores/chatStore';
+
+// Tauri API modules are static imports: App.tsx and ChatOverlay.tsx
+// already pull them statically, so a `await import()` here would NOT
+// help with code-splitting (Vite warns about it) and only adds runtime
+// indirection. Static imports are also a no-op in browser mode because
+// the modules' bodies just declare classes that throw when called
+// outside Tauri — they're cheap until something invokes them.
 
 const CHAT_OVERLAY_LABEL = 'chat-overlay';
 const CHAT_OVERLAY_PATH = '/?overlay=chat';
@@ -19,8 +28,6 @@ function getOverlayUrl(): string {
 let browserPopup: Window | null = null;
 
 async function openTauriOverlay() {
-  const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-
   const existing = await WebviewWindow.getByLabel(CHAT_OVERLAY_LABEL);
   if (existing) {
     await existing.show();
@@ -99,7 +106,6 @@ export async function openChatOverlay() {
 export async function closeChatOverlay() {
   if (isTauri()) {
     try {
-      const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
       const overlay = await WebviewWindow.getByLabel(CHAT_OVERLAY_LABEL);
       if (overlay) {
         await overlay.close();
@@ -120,7 +126,6 @@ export async function setOverlayAlwaysOnTop(alwaysOnTop: boolean) {
   if (!isTauri()) return;
 
   try {
-    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
     const overlay = await WebviewWindow.getByLabel(CHAT_OVERLAY_LABEL);
     if (overlay) {
       await overlay.setAlwaysOnTop(alwaysOnTop);
@@ -158,9 +163,6 @@ export async function setupOverlayAutoClose() {
   if (!isTauri()) return;
 
   try {
-    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-    const { getCurrentWindow } = await import('@tauri-apps/api/window');
-
     const overlayWindow = getCurrentWindow();
 
     // Poll to check if main window still exists

@@ -65,7 +65,7 @@ pub struct ServiceRegistry {
     pub auth_surveillance: Arc<AuthSurveillanceService>,
     /// Orchestrates profile activation: composes `profiles`, `oauth`,
     /// `chat`, `obs`, and `auth_surveillance` so transports stay thin.
-    /// Mirrors the `SafetyService` shape — Arc<participants> in,
+    /// Mirrors the `SafetyService` shape — `Arc<participants>` in,
     /// single verb method out.
     pub profile_activation: Arc<ProfileActivationService>,
     pub events: Arc<dyn EventSink>,
