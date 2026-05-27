@@ -39,4 +39,29 @@ impl OAuthProvider {
             scopes: vec!["user:read", "chat:write"],
         }
     }
+
+    /// Facebook OAuth 2.0 (Meta Graph API). Scopes required for
+    /// reading + posting Live Video comments at the Page level:
+    /// `pages_read_engagement` (read comments), `pages_manage_engagement`
+    /// (post comments + replies), `pages_show_list` (enumerate the
+    /// user's Pages so the UI can resolve which Page's token to use).
+    ///
+    /// All three scopes are App-Review-gated for production: the
+    /// maintainer's Meta App must be approved before the OAuth flow
+    /// returns a Page-scoped token. Until App Review completes, the
+    /// operator can paste a long-lived Page Access Token directly into
+    /// `oauth.facebook.access_token` via settings — the connector path
+    /// reads the same field regardless of how the token was obtained.
+    pub fn facebook() -> Self {
+        Self {
+            name: "facebook",
+            auth_url: "https://www.facebook.com/v18.0/dialog/oauth",
+            token_url: "https://graph.facebook.com/v18.0/oauth/access_token",
+            scopes: vec![
+                "pages_read_engagement",
+                "pages_manage_engagement",
+                "pages_show_list",
+            ],
+        }
+    }
 }

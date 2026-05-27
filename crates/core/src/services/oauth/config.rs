@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 const TWITCH_CLIENT_ID: &str = "TWITCH_CLIENT_ID_PLACEHOLDER";
 const YOUTUBE_CLIENT_ID: &str = "YOUTUBE_CLIENT_ID_PLACEHOLDER";
 const KICK_CLIENT_ID: &str = "KICK_CLIENT_ID_PLACEHOLDER";
+const FACEBOOK_CLIENT_ID: &str = "FACEBOOK_CLIENT_ID_PLACEHOLDER";
 
 /// User-provided OAuth credentials. Each field falls back through:
 /// (1) explicit override on this struct, (2) env var, (3) embedded
@@ -25,6 +26,10 @@ pub struct OAuthConfig {
     pub kick_client_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kick_client_secret: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub facebook_client_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub facebook_client_secret: Option<String>,
 }
 
 impl OAuthConfig {
@@ -132,6 +137,45 @@ impl OAuthConfig {
             }
         }
         if let Ok(value) = std::env::var("SPIRITSTREAM_KICK_CLIENT_SECRET") {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+        None
+    }
+
+    pub fn has_facebook(&self) -> bool {
+        true
+    }
+
+    pub fn get_facebook_client_id(&self) -> String {
+        if let Some(value) = self.facebook_client_id.as_deref() {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return trimmed.to_string();
+            }
+        }
+        if let Ok(value) = std::env::var("SPIRITSTREAM_FACEBOOK_CLIENT_ID") {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return trimmed.to_string();
+            }
+        }
+        FACEBOOK_CLIENT_ID.to_string()
+    }
+
+    /// Facebook OAuth requires the App Secret for the token exchange —
+    /// Meta does not support PKCE for web apps. Same fall-through chain
+    /// as the other providers.
+    pub fn get_facebook_client_secret(&self) -> Option<String> {
+        if let Some(value) = self.facebook_client_secret.as_deref() {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+        if let Ok(value) = std::env::var("SPIRITSTREAM_FACEBOOK_CLIENT_SECRET") {
             let trimmed = value.trim();
             if !trimmed.is_empty() {
                 return Some(trimmed.to_string());

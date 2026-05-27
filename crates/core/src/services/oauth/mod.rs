@@ -77,6 +77,6 @@ impl OAuthService {
 
     /// Always true with embedded client IDs.
     pub async fn is_configured(&self, provider: &str) -> bool {
-        matches!(provider, "twitch" | "youtube" | "kick")
+        matches!(provider, "twitch" | "youtube" | "kick" | "facebook")
     }
 }

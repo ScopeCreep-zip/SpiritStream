@@ -85,6 +85,15 @@ pub struct KickUser {
     pub profile_picture: Option<String>,
 }
 
+/// Facebook user info from `GET /me?fields=id,name`. Real-name
+/// identity is what Meta returns — this is the load-bearing privacy
+/// trade-off the user signs off on by enabling Facebook chat.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FacebookUser {
+    pub id: String,
+    pub name: String,
+}
+
 impl super::OAuthService {
     /// Pre-flight check: does this token expire within `leeway_secs` of now?
     /// Callers about to use an access token should call this and request a
@@ -147,7 +156,7 @@ impl super::OAuthService {
     ) -> Result<OAuthRefreshOutcome, CoreError> {
         let mut outcome = OAuthRefreshOutcome::default();
 
-        for provider in ["twitch", "youtube", "kick"] {
+        for provider in ["twitch", "youtube", "kick", "facebook"] {
             let (access, refresh, expires_at) = match provider {
                 "twitch" => (
                     profile.settings.oauth.twitch.access_token.clone(),
@@ -163,6 +172,11 @@ impl super::OAuthService {
                     profile.settings.oauth.kick.access_token.clone(),
                     profile.settings.oauth.kick.refresh_token.clone(),
                     profile.settings.oauth.kick.expires_at,
+                ),
+                "facebook" => (
+                    profile.settings.oauth.facebook.access_token.clone(),
+                    profile.settings.oauth.facebook.refresh_token.clone(),
+                    profile.settings.oauth.facebook.expires_at,
                 ),
                 _ => continue,
             };
@@ -207,6 +221,13 @@ impl super::OAuthService {
                             }
                             profile.settings.oauth.kick.expires_at = new_expires;
                         }
+                        "facebook" => {
+                            profile.settings.oauth.facebook.access_token = tokens.access_token;
+                            if let Some(rt) = tokens.refresh_token {
+                                profile.settings.oauth.facebook.refresh_token = rt;
+                            }
+                            profile.settings.oauth.facebook.expires_at = new_expires;
+                        }
                         _ => {}
                     }
                     outcome.refreshed.push(provider.to_string());
@@ -247,6 +268,11 @@ impl super::OAuthService {
                 OAuthProvider::kick(),
                 config.get_kick_client_id(),
                 config.get_kick_client_secret(),
+            ),
+            "facebook" => (
+                OAuthProvider::facebook(),
+                config.get_facebook_client_id(),
+                config.get_facebook_client_secret(),
             ),
             _ => return Err(unknown_provider(provider_name)),
         };
@@ -398,6 +424,36 @@ impl super::OAuthService {
         self.fetch_twitch_user(access_token).await
     }
 
+    /// Fetch the bearer-identified Facebook user. Meta's `/me` endpoint
+    /// returns the user id + display name; the same id is the seed for
+    /// looking up Pages the user manages (`/me/accounts`) — which is
+    /// what the Live Video connector needs the Page Access Token of.
+    pub async fn fetch_facebook_user(
+        &self,
+        access_token: &str,
+    ) -> Result<FacebookUser, CoreError> {
+        let response = self
+            .http_client
+            .get("https://graph.facebook.com/v18.0/me")
+            .query(&[("fields", "id,name"), ("access_token", access_token)])
+            .send()
+            .await
+            .map_err(|e| network(format!("Facebook user request failed: {e}")))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let _ = response.text().await;
+            error!("Facebook user fetch failed: {}", status);
+            return Err(CoreError::Unauthorized);
+        }
+
+        response.json::<FacebookUser>().await.map_err(|e| {
+            CoreError::Internal {
+                context: format!("Failed to parse Facebook user response: {e}"),
+            }
+        })
+    }
+
     /// Fetch the bearer-identified Kick user. Kick exposes a `users` REST
     /// endpoint that returns the broadcaster id needed to address
     /// `POST /public/v1/chat`.
@@ -468,6 +524,24 @@ impl super::OAuthService {
 
                 if !response.status().is_success() {
                     warn!("YouTube token revocation returned non-success status");
+                }
+                Ok(())
+            }
+            "facebook" => {
+                // Meta's revocation endpoint: DELETE /me/permissions.
+                // This revokes *all* the app's permissions for the
+                // bearer-identified user, which is what "forget" should
+                // do — partial revocation isn't something the UI exposes.
+                let response = self
+                    .http_client
+                    .delete("https://graph.facebook.com/v18.0/me/permissions")
+                    .query(&[("access_token", token)])
+                    .send()
+                    .await
+                    .map_err(|e| network(format!("Token revoke request failed: {e}")))?;
+
+                if !response.status().is_success() {
+                    warn!("Facebook token revocation returned non-success status");
                 }
                 Ok(())
             }

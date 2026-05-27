@@ -217,6 +217,16 @@ pub(crate) async fn update_profile_oauth_account(
             profile_settings.oauth.kick.username = user_info.username.clone();
             profile_settings.oauth.kick.display_name = user_info.display_name.clone();
         }
+        "facebook" => {
+            profile_settings.oauth.facebook.access_token = access_token;
+            if let Some(rt) = refresh_token {
+                profile_settings.oauth.facebook.refresh_token = rt;
+            }
+            profile_settings.oauth.facebook.expires_at = expires_at;
+            profile_settings.oauth.facebook.user_id = user_info.user_id.clone();
+            profile_settings.oauth.facebook.username = user_info.username.clone();
+            profile_settings.oauth.facebook.display_name = user_info.display_name.clone();
+        }
         _ => {
             return Err(spiritstream_core::CoreError::NotImplemented {
                 feature: format!("Unknown provider: {provider}"),
@@ -244,6 +254,9 @@ pub(crate) async fn clear_profile_oauth_account(
         }
         "kick" => {
             profile_settings.oauth.kick = Default::default();
+        }
+        "facebook" => {
+            profile_settings.oauth.facebook = Default::default();
         }
         _ => {
             return Err(spiritstream_core::CoreError::NotImplemented {

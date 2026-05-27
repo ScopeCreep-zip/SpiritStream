@@ -137,6 +137,11 @@ impl super::OAuthService {
                 config.get_kick_client_id(),
                 config.get_kick_client_secret(),
             ),
+            "facebook" => (
+                OAuthProvider::facebook(),
+                config.get_facebook_client_id(),
+                config.get_facebook_client_secret(),
+            ),
             _ => return Err(unknown_provider(provider_name)),
         };
 
@@ -151,6 +156,9 @@ impl super::OAuthService {
             "twitch" => (client_secret.is_none(), false),
             // Kick mandates auth code + PKCE (OAuth 2.1 — no implicit flow).
             "kick" => (false, true),
+            // Facebook's web OAuth uses auth code + App Secret (no PKCE).
+            // The token exchange requires both client_id + client_secret.
+            "facebook" => (false, false),
             // YouTube uses auth code + PKCE.
             _ => (false, true),
         };
@@ -265,6 +273,11 @@ impl super::OAuthService {
                 config.get_kick_client_id(),
                 config.get_kick_client_secret(),
             ),
+            "facebook" => (
+                OAuthProvider::facebook(),
+                config.get_facebook_client_id(),
+                config.get_facebook_client_secret(),
+            ),
             _ => return Err(unknown_provider(provider_name)),
         };
 
@@ -345,6 +358,15 @@ impl super::OAuthService {
                     user_id: channel.id.clone(),
                     username: channel.id,
                     display_name: channel.title,
+                }
+            }
+            "facebook" => {
+                let user = self.fetch_facebook_user(&tokens.access_token).await?;
+                OAuthUserInfo {
+                    provider: "facebook".to_string(),
+                    user_id: user.id,
+                    username: user.name.clone(),
+                    display_name: user.name,
                 }
             }
             "kick" => {

@@ -86,6 +86,10 @@ pub enum ConfigCmd {
         kick_client_id: Option<String>,
         #[arg(long)]
         kick_client_secret: Option<String>,
+        #[arg(long)]
+        facebook_client_id: Option<String>,
+        #[arg(long)]
+        facebook_client_secret: Option<String>,
     },
 }
 
@@ -219,6 +223,8 @@ pub async fn run(
                 youtube_client_secret,
                 kick_client_id,
                 kick_client_secret,
+                facebook_client_id,
+                facebook_client_secret,
             } => {
                 let config: spiritstream_core::services::OAuthConfig = if let Some(raw) = json {
                     serde_json::from_str(&raw)
@@ -231,6 +237,8 @@ pub async fn run(
                         youtube_client_secret,
                         kick_client_id,
                         kick_client_secret,
+                        facebook_client_id,
+                        facebook_client_secret,
                     }
                 };
                 registry.oauth.update_config(config).await;
