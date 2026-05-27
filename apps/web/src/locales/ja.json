@@ -29,8 +29,8 @@
   },
   "audit": {
     "tampered": {
-      "title": "Audit log tampered",
-      "message": "Verification failed at entry {{lastValid}}: {{reason}}. Entries beyond this point cannot be trusted."
+      "title": "監査ログが改ざんされました",
+      "message": "エントリ {{lastValid}} で検証に失敗: {{reason}}。この時点以降のエントリは信頼できません。"
     }
   },
   "chat": {
@@ -206,11 +206,11 @@
       "connectionFailed": "接続に失敗しました"
     },
     "tiktok": {
-      "readOnlyNotice": "TikTok chat is read-only. SpiritStream cannot stream to TikTok directly — go live in the TikTok app first, then connect chat here to see comments while you're streaming elsewhere."
+      "readOnlyNotice": "TikTokチャットは読み取り専用です。SpiritStreamからTikTokへ直接配信することはできません — まずTikTokアプリでライブ配信を開始し、別の場所で配信中にコメントを表示するためにここでチャットを接続してください。"
     },
     "facebook": {
-      "identityWarning": "Connecting Facebook Live reveals your real-name account. Anyone watching the stream sees your Facebook handle, profile picture, and friends-list metadata Meta exposes by default. This cannot be pseudonymised — anonymous mode pseudonymises inbound messages only.",
-      "confirmEnable": "I understand my real-name identity will be exposed; enable Facebook chat"
+      "identityWarning": "Facebook Liveに接続すると、本名アカウントが公開されます。配信を視聴している人は誰でも、Metaがデフォルトで公開するあなたのFacebookハンドル、プロフィール写真、友達リストのメタデータを見ることができます。これは匿名化できません — 匿名モードは受信メッセージのみを匿名化します。",
+      "confirmEnable": "本名が公開されることを理解しました。Facebookチャットを有効にする"
     }
   },
   "common": {

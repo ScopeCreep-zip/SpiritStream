@@ -29,8 +29,8 @@
   },
   "audit": {
     "tampered": {
-      "title": "Audit log tampered",
-      "message": "Verification failed at entry {{lastValid}}: {{reason}}. Entries beyond this point cannot be trusted."
+      "title": "Journal d'audit altéré",
+      "message": "Vérification échouée à l'entrée {{lastValid}} : {{reason}}. Les entrées au-delà de ce point ne peuvent pas être considérées comme fiables."
     }
   },
   "chat": {
@@ -206,11 +206,11 @@
       "connectionFailed": "La connexion a échoué"
     },
     "tiktok": {
-      "readOnlyNotice": "TikTok chat is read-only. SpiritStream cannot stream to TikTok directly — go live in the TikTok app first, then connect chat here to see comments while you're streaming elsewhere."
+      "readOnlyNotice": "Le chat TikTok est en lecture seule. SpiritStream ne peut pas diffuser directement vers TikTok — passez d'abord en direct dans l'application TikTok, puis connectez le chat ici pour voir les commentaires pendant que vous diffusez ailleurs."
     },
     "facebook": {
-      "identityWarning": "Connecting Facebook Live reveals your real-name account. Anyone watching the stream sees your Facebook handle, profile picture, and friends-list metadata Meta exposes by default. This cannot be pseudonymised — anonymous mode pseudonymises inbound messages only.",
-      "confirmEnable": "I understand my real-name identity will be exposed; enable Facebook chat"
+      "identityWarning": "Connecter Facebook Live révèle votre compte avec votre vrai nom. Toute personne regardant la diffusion verra votre identifiant Facebook, votre photo de profil et les métadonnées de votre liste d'amis que Meta expose par défaut. Cela ne peut pas être pseudonymisé — le mode anonyme ne pseudonymise que les messages entrants.",
+      "confirmEnable": "Je comprends que mon identité réelle sera exposée ; activer le chat Facebook"
     }
   },
   "common": {

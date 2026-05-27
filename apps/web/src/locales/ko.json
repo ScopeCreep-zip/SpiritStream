@@ -29,8 +29,8 @@
   },
   "audit": {
     "tampered": {
-      "title": "Audit log tampered",
-      "message": "Verification failed at entry {{lastValid}}: {{reason}}. Entries beyond this point cannot be trusted."
+      "title": "감사 로그가 변조되었습니다",
+      "message": "{{lastValid}} 항목에서 검증 실패: {{reason}}. 이 지점 이후의 항목은 신뢰할 수 없습니다."
     }
   },
   "chat": {
@@ -206,11 +206,11 @@
       "connectionFailed": "연결 실패"
     },
     "tiktok": {
-      "readOnlyNotice": "TikTok chat is read-only. SpiritStream cannot stream to TikTok directly — go live in the TikTok app first, then connect chat here to see comments while you're streaming elsewhere."
+      "readOnlyNotice": "TikTok 채팅은 읽기 전용입니다. SpiritStream은 TikTok으로 직접 스트리밍할 수 없습니다 — 먼저 TikTok 앱에서 라이브를 시작한 다음, 다른 곳에서 스트리밍하는 동안 댓글을 보려면 여기에 채팅을 연결하세요."
     },
     "facebook": {
-      "identityWarning": "Connecting Facebook Live reveals your real-name account. Anyone watching the stream sees your Facebook handle, profile picture, and friends-list metadata Meta exposes by default. This cannot be pseudonymised — anonymous mode pseudonymises inbound messages only.",
-      "confirmEnable": "I understand my real-name identity will be exposed; enable Facebook chat"
+      "identityWarning": "Facebook Live에 연결하면 실명 계정이 노출됩니다. 스트림을 보는 모든 사람은 Meta가 기본적으로 노출하는 귀하의 Facebook 핸들, 프로필 사진 및 친구 목록 메타데이터를 볼 수 있습니다. 이는 익명화할 수 없습니다 — 익명 모드는 수신 메시지만 익명화합니다.",
+      "confirmEnable": "실명이 노출됨을 이해합니다. Facebook 채팅을 활성화합니다"
     }
   },
   "common": {

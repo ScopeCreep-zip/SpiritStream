@@ -29,8 +29,8 @@
   },
   "audit": {
     "tampered": {
-      "title": "Audit log tampered",
-      "message": "Verification failed at entry {{lastValid}}: {{reason}}. Entries beyond this point cannot be trusted."
+      "title": "Ouditlog gepeuter",
+      "message": "Verifikasie misluk by inskrywing {{lastValid}}: {{reason}}. Inskrywings na hierdie punt kan nie vertrou word nie."
     }
   },
   "chat": {
@@ -206,11 +206,11 @@
       "connectionFailed": "Konneksie het misluk"
     },
     "tiktok": {
-      "readOnlyNotice": "TikTok chat is read-only. SpiritStream cannot stream to TikTok directly — go live in the TikTok app first, then connect chat here to see comments while you're streaming elsewhere."
+      "readOnlyNotice": "TikTok-klets is lees-alleenlik. SpiritStream kan nie direk na TikTok stroom nie — gaan eers regstreeks in die TikTok-app, koppel dan die klets hier om kommentaar te sien terwyl jy elders stroom."
     },
     "facebook": {
-      "identityWarning": "Connecting Facebook Live reveals your real-name account. Anyone watching the stream sees your Facebook handle, profile picture, and friends-list metadata Meta exposes by default. This cannot be pseudonymised — anonymous mode pseudonymises inbound messages only.",
-      "confirmEnable": "I understand my real-name identity will be exposed; enable Facebook chat"
+      "identityWarning": "Om Facebook Live te koppel onthul jou regte-naam-rekening. Enigiemand wat die stroom kyk sien jou Facebook-handvatsel, profielfoto, en vriende-lys-metadata wat Meta by verstek bekend maak. Dit kan nie geanonimiseer word nie — anonieme modus anonimiseer slegs inkomende boodskappe.",
+      "confirmEnable": "Ek verstaan dat my regte identiteit blootgestel sal word; aktiveer Facebook-klets"
     }
   },
   "common": {
