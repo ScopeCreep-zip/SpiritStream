@@ -14,7 +14,11 @@ pub struct Settings {
 }
 
 pub fn load_settings<R: Runtime>(app: &AppHandle<R>) -> Option<Settings> {
-    let app_data_dir = app.path().app_data_dir().ok()?;
+    // LOCAL app data — the same directory the backend writes
+    // settings.json into (`SPIRITSTREAM_DATA_DIR = app_local_data_dir`).
+    // The old `app_data_dir()` read Roaming on Windows, where the file
+    // never exists, so `start_minimized` was silently never honored.
+    let app_data_dir = app.path().app_local_data_dir().ok()?;
     let settings_path = app_data_dir.join("settings.json");
 
     if !settings_path.exists() {

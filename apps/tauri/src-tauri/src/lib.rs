@@ -17,11 +17,17 @@ use updater::updater_supported;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Single-instance MUST register first (per the plugin's docs).
+        // Launching the app twice used to run `kill_existing_servers`,
+        // which killed the FIRST instance's backend out from under it.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_dialog::init())
         // App self-update via GitHub Releases. The plugin verifies each
         // `.sig` file (locally signed by the maintainer) against the
         // `pubkey` embedded in `tauri.conf.json`. Linux .deb / .rpm

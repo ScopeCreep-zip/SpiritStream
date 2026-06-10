@@ -3,6 +3,15 @@ import ReactDOM from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App';
 import './lib/i18n'; // Initialize i18n before app renders
+// Self-hosted fonts (was Google Fonts at runtime — a per-launch IP
+// beacon to a third party, unacceptable for this threat model, and
+// broken offline). Weights match the previous <link> exactly.
+import '@fontsource/space-grotesk/400.css';
+import '@fontsource/space-grotesk/500.css';
+import '@fontsource/space-grotesk/600.css';
+import '@fontsource/space-grotesk/700.css';
+import '@fontsource/jetbrains-mono/400.css';
+import '@fontsource/jetbrains-mono/500.css';
 import './styles/tokens.css';
 import './styles/tokens-high-contrast.css';
 import './styles/globals.css';

@@ -8,7 +8,19 @@ use tauri_plugin_shell::{
 use crate::settings::load_settings;
 
 const DEFAULT_HOST: &str = "127.0.0.1";
-const DEFAULT_PORT: &str = "8008";
+const DEFAULT_PORT: u16 = 8008;
+
+/// Shell-side launcher failures. Typed (per the no-`Result<T, String>`
+/// standard) so call sites can branch and logs stay greppable.
+#[derive(Debug, thiserror::Error)]
+pub enum ShellError {
+    #[error("failed to resolve app data dir: {0}")]
+    DataDir(String),
+    #[error("failed to spawn backend sidecar: {0}")]
+    Spawn(String),
+    #[error("failed to create main window: {0}")]
+    Window(String),
+}
 
 /// Holds the server child process so we can kill it on exit. Managed
 /// by Tauri as application state; `kill_on_exit` is invoked from the
@@ -49,26 +61,25 @@ pub fn launch<R: Runtime>(app: &AppHandle<R>) {
     });
 }
 
-async fn run_launcher<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+async fn run_launcher<R: Runtime>(app: &AppHandle<R>) -> Result<(), ShellError> {
     let settings = load_settings(app).unwrap_or_default();
 
     // Bind args (host/port/token) are resolved server-side from the
-    // active profile's `settings.backend` (`crates/transport-http/src/lib.rs`
-    // ~2403). The shell never invents host/port/token defaults; the
-    // server owns that decision exclusively. Operator overrides via
-    // `SPIRITSTREAM_HOST` / `SPIRITSTREAM_PORT` / `SPIRITSTREAM_API_TOKEN`
-    // in the launcher's parent environment are inherited by the
-    // spawned child automatically (process-default env-var inheritance).
-    //
-    // The webview always loads from `127.0.0.1:8008` regardless of
-    // server bind: the CSP allow-list in `tauri.conf.json` hardcodes
-    // that origin, and the server always answers on localhost too —
-    // toggling "Allow remote web access" widens the bind from
-    // `127.0.0.1:8008` to `0.0.0.0:8008`, never moves the port.
+    // active profile's `settings.backend`. The shell mirrors the SAME
+    // resolution (env override → active profile's backend.port →
+    // default) purely to know which port to health-check — it never
+    // injects host/port/token env vars. The CSP / capability allow-
+    // lists use wildcard loopback ports (`http://127.0.0.1:*`), so a
+    // user-edited backend port works without rebuilding the shell;
+    // pre-fix everything hardcoded 8008 and editing the port in the
+    // UI bricked the desktop app.
     let host = DEFAULT_HOST;
-    let port = DEFAULT_PORT;
+    let port = resolve_backend_port(app);
+    if port != DEFAULT_PORT {
+        log::info!("Backend port resolved to {port} (profile/env override)");
+    }
 
-    kill_existing_servers();
+    kill_stale_sidecar(app, port);
 
     #[cfg(desktop)]
     spawn_server(app)?;
@@ -106,7 +117,7 @@ async fn run_launcher<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
         .build()
     {
         Ok(w) => w,
-        Err(e) => return Err(format!("failed to create main window: {e}")),
+        Err(e) => return Err(ShellError::Window(e.to_string())),
     };
 
     let icon_bytes = include_bytes!("../icons/icon.png").to_vec();
@@ -136,7 +147,7 @@ async fn run_launcher<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
 /// Compiling this for mobile would fail link-time on the missing
 /// sidecar binary anyway.
 #[cfg(desktop)]
-fn spawn_server<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+fn spawn_server<R: Runtime>(app: &AppHandle<R>) -> Result<(), ShellError> {
     // `SPIRITSTREAM_SERVER_PATH` lets the dev iteration loop point at a
     // freshly-rebuilt server binary outside the bundle. In RELEASE
     // builds this would be a privilege-escalation vector: anyone who
@@ -153,13 +164,13 @@ fn spawn_server<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     } else {
         app.shell()
             .sidecar("spiritstream-server")
-            .map_err(|e| e.to_string())?
+            .map_err(|e| ShellError::Spawn(e.to_string()))?
     };
     #[cfg(not(debug_assertions))]
     let mut command = app
         .shell()
         .sidecar("spiritstream-server")
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| ShellError::Spawn(e.to_string()))?;
 
     // Local AppData (not Roaming) keeps everything in one machine-
     // specific location that doesn't sync; profiles / settings don't
@@ -167,7 +178,7 @@ fn spawn_server<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let app_data_dir = app
         .path()
         .app_local_data_dir()
-        .map_err(|e| format!("Failed to resolve app local data dir: {e}"))?;
+        .map_err(|e| ShellError::DataDir(e.to_string()))?;
     let log_dir = app_data_dir.join("logs");
 
     std::fs::create_dir_all(&app_data_dir).ok();
@@ -231,8 +242,17 @@ fn spawn_server<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
 
     let (mut rx, child) = command.spawn().map_err(|e| {
         log::error!("Failed to spawn server: {e}");
-        format!("Failed to spawn server: {e}")
+        ShellError::Spawn(e.to_string())
     })?;
+
+    // Persist the sidecar pid so the NEXT launch (after a shell crash /
+    // SIGKILL that skipped RunEvent::Exit) can reap exactly this
+    // process — by pid, after verifying its identity — instead of the
+    // old `pkill -f spiritstream-server`, which killed any same-user
+    // process whose command line merely mentioned the name (an editor
+    // on the log file, a cargo build, a second instance's healthy
+    // backend).
+    write_sidecar_pid_file(&app_data_dir, child.pid());
 
     if let Some(server_state) = app.try_state::<ServerProcess>() {
         if let Ok(mut guard) = server_state.0.lock() {
@@ -277,7 +297,7 @@ fn spawn_server<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
                         startup_errors.join("\n")
                     };
 
-                    let _ = app_handle.emit("server-error", &error_msg);
+                    emit_server_error_when_deliverable(&app_handle, error_msg.clone());
                     log::error!("Server startup failed: {}", error_msg);
                     break;
                 }
@@ -468,52 +488,121 @@ fn resolve_ffmpeg_sidecar() -> Option<std::path::PathBuf> {
     None
 }
 
-/// Kill any zombie spiritstream-server processes from previous runs to
-/// avoid port conflicts. Unix uses `pkill -f`; Windows uses `taskkill`
-/// plus a port-availability re-check loop because taskkill returns
-/// before the kernel actually frees the bound port.
-fn kill_existing_servers() {
-    #[cfg(unix)]
-    {
-        use std::process::Command;
-        let _ = Command::new("pkill")
-            .args(["-f", "spiritstream-server"])
-            .output();
-        std::thread::sleep(Duration::from_millis(1000));
-        log::info!("Killed any existing spiritstream-server processes");
+/// Reap a stale sidecar from a previous run (shell crash / SIGKILL
+/// skipped the orderly RunEvent::Exit kill) so the port is free. The
+/// pid comes from our own `sidecar.pid` file and is verified to still
+/// be a `spiritstream-server` process before any signal is sent — a
+/// recycled pid running someone else's program is left alone, loudly.
+fn kill_stale_sidecar<R: Runtime>(app: &AppHandle<R>, port: u16) {
+    let Some(data_dir) = app.path().app_local_data_dir().ok() else {
+        return;
+    };
+    let pid_path = data_dir.join("sidecar.pid");
+    let Ok(text) = std::fs::read_to_string(&pid_path) else {
+        return; // no previous run to clean up
+    };
+    let _ = std::fs::remove_file(&pid_path);
+    let Ok(pid) = text.trim().parse::<u32>() else {
+        log::warn!("sidecar.pid was unparseable; skipping stale-sidecar reap");
+        return;
+    };
+
+    let mut system = sysinfo::System::new();
+    system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    let Some(process) = system.process(sysinfo::Pid::from_u32(pid)) else {
+        return; // already gone
+    };
+    let name = process.name().to_string_lossy().to_string();
+    if !name.contains("spiritstream-server") {
+        log::warn!(
+            "sidecar.pid {pid} now belongs to {name:?} (pid reuse) — refusing to kill it"
+        );
+        return;
     }
-    #[cfg(windows)]
-    {
-        use std::process::Command;
-        let result = Command::new("taskkill")
-            .args(["/F", "/IM", "spiritstream-server.exe"])
-            .output();
-
-        if let Ok(output) = &result {
-            if output.status.success() {
-                log::info!("Taskkill succeeded for spiritstream-server.exe");
-            }
+    log::info!("Reaping stale sidecar from previous run (pid {pid})");
+    // Two-phase: TERM, brief grace, then KILL if still alive.
+    let _ = process.kill_with(sysinfo::Signal::Term);
+    std::thread::sleep(Duration::from_millis(1500));
+    system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    if let Some(process) = system.process(sysinfo::Pid::from_u32(pid)) {
+        if process
+            .name()
+            .to_string_lossy()
+            .contains("spiritstream-server")
+        {
+            process.kill();
         }
-
-        std::thread::sleep(Duration::from_millis(1500));
-
-        for attempt in 1..=3 {
-            if is_port_available(8008) {
-                log::info!("Port 8008 is available after {} attempt(s)", attempt);
-                break;
-            }
-            log::warn!("Port 8008 still in use, waiting... (attempt {})", attempt);
-            std::thread::sleep(Duration::from_millis(1000));
+    }
+    // Give the kernel a beat to release the bound port.
+    for attempt in 1..=3 {
+        if std::net::TcpListener::bind(("127.0.0.1", port)).is_ok() {
+            log::info!("Port {port} is available after {attempt} attempt(s)");
+            break;
         }
-
-        log::info!("Killed any existing spiritstream-server processes");
+        log::warn!("Port {port} still in use, waiting… (attempt {attempt})");
+        std::thread::sleep(Duration::from_millis(1000));
     }
 }
 
-#[cfg(windows)]
-fn is_port_available(port: u16) -> bool {
-    use std::net::TcpListener;
-    TcpListener::bind(format!("127.0.0.1:{}", port)).is_ok()
+fn write_sidecar_pid_file(data_dir: &std::path::Path, pid: u32) {
+    let path = data_dir.join("sidecar.pid");
+    if let Err(e) = std::fs::write(&path, pid.to_string()) {
+        log::warn!("failed to write sidecar.pid: {e}");
+    }
+}
+
+/// Resolve the backend port the way the server does: env override →
+/// active profile's plaintext `settings.backend.port` → default.
+/// Password-encrypted (`.mgs`) profiles can't be read here OR by the
+/// server's startup probe, so both sides consistently land on the
+/// default for them.
+fn resolve_backend_port<R: Runtime>(app: &AppHandle<R>) -> u16 {
+    if let Ok(value) = env::var("SPIRITSTREAM_PORT") {
+        if let Ok(port) = value.trim().parse::<u16>() {
+            return port;
+        }
+    }
+    let Some(data_dir) = app.path().app_local_data_dir().ok() else {
+        return DEFAULT_PORT;
+    };
+    let read_json = |path: &std::path::Path| -> Option<serde_json::Value> {
+        serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()
+    };
+    let Some(settings) = read_json(&data_dir.join("settings.json")) else {
+        return DEFAULT_PORT;
+    };
+    let Some(last_profile) = settings.get("lastProfile").and_then(|v| v.as_str()) else {
+        return DEFAULT_PORT;
+    };
+    let profile_path = data_dir
+        .join("profiles")
+        .join(format!("{last_profile}.json"));
+    let Some(profile) = read_json(&profile_path) else {
+        return DEFAULT_PORT;
+    };
+    profile
+        .pointer("/settings/backend/port")
+        .and_then(|v| v.as_u64())
+        .and_then(|p| u16::try_from(p).ok())
+        .unwrap_or(DEFAULT_PORT)
+}
+
+/// Emit `server-error` once a window exists to receive it. The
+/// terminated handler used to emit immediately — usually BEFORE the
+/// main window was built — so the event evaporated and the user saw
+/// only a generic "unreachable" overlay with no cause attached.
+fn emit_server_error_when_deliverable<R: Runtime>(app: &AppHandle<R>, error_msg: String) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        for _ in 0..120 {
+            if app.get_webview_window("main").is_some() {
+                let _ = app.emit("server-error", &error_msg);
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+        log::error!("server-error never deliverable (no window after 30s): {error_msg}");
+    });
 }
 
 /// Wait for the server's TCP socket to be accepting connections.
@@ -526,7 +615,7 @@ fn is_port_available(port: u16) -> bool {
 /// This is the entire shell-side readiness coordination — services
 /// initialization is observed *through the server*, not the shell, via the
 /// long-poll on `/api/v1/ready`. Single source of readiness truth.
-async fn wait_for_tcp_listening(host: &str, port: &str) {
+async fn wait_for_tcp_listening(host: &str, port: u16) {
     let addr = format!("{host}:{port}");
     for attempt in 0..50 {
         if tokio::net::TcpStream::connect(&addr).await.is_ok() {

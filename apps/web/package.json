@@ -16,6 +16,8 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@fontsource/jetbrains-mono": "^5.2.8",
+    "@fontsource/space-grotesk": "^5.2.10",
     "@radix-ui/react-menubar": "^1.1.16",
     "@spiritstream/api-client": "workspace:*",
     "@spiritstream/types": "workspace:*",

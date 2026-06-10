@@ -8,9 +8,12 @@ use crate::errors::{CoreError, ValidationIssue};
 /// would be misleading.
 pub const DISCORD_COOLDOWN_SECONDS_MAX: u32 = 86_400;
 
-/// Backend bind port lower bound. Port 0 is reserved and never valid
-/// for binding.
-pub const BACKEND_PORT_MIN: u16 = 1;
+/// Backend bind port lower bound. Matches the env-path rule
+/// (`SPIRITSTREAM_PORT` must be 1024..=65535): privileged ports need
+/// root and port 0 is reserved — a profile-sourced port below 1024
+/// used to pass validation here and then fail at bind time instead of
+/// surfacing at save time.
+pub const BACKEND_PORT_MIN: u16 = 1024;
 
 /// Validate profile name to prevent path traversal attacks.
 ///
