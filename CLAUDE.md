@@ -113,7 +113,10 @@ VITE_BACKEND_TOKEN=secret           # Auth token
 
 # Backend server
 SPIRITSTREAM_HOST=127.0.0.1         # Bind address
-SPIRITSTREAM_PORT=8008              # HTTP port — must be 1024..=65535 (privileged ports + 0 rejected at startup)
+SPIRITSTREAM_PORT=8008              # HTTP port — must be 1024..=65535 (privileged ports + 0 rejected at startup).
+                                    # Desktop: the Tauri shell resolves the port the same way the server does
+                                    # (env -> active profile's backend.port -> 8008); CSP/capabilities allow any
+                                    # loopback port, so changing it needs only an app restart, not a rebuild.
 SPIRITSTREAM_API_TOKEN=secret       # Auth token (≥32 chars required in cloud mode)
 SPIRITSTREAM_DEV_TOKEN=secret       # Alias for API_TOKEN — read when API_TOKEN is unset (dev convenience)
 SPIRITSTREAM_UI_ENABLED=1           # Serve static UI bundle from the backend
