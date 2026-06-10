@@ -46,6 +46,21 @@ export function StatusStrip({ profile, onOpenModal }: StatusStripProps): React.R
     }
   }, [profile, startAllGroups, t]);
 
+  const handleStop = useCallback(async (): Promise<void> => {
+    try {
+      await stopAllGroups();
+      toast.success(t('toast.streamStopped', { defaultValue: 'Stream stopped' }));
+    } catch (err) {
+      logger.error('[status-strip] stop failed', err);
+      toast.error(
+        t('toast.stopFailed', {
+          defaultValue: 'Failed to stop stream: {{error}}',
+          error: err instanceof Error ? err.message : String(err),
+        })
+      );
+    }
+  }, [stopAllGroups, t]);
+
   const handlePanic = useCallback(async (): Promise<void> => {
     setPanicking(true);
     try {
@@ -94,7 +109,7 @@ export function StatusStrip({ profile, onOpenModal }: StatusStripProps): React.R
       {isStreaming ? (
         <button
           type="button"
-          onClick={() => stopAllGroups()}
+          onClick={handleStop}
           className={cn(
             'inline-flex items-center gap-2 px-4 h-10 min-w-[44px]',
             'rounded-md bg-error-bg text-error-text border border-error-border',

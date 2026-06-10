@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { events } from '@spiritstream/api-client';
+import { logger } from '@/lib/logger';
 import { useProfileStore } from '@/stores/profileStore';
 
 interface ProfileChangedPayload {
@@ -22,7 +23,16 @@ export function useDataSync() {
   currentProfileNameRef.current = currentProfileName;
 
   useEffect(() => {
+    let cancelled = false;
     const unsubscribers: Array<() => void> = [];
+    const adopt = (unsub: () => void): void => {
+      // Unmounted while registering — release instead of leaking.
+      if (cancelled) {
+        unsub();
+        return;
+      }
+      unsubscribers.push(unsub);
+    };
 
     // Listen for profile changes from other clients
     events
@@ -38,8 +48,10 @@ export function useDataSync() {
         // If the current profile was deleted, it will be handled by loadProfiles
         // which will show the profile is no longer available
       })
-      .then((unsub) => unsubscribers.push(unsub))
-      .catch(() => {});
+      .then(adopt)
+      .catch((error) => {
+        logger.error('[useDataSync] failed to subscribe to profile_changed:', error);
+      });
 
     // Listen for settings changes from other clients
     // Settings are typically loaded on-demand in the Settings view,
@@ -48,10 +60,13 @@ export function useDataSync() {
       .on('settings_changed', () => {
         window.dispatchEvent(new CustomEvent('backend:settings_changed'));
       })
-      .then((unsub) => unsubscribers.push(unsub))
-      .catch(() => {});
+      .then(adopt)
+      .catch((error) => {
+        logger.error('[useDataSync] failed to subscribe to settings_changed:', error);
+      });
 
     return () => {
+      cancelled = true;
       unsubscribers.forEach((unsub) => unsub());
     };
   }, [loadProfiles, loadProfile]);

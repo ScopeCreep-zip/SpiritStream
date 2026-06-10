@@ -1,6 +1,8 @@
 import type { StateCreator } from 'zustand';
 import { api } from '@/lib/client';
 import { logger } from '@/lib/logger';
+import { toast } from '@/hooks/useToast';
+import i18n from '@/lib/i18n';
 import type { ProfileState } from './types';
 
 type PasswordSlice = Pick<
@@ -38,13 +40,18 @@ export const createPasswordSlice: StateCreator<ProfileState, [], [], PasswordSli
         await get().loadProfile(name);
         set({ pendingUnlock: false, pendingPasswordProfile: null, passwordError: null });
       } catch (error) {
-        const message = String(error);
-        if (message.toLowerCase().includes('password')) {
+        const kind = (error as Error & { kind?: string }).kind;
+        if (kind === 'password_incorrect' || kind === 'password_required') {
           set({ passwordError: 'Incorrect password', pendingUnlock: false });
         } else {
           logger.error('[ProfileStore] Failed to remove encryption:', error);
           set({ pendingUnlock: false });
-          get().setError(message);
+          toast.error(
+            i18n.t('errors.removeEncryptionFailed', {
+              defaultValue: 'Failed to remove encryption: {{error}}',
+              error: error instanceof Error ? error.message : String(error),
+            })
+          );
         }
       }
       return;

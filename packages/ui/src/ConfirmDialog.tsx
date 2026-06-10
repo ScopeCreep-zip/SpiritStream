@@ -110,6 +110,10 @@ export function ConfirmDialog({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
     if (e.key === 'Escape') {
       e.preventDefault();
+      // Don't let the Escape bubble to a parent modal's document-level
+      // listener — one press should close only this dialog, not the
+      // modal underneath it too.
+      e.stopPropagation();
       onCancel();
       return;
     }

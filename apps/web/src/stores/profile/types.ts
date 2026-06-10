@@ -10,7 +10,6 @@ export interface ProfileState {
   profiles: ProfileSummary[];
   current: Profile | null;
   loading: boolean;
-  error: string | null;
 
   pendingPasswordProfile: string | null;
   passwordError: string | null;
@@ -29,7 +28,6 @@ export interface ProfileState {
   unlockProfile: (name: string) => void;
 
   setLoading: (loading: boolean) => void;
-  setError: (error: string | null) => void;
 
   selectProfile: (name: string) => Promise<void>;
   duplicateProfile: (name: string) => Promise<void>;

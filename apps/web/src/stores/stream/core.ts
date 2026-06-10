@@ -17,7 +17,6 @@ type CoreSlice = Pick<
   | 'activeGroups'
   | 'liveTargetOverrides'
   | 'activeStreamCount'
-  | 'error'
   | 'syncWithBackend'
   | 'startGroup'
   | 'stopGroup'
@@ -25,7 +24,6 @@ type CoreSlice = Pick<
   | 'stopAllGroups'
   | 'toggleTargetLive'
   | 'setIsStreaming'
-  | 'setError'
   | 'reset'
 >;
 
@@ -33,7 +31,6 @@ export const createCoreSlice: StateCreator<StreamState, [], [], CoreSlice> = (se
   isStreaming: false,
   activeGroups: new Set(),
   liveTargetOverrides: new Map(),
-  error: null,
   activeStreamCount: 0,
 
   syncWithBackend: async () => {
@@ -62,7 +59,6 @@ export const createCoreSlice: StateCreator<StreamState, [], [], CoreSlice> = (se
 
   startGroup: async (group, incomingUrl) => {
     set({ globalStatus: 'connecting' });
-    get().setError(null);
     try {
       await api.stream.start(group, incomingUrl);
       const activeGroups = new Set(get().activeGroups);
@@ -80,26 +76,27 @@ export const createCoreSlice: StateCreator<StreamState, [], [], CoreSlice> = (se
       // SS→OBS trigger runs server-side in core (see top of file).
     } catch (error) {
       set({ globalStatus: 'error' });
-      get().setError(String(error));
+      // Rethrow so callers surface the failure — swallowing here let
+      // "Streaming {{name}}" success toasts fire on failed starts.
+      throw error;
     }
   },
 
+  // A failed stop propagates to the caller — a "Stopped" toast on
+  // failure would mean FFmpeg is still pushing while the user believes
+  // they're offline.
   stopGroup: async (groupId) => {
-    try {
-      await api.stream.stop(groupId);
-      const activeGroups = new Set(get().activeGroups);
-      activeGroups.delete(groupId);
-      const isStreaming = activeGroups.size > 0;
-      set({
-        activeGroups,
-        isStreaming,
-        // Live overrides only make sense while something is live.
-        liveTargetOverrides: isStreaming ? get().liveTargetOverrides : new Map(),
-      });
-      get().setGlobalStatus(isStreaming ? 'live' : 'offline');
-    } catch (error) {
-      get().setError(String(error));
-    }
+    await api.stream.stop(groupId);
+    const activeGroups = new Set(get().activeGroups);
+    activeGroups.delete(groupId);
+    const isStreaming = activeGroups.size > 0;
+    set({
+      activeGroups,
+      isStreaming,
+      // Live overrides only make sense while something is live.
+      liveTargetOverrides: isStreaming ? get().liveTargetOverrides : new Map(),
+    });
+    get().setGlobalStatus(isStreaming ? 'live' : 'offline');
   },
 
   // Eligibility (group.enabled + at least one enabled target) is decided
@@ -108,8 +105,6 @@ export const createCoreSlice: StateCreator<StreamState, [], [], CoreSlice> = (se
   // validation error.
   startAllGroups: async (groups, incomingUrl) => {
     set({ globalStatus: 'connecting' });
-    get().setError(null);
-
     try {
       const { startedGroupIds } = await api.stream.startAll(groups, incomingUrl);
 
@@ -123,47 +118,35 @@ export const createCoreSlice: StateCreator<StreamState, [], [], CoreSlice> = (se
       get().setGlobalStatus('live');
     } catch (error) {
       set({ globalStatus: 'error' });
-      get().setError(String(error));
       throw error;
     }
   },
 
   stopAllGroups: async () => {
-    try {
-      await api.stream.stopAll();
-      set({
-        activeGroups: new Set(),
-        liveTargetOverrides: new Map(),
-        isStreaming: false,
-        uptime: 0,
-        groupStats: {},
-        stats: initialStats,
-      });
-      get().setGlobalStatus('offline');
-    } catch (error) {
-      get().setError(String(error));
-    }
+    await api.stream.stopAll();
+    set({
+      activeGroups: new Set(),
+      liveTargetOverrides: new Map(),
+      isStreaming: false,
+      uptime: 0,
+      groupStats: {},
+      stats: initialStats,
+    });
+    get().setGlobalStatus('offline');
   },
 
   toggleTargetLive: async (targetId, enabled, group, incomingUrl) => {
-    try {
-      await api.stream.toggleTarget(targetId, enabled, group, incomingUrl);
+    await api.stream.toggleTarget(targetId, enabled, group, incomingUrl);
 
-      const liveTargetOverrides = new Map(get().liveTargetOverrides);
-      liveTargetOverrides.set(targetId, enabled);
-      set({ liveTargetOverrides });
-    } catch (error) {
-      get().setError(String(error));
-      throw error;
-    }
+    const liveTargetOverrides = new Map(get().liveTargetOverrides);
+    liveTargetOverrides.set(targetId, enabled);
+    set({ liveTargetOverrides });
   },
 
   setIsStreaming: (isStreaming) => {
     const status: StreamStatusType = isStreaming ? 'live' : 'offline';
     set({ isStreaming, globalStatus: status });
   },
-
-  setError: (error) => set({ error }),
 
   reset: () => {
     set({
@@ -176,6 +159,5 @@ export const createCoreSlice: StateCreator<StreamState, [], [], CoreSlice> = (se
       globalStatus: 'offline' as StreamStatusType,
       activeStreamCount: 0,
     });
-    get().setError(null);
   },
 });

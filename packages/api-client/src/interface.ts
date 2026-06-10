@@ -262,6 +262,11 @@ export interface ApiClient {
   // Destructive-op confirmation tokens.
   security: {
     /**
+     * End the current session and expire its cookie. Other devices'
+     * sessions stay valid — use `revokeAllSessions` for those.
+     */
+    logout(): Promise<Record<string, never>>;
+    /**
      * Low-level: request a one-shot confirm token for `intent`.
      * Most callers use the wrapped destructive methods
      * (`settings.clearData`, `settings.rotateMachineKey`,

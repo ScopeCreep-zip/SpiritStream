@@ -5,6 +5,8 @@ import { fetchTypedJson } from './api/_internal';
 // frontends can listen without taking a dependency on a specific state
 // management library. The shipped Zustand store
 // (`apps/web/src/stores/connectionStore.ts`) subscribes to these.
+// `detail.error` carries a stable CODE (`auth_required`,
+// `connection_error`, `max_reconnects`) — the UI layer owns the i18n.
 type ConnectionDetail = { error?: string };
 const dispatch = (name: string, detail?: ConnectionDetail) => {
   if (typeof window !== 'undefined') {
@@ -116,12 +118,19 @@ function ensureSocket(): Promise<void> {
 
   notifyConnecting();
 
-  openPromise = buildWsUrl().then(
+  const attempt = buildWsUrl().then(
     (wsUrl) =>
-      new Promise((resolve) => {
+      new Promise<void>((resolve, reject) => {
+        // Pre-fix, this promise only ever resolved (on 'open'). A socket
+        // that errored before opening left every `await events.on(...)`
+        // pending forever — effect cleanups never received their
+        // unlisten functions, so handlers leaked. Now a pre-open
+        // close settles the promise with a coded rejection.
+        let settled = false;
         socket = new WebSocket(wsUrl);
 
         socket.addEventListener('open', () => {
+          settled = true;
           openPromise = null;
           notifyConnected();
           resolve();
@@ -145,36 +154,43 @@ function ensureSocket(): Promise<void> {
           }
         });
 
+        // Per the WebSocket spec a 'close' always follows 'error', so all
+        // teardown lives here — the old separate 'error' teardown ran the
+        // same work twice and double-dispatched `backend:disconnected`.
         socket.addEventListener('close', (event) => {
           socket = null;
           openPromise = null;
 
-          // Check if this is an auth failure (401 Unauthorized returns code 1008)
-          if (event.code === 1008 || event.reason === 'Unauthorized') {
+          // Auth failure (401 on upgrade surfaces as policy-violation 1008).
+          const authFailure = event.code === 1008 || event.reason === 'Unauthorized';
+          if (authFailure) {
             notifyAuthRequired();
-            notifyDisconnected('Authentication required');
-            return;
+            notifyDisconnected('auth_required');
+          } else {
+            notifyDisconnected();
           }
 
-          notifyDisconnected();
-          if (handlers.size > 0 || keepAlive) {
-            scheduleReconnect();
+          if (!settled) {
+            settled = true;
+            reject(new Error(authFailure ? 'auth_required' : 'connection_error'));
           }
-        });
 
-        socket.addEventListener('error', () => {
-          if (socket && socket.readyState === WebSocket.OPEN) {
-            return;
-          }
-          socket = null;
-          openPromise = null;
-          notifyDisconnected('Connection error');
-          if (handlers.size > 0 || keepAlive) {
+          // Reconnecting on an auth failure would loop 401s forever; the
+          // auth-required flow owns recovery there.
+          if (!authFailure && (handlers.size > 0 || keepAlive)) {
             scheduleReconnect();
           }
         });
       })
   );
+
+  // Clear the slot when the attempt fails (including buildWsUrl itself
+  // throwing) so the next ensureSocket() starts fresh instead of
+  // returning a permanently-rejected promise.
+  openPromise = attempt.catch((error) => {
+    openPromise = null;
+    throw error;
+  });
 
   return openPromise;
 }
@@ -184,7 +200,7 @@ function scheduleReconnect() {
 
   // Check if we've exceeded max reconnection attempts
   if (reconnectCount >= MAX_RECONNECT_ATTEMPTS) {
-    notifyDisconnected('Connection lost. Please refresh the page.');
+    notifyDisconnected('max_reconnects');
     return;
   }
 
@@ -240,7 +256,20 @@ export const events = {
     set.add(handler as AnyHandler);
     handlers.set(eventName, set);
 
-    await ensureSocket();
+    try {
+      await ensureSocket();
+    } catch (error) {
+      // The subscribe failed and the caller never receives an unlisten
+      // function — remove the handler we just added so it can't leak.
+      const listeners = handlers.get(eventName);
+      if (listeners) {
+        listeners.delete(handler as AnyHandler);
+        if (listeners.size === 0) {
+          handlers.delete(eventName);
+        }
+      }
+      throw error;
+    }
 
     return () => {
       const listeners = handlers.get(eventName);

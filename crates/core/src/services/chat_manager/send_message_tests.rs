@@ -72,6 +72,20 @@ impl ChatManager {
 /// Build a (ChatManager, SafetyService, AuditLogService) triple
 /// sharing the same audit instance, so a test can both call
 /// `send_message(..., &safety)` and inspect the audit chain.
+/// Push a ChatSettings with every per-platform send flag enabled —
+/// `send_message` enforces the profile send policy in core, so tests
+/// exercising the downstream stages must first clear that gate.
+async fn enable_all_sends(mgr: &ChatManager) {
+    let settings = crate::models::ChatSettings {
+        twitch_send_enabled: true,
+        youtube_send_enabled: true,
+        trovo_send_enabled: true,
+        kick_send_enabled: true,
+        ..Default::default()
+    };
+    mgr.update_profile_chat_settings(settings).await;
+}
+
 fn fixture() -> (
     TempDir,
     Arc<ChatManager>,
@@ -111,6 +125,7 @@ fn fixture() -> (
 #[tokio::test]
 async fn over_length_message_returns_chat_message_length_exceeded() {
     let (_dir, mgr, safety, _audit) = fixture();
+    enable_all_sends(&mgr).await;
     let limit = ChatPlatform::Twitch.max_message_chars();
     let too_long = "x".repeat(limit + 50);
     let results = mgr
@@ -140,6 +155,7 @@ async fn over_length_message_returns_chat_message_length_exceeded() {
 #[tokio::test]
 async fn unconnected_platform_returns_chat_platform_not_connected() {
     let (_dir, mgr, safety, _audit) = fixture();
+    enable_all_sends(&mgr).await;
     let results = mgr
         .send_message("hello".to_string(), &[ChatPlatform::Twitch], None, &safety)
         .await;
@@ -158,6 +174,7 @@ async fn unconnected_platform_returns_chat_platform_not_connected() {
 #[tokio::test]
 async fn per_platform_results_are_independent() {
     let (_dir, mgr, safety, _audit) = fixture();
+    enable_all_sends(&mgr).await;
     let results = mgr
         .send_message(
             "ok".to_string(),
@@ -179,6 +196,7 @@ async fn per_platform_results_are_independent() {
 #[tokio::test]
 async fn successful_send_records_chat_message_sent_audit() {
     let (_dir, mgr, safety, audit) = fixture();
+    enable_all_sends(&mgr).await;
     let connector: BoxedPlatform = Box::new(AlwaysOkConnector { name: "twitch" });
     mgr.insert_test_connector(ChatPlatform::Twitch, connector)
         .await;
@@ -216,6 +234,7 @@ async fn successful_send_records_chat_message_sent_audit() {
 #[tokio::test]
 async fn pii_match_blocks_all_targets_atomically() {
     let (_dir, mgr, safety, audit) = fixture();
+    enable_all_sends(&mgr).await;
     let policy = Some((vec!["alice".into()], false));
     let results = mgr
         .send_message(
@@ -240,4 +259,59 @@ async fn pii_match_blocks_all_targets_atomically() {
         .filter(|e| matches!(e.action, AuditAction::ChatMessagePiiBlocked { .. }))
         .collect();
     assert_eq!(blocked.len(), 1);
+}
+
+/// The send policy lives in core: an explicit target list (the
+/// ChatComposer single-target path) must NOT bypass a disabled
+/// `*_send_enabled` flag — even with a live, send-capable connector.
+#[tokio::test]
+async fn explicit_target_cannot_bypass_disabled_send_flag() {
+    let (_dir, mgr, safety, audit) = fixture();
+    // twitch_send_enabled stays false (ChatSettings::default()).
+    let connector: BoxedPlatform = Box::new(AlwaysOkConnector { name: "twitch" });
+    mgr.insert_test_connector(ChatPlatform::Twitch, connector)
+        .await;
+
+    let results = mgr
+        .send_message("hello".to_string(), &[ChatPlatform::Twitch], None, &safety)
+        .await;
+    assert_eq!(results.len(), 1);
+    match &results[0] {
+        (ChatPlatform::Twitch, Err(CoreError::ChatSendingDisabled { platform })) => {
+            assert_eq!(platform, "twitch");
+        }
+        other => panic!("expected ChatSendingDisabled, got {other:?}"),
+    }
+
+    let entries = audit.entries().unwrap();
+    assert!(
+        !entries
+            .iter()
+            .any(|e| matches!(e.action, AuditAction::ChatMessageSent { .. })),
+        "nothing was sent, so nothing may be audited as sent"
+    );
+}
+
+/// YouTube API-key mode is read-only: even with the send flag on, the
+/// policy refuses sends when `youtube_use_api_key` is set.
+#[tokio::test]
+async fn youtube_api_key_mode_is_read_only() {
+    let (_dir, mgr, safety, _audit) = fixture();
+    let settings = crate::models::ChatSettings {
+        youtube_send_enabled: true,
+        youtube_use_api_key: true,
+        ..Default::default()
+    };
+    mgr.update_profile_chat_settings(settings).await;
+    let connector: BoxedPlatform = Box::new(AlwaysOkConnector { name: "youtube" });
+    mgr.insert_test_connector(ChatPlatform::YouTube, connector)
+        .await;
+
+    let results = mgr
+        .send_message("hi".to_string(), &[ChatPlatform::YouTube], None, &safety)
+        .await;
+    assert!(matches!(
+        results[0],
+        (ChatPlatform::YouTube, Err(CoreError::ChatSendingDisabled { .. }))
+    ));
 }

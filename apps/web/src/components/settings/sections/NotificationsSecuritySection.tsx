@@ -5,6 +5,7 @@ import { Toggle } from '@/components/ui/Toggle';
 import { useProfileStore } from '@/stores/profileStore';
 import { useSaveSettings, useUpdateSetting } from '@/hooks/useSettings';
 import { KeyRotationSection } from '@/components/settings/KeyRotationSection';
+import { SessionSection } from '@/components/settings/SessionSection';
 import type { ProfileSettings as ProfileSettingsType } from '@spiritstream/types';
 
 /**
@@ -78,6 +79,7 @@ export function NotificationsSecuritySection() {
           encryptStreamKeys={profileSettings?.encryptStreamKeys ?? true}
           disabled={isSaving}
         />
+        <SessionSection />
       </CardBody>
     </Card>
   );

@@ -74,12 +74,28 @@ export function ChatList({
 }: ChatListProps) {
   const { t } = useTranslation();
   const listRef = useRef<HTMLDivElement>(null);
+  // True while the user is at (or within a row of) the bottom. Scrolling
+  // up to read history unpins; new messages then stop yanking the view
+  // back down until the user returns to the bottom.
+  const pinnedToBottom = useRef(true);
+
+  // Keyed on the LAST MESSAGE ID, not messages.length — once the buffer
+  // hits its cap the length never changes again, which froze auto-scroll
+  // exactly when chat got busy.
+  const lastMessageId = messages.length > 0 ? messages[messages.length - 1].id : null;
 
   useEffect(() => {
-    if (listRef.current) {
-      listRef.current.scrollTop = listRef.current.scrollHeight;
+    const el = listRef.current;
+    if (el && pinnedToBottom.current) {
+      el.scrollTop = el.scrollHeight;
     }
-  }, [messages.length]);
+  }, [lastMessageId]);
+
+  const handleScroll = (event: React.UIEvent<HTMLDivElement>): void => {
+    const el = event.currentTarget;
+    pinnedToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    props.onScroll?.(event);
+  };
 
   const densityConfig = densityStyles[density];
 
@@ -88,7 +104,7 @@ export function ChatList({
   ) : null;
 
   return (
-    <div ref={listRef} className={cn('overflow-y-auto', className)} {...props}>
+    <div ref={listRef} className={cn('overflow-y-auto', className)} {...props} onScroll={handleScroll}>
       {messages.length === 0 ? (
         renderEmpty
       ) : (

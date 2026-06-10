@@ -209,6 +209,13 @@ pub async fn run(
                 .as_ref()
                 .map(|p| p.settings.chat.clone())
                 .unwrap_or_default();
+            // Rehydrate the manager's settings cache: core's send path
+            // enforces the `*_send_enabled` policy from that cache, and a
+            // cold CLI process starts with defaults (everything off).
+            registry
+                .chat
+                .update_profile_chat_settings(chat_cfg.clone())
+                .await;
             let mut targets = Vec::new();
             if chat_cfg.twitch_send_enabled {
                 targets.push(ChatPlatform::Twitch);

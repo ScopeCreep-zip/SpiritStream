@@ -224,8 +224,8 @@ export function ChatComposer({
     setIsSending(true);
     try {
       // When the user has disabled broadcast-to-all, pass an explicit
-      // single-platform list to the backend so it bypasses the
-      // per-platform send-enable flags and dispatches only there.
+      // single-platform list. This only narrows the target set — core's
+      // send path re-checks the per-platform send-enable flags either way.
       const explicitTargets =
         chatSettings.sendAllEnabled || singleTarget === null ? undefined : [singleTarget];
       const results = await api.chat.sendMessage(trimmed, explicitTargets);
@@ -233,7 +233,11 @@ export function ChatComposer({
       if (failures.length) {
         toast.error(t('chat.sendPartialFail', 'Some platforms failed to receive your message.'));
       }
-      setDraftMessage('');
+      // Keep the draft when NOTHING went out so the user can retry
+      // without retyping; clear it once at least one platform took it.
+      if (failures.length < results.length) {
+        setDraftMessage('');
+      }
     } catch (error) {
       toast.error(t('chat.sendFailed', { defaultValue: 'Failed to send message' }));
       logger.error('Failed to send chat message:', error);

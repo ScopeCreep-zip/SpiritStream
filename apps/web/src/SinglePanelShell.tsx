@@ -437,8 +437,18 @@ function OpenProfileModal({ open, onClose }: OpenProfileModalProps): React.React
   const duplicateProfile = useProfileStore((s) => s.duplicateProfile);
 
   const handleDuplicate = async (name: string): Promise<void> => {
-    await duplicateProfile(name);
-    toast.success(t('toast.profileDuplicated', { name, defaultValue: 'Duplicated {{name}}' }));
+    try {
+      await duplicateProfile(name);
+      toast.success(t('toast.profileDuplicated', { name, defaultValue: 'Duplicated {{name}}' }));
+    } catch (err) {
+      toast.error(
+        t('toast.profileDuplicateFailed', {
+          defaultValue: 'Failed to duplicate {{name}}: {{error}}',
+          name,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      );
+    }
   };
 
   const iconButtonClass =

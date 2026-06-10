@@ -51,8 +51,12 @@ export const createOutputGroupsSlice: StateCreator<ProfileState, [], [], OutputG
     if (current) {
       const groupToDelete = current.outputGroups.find((g) => g.id === groupId);
       if (groupToDelete?.isDefault) {
+        // Throw instead of silently returning — the caller used to toast
+        // "Output group removed" while the group was still there.
         logger.warn('Cannot delete the default passthrough output group');
-        return;
+        throw Object.assign(new Error('The default passthrough group cannot be removed.'), {
+          kind: 'default_group_undeletable',
+        });
       }
 
       set({

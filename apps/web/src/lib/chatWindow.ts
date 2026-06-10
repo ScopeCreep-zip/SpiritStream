@@ -137,15 +137,19 @@ export async function setOverlayAlwaysOnTop(alwaysOnTop: boolean) {
 
 /**
  * Set up listener to close chat overlay when main window closes.
- * Call this once from the main app on mount.
+ * Call this once from the main app on mount. Returns a cleanup
+ * function so the owning effect can unregister on unmount (StrictMode
+ * double-mounts used to stack a second permanent listener).
  */
-export function setupMainWindowCloseHandler() {
+export function setupMainWindowCloseHandler(): () => void {
   // For browser, close popup when main window unloads
-  window.addEventListener('beforeunload', () => {
+  const closePopup = (): void => {
     if (browserPopup && !browserPopup.closed) {
       browserPopup.close();
     }
-  });
+  };
+  window.addEventListener('beforeunload', closePopup);
+  return () => window.removeEventListener('beforeunload', closePopup);
 }
 
 /**

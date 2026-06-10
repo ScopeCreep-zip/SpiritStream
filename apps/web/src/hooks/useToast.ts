@@ -34,8 +34,12 @@ export const useToast = create<ToastStore>((set) => ({
 
     const id = crypto.randomUUID();
     set(appendToast({ id, type, message }));
-    // Auto-remove after 3 seconds
-    setTimeout(() => set(removeToastById(id)), 3000);
+    // Errors stay until dismissed — a 3s flash is not enough time for
+    // the users this app serves (screen-reader latency, panic moments)
+    // to read why their stream or safety action failed.
+    if (type !== 'error') {
+      setTimeout(() => set(removeToastById(id)), 3000);
+    }
   },
   removeToast: (id) => set(removeToastById(id)),
 }));

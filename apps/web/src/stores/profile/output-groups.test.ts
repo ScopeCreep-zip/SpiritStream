@@ -72,9 +72,11 @@ describe('output-groups.addOutputGroup', () => {
 });
 
 describe('output-groups.removeOutputGroup', () => {
-  it('refuses to delete the default passthrough group', async () => {
+  it('refuses to delete the default passthrough group with a typed error', async () => {
     seed([makeGroup('default', { isDefault: true }), makeGroup('g2')]);
-    await useProfileStore.getState().removeOutputGroup('default');
+    await expect(useProfileStore.getState().removeOutputGroup('default')).rejects.toMatchObject({
+      kind: 'default_group_undeletable',
+    });
     expect(groups().map((g) => g.id)).toEqual(['default', 'g2']);
     expect(saveProfile).not.toHaveBeenCalled();
   });

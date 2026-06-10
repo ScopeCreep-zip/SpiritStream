@@ -40,8 +40,23 @@ export function useConnectionStatus() {
       }
     };
 
+    // The api-client dispatches stable codes; this seam owns the wording.
+    const describeCode = (code: string): string => {
+      switch (code) {
+        case 'auth_required':
+          return t('connection.authRequired', 'Authentication required — sign in again.');
+        case 'max_reconnects':
+          return t('connection.maxReconnects', 'Connection lost. Please refresh the page.');
+        case 'connection_error':
+          return t('connection.error', 'Connection error');
+        default:
+          return code;
+      }
+    };
+
     const handleDisconnected = (event: CustomEvent<{ error?: string }>) => {
-      const error = event.detail?.error;
+      const code = event.detail?.error;
+      const error = code ? describeCode(code) : undefined;
       setDisconnected(error);
       toast.error(
         error

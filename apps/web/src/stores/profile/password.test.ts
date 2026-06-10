@@ -17,7 +17,10 @@ vi.mock('@/lib/i18n', () => ({ default: { t: (k: string) => k } }));
 vi.mock('@/lib/profile-helpers', () => ({ createDefaultProfile: vi.fn() }));
 vi.mock('./applySettings', () => ({ applyProfileSettings: vi.fn(), applyUiSettings: vi.fn() }));
 vi.mock('@spiritstream/api-client', () => ({ events: { on: vi.fn() } }));
-vi.mock('@/hooks/useToast', () => ({ toast: { info: vi.fn() } }));
+const { toast } = vi.hoisted(() => ({
+  toast: { info: vi.fn(), error: vi.fn(), success: vi.fn() },
+}));
+vi.mock('@/hooks/useToast', () => ({ toast }));
 
 import { useProfileStore } from './index';
 
@@ -30,7 +33,6 @@ beforeEach(() => {
     pendingPasswordProfile: null,
     pendingUnlock: false,
     passwordError: null,
-    error: null,
     loading: false,
     loadProfile,
     loadProfiles,
@@ -83,19 +85,21 @@ describe('password.submitPassword', () => {
 
   it('classifies a wrong-password decrypt failure as a password error', async () => {
     useProfileStore.setState({ pendingPasswordProfile: 'secret', pendingUnlock: true });
-    api.profile.decrypt.mockRejectedValue(new Error('invalid password supplied'));
+    api.profile.decrypt.mockRejectedValue(
+      Object.assign(new Error('invalid password supplied'), { kind: 'password_incorrect' })
+    );
     await useProfileStore.getState().submitPassword('bad');
     const s = useProfileStore.getState();
     expect(s.passwordError).toBe('Incorrect password');
     expect(s.pendingUnlock).toBe(false);
   });
 
-  it('surfaces a non-password decrypt failure as a generic error', async () => {
+  it('surfaces a non-password decrypt failure as an error toast', async () => {
     useProfileStore.setState({ pendingPasswordProfile: 'secret', pendingUnlock: true });
     api.profile.decrypt.mockRejectedValue(new Error('disk full'));
     await useProfileStore.getState().submitPassword('pw');
     const s = useProfileStore.getState();
-    expect(s.error).toContain('disk full');
+    expect(toast.error).toHaveBeenCalled();
     expect(s.passwordError).toBeNull();
   });
 });

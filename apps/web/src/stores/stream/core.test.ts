@@ -91,12 +91,13 @@ describe('core.startGroup', () => {
     expect(s.globalStatus).toBe('live');
   });
 
-  it('surfaces a backend rejection as an error and goes to error status', async () => {
+  it('rethrows a backend rejection and goes to error status', async () => {
     apiStream.start.mockRejectedValue(new Error('boom'));
-    await useStreamStore.getState().startGroup(makeGroup('g1', 1), INGEST_URL);
+    await expect(
+      useStreamStore.getState().startGroup(makeGroup('g1', 1), INGEST_URL)
+    ).rejects.toThrow('boom');
     const s = useStreamStore.getState();
     expect(s.globalStatus).toBe('error');
-    expect(s.error).toContain('boom');
     expect(s.activeGroups.has('g1')).toBe(false);
   });
 });
@@ -146,11 +147,11 @@ describe('core.toggleTargetLive', () => {
     expect(useStreamStore.getState().liveTargetOverrides.get('t1')).toBe(true);
   });
 
-  it('rethrows and records the error on failure', async () => {
+  it('rethrows on failure and records no override', async () => {
     apiStream.toggleTarget.mockRejectedValue(new Error('nope'));
     await expect(
       useStreamStore.getState().toggleTargetLive('t1', true, makeGroup('g1', 1), INGEST_URL)
     ).rejects.toThrow('nope');
-    expect(useStreamStore.getState().error).toContain('nope');
+    expect(useStreamStore.getState().liveTargetOverrides.has('t1')).toBe(false);
   });
 });

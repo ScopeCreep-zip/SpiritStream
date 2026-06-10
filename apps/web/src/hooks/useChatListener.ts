@@ -14,6 +14,9 @@ export function useChatListener() {
   const setOverlayTransparent = useChatStore((state) => state.setOverlayTransparent);
 
   useEffect(() => {
+    // Unmount can race the async registrations; the cancelled flag makes
+    // a late-resolving subscribe release itself instead of leaking.
+    let cancelled = false;
     let unlistenMessages: UnlistenFn | null = null;
     let unlistenOverlay: UnlistenFn | null = null;
 
@@ -37,6 +40,10 @@ export function useChatListener() {
         addMessage(payload);
       })
       .then((unsubscribe) => {
+        if (cancelled) {
+          unsubscribe();
+          return;
+        }
         unlistenMessages = unsubscribe;
       })
       .catch((error) => {
@@ -48,6 +55,10 @@ export function useChatListener() {
         setOverlayTransparent(payload.transparent);
       })
       .then((unsubscribe) => {
+        if (cancelled) {
+          unsubscribe();
+          return;
+        }
         unlistenOverlay = unsubscribe;
       })
       .catch((error) => {
@@ -55,6 +66,7 @@ export function useChatListener() {
       });
 
     return () => {
+      cancelled = true;
       if (unlistenMessages) {
         unlistenMessages();
       }

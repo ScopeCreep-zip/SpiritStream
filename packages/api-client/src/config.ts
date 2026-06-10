@@ -63,6 +63,13 @@ export async function safeFetch(url: string, options?: RequestInit): Promise<Res
     const maxRetries = 5;
     const baseDelay = RETRY_BASE_DELAY_MS;
 
+    // POST/PATCH are not idempotent: a 504 (upstream timeout) or a
+    // connection dropped mid-response can mean the server already
+    // executed the request — a blind retry would start a second stream
+    // or send a chat message twice. Those fail straight to the caller.
+    const method = (options?.method ?? 'GET').toUpperCase();
+    const idempotent = method !== 'POST' && method !== 'PATCH';
+
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         const response = await fetch(url, options);
@@ -71,7 +78,7 @@ export async function safeFetch(url: string, options?: RequestInit): Promise<Res
         // `Retry-After`. A 5xx without `Retry-After` is a "fix it
         // yourself" condition (e.g. FfmpegNotFound) where retry just
         // amplifies load and floods the console with errors.
-        if (RETRY_AFTER_AWARE_STATUSES.has(response.status) && attempt < maxRetries) {
+        if (idempotent && RETRY_AFTER_AWARE_STATUSES.has(response.status) && attempt < maxRetries) {
           const retryAfterHeader = response.headers.get('Retry-After');
           if (retryAfterHeader) {
             const retryAfterSec = Number.parseInt(retryAfterHeader, 10);
@@ -93,7 +100,7 @@ export async function safeFetch(url: string, options?: RequestInit): Promise<Res
       } catch (error) {
         const isLastAttempt = attempt === maxRetries;
 
-        if (isLastAttempt) {
+        if (isLastAttempt || !idempotent) {
           throw error;
         }
 

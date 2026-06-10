@@ -49,7 +49,7 @@ const defaultFormData: FormData = {
 export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps) {
   const { t } = useTranslation();
   const tDynamic = t as (key: string, options?: { defaultValue?: string }) => string;
-  const { updateProfile, saveProfile, current } = useProfileStore();
+  const { updateProfile, current } = useProfileStore();
   const form = useFormState<FormData>(defaultFormData);
   const formData = form.values;
   const [portConflictMessage, setPortConflictMessage] = useState<string | undefined>();
@@ -158,8 +158,9 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
       await loadProfiles();
       await loadProfile(newProfile.name, password);
     } else if (mode === 'edit' && current) {
-      updateProfile({ name: trimmedName, input });
-      await saveProfile();
+      // updateProfile saves internally; awaiting it lets a backend
+      // rejection land in handleSave's catch instead of floating.
+      await updateProfile({ name: trimmedName, input });
     }
 
     onClose();

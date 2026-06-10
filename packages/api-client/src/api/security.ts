@@ -2,6 +2,12 @@ import { fetchTypedJson, withConfirmToken } from './_internal';
 
 export const security = {
   /**
+   * End the CURRENT session: the server removes it from the session
+   * store and expires the HttpOnly cookie. Other devices' sessions
+   * stay valid — use `revokeAllSessions` for those.
+   */
+  logout: () => fetchTypedJson<Record<string, never>>('POST', '/api/v1/auth/logout'),
+  /**
    * Request a one-shot confirmation token for the given destructive
    * intent. The token expires after `expiresInSeconds` and is
    * consumed by the destructive endpoint's `X-Confirm-Token` header.

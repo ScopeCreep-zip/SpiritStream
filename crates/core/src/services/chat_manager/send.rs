@@ -1,6 +1,25 @@
 use crate::errors::CoreError;
-use crate::models::ChatPlatform;
+use crate::models::{ChatPlatform, ChatSettings};
 use crate::services::{AuditAction, SafetyService};
+
+/// Profile-level send policy: may this platform receive outbound
+/// messages at all? Lives in core so an explicit per-message target
+/// list from a client can only ever NARROW the broadcast set, never
+/// bypass a platform the user disabled.
+///
+/// Facebook has no per-profile toggle — send is auth-gated by the
+/// connector (`can_send()` reflects whether a Page Access Token was
+/// captured at connect). TikTok rejects third-party sends by design.
+fn send_policy_allows(settings: &ChatSettings, platform: ChatPlatform) -> bool {
+    match platform {
+        ChatPlatform::Twitch => settings.twitch_send_enabled,
+        ChatPlatform::YouTube => settings.youtube_send_enabled && !settings.youtube_use_api_key,
+        ChatPlatform::Trovo => settings.trovo_send_enabled,
+        ChatPlatform::Kick => settings.kick_send_enabled,
+        ChatPlatform::Facebook => true,
+        ChatPlatform::TikTok => false,
+    }
+}
 
 impl super::ChatManager {
     /// Send a chat message to the requested platforms.
@@ -11,9 +30,11 @@ impl super::ChatManager {
     ///    A match returns `Err(CoreError::ChatBlockedByPii)` for every
     ///    target platform; the message never touches the wire on any
     ///    of them. The audit entry is emitted by `safety` itself.
-    /// 2. **Per-platform char-limit** — `ChatPlatform::max_message_chars`.
-    /// 3. **Dispatch** — over the live connector.
-    /// 4. **Audit** — on at least one successful destination, record
+    /// 2. **Send policy** — the profile's `*_send_enabled` flags, checked
+    ///    per platform regardless of how the target list was built.
+    /// 3. **Per-platform char-limit** — `ChatPlatform::max_message_chars`.
+    /// 4. **Dispatch** — over the live connector.
+    /// 5. **Audit** — on at least one successful destination, record
     ///    `ChatMessageSent` with the list of successful platforms and
     ///    the character count. Message text is **never** persisted.
     ///
@@ -40,10 +61,25 @@ impl super::ChatManager {
             }
         }
 
+        // Step 1.5: profile send policy. Enforced HERE, not in the
+        // transports — an explicit `targetPlatforms` list used to ride
+        // straight past the `*_send_enabled` flags.
+        let settings = self.profile_chat_settings().await;
+
         let mut results = Vec::new();
         let mut connectors = self.platforms.lock().await;
 
         for platform in platforms {
+            if !send_policy_allows(&settings, *platform) {
+                results.push((
+                    *platform,
+                    Err(CoreError::ChatSendingDisabled {
+                        platform: platform.as_str().to_string(),
+                    }),
+                ));
+                continue;
+            }
+
             // Shared with the crosspost path (`status.rs`) so the two
             // outbound length rules can never drift.
             if let Err(err) = super::check_platform_length(*platform, message_chars) {
@@ -78,7 +114,7 @@ impl super::ChatManager {
             }
         }
 
-        // Step 4: Audit. Record the list of successful destinations.
+        // Step 5: Audit. Record the list of successful destinations.
         // Char count is grapheme-conservative (chars().count()), matching
         // the per-platform limit check above.
         let successes: Vec<String> = results

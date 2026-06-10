@@ -3,6 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
+// Module-level stack of open modals. Escape and the Tab focus trap only
+// act on the TOPMOST modal — without this, stacked modals (a confirm
+// dialog over a settings modal) all closed on a single Escape press.
+const modalStack: symbol[] = [];
+
 export interface ModalProps {
   open: boolean;
   onClose: () => void;
@@ -25,6 +30,18 @@ export function Modal({
 }: ModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
   const previousActiveElement = useRef<HTMLElement | null>(null);
+  const stackId = useRef<symbol>(Symbol('modal'));
+
+  // Register on the modal stack while open.
+  useEffect(() => {
+    if (!open) return;
+    const id = stackId.current;
+    modalStack.push(id);
+    return () => {
+      const index = modalStack.indexOf(id);
+      if (index !== -1) modalStack.splice(index, 1);
+    };
+  }, [open]);
 
   // Focus trap - get all focusable elements
   const getFocusableElements = useCallback(() => {
@@ -40,6 +57,8 @@ export function Modal({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!open) return;
+      // Only the topmost modal in the stack handles keys.
+      if (modalStack[modalStack.length - 1] !== stackId.current) return;
 
       if (e.key === 'Escape') {
         onClose();

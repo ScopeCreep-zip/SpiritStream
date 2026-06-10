@@ -102,17 +102,29 @@ function MainApp() {
   useEffect(() => {
     if (!isTauri()) return;
 
+    let cancelled = false;
     let unlisten: (() => void) | null = null;
     listen(CHAT_OVERLAY_SYNC_REQUEST_EVENT, () => {
       const messages = useChatStore.getState().messages;
       emit(CHAT_OVERLAY_SYNC_EVENT, { messages }).catch((error) => {
         logger.error('Failed to sync chat overlay:', error);
       });
-    }).then((unsubscribe) => {
-      unlisten = unsubscribe;
-    });
+    })
+      .then((unsubscribe) => {
+        // Unmounted while the registration was in flight — release it
+        // immediately so the listener can't leak.
+        if (cancelled) {
+          unsubscribe();
+          return;
+        }
+        unlisten = unsubscribe;
+      })
+      .catch((error) => {
+        logger.error('Failed to register chat overlay sync listener:', error);
+      });
 
     return () => {
+      cancelled = true;
       if (unlisten) unlisten();
     };
   }, []);
@@ -348,9 +360,7 @@ function AppContent() {
   useObsEvents();
 
   // Set up handler to close chat overlay when main window closes
-  useEffect(() => {
-    setupMainWindowCloseHandler();
-  }, []);
+  useEffect(() => setupMainWindowCloseHandler(), []);
 
   // Store hooks — only the profile-settings effect below needs these.
   // SinglePanelShell holds its own subscriptions for what it renders.

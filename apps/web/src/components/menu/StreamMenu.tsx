@@ -43,6 +43,21 @@ export function StreamMenu({ onEditEncoder, canEditEncoder }: StreamMenuProps): 
     }
   }, [current, startAllGroups, t]);
 
+  const handleStop = useCallback(async (): Promise<void> => {
+    try {
+      await stopAllGroups();
+      toast.success(t('toast.streamStopped', { defaultValue: 'Stream stopped' }));
+    } catch (err) {
+      logger.error('[menu] stop failed', err);
+      toast.error(
+        t('toast.stopFailed', {
+          defaultValue: 'Failed to stop stream: {{error}}',
+          error: err instanceof Error ? err.message : String(err),
+        })
+      );
+    }
+  }, [stopAllGroups, t]);
+
   const handleTestConnectivity = useCallback(async (): Promise<void> => {
     if (!current) {
       toast.error(t('errors.noProfileSelected'));
@@ -81,7 +96,7 @@ export function StreamMenu({ onEditEncoder, canEditEncoder }: StreamMenuProps): 
           <Menubar.Item
             className={ITEM_CLASS}
             disabled={!isStreaming}
-            onSelect={() => stopAllGroups()}
+            onSelect={handleStop}
           >
             <span>{t('menu.stream.stop', { defaultValue: 'Stop streaming' })}</span>
             <span className={SHORTCUT_CLASS}>⌘.</span>

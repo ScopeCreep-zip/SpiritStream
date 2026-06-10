@@ -90,7 +90,7 @@ export const createStatsSlice: StateCreator<StreamState, [], [], StatsSlice> = (
     });
   },
 
-  setStreamError: (groupId, error) => {
+  setStreamError: (groupId) => {
     const activeGroups = new Set(get().activeGroups);
     activeGroups.delete(groupId);
 
@@ -115,7 +115,6 @@ export const createStatsSlice: StateCreator<StreamState, [], [], StatsSlice> = (
       isStreaming,
       globalStatus: isStreaming ? 'live' : 'error',
     });
-    get().setError(`Stream error (${groupId}): ${error}`);
   },
 
   setUptime: (uptime) => set({ uptime }),

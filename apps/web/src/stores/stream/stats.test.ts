@@ -88,14 +88,15 @@ describe('stats.setStreamEnded', () => {
 });
 
 describe('stats.setStreamError', () => {
-  it('drops the group, records a prefixed error, and goes error when none remain', () => {
+  it('drops the group and goes error when none remain', () => {
     const s = useStreamStore.getState();
     useStreamStore.setState({ activeGroups: new Set(['g1']) });
     s.updateStats('g1', makeFfmpegStats());
-    s.setStreamError('g1', 'rtmp refused');
+    s.setStreamError('g1');
     const next = useStreamStore.getState();
     expect(next.globalStatus).toBe('error');
-    expect(next.error).toBe('Stream error (g1): rtmp refused');
+    expect(next.isStreaming).toBe(false);
+    expect(next.groupStats['g1']).toBeUndefined();
   });
 });
 

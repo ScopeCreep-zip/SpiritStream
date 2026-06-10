@@ -101,6 +101,10 @@ export function useUpdateSetting() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    // useSettingsSync's useIsMutating filter matches on this key; without
+    // it the "skip invalidation while saving our own change" guard never
+    // saw a mutation in flight.
+    mutationKey: ['settings'],
     mutationFn: async ({ key, value }: { key: keyof AppSettings; value: unknown }) => {
       const current = queryClient.getQueryData<SettingsData>(SETTINGS_QUERY_KEY);
       if (!current) {
@@ -153,6 +157,7 @@ export function useSaveSettings() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['settings'],
     mutationFn: async (updates: Partial<AppSettings>) => {
       const current = queryClient.getQueryData<SettingsData>(SETTINGS_QUERY_KEY);
       if (!current) {

@@ -34,7 +34,6 @@ export interface StreamState {
   groupStats: Record<string, GroupStats>;
   uptime: number;
   globalStatus: StreamStatusType;
-  error: string | null;
   activeStreamCount: number;
 
   startGroup: (group: OutputGroup, incomingUrl: string) => Promise<void>;
@@ -53,11 +52,10 @@ export interface StreamState {
   setIsStreaming: (isStreaming: boolean) => void;
   updateStats: (groupId: string, ffmpegStats: FFmpegStats) => void;
   setStreamEnded: (groupId: string) => void;
-  setStreamError: (groupId: string, error: string) => void;
+  setStreamError: (groupId: string) => void;
   setUptime: (uptime: number) => void;
   incrementUptime: () => void;
   setGlobalStatus: (status: StreamStatusType) => void;
-  setError: (error: string | null) => void;
   reset: () => void;
 }
 

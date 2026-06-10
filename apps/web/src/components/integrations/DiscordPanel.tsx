@@ -61,22 +61,30 @@ export function DiscordPanel() {
     }
   }, [discordSettings]);
 
+  // Latest settings for the unmount flush. Keeping `discordSettings`
+  // itself out of the flush effect's deps matters: each successful save
+  // changes it, and a dep on it made the cleanup run mid-session —
+  // killing the debounce timer and flushing early (ObsPanel's
+  // stable-dep pattern).
+  const discordSettingsRef = useRef(discordSettings);
+  discordSettingsRef.current = discordSettings;
+
   // Flush pending saves on unmount (don't lose unsaved changes).
   useEffect(() => {
     return () => {
       if (saveTimeoutRef.current) {
         window.clearTimeout(saveTimeoutRef.current);
       }
-      if (pendingUpdatesRef.current && discordSettings) {
+      if (pendingUpdatesRef.current && discordSettingsRef.current) {
         updateProfileSettings({
-          discord: { ...discordSettings, ...pendingUpdatesRef.current },
+          discord: { ...discordSettingsRef.current, ...pendingUpdatesRef.current },
         }).catch((error) => {
           logger.error('Failed to flush Discord settings on unmount:', error);
         });
         pendingUpdatesRef.current = null;
       }
     };
-  }, [discordSettings, updateProfileSettings]);
+  }, [updateProfileSettings]);
 
   // Auto-save with debounce — saves to profile settings.
   const autoSave = useCallback(

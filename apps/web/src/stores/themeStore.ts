@@ -181,7 +181,9 @@ export const useThemeStore = create<ThemeState>()(
             theme = themes.find((t) => t.id === themeId);
 
             if (!theme) {
-              const err = new Error(`Theme "${themeId}" is not installed.`);
+              const err = Object.assign(new Error(`Theme "${themeId}" is not installed.`), {
+                kind: 'theme_not_installed',
+              });
               toast.error(err.message);
               throw err;
             }
@@ -215,9 +217,10 @@ export const useThemeStore = create<ThemeState>()(
           set({ currentThemeId: themeId, currentMode: theme.mode, currentTokens: tokens });
         } catch (err) {
           logger.error('[themeStore] setTheme failed', err);
-          // Surface unless we already toasted from the not-installed branch.
-          const message = err instanceof Error ? err.message : String(err);
-          if (!message.startsWith('Theme "')) {
+          // Surface unless we already toasted from the not-installed
+          // branch — branch on the structured `kind`, not the message.
+          if ((err as Error & { kind?: string }).kind !== 'theme_not_installed') {
+            const message = err instanceof Error ? err.message : String(err);
             toast.error(`Failed to load theme: ${message}`);
           }
           throw err;

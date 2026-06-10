@@ -373,9 +373,11 @@ pub async fn v1_chat_retry_proxy(
 pub struct ChatSendRequest {
     pub message: String,
     /// Optional per-message target override. When `Some`, dispatch
-    /// only to the listed platforms (subject to each connector's
-    /// `can_send()` gate). When `None`, the handler auto-builds the
-    /// target set from the profile's `*_send_enabled` flags — the
+    /// only to the listed platforms — this can NARROW the broadcast
+    /// set but never widen it: `ChatManager::send_message` re-checks
+    /// the profile's `*_send_enabled` flags (and each connector's
+    /// `can_send()` gate) for every target. When `None`, the handler
+    /// auto-builds the target set from those same flags — the
     /// "broadcast to all enabled" behaviour controlled by
     /// `chatSettings.sendAllEnabled` on the frontend.
     ///

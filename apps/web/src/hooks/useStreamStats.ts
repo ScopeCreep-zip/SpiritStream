@@ -1,48 +1,15 @@
 import { useEffect } from 'react';
 import { events } from '@spiritstream/api-client';
-import type { StreamStats } from '@spiritstream/types';
+import type {
+  StreamStats,
+  StreamErrorEvent,
+  StreamRetryAttemptEvent,
+  StreamRetryExhaustedEvent,
+} from '@spiritstream/types';
 import { useStreamStore } from '@/stores/streamStore';
+import { logger } from '@/lib/logger';
 import { toast } from '@/hooks/useToast';
 import { useTranslation } from 'react-i18next';
-
-// L3: pre-fix this file shadowed every backend stream-event type with
-// a hand-maintained inline `interface` (StreamStats, StreamError,
-// StreamReconnecting, StreamRetryExhausted). They drifted from the
-// ts-rs-generated source of truth (`packages/types/src/generated/`).
-// Backend `StreamStats` is now imported above. For the other three —
-// the backend emits them as `serde_json::Value` payloads on the event
-// bus, so the local shape is the wire-side schema. Each one is named
-// `_StreamEventPayload` so it's clear they describe the bus payload
-// and not the (non-existent) backend type.
-
-/**
- * Stream error from FFmpeg crash
- */
-export interface StreamError {
-  groupId: string;
-  error: string;
-  canRetry: boolean;
-  suggestion?: string;
-}
-
-/**
- * Stream reconnecting event from backend
- */
-export interface StreamReconnecting {
-  groupId: string;
-  attempt: number;
-  maxAttempts: number;
-  delaySecs: number;
-}
-
-/**
- * Terminal event: the backend gave up after max_retries. UI should treat the
- * group as failed (not in retrying limbo) and let the user manually restart.
- */
-export interface StreamRetryExhausted {
-  groupId: string;
-  maxAttempts: number;
-}
 
 /**
  * Hook to listen to real-time stream statistics from the Rust backend.
@@ -75,6 +42,7 @@ export function useStreamStats() {
 
   // Set up event listeners
   useEffect(() => {
+    let cancelled = false;
     let unlistenStats: (() => void) | null = null;
     let unlistenEnded: (() => void) | null = null;
     let unlistenError: (() => void) | null = null;
@@ -83,51 +51,87 @@ export function useStreamStats() {
 
     const setupListeners = async () => {
       // Listen for stream stats updates
-      unlistenStats = await events.on<StreamStats>('stream_stats', (payload) => {
+      const stats = await events.on<StreamStats>('stream_stats', (payload) => {
         updateStats(payload.groupId, payload);
       });
+      if (cancelled) {
+        stats();
+        return;
+      }
+      unlistenStats = stats;
 
       // Listen for stream ended events (clean exit)
-      unlistenEnded = await events.on<string>('stream_ended', (payload) => {
+      const ended = await events.on<string>('stream_ended', (payload) => {
         setStreamEnded(payload);
       });
+      if (cancelled) {
+        ended();
+        return;
+      }
+      unlistenEnded = ended;
 
       // Listen for stream error events (crash/unexpected exit). Backend
-      // owns the retry trigger (`start_auto_retry_task`); we just surface
-      // the error in the store so the UI can render an indicator.
-      unlistenError = await events.on<StreamError>('stream_error', (payload) => {
-        setStreamError(payload.groupId, payload.error);
-      });
-
-      // Listen for retry-attempt events (backend-initiated retry in progress)
-      unlistenRetry = await events.on<StreamReconnecting>('stream_retry_attempt', (payload) => {
-        toast.info(
-          t('streams.reconnectingAttempt', 'Reconnecting... (attempt {{attempt}}/{{max}})', {
-            attempt: payload.attempt,
-            max: payload.maxAttempts,
-          })
+      // owns the retry trigger (`start_auto_retry_task`); the store flips
+      // status, and a toast tells the user WHY — the error string used to
+      // land in an `error` field nothing rendered.
+      const errored = await events.on<StreamErrorEvent>('stream_error', (payload) => {
+        setStreamError(payload.groupId);
+        toast.error(
+          t('streams.streamError', 'Stream error: {{error}}', { error: payload.error }) +
+            (payload.suggestion ? ` ${payload.suggestion}` : '')
         );
       });
+      if (cancelled) {
+        errored();
+        return;
+      }
+      unlistenError = errored;
+
+      // Listen for retry-attempt events (backend-initiated retry in progress)
+      const retry = await events.on<StreamRetryAttemptEvent>(
+        'stream_retry_attempt',
+        (payload) => {
+          toast.info(
+            t('streams.reconnectingAttempt', 'Reconnecting... (attempt {{attempt}}/{{max}})', {
+              attempt: payload.attempt,
+              max: payload.maxAttempts,
+            })
+          );
+        }
+      );
+      if (cancelled) {
+        retry();
+        return;
+      }
+      unlistenRetry = retry;
 
       // Listen for terminal retry exhaustion — backend gave up. Flip the
       // group to an error state so the UI no longer shows "active".
-      unlistenExhausted = await events.on<StreamRetryExhausted>(
+      const exhausted = await events.on<StreamRetryExhaustedEvent>(
         'stream_retry_exhausted',
         (payload) => {
-          setStreamError(
-            payload.groupId,
+          setStreamError(payload.groupId);
+          toast.error(
             t('streams.retryExhausted', 'Stream failed after {{max}} retries — restart manually.', {
               max: payload.maxAttempts,
             })
           );
         }
       );
+      if (cancelled) {
+        exhausted();
+        return;
+      }
+      unlistenExhausted = exhausted;
     };
 
-    setupListeners();
+    setupListeners().catch((error) => {
+      logger.error('[useStreamStats] failed to register listeners:', error);
+    });
 
     // Cleanup listeners on unmount
     return () => {
+      cancelled = true;
       if (unlistenStats) unlistenStats();
       if (unlistenEnded) unlistenEnded();
       if (unlistenError) unlistenError();

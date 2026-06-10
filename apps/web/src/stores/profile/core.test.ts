@@ -39,7 +39,10 @@ vi.mock('./applySettings', () => ({
   applyUiSettings: vi.fn(),
 }));
 vi.mock('@spiritstream/api-client', () => ({ events: { on: vi.fn() } }));
-vi.mock('@/hooks/useToast', () => ({ toast: { info: vi.fn() } }));
+const { toast } = vi.hoisted(() => ({
+  toast: { info: vi.fn(), error: vi.fn(), success: vi.fn() },
+}));
+vi.mock('@/hooks/useToast', () => ({ toast }));
 
 import { useProfileStore } from './index';
 
@@ -90,10 +93,11 @@ describe('core.loadProfiles', () => {
     expect(s.loading).toBe(false);
   });
 
-  it('records the error string on failure', async () => {
+  it('surfaces a failure as an error toast and clears loading', async () => {
     api.profile.getSummaries.mockRejectedValue(new Error('network down'));
     await useProfileStore.getState().loadProfiles();
-    expect(useProfileStore.getState().error).toContain('network down');
+    expect(toast.error).toHaveBeenCalled();
+    expect(useProfileStore.getState().loading).toBe(false);
   });
 });
 
@@ -119,13 +123,15 @@ describe('core.loadProfile encryption gate', () => {
     expect(api.settings.save).toHaveBeenCalled();
   });
 
-  it('classifies a decrypt failure as a password error, not a generic error', async () => {
+  it('classifies a password_incorrect kind as a password error, not a generic toast', async () => {
     api.profile.isEncrypted.mockResolvedValue(true);
-    api.profile.activate.mockRejectedValue(new Error('failed to decrypt payload'));
+    api.profile.activate.mockRejectedValue(
+      Object.assign(new Error('failed to decrypt payload'), { kind: 'password_incorrect' })
+    );
     await useProfileStore.getState().loadProfile('secret', 'wrong-pass');
     const s = useProfileStore.getState();
     expect(s.passwordError).toBe('Incorrect password');
-    expect(s.error).toBeNull();
+    expect(toast.error).not.toHaveBeenCalled();
   });
 });
 
@@ -196,7 +202,7 @@ describe('core.reorderProfiles', () => {
     await useProfileStore.getState().reorderProfiles(0, 2);
     const s = useProfileStore.getState();
     expect(s.profiles.map((p) => p.name)).toEqual(['a', 'b', 'c']);
-    expect(s.error).toContain('persist failed');
+    expect(toast.error).toHaveBeenCalled();
   });
 });
 

@@ -1,6 +1,7 @@
 import type { StateCreator } from 'zustand';
 import { api } from '@/lib/client';
 import { logger } from '@/lib/logger';
+import { toast } from '@/hooks/useToast';
 import i18n from '@/lib/i18n';
 import type { Profile } from '@spiritstream/types';
 import { createDefaultProfile } from '@/lib/profile-helpers';
@@ -12,7 +13,6 @@ type CoreSlice = Pick<
   | 'profiles'
   | 'current'
   | 'loading'
-  | 'error'
   | 'loadProfiles'
   | 'loadProfile'
   | 'saveProfile'
@@ -20,7 +20,6 @@ type CoreSlice = Pick<
   | 'createProfile'
   | 'reorderProfiles'
   | 'setLoading'
-  | 'setError'
   | 'selectProfile'
   | 'duplicateProfile'
   | 'updateProfile'
@@ -31,20 +30,24 @@ export const createCoreSlice: StateCreator<ProfileState, [], [], CoreSlice> = (s
   profiles: [],
   current: null,
   loading: false,
-  error: null,
 
   loadProfiles: async () => {
     const isInitialLoad = get().profiles.length === 0;
     if (isInitialLoad) {
       get().setLoading(true);
     }
-    get().setError(null);
     try {
       const summaries = await api.profile.getSummaries();
       set({ profiles: summaries });
       get().setLoading(false);
     } catch (error) {
-      get().setError(String(error));
+      logger.error('[ProfileStore] loadProfiles failed:', error);
+      toast.error(
+        i18n.t('errors.loadProfilesFailed', {
+          defaultValue: 'Failed to load profiles: {{error}}',
+          error: error instanceof Error ? error.message : String(error),
+        })
+      );
       get().setLoading(false);
     }
   },
@@ -56,7 +59,6 @@ export const createCoreSlice: StateCreator<ProfileState, [], [], CoreSlice> = (s
     if (!isRefresh) {
       get().setLoading(true);
     }
-    get().setError(null);
     set({ passwordError: null });
     try {
       const isEncrypted = await api.profile.isEncrypted(name);
@@ -99,13 +101,22 @@ export const createCoreSlice: StateCreator<ProfileState, [], [], CoreSlice> = (s
         logger.warn('[ProfileStore] Failed to save last profile:', settingsError);
       }
     } catch (error) {
-      const errorMsg = String(error);
-      if (password && errorMsg.includes('decrypt')) {
+      // Branch on the structured `kind` the api-client attaches (from
+      // CoreError's serde tag), not message substrings.
+      const kind = (error as Error & { kind?: string }).kind;
+      if (password && (kind === 'password_incorrect' || kind === 'password_required')) {
         set({ passwordError: 'Incorrect password' });
         get().setLoading(false);
       } else {
+        logger.error('[ProfileStore] loadProfile failed:', error);
         set({ pendingPasswordProfile: null });
-        get().setError(errorMsg);
+        toast.error(
+          i18n.t('errors.loadProfileFailed', {
+            defaultValue: 'Failed to open profile {{name}}: {{error}}',
+            name,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        );
         get().setLoading(false);
       }
     }
@@ -123,14 +134,12 @@ export const createCoreSlice: StateCreator<ProfileState, [], [], CoreSlice> = (s
 
     // Don't set loading: true — this causes the UI to flash "Loading...".
     // The caller should have already updated the state optimistically.
-    get().setError(null);
     try {
       await api.profile.save(current, password);
       logger.debug('[ProfileStore] saveProfile completed (backend save successful)');
       await get().loadProfiles();
     } catch (error) {
       logger.error('[ProfileStore] saveProfile failed:', error);
-      get().setError(String(error));
       // Rethrow so callers can surface the failure. Swallowing here
       // meant every profile mutation reported success (toast, closed
       // modal) while the backend had rejected the save — the in-memory
@@ -141,7 +150,6 @@ export const createCoreSlice: StateCreator<ProfileState, [], [], CoreSlice> = (s
 
   deleteProfile: async (name) => {
     get().setLoading(true);
-    get().setError(null);
     try {
       await api.profile.delete(name);
       const profiles = get().profiles.filter((p) => p.name !== name);
@@ -164,42 +172,35 @@ export const createCoreSlice: StateCreator<ProfileState, [], [], CoreSlice> = (s
         logger.warn('[ProfileStore] Failed to clear lastProfile after delete:', clearError);
       }
     } catch (error) {
-      get().setError(String(error));
       get().setLoading(false);
+      // Rethrow — FileMenu's catch (and its "Deleted profile" success
+      // toast guard) was dead while this swallowed.
+      throw error;
     }
   },
 
   createProfile: async (name) => {
     const newProfile = createDefaultProfile(name);
     set({ current: newProfile });
-    try {
-      await api.profile.save(newProfile);
-      await get().loadProfiles();
-    } catch (error) {
-      get().setError(String(error));
-    }
+    await api.profile.save(newProfile);
+    await get().loadProfiles();
   },
 
   setLoading: (loading) => set({ loading }),
-  setError: (error) => set({ error }),
 
   selectProfile: async (name) => {
     await get().loadProfile(name);
   },
 
   duplicateProfile: async (name) => {
-    try {
-      const profile = await api.profile.load(name, undefined, false);
-      const newProfile: Profile = {
-        ...profile,
-        id: crypto.randomUUID(),
-        name: `${profile.name} ${i18n.t('common.copySuffix')}`,
-      };
-      await api.profile.save(newProfile);
-      await get().loadProfiles();
-    } catch (error) {
-      get().setError(String(error));
-    }
+    const profile = await api.profile.load(name, undefined, false);
+    const newProfile: Profile = {
+      ...profile,
+      id: crypto.randomUUID(),
+      name: `${profile.name} ${i18n.t('common.copySuffix')}`,
+    };
+    await api.profile.save(newProfile);
+    await get().loadProfiles();
   },
 
   updateProfile: async (updates) => {
@@ -250,7 +251,12 @@ export const createCoreSlice: StateCreator<ProfileState, [], [], CoreSlice> = (s
     } catch (err) {
       // Revert on failure + surface error.
       set({ profiles });
-      get().setError(String(err));
+      toast.error(
+        i18n.t('errors.reorderProfilesFailed', {
+          defaultValue: 'Failed to reorder profiles: {{error}}',
+          error: err instanceof Error ? err.message : String(err),
+        })
+      );
     }
   },
 });
