@@ -143,6 +143,14 @@ impl ServiceRegistry {
         let discord = Arc::new(DiscordWebhookService::new(opts.data_dir.clone()));
         let chat = Arc::new(ChatManager::new(opts.events.clone(), opts.log_dir.clone()));
         let oauth = Arc::new(OAuthService::new(OAuthConfig::default()));
+        // Keyed phrase-id secret for the PII filter's audit identifiers
+        // (HMAC, not bare SHA-256 — blocklist phrases are guessable, so
+        // an unkeyed hash would let anyone holding the audit log confirm
+        // candidate names by hashing them).
+        let phrase_id_key = crate::services::Encryption::derive_machine_subkey(
+            &opts.data_dir,
+            crate::services::PHRASE_ID_KEY_INFO,
+        )?;
         let audit = Arc::new(AuditLogService::new(opts.data_dir.clone())?);
         // Now that the chain is writable, record the startup rotation
         // recovery (if any) so the user has a durable record of what
@@ -168,7 +176,12 @@ impl ServiceRegistry {
             audit.clone(),
             opts.events.clone(),
             opts.secret_store.clone(),
+            phrase_id_key,
         ));
+        // Crosspost PII gate: ChatManager refuses to re-broadcast
+        // inbound text until this guard is wired (fail loud, never
+        // crosspost unchecked).
+        chat.set_outbound_guard(safety.clone());
         let auth_surveillance = Arc::new(AuthSurveillanceService::new(
             audit.clone(),
             opts.events.clone(),

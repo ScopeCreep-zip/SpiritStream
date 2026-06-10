@@ -175,6 +175,11 @@ impl ProfileActivationService {
         self.chat
             .set_anonymous_policy(profile.anonymous_logging, profile.anonymous_salt.clone())?;
 
+        // Same single-source push for the PII policy snapshot the
+        // crosspost gate consumes.
+        self.chat
+            .set_pii_policy(profile.pii_blocklist.clone(), profile.pii_fuzzy);
+
         // Tear down any existing OBS session before reconfigure — otherwise
         // we'd hold a connection authenticated with the prior profile's
         // password while the new config replaces it.

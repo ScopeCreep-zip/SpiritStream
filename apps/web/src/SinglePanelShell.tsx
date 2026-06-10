@@ -39,7 +39,7 @@ import { InputColumn } from '@/components/input/InputColumn';
 import { PipelineColumn } from '@/components/pipeline/PipelineColumn';
 import { AppDrawer } from '@/components/drawer/AppDrawer';
 import { Chat } from '@/views/Chat';
-import { SafetyWizard } from '@/views/SafetyWizard';
+import { SafetyWizard, type SafetyWizardResult } from '@/views/SafetyWizard';
 import { LogsViewer } from '@/components/logs/LogsViewer';
 import { AuditLogViewer } from '@/components/audit/AuditLogViewer';
 import { Settings } from '@/views/Settings';
@@ -48,6 +48,7 @@ import { ChatPanel } from '@/components/integrations/ChatPanel';
 import { DiscordPanel } from '@/components/integrations/DiscordPanel';
 import { ChevronUp, ChevronDown, Copy } from 'lucide-react';
 import { toast } from '@/hooks/useToast';
+import { logger } from '@/lib/logger';
 import type { Platform, OutputGroup, StreamTarget } from '@spiritstream/types';
 
 export interface SinglePanelShellProps {
@@ -73,9 +74,58 @@ export function SinglePanelShell({
     cancelPasswordPrompt,
     passwordError,
     clearPasswordError,
+    updateProfile,
   } = useProfileStore();
 
   const { state: modals, open, close } = useModalRegistry();
+
+  /**
+   * Persist the wizard's choices onto the active profile. The wizard is
+   * pure presentation; the blocklist normalization (trim/dedupe) and
+   * the follower-only application both happen backend-side. The modal
+   * only closes on a successful save — a vulnerable user must never
+   * believe their blocklist is armed when the save failed.
+   */
+  const handleSafetyWizardComplete = useCallback(
+    async (result: SafetyWizardResult): Promise<void> => {
+      const profile = useProfileStore.getState().current;
+      if (!profile) {
+        toast.error(
+          t('safety.wizard.noProfile', {
+            defaultValue: 'Open or create a profile before running the safety wizard.',
+          })
+        );
+        return;
+      }
+      try {
+        await updateProfile({
+          piiBlocklist: result.piiBlocklist,
+          anonymousLogging: result.anonymousLogging,
+          settings: {
+            ...profile.settings,
+            chat: {
+              ...profile.settings.chat,
+              followerOnlyDefault: result.followerOnlyDefault,
+            },
+          },
+        });
+        toast.success(
+          t('safety.wizard.savedToast', {
+            defaultValue: 'Safety settings saved to your profile.',
+          })
+        );
+        close('safetyWizard');
+      } catch (error) {
+        logger.error('[SinglePanelShell] safety wizard save failed:', error);
+        toast.error(
+          t('safety.wizard.saveFailedToast', {
+            defaultValue: 'Saving safety settings failed — your choices were NOT applied.',
+          })
+        );
+      }
+    },
+    [updateProfile, close, t]
+  );
   const [chatCollapsed, setChatCollapsed] = useState(false);
   /**
    * User's chosen output group. May be stale (e.g., after profile switch),
@@ -315,7 +365,7 @@ export function SinglePanelShell({
           maxWidth="640px"
         >
           <SafetyWizard
-            onComplete={() => close('safetyWizard')}
+            onComplete={handleSafetyWizardComplete}
             onSkip={() => close('safetyWizard')}
           />
         </Modal>

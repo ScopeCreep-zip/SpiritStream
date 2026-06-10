@@ -258,6 +258,14 @@ pub struct ChatSettings {
     #[serde(default)]
     pub crosspost_enabled: bool,
 
+    /// Turn on follower-only chat when connecting (safety-wizard
+    /// setting). Applied via Twitch Helix at connect time — requires
+    /// the `moderator:manage:chat_settings` scope; other platforms
+    /// surface a `follower_only_unsupported` event instead of silently
+    /// ignoring the flag.
+    #[serde(default)]
+    pub follower_only_default: bool,
+
     /// Use API key instead of OAuth for YouTube chat
     #[serde(default)]
     pub youtube_use_api_key: bool,
@@ -287,6 +295,7 @@ impl Default for ChatSettings {
             kick_send_enabled: false,
             send_all_enabled: true,
             crosspost_enabled: false,
+            follower_only_default: false,
             youtube_use_api_key: false,
             visible_platforms: Vec::new(),
             visibility_panel_collapsed: default_chat_visibility_panel_collapsed(),

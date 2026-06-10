@@ -128,6 +128,7 @@ export const createDefaultChatSettings = (): ChatSettings => ({
   kickSendEnabled: false,
   sendAllEnabled: true,
   crosspostEnabled: false,
+  followerOnlyDefault: false,
   youtubeUseApiKey: false,
   visiblePlatforms: [],
   visibilityPanelCollapsed: true,

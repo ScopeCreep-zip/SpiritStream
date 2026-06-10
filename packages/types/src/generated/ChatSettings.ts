@@ -62,6 +62,14 @@ sendAllEnabled: boolean,
  */
 crosspostEnabled: boolean, 
 /**
+ * Turn on follower-only chat when connecting (safety-wizard
+ * setting). Applied via Twitch Helix at connect time — requires
+ * the `moderator:manage:chat_settings` scope; other platforms
+ * surface a `follower_only_unsupported` event instead of silently
+ * ignoring the flag.
+ */
+followerOnlyDefault: boolean, 
+/**
  * Use API key instead of OAuth for YouTube chat
  */
 youtubeUseApiKey: boolean, 

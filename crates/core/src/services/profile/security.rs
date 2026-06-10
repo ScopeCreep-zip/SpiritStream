@@ -163,6 +163,13 @@ impl super::ProfileManager {
             }
         }
 
+        // Canonicalise the blocklist (trim / drop empties / dedupe)
+        // before wrapping. Lives here — not in any frontend — so every
+        // writer produces the same shape. Already-encrypted entries
+        // pass through untouched (base64 has no leading/trailing
+        // whitespace to trim).
+        super::validation::normalize_pii_blocklist(&mut profile_to_save.pii_blocklist);
+
         // One walker-driven sweep covers stream keys (gated on the
         // per-profile flag), sensitive settings, OAuth tokens, and the
         // PII blocklist. The blocklist is wrapped even for password-

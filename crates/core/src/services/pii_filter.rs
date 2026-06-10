@@ -12,9 +12,14 @@
 //!   trades some false-positive risk for catching obvious obfuscation.
 //!
 //! The blocklist content is never logged. Audit-log entries reference
-//! a stable `phrase_id` (SHA-256 prefix of the phrase) so a forensic
-//! trail of "the filter fired" exists without the matched text on
-//! disk.
+//! a stable `phrase_id` — an HMAC-SHA256 prefix of the normalised
+//! phrase under a machine-key-derived secret — so a forensic trail of
+//! "the filter fired" exists without the matched text on disk. The
+//! keying matters: blocklist phrases are the lowest-entropy secrets
+//! imaginable (real names, deadnames, hometowns), so an UNkeyed hash
+//! would let anyone holding the audit log confirm "is this deadname on
+//! the blocklist?" by hashing candidate names. With the key, the log
+//! alone proves nothing.
 //!
 //! # Residual risks
 //!
@@ -23,7 +28,8 @@
 //! table, and attackers who hash the user's name and send only the
 //! hash. The filter is a safety net, not a firewall.
 
-use sha2::{Digest, Sha256};
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
 
 /// Matching strictness chosen per profile. Strict is the default;
 /// users explicitly opt into Fuzzy in the safety settings panel.
@@ -44,21 +50,30 @@ pub enum PiiCheck {
     Match { phrase_id: String },
 }
 
-/// Compute the stable audit-log identifier for a blocklist phrase.
-/// Truncated SHA-256 prefix — keeps the audit line short while
-/// staying collision-resistant across reasonable blocklist sizes.
-pub fn phrase_id(phrase: &str) -> String {
+/// Compute the stable audit-log identifier for a blocklist phrase:
+/// truncated HMAC-SHA256 of the strict-normalised phrase under
+/// `phrase_key`. Keyed (not a bare hash) because blocklist phrases are
+/// trivially guessable — see the module docs. The key is derived once
+/// from the machine key (`SafetyService` owns it); the same phrase +
+/// same install always yields the same id, so audit lines correlate.
+pub fn phrase_id_keyed(phrase: &str, phrase_key: &[u8; 32]) -> String {
     let normalised = normalise_strict(phrase);
-    let mut hasher = Sha256::new();
-    hasher.update(normalised.as_bytes());
-    let digest = hasher.finalize();
+    let mut mac =
+        Hmac::<Sha256>::new_from_slice(phrase_key).expect("HMAC accepts any key length");
+    mac.update(normalised.as_bytes());
+    let digest = mac.finalize().into_bytes();
     hex::encode(&digest[..8])
 }
 
 /// Run `message` through `blocklist` under the given match mode.
-/// Returns the first matching phrase's id (we don't need to enumerate
-/// every match — one hit is enough to drop the message).
-pub fn check(message: &str, blocklist: &[String], mode: PiiMatchMode) -> PiiCheck {
+/// Returns the first matching phrase's keyed id (we don't need to
+/// enumerate every match — one hit is enough to drop the message).
+pub fn check(
+    message: &str,
+    blocklist: &[String],
+    mode: PiiMatchMode,
+    phrase_key: &[u8; 32],
+) -> PiiCheck {
     let haystack = match mode {
         PiiMatchMode::Strict => normalise_strict(message),
         PiiMatchMode::Fuzzy => normalise_fuzzy(message),
@@ -76,7 +91,7 @@ pub fn check(message: &str, blocklist: &[String], mode: PiiMatchMode) -> PiiChec
         }
         if haystack.contains(&needle) {
             return PiiCheck::Match {
-                phrase_id: phrase_id(phrase),
+                phrase_id: phrase_id_keyed(phrase, phrase_key),
             };
         }
     }
@@ -140,6 +155,8 @@ fn normalise_fuzzy(s: &str) -> String {
 mod tests {
     use super::*;
 
+    const KEY: &[u8; 32] = &[42u8; 32];
+
     fn block(items: &[&str]) -> Vec<String> {
         items.iter().map(|s| (*s).to_string()).collect()
     }
@@ -150,15 +167,15 @@ mod tests {
     fn strict_substring_match_case_insensitive() {
         let bl = block(&["alex"]);
         assert!(matches!(
-            check("Hi ALEX!", &bl, PiiMatchMode::Strict),
+            check("Hi ALEX!", &bl, PiiMatchMode::Strict, KEY),
             PiiCheck::Match { .. }
         ));
         assert!(matches!(
-            check("hi alex", &bl, PiiMatchMode::Strict),
+            check("hi alex", &bl, PiiMatchMode::Strict, KEY),
             PiiCheck::Match { .. }
         ));
         assert_eq!(
-            check("nothing here", &bl, PiiMatchMode::Strict),
+            check("nothing here", &bl, PiiMatchMode::Strict, KEY),
             PiiCheck::Clear
         );
     }
@@ -168,7 +185,7 @@ mod tests {
         // German ß lowercase / uppercase round-trip via to_lowercase.
         let bl = block(&["straße"]);
         assert!(matches!(
-            check("STRAẞE in München", &bl, PiiMatchMode::Strict),
+            check("STRAẞE in München", &bl, PiiMatchMode::Strict, KEY),
             PiiCheck::Match { .. }
         ));
     }
@@ -177,7 +194,10 @@ mod tests {
     fn strict_does_not_match_leet_substitution() {
         // Without fuzzy mode, `a` and `@` are distinct.
         let bl = block(&["alex"]);
-        assert_eq!(check("hi @lex", &bl, PiiMatchMode::Strict), PiiCheck::Clear);
+        assert_eq!(
+            check("hi @lex", &bl, PiiMatchMode::Strict, KEY),
+            PiiCheck::Clear
+        );
     }
 
     #[test]
@@ -190,7 +210,7 @@ mod tests {
         // Mathematical-italic capital S, lowercase a, lowercase m.
         assert!(
             matches!(
-                check("𝕊𝕒𝕞 was here", &bl, PiiMatchMode::Strict),
+                check("𝕊𝕒𝕞 was here", &bl, PiiMatchMode::Strict, KEY),
                 PiiCheck::Match { .. }
             ),
             "mathematical-italic lookalike bypassed strict matcher"
@@ -198,7 +218,7 @@ mod tests {
         // Fullwidth Latin.
         assert!(
             matches!(
-                check("Ｓａｍ was here", &bl, PiiMatchMode::Strict),
+                check("Ｓａｍ was here", &bl, PiiMatchMode::Strict, KEY),
                 PiiCheck::Match { .. }
             ),
             "fullwidth lookalike bypassed strict matcher"
@@ -206,7 +226,7 @@ mod tests {
         // Ligature `ﬃ` (U+FB03) → "ffi"; blocklist "office" should catch.
         assert!(
             matches!(
-                check("oﬃce hours", &bl, PiiMatchMode::Strict),
+                check("oﬃce hours", &bl, PiiMatchMode::Strict, KEY),
                 PiiCheck::Match { .. }
             ),
             "ﬃ ligature bypassed strict matcher"
@@ -219,15 +239,15 @@ mod tests {
     fn fuzzy_matches_leet_substitutions() {
         let bl = block(&["alex"]);
         assert!(matches!(
-            check("@l3x", &bl, PiiMatchMode::Fuzzy),
+            check("@l3x", &bl, PiiMatchMode::Fuzzy, KEY),
             PiiCheck::Match { .. }
         ));
         assert!(matches!(
-            check("4lex", &bl, PiiMatchMode::Fuzzy),
+            check("4lex", &bl, PiiMatchMode::Fuzzy, KEY),
             PiiCheck::Match { .. }
         ));
         assert!(matches!(
-            check("a1ex", &bl, PiiMatchMode::Fuzzy),
+            check("a1ex", &bl, PiiMatchMode::Fuzzy, KEY),
             PiiCheck::Match { .. }
         ));
     }
@@ -238,7 +258,7 @@ mod tests {
         let bl = block(&["alex"]);
         let msg = "a\u{200B}lex";
         assert!(matches!(
-            check(msg, &bl, PiiMatchMode::Fuzzy),
+            check(msg, &bl, PiiMatchMode::Fuzzy, KEY),
             PiiCheck::Match { .. }
         ));
     }
@@ -247,7 +267,7 @@ mod tests {
     fn fuzzy_still_clears_clean_input() {
         let bl = block(&["alex"]);
         assert_eq!(
-            check("hello world", &bl, PiiMatchMode::Fuzzy),
+            check("hello world", &bl, PiiMatchMode::Fuzzy, KEY),
             PiiCheck::Clear
         );
     }
@@ -258,19 +278,36 @@ mod tests {
     fn phrase_id_is_stable_under_case_changes() {
         // The audit-log id must collapse case differences so adding
         // "ALEX" then "alex" doesn't produce two distinct ids.
-        assert_eq!(phrase_id("Alex"), phrase_id("ALEX"));
-        assert_eq!(phrase_id("alex"), phrase_id("Alex"));
+        assert_eq!(phrase_id_keyed("Alex", KEY), phrase_id_keyed("ALEX", KEY));
+        assert_eq!(phrase_id_keyed("alex", KEY), phrase_id_keyed("Alex", KEY));
     }
 
     #[test]
     fn phrase_id_distinguishes_distinct_phrases() {
-        assert_ne!(phrase_id("alex"), phrase_id("hometown"));
+        assert_ne!(
+            phrase_id_keyed("alex", KEY),
+            phrase_id_keyed("hometown", KEY)
+        );
     }
 
     #[test]
     fn phrase_id_is_short_for_log_lines() {
         // 8 bytes hex-encoded = 16 chars. Keeps audit log readable.
-        assert_eq!(phrase_id("anything").len(), 16);
+        assert_eq!(phrase_id_keyed("anything", KEY).len(), 16);
+    }
+
+    /// THE keyed-id property: the same phrase under different keys must
+    /// produce different ids, so an attacker holding only the audit log
+    /// (not the machine key) cannot confirm a candidate name by hashing
+    /// it themselves. Pre-fix the id was an unkeyed SHA-256 prefix —
+    /// a pure dictionary-confirmation oracle for deadnames.
+    #[test]
+    fn phrase_id_depends_on_the_key() {
+        let other_key = &[7u8; 32];
+        assert_ne!(
+            phrase_id_keyed("deadname", KEY),
+            phrase_id_keyed("deadname", other_key)
+        );
     }
 
     // --- Empty blocklist / empty phrase ----------------------------------
@@ -278,10 +315,13 @@ mod tests {
     #[test]
     fn empty_blocklist_always_clear() {
         assert_eq!(
-            check("anything", &[], PiiMatchMode::Strict),
+            check("anything", &[], PiiMatchMode::Strict, KEY),
             PiiCheck::Clear
         );
-        assert_eq!(check("anything", &[], PiiMatchMode::Fuzzy), PiiCheck::Clear);
+        assert_eq!(
+            check("anything", &[], PiiMatchMode::Fuzzy, KEY),
+            PiiCheck::Clear
+        );
     }
 
     #[test]
@@ -289,9 +329,12 @@ mod tests {
         // An empty string in the blocklist must NOT match every message.
         let bl = block(&[""]);
         assert_eq!(
-            check("anything", &bl, PiiMatchMode::Strict),
+            check("anything", &bl, PiiMatchMode::Strict, KEY),
             PiiCheck::Clear
         );
-        assert_eq!(check("anything", &bl, PiiMatchMode::Fuzzy), PiiCheck::Clear);
+        assert_eq!(
+            check("anything", &bl, PiiMatchMode::Fuzzy, KEY),
+            PiiCheck::Clear
+        );
     }
 }

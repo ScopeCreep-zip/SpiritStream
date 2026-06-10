@@ -13,7 +13,13 @@ impl OAuthProvider {
             name: "twitch",
             auth_url: "https://id.twitch.tv/oauth2/authorize",
             token_url: "https://id.twitch.tv/oauth2/token",
-            scopes: vec!["chat:read", "chat:edit"],
+            // `moderator:manage:chat_settings` powers the safety
+            // wizard's follower-only default (Helix PATCH
+            // /helix/chat/settings at chat-connect time). Tokens
+            // granted before this scope existed fail the scope probe
+            // and surface a `follower_only_unsupported` event telling
+            // the user to reconnect Twitch.
+            scopes: vec!["chat:read", "chat:edit", "moderator:manage:chat_settings"],
         }
     }
 

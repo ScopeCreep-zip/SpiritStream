@@ -46,8 +46,10 @@ export function SafetyWizard({ onComplete, onSkip }: SafetyWizardProps): React.R
     if (stepIndex < STEP_KEYS.length - 1) {
       setStep(STEP_KEYS[stepIndex + 1]);
     } else {
+      // Raw input on purpose: trimming / deduping / dropping empties is
+      // core's job (profile save path normalizes), not the frontend's.
       onComplete({
-        piiBlocklist: blocklistInput.map((s) => s.trim()).filter((s) => s.length > 0),
+        piiBlocklist: blocklistInput,
         anonymousLogging,
         followerOnlyDefault: followerOnly,
       });
@@ -198,7 +200,7 @@ export function SafetyWizard({ onComplete, onSkip }: SafetyWizardProps): React.R
               <p className="text-sm text-text-secondary mb-3">
                 {t(
                   'safety.wizard.followerOnlyBody',
-                  "Apply the platform's follower-only / subscriber-only mode to every connected chat platform on start. Reduces drive-by harassment."
+                  'Turn on follower-only chat when connecting. Applied on Twitch (requires reconnecting Twitch once to grant the permission); other platforms will show a notice that they don’t support it. Reduces drive-by harassment.'
                 )}
               </p>
               <label className="flex items-center gap-2 text-sm text-text-primary">

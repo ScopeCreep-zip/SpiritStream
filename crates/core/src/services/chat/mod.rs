@@ -4,7 +4,7 @@ mod kick;
 mod platform;
 mod tiktok;
 mod trovo;
-mod twitch;
+pub(crate) mod twitch;
 mod youtube;
 
 #[cfg(test)]

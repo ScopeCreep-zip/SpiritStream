@@ -36,6 +36,10 @@ pub struct ChatEndpoints {
     pub twitch_gql: String,
     /// Twitch OAuth token-validate endpoint (full URL, no path variable).
     pub twitch_validate: String,
+    /// Twitch Helix chat-settings endpoint (full URL; the room-settings
+    /// helper appends `?broadcaster_id=…&moderator_id=…`). Used to apply
+    /// the profile's follower-only default at connect time.
+    pub twitch_helix_chat_settings: String,
     /// Kick Pusher Channels WebSocket URL (scheme + host + query string).
     pub kick_pusher_ws: String,
     /// Kick public REST channel-lookup prefix; the channel slug is
@@ -60,6 +64,7 @@ impl Default for ChatEndpoints {
         Self {
             twitch_gql: "https://gql.twitch.tv/gql".to_string(),
             twitch_validate: "https://id.twitch.tv/oauth2/validate".to_string(),
+            twitch_helix_chat_settings: "https://api.twitch.tv/helix/chat/settings".to_string(),
             kick_pusher_ws: "wss://ws-us2.pusher.com/app/eb1d5f283081a78b932c\
                 ?protocol=7&client=spiritstream&version=8.4.0&flash=false"
                 .to_string(),
@@ -84,6 +89,7 @@ impl ChatEndpoints {
         Self {
             twitch_gql: format!("{http_base}/gql"),
             twitch_validate: format!("{http_base}/oauth2/validate"),
+            twitch_helix_chat_settings: format!("{http_base}/helix/chat/settings"),
             kick_pusher_ws: ws_base.to_string(),
             kick_channel_lookup: format!("{http_base}/api/v2/channels/"),
             kick_send_chat: format!("{http_base}/public/v1/chat"),

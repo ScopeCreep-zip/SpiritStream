@@ -32,13 +32,21 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use zeroize::Zeroizing;
+
 use crate::errors::CoreError;
 use crate::models::ChatPlatform;
+use crate::services::chat_manager::OutboundGuard;
 use crate::services::{
     pii_filter, AuditAction, AuditLogService, ChatManager, FFmpegHandler, ObsWebSocketHandler,
     PiiCheck, PiiMatchMode,
 };
 use crate::traits::{EventSink, SecretStore};
+
+/// HKDF domain-separation info for the keyed `phrase_id` (see
+/// `pii_filter::phrase_id_keyed`). Derived from the machine key once at
+/// registry build.
+pub const PHRASE_ID_KEY_INFO: &[u8] = b"spiritstream/pii-filter/phrase-id/v1";
 
 /// Result returned by a successful panic — surfaced through the event
 /// bus and the audit log so the user can see what happened.
@@ -63,6 +71,10 @@ pub struct SafetyService {
     audit: Arc<AuditLogService>,
     events: Arc<dyn EventSink>,
     secrets: Arc<dyn SecretStore>,
+    /// HMAC key for `pii_filter::phrase_id_keyed`. Machine-key-derived
+    /// (info = [`PHRASE_ID_KEY_INFO`]) so audit-log phrase ids cannot be
+    /// dictionary-confirmed by anyone holding only the log.
+    phrase_id_key: Zeroizing<[u8; 32]>,
 }
 
 impl SafetyService {
@@ -73,6 +85,7 @@ impl SafetyService {
         audit: Arc<AuditLogService>,
         events: Arc<dyn EventSink>,
         secrets: Arc<dyn SecretStore>,
+        phrase_id_key: Zeroizing<[u8; 32]>,
     ) -> Self {
         Self {
             ffmpeg,
@@ -81,6 +94,7 @@ impl SafetyService {
             audit,
             events,
             secrets,
+            phrase_id_key,
         }
     }
 
@@ -112,7 +126,9 @@ impl SafetyService {
         } else {
             PiiMatchMode::Strict
         };
-        if let PiiCheck::Match { phrase_id } = pii_filter::check(message, blocklist, mode) {
+        if let PiiCheck::Match { phrase_id } =
+            pii_filter::check(message, blocklist, mode, &self.phrase_id_key)
+        {
             // One aggregate audit entry per send call. The decision is
             // platform-agnostic (same phrase, multiple destinations);
             // per-platform records would inflate the chain without
@@ -215,6 +231,23 @@ impl SafetyService {
     }
 }
 
+/// `ChatManager`'s crosspost path runs the same outbound PII gate as
+/// user-initiated sends, via this trait (registry wires the
+/// `SafetyService` in post-construction to keep the build acyclic —
+/// SafetyService already holds `Arc<ChatManager>`). Audit + event
+/// emission happen inside `check_outbound_pii`.
+impl OutboundGuard for SafetyService {
+    fn check(
+        &self,
+        blocklist: &[String],
+        fuzzy: bool,
+        platforms: &[ChatPlatform],
+        message: &str,
+    ) -> Result<(), CoreError> {
+        self.check_outbound_pii(blocklist, fuzzy, platforms, message)
+    }
+}
+
 /// One-shot adapter that lets [`ObsWebSocketHandler::disconnect`] —
 /// which expects an `impl EventSink` by value — accept our `Arc<dyn>`.
 struct OneShotEventSink {
@@ -306,7 +339,20 @@ mod tests {
             purges: AtomicUsize::new(0),
         });
         let secrets: Arc<dyn SecretStore> = store.clone();
-        let svc = SafetyService::new(ffmpeg, chat, obs, audit.clone(), events, secrets);
+        let phrase_id_key = crate::services::Encryption::derive_machine_subkey(
+            &dir,
+            super::PHRASE_ID_KEY_INFO,
+        )
+        .expect("derive phrase-id key");
+        let svc = SafetyService::new(
+            ffmpeg,
+            chat,
+            obs,
+            audit.clone(),
+            events,
+            secrets,
+            phrase_id_key,
+        );
         (svc, counting, audit, store)
     }
 

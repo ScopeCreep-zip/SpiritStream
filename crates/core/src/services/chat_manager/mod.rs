@@ -17,6 +17,8 @@ mod settings;
 mod status;
 
 #[cfg(test)]
+mod crosspost_tests;
+#[cfg(test)]
 mod send_message_tests;
 
 use log_writer::ChatLogCommand;
@@ -45,6 +47,39 @@ pub(super) fn chat_validation(code: &'static str, message: impl Into<String>) ->
             path: None,
         }],
     }
+}
+
+/// Outbound PII gate the crosspost path runs before re-broadcasting
+/// inbound text. Implemented by `SafetyService` (which already holds
+/// `Arc<ChatManager>` — this trait keeps the wiring acyclic; the
+/// registry connects the two post-construction). Audit + event
+/// emission happen inside the implementation.
+pub trait OutboundGuard: Send + Sync {
+    fn check(
+        &self,
+        blocklist: &[String],
+        fuzzy: bool,
+        platforms: &[ChatPlatform],
+        message: &str,
+    ) -> Result<(), CoreError>;
+}
+
+/// Per-platform outbound length check shared by the user-send path
+/// (`send.rs`) and the crosspost path (`status.rs`) so the two can
+/// never drift.
+pub(super) fn check_platform_length(
+    platform: ChatPlatform,
+    message_chars: usize,
+) -> Result<(), CoreError> {
+    let limit = platform.max_message_chars();
+    if message_chars > limit {
+        return Err(CoreError::ChatMessageLengthExceeded {
+            platform: platform.as_str().to_string(),
+            limit,
+            actual: message_chars,
+        });
+    }
+    Ok(())
 }
 
 /// Central manager for all chat platform connections
@@ -81,6 +116,17 @@ pub struct ChatManager {
     /// contention fallback wrote PLAINTEXT usernames to disk — a
     /// silent-fallback hole this lock choice removes outright.
     pub(super) anonymous_policy: Arc<std::sync::RwLock<Option<(bool, String)>>>,
+    /// PII gate the crosspost path runs before re-broadcasting inbound
+    /// text from the streamer's own accounts. Wired by the registry
+    /// (`set_outbound_guard(safety)`) post-construction. Crosspost
+    /// REFUSES to send while this is `None` — fail loud, never
+    /// rebroadcast unchecked.
+    pub(super) outbound_guard: Arc<std::sync::RwLock<Option<Arc<dyn OutboundGuard>>>>,
+    /// `(blocklist, fuzzy)` snapshot from the active profile, set at
+    /// activation alongside `anonymous_policy`. Consumed by the
+    /// crosspost gate; the user-send path receives its snapshot per
+    /// call from the transport.
+    pub(super) pii_policy: Arc<std::sync::RwLock<(Vec<String>, bool)>>,
     /// Audit-log handle, wired post-construction by `ServiceRegistry`
     /// (mirrors the `ThemeManager::set_audit_log` pattern — keeps
     /// construction order acyclic). Used for chat-mutation entries:
@@ -137,6 +183,8 @@ impl ChatManager {
             send_enabled: Arc::new(Mutex::new(HashMap::new())),
             chat_settings: Arc::new(Mutex::new(ChatSettings::default())),
             anonymous_policy: Arc::new(std::sync::RwLock::new(None)),
+            outbound_guard: Arc::new(std::sync::RwLock::new(None)),
+            pii_policy: Arc::new(std::sync::RwLock::new((Vec::new(), false))),
             audit_log: Arc::new(std::sync::RwLock::new(None)),
             message_handler_handle: std::sync::Mutex::new(None),
             status_monitor_handle: std::sync::Mutex::new(None),
@@ -162,6 +210,25 @@ impl ChatManager {
                 log::error!("chat_manager audit_log write lock poisoned during set_audit_log: {e}")
             }
         }
+    }
+
+    /// Wire the outbound PII guard post-construction (same registry
+    /// pattern as `set_audit_log`). Until this runs, crosspost refuses
+    /// to re-broadcast — never sends unchecked.
+    pub fn set_outbound_guard(&self, guard: Arc<dyn OutboundGuard>) {
+        let mut slot = self
+            .outbound_guard
+            .write()
+            .unwrap_or_else(|e| e.into_inner());
+        *slot = Some(guard);
+    }
+
+    /// Push the active profile's PII policy snapshot. Called by
+    /// `ProfileActivationService::activate` alongside the anonymous
+    /// policy so the crosspost gate always reflects the active profile.
+    pub fn set_pii_policy(&self, blocklist: Vec<String>, fuzzy: bool) {
+        let mut slot = self.pii_policy.write().unwrap_or_else(|e| e.into_inner());
+        *slot = (blocklist, fuzzy);
     }
 
     /// Read the wired audit-log handle (clone of the Arc). Returns

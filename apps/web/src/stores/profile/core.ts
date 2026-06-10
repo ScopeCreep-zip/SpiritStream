@@ -131,6 +131,11 @@ export const createCoreSlice: StateCreator<ProfileState, [], [], CoreSlice> = (s
     } catch (error) {
       logger.error('[ProfileStore] saveProfile failed:', error);
       get().setError(String(error));
+      // Rethrow so callers can surface the failure. Swallowing here
+      // meant every profile mutation reported success (toast, closed
+      // modal) while the backend had rejected the save — the in-memory
+      // state silently diverged from disk until the next reload.
+      throw error;
     }
   },
 

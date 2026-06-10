@@ -60,7 +60,11 @@ impl ChatManager {
     /// network. Production code never reaches this — the registry's
     /// `BoxedPlatform` factory is the only path that builds
     /// connectors at runtime.
-    async fn insert_test_connector(&self, platform: ChatPlatform, connector: BoxedPlatform) {
+    pub(super) async fn insert_test_connector(
+        &self,
+        platform: ChatPlatform,
+        connector: BoxedPlatform,
+    ) {
         self.platforms.lock().await.insert(platform, connector);
     }
 }
@@ -85,7 +89,20 @@ fn fixture() -> (
     );
     let obs = Arc::new(ObsWebSocketHandler::new(data_dir.clone()));
     let secrets: Arc<dyn SecretStore> = Arc::new(EncryptedFileSecretStore::new(data_dir.clone()));
-    let safety = SafetyService::new(ffmpeg, mgr.clone(), obs, audit.clone(), event_sink, secrets);
+    let phrase_id_key = crate::services::Encryption::derive_machine_subkey(
+        &data_dir,
+        crate::services::PHRASE_ID_KEY_INFO,
+    )
+    .expect("derive phrase-id key");
+    let safety = SafetyService::new(
+        ffmpeg,
+        mgr.clone(),
+        obs,
+        audit.clone(),
+        event_sink,
+        secrets,
+        phrase_id_key,
+    );
     (dir, mgr, safety, audit)
 }
 

@@ -65,6 +65,26 @@ pub(super) fn validate_profile_name(name: &str) -> Result<(), CoreError> {
     }
 }
 
+/// Normalise the PII blocklist in place: trim whitespace, drop empty
+/// entries, dedupe (first occurrence wins, order preserved). Runs in
+/// the core save path so EVERY writer — safety wizard, settings panel,
+/// CLI profile save — produces the same canonical list; the frontend
+/// passes raw user input through verbatim.
+pub(super) fn normalize_pii_blocklist(entries: &mut Vec<String>) {
+    let mut seen = std::collections::HashSet::new();
+    let mut normalized = Vec::with_capacity(entries.len());
+    for entry in entries.drain(..) {
+        let trimmed = entry.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if seen.insert(trimmed.to_string()) {
+            normalized.push(trimmed.to_string());
+        }
+    }
+    *entries = normalized;
+}
+
 impl super::ProfileManager {
     /// Enforce bounds on profile-scoped settings that now live in
     /// `ProfileSettings`. Out-of-range values produce a single
@@ -177,6 +197,22 @@ mod tests {
         assert!(
             codes(ProfileManager::validate_profile_settings_bounds(&settings).unwrap_err())
                 .contains(&"discord_cooldown_seconds_out_of_range".to_string())
+        );
+    }
+
+    #[test]
+    fn pii_blocklist_normalization_trims_drops_empties_and_dedupes() {
+        let mut entries = vec![
+            "  Alice Smith ".to_string(),
+            String::new(),
+            "   ".to_string(),
+            "Alice Smith".to_string(),
+            "Springfield".to_string(),
+        ];
+        super::normalize_pii_blocklist(&mut entries);
+        assert_eq!(
+            entries,
+            vec!["Alice Smith".to_string(), "Springfield".to_string()]
         );
     }
 }

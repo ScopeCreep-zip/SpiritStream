@@ -22,6 +22,24 @@ impl super::Encryption {
         get_or_create_machine_key(app_data_dir)
     }
 
+    /// Derive a 32-byte purpose-specific subkey from the machine key via
+    /// HKDF-SHA256 with a domain-separation `info` string (e.g.
+    /// `b"spiritstream/pii-filter/phrase-id/v1"`). Same construction the
+    /// audit log uses for its HMAC chain key — one machine key, many
+    /// independent subkeys, no cross-purpose reuse.
+    pub fn derive_machine_subkey(
+        app_data_dir: &Path,
+        info: &[u8],
+    ) -> Result<Zeroizing<[u8; KEY_LEN]>, CoreError> {
+        let machine_key = get_or_create_machine_key(app_data_dir)?;
+        let hk = hkdf::Hkdf::<sha2::Sha256>::new(None, &*machine_key);
+        let mut out = Zeroizing::new([0u8; KEY_LEN]);
+        hk.expand(info, &mut *out).map_err(|e| CoreError::Internal {
+            context: format!("HKDF expand failed: {e}"),
+        })?;
+        Ok(out)
+    }
+
     /// Encrypt a stream key for storage. Always writes V2 (`ENC2::` prefix,
     /// AES-256-GCM-SIV). Already-encrypted values (V1 or V2 prefix) and
     /// empty strings pass through unchanged.

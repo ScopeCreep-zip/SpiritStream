@@ -72,6 +72,19 @@ impl super::ChatManager {
         // `config.credentials`. Powers the audit-log entry below.
         let account_id = account_id_from_credentials(&config.credentials);
 
+        // Capture the Twitch bearer token (if any) before the connector
+        // consumes the credentials — the follower-only default below
+        // needs it for the Helix chat-settings call.
+        let twitch_token: Option<String> = match &config.credentials {
+            ChatCredentials::Twitch {
+                auth: Some(auth), ..
+            } => Some(match auth {
+                crate::models::TwitchAuth::UserToken { oauth_token } => oauth_token.clone(),
+                crate::models::TwitchAuth::AppOAuth { access_token, .. } => access_token.clone(),
+            }),
+            _ => None,
+        };
+
         // Connect to the platform. The connector itself tracks its own
         // `last_error` (see `ChatPlatform::last_error` trait impls); re-
         // inserting the failed connector lets the UI surface that error
@@ -94,7 +107,75 @@ impl super::ChatManager {
             });
         }
 
+        self.apply_follower_only_default(config.platform, twitch_token)
+            .await;
+
         Ok(())
+    }
+
+    /// Apply the profile's follower-only default after a successful
+    /// connect. Twitch is the only platform with a server-side API for
+    /// it (Helix chat settings); every other platform — and a Twitch
+    /// connect without an OAuth token or the required scope — emits a
+    /// `follower_only_unsupported` event so the user KNOWS the
+    /// protection is not active. Silently ignoring the flag would be a
+    /// safety lie to exactly the population this app serves.
+    async fn apply_follower_only_default(
+        &self,
+        platform: ChatPlatform,
+        twitch_token: Option<String>,
+    ) {
+        let enabled = self.chat_settings.lock().await.follower_only_default;
+        if !enabled {
+            return;
+        }
+        if platform != ChatPlatform::Twitch {
+            self.event_sink.emit(
+                "follower_only_unsupported",
+                serde_json::json!({
+                    "platform": platform.as_str(),
+                    "reason": "platform_not_supported",
+                }),
+            );
+            return;
+        }
+        let Some(token) = twitch_token else {
+            log::warn!("follower-only default set but Twitch connected without an OAuth token");
+            self.event_sink.emit(
+                "follower_only_unsupported",
+                serde_json::json!({ "platform": "twitch", "reason": "no_oauth_token" }),
+            );
+            return;
+        };
+        let endpoints = self.chat_endpoints.clone();
+        let events = self.event_sink.clone();
+        // Two HTTP round-trips — run off the connect path; the outcome
+        // events keep it observable either way.
+        tokio::spawn(async move {
+            match crate::services::chat::twitch::room_settings::apply_follower_only_default(
+                &endpoints, &token,
+            )
+            .await
+            {
+                Ok(()) => {
+                    log::info!("follower-only default applied to Twitch chat");
+                    events.emit(
+                        "follower_only_applied",
+                        serde_json::json!({ "platform": "twitch" }),
+                    );
+                }
+                Err(e) => {
+                    log::warn!("follower-only default could not be applied: {e}");
+                    events.emit(
+                        "follower_only_unsupported",
+                        serde_json::json!({
+                            "platform": "twitch",
+                            "reason": e.kind(),
+                        }),
+                    );
+                }
+            }
+        });
     }
 
     /// Disconnect from a chat platform.
@@ -155,19 +236,66 @@ impl super::ChatManager {
     /// user-requested mass-disconnect from a process shutdown. Use the
     /// stable short discriminators documented on the audit variant:
     /// `"panic_triggered"`, `"user_requested"`, `"shutdown"`.
+    ///
+    /// Lock discipline matters here because the panic button calls this:
+    /// connectors are taken OUT of the map first, the `platforms` lock is
+    /// released, then every disconnect runs concurrently under a 5s
+    /// per-connector timeout. The previous implementation held the lock
+    /// across sequential disconnect awaits — one hung connector stalled
+    /// the entire panic teardown plus every concurrent status/send call.
     pub async fn disconnect_all(&self, reason: &str) -> Result<(), CoreError> {
         info!("Disconnecting from all chat platforms (reason={reason})");
 
-        let mut platforms = self.platforms.lock().await;
+        const DISCONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+        let mut to_disconnect: Vec<(ChatPlatform, crate::services::chat::BoxedPlatform)> = {
+            let mut platforms = self.platforms.lock().await;
+            let connected: Vec<ChatPlatform> = platforms
+                .iter()
+                .filter(|(_, c)| c.is_connected())
+                .map(|(p, _)| *p)
+                .collect();
+            connected
+                .into_iter()
+                .filter_map(|p| platforms.remove(&p).map(|c| (p, c)))
+                .collect()
+        };
+
+        let outcomes = futures_util::future::join_all(to_disconnect.iter_mut().map(
+            |(platform, connector)| {
+                let platform = *platform;
+                async move {
+                    match tokio::time::timeout(DISCONNECT_TIMEOUT, connector.disconnect()).await {
+                        Ok(Ok(())) => (platform, Ok(())),
+                        Ok(Err(e)) => (platform, Err(e.to_string())),
+                        Err(_) => (
+                            platform,
+                            Err(format!(
+                                "disconnect timed out after {}s",
+                                DISCONNECT_TIMEOUT.as_secs()
+                            )),
+                        ),
+                    }
+                }
+            },
+        ))
+        .await;
+
+        // Put the (now-disconnected) connectors back so platform state
+        // queries stay consistent with the pre-call shape.
+        {
+            let mut platforms = self.platforms.lock().await;
+            for (platform, connector) in to_disconnect {
+                platforms.insert(platform, connector);
+            }
+        }
+
         let mut errors = Vec::new();
         let mut disconnected: Vec<ChatPlatform> = Vec::new();
-
-        for (platform, connector) in platforms.iter_mut() {
-            if connector.is_connected() {
-                match connector.disconnect().await {
-                    Ok(()) => disconnected.push(*platform),
-                    Err(e) => errors.push(format!("{}: {}", platform.as_str(), e)),
-                }
+        for (platform, outcome) in outcomes {
+            match outcome {
+                Ok(()) => disconnected.push(platform),
+                Err(e) => errors.push(format!("{}: {}", platform.as_str(), e)),
             }
         }
 

@@ -1,6 +1,7 @@
 pub mod emotes;
 pub mod events;
 pub mod fragments;
+pub(crate) mod room_settings;
 
 /// Twitch's own default chat color (purple), used by their web client when a
 /// user hasn't set a personal name color. Applied when `name_color` is absent

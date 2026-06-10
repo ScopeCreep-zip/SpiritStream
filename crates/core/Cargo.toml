@@ -105,6 +105,9 @@ xz2 = "0.1"
 winapi = { version = "0.3", features = ["fileapi", "winnt"] }
 
 [dev-dependencies]
+# Paused-clock tests (`#[tokio::test(start_paused = true)]`) for timeout
+# behavior without real-time sleeps (chat disconnect_all panic path).
+tokio = { version = "1.0", features = ["test-util"] }
 # Test-time PNG construction for media_sanitizer fixtures.
 png = "0.17"
 # Test-time mtime backdating for log-retention pruning tests.

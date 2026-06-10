@@ -44,16 +44,10 @@ impl super::ChatManager {
         let mut connectors = self.platforms.lock().await;
 
         for platform in platforms {
-            let limit = platform.max_message_chars();
-            if message_chars > limit {
-                results.push((
-                    *platform,
-                    Err(CoreError::ChatMessageLengthExceeded {
-                        platform: platform.as_str().to_string(),
-                        limit,
-                        actual: message_chars,
-                    }),
-                ));
+            // Shared with the crosspost path (`status.rs`) so the two
+            // outbound length rules can never drift.
+            if let Err(err) = super::check_platform_length(*platform, message_chars) {
+                results.push((*platform, Err(err)));
                 continue;
             }
 

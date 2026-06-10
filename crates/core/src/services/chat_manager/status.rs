@@ -42,6 +42,8 @@ impl super::ChatManager {
         let crosspost_enabled = self.crosspost_enabled.clone();
         let send_enabled = self.send_enabled.clone();
         let anonymous_policy = self.anonymous_policy.clone();
+        let outbound_guard = self.outbound_guard.clone();
+        let pii_policy = self.pii_policy.clone();
 
         let handle = tokio::spawn(async move {
             use std::collections::{HashSet, VecDeque};
@@ -111,6 +113,12 @@ impl super::ChatManager {
                     }
 
                     // Crosspost inbound messages to other enabled platforms.
+                    // SAFETY-CRITICAL ORDERING: the outbound PII gate runs
+                    // BEFORE any fan-out. Pre-fix, crosspost re-broadcast
+                    // inbound third-party text from the streamer's own
+                    // accounts with no filter — a harasser posting the
+                    // streamer's deadname in one chat got it relayed to
+                    // every other platform under the streamer's name.
                     if message.direction == ChatMessageDirection::Inbound
                         && crosspost_enabled.load(Ordering::Relaxed)
                     {
@@ -137,11 +145,62 @@ impl super::ChatManager {
                             list
                         };
 
-                        if !targets.is_empty() {
+                        let cleared = if targets.is_empty() {
+                            false
+                        } else {
+                            let guard = outbound_guard
+                                .read()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .clone();
+                            match guard {
+                                None => {
+                                    // Fail loud, never rebroadcast unchecked.
+                                    error!(
+                                        "crosspost enabled but no outbound PII guard is \
+                                         wired — refusing to crosspost"
+                                    );
+                                    false
+                                }
+                                Some(guard) => {
+                                    let (blocklist, fuzzy) = pii_policy
+                                        .read()
+                                        .unwrap_or_else(|e| e.into_inner())
+                                        .clone();
+                                    match guard.check(&blocklist, fuzzy, &targets, &text) {
+                                        Ok(()) => true,
+                                        Err(err) => {
+                                            // Audit + pii_filter_fired event were
+                                            // emitted inside the guard; only the
+                                            // phrase_id ever appears in logs.
+                                            warn!("crosspost blocked by PII filter: {err}");
+                                            false
+                                        }
+                                    }
+                                }
+                            }
+                        };
+
+                        if cleared {
                             let platforms = platforms.clone();
+                            let message_chars = text.chars().count();
                             tokio::spawn(async move {
-                                let mut connectors = platforms.lock().await;
                                 for platform in targets {
+                                    // Same length rule as the user-send path
+                                    // (shared helper — no drift).
+                                    if let Err(err) =
+                                        super::check_platform_length(platform, message_chars)
+                                    {
+                                        warn!(
+                                            "Crosspost to {} skipped: {}",
+                                            platform.as_str(),
+                                            err
+                                        );
+                                        continue;
+                                    }
+                                    // Lock per-iteration so one slow connector
+                                    // doesn't hold every other platform's chat
+                                    // (and the status poller) hostage.
+                                    let mut connectors = platforms.lock().await;
                                     if let Some(connector) = connectors.get_mut(&platform) {
                                         if let Err(err) = connector.send_message(text.clone()).await
                                         {
