@@ -88,7 +88,11 @@ impl SettingsManager {
             {
                 settings.log_retention_days = defaults.log_retention_days;
             }
-            let _ = self.save_internal(&settings);
+            // Propagate: a failed re-save means the on-disk file still
+            // holds out-of-bounds values and every future load repeats
+            // the clamp silently. The clamped in-memory copy is only
+            // safe to serve if the disk agrees.
+            self.save_internal(&settings)?;
         }
 
         let mut cache = self.cache.write().unwrap_or_else(|e| e.into_inner());

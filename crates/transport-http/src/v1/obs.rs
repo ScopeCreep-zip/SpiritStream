@@ -102,12 +102,16 @@ impl From<ObsState> for ObsStateResponse {
     }
 }
 
+/// The OBS password never rides this response — only whether one is
+/// set. Clients that need the value already have it from the profile
+/// document; shipping it here (the old shape returned the DECRYPTED
+/// password) widened the exposure surface for zero benefit.
 #[derive(Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ObsConfigResponse {
     pub host: String,
     pub port: u16,
-    pub password: String,
+    pub has_password: bool,
     pub use_auth: bool,
     pub direction: IntegrationDirectionWire,
     pub auto_connect: bool,
@@ -118,7 +122,7 @@ impl From<ObsConfig> for ObsConfigResponse {
         Self {
             host: c.host,
             port: c.port,
-            password: c.password,
+            has_password: !c.password.is_empty(),
             use_auth: c.use_auth,
             direction: c.direction.into(),
             auto_connect: c.auto_connect,
@@ -157,7 +161,8 @@ pub async fn v1_obs_state_proxy(
 pub async fn v1_obs_get_config_proxy(
     State(state): State<AppState>,
 ) -> Result<Json<ObsConfigResponse>, crate::ApiError> {
-    let config = state.obs_handler.get_decrypted_config().await?;
+    // No decryption: the response carries `hasPassword`, never the value.
+    let config = state.obs_handler.get_config().await;
     Ok(Json(config.into()))
 }
 

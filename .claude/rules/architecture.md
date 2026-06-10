@@ -39,7 +39,6 @@ spiritstream/
 ├── packages/
 │   ├── types/                     # Rust → TS via ts-rs (auto-generated)
 │   ├── api-client/                # ApiClient interface + HttpClient impl
-│   ├── validation/                # JSON Schemas from utoipa
 │   └── ui/                        # Shared React primitives
 ├── deploy/
 │   ├── docker/                    # Docker image build context

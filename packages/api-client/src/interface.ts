@@ -9,10 +9,9 @@
 // catches `Error`; the underlying body is the JSON-serialized `CoreError`
 // shape from `@spiritstream/types`).
 //
-// Method signatures are stable and outlive the transition from invoke-bridge
-// to typed REST: the `HttpClient` implementation delegates to whichever
-// concrete endpoint exists today, and that delegation site updates in lockstep
-// with the service migrations.
+// Method signatures are transport-stable: the `HttpClient` implementation
+// delegates to the typed REST endpoints, and a future transport swaps the
+// delegation without touching callers.
 
 import type {
   Profile,
@@ -139,7 +138,8 @@ export interface ThemeApi {
 
 export interface ObsApi {
   getState(): Promise<ObsState>;
-  getConfig(): Promise<ObsConfig>;
+  /** Never carries the password value — only whether one is set. */
+  getConfig(): Promise<Omit<ObsConfig, 'password'> & { hasPassword: boolean }>;
   setConfig(config: {
     host: string;
     port: number;
@@ -173,10 +173,11 @@ export interface ChatApi {
    * Send `message` to chat. Without `targetPlatforms` the backend
    * dispatches to every platform whose `*_send_enabled` flag is on —
    * the broadcast behaviour gated by `chatSettings.sendAllEnabled`.
-   * With `targetPlatforms` set, dispatch only to that list (each
-   * subject to the connector's `can_send()` gate). The composer
-   * passes the array when the user has flipped sendAllEnabled off
-   * and picked a single platform.
+   * With `targetPlatforms` set, dispatch only to that list — core
+   * re-checks the `*_send_enabled` flags and the connector's
+   * `can_send()` gate either way, so an explicit list can only narrow
+   * the broadcast set. The composer passes the array when the user has
+   * flipped sendAllEnabled off and picked a single platform.
    */
   sendMessage(message: string, targetPlatforms?: ChatPlatform[]): Promise<ChatSendResult[]>;
   disconnect(platform: ChatPlatform): Promise<void>;

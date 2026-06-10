@@ -170,7 +170,7 @@ fn action_kind_str(action: &spiritstream_core::services::AuditAction) -> &'stati
         ProfileSaved { .. } => "profile_saved",
         ProfileDeleted { .. } => "profile_deleted",
         OauthRefresh { .. } => "oauth_refresh",
-        OauthRefreshUnusualLocation { .. } => "oauth_refresh_unusual_location",
+        OauthRefreshAnomaly { .. } => "oauth_refresh_unusual_location",
         MachineKeyRotated { .. } => "machine_key_rotated",
         PanicKilledOrphans { .. } => "panic_killed_orphans",
         KeyRotationRolledBack => "key_rotation_rolled_back",

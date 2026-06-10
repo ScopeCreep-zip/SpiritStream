@@ -1,9 +1,8 @@
 //! Versioned REST API surface — the *only* HTTP surface SpiritStream serves.
 //!
 //! Every route this transport exposes lives under `/api/v1/*`. There are no
-//! legacy aliases. The single transitional pattern is the
-//! `POST /api/v1/invoke/:command` dispatch bridge that is retired one
-//! command at a time as typed REST handlers replace each entry.
+//! legacy aliases and no dispatch bridge — every endpoint is a typed
+//! REST handler with a utoipa annotation.
 //!
 //! When you add a new typed handler:
 //!   1. Annotate it with `#[utoipa::path(...)]`.
@@ -262,7 +261,7 @@ pub fn protected_router(state: AppState) -> Router<AppState> {
             "/api/v1/oauth/:provider/refresh",
             post(v1_oauth_refresh_token_proxy),
         )
-        // Stream extras still on the legacy command set.
+        // Per-target live-toggle state probe.
         .route(
             "/api/v1/streams/targets/:target_id/disabled",
             get(v1_stream_target_disabled_proxy),

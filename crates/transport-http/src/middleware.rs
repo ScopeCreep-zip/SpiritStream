@@ -12,7 +12,7 @@ use tower_cookies::Cookies;
 use crate::auth_helpers::{bearer_token, verify_token};
 use crate::cors::origin_matches;
 use crate::rate_limit::KeyedLimiter;
-use crate::{AppState, InvokeResponse, AUTH_COOKIE_NAME};
+use crate::{AppState, MiddlewareErrorResponse, AUTH_COOKIE_NAME};
 
 /// Authentication middleware - check for valid session cookie.
 pub(crate) async fn auth_middleware(
@@ -38,7 +38,8 @@ pub(crate) async fn auth_middleware(
         return next.run(request).await;
     }
 
-    // Also accept Bearer token for backwards compatibility and programmatic access
+    // Bearer token is a first-class auth path for programmatic clients
+    // (scripts, reverse proxies, tests) alongside the session cookie.
     if let Some(token) = bearer_token(&headers) {
         if let Some(expected) = state.auth_token.as_deref() {
             if verify_token(expected, token) {
@@ -48,7 +49,7 @@ pub(crate) async fn auth_middleware(
     }
 
     // No valid session
-    let response = InvokeResponse {
+    let response = MiddlewareErrorResponse {
         ok: false,
         data: None,
         error: Some("Authentication required".to_string()),
@@ -64,8 +65,8 @@ pub(crate) async fn auth_middleware(
 /// from `ConnectInfo` (or `"unknown"` if the server is reached through a
 /// path that doesn't surface `ConnectInfo` — primarily test harnesses).
 ///
-/// Failures are returned as 429 with a JSON body matching the
-/// `InvokeResponse` envelope so existing CLI parsers keep working.
+/// Failures are returned as 429 with the middleware error envelope
+/// (`{ ok, data, error }`).
 pub(crate) async fn rate_limit_middleware(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -82,7 +83,7 @@ pub(crate) async fn rate_limit_middleware(
     match limiter.check_key(&key) {
         Ok(_) => next.run(request).await,
         Err(_) => {
-            let response = InvokeResponse {
+            let response = MiddlewareErrorResponse {
                 ok: false,
                 data: None,
                 error: Some("Rate limit exceeded. Please try again later.".to_string()),
@@ -314,7 +315,7 @@ pub(crate) async fn csrf_middleware(
     };
 
     if !allowed {
-        let response = InvokeResponse {
+        let response = MiddlewareErrorResponse {
             ok: false,
             data: None,
             error: Some("CSRF: request origin not allowed".to_string()),

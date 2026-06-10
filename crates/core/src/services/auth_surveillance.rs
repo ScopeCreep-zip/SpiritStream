@@ -72,11 +72,13 @@ impl AuthSurveillanceService {
     }
 
     /// Record an OAuth refresh event for `platform`. Appends an
-    /// `OauthRefresh` entry to the audit log, then checks for
-    /// anomalies. On anomaly: appends an additional
-    /// `OauthRefreshUnusualLocation` audit entry (used for both
-    /// geo-changes and the frequency heuristic) and emits an
-    /// `unusual_oauth_refresh` event.
+    /// `OauthRefresh` entry to the audit log, then checks the
+    /// refresh-frequency heuristic (rapid bursts inside a short
+    /// window — the signature of a stolen refresh token being
+    /// replayed). On anomaly: appends an `OauthRefreshAnomaly` audit
+    /// entry and emits an `unusual_oauth_refresh` event. There is no
+    /// geolocation heuristic — the audit kind's historical wire name
+    /// (`oauth_refresh_unusual_location`) predates this design.
     pub async fn record_oauth_refresh(
         &self,
         platform: &str,
@@ -117,7 +119,7 @@ impl AuthSurveillanceService {
         // 3. Anomaly check + audit + event.
         if count_in_window >= RAPID_THRESHOLD {
             self.audit
-                .record(AuditAction::OauthRefreshUnusualLocation {
+                .record(AuditAction::OauthRefreshAnomaly {
                     platform: platform.to_string(),
                 })?;
             self.events.emit(
@@ -200,11 +202,11 @@ mod tests {
         assert!(matches!(r3, RefreshAnomaly::RapidRefreshBurst { .. }));
         assert_eq!(sink.unusual.load(Ordering::SeqCst), 1);
         let entries = audit.entries().unwrap();
-        // 3 OauthRefresh entries + 1 OauthRefreshUnusualLocation entry.
+        // 3 OauthRefresh entries + 1 OauthRefreshAnomaly entry.
         assert_eq!(entries.len(), 4);
         let unusual_count = entries
             .iter()
-            .filter(|e| matches!(e.action, AuditAction::OauthRefreshUnusualLocation { .. }))
+            .filter(|e| matches!(e.action, AuditAction::OauthRefreshAnomaly { .. }))
             .count();
         assert_eq!(unusual_count, 1);
     }

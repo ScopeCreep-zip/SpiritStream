@@ -1,9 +1,12 @@
 import type { ObsConfig, ObsIntegrationDirection, ObsState } from '@spiritstream/types';
 import { fetchTypedJson } from './_internal';
 
+/** `GET /obs/config` — never carries the password value, only whether one is set. */
+export type ObsConfigView = Omit<ObsConfig, 'password'> & { hasPassword: boolean };
+
 export const obs = {
   getState: () => fetchTypedJson<ObsState>('GET', '/api/v1/obs/state'),
-  getConfig: () => fetchTypedJson<ObsConfig>('GET', '/api/v1/obs/config'),
+  getConfig: () => fetchTypedJson<ObsConfigView>('GET', '/api/v1/obs/config'),
   setConfig: async (config: {
     host: string;
     port: number;

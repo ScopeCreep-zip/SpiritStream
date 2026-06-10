@@ -189,8 +189,11 @@ pub struct AppState {
     pub(crate) event_tickets: Arc<spiritstream_core::services::EventTicketService>,
 }
 
+/// Error envelope for middleware-layer rejections (auth, CSRF, rate
+/// limit) that fire before a typed handler is reached. Handlers
+/// themselves use the `{ kind, details }` `ApiError` contract.
 #[derive(Serialize)]
-struct InvokeResponse {
+struct MiddlewareErrorResponse {
     ok: bool,
     data: Option<Value>,
     error: Option<String>,
@@ -634,8 +637,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "/api/v1/security/sessions/revoke-all",
             post(security_revoke_all_sessions),
         )
-        // Typed REST surface + `invoke` dispatch bridge (the bridge
-        // is retired one command at a time as typed handlers replace it).
+        // Typed REST surface (`/api/v1/*`).
         .merge(v1::protected_router(state.clone()))
         // H2: rate-limit AFTER auth for protected routes. Pre-H2 the
         // limiter sat on the global stack, so unauthenticated traffic

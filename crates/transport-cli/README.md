@@ -21,14 +21,37 @@ no HTTP shell-out, no IPC. Output is JSON by default for scripting,
 | Family | Commands |
 |---|---|
 | `profile` | `list`, `exists`, `show`, `save`, `delete`, `is-encrypted`, `summaries`, `validate-input`, `reorder`, `order`, `activate`, `decrypt`, `unlock`, `lock`, `locked-list` |
-| `stream` | `start`, `start-all`, `stop`, `stop-all`, `status`, `retry`, `toggle-target` |
-| `chat` | `status`, `send` |
-| `oauth` | `start`, `complete`, `account`, `config` |
-| `system` | `encoders`, `ffmpeg` |
+| `stream` | `start`, `start-all`, `stop`, `stop-all`, `status`, `retry`, `toggle-target`, `target enable/disable`, `group enable/disable` |
+| `chat` | `status`, `send`, `connect`, `disconnect`, `export-log` |
+| `oauth` | `start`, `complete`, `refresh`, `forget`, `account`, `config` |
+| `system` | `encoders`, `ffmpeg`, `test-rtmp`, `health` |
 | `settings` | `get`, `set` |
-| `data` | `export` |
+| `theme` | `list` |
+| `data` | `export`, `clear`, `rotate-machine-key` |
+| `obs` / `discord` / `files` | integration + file-browser primitives |
 | `safety` | `panic`, `blocklist {list, add, remove}` |
+| `audit` | `log`, `verify` (current chain + archives) |
+| `session` | `list`, `revoke-all` (cross-process — reaches a running server's sessions) |
+| `confirm-token` | `issue` (one-shot tokens for destructive ops) |
 | `events` | `watch` |
+
+## Secret input model
+
+Secrets never ride argv (`ps`/shell-history-safe), following the
+docker/gh convention:
+
+1. **By reference** — commands that operate on secrets core already
+   stores take *names*, not values: `oauth refresh <provider>` reads
+   the active profile's stored refresh token, `oauth forget` clears
+   stored tokens, `chat connect` uses stored credentials.
+2. **Net-new entry** — every secret-accepting flag is a `--*-from
+   stdin|prompt` selector: `stdin` reads the first line from stdin
+   (pipe-friendly: `profile activate name --password-from stdin
+   <<<"$PW"`), `prompt` uses a no-echo TTY prompt. A non-TTY without
+   `stdin` fails loudly instead of hanging.
+3. **Bulk unlock** — `data rotate-machine-key --passwords-stdin`
+   accepts `name:password` lines for encrypted profiles; without the
+   flag, an interactive terminal prompts per profile.
 
 ## Exit codes
 
@@ -66,9 +89,11 @@ cargo test -p spiritstream-cli
 bash tests/integration/run.sh
 ```
 
-24 in-process integration tests in `crates/transport-cli/tests/` plus
-23 shell-driven golden-file tests under `tests/integration/cases/`.
-Every command is exercised against a `--data-dir <tmpdir>` install.
+In-process integration tests live in `crates/transport-cli/tests/`;
+the shell-driven golden-file suite under `tests/integration/cases/`
+exercises every command family against a `--data-dir <tmpdir>` install
+(38 cases at the time of writing — `bash tests/integration/run.sh`
+prints the authoritative count).
 
 ## Why this exists
 

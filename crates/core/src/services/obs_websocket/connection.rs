@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::errors::CoreError;
 use crate::services::{Encryption, EventSink};
 
-use super::types::{ObsConfig, ObsConnectionStatus, ObsStreamStatus};
+use super::types::{ObsConnectionStatus, ObsStreamStatus};
 
 impl super::ObsWebSocketHandler {
     /// Connect with exponential-backoff auto-retry. Used by the
@@ -215,17 +215,5 @@ impl super::ObsWebSocketHandler {
             return Ok(String::new());
         }
         Encryption::encrypt_stream_key(password, &self.app_data_dir)
-    }
-
-    /// Return the current OBS config with the stored password decrypted for the
-    /// caller. Used by the typed REST handler so transports never touch
-    /// `Encryption::*` directly — every CoreError flows through the single
-    /// `ApiError(CoreError)` mapping on the HTTP side.
-    pub async fn get_decrypted_config(&self) -> Result<ObsConfig, CoreError> {
-        let mut config = self.config.read().await.clone();
-        if !config.password.is_empty() && Encryption::is_stream_key_encrypted(&config.password) {
-            config.password = Encryption::decrypt_stream_key(&config.password, &self.app_data_dir)?;
-        }
-        Ok(config)
     }
 }

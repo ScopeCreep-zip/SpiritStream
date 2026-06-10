@@ -39,6 +39,8 @@ spec:
             - name: SPIRITSTREAM_BEHIND_TLS_PROXY
               value: "1"
             {{- end }}
+            - name: SPIRITSTREAM_TRUSTED_PROXIES
+              value: {{ required "set values.trustedProxies — cloud mode refuses to start without a trusted-proxy CIDR list" .Values.trustedProxies | quote }}
             - name: SPIRITSTREAM_COOKIE_MODE
               value: {{ .Values.cookieMode | quote }}
             - name: SPIRITSTREAM_CORS_ORIGINS

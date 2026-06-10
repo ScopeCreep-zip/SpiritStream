@@ -39,6 +39,15 @@ behindTlsProxy: true
 # Wildcards are not permitted.
 corsOrigins: 'https://spiritstream.example.com'
 
+# Trusted reverse-proxy CIDRs (comma-separated). X-Forwarded-For is
+# honoured for rate-limit keying only from peers inside these ranges —
+# set this to your cluster's ingress-controller pod/network CIDR.
+# Required: cloud mode refuses to start when unset. The default covers
+# the RFC 1918 pod networks most clusters use; NARROW IT for your
+# cluster (a too-wide range lets any in-cluster pod spoof client IPs
+# to the rate limiter).
+trustedProxies: '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'
+
 # Cookie attributes.
 #   same_origin   — UI served from the same host as the API
 #   cross_origin  — UI on a separate host (the default cloud shape)

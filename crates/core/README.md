@@ -37,7 +37,7 @@ src/
 | `encryption` | AES-256-GCM-SIV (V2) + AES-256-GCM (V1) machine-key + password-based encryption |
 | `auth` | Login brute-force defense (exponential backoff + lockout) |
 | `auth_surveillance` | OAuth refresh frequency anomaly detection |
-| `audit_log` | Append-only HMAC-chained audit log |
+| `audit_log` | Append-only HMAC chain, per-day HKDF keys, SecretStore tail anchor (async — see anchor-lag note below), startup quarantine of corrupt logs |
 | `confirm_token` | One-shot intent-scoped confirmation tokens for destructive ops |
 | `pii_filter` | Strict + fuzzy chat-message matcher |
 | `pseudonymizer` | HMAC-SHA256 keyed-hash for anonymous-mode usernames |
@@ -65,11 +65,45 @@ src/
 cargo test -p spiritstream-core
 ```
 
-181 unit + integration tests cover the encryption envelope migration,
+The unit + integration suite covers the encryption envelope migration,
 audit-log HMAC chain tamper detection, login brute-force defense,
 confirm-token issuance, PII filter matchers, pseudonymizer
 deterministic-with-misuse-resistance properties, media sanitizer
 chunk-removal, and the safety panic orchestrator end-to-end.
+
+## Audit-log integrity semantics (honest edition)
+
+* **Per-day keys**: each entry is HMAC'd with an HKDF subkey derived
+  from the master audit key and the entry's UTC date
+  (`spiritstream/audit-log/hmac/v1/{YYYY-MM-DD}`), so one
+  compromised day key can't forge other days. Legacy static-key
+  chains are archived to `audit.log.v1-archive` on first startup
+  after upgrade (`ChainMigrated` opens the new chain); `spiritstream-cli
+  audit verify` still verifies archives.
+* **Tail anchor**: after each append, `{seq, hmac}` is written to the
+  SecretStore by a dedicated async task. Verification fails loud when
+  the log's tail is older than the anchor (truncation). Because the
+  anchor write is asynchronous, there is a small window (typically
+  <1s) where entries exist that the anchor doesn't cover yet — an
+  attacker with disk access in exactly that window could truncate
+  those unanchored entries undetected. Anchor-write failures degrade
+  loudly (`anchorState: "degraded"` in the status DTO), never block
+  appends.
+* **Corruption never bricks startup**: an unverifiable or malformed
+  log is quarantined to `audit.log.quarantined-{timestamp}` and a
+  fresh chain opens with `ChainQuarantined` — the tamper evidence is
+  preserved, the app still starts, and the status surface says so.
+
+## Machine-key rotation recovery
+
+Rotation journals the new key to `.stream_key.new` before touching
+any profile, then rewrites profiles, shreds the old key to zero
+bytes, and renames the journal into place. On startup,
+`recover_interrupted_rotation()` resolves a crash in any window:
+valid old key + journal present → roll back from backup; empty/missing
+old key + journal present → promote the journal. Both paths record an
+audit entry (`KeyRotationRolledBack` / `KeyRotationRecovered`).
+Rotation refuses to start while any stream is live.
 
 ## See also
 

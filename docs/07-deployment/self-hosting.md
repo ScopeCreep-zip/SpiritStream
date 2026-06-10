@@ -43,8 +43,26 @@ docker compose logs -f caddy
 docker compose logs -f spiritstream
 ```
 
-The backend refuses to start without all three env-vars. The
-cloud-mode guard reports the exact missing piece in stderr.
+The backend refuses to start unless the cloud-mode preconditions are
+met (strong token, TLS attestation, pinned CORS origins, and a
+`SPIRITSTREAM_TRUSTED_PROXIES` CIDR list — the shipped compose file
+sets the last three). The cloud-mode guard reports the exact missing
+piece in stderr.
+
+## Trusted proxies and client IPs
+
+Behind Caddy every TCP connection reaches SpiritStream from the proxy,
+so rate limiting would otherwise treat all clients as one. The server
+honours `X-Forwarded-For` **only** when the connecting peer is inside
+`SPIRITSTREAM_TRUSTED_PROXIES` (comma-separated CIDRs), and even then
+uses the *rightmost address not in the trusted list* — entries a client
+forged into the header before it reached your proxy are ignored. The
+compose file pins the internal docker network to `172.28.97.0/24` and
+trusts exactly that range. If you front the stack with another proxy
+layer (Cloudflare, a load balancer), add its egress ranges too —
+otherwise its address becomes "the client" and rate limits aggregate
+again. Invalid CIDRs abort startup; an empty list in cloud mode
+refuses startup.
 
 ## What the compose ships
 

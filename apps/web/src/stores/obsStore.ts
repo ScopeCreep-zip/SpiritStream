@@ -94,8 +94,20 @@ export const useObsStore = create<ObsStoreState>((set, get) => ({
   loadConfig: async () => {
     try {
       set({ isLoading: true });
-      const config = await api.obs.getConfig();
-      set({ config });
+      // The wire view never carries the password value. The real value
+      // arrives with the profile via syncConfigFromProfile; until then
+      // the form field is simply empty.
+      const view = await api.obs.getConfig();
+      set({
+        config: {
+          host: view.host,
+          port: view.port,
+          password: '',
+          useAuth: view.useAuth,
+          direction: view.direction,
+          autoConnect: view.autoConnect,
+        },
+      });
     } catch (error) {
       logger.error('Failed to load OBS config:', error);
     } finally {

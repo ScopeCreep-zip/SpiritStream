@@ -46,7 +46,7 @@ spiritstream/
 │   ├── transport-cli/      spiritstream-cli binary
 │   └── transport-veilid/   Contract-validation spike (NotImplemented; see BLOCKERS.md)
 ├── server/                 Thin binary wiring core + transport-http (Docker / Tauri desktop sidecar)
-├── packages/               types (ts-rs), api-client (@hey-api/openapi-ts), validation, ui
+├── packages/               types (ts-rs), api-client (@hey-api/openapi-ts), ui
 ├── deploy/                 docker/, compose/ (Caddy + Let's Encrypt), helm/
 ├── tests/
 │   ├── integration/        CLI-driven golden-file tests
@@ -127,6 +127,7 @@ SPIRITSTREAM_LOG_DIR=./data/logs    # Log directory; defaults to {DATA_DIR}/logs
 SPIRITSTREAM_THEMES_DIR=./themes    # Theme catalog directory (read for the View → Theme menu)
 SPIRITSTREAM_UI_DIR=./dist          # Static UI bundle directory when UI_ENABLED=1
 SPIRITSTREAM_LOG_FORMAT=json        # json for log shippers; text for human reading
+SPIRITSTREAM_TRUSTED_PROXIES=10.0.0.0/8 # CIDR allow-list; only these peers may supply X-Forwarded-For (required in cloud mode)
 ```
 
 ## Design Theme
@@ -161,4 +162,3 @@ See `.claude/rules/coding-standards.md` for full details.
 - Self-hosting (cloud / compose / Helm): `docs/07-deployment/self-hosting.md`
 - Threat model & population-specific defenses: `.claude/claudedocs/`
 
-@.claude/claudedocs/web-app-split-master-plan.md

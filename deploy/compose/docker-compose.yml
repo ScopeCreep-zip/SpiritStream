@@ -51,9 +51,15 @@ services:
       - SPIRITSTREAM_PORT=8008
 
       # Cloud-mode preconditions. The server refuses to start without
-      # both of these set.
+      # all three of these set.
       - SPIRITSTREAM_DEPLOY_MODE=cloud
       - SPIRITSTREAM_BEHIND_TLS_PROXY=1
+
+      # Only peers inside this CIDR (the pinned internal network below,
+      # i.e. Caddy) may supply X-Forwarded-For. Rate limiting then keys
+      # on the real client IP instead of treating every request as
+      # coming from Caddy — and a client-forged XFF header is ignored.
+      - SPIRITSTREAM_TRUSTED_PROXIES=172.28.97.0/24
 
       # Cookie mode auto-detected as CrossOrigin under cloud deploy.
       # Override here if the UI is served from the same host
@@ -170,9 +176,14 @@ volumes:
 
 networks:
   # Backend ↔ Caddy only. SpiritStream has no direct internet exposure.
+  # The subnet is pinned so SPIRITSTREAM_TRUSTED_PROXIES (above) can
+  # name it deterministically across compose recreations.
   spiritstream-internal:
     name: spiritstream-internal
     internal: true
+    ipam:
+      config:
+        - subnet: 172.28.97.0/24
   # Caddy ↔ public internet (for ACME challenges + user traffic).
   spiritstream-public:
     name: spiritstream-public

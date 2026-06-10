@@ -67,7 +67,13 @@ pub enum AuditAction {
         platform: String,
         success: bool,
     },
-    OauthRefreshUnusualLocation {
+    /// OAuth refresh-frequency anomaly (rapid-burst heuristic). The
+    /// serialized kind is pinned to the historical string: the HMAC
+    /// chain re-serializes actions during verification, so changing
+    /// the wire form would false-tamper every existing log. No
+    /// geolocation is involved — the name predates the heuristic.
+    #[serde(rename = "oauth_refresh_unusual_location")]
+    OauthRefreshAnomaly {
         platform: String,
     },
     MachineKeyRotated {

@@ -372,6 +372,29 @@ jobs:
             exit 1
           fi
 
+  # CLI-driven golden-file suite (tests/integration/cases/*) — the
+  # transport-agnosticism proof. Builds spiritstream-cli and runs every
+  # case against a tmpdir install. Previously this suite only ran on
+  # developer machines.
+  integration-suite:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.19.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # stable
+        with:
+          toolchain: stable
+      - name: Cache cargo target
+        uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+      - name: Run CLI integration suite
+        run: bash tests/integration/run.sh
+
   test:
     permissions:
       contents: read
