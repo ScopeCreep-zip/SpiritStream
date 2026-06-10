@@ -90,7 +90,7 @@ describe('password.submitPassword', () => {
     );
     await useProfileStore.getState().submitPassword('bad');
     const s = useProfileStore.getState();
-    expect(s.passwordError).toBe('Incorrect password');
+    expect(s.passwordError).toBe('login.incorrectPassword');
     expect(s.pendingUnlock).toBe(false);
   });
 

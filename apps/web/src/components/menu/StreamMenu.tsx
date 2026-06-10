@@ -81,7 +81,7 @@ export function StreamMenu({ onEditEncoder, canEditEncoder }: StreamMenuProps): 
   return (
     <Menubar.Menu>
       <Menubar.Trigger className={TRIGGER_CLASS}>
-        {t('menu.stream', { defaultValue: 'Stream' })}
+        {t('menu.stream.label', { defaultValue: 'Stream' })}
       </Menubar.Trigger>
       <Menubar.Portal>
         <Menubar.Content className={CONTENT_CLASS} align="start" sideOffset={4}>

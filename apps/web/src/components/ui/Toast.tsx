@@ -1,4 +1,5 @@
 import { X, CheckCircle, XCircle, Info } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useToast, type Toast as ToastType } from '@/hooks/useToast';
 import { cn } from '@/lib/cn';
 
@@ -38,6 +39,7 @@ function ToastItem({ toast }: { toast: ToastType }) {
 }
 
 export function ToastContainer() {
+  const { t } = useTranslation();
   const { toasts } = useToast();
 
   if (toasts.length === 0) return null;
@@ -49,7 +51,7 @@ export function ToastContainer() {
     // uses the centralised ladder.
     <div
       role="region"
-      aria-label="Notifications"
+      aria-label={t('a11y.notifications', { defaultValue: 'Notifications' })}
       aria-live="polite"
       className="fixed bottom-4 end-4 z-[var(--z-toast)] flex flex-col gap-2 max-w-sm"
     >

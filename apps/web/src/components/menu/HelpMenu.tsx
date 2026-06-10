@@ -14,7 +14,7 @@ export function HelpMenu({ onOpenModal }: HelpMenuProps): React.ReactElement {
   return (
     <Menubar.Menu>
       <Menubar.Trigger className={TRIGGER_CLASS}>
-        {t('menu.help', { defaultValue: 'Help' })}
+        {t('menu.help.label', { defaultValue: 'Help' })}
       </Menubar.Trigger>
       <Menubar.Portal>
         <Menubar.Content className={CONTENT_CLASS} align="start" sideOffset={4}>

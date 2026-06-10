@@ -31,7 +31,7 @@ export function ViewMenu({ onToggleChat, chatCollapsed }: ViewMenuProps): React.
   return (
     <Menubar.Menu>
       <Menubar.Trigger className={TRIGGER_CLASS}>
-        {t('menu.view', { defaultValue: 'View' })}
+        {t('menu.view.label', { defaultValue: 'View' })}
       </Menubar.Trigger>
       <Menubar.Portal>
         <Menubar.Content className={CONTENT_CLASS} align="start" sideOffset={4}>

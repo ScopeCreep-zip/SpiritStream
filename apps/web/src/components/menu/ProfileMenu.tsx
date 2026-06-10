@@ -16,7 +16,7 @@ export function ProfileMenu({ onOpenModal }: ProfileMenuProps): React.ReactEleme
   return (
     <Menubar.Menu>
       <Menubar.Trigger className={TRIGGER_CLASS}>
-        {t('menu.profile', { defaultValue: 'Profile' })}
+        {t('menu.profile.label', { defaultValue: 'Profile' })}
       </Menubar.Trigger>
       <Menubar.Portal>
         <Menubar.Content className={CONTENT_CLASS} align="start" sideOffset={4}>

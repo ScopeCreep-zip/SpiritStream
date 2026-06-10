@@ -42,7 +42,10 @@ export const createPasswordSlice: StateCreator<ProfileState, [], [], PasswordSli
       } catch (error) {
         const kind = (error as Error & { kind?: string }).kind;
         if (kind === 'password_incorrect' || kind === 'password_required') {
-          set({ passwordError: 'Incorrect password', pendingUnlock: false });
+          set({
+            passwordError: i18n.t('login.incorrectPassword', 'Incorrect password'),
+            pendingUnlock: false,
+          });
         } else {
           logger.error('[ProfileStore] Failed to remove encryption:', error);
           set({ pendingUnlock: false });

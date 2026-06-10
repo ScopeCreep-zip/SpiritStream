@@ -74,7 +74,7 @@ export function FileMenu({ onOpenModal }: FileMenuProps): React.ReactElement {
   return (
     <Menubar.Menu>
       <Menubar.Trigger className={TRIGGER_CLASS}>
-        {t('menu.file', { defaultValue: 'File' })}
+        {t('menu.file.label', { defaultValue: 'File' })}
       </Menubar.Trigger>
       <Menubar.Portal>
         <Menubar.Content className={CONTENT_CLASS} align="start" sideOffset={4}>

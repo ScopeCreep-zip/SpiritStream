@@ -31,7 +31,18 @@ vi.mock('@/lib/logger', () => ({
 
 // Slice module deps pulled in transitively through ./index.
 vi.mock('@/lib/client', () => ({ api: {} }));
-vi.mock('@/lib/i18n', () => ({ default: { t: (k: string) => k } }));
+vi.mock('@/lib/i18n', () => ({
+  default: {
+    t: (k: string, opts?: { defaultValue?: string; [key: string]: unknown }) => {
+      let out = opts?.defaultValue ?? k;
+      for (const [name, value] of Object.entries(opts ?? {})) {
+        if (name === 'defaultValue') continue;
+        out = out.replaceAll(`{{${name}}}`, String(value));
+      }
+      return out;
+    },
+  },
+}));
 vi.mock('@/lib/profile-helpers', () => ({ createDefaultProfile: vi.fn() }));
 
 import {
@@ -78,6 +89,8 @@ describe('subscribeOAuthTokenExpired', () => {
   it('toasts a capitalized re-auth prompt for the provider', async () => {
     await subscribeOAuthTokenExpired();
     handlers.get('oauth_token_expired')!({ provider: 'twitch' });
+    // The i18n mock interpolates {{provider}} into the defaultValue, so
+    // the capitalization contract stays pinned.
     expect(toast.info).toHaveBeenCalledWith(expect.stringContaining('Twitch'));
   });
 });

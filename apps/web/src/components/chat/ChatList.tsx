@@ -66,7 +66,7 @@ const densityStyles = {
 export function ChatList({
   messages,
   showEmptyState = true,
-  emptyLabel = 'No chat messages yet.',
+  emptyLabel,
   density = 'default',
   showTimestamps = false,
   className,
@@ -100,7 +100,9 @@ export function ChatList({
   const densityConfig = densityStyles[density];
 
   const renderEmpty = showEmptyState ? (
-    <div className="text-center text-text-tertiary py-10 px-4">{emptyLabel}</div>
+    <div className="text-center text-text-tertiary py-10 px-4">
+      {emptyLabel ?? t('chat.empty', { defaultValue: 'No chat messages yet.' })}
+    </div>
   ) : null;
 
   return (

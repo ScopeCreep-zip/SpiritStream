@@ -105,7 +105,7 @@ export const createCoreSlice: StateCreator<ProfileState, [], [], CoreSlice> = (s
       // CoreError's serde tag), not message substrings.
       const kind = (error as Error & { kind?: string }).kind;
       if (password && (kind === 'password_incorrect' || kind === 'password_required')) {
-        set({ passwordError: 'Incorrect password' });
+        set({ passwordError: i18n.t('login.incorrectPassword', 'Incorrect password') });
         get().setLoading(false);
       } else {
         logger.error('[ProfileStore] loadProfile failed:', error);

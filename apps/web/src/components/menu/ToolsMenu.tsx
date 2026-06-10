@@ -20,7 +20,7 @@ export function ToolsMenu({ onOpenModal }: ToolsMenuProps): React.ReactElement {
   return (
     <Menubar.Menu>
       <Menubar.Trigger className={TRIGGER_CLASS}>
-        {t('menu.tools', { defaultValue: 'Tools' })}
+        {t('menu.tools.label', { defaultValue: 'Tools' })}
       </Menubar.Trigger>
       <Menubar.Portal>
         <Menubar.Content className={CONTENT_CLASS} align="start" sideOffset={4}>

@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -19,6 +20,7 @@ import { useChatStore } from '@/stores/chatStore';
 import type { ChatMessage } from '@spiritstream/types';
 
 export function ChatOverlay() {
+  const { t } = useTranslation();
   const messages = useChatStore((state) => state.messages);
   const overlayTransparent = useChatStore((state) => state.overlayTransparent);
   const setOverlayTransparent = useChatStore((state) => state.setOverlayTransparent);
@@ -159,7 +161,7 @@ export function ChatOverlay() {
           variant="ghost"
           size="icon"
           onClick={handleClose}
-          aria-label="Close chat overlay"
+          aria-label={t('chat.closeOverlay', { defaultValue: 'Close chat overlay' })}
           data-tauri-drag-region="false"
           onPointerDown={(event) => event.stopPropagation()}
         >

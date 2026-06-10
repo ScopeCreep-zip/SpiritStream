@@ -130,7 +130,7 @@ describe('core.loadProfile encryption gate', () => {
     );
     await useProfileStore.getState().loadProfile('secret', 'wrong-pass');
     const s = useProfileStore.getState();
-    expect(s.passwordError).toBe('Incorrect password');
+    expect(s.passwordError).toBe('login.incorrectPassword');
     expect(toast.error).not.toHaveBeenCalled();
   });
 });

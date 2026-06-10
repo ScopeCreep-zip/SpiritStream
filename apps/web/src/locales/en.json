@@ -1,54 +1,107 @@
 {
+  "a11y": {
+    "chatColumn": "Chat",
+    "collapseChat": "Collapse chat panel",
+    "expandChat": "Expand chat panel",
+    "inputColumn": "Input",
+    "notifications": "Notifications",
+    "panic": "Panic disconnect — stop all streams immediately (⌘P)",
+    "pipelineColumn": "Pipeline",
+    "skipToMain": "Skip to main content",
+    "statusStrip": "Stream status and controls"
+  },
   "audio": {
     "bitrates": {
-      "64": "64 kbps (Low)",
-      "96": "96 kbps",
       "128": "128 kbps (Standard)",
-      "192": "192 kbps",
-      "256": "256 kbps",
-      "320": "320 kbps (Best)",
       "128k": "128 kbps",
       "160k": "160 kbps",
+      "192": "192 kbps",
       "192k": "192 kbps",
+      "256": "256 kbps",
       "256k": "256 kbps",
+      "320": "320 kbps (Best)",
       "320k": "320 kbps (Best)",
+      "64": "64 kbps (Low)",
       "64k": "64 kbps",
+      "96": "96 kbps",
       "96k": "96 kbps"
+    },
+    "channels": {
+      "mono": "Mono",
+      "multiple": "{{count}} channels",
+      "stereo": "Stereo"
     },
     "codecs": {
       "aac": "AAC",
       "libmp3lame": "MP3",
       "libopus": "Opus"
     },
-    "channels": {
-      "mono": "Mono",
-      "stereo": "Stereo",
-      "multiple": "{{count}} channels"
-    },
     "sampleRateKHz": "{{value}} kHz"
   },
   "audit": {
+    "colDetails": "Details",
+    "colKind": "Event",
+    "colTimestamp": "Time",
+    "empty": "No audit entries match this filter.",
+    "filterLabel": "Filter",
+    "loading": "Loading…",
+    "next": "Next →",
+    "page": "{{from}}–{{to}} of {{total}}",
+    "prev": "← Previous",
+    "subtitle": "Every security-relevant event SpiritStream has recorded.",
     "tampered": {
-      "title": "Audit log tampered",
-      "message": "Verification failed at entry {{lastValid}}: {{reason}}. Entries beyond this point cannot be trusted."
-    }
+      "message": "Verification failed at entry {{lastValid}}: {{reason}}. Entries beyond this point cannot be trusted.",
+      "title": "Audit log tampered"
+    },
+    "title": "Audit log",
+    "total": "{{count}} entries"
   },
   "chat": {
     "alwaysOnTop": "Always on top",
+    "closeOverlay": "Close chat overlay",
     "crosspostEnabled": "Crosspost chat messages",
     "crosspostHint": "Relay incoming messages to all enabled platforms that allow sending.",
+    "dockChat": "Dock chat",
     "empty": "No chat messages yet.",
     "exportFailed": "Failed to export chat log.",
     "exportLog": "Export chat",
     "exportNoSession": "No active chat session to export.",
     "exportRequiresStream": "Start a stream to export the current chat session.",
     "exportSuccess": "Chat log exported.",
+    "facebook": {
+      "accessToken": "Page Access Token",
+      "accessTokenHint": "Requires pages_read_engagement + pages_manage_engagement scopes. Long-lived Page tokens never expire.",
+      "confirmEnable": "I understand my real-name identity will be exposed; enable Facebook chat",
+      "connect": "Enable Facebook chat",
+      "connectFailed": "Facebook connect failed: {{error}}",
+      "connectSuccess": "Facebook chat connected",
+      "connecting": "Connecting…",
+      "description": "Connect to a Facebook Live video — identity-revealing",
+      "disconnect": "Disconnect",
+      "disconnectFailed": "Facebook disconnect failed: {{error}}",
+      "disconnectSuccess": "Facebook chat disconnected",
+      "identityWarning": "Connecting Facebook Live reveals your real-name account. Anyone watching the stream sees your Facebook handle, profile picture, and friends-list metadata Meta exposes by default. This cannot be pseudonymised — anonymous mode pseudonymises inbound messages only.",
+      "loginWithFacebook": "Login with Facebook",
+      "videoId": "Facebook Live video ID",
+      "videoIdHint": "From the URL of your Facebook Live broadcast (the numeric id, not the slug).",
+      "warningHeading": "Connecting Facebook reveals your real-name account"
+    },
+    "kick": {
+      "channel": "Channel name",
+      "channelPlaceholder": "e.g. kick_streamer",
+      "description": "Connect to a Kick channel chat (anonymous read; OAuth for send)",
+      "loginWithKick": "Login with Kick",
+      "sendEnabled": "Allow sending messages (requires Sign in with Kick)"
+    },
+    "noProfile": "Activate a profile to configure chat.",
     "oauth": {
       "browserOpened": "Check your browser to complete authentication",
+      "signOutFailed": "Failed to sign out: {{error}}",
       "signedInAs": "Signed in as {{username}}",
       "signedOut": "Signed out of {{platform}}",
       "startFailed": "Failed to start sign-in: {{error}}"
     },
+    "platformReadOnly": "read-only",
     "platforms": {
       "facebook": "Facebook",
       "kick": "Kick",
@@ -57,30 +110,8 @@
       "twitch": "Twitch",
       "youtube": "YouTube"
     },
-    "tiktok": {
-      "readOnlyNotice": "TikTok chat is read-only. SpiritStream cannot stream to TikTok directly — go live in the TikTok app first, then connect chat here to see comments while you're streaming elsewhere.",
-      "description": "Read TikTok Live chat by username (read-only)",
-      "username": "TikTok username"
-    },
-    "facebook": {
-      "identityWarning": "Connecting Facebook Live reveals your real-name account. Anyone watching the stream sees your Facebook handle, profile picture, and friends-list metadata Meta exposes by default. This cannot be pseudonymised — anonymous mode pseudonymises inbound messages only.",
-      "confirmEnable": "I understand my real-name identity will be exposed; enable Facebook chat",
-      "description": "Connect to a Facebook Live video — identity-revealing",
-      "videoId": "Facebook Live video ID",
-      "videoIdHint": "From the URL of your Facebook Live broadcast (the numeric id, not the slug).",
-      "accessToken": "Page Access Token",
-      "accessTokenHint": "Requires pages_read_engagement + pages_manage_engagement scopes. Long-lived Page tokens never expire.",
-      "warningHeading": "Connecting Facebook reveals your real-name account",
-      "connect": "Enable Facebook chat",
-      "connecting": "Connecting…",
-      "connectSuccess": "Facebook chat connected",
-      "connectFailed": "Facebook connect failed: {{error}}",
-      "disconnect": "Disconnect",
-      "disconnectSuccess": "Facebook chat disconnected",
-      "loginWithFacebook": "Login with Facebook"
-    },
     "popOut": "Pop out",
-    "dockChat": "Dock chat",
+    "saveFailed": "Failed to save chat settings",
     "search": "Search",
     "searchFailed": "Failed to search chat logs.",
     "searchInMemory": "On screen",
@@ -93,6 +124,8 @@
     "searchTitle": "Search chat",
     "searching": "Searching...",
     "send": "Send",
+    "sendAllEnabled": "Broadcast outbound messages to all enabled platforms",
+    "sendAllEnabledHint": "When off, pick a single target platform per message in the chat composer.",
     "sendApiKeyReadOnly": "YouTube API key mode is read-only. Sign in or enable another platform to send.",
     "sendConnecting": "Connecting to chat...",
     "sendDisabledHint": "Enable sending in Integrations and connect your chat to send messages.",
@@ -107,7 +140,13 @@
     "sendRequiresConfig": "Configure a chat platform in Integrations to enable sending.",
     "sendRequiresStream": "Chat connects when you start streaming. Start a stream to enable sending.",
     "sendTargets": "Sending to: {{targets}}",
+    "sendTo": "Send to:",
     "signOut": "Sign out",
+    "tiktok": {
+      "description": "Read TikTok Live chat by username (read-only)",
+      "readOnlyNotice": "TikTok chat is read-only. SpiritStream cannot stream to TikTok directly — go live in the TikTok app first, then connect chat here to see comments while you're streaming elsewhere.",
+      "username": "TikTok username"
+    },
     "transparentOverlay": "Transparent overlay",
     "trovo": {
       "channelId": "Channel ID",
@@ -137,28 +176,22 @@
       "apiKey": "API key",
       "channelId": "Channel ID or @handle",
       "description": "Connect to a YouTube live chat",
-      "useApiKey": "Use API key (read-only) instead of OAuth",
-      "loginWithYouTube": "Login with YouTube"
-    },
-    "noProfile": "Activate a profile to configure chat.",
-    "saveFailed": "Failed to save chat settings",
-    "kick": {
-      "description": "Connect to a Kick channel chat (anonymous read; OAuth for send)",
-      "channel": "Channel name",
-      "channelPlaceholder": "e.g. kick_streamer",
-      "sendEnabled": "Allow sending messages (requires Sign in with Kick)",
-      "loginWithKick": "Login with Kick"
+      "loginWithYouTube": "Login with YouTube",
+      "useApiKey": "Use API key (read-only) instead of OAuth"
     }
   },
   "common": {
     "cancel": "Cancel",
     "clear": "Clear",
     "close": "Close",
+    "configure": "Configure",
     "confirm": "Confirm",
     "copied": "Copied!",
     "copy": "Copy",
     "copySuffix": "(Copy)",
+    "current": "current",
     "delete": "Delete",
+    "dismiss": "Dismiss",
     "edit": "Edit",
     "error": "Error",
     "export": "Export",
@@ -180,6 +213,8 @@
   },
   "connection": {
     "attemptingConnection": "Attempting to connect to:",
+    "authRequired": "Authentication required — sign in again.",
+    "error": "Connection error",
     "errorDescription": "The backend server is not responding. Please ensure it is running and try again.",
     "errorTitle": "Cannot connect to server",
     "helpText": "If the problem persists, check that the server is running and the URL is correct.",
@@ -187,6 +222,11 @@
     "lostBody": "Lost connection to the backend server.",
     "lostTitle": "Connection Lost",
     "lostWithError": "Connection lost: {{error}}",
+    "maxReconnects": "Connection lost. Please refresh the page.",
+    "notReadyDescription": "The backend is running but failed its readiness checks.",
+    "notReadyHelp": "Fix the issue(s) above or check the server logs, then retry.",
+    "notReadyTitle": "Backend not ready",
+    "readinessDetails": "Readiness details:",
     "reconnected": "Reconnected to backend",
     "reconnectedBody": "Reconnected to the backend server.",
     "reconnectedTitle": "Connection Restored",
@@ -195,17 +235,23 @@
     "serverBadge": {
       "connected": "Server connected",
       "connecting": "Server connecting…",
-      "reconnecting": "Server reconnecting…",
-      "disconnected": "Server disconnected"
+      "disconnected": "Server disconnected",
+      "reconnecting": "Server reconnecting…"
     }
   },
   "discord": {
     "attachImage": "Attach Image",
+    "autoSaveFailed": "Failed to save Discord setting: {{error}}",
     "cooldownDescription": "Prevent duplicate notifications when restarting streams",
     "cooldownInfo": "When enabled, if you stop and restart your stream within the cooldown period, no new notification will be sent. This prevents spam when fixing technical issues.",
     "cooldownSeconds": "Cooldown",
     "cooldownSettings": "Cooldown Settings",
     "description": "Send go-live notifications to Discord",
+    "emojiCategories": {
+      "fun": "Fun",
+      "reactions": "Reactions",
+      "streaming": "Streaming"
+    },
     "enableCooldown": "Enable Cooldown",
     "enableCooldownDescription": "Prevent duplicate notifications within the cooldown period",
     "enableWebhook": "Enable Discord Webhook",
@@ -216,9 +262,13 @@
     "imageHint": "PNG, JPG, GIF, or WebP (max 8MB). The image will be attached to your notification.",
     "insertEmoji": "Insert emoji",
     "invalidWebhookUrl": "Invalid webhook URL. Must start with https://discord.com/api/webhooks/",
+    "markdownExample": "**bold** *italic* __underline__ ~~strikethrough~~ `code` [link](url)",
     "markdownSupport": "Discord markdown is supported:",
+    "messageCharCount": "{{count}}/2000",
     "messagePlaceholder": "**Stream is now live!**\n\nCome join the stream!",
     "removeImage": "Remove image",
+    "removeImageFailed": "Failed to remove Discord image: {{error}}",
+    "saveErrorBanner": "Last save failed: {{error}}. Change a field to retry.",
     "seconds": "seconds",
     "selectImage": "Select Image",
     "testFailed": "Test failed",
@@ -226,16 +276,17 @@
     "testSuccess": "Test notification sent successfully!",
     "testWebhook": "Test Webhook",
     "title": "Discord Webhook",
+    "toggleSaveFailed": "Failed to save Discord webhook toggle: {{error}}",
     "webhookSettings": "Webhook Settings",
     "webhookSettingsDescription": "Configure your Discord webhook for go-live notifications",
     "webhookUrl": "Webhook URL",
-    "emojiCategories": {
-      "streaming": "Streaming",
-      "reactions": "Reactions",
-      "fun": "Fun"
-    },
-    "markdownExample": "**bold** *italic* __underline__ ~~strikethrough~~ `code` [link](url)",
     "webhookUrlPlaceholder": "https://discord.com/api/webhooks/..."
+  },
+  "drawer": {
+    "noResults": "No platforms match \"{{q}}\".",
+    "resultsLabel": "Available platforms",
+    "searchLabel": "Search platforms",
+    "searchPlaceholder": "Search platforms…"
   },
   "encoder": {
     "audio": "Audio",
@@ -315,11 +366,29 @@
     "videoBitrate": "Video Bitrate",
     "videoEncoder": "Video Encoder"
   },
+  "errorBoundary": {
+    "body": "A component on this page hit an unexpected error. Your data on disk is unaffected. Reloading should restore the app.",
+    "copied": "Copied",
+    "copy": "Copy details",
+    "detailsLabel": "Show technical details",
+    "dismiss": "Dismiss",
+    "reload": "Reload",
+    "title": "Something went wrong"
+  },
   "errors": {
     "invalidInput": "Invalid input",
     "invalidProfileFormat": "Invalid profile format",
+    "loadProfileFailed": "Failed to open profile {{name}}: {{error}}",
+    "loadProfilesFailed": "Failed to load profiles: {{error}}",
     "moreIssues": "...and {{count}} more issues to fix",
-    "noProfileSelected": "No profile selected"
+    "noProfileSelected": "No profile selected",
+    "oauthExpired": "{{provider}} sign-in expired — reconnect to send chat or stream.",
+    "removeEncryptionFailed": "Failed to remove encryption: {{error}}",
+    "reorderProfilesFailed": "Failed to reorder profiles: {{error}}",
+    "themeLoadFailed": "Failed to load theme: {{error}}",
+    "themeNotInstalled": "Theme \"{{id}}\" is not installed.",
+    "themeUninstalled": "Theme \"{{id}}\" was uninstalled. Switched to Spirit Dark.",
+    "themesRefreshFailed": "Could not load themes from backend: {{error}}"
   },
   "fileBrowser": {
     "accessDenied": "This location is outside the allowed browsing area. You can browse your home directory and common system folders.",
@@ -343,10 +412,36 @@
     "selectedDirectory": "Selected directory:",
     "typePath": "Type a path and press Enter..."
   },
+  "hotkey": {
+    "capture": {
+      "confirm": "Set",
+      "prompt": "Press the key combination you want to use.",
+      "title": "Set hotkey",
+      "waiting": "Waiting for keypress…"
+    }
+  },
+  "input": {
+    "encoder": {
+      "audio": "Audio",
+      "noGroup": "No output group selected.",
+      "passthroughHint": "Default passthrough relays your stream as-is. Add a custom output group to configure encoder settings.",
+      "title": "Encoder",
+      "video": "Video"
+    },
+    "obs": {
+      "title": "OBS"
+    },
+    "source": {
+      "endpoint": "RTMP endpoint",
+      "noProfile": "Load a profile to see input.",
+      "title": "Source"
+    }
+  },
   "login": {
     "authenticating": "Authenticating...",
     "connectionError": "Connection error. Please try again.",
     "description": "This SpiritStream server requires authentication. Please enter your API token to continue.",
+    "incorrectPassword": "Incorrect password",
     "invalidToken": "Invalid API token",
     "submit": "Login",
     "title": "Authentication Required",
@@ -376,11 +471,68 @@
     "title": "Application Logs",
     "warning": "WARN"
   },
+  "menu": {
+    "bar": "Application menu",
+    "file": {
+      "deleteProfile": "Delete profile",
+      "duplicateProfile": "Duplicate {{name}}",
+      "import": "Import profile…",
+      "label": "File",
+      "moveProfileDown": "Move {{name}} down",
+      "moveProfileUp": "Move {{name}} up",
+      "newProfile": "New profile…",
+      "noEncryptedProfiles": "No encrypted profiles",
+      "noProfiles": "No profiles yet — use File → New profile.",
+      "openProfile": "Open profile",
+      "removeEncryption": "Remove encryption…",
+      "switchProfile": "Switch profile"
+    },
+    "help": {
+      "docs": "Documentation",
+      "label": "Help",
+      "shortcuts": "Keyboard shortcuts"
+    },
+    "profile": {
+      "edit": "Edit current…",
+      "label": "Profile"
+    },
+    "safety": {
+      "label": "Safety",
+      "panic": "Panic disconnect",
+      "wizard": "Safety wizard…"
+    },
+    "stream": {
+      "encoder": "Encoder settings…",
+      "label": "Stream",
+      "start": "Start streaming",
+      "stop": "Stop streaming",
+      "test": "Test connectivity"
+    },
+    "tools": {
+      "audit": "Audit log",
+      "chat": "Chat platforms",
+      "discord": "Discord notifications",
+      "label": "Tools",
+      "logs": "Logs",
+      "obs": "OBS connection",
+      "settings": "Settings"
+    },
+    "view": {
+      "hideChat": "Hide chat panel",
+      "highContrast": "High contrast",
+      "label": "View",
+      "language": "Language",
+      "noThemes": "No themes installed",
+      "showChat": "Show chat panel",
+      "theme": "Theme"
+    }
+  },
   "modals": {
     "addStreamTarget": "Add Stream Target",
     "addTarget": "Add Target",
     "application": "Application",
     "applicationHelper": "The application name (e.g., 'live')",
+    "applicationPlaceholder": "live",
     "audioBitrate": "Audio Bitrate",
     "audioChannels": "Channels",
     "audioCodec": "Audio Codec",
@@ -388,6 +540,7 @@
     "audioSettings": "Audio Settings",
     "bindAddress": "Bind Address",
     "bindAddressHelper": "0.0.0.0 listens on all interfaces",
+    "bindAddressPlaceholder": "0.0.0.0",
     "confirmPassword": "Confirm Password",
     "confirmYourPassword": "Confirm your password",
     "containerFormat": "Container Format",
@@ -405,6 +558,7 @@
     "encryptProfile": "Encrypt Profile",
     "enterPassword": "Enter Password",
     "enterStrongPassword": "Enter a strong password",
+    "keyframeIntervalPlaceholder": "2",
     "noOutputGroupsAvailable": "No output groups available. Create one first.",
     "outputGroupExplanation": "Custom output groups re-encode your incoming stream to different settings. Use these when you need to send different quality streams to different platforms. The default passthrough group relays your stream as-is without re-encoding.",
     "outputGroupLabel": "Output Group",
@@ -421,6 +575,7 @@
     "portConflictBody": "Another profile is already configured to use this port. Only one profile can listen on a port at a time.",
     "portConflictConfirm": "Do you want to save anyway?",
     "portConflictTitle": "Port already in use",
+    "portPlaceholder": "1935",
     "profileExplanation": "Configure your streaming software (OBS, etc.) to send to this RTMP URL. Encoding settings are configured in your streaming software, not in the profile. Use output groups to re-encode to different settings for different platforms.",
     "profileName": "Profile Name",
     "profileNamePlaceholder": "e.g., Gaming Stream",
@@ -436,12 +591,8 @@
     "targetNamePlaceholder": "e.g., YouTube Gaming",
     "thisProfile": "this profile",
     "unlock": "Unlock",
-    "videoSettings": "Video Settings",
-    "applicationPlaceholder": "live",
-    "bindAddressPlaceholder": "0.0.0.0",
-    "keyframeIntervalPlaceholder": "2",
-    "portPlaceholder": "1935",
-    "videoBitratePlaceholder": "6000"
+    "videoBitratePlaceholder": "6000",
+    "videoSettings": "Video Settings"
   },
   "notifications": {
     "obsConnectedBody": "Successfully connected to OBS WebSocket.",
@@ -491,17 +642,84 @@
     "useAuthentication": "Use Authentication",
     "versionInfo": "OBS {{obsVersion}} / WS {{wsVersion}}"
   },
+  "pipeline": {
+    "group": {
+      "addTarget": "Add service",
+      "duplicate": "Duplicate group",
+      "edit": "Edit group",
+      "editEncoder": "Edit encoder",
+      "enabledInStartAll": "Include in start all",
+      "encoderSummary": "{{codec}} · {{w}}×{{h}}@{{fps}} · {{bitrate}}",
+      "noTargets": "No targets yet — add one to start.",
+      "remove": "Remove group",
+      "start": "Start this group",
+      "startDisabled": "Enable at least one target to start",
+      "stop": "Stop this group"
+    },
+    "groups": {
+      "add": "New output group",
+      "label": "Output groups",
+      "new": "New group"
+    },
+    "noGroups": "No output groups yet.",
+    "noProfile": "Load a profile to see its outputs.",
+    "target": {
+      "edit": "Edit {{name}}",
+      "enableLabel": "Enable {{name}}",
+      "remove": "Remove {{name}}"
+    }
+  },
   "profiles": {
     "protectWithPassword": "Protect with password"
+  },
+  "safety": {
+    "wizard": {
+      "anonymousBody": "Chat usernames render as `hash:abcd1234` in logs and exports. You can still decode them locally with your profile salt. A leaked log can NOT.",
+      "anonymousTitle": "Anonymous mode",
+      "anonymousToggle": "Keep anonymous chat logging ON (recommended)",
+      "anonymousWarning": "Disabling anonymous mode means a leaked log file enumerates everyone who appeared in your chat.",
+      "back": "← Back",
+      "blocklistBody": "Add phrases to drop before they reach chat. Real name, deadname, hometown, workplace. Entries are stored encrypted with the rest of your profile.",
+      "blocklistTitle": "PII blocklist",
+      "finish": "Finish",
+      "followerOnlyBody": "Turn on follower-only chat when connecting. Applied on Twitch (requires reconnecting Twitch once to grant the permission); other platforms will show a notice that they don’t support it. Reduces drive-by harassment.",
+      "followerOnlyTitle": "Follower-only chat default",
+      "followerOnlyToggle": "Enable follower-only mode by default",
+      "next": "Next →",
+      "noProfile": "Open or create a profile before running the safety wizard.",
+      "panicBody": "A panic disconnect stops every stream, drops chat connections, and wipes secrets in memory. The keyboard hotkey is configured in Settings → Safety after this wizard.",
+      "panicDefault": "Default hotkey: a randomised chord is generated server-side. You can re-pick it any time.",
+      "panicTitle": "Panic button",
+      "saveFailedToast": "Saving safety settings failed — your choices were NOT applied.",
+      "savedToast": "Safety settings saved to your profile.",
+      "shoulderSurf": "Anyone watching your screen during setup learns what you type here. Complete in private if possible.",
+      "skipAll": "Skip all (safe defaults will apply)",
+      "stepCount": "{{current}} of {{total}}",
+      "title": "Safety wizard"
+    }
+  },
+  "security": {
+    "loggedOut": "Logged out.",
+    "logout": "Log out",
+    "logoutFailed": "Logout failed: {{error}}",
+    "revokeAll": "Sign out everywhere",
+    "revokeAllConfirm": "Every signed-in device — including this one — will be logged out immediately. Continue?",
+    "revokeAllFailed": "Failed to revoke sessions: {{error}}",
+    "sessions": "Sessions",
+    "sessionsDescription": "Log out of this device, or sign out everywhere if you think a session was exposed.",
+    "sessionsRevoked": "Signed out everywhere — {{count}} sessions revoked."
   },
   "settings": {
     "about": "About",
     "aboutDescription": "Application information",
+    "accessibility": "Accessibility",
+    "accessibilityDescription": "Visual and motion preferences. Saved per-device.",
     "appBehavior": "App Behavior",
     "appBehaviorDescription": "System-wide application settings.",
     "appearance": "Appearance",
     "appearanceDescription": "Theme and language for this profile.",
     "browse": "Browse",
+    "changeHotkey": "Change…",
     "clearAllData": "Clear All Data",
     "clearConfirm": "Are you sure you want to clear all data? This action cannot be undone.",
     "clearFailed": "Failed to clear data",
@@ -518,9 +736,12 @@
     "ffmpegDescription": "Configure FFmpeg encoding backend",
     "ffmpegNotFound": "FFmpeg not found",
     "ffmpegPath": "FFmpeg Path",
+    "ffmpegUpdateAvailable": "Update available: {{installed}} → {{latest}}",
     "ffmpegVersion": "FFmpeg Version",
-    "globalSettings": "Global Settings",
     "github": "GitHub",
+    "globalSettings": "Global Settings",
+    "highContrast": "High contrast",
+    "highContrastDescription": "Maximum-contrast palette (WCAG AAA, 7:1). Use if you have low vision or work in bright light.",
     "installTheme": "Install Theme",
     "invalidFfmpegPath": "Invalid FFmpeg path",
     "language": "Language",
@@ -535,9 +756,11 @@
     "logRetention90Days": "90 days",
     "logRetentionDescription": "How long to keep application log files.",
     "machineKey": "Machine Key",
-    "open": "Open",
     "notificationsSecurity": "Notifications & Security",
     "notificationsSecurityDescription": "Notification preferences and data security for this profile.",
+    "open": "Open",
+    "panicHotkey": "Panic hotkey",
+    "panicHotkeyDescription": "Pressing this key stops every active stream immediately. Desktop builds bind it globally.",
     "profileSettings": "Profile Settings",
     "profileStorage": "Profile Storage",
     "remoteAccess": "Remote Access",
@@ -576,33 +799,38 @@
     "tagline": "Multi-destination streaming made simple",
     "theme": "Theme",
     "themeHelper": "Choose your preferred theme appearance.",
-    "updates": "Updates",
-    "version": "Version",
-    "updateChecking": "Checking…",
-    "updateNone": "You are running the latest version.",
-    "updateAvailableTitle": "Update available: {{version}}",
-    "updateInstall": "Download and install",
-    "updateDownloading": "Downloading update…",
-    "updateReady": "Update installed. Restart to apply.",
-    "updateRestart": "Restart now",
-    "updateErrorTitle": "Update check failed",
-    "updateDistroManaged": "Updates are managed by your distribution package manager. Run apt upgrade spiritstream or dnf upgrade spiritstream.",
     "thirdPartyLicenses": "Third-party licenses",
-    "thirdPartyLicensesTitle": "Third-party licenses",
-    "thirdPartyLicensesIntro": "SpiritStream bundles the following third-party software. License notices and corresponding source code are linked below.",
     "thirdPartyLicensesFfmpegBundled": "Bundled with this build of SpiritStream.",
     "thirdPartyLicensesFfmpegLicense": "License (ffmpeg.org/legal.html)",
     "thirdPartyLicensesFfmpegSource": "Matching source tarball (attached to this release)",
-    "thirdPartyLicensesFfmpegUpstream": "Upstream binary distributors"
+    "thirdPartyLicensesFfmpegUpstream": "Upstream binary distributors",
+    "thirdPartyLicensesIntro": "SpiritStream bundles the following third-party software. License notices and corresponding source code are linked below.",
+    "thirdPartyLicensesTitle": "Third-party licenses",
+    "updateAvailableTitle": "Update available: {{version}}",
+    "updateChecking": "Checking…",
+    "updateDistroManaged": "Updates are managed by your distribution package manager. Run apt upgrade spiritstream or dnf upgrade spiritstream.",
+    "updateDownloading": "Downloading update…",
+    "updateErrorTitle": "Update check failed",
+    "updateInstall": "Download and install",
+    "updateNone": "You are running the latest version.",
+    "updateReady": "Update installed. Restart to apply.",
+    "updateRestart": "Restart now",
+    "updates": "Updates",
+    "version": "Version"
+  },
+  "shortcuts": {
+    "title": "Keyboard shortcuts"
   },
   "status": {
     "active": "Active",
+    "activeTargets": "{{count}} active",
     "checkConnection": "Check connection",
     "connecting": "Connecting",
     "error": "Error",
     "live": "Live",
     "noActiveStreams": "No active streams",
     "noIssues": "No issues",
+    "noProfile": "No profile",
     "notStreaming": "Not streaming",
     "offline": "Offline",
     "ready": "Ready",
@@ -611,29 +839,52 @@
   },
   "streams": {
     "reconnectingAttempt": "Reconnecting... (attempt {{attempt}}/{{max}})",
+    "retryExhausted": "Stream failed after {{max}} retries — restart manually.",
     "startStreaming": "Start Streaming",
     "stopStreaming": "Stop Streaming",
+    "streamError": "Stream error: {{error}}",
     "validating": "Validating..."
   },
   "targets": {
     "streamKey": "Stream Key"
   },
   "toast": {
+    "allTestsPassed": "All {{count}} targets passed connectivity test!",
     "dataCleared": "All data has been cleared",
     "dataExported": "Data exported successfully",
-    "allTestsPassed": "All {{count}} targets passed connectivity test!",
+    "deleteProfileConfirm": "Delete profile \"{{name}}\"? This cannot be undone.",
+    "deleteProfileFailed": "Failed to delete {{name}}: {{error}}",
+    "deleteProfileTitle": "Delete profile?",
+    "groupAddFailed": "Failed to add group: {{error}}",
+    "groupAdded": "New output group added",
+    "groupDuplicateFailed": "Failed to duplicate group: {{error}}",
     "groupDuplicated": "Output group \"{{name}}\" duplicated",
+    "groupRemoveFailed": "Failed to remove group: {{error}}",
     "groupRemoved": "Output group removed",
+    "groupStartFailed": "Failed to start {{name}}: {{error}}",
     "groupStarted": "Output group started",
+    "groupStopFailed": "Failed to stop {{name}}: {{error}}",
     "groupStopped": "Output group stopped",
+    "groupToggleFailed": "Failed to toggle {{name}}: {{error}}",
     "importFailed": "Failed to import profile",
     "keyRotationFailed": "Key rotation failed: {{error}}",
     "keyRotationSuccess": "Machine key rotated. {{profiles}} profiles updated, {{keys}} keys re-encrypted.",
+    "panicFailed": "Panic disconnect failed: {{error}}",
+    "panicStopped": "Panic disconnect: stopped {{count}} streams in {{ms}}ms",
     "profileDeleted": "Profile deleted",
+    "profileDuplicateFailed": "Failed to duplicate {{name}}: {{error}}",
+    "profileDuplicated": "Duplicated {{name}}",
     "profileImported": "Profile imported successfully",
     "someTestsFailed": "{{passed}} passed, {{failed}} failed",
     "startFailed": "Failed to start streaming: {{error}}",
+    "stopFailed": "Failed to stop stream: {{error}}",
     "streamStarted": "Streaming started",
+    "streamStopped": "Stream stopped",
+    "targetRemoveFailed": "Failed to remove target: {{error}}",
+    "targetRemoved": "Removed {{name}}",
+    "targetStarted": "Started {{name}}",
+    "targetStopped": "Stopped {{name}}",
+    "targetToggleFailed": "Failed to toggle {{name}}: {{error}}",
     "testFailed": "Stream test failed",
     "testingConnectivity": "Testing connectivity to {{count}} targets..."
   },

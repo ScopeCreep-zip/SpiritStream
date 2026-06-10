@@ -11,6 +11,7 @@
 import { create } from 'zustand';
 import { events } from '@spiritstream/api-client';
 import { logger } from '@/lib/logger';
+import i18n from '@/lib/i18n';
 import { toast } from '@/hooks/useToast';
 import type { ProfileActivatedEvent } from '@spiritstream/types';
 import { createCoreSlice } from './core';
@@ -70,6 +71,11 @@ export async function subscribeOAuthTokenExpired(): Promise<() => void> {
   return events.on<OAuthTokenExpiredPayload>('oauth_token_expired', (payload) => {
     logger.warn(`[ProfileStore] OAuth token expired for ${payload.provider}; re-auth required.`);
     const label = payload.provider.charAt(0).toUpperCase() + payload.provider.slice(1);
-    toast.info(`${label} sign-in expired — reconnect to send chat or stream.`);
+    toast.info(
+      i18n.t('errors.oauthExpired', {
+        defaultValue: '{{provider}} sign-in expired — reconnect to send chat or stream.',
+        provider: label,
+      })
+    );
   });
 }

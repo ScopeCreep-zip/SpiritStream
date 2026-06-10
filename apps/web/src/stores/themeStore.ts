@@ -5,6 +5,7 @@ import { events } from '@spiritstream/api-client';
 import { clientConfig } from '@/lib/constants';
 import { toast } from '@/hooks/useToast';
 import { logger } from '@/lib/logger';
+import i18n from '@/lib/i18n';
 import type { ThemeSummary, ThemeMode } from '@spiritstream/types';
 
 interface ThemeState {
@@ -181,9 +182,15 @@ export const useThemeStore = create<ThemeState>()(
             theme = themes.find((t) => t.id === themeId);
 
             if (!theme) {
-              const err = Object.assign(new Error(`Theme "${themeId}" is not installed.`), {
-                kind: 'theme_not_installed',
-              });
+              const err = Object.assign(
+                new Error(
+                  i18n.t('errors.themeNotInstalled', {
+                    defaultValue: 'Theme "{{id}}" is not installed.',
+                    id: themeId,
+                  })
+                ),
+                { kind: 'theme_not_installed' }
+              );
               toast.error(err.message);
               throw err;
             }
@@ -221,7 +228,12 @@ export const useThemeStore = create<ThemeState>()(
           // branch — branch on the structured `kind`, not the message.
           if ((err as Error & { kind?: string }).kind !== 'theme_not_installed') {
             const message = err instanceof Error ? err.message : String(err);
-            toast.error(`Failed to load theme: ${message}`);
+            toast.error(
+              i18n.t('errors.themeLoadFailed', {
+                defaultValue: 'Failed to load theme: {{error}}',
+                error: message,
+              })
+            );
           }
           throw err;
         }
@@ -252,14 +264,22 @@ export const useThemeStore = create<ThemeState>()(
             // Cached tokens still let the current theme render; trust them.
             const hasCached = currentTokens && Object.keys(currentTokens).length > 0;
             if (!hasCached) {
-              toast.info(`Theme "${currentThemeId}" was uninstalled. Switched to Spirit Dark.`);
+              toast.info(
+                i18n.t('errors.themeUninstalled', {
+                  defaultValue: 'Theme "{{id}}" was uninstalled. Switched to Spirit Dark.',
+                  id: currentThemeId,
+                })
+              );
               await get().setTheme(DEFAULT_THEME_DARK);
             }
           }
         } catch (err) {
           logger.error('[themeStore] refreshThemes failed', err);
           toast.error(
-            `Could not load themes from backend: ${err instanceof Error ? err.message : String(err)}`
+            i18n.t('errors.themesRefreshFailed', {
+              defaultValue: 'Could not load themes from backend: {{error}}',
+              error: err instanceof Error ? err.message : String(err),
+            })
           );
           // Mark as initialized so callers don't block forever; existing
           // `themes` state (at minimum the bundled themes from initial state)
@@ -320,7 +340,12 @@ export async function subscribeThemesUpdated(): Promise<() => void> {
     useThemeStore.setState({ themes: merged });
     const state = useThemeStore.getState();
     if (!merged.find((theme) => theme.id === state.currentThemeId)) {
-      toast.info(`Theme "${state.currentThemeId}" was uninstalled. Switched to Spirit Dark.`);
+      toast.info(
+        i18n.t('errors.themeUninstalled', {
+          defaultValue: 'Theme "{{id}}" was uninstalled. Switched to Spirit Dark.',
+          id: state.currentThemeId,
+        })
+      );
       // Fire-and-forget — caller is an event subscription, can't await.
       state.setTheme(DEFAULT_THEME_DARK).catch(() => {
         /* swallow: toast already surfaced the uninstall */

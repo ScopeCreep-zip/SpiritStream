@@ -42,7 +42,7 @@ export function SafetyMenu({ onOpenModal }: SafetyMenuProps): React.ReactElement
   return (
     <Menubar.Menu>
       <Menubar.Trigger className={TRIGGER_CLASS}>
-        {t('menu.safety', { defaultValue: 'Safety' })}
+        {t('menu.safety.label', { defaultValue: 'Safety' })}
       </Menubar.Trigger>
       <Menubar.Portal>
         <Menubar.Content className={CONTENT_CLASS} align="start" sideOffset={4}>
