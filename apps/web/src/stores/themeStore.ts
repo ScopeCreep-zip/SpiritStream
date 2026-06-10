@@ -23,7 +23,12 @@ interface ThemeState {
 }
 
 const DEFAULT_THEME_DARK = 'spirit-dark';
-const THEME_STYLE_ID = 'spiritstream-theme-overrides';
+
+// Custom-property keys currently set inline on <html>. Tracked so a theme
+// switch can remove the previous theme's keys before applying the next one's.
+// theme-init.js seeds the same keys at boot; the first applyTheme on rehydrate
+// re-sets and starts tracking them, so ownership transfers cleanly to the store.
+let appliedTokenKeys: string[] = [];
 
 // Promise-based initialization tracking
 let initResolve: (() => void) | null = null;
@@ -35,16 +40,32 @@ const initPromise = new Promise<void>((resolve) => {
 // in `tokens.css`. The store starts with these and merges backend additions on
 // refresh, so the picker is never empty even when the backend is unreachable.
 const BUNDLED_THEMES: ReadonlyArray<ThemeSummary> = [
-  { id: 'spirit-dark', name: 'Spirit Dark', mode: 'dark', source: 'builtin', builtIn: true, valid: true, error: null },
-  { id: 'spirit-light', name: 'Spirit Light', mode: 'light', source: 'builtin', builtIn: true, valid: true, error: null },
+  {
+    id: 'spirit-dark',
+    name: 'Spirit Dark',
+    mode: 'dark',
+    source: 'builtin',
+    builtIn: true,
+    valid: true,
+    error: null,
+  },
+  {
+    id: 'spirit-light',
+    name: 'Spirit Light',
+    mode: 'light',
+    source: 'builtin',
+    builtIn: true,
+    valid: true,
+    error: null,
+  },
 ];
 
 /**
- * Apply a theme. Owns ONLY `data-theme`, `data-theme-id`, and the
- * `<style id="spiritstream-theme-overrides">` token tag. The `data-contrast`
- * attribute is the exclusive domain of `useHighContrast` — never touch it here.
- * Theme and contrast are orthogonal axes; they must not read or write each
- * other's attributes.
+ * Apply a theme. Owns ONLY `data-theme`, `data-theme-id`, and the inline
+ * custom-property token set on `<html>`. The `data-contrast` attribute is the
+ * exclusive domain of `useHighContrast` — never touch it here. Theme and
+ * contrast are orthogonal axes; they must not read or write each other's
+ * attributes.
  */
 function applyTheme(themeId: string, mode: ThemeMode, tokens?: Record<string, string>) {
   if (typeof document === 'undefined') return;
@@ -55,43 +76,43 @@ function applyTheme(themeId: string, mode: ThemeMode, tokens?: Record<string, st
   // Only apply overrides when tokens are provided and non-empty
   const hasTokens = tokens && Object.keys(tokens).length > 0;
   if (hasTokens) {
-    setThemeOverrides(themeId, mode, tokens);
+    setThemeOverrides(tokens);
   } else {
     clearThemeOverrides();
   }
 }
 
-function setThemeOverrides(themeId: string, mode: ThemeMode, tokens: Record<string, string>) {
+// Custom-theme tokens are written as inline custom properties on <html> via
+// CSSOM `setProperty`. Property assignment through the CSSOM is exempt from CSP
+// style-src (unlike a script-injected <style>), so the production CSP carries no
+// `'unsafe-inline'`. Built-in themes pass no tokens — their values come from the
+// static `[data-theme]` selectors in boot.css / tokens.css.
+function setThemeOverrides(tokens: Record<string, string>) {
   if (typeof document === 'undefined') return;
 
-  const tokenKeys = Object.keys(tokens);
-  if (tokenKeys.length === 0) {
-    return;
+  const root = document.documentElement;
+  // Drop any keys from the previous theme that the new one doesn't define.
+  for (const key of appliedTokenKeys) {
+    if (!(key in tokens)) {
+      root.style.removeProperty(key);
+    }
   }
 
-  const styleId = THEME_STYLE_ID;
-  let style = document.getElementById(styleId) as HTMLStyleElement | null;
-  if (!style) {
-    style = document.createElement('style');
-    style.id = styleId;
-    document.head.appendChild(style);
+  const nextKeys: string[] = [];
+  for (const [key, value] of Object.entries(tokens)) {
+    root.style.setProperty(key, value);
+    nextKeys.push(key);
   }
-
-  const entries = Object.entries(tokens)
-    .map(([key, value]) => `  ${key}: ${value};`)
-    .join('\n');
-
-  // Single selector for this specific theme + mode
-  const css = `:root[data-theme-id="${themeId}"][data-theme="${mode}"] {\n${entries}\n}`;
-  style.textContent = css;
+  appliedTokenKeys = nextKeys;
 }
 
 function clearThemeOverrides() {
   if (typeof document === 'undefined') return;
-  const style = document.getElementById(THEME_STYLE_ID);
-  if (style && style.parentNode) {
-    style.parentNode.removeChild(style);
+  const root = document.documentElement;
+  for (const key of appliedTokenKeys) {
+    root.style.removeProperty(key);
   }
+  appliedTokenKeys = [];
 }
 
 export const useThemeStore = create<ThemeState>()(
@@ -126,9 +147,9 @@ export const useThemeStore = create<ThemeState>()(
         {
           const { currentThemeId, currentTokens } = get();
           if (
-            currentThemeId === themeId
-            && currentTokens
-            && Object.keys(currentTokens).length > 0
+            currentThemeId === themeId &&
+            currentTokens &&
+            Object.keys(currentTokens).length > 0
           ) {
             return;
           }
@@ -137,7 +158,10 @@ export const useThemeStore = create<ThemeState>()(
           // Wait for themes to be loaded if not initialized (with timeout)
           if (!get().isInitialized) {
             const timeout = new Promise<void>((_, reject) =>
-              setTimeout(() => reject(new Error('Theme initialization timeout')), clientConfig.THEME_INIT_TIMEOUT_MS)
+              setTimeout(
+                () => reject(new Error('Theme initialization timeout')),
+                clientConfig.THEME_INIT_TIMEOUT_MS
+              )
             );
             try {
               await Promise.race([initPromise, timeout]);
@@ -166,7 +190,8 @@ export const useThemeStore = create<ThemeState>()(
           // Check if we already have cached tokens for this theme
           const cachedTokens = get().currentTokens;
           const currentId = get().currentThemeId;
-          const hasCachedTokens = currentId === themeId && cachedTokens && Object.keys(cachedTokens).length > 0;
+          const hasCachedTokens =
+            currentId === themeId && cachedTokens && Object.keys(cachedTokens).length > 0;
 
           // Use cached tokens if available (prevents flash), otherwise fetch from backend
           let tokens: Record<string, string> | undefined;
@@ -224,16 +249,14 @@ export const useThemeStore = create<ThemeState>()(
             // Cached tokens still let the current theme render; trust them.
             const hasCached = currentTokens && Object.keys(currentTokens).length > 0;
             if (!hasCached) {
-              toast.info(
-                `Theme "${currentThemeId}" was uninstalled. Switched to Spirit Dark.`,
-              );
+              toast.info(`Theme "${currentThemeId}" was uninstalled. Switched to Spirit Dark.`);
               await get().setTheme(DEFAULT_THEME_DARK);
             }
           }
         } catch (err) {
           logger.error('[themeStore] refreshThemes failed', err);
           toast.error(
-            `Could not load themes from backend: ${err instanceof Error ? err.message : String(err)}`,
+            `Could not load themes from backend: ${err instanceof Error ? err.message : String(err)}`
           );
           // Mark as initialized so callers don't block forever; existing
           // `themes` state (at minimum the bundled themes from initial state)
@@ -256,10 +279,12 @@ export const useThemeStore = create<ThemeState>()(
       }),
       onRehydrateStorage: () => (state) => {
         if (state) {
-          // Mirror the cached theme into React-side state. The inline
-          // <script> in index.html has already set data-theme and the
-          // token <style> on <html> before CSS parsed, so this is just
-          // a React-side mirror — the DOM is already correct.
+          // Mirror the cached theme into React-side state. theme-init.js
+          // (loaded from /theme-init.js in index.html) has already set
+          // data-theme and the inline token custom properties on <html>
+          // before CSS parsed, so this is just a React-side mirror that also
+          // transfers token-key ownership to the store — the DOM is already
+          // correct.
           //
           // NO network call here. Per the next-themes / MUI pattern,
           // localStorage is the source of truth for first paint; the
@@ -292,9 +317,7 @@ export async function subscribeThemesUpdated(): Promise<() => void> {
     useThemeStore.setState({ themes: merged });
     const state = useThemeStore.getState();
     if (!merged.find((theme) => theme.id === state.currentThemeId)) {
-      toast.info(
-        `Theme "${state.currentThemeId}" was uninstalled. Switched to Spirit Dark.`,
-      );
+      toast.info(`Theme "${state.currentThemeId}" was uninstalled. Switched to Spirit Dark.`);
       // Fire-and-forget — caller is an event subscription, can't await.
       state.setTheme(DEFAULT_THEME_DARK).catch(() => {
         /* swallow: toast already surfaced the uninstall */

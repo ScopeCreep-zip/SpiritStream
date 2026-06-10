@@ -35,7 +35,7 @@ export function useConnectionStatus() {
       if (showNotifications) {
         showSystemNotification(
           t('connection.reconnectedTitle', 'Connection Restored'),
-          t('connection.reconnectedBody', 'Reconnected to the backend server.'),
+          t('connection.reconnectedBody', 'Reconnected to the backend server.')
         );
       }
     };
@@ -46,13 +46,13 @@ export function useConnectionStatus() {
       toast.error(
         error
           ? t('connection.lostWithError', 'Connection lost: {{error}}', { error })
-          : t('connection.lost', 'Connection to backend lost. Attempting to reconnect...'),
+          : t('connection.lost', 'Connection to backend lost. Attempting to reconnect...')
       );
       const showNotifications = useSettingsStore.getState().showNotifications;
       if (showNotifications) {
         showSystemNotification(
           t('connection.lostTitle', 'Connection Lost'),
-          t('connection.lostBody', 'Lost connection to the backend server.'),
+          t('connection.lostBody', 'Lost connection to the backend server.')
         );
       }
     };

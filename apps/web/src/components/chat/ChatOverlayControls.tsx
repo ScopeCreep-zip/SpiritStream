@@ -21,7 +21,9 @@ import { logger } from '@/lib/logger';
 
 interface ChatOverlayHeaderButtonsProps {}
 
-export function ChatOverlayHeaderButtons(_props: ChatOverlayHeaderButtonsProps = {}): React.ReactElement {
+export function ChatOverlayHeaderButtons(
+  _props: ChatOverlayHeaderButtonsProps = {}
+): React.ReactElement {
   const { t } = useTranslation();
   return (
     <div className="flex items-center gap-1 flex-shrink-0">
@@ -53,20 +55,26 @@ export function ChatOverlayToggles(): React.ReactElement {
   const overlayAlwaysOnTop = useChatStore((state) => state.overlayAlwaysOnTop);
   const setOverlayAlwaysOnTopState = useChatStore((state) => state.setOverlayAlwaysOnTop);
 
-  const handleTransparentToggle = useCallback((transparent: boolean) => {
-    setOverlayTransparent(transparent);
-    emit(CHAT_OVERLAY_SETTINGS_EVENT, { transparent }).catch((error) => {
-      logger.error('Failed to sync chat overlay settings:', error);
-    });
-  }, [setOverlayTransparent]);
+  const handleTransparentToggle = useCallback(
+    (transparent: boolean) => {
+      setOverlayTransparent(transparent);
+      emit(CHAT_OVERLAY_SETTINGS_EVENT, { transparent }).catch((error) => {
+        logger.error('Failed to sync chat overlay settings:', error);
+      });
+    },
+    [setOverlayTransparent]
+  );
 
-  const handleAlwaysOnTopToggle = useCallback((alwaysOnTop: boolean) => {
-    setOverlayAlwaysOnTopState(alwaysOnTop);
-    setOverlayAlwaysOnTop(alwaysOnTop);
-    emit(CHAT_OVERLAY_ALWAYS_ON_TOP_EVENT, { alwaysOnTop }).catch((error) => {
-      logger.error('Failed to sync chat overlay always on top:', error);
-    });
-  }, [setOverlayAlwaysOnTopState]);
+  const handleAlwaysOnTopToggle = useCallback(
+    (alwaysOnTop: boolean) => {
+      setOverlayAlwaysOnTopState(alwaysOnTop);
+      setOverlayAlwaysOnTop(alwaysOnTop);
+      emit(CHAT_OVERLAY_ALWAYS_ON_TOP_EVENT, { alwaysOnTop }).catch((error) => {
+        logger.error('Failed to sync chat overlay always on top:', error);
+      });
+    },
+    [setOverlayAlwaysOnTopState]
+  );
 
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">

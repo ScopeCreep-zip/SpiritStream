@@ -37,7 +37,7 @@ export function OutputRow({
       className={cn(
         'flex items-center gap-3 px-3 py-2 rounded-md',
         'bg-bg-surface border border-border-muted',
-        'hover:border-border-default transition-colors',
+        'hover:border-border-default transition-colors'
       )}
     >
       <span
@@ -54,11 +54,7 @@ export function OutputRow({
         {t(`status.${status}`, { defaultValue: status })}
       </span>
 
-      <EnabledSwitch
-        enabled={enabled}
-        onToggle={onToggleEnabled}
-        targetName={target.name}
-      />
+      <EnabledSwitch enabled={enabled} onToggle={onToggleEnabled} targetName={target.name} />
 
       <button
         type="button"
@@ -71,7 +67,7 @@ export function OutputRow({
           'inline-flex items-center justify-center w-8 h-8 rounded-md',
           'text-text-tertiary hover:bg-bg-hover hover:text-text-primary',
           'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring-default',
-          'transition-colors',
+          'transition-colors'
         )}
       >
         <Pencil className="w-4 h-4" />
@@ -88,7 +84,7 @@ export function OutputRow({
           'inline-flex items-center justify-center w-8 h-8 rounded-md',
           'text-text-tertiary hover:bg-error-subtle hover:text-error-text',
           'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring-default',
-          'transition-colors',
+          'transition-colors'
         )}
       >
         <Trash2 className="w-4 h-4" />
@@ -118,7 +114,7 @@ function EnabledSwitch({ enabled, onToggle, targetName }: EnabledSwitchProps): R
       className={cn(
         'relative inline-flex w-10 h-6 rounded-full transition-colors flex-shrink-0',
         'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring-default focus-visible:ring-offset-2',
-        enabled ? 'bg-primary' : 'bg-border-strong',
+        enabled ? 'bg-primary' : 'bg-border-strong'
       )}
     >
       <span
@@ -126,7 +122,7 @@ function EnabledSwitch({ enabled, onToggle, targetName }: EnabledSwitchProps): R
         className={cn(
           'absolute top-[3px] start-[3px] w-[18px] h-[18px] rounded-full bg-white shadow-sm',
           'transition-transform duration-200',
-          enabled ? 'translate-x-4' : 'translate-x-0',
+          enabled ? 'translate-x-4' : 'translate-x-0'
         )}
       />
     </button>

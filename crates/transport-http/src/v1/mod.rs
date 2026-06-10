@@ -23,15 +23,18 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use utoipa::{OpenApi, ToSchema};
+use utoipa::ToSchema;
 
 use crate::AppState;
 
 mod audit;
 mod chat;
+mod chat_message_wire;
 mod discord;
 mod oauth;
 mod obs;
+mod openapi_doc;
+mod profile_wire;
 mod profiles;
 mod safety;
 mod settings;
@@ -40,214 +43,18 @@ mod system;
 mod themes;
 pub use audit::*;
 pub use chat::*;
+pub use chat_message_wire::*;
 pub use discord::*;
 pub use oauth::*;
 pub use obs::*;
+pub use openapi_doc::{serve_openapi, ApiDoc};
+pub use profile_wire::*;
 pub use profiles::*;
 pub use safety::*;
 pub use settings::*;
 pub use streams::*;
 pub use system::*;
 pub use themes::*;
-
-/// Aggregated OpenAPI document for the `/api/v1/*` surface.
-#[derive(OpenApi)]
-#[openapi(
-    info(
-        title = "SpiritStream HTTP API",
-        version = "1.0.0",
-        description = "Versioned REST surface for SpiritStream. All clients (web, Tauri desktop, Tauri mobile, CLI, automation) speak this API. See the rewrite plan for the migration shape."
-    ),
-    servers((url = "/api/v1", description = "API v1")),
-    paths(
-        v1_health,
-        v1_ready,
-        v1_profiles_list,
-        v1_profile_show,
-        v1_profile_save,
-        v1_profile_delete,
-        v1_profile_is_encrypted,
-        v1_settings_get,
-        v1_settings_save,
-        v1_settings_profiles_path,
-        v1_settings_export,
-        v1_settings_clear_data,
-        v1_safety_panic,
-        v1_audit_log,
-        v1_streams_validate,
-        v1_streams_status,
-        v1_streams_start,
-        v1_streams_start_all,
-        v1_streams_stop,
-        v1_streams_stop_all,
-        v1_streams_retry,
-        v1_streams_toggle_target,
-        v1_profile_activate,
-        v1_profile_unlock,
-        v1_profile_decrypt,
-        v1_profile_lock,
-        v1_profile_locked_list,
-        v1_system_encoder_presets,
-        v1_system_app_version,
-        v1_system_audit_app_update_failure,
-        v1_system_client_config,
-        v1_system_encoders_proxy,
-        v1_system_ffmpeg_test_proxy,
-        v1_system_ffmpeg_path_proxy,
-        v1_system_ffmpeg_update_proxy,
-        v1_system_ffmpeg_validate_proxy,
-        v1_system_rtmp_test_proxy,
-        v1_system_logs_proxy,
-        v1_system_logs_export_proxy,
-        v1_security_rotate_machine_key_proxy,
-        v1_profile_summaries_proxy,
-        v1_profile_validate_input_proxy,
-        v1_profile_order_get_proxy,
-        v1_profile_order_set_proxy,
-        v1_profile_order_ensure_proxy,
-        v1_themes_list_proxy,
-        v1_themes_install_proxy,
-        v1_themes_refresh_proxy,
-        v1_theme_tokens_proxy,
-        v1_obs_state_proxy,
-        v1_obs_get_config_proxy,
-        v1_obs_set_config_proxy,
-        v1_obs_is_connected_proxy,
-        v1_obs_connect_proxy,
-        v1_obs_disconnect_proxy,
-        v1_obs_start_stream_proxy,
-        v1_obs_stop_stream_proxy,
-        v1_discord_test_webhook_proxy,
-        v1_discord_send_notification_proxy,
-        v1_discord_reset_cooldown_proxy,
-        v1_chat_status_proxy,
-        v1_chat_connect_proxy,
-        v1_chat_disconnect_all_proxy,
-        v1_chat_platform_status_proxy,
-        v1_chat_disconnect_proxy,
-        v1_chat_retry_proxy,
-        v1_chat_send_proxy,
-        v1_chat_is_connected_proxy,
-        v1_chat_log_status_proxy,
-        v1_chat_export_log_proxy,
-        v1_chat_search_session_proxy,
-        v1_oauth_get_config_proxy,
-        v1_oauth_set_config_proxy,
-        v1_oauth_is_configured_proxy,
-        v1_oauth_start_flow_proxy,
-        v1_oauth_complete_flow_proxy,
-        v1_oauth_get_account_proxy,
-        v1_oauth_disconnect_proxy,
-        v1_oauth_forget_proxy,
-        v1_oauth_refresh_token_proxy,
-        v1_stream_target_disabled_proxy,
-    ),
-    components(schemas(
-        HealthResponse,
-        ReadyResponse,
-        ReadyCheckFailure,
-        ProfilesListResponse,
-        ProfileShowQuery,
-        ProfileSaveRequest,
-        ProfileSaveResponse,
-        ProfileDeleteResponse,
-        ProfileIsEncryptedResponse,
-        SettingsSaveRequest,
-        SettingsSaveResponse,
-        SettingsProfilesPathResponse,
-        SettingsExportRequest,
-        SettingsExportResponse,
-        SettingsClearDataResponse,
-        SafetyPanicResponse,
-        AuditLogResponse,
-        AuditChainStatusWire,
-        ChatPlatformWire,
-        ChatConnectionStatusWire,
-        ChatPlatformStatusWire,
-        ChatSendResultWire,
-        ChatLogStatusWire,
-        ChatAckResponse,
-        ChatConnectedResponse,
-        ChatSendRequest,
-        ChatSearchRequest,
-        ChatExportRequest,
-        SubsystemStatus,
-        StreamValidateRequest,
-        StreamValidateResponse,
-        StreamStatusResponse,
-        StreamStartRequest,
-        StreamStartResponse,
-        StreamStartAllRequest,
-        StreamStartAllResponse,
-        StreamStopAllResponse,
-        StreamRetryResponse,
-        StreamToggleTargetRequest,
-        StreamToggleTargetResponse,
-        ProfileActivateRequest,
-        ProfileUnlockRequest,
-        ProfileUnlockResponse,
-        ProfileDecryptRequest,
-        ProfileDecryptResponse,
-        ProfileLockResponse,
-        ProfileLockedListResponse,
-        EncoderPresetsResponse,
-        ClientConfigResponse,
-        RangeU32,
-        AppVersionResponse,
-        AppUpdateFailureRequest,
-        AuditRecordedResponse,
-        SystemAckResponse,
-        LogsResponse,
-        LogsQuery,
-        LogsExportRequest,
-        FFmpegVersionResponse,
-        FFmpegPathResponse,
-        FFmpegValidatePathResponse,
-        FFmpegValidatePathRequest,
-        FFmpegUpdateQuery,
-        FFmpegVersionInfoWire,
-        EncoderKindWire,
-        EncoderMetaWire,
-        EncodersWire,
-        RtmpTestRequest,
-        RtmpTestResultWire,
-        RotationReportWire,
-        OAuthConfiguredFlagsResponse,
-        OAuthConfiguredResponse,
-        OAuthAckResponse,
-        OAuthConfigRequest,
-        OAuthFlowResponse,
-        OAuthUserInfoResponse,
-        OAuthTokensResponse,
-        OAuthAccountStatusResponse,
-        OAuthCompleteRequest,
-        OAuthRefreshRequest,
-        ObsConnectionStatusWire,
-        ObsStreamStatusWire,
-        IntegrationDirectionWire,
-        ObsStateResponse,
-        ObsConfigResponse,
-        ObsSetConfigRequest,
-        ObsConnectedResponse,
-        ObsAckResponse,
-        ProfileSummaryWire,
-        ProfileAckResponse,
-        ProfileOrderMapResponse,
-        ProfileValidateInputRequest,
-        ProfileOrderSetRequest,
-        ThemeModeWire,
-        ThemeSummaryWire,
-        ThemeTokensResponse,
-        ThemeInstallRequest,
-        WebhookResultResponse,
-        DiscordAckResponse,
-        DiscordWebhookTestRequest,
-        StreamTargetDisabledResponse,
-        ApiErrorBody,
-        RotateMachineKeyRequest,
-    ))
-)]
-pub struct ApiDoc;
 
 /// Build the public `/api/v1/*` sub-router (no auth required).
 pub fn public_router(state: AppState) -> Router<AppState> {
@@ -463,17 +270,6 @@ pub fn protected_router(state: AppState) -> Router<AppState> {
         .with_state(state)
 }
 
-/// Serve the OpenAPI document describing the `/api/v1/*` surface.
-///
-/// The current emitter (utoipa 4 with axum 0.7) produces an OpenAPI 3.0.3
-/// document. The rewrite plan calls for 3.1, which requires bumping to
-/// utoipa 5 + axum 0.8 — that upgrade is folded into a later cleanup pass
-/// since the type-generator we use (`@hey-api/openapi-ts`)
-/// accepts both 3.0 and 3.1 specs without behavior change.
-async fn serve_openapi() -> impl IntoResponse {
-    Json(ApiDoc::openapi())
-}
-
 // ---------------------------------------------------------------------------
 // Health & readiness
 // ---------------------------------------------------------------------------
@@ -672,9 +468,3 @@ pub async fn v1_ready(State(state): State<AppState>) -> impl IntoResponse {
         }
     }
 }
-
-
-
-
-
-

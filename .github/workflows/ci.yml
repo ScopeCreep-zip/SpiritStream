@@ -94,6 +94,264 @@ jobs:
         # violations. Plain-script entry under `tests/a11y/`.
         run: pnpm tsx tests/a11y/axe-run.ts apps/web/dist
 
+  # Sprint T: enforce the 600 LOC ceiling. Cheap, fast, fails the
+  # check run if a source file grows past its allowlisted cap. The
+  # allowlist (`.loc-allowlist`) names every currently-grandfathered
+  # offender plus its ceiling; Sprint K splits drop entries one by
+  # one, and the gate refuses growth even within the allowlist.
+  loc-gate:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.19.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Run 600 LOC ceiling check
+        run: bash scripts/check-loc.sh
+
+  # Sprint N3 + N5: Vitest frontend tests + coverage gate. Thresholds
+  # live in `apps/web/vite.config.ts` (intentionally conservative
+  # baselines — raise as tests land per Sprint N1/N2/N4). Failing
+  # threshold blocks the PR.
+  web-tests:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.19.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          version: 9.15.0
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Run Vitest with coverage gate
+        run: pnpm --filter @spiritstream/web test:coverage
+
+  # Sprint N5: api-client coverage gate. The other half of N5's "stores +
+  # api-client" scope. Thresholds live in
+  # `packages/api-client/vitest.config.ts`, scoped to the logic-bearing
+  # transport modules (config / events / _internal). Failing threshold
+  # blocks the PR.
+  api-client-tests:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.19.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          version: 9.15.0
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Run Vitest with coverage gate
+        run: pnpm --filter @spiritstream/api-client test:coverage
+
+  # Sprint M5: ESLint with `--max-warnings 0` (already enforced by the
+  # `lint` package script). Run on every push/PR so a stray `console.log`
+  # / unused-var / react-hooks/exhaustive-deps warning blocks merge
+  # instead of slipping in next to the typecheck pass.
+  web-lint:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.19.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          version: 9.15.0
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: ESLint (--max-warnings 0)
+        run: pnpm --filter @spiritstream/web lint
+
+  # Sprint M10: markdown lint. Catches drift before docs ship — broken
+  # headings, inconsistent list/code styles, malformed link refs.
+  # Config in `.markdownlint.json`; `.markdownlintignore` carves out
+  # `.github/CODEOWNERS` (GitHub-specific syntax, not markdown).
+  markdownlint:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.19.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Run markdownlint
+        uses: DavidAnson/markdownlint-cli2-action@b4c9feab76d8025d1e83c653fa3990936df0e6c8 # v20.0.0
+        with:
+          globs: |
+            **/*.md
+            !node_modules
+            !target
+            !packages/types/src/generated
+            !packages/api-client/src/generated
+
+  # Sprint N6: Rust coverage gate. `cargo tarpaulin` runs every
+  # `#[test]` in `spiritstream-core` and reports line-level coverage
+  # — the safety-critical crate that the rest of the workspace builds
+  # on. The `--exclude-files` globs are a measurement-accuracy fix, not
+  # a threshold dodge: `tarpaulin -p spiritstream-core --lib` walks the
+  # whole workspace source map and folds ~196 lines of foreign 0-coverage
+  # files (apps/tauri server.rs + settings.rs, transport-http middleware,
+  # transport-cli output, crates/core/build.rs) into the denominator,
+  # understating the crate's true figure by ~1.6pt. Excluding everything
+  # outside crates/core/src/ makes the gate measure spiritstream-core
+  # alone — its actual line coverage is 60.18% (4300/7145). Gate at 60,
+  # the plan's floor, genuinely reached by real in-process unit suites
+  # (registry / profile-model / profile-activation cascade / oauth-config
+  # / stream-stats / theme-catalog + jsonc / chat frame-parse extracts /
+  # ffmpeg arg-builder / credentials redaction / platform-registry). The
+  # remaining ~40% is irreducible live I/O (WebSocket connector loops,
+  # reqwest token/HTTP bodies, FFmpeg process spawning, UDP meter socket)
+  # that tarpaulin cannot reach in-process — it instruments the test
+  # binary, not spawned subprocesses or live sockets. The threshold is a
+  # ratchet: raise it (never lower it) as more real tests land.
+  cargo-coverage:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.19.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # stable
+        with:
+          toolchain: stable
+      - name: Cache cargo target
+        uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+      - name: Install cargo-tarpaulin
+        uses: taiki-e/install-action@84c20235bedc3797c7eee0a8f5803338efb13a3a # v2.62.51
+        with:
+          tool: cargo-tarpaulin
+      - name: cargo tarpaulin -p spiritstream-core --fail-under 60
+        run: |
+          cargo tarpaulin -p spiritstream-core --lib --skip-clean \
+            --exclude-files "apps/**" \
+            --exclude-files "crates/transport-cli/**" \
+            --exclude-files "crates/transport-http/**" \
+            --exclude-files "crates/transport-veilid/**" \
+            --exclude-files "server/**" \
+            --exclude-files "crates/core/build.rs" \
+            --fail-under 60 --out Xml
+
+  # Sprint M: rustdoc gate. `cargo doc --no-deps --workspace -D warnings`
+  # catches broken intra-doc links, missing doc comments on public
+  # items where the crate opted in, and rustdoc lints we'd otherwise
+  # only discover when generating user-facing API docs. Cheap to run.
+  cargo-doc:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.19.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # stable
+        with:
+          toolchain: stable
+      - name: Cache cargo target
+        uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+      - name: cargo doc -D warnings
+        env:
+          RUSTDOCFLAGS: '-D warnings'
+        run: cargo doc --no-deps --workspace --locked
+
+  # Sprint L: detect ts-rs drift. `cargo test --workspace` regenerates
+  # the TS exports under `packages/types/src/generated/`; if any file
+  # changes vs the committed copy the suite is out of sync and the
+  # frontend will silently consume stale types. Fail loud so the
+  # generator + the committed snapshot stay equal.
+  # Sprint J: smoke-check that `crates/core` cross-compiles for iOS and
+  # Android. The CI matrix below only runs desktop targets, so an
+  # unguarded `Command::new` / sidecar / OS-keyring call could land
+  # without anyone noticing until a mobile bundle is cut. We don't link
+  # (no NDK / no Xcode in this job) — `cargo check` is enough to catch
+  # the cfg-gating mistakes Sprint J1/J2 exists to prevent.
+  mobile-build-check:
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Install Rust toolchain (iOS + Android targets)
+        uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # stable
+        with:
+          toolchain: stable
+          targets: aarch64-apple-ios,aarch64-linux-android
+      - name: Cache cargo target
+        uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+      - name: cargo check --target aarch64-apple-ios
+        run: cargo check --target aarch64-apple-ios -p spiritstream-core
+      - name: cargo check --target aarch64-linux-android
+        run: cargo check --target aarch64-linux-android -p spiritstream-core
+
+  ts-rs-drift:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.19.3
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # stable
+        with:
+          toolchain: stable
+      - name: Cache cargo target
+        uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
+      - name: Regenerate ts-rs exports
+        run: cargo test --workspace --lib --quiet
+      - name: Fail on drift
+        run: |
+          if ! git diff --exit-code -- packages/types/src/generated/; then
+            echo "::error::ts-rs output is out of sync with the committed snapshot." >&2
+            echo "Run 'cargo test --workspace' locally and commit the diff." >&2
+            exit 1
+          fi
+
   test:
     permissions:
       contents: read
@@ -176,6 +434,17 @@ jobs:
 
       - name: Build server sidecar
         run: pnpm run build:server ${{ matrix.rust_target && format('-- --target {0}', matrix.rust_target) || '' }}
+
+      # Full workspace test run on every OS in the matrix. The `--lib` run in
+      # the `ts-rs-drift` job only regenerates exports and the tarpaulin job
+      # only covers `spiritstream-core --lib`; neither executes the integration
+      # test targets (`crates/*/tests/`, CLI golden files) or doc-tests. This
+      # step is the actual pass/fail gate for the whole suite, and running it
+      # per-OS exercises the platform-specific paths (e.g. the Windows audit-log
+      # ACL branch). Placed after the sidecar build because the Tauri crate's
+      # build.rs requires the sidecar binary to be present.
+      - name: Rust test (workspace)
+        run: cargo test --workspace
 
       # Desktop checks must come after sidecar build (Tauri build.rs requires sidecar binary)
       - name: Rust check (desktop)

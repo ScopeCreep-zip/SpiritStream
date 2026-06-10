@@ -20,6 +20,4 @@ pub use super::profile::{
 // (e.g. `services::encryption` tests) that still reference the historical
 // `profile_manager::ENCRYPTED_MAGIC_*` path. New code should reach for
 // `profile::io::ENCRYPTED_MAGIC_*` instead.
-pub(crate) use super::profile::io::{
-    ENCRYPTED_MAGIC_LEN, ENCRYPTED_MAGIC_V1, ENCRYPTED_MAGIC_V2,
-};
+pub(crate) use super::profile::io::{ENCRYPTED_MAGIC_LEN, ENCRYPTED_MAGIC_V1, ENCRYPTED_MAGIC_V2};

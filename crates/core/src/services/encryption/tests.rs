@@ -11,9 +11,7 @@ use crate::errors::CoreError;
 
 use super::kdf::derive_key;
 use super::machine_key::get_or_create_machine_key;
-use super::{
-    Encryption, KEY_LEN, NONCE_LEN, SALT_LEN, STREAM_KEY_PREFIX_V1, STREAM_KEY_PREFIX_V2,
-};
+use super::{Encryption, KEY_LEN, NONCE_LEN, SALT_LEN, STREAM_KEY_PREFIX_V1, STREAM_KEY_PREFIX_V2};
 
 // --- Password-based encryption (profile `.mgs` body) -------------------
 
@@ -196,9 +194,7 @@ fn empty_string_passes_through() {
 
 #[tokio::test]
 async fn rotate_with_encrypted_profile_re_encrypts_stream_keys() {
-    use crate::models::{
-        OutputGroup, Platform, Profile, ProfileSettings, RtmpInput, StreamTarget,
-    };
+    use crate::models::{OutputGroup, Platform, Profile, ProfileSettings, RtmpInput, StreamTarget};
     use crate::services::ProfileManager;
     use std::collections::HashMap;
 
@@ -333,6 +329,155 @@ async fn rotate_refuses_when_password_missing_for_encrypted_profile() {
     assert_eq!(
         key_before, key_after,
         "old machine key must be untouched after a refused rotation"
+    );
+}
+
+/// G7 regression: when a per-profile re-encrypt fails mid-rotation,
+/// `restore_from_backup` must put every profile back exactly as it
+/// was — and the old machine key must still decrypt them. Pre-G7 we
+/// had no test for the rollback path; the cleanup chain could silently
+/// regress and only fail in production where rolling back matters
+/// most. Forces failure by writing a profile whose machine-key
+/// envelope is structurally valid (carries the V2 prefix) but holds
+/// non-base64 garbage so the decrypt-with-old-key step errors.
+#[tokio::test]
+async fn rotate_rolls_back_when_re_encrypt_fails_midway() {
+    use crate::models::{OutputGroup, Platform, Profile, ProfileSettings, RtmpInput, StreamTarget};
+    use crate::services::ProfileManager;
+    use std::collections::HashMap;
+
+    let data_dir = TempDir::new().unwrap();
+    let profiles_dir = data_dir.path().join("profiles");
+    std::fs::create_dir_all(&profiles_dir).unwrap();
+    let mgr = ProfileManager::new(data_dir.path().to_path_buf());
+
+    // Healthy plaintext profile with a real encrypted stream key.
+    let mut og = OutputGroup::new();
+    og.id = "g".into();
+    og.name = "G".into();
+    og.stream_targets = vec![StreamTarget {
+        id: "t".into(),
+        service: Platform::Twitch,
+        name: "Twitch".into(),
+        url: "rtmp://localhost/x".into(),
+        stream_key: "live_real_1234567890".into(),
+    }];
+    let good = Profile {
+        id: "good".into(),
+        name: "good".into(),
+        encrypted: false,
+        input: RtmpInput {
+            input_type: "rtmp".into(),
+            bind_address: "127.0.0.1".into(),
+            port: 1935,
+            application: "live".into(),
+        },
+        output_groups: vec![og],
+        settings: ProfileSettings {
+            encrypt_stream_keys: true,
+            ..ProfileSettings::default()
+        },
+        pii_blocklist: vec![],
+        pii_fuzzy: false,
+        anonymous_logging: true,
+        anonymous_salt: String::new(),
+    };
+    mgr.save_with_key_encryption(&good, None).await.unwrap();
+
+    // Snapshot the healthy file contents + the old machine key so we
+    // can verify the rollback leaves everything exactly as it was.
+    let good_path = profiles_dir.join("good.json");
+    let good_before = std::fs::read(&good_path).unwrap();
+    let key_path = data_dir.path().join(".stream_key");
+    let key_before = std::fs::read(&key_path).unwrap();
+
+    // Now inject a poisoned plaintext profile alongside the good one.
+    // Carries a V2-prefixed but undecryptable stream_key — re-encrypt
+    // path will fail on `decode_and_decrypt_v2`, triggering rollback.
+    let poison_json = serde_json::json!({
+        "id": "poison",
+        "name": "poison",
+        "encrypted": false,
+        "input": {
+            "type": "rtmp",
+            "bindAddress": "127.0.0.1",
+            "port": 1936,
+            "application": "live"
+        },
+        "outputGroups": [{
+            "id": "g",
+            "name": "G",
+            "video": {
+                "codec": "libx264",
+                "preset": "veryfast",
+                "tune": "zerolatency",
+                "profile": "high",
+                "bitrate": "6000",
+                "width": 1920,
+                "height": 1080,
+                "fps": 30,
+                "keyframeInterval": 2,
+            },
+            "audio": {
+                "codec": "aac",
+                "bitrate": "160k",
+                "sampleRate": 48000,
+                "channels": 2
+            },
+            "streamTargets": [{
+                "id": "t",
+                "service": "twitch",
+                "name": "T",
+                "url": "rtmp://localhost/x",
+                "streamKey": "ENC2::!!!not-base64!!!"
+            }]
+        }],
+        "settings": serde_json::Value::Object(serde_json::Map::new()),
+        "piiBlocklist": [],
+        "piiFuzzy": false,
+        "anonymousLogging": true,
+        "anonymousSalt": ""
+    });
+    std::fs::write(
+        profiles_dir.join("poison.json"),
+        serde_json::to_vec_pretty(&poison_json).unwrap(),
+    )
+    .unwrap();
+
+    // Rotate. Expect Internal error citing rollback.
+    let err = Encryption::rotate_machine_key(data_dir.path(), &profiles_dir, &HashMap::new())
+        .expect_err("rotation must fail when a profile's encrypted key is unrecoverable");
+    match err {
+        CoreError::Internal { context } => {
+            assert!(
+                context.contains("Key rotation failed") || context.contains("rolled back"),
+                "unexpected internal error: {context}",
+            );
+        }
+        other => panic!("expected Internal, got {other:?}"),
+    }
+
+    // Old machine key must be intact — step 7 (delete old key) never
+    // ran because step 6 errored.
+    let key_after = std::fs::read(&key_path).unwrap();
+    assert_eq!(
+        key_before, key_after,
+        "rollback must leave the old machine key in place",
+    );
+
+    // The healthy profile must be byte-identical to its pre-rotation state.
+    let good_after = std::fs::read(&good_path).unwrap();
+    assert_eq!(
+        good_before, good_after,
+        "rollback must restore the healthy profile byte-for-byte",
+    );
+
+    // And the original stream_key must still decrypt under the
+    // (unchanged) old machine key.
+    let loaded = mgr.load_with_key_decryption("good", None).await.unwrap();
+    assert_eq!(
+        loaded.output_groups[0].stream_targets[0].stream_key,
+        "live_real_1234567890",
     );
 }
 

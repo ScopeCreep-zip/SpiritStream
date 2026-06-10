@@ -17,10 +17,6 @@ youtubeChannelId: string,
  */
 trovoChannelId: string, 
 /**
- * Stripchat username
- */
-stripchatUsername: string, 
-/**
  * Kick channel name (also used as the broadcaster handle for
  * chatroom-id lookup at activation time).
  */
@@ -53,10 +49,6 @@ youtubeSendEnabled: boolean,
  * Allow sending to Trovo chat
  */
 trovoSendEnabled: boolean, 
-/**
- * Allow sending to Stripchat chat
- */
-stripchatSendEnabled: boolean, 
 /**
  * Allow sending to Kick chat (requires OAuth + chat:write scope)
  */

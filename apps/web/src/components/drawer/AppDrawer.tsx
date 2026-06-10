@@ -51,7 +51,7 @@ export function AppDrawer({ open, onClose, mode, onSelect }: AppDrawerProps): Re
   const capability: ServiceCapability = mode === 'chat-source' ? 'chat' : 'rtmp';
   const filtered = useMemo(
     () => filterCatalog(catalog, query, capability),
-    [catalog, query, capability],
+    [catalog, query, capability]
   );
 
   // Reset the query whenever the drawer opens — selecting a service should
@@ -69,10 +69,9 @@ export function AppDrawer({ open, onClose, mode, onSelect }: AppDrawerProps): Re
     <Modal
       open={open}
       onClose={onClose}
-      title={t(
-        mode === 'chat-source' ? 'drawer.title.chat' : 'drawer.title.stream',
-        { defaultValue: mode === 'chat-source' ? 'Connect chat source' : 'Add streaming destination' },
-      )}
+      title={t(mode === 'chat-source' ? 'drawer.title.chat' : 'drawer.title.stream', {
+        defaultValue: mode === 'chat-source' ? 'Connect chat source' : 'Add streaming destination',
+      })}
       maxWidth="720px"
       closeOnBackdropClick
     >
@@ -94,7 +93,7 @@ export function AppDrawer({ open, onClose, mode, onSelect }: AppDrawerProps): Re
             'w-full h-10 ps-9 pe-3 rounded-md text-sm',
             'bg-bg-sunken text-text-primary border border-border-default',
             'placeholder:text-text-muted',
-            'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring-default',
+            'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring-default'
           )}
         />
       </div>
@@ -166,20 +165,20 @@ function ServiceCard({ entry, onSelect }: ServiceCardProps): React.ReactElement 
         'bg-bg-surface border border-border-muted',
         'hover:border-primary hover:bg-bg-hover',
         'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring-default',
-        'transition-colors',
+        'transition-colors'
       )}
     >
       <span
         aria-hidden="true"
-        className="flex-shrink-0 inline-flex items-center justify-center w-8 h-8 rounded text-xs font-semibold"
-        style={{ backgroundColor: entry.color, color: entry.textColor }}
+        className="flex-shrink-0 inline-flex items-center justify-center w-8 h-8 rounded text-xs font-semibold bg-[var(--service-bg)] text-[var(--service-fg)]"
+        // Per-service brand colors are config data, not static tokens — inject
+        // as CSS vars (Modal.tsx pattern).
+        style={{ '--service-bg': entry.color, '--service-fg': entry.textColor } as React.CSSProperties}
       >
         {entry.abbreviation}
       </span>
       <span className="flex flex-col min-w-0">
-        <span className="text-sm font-medium text-text-primary truncate">
-          {entry.displayName}
-        </span>
+        <span className="text-sm font-medium text-text-primary truncate">{entry.displayName}</span>
         <span className="text-xs text-text-tertiary truncate">
           {entry.capabilities.join(' · ')}
         </span>

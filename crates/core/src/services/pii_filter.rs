@@ -83,23 +83,30 @@ pub fn check(message: &str, blocklist: &[String], mode: PiiMatchMode) -> PiiChec
     PiiCheck::Clear
 }
 
-/// Strict normalisation: lowercase. We rely on Rust's `to_lowercase`
-/// which is Unicode-aware (full case folding for many scripts). NFD
-/// normalisation would be ideal but `unicode-normalization` is an
-/// extra dep we don't currently take; lowercase handles the bulk of
-/// real-world inputs. (Threat model note: the documented residual
-/// risk above covers the gap.)
+/// Strict normalisation: NFKC + lowercase. NFKC collapses lookalike
+/// code points (mathematical-italic `𝕊𝕒𝕞` → `Sam`, fullwidth `Ｓａｍ` →
+/// `Sam`, ligatures `ﬃ` → `ffi`) into their canonical ASCII / Latin
+/// equivalents BEFORE case-folding, so a blocklist entry of "sam"
+/// catches every visual variant an attacker might use to bypass it.
+/// Per the SpiritStream threat model (sex workers, harassment-prone
+/// streamers, journalists), this matters: a leaked deadname or real
+/// name typed in mathematical italic must still trigger the filter.
 fn normalise_strict(s: &str) -> String {
-    s.to_lowercase()
+    use unicode_normalization::UnicodeNormalization;
+    s.nfkc().collect::<String>().to_lowercase()
 }
 
-/// Fuzzy normalisation: strict + leet-speak substitution + zero-width
-/// character stripping. The substitution table is intentionally small
-/// and curated — users CANNOT register their own patterns (no regex
-/// from user input, no ReDoS risk, no logic injection).
+/// Fuzzy normalisation: NFKC + strict + leet-speak substitution +
+/// zero-width character stripping. The substitution table is
+/// intentionally small and curated — users CANNOT register their own
+/// patterns (no regex from user input, no ReDoS risk, no logic
+/// injection). NFKC runs first so subsequent steps see canonical
+/// code points.
 fn normalise_fuzzy(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
+    use unicode_normalization::UnicodeNormalization;
+    let normalised: String = s.nfkc().collect();
+    let mut out = String::with_capacity(normalised.len());
+    for c in normalised.chars() {
         // Strip zero-width joiners / non-joiners / spaces.
         if matches!(c, '\u{200B}' | '\u{200C}' | '\u{200D}' | '\u{FEFF}') {
             continue;
@@ -171,6 +178,39 @@ mod tests {
         // Without fuzzy mode, `a` and `@` are distinct.
         let bl = block(&["alex"]);
         assert_eq!(check("hi @lex", &bl, PiiMatchMode::Strict), PiiCheck::Clear);
+    }
+
+    #[test]
+    fn strict_catches_nfkc_lookalike_bypass() {
+        // Pre-NFKC bug: an attacker could bypass a blocklist entry of
+        // "sam" by typing mathematical-italic "𝕊𝕒𝕞", fullwidth "Ｓａｍ",
+        // or the "ﬃ" ligature. NFKC folds them to canonical ASCII
+        // before lowercase, so the strict matcher catches all variants.
+        let bl = block(&["sam", "office"]);
+        // Mathematical-italic capital S, lowercase a, lowercase m.
+        assert!(
+            matches!(
+                check("𝕊𝕒𝕞 was here", &bl, PiiMatchMode::Strict),
+                PiiCheck::Match { .. }
+            ),
+            "mathematical-italic lookalike bypassed strict matcher"
+        );
+        // Fullwidth Latin.
+        assert!(
+            matches!(
+                check("Ｓａｍ was here", &bl, PiiMatchMode::Strict),
+                PiiCheck::Match { .. }
+            ),
+            "fullwidth lookalike bypassed strict matcher"
+        );
+        // Ligature `ﬃ` (U+FB03) → "ffi"; blocklist "office" should catch.
+        assert!(
+            matches!(
+                check("oﬃce hours", &bl, PiiMatchMode::Strict),
+                PiiCheck::Match { .. }
+            ),
+            "ﬃ ligature bypassed strict matcher"
+        );
     }
 
     // --- Fuzzy matcher ---------------------------------------------------

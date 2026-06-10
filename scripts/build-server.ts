@@ -22,8 +22,18 @@ import { tmpdir } from 'os';
  */
 function findVcvarsall(): string | null {
   const vswherePaths = [
-    join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Microsoft Visual Studio', 'Installer', 'vswhere.exe'),
-    join(process.env['ProgramFiles'] || 'C:\\Program Files', 'Microsoft Visual Studio', 'Installer', 'vswhere.exe'),
+    join(
+      process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)',
+      'Microsoft Visual Studio',
+      'Installer',
+      'vswhere.exe'
+    ),
+    join(
+      process.env['ProgramFiles'] || 'C:\\Program Files',
+      'Microsoft Visual Studio',
+      'Installer',
+      'vswhere.exe'
+    ),
   ];
 
   for (const vswherePath of vswherePaths) {
@@ -173,6 +183,33 @@ console.log(`Building server binary for ${target} (${profile})...`);
 const binariesDir = join(projectRoot, 'apps', 'tauri', 'src-tauri', 'binaries');
 if (!existsSync(binariesDir)) {
   mkdirSync(binariesDir, { recursive: true });
+}
+
+// M8: pre-build sanity check. `tauri.conf.json#externalBin` names two
+// sidecars — `binaries/spiritstream-server` (this script builds it)
+// and `binaries/ffmpeg` (built separately by `scripts/build-ffmpeg`
+// and copied into place by `scripts/attach-ffmpeg-source.ts` or the
+// CI matrix). The Tauri bundler errors out with a cryptic "couldn't
+// find external binary" deep inside the bundle step when ffmpeg is
+// missing; surface the failure here with a clear actionable message
+// so the maintainer doesn't waste a multi-minute release build to
+// see the bundler give up at the end.
+const ffmpegPath = join(binariesDir, `ffmpeg-${target}${ext}`);
+if (!existsSync(ffmpegPath)) {
+  console.error(`
+[build-server] required ffmpeg sidecar is missing:
+  ${ffmpegPath}
+
+The Tauri bundler ('tauri.conf.json#externalBin') depends on this
+file being present at build time. Run one of:
+
+  pnpm tsx scripts/fetch-bundled-ffmpeg.ts          # download the
+                                                    # pre-built binary
+  pnpm tsx scripts/build-ffmpeg --target ${target}  # build from source
+
+before re-invoking 'pnpm build:server'.
+`);
+  process.exit(1);
 }
 
 // Destination path for the sidecar binary

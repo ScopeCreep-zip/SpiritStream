@@ -58,9 +58,11 @@ function generatePlatformTypes() {
   const data: PlatformsJSON = JSON.parse(jsonContent);
 
   // Filter to only RTMP/RTMPS platforms with "append" or "in_url_template" placement
-  const services = data.services.filter(service => {
-    const isRTMP = service.defaultUrl.startsWith('rtmp://') || service.defaultUrl.startsWith('rtmps://');
-    const isSupported = service.streamKeyPlacement === 'append' || service.streamKeyPlacement === 'in_url_template';
+  const services = data.services.filter((service) => {
+    const isRTMP =
+      service.defaultUrl.startsWith('rtmp://') || service.defaultUrl.startsWith('rtmps://');
+    const isSupported =
+      service.streamKeyPlacement === 'append' || service.streamKeyPlacement === 'in_url_template';
     return isRTMP && isSupported;
   });
 
@@ -117,7 +119,15 @@ export const PLATFORMS: Record<Platform, {
   output += '};\n';
 
   // Write output file
-  const outputPath = path.join(__dirname, '..', 'apps', 'web', 'src', 'types', 'generated-platforms.ts');
+  const outputPath = path.join(
+    __dirname,
+    '..',
+    'apps',
+    'web',
+    'src',
+    'types',
+    'generated-platforms.ts'
+  );
   fs.writeFileSync(outputPath, output, 'utf-8');
 
   console.log(`✅ Generated ${services.length} platform types to ${outputPath}`);

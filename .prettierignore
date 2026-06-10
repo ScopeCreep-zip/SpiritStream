@@ -2,3 +2,19 @@ dist/
 node_modules/
 src-tauri/target/
 *.md
+# Helm templates: Go templating (`{{ .Values.foo }}`) inside YAML is
+# not parseable by Prettier's YAML parser. The chart is linted with
+# `helm lint` instead (template-aware).
+deploy/helm/**/templates/**
+# Generated files — owned by ts-rs / @hey-api/openapi-ts / Tauri
+# build.rs / `tauri gen`. Re-running the generator wins; prettifying
+# would just drift back on the next regen.
+**/generated/**
+apps/web/src/types/generated-platforms.ts
+apps/tauri/src-tauri/gen/**
+# Tauri owns capability config formatting via the JSON Schema it
+# emits; manual prettier reformatting fights `tauri gen`.
+apps/tauri/src-tauri/capabilities/**
+apps/tauri/src-tauri/tauri.conf.json
+# Lockfile + pnpm artifacts: format is owned by pnpm.
+pnpm-lock.yaml

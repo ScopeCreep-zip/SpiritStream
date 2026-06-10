@@ -116,22 +116,33 @@ impl OAuthCallbackServer {
             })
             .collect();
 
+        // H5: every `urlencoding::decode().unwrap_or_default()` here
+        // silently swallowed malformed input and presented the
+        // empty string downstream as if it were a valid OAuth value.
+        // A flipped bit on the wire or a curiosity-driven `%ZZ` from
+        // a wrong-client redirect would then trip the token exchange
+        // with a blank `code`, producing a generic upstream 4xx with
+        // no breadcrumb pointing at the corruption. Now decode
+        // failures abort the callback parse — the loopback server
+        // returns the no-match fallback page rather than confidently
+        // forwarding garbage.
         if let Some(error) = params.get("error") {
+            let decoded_error = urlencoding::decode(error).ok()?.to_string();
+            let description = match params.get("error_description") {
+                Some(d) => Some(urlencoding::decode(d).ok()?.to_string()),
+                None => None,
+            };
             return Some(OAuthCallback::Error {
-                error: urlencoding::decode(error).unwrap_or_default().to_string(),
-                description: params
-                    .get("error_description")
-                    .map(|d| urlencoding::decode(d).unwrap_or_default().to_string()),
+                error: decoded_error,
+                description,
             });
         }
 
         if let Some(access_token) = params.get("access_token") {
             let state = params.get("state")?;
             return Some(OAuthCallback::ImplicitSuccess {
-                access_token: urlencoding::decode(access_token)
-                    .unwrap_or_default()
-                    .to_string(),
-                state: urlencoding::decode(state).unwrap_or_default().to_string(),
+                access_token: urlencoding::decode(access_token).ok()?.to_string(),
+                state: urlencoding::decode(state).ok()?.to_string(),
             });
         }
 
@@ -139,8 +150,8 @@ impl OAuthCallbackServer {
         let state = params.get("state")?;
 
         Some(OAuthCallback::Success {
-            code: urlencoding::decode(code).unwrap_or_default().to_string(),
-            state: urlencoding::decode(state).unwrap_or_default().to_string(),
+            code: urlencoding::decode(code).ok()?.to_string(),
+            state: urlencoding::decode(state).ok()?.to_string(),
         })
     }
 
@@ -257,12 +268,128 @@ pub enum OAuthCallback {
     /// Implicit flow callback — token arrives directly in the
     /// redirect URL (Twitch implicit grant; fragment hoisted into the
     /// query by the callback HTML before SpiritStream sees it).
-    ImplicitSuccess {
-        access_token: String,
-        state: String,
-    },
+    ImplicitSuccess { access_token: String, state: String },
     Error {
         error: String,
         description: Option<String>,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{OAuthCallback, OAuthCallbackServer};
+
+    fn parse(line: &str) -> Option<OAuthCallback> {
+        OAuthCallbackServer::parse_callback(line)
+    }
+
+    #[test]
+    fn parses_authorization_code_callback() {
+        let req = "GET /oauth/callback?code=abc123&state=xyz HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        match parse(req) {
+            Some(OAuthCallback::Success { code, state }) => {
+                assert_eq!(code, "abc123");
+                assert_eq!(state, "xyz");
+            }
+            other => panic!("expected Success, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn url_decodes_code_and_state() {
+        let req = "GET /oauth/callback?code=a%20b&state=x%2By HTTP/1.1\r\n\r\n";
+        match parse(req) {
+            Some(OAuthCallback::Success { code, state }) => {
+                assert_eq!(code, "a b");
+                assert_eq!(state, "x+y");
+            }
+            other => panic!("expected Success, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_implicit_token_callback() {
+        let req = "GET /oauth/callback?access_token=tok&state=st HTTP/1.1\r\n\r\n";
+        match parse(req) {
+            Some(OAuthCallback::ImplicitSuccess {
+                access_token,
+                state,
+            }) => {
+                assert_eq!(access_token, "tok");
+                assert_eq!(state, "st");
+            }
+            other => panic!("expected ImplicitSuccess, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_error_callback_with_description() {
+        let req = "GET /oauth/callback?error=access_denied&error_description=nope HTTP/1.1\r\n\r\n";
+        match parse(req) {
+            Some(OAuthCallback::Error { error, description }) => {
+                assert_eq!(error, "access_denied");
+                assert_eq!(description.as_deref(), Some("nope"));
+            }
+            other => panic!("expected Error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_error_callback_without_description() {
+        let req = "GET /oauth/callback?error=server_error HTTP/1.1\r\n\r\n";
+        match parse(req) {
+            Some(OAuthCallback::Error { error, description }) => {
+                assert_eq!(error, "server_error");
+                assert!(description.is_none());
+            }
+            other => panic!("expected Error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn non_callback_path_returns_none() {
+        assert!(parse("GET /favicon.ico HTTP/1.1\r\n\r\n").is_none());
+    }
+
+    #[test]
+    fn callback_without_query_returns_none() {
+        // No query string → implicit-flow fragment page is served instead.
+        assert!(parse("GET /oauth/callback HTTP/1.1\r\n\r\n").is_none());
+    }
+
+    #[test]
+    fn malformed_percent_encoding_aborts_parse() {
+        // H5: a percent-escape that decodes to invalid UTF-8 (0xFF) must
+        // abort the parse (return None) rather than silently forwarding an
+        // empty value downstream.
+        assert!(parse("GET /oauth/callback?code=%FF&state=ok HTTP/1.1\r\n\r\n").is_none());
+    }
+
+    #[test]
+    fn empty_request_returns_none() {
+        assert!(parse("").is_none());
+    }
+
+    #[test]
+    fn success_response_is_well_formed_http() {
+        let resp = OAuthCallbackServer::success_response();
+        assert!(resp.starts_with("HTTP/1.1 200 OK"));
+        assert!(resp.contains("Authentication Successful"));
+        assert!(resp.contains("Content-Length:"));
+    }
+
+    #[test]
+    fn error_response_carries_message_and_400() {
+        let resp = OAuthCallbackServer::error_response("boom");
+        assert!(resp.starts_with("HTTP/1.1 400 Bad Request"));
+        assert!(resp.contains("boom"));
+    }
+
+    #[test]
+    fn fragment_extraction_response_redirects_via_script() {
+        let resp = OAuthCallbackServer::fragment_extraction_response();
+        assert!(resp.starts_with("HTTP/1.1 200 OK"));
+        assert!(resp.contains("window.location.hash"));
+        assert!(resp.contains("/oauth/callback?"));
+    }
 }

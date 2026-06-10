@@ -51,6 +51,14 @@ base64 = "0.22"
 zeroize = { version = "1.7", features = ["derive"] }
 sha2 = "0.10"
 hex = "0.4"
+# Constant-time byte comparison for HMAC tag + pseudonym verification.
+# Avoids `==` on byte slices which short-circuits on first mismatch.
+subtle = "2"
+# Unicode NFKC normalisation for the PII blocklist matcher. Without it,
+# lookalike code points (mathematical-italic Latin, fullwidth ASCII,
+# Latin-Extended diacritics) bypass `to_lowercase` and silently slip
+# through the strict matcher.
+unicode-normalization = "0.1"
 # Chat message flags (Phase B). bitflags 2.x with manual serde so the
 # wire format stays a plain integer for ts-rs/JS consumption.
 bitflags = "2.6"
@@ -99,6 +107,13 @@ winapi = { version = "0.3", features = ["fileapi", "winnt"] }
 [dev-dependencies]
 # Test-time PNG construction for media_sanitizer fixtures.
 png = "0.17"
+# Test-time mtime backdating for log-retention pruning tests.
+filetime = "0.2"
+# HTTP mock server for the chat-connector integration harness. Dev-only:
+# wiremock pulls hyper for its own mock server, but as a dev-dependency it
+# never enters the library's dependency graph, so the core "no transport
+# frameworks" rule (axum/tower/hyper) still holds for published builds.
+wiremock = "0.6"
 
 [build-dependencies]
 serde_json = "1.0"

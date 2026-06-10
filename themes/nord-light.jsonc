@@ -190,6 +190,6 @@
     "--shadow-color": "rgba(46, 52, 64, 0.5)",
     "--scrollbar-track": "#E5E9F0",
     "--scrollbar-thumb": "#CBD2DC",
-    "--scrollbar-thumb-hover": "#B8C0CC"
-  }
+    "--scrollbar-thumb-hover": "#B8C0CC",
+  },
 }

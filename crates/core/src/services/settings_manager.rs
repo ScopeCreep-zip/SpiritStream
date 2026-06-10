@@ -233,9 +233,14 @@ impl SettingsManager {
             })?;
         }
         // Drop the cache so subsequent loads reread from a (now empty)
-        // disk and write fresh defaults.
-        if let Ok(mut cache) = self.cache.write() {
-            *cache = None;
+        // disk and write fresh defaults. A poisoned cache lock means a
+        // stale entry could survive the wipe — surface it loudly rather
+        // than silently leaking pre-clear settings into a `load()` call.
+        match self.cache.write() {
+            Ok(mut cache) => *cache = None,
+            Err(e) => log::error!(
+                "settings_manager cache write lock poisoned during clear_all_data — stale cache may survive: {e}"
+            ),
         }
         Ok(())
     }
@@ -315,5 +320,63 @@ mod tests {
             0o600,
             "settings.json must be owner-only after save",
         );
+    }
+
+    #[test]
+    fn load_clamps_out_of_range_persisted_value_to_default() {
+        let tmp = TempDir::new().expect("tempdir");
+        let bad = Settings {
+            log_retention_days: 9999,
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&bad).expect("serialize");
+        std::fs::write(tmp.path().join("settings.json"), json).expect("seed file");
+
+        let mgr = SettingsManager::new(tmp.path().to_path_buf());
+        let loaded = mgr.load().expect("load with clamp");
+        assert_eq!(
+            loaded.log_retention_days,
+            Settings::default().log_retention_days
+        );
+    }
+
+    #[test]
+    fn export_data_copies_settings_and_profiles_under_cap() {
+        let (mgr, tmp) = manager();
+        let s = mgr.load().expect("load defaults");
+        mgr.save(&s).expect("save defaults");
+
+        let profiles_dir = mgr.get_profiles_path();
+        std::fs::create_dir_all(&profiles_dir).expect("profiles dir");
+        std::fs::write(profiles_dir.join("p1.json"), b"{}").expect("seed profile");
+
+        let export_dir = tmp.path().join("export");
+        mgr.export_data(&export_dir).expect("export");
+
+        assert!(export_dir.join("settings.json").exists());
+        assert!(export_dir.join("profiles").join("p1.json").exists());
+    }
+
+    #[test]
+    fn clear_data_removes_settings_and_profiles_and_drops_cache() {
+        let (mgr, _tmp) = manager();
+        let s = mgr.load().expect("load defaults");
+        mgr.save(&s).expect("save defaults");
+        let profiles_dir = mgr.get_profiles_path();
+        std::fs::create_dir_all(&profiles_dir).expect("profiles dir");
+        std::fs::write(profiles_dir.join("p1.json"), b"{}").expect("seed profile");
+
+        mgr.clear_data().expect("clear");
+
+        assert!(!mgr.settings_path.exists());
+        assert!(!profiles_dir.exists());
+
+        // A subsequent load rereads from the wiped disk and rewrites defaults.
+        let reloaded = mgr.load().expect("reload after clear");
+        assert_eq!(
+            reloaded.log_retention_days,
+            Settings::default().log_retention_days
+        );
+        assert!(mgr.settings_path.exists());
     }
 }

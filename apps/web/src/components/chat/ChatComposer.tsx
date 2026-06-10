@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Send } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
@@ -24,15 +24,22 @@ interface ChatComposerProps {
  * Backend decides what's valid to send: this component only formats the
  * draft and calls `api.chat.sendMessage`.
  */
-export function ChatComposer({ statuses, activeStreamCount }: ChatComposerProps): React.ReactElement {
+export function ChatComposer({
+  statuses,
+  activeStreamCount,
+}: ChatComposerProps): React.ReactElement {
   const { t } = useTranslation();
   const currentProfile = useProfileStore((state) => state.current);
   const chatSettings = useMemo(
     () => currentProfile?.settings?.chat ?? createDefaultChatSettings(),
-    [currentProfile],
+    [currentProfile]
   );
   const [draftMessage, setDraftMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
+  // Per-message target when the user has disabled broadcast-to-all on
+  // the chat-settings panel. Picks the first connected send-target by
+  // default so the dropdown is never empty when shown.
+  const [singleTarget, setSingleTarget] = useState<ChatPlatformStatus['platform'] | null>(null);
 
   const sendTargets = useMemo(() => {
     return statuses.filter((status) => {
@@ -55,6 +62,18 @@ export function ChatComposer({ statuses, activeStreamCount }: ChatComposerProps)
     });
   }, [chatSettings, statuses]);
 
+  // Keep `singleTarget` valid as the connected-set changes (e.g. a
+  // platform drops). Picks the first available send-target whenever the
+  // current pick disappears.
+  useEffect(() => {
+    if (chatSettings.sendAllEnabled) return;
+    const currentValid =
+      singleTarget !== null && sendTargets.some((t) => t.platform === singleTarget);
+    if (!currentValid && sendTargets[0]) {
+      setSingleTarget(sendTargets[0].platform);
+    }
+  }, [chatSettings.sendAllEnabled, sendTargets, singleTarget]);
+
   const canSend = draftMessage.trim().length > 0 && sendTargets.length > 0;
 
   const sendTargetLabel = useMemo(() => {
@@ -72,52 +91,87 @@ export function ChatComposer({ statuses, activeStreamCount }: ChatComposerProps)
       .join(', ');
   }, [sendTargets, t]);
 
-  const platformStates = useMemo(() => {
+  // Single source of truth for "what state is each chat platform in?" —
+  // drives both the bottom badge row and the disabled-send hint below.
+  // Mirrors the configured/send-enabled logic used by ChatPanel's auto-
+  // visibility list and by `sendTargets` above; tiktok is read-only,
+  // facebook send is auth-gated server-side (config = opted-in via the
+  // confirm-token gate at connect).
+  const allPlatformStates = useMemo(() => {
     const getStatus = (platform: ChatPlatformStatus['platform']) =>
       statuses.find((status) => status.platform === platform)?.status ?? 'disconnected';
+    const facebookConfigured = (chatSettings.facebookLiveVideoId ?? '').trim().length > 0;
 
     return [
       {
-        id: 'twitch',
+        id: 'twitch' as const,
         label: t('chat.platforms.twitch'),
         configured: chatSettings.twitchChannel.trim().length > 0,
         sendEnabled: chatSettings.twitchSendEnabled,
+        readOnly: false,
         status: getStatus('twitch'),
       },
       {
-        id: 'youtube',
+        id: 'youtube' as const,
         label: t('chat.platforms.youtube'),
         configured: chatSettings.youtubeChannelId.trim().length > 0,
         sendEnabled: chatSettings.youtubeSendEnabled && !chatSettings.youtubeUseApiKey,
+        readOnly: chatSettings.youtubeUseApiKey,
         status: getStatus('youtube'),
       },
       {
-        id: 'trovo',
+        id: 'trovo' as const,
         label: t('chat.platforms.trovo'),
         configured: chatSettings.trovoChannelId.trim().length > 0,
         sendEnabled: chatSettings.trovoSendEnabled,
+        readOnly: false,
         status: getStatus('trovo'),
+      },
+      {
+        id: 'kick' as const,
+        label: t('chat.platforms.kick'),
+        configured: chatSettings.kickChannel.trim().length > 0,
+        sendEnabled: chatSettings.kickSendEnabled,
+        readOnly: false,
+        status: getStatus('kick'),
+      },
+      {
+        id: 'tiktok' as const,
+        label: t('chat.platforms.tiktok'),
+        configured: chatSettings.tiktokUsername.trim().length > 0,
+        sendEnabled: false,
+        readOnly: true,
+        status: getStatus('tiktok'),
+      },
+      {
+        id: 'facebook' as const,
+        label: t('chat.platforms.facebook'),
+        configured: facebookConfigured,
+        sendEnabled: facebookConfigured,
+        readOnly: false,
+        status: getStatus('facebook'),
       },
     ];
   }, [chatSettings, statuses, t]);
 
+  // Only badge platforms the user has actually configured — an unconfigured
+  // row has no useful state to surface.
+  const platformStates = useMemo(
+    () => allPlatformStates.filter((row) => row.configured),
+    [allPlatformStates]
+  );
+
   const sendDisabledReason = useMemo(() => {
     const isStreaming = activeStreamCount > 0;
-    const configuredPlatforms = [
-      chatSettings.twitchChannel.trim() ? 'twitch' : null,
-      chatSettings.youtubeChannelId.trim() ? 'youtube' : null,
-      chatSettings.trovoChannelId.trim() ? 'trovo' : null,
-    ].filter(Boolean);
-    const sendEnabledPlatforms = [
-      chatSettings.twitchSendEnabled ? 'twitch' : null,
-      chatSettings.youtubeSendEnabled && !chatSettings.youtubeUseApiKey ? 'youtube' : null,
-      chatSettings.trovoSendEnabled ? 'trovo' : null,
-    ].filter(Boolean);
+    const configuredPlatforms = allPlatformStates.filter((row) => row.configured);
+    // TikTok cannot send by design; exclude from "can we send?" enumeration.
+    const sendEnabledPlatforms = allPlatformStates.filter(
+      (row) => row.configured && row.sendEnabled && !row.readOnly
+    );
 
     if (!isStreaming) {
       return t('chat.sendRequiresStream', {
-        defaultValue:
-          'Chat connects when you start streaming. Start a stream to enable sending.',
+        defaultValue: 'Chat connects when you start streaming. Start a stream to enable sending.',
       });
     }
 
@@ -155,22 +209,26 @@ export function ChatComposer({ statuses, activeStreamCount }: ChatComposerProps)
     const connectedCount = statuses.filter((status) => status.status === 'connected').length;
     if (connectedCount === 0) {
       return t('chat.sendNoConnected', {
-        defaultValue:
-          'No chat platforms are connected yet. Check your channel IDs and sign-in.',
+        defaultValue: 'No chat platforms are connected yet. Check your channel IDs and sign-in.',
       });
     }
 
     return t('chat.sendDisabledHint', {
       defaultValue: 'Enable sending in Integrations and connect your chat to send messages.',
     });
-  }, [activeStreamCount, chatSettings, statuses, t]);
+  }, [activeStreamCount, allPlatformStates, chatSettings, statuses, t]);
 
   const handleSend = useCallback(async (): Promise<void> => {
     const trimmed = draftMessage.trim();
     if (!trimmed || isSending) return;
     setIsSending(true);
     try {
-      const results = await api.chat.sendMessage(trimmed);
+      // When the user has disabled broadcast-to-all, pass an explicit
+      // single-platform list to the backend so it bypasses the
+      // per-platform send-enable flags and dispatches only there.
+      const explicitTargets =
+        chatSettings.sendAllEnabled || singleTarget === null ? undefined : [singleTarget];
+      const results = await api.chat.sendMessage(trimmed, explicitTargets);
       const failures = results.filter((result) => !result.success);
       if (failures.length) {
         toast.error(t('chat.sendPartialFail', 'Some platforms failed to receive your message.'));
@@ -182,10 +240,33 @@ export function ChatComposer({ statuses, activeStreamCount }: ChatComposerProps)
     } finally {
       setIsSending(false);
     }
-  }, [draftMessage, isSending, t]);
+  }, [chatSettings.sendAllEnabled, singleTarget, draftMessage, isSending, t]);
 
   return (
     <div className="space-y-2">
+      {/* Per-message platform picker — only when broadcast-to-all is
+          off. When on, the backend dispatches to every connected
+          platform whose per-platform send flag is true. */}
+      {!chatSettings.sendAllEnabled && sendTargets.length > 0 && (
+        <label className="flex items-center gap-2 text-xs">
+          <span className="text-text-tertiary">
+            {t('chat.sendTo', { defaultValue: 'Send to:' })}
+          </span>
+          <select
+            value={singleTarget ?? ''}
+            onChange={(event) =>
+              setSingleTarget(event.target.value as ChatPlatformStatus['platform'])
+            }
+            className="bg-bg-elevated border border-border-subtle rounded px-2 py-1 text-text-primary"
+          >
+            {sendTargets.map((target) => (
+              <option key={target.platform} value={target.platform}>
+                {t(`chat.platforms.${target.platform}`)}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <div className="flex items-center gap-2">
         <div className="flex-1 min-w-0">
           <Input
@@ -225,8 +306,8 @@ export function ChatComposer({ statuses, activeStreamCount }: ChatComposerProps)
         <div className="flex flex-wrap items-center gap-1.5 text-xs">
           {platformStates.map((platform) => {
             let stateLabel: string;
-            if (!platform.configured) {
-              stateLabel = t('chat.platformNotConfigured', { defaultValue: 'not configured' });
+            if (platform.readOnly) {
+              stateLabel = t('chat.platformReadOnly', { defaultValue: 'read-only' });
             } else if (platform.sendEnabled) {
               stateLabel = t('chat.sendOn', { defaultValue: 'on' });
             } else {
@@ -239,7 +320,10 @@ export function ChatComposer({ statuses, activeStreamCount }: ChatComposerProps)
                 title={`${platform.label} — ${stateLabel}`}
               >
                 <span
-                  className={cn('inline-block h-2 w-2 rounded-full', statusDotClass(platform.status))}
+                  className={cn(
+                    'inline-block h-2 w-2 rounded-full',
+                    statusDotClass(platform.status)
+                  )}
                   aria-hidden="true"
                 />
                 <span className="text-text-primary">{platform.label}</span>

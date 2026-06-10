@@ -22,9 +22,7 @@ mod tests;
 
 pub use cascade::ObsCascadeDeps;
 pub use handler::ObsWebSocketHandler;
-pub use types::{
-    IntegrationDirection, ObsConfig, ObsConnectionStatus, ObsState, ObsStreamStatus,
-};
+pub use types::{IntegrationDirection, ObsConfig, ObsConnectionStatus, ObsState, ObsStreamStatus};
 
 use crate::errors::{CoreError, ValidationIssue};
 

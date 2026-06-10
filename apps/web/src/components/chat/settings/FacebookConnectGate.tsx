@@ -31,7 +31,7 @@ export function FacebookConnectGate(): React.ReactElement {
 
   const chatSettings = useMemo(
     () => currentProfile?.settings?.chat ?? createDefaultChatSettings(),
-    [currentProfile],
+    [currentProfile]
   );
 
   const [videoId, setVideoId] = useState('');
@@ -117,9 +117,7 @@ export function FacebookConnectGate(): React.ReactElement {
         },
       });
 
-      toast.success(
-        t('chat.facebook.connectSuccess', { defaultValue: 'Facebook chat connected' }),
-      );
+      toast.success(t('chat.facebook.connectSuccess', { defaultValue: 'Facebook chat connected' }));
     } catch (error) {
       logger.error('[FacebookConnectGate] connect failed:', error);
       const message = error instanceof Error ? error.message : String(error);
@@ -127,20 +125,12 @@ export function FacebookConnectGate(): React.ReactElement {
         t('chat.facebook.connectFailed', {
           defaultValue: 'Facebook connect failed: {{error}}',
           error: message,
-        }),
+        })
       );
     } finally {
       setConnecting(false);
     }
-  }, [
-    acknowledged,
-    accessToken,
-    chatSettings,
-    currentProfile,
-    t,
-    updateProfileSettings,
-    videoId,
-  ]);
+  }, [acknowledged, accessToken, chatSettings, currentProfile, t, updateProfileSettings, videoId]);
 
   const handleDisconnect = useCallback(async () => {
     try {
@@ -149,10 +139,16 @@ export function FacebookConnectGate(): React.ReactElement {
         chat: { ...chatSettings, facebookLiveVideoId: '' },
       });
       toast.success(
-        t('chat.facebook.disconnectSuccess', { defaultValue: 'Facebook chat disconnected' }),
+        t('chat.facebook.disconnectSuccess', { defaultValue: 'Facebook chat disconnected' })
       );
     } catch (error) {
       logger.error('[FacebookConnectGate] disconnect failed:', error);
+      toast.error(
+        t('chat.facebook.disconnectFailed', {
+          defaultValue: 'Facebook disconnect failed: {{error}}',
+          error: error instanceof Error ? error.message : String(error),
+        })
+      );
     }
   }, [chatSettings, t, updateProfileSettings]);
 
@@ -237,11 +233,7 @@ export function FacebookConnectGate(): React.ReactElement {
         </div>
 
         <div className="mt-4 flex gap-2">
-          <Button
-            variant="primary"
-            onClick={handleConnect}
-            disabled={!canConnect}
-          >
+          <Button variant="primary" onClick={handleConnect} disabled={!canConnect}>
             {connecting
               ? t('chat.facebook.connecting', { defaultValue: 'Connecting…' })
               : t('chat.facebook.connect', { defaultValue: 'Enable Facebook chat' })}

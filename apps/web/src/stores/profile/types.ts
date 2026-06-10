@@ -21,19 +21,16 @@ export interface ProfileState {
   saveProfile: (password?: string) => Promise<void>;
   deleteProfile: (name: string) => Promise<void>;
   createProfile: (name: string) => Promise<void>;
-  isProfileEncrypted: (name: string) => Promise<boolean>;
   reorderProfiles: (fromIndex: number, toIndex: number) => Promise<void>;
 
-  setPendingPasswordProfile: (name: string | null) => void;
   clearPasswordError: () => void;
   submitPassword: (password: string) => Promise<void>;
   cancelPasswordPrompt: () => void;
   unlockProfile: (name: string) => void;
 
-  setProfiles: (profiles: ProfileSummary[]) => void;
-  setCurrentProfile: (profile: Profile | null) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
+
   selectProfile: (name: string) => Promise<void>;
   duplicateProfile: (name: string) => Promise<void>;
 

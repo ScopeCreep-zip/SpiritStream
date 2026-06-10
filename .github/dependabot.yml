@@ -14,7 +14,7 @@ version: 2
 updates:
   # Rust workspace at the repo root.
   - package-ecosystem: cargo
-    directory: "/"
+    directory: '/'
     schedule:
       interval: weekly
       day: monday
@@ -27,14 +27,14 @@ updates:
       rust-deps:
         applies-to: version-updates
         update-types: [minor, patch]
-    labels: ["dependencies", "rust"]
+    labels: ['dependencies', 'rust']
     commit-message:
-      prefix: "chore(deps,rust)"
+      prefix: 'chore(deps,rust)'
       include: scope
 
   # pnpm workspace (frontend + shared packages).
   - package-ecosystem: npm
-    directory: "/"
+    directory: '/'
     schedule:
       interval: weekly
       day: monday
@@ -45,9 +45,9 @@ updates:
       js-deps:
         applies-to: version-updates
         update-types: [minor, patch]
-    labels: ["dependencies", "javascript"]
+    labels: ['dependencies', 'javascript']
     commit-message:
-      prefix: "chore(deps,js)"
+      prefix: 'chore(deps,js)'
       include: scope
     ignore:
       # Vite dev-server CVEs (GHSA-4w7w-66w2-5vf9, GHSA-p9ff-h696-f583,
@@ -57,14 +57,14 @@ updates:
       # so the vulnerable version range is ignored. The pnpm.overrides
       # block in package.json still pins to 7.3.2+; this stops Dependabot
       # from re-raising alerts when a sub-7.3.2 transitive sneaks in.
-      - dependency-name: "vite"
-        versions: [">=7.0.0 <7.3.2"]
+      - dependency-name: 'vite'
+        versions: ['>=7.0.0 <7.3.2']
 
   # GitHub Actions versions. With SHA-pinning in workflows, Dependabot
   # rewrites the SHA pin AND the trailing version comment, so the
   # weekly batch stays both auditable and current.
   - package-ecosystem: github-actions
-    directory: "/"
+    directory: '/'
     schedule:
       interval: weekly
       day: monday
@@ -73,19 +73,19 @@ updates:
       ci-actions:
         applies-to: version-updates
         update-types: [minor, patch]
-    labels: ["dependencies", "ci"]
+    labels: ['dependencies', 'ci']
     commit-message:
-      prefix: "chore(deps,ci)"
+      prefix: 'chore(deps,ci)'
       include: scope
 
   # Docker base image bumps (Dockerfile in deploy/docker).
   - package-ecosystem: docker
-    directory: "/deploy/docker"
+    directory: '/deploy/docker'
     schedule:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
-    labels: ["dependencies", "docker"]
+    labels: ['dependencies', 'docker']
     commit-message:
-      prefix: "chore(deps,docker)"
+      prefix: 'chore(deps,docker)'
       include: scope

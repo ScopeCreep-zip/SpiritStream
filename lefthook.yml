@@ -63,6 +63,19 @@ pre-commit:
       fail_text: |
         Prettier formatting violations. Run `pnpm format` to fix.
 
+    # --- File size ceiling (Sprint T) ---
+    # No source file > 600 LOC (non-blank, non-comment). Allowlisted
+    # files have a per-file ceiling in `.loc-allowlist`; the gate
+    # rejects growth even within the allowlist. Split offenders per
+    # `.claude/rules/coding-standards.md#file-size-limit`.
+    loc-gate:
+      glob: '*.{rs,ts,tsx,sh,mjs}'
+      run: bash scripts/check-loc.sh --changed-only
+      fail_text: |
+        One or more staged files exceeds the 600 LOC ceiling.
+        Split the offender (mod.rs orchestrator + focused submodules) or
+        drop the .loc-allowlist entry if you're shrinking back under cap.
+
     # --- Secret hygiene ---
     # gitleaks protect --staged scans only what's staged for the commit;
     # the workflow scans the whole history on push as a backstop.

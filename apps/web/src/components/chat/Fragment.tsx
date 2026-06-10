@@ -64,7 +64,7 @@ function LinkFragment({
     <a
       className={cn(
         'chat-frag chat-frag--link underline underline-offset-2 break-all',
-        isSafeBrowsingFlagged && 'chat-frag--link-flagged',
+        isSafeBrowsingFlagged && 'chat-frag--link-flagged'
       )}
       href={url}
       target="_blank"
@@ -88,7 +88,7 @@ function EmoteFragment({
     <img
       className={cn(
         'chat-frag chat-frag--emote inline-block align-middle',
-        zeroWidth && 'chat-frag--emote-overlay',
+        zeroWidth && 'chat-frag--emote-overlay'
       )}
       src={url1x}
       srcSet={`${url1x} 1x, ${url2x} 2x`}
@@ -162,7 +162,12 @@ function CheermoteFragment({
         loading="lazy"
         decoding="async"
       />
-      <span className="font-semibold tabular-nums" style={{ color: tierColor.hex }}>
+      <span
+        className="font-semibold tabular-nums text-[var(--cheer-tier)]"
+        // Cheermote tier color is per-message data from the platform, not a
+        // static token — inject as a CSS var (Modal.tsx pattern).
+        style={{ '--cheer-tier': tierColor.hex } as React.CSSProperties}
+      >
         {amount}
       </span>
     </span>

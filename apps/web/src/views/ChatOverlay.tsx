@@ -80,6 +80,12 @@ export function ChatOverlay() {
     if (!window.opener) return;
 
     const handleMessage = (event: MessageEvent) => {
+      // Reject messages from other origins — in browser mode (Docker
+      // self-host, dev preview, etc.) an iframe attacker on a different
+      // origin can forge sync messages and inject arbitrary "chat
+      // messages" into the overlay. Tauri webview origin matches
+      // `window.location.origin` for the bundled app shell.
+      if (event.origin !== window.location.origin) return;
       if (!event.data || event.data.type !== 'chat-overlay-sync') return;
       const payload = event.data as { messages?: ChatMessage[] };
       if (payload.messages?.length) {
@@ -130,9 +136,11 @@ export function ChatOverlay() {
   };
 
   const handleDragStart = () => {
-    getCurrentWindow().startDragging().catch((error) => {
-      logger.error('Failed to start dragging chat overlay window:', error);
-    });
+    getCurrentWindow()
+      .startDragging()
+      .catch((error) => {
+        logger.error('Failed to start dragging chat overlay window:', error);
+      });
   };
 
   return (
@@ -159,12 +167,7 @@ export function ChatOverlay() {
         </Button>
       </div>
       <div className="flex-1 min-h-0 px-6 pb-6">
-        <ChatList
-          messages={messages}
-          showEmptyState={false}
-          density="compact"
-          className="h-full"
-        />
+        <ChatList messages={messages} showEmptyState={false} density="compact" className="h-full" />
       </div>
     </div>
   );

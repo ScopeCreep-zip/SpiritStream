@@ -45,7 +45,7 @@ export function DiscordCooldownSettings({
               label={t('discord.cooldownSeconds')}
               type="number"
               min="0"
-              max="3600"
+              max="86400"
               value={cooldownSeconds}
               onChange={(e) => setCooldownSeconds(e.target.value)}
               onBlur={onCooldownBlur}

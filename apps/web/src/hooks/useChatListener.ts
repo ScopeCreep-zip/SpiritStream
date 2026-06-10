@@ -9,15 +9,33 @@ type UnlistenFn = () => void;
 
 export function useChatListener() {
   const addMessage = useChatStore((state) => state.addMessage);
+  const markMessageDeleted = useChatStore((state) => state.markMessageDeleted);
+  const markUserTimedOut = useChatStore((state) => state.markUserTimedOut);
   const setOverlayTransparent = useChatStore((state) => state.setOverlayTransparent);
 
   useEffect(() => {
     let unlistenMessages: UnlistenFn | null = null;
     let unlistenOverlay: UnlistenFn | null = null;
 
-    events.on<ChatMessage>(CHAT_MESSAGE_EVENT, (payload) => {
-      addMessage(payload);
-    })
+    events
+      .on<ChatMessage>(CHAT_MESSAGE_EVENT, (payload) => {
+        // Plan B4 contract: MessageDeleted and UserBanned events mutate
+        // PAST messages rather than appending a new row. Every other
+        // ChatEvent variant (SubGifted, Raid, MemberMilestone,
+        // RoomStateChanged) flows through as a normal system row.
+        const evt = payload.event;
+        if (evt) {
+          if (evt.kind === 'messageDeleted') {
+            markMessageDeleted(evt.id);
+            return;
+          }
+          if (evt.kind === 'userBanned') {
+            markUserTimedOut(evt.userLogin);
+            return;
+          }
+        }
+        addMessage(payload);
+      })
       .then((unsubscribe) => {
         unlistenMessages = unsubscribe;
       })
@@ -25,9 +43,10 @@ export function useChatListener() {
         logger.error('Failed to listen for chat messages:', error);
       });
 
-    events.on<{ transparent: boolean }>(CHAT_OVERLAY_SETTINGS_EVENT, (payload) => {
-      setOverlayTransparent(payload.transparent);
-    })
+    events
+      .on<{ transparent: boolean }>(CHAT_OVERLAY_SETTINGS_EVENT, (payload) => {
+        setOverlayTransparent(payload.transparent);
+      })
       .then((unsubscribe) => {
         unlistenOverlay = unsubscribe;
       })
@@ -43,5 +62,5 @@ export function useChatListener() {
         unlistenOverlay();
       }
     };
-  }, [addMessage, setOverlayTransparent]);
+  }, [addMessage, markMessageDeleted, markUserTimedOut, setOverlayTransparent]);
 }

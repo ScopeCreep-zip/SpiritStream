@@ -14,11 +14,7 @@ export function Card({ className, variant = 'default', ...props }: CardProps) {
 
   return (
     <div
-      className={cn(
-        'rounded-xl border border-border-default',
-        variants[variant],
-        className
-      )}
+      className={cn('rounded-xl border border-border-default', variants[variant], className)}
       {...props}
     />
   );
@@ -43,12 +39,7 @@ export function CardHeader({ className, ...props }: CardHeaderProps) {
 export interface CardTitleProps extends React.HTMLAttributes<HTMLHeadingElement> {}
 
 export function CardTitle({ className, ...props }: CardTitleProps) {
-  return (
-    <h3
-      className={cn('text-base font-semibold text-text-primary', className)}
-      {...props}
-    />
-  );
+  return <h3 className={cn('text-base font-semibold text-text-primary', className)} {...props} />;
 }
 
 export interface CardDescriptionProps extends React.HTMLAttributes<HTMLParagraphElement> {}

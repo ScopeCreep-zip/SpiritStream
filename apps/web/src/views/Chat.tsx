@@ -8,7 +8,10 @@ import { useChatStore } from '@/stores/chatStore';
 import { api } from '@/lib/client';
 import { useFileBrowser } from '@/hooks/useFileBrowser';
 import { useChatPlatformStatus } from '@/hooks/useChatPlatformStatus';
-import { ChatOverlayHeaderButtons, ChatOverlayToggles } from '@/components/chat/ChatOverlayControls';
+import {
+  ChatOverlayHeaderButtons,
+  ChatOverlayToggles,
+} from '@/components/chat/ChatOverlayControls';
 import { ChatComposer } from '@/components/chat/ChatComposer';
 import { ChatSearch } from '@/components/chat/ChatSearch';
 import { toast } from '@/hooks/useToast';
@@ -35,7 +38,7 @@ export function Chat() {
         toast.error(
           t('chat.exportRequiresStream', {
             defaultValue: 'Start a stream to export the current chat session.',
-          }),
+          })
         );
         return;
       }
@@ -45,7 +48,7 @@ export function Chat() {
         toast.error(
           t('chat.exportNoSession', {
             defaultValue: 'No active chat session to export.',
-          }),
+          })
         );
         return;
       }
@@ -56,7 +59,7 @@ export function Chat() {
       const start = new Date(Number(status.startedAt));
       const end = new Date();
       const defaultName = `chatlog_${formatTimestampForFile(start)}_to_${formatTimestampForFile(
-        end,
+        end
       )}.jsonl`;
 
       const path = await browserSaveFile({
@@ -152,6 +155,6 @@ export function Chat() {
 function formatTimestampForFile(date: Date): string {
   const pad = (value: number): string => String(value).padStart(2, '0');
   return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(
-    date.getHours(),
+    date.getHours()
   )}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
 }

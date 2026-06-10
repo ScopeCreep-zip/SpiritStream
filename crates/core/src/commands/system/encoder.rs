@@ -36,7 +36,30 @@ pub fn get_encoders() -> Result<Encoders, CoreError> {
     let encoder_list = String::from_utf8_lossy(&output.stdout);
 
     let (has_nvidia, has_amd, has_intel) = detect_gpus();
+    let (video, audio) = select_encoders(&encoder_list, has_nvidia, has_amd, has_intel);
 
+    let mut metadata = std::collections::HashMap::new();
+    for name in video.iter().chain(audio.iter()) {
+        metadata.insert(name.clone(), classify(name));
+    }
+
+    Ok(Encoders {
+        video,
+        audio,
+        metadata,
+    })
+}
+
+/// Filters FFmpeg's `-encoders` listing into the (video, audio) encoder names
+/// SpiritStream offers, gating hardware encoders on the detected GPU vendors.
+/// Pure — `get_encoders` owns the FFmpeg + GPU probe I/O. Always yields at
+/// least `libx264` / `aac` so the UI never shows an empty encoder picker.
+fn select_encoders(
+    encoder_list: &str,
+    has_nvidia: bool,
+    has_amd: bool,
+    has_intel: bool,
+) -> (Vec<String>, Vec<String>) {
     let mut video = Vec::new();
     let mut audio = Vec::new();
 
@@ -68,16 +91,7 @@ pub fn get_encoders() -> Result<Encoders, CoreError> {
         audio.push("aac".to_string());
     }
 
-    let mut metadata = std::collections::HashMap::new();
-    for name in video.iter().chain(audio.iter()) {
-        metadata.insert(name.clone(), classify(name));
-    }
-
-    Ok(Encoders {
-        video,
-        audio,
-        metadata,
-    })
+    (video, audio)
 }
 
 /// Per-OS GPU probe. Returns `(has_nvidia, has_amd, has_intel)`.
@@ -256,5 +270,139 @@ fn classify(name: &str) -> EncoderMeta {
     EncoderMeta {
         kind: EncoderKind::Software,
         family: String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{classify, select_encoders, video_encoder_table};
+    use crate::models::EncoderKind;
+
+    #[test]
+    fn classify_passthrough_has_no_family() {
+        let meta = classify("copy");
+        assert_eq!(meta.kind, EncoderKind::Passthrough);
+        assert!(meta.family.is_empty());
+    }
+
+    #[test]
+    fn classify_software_x264_and_x265() {
+        let x264 = classify("libx264");
+        assert_eq!(x264.kind, EncoderKind::Software);
+        assert_eq!(x264.family, "libx264");
+
+        let x265 = classify("libx265");
+        assert_eq!(x265.kind, EncoderKind::Software);
+        assert_eq!(x265.family, "libx265");
+    }
+
+    #[test]
+    fn classify_maps_hardware_suffixes_to_their_family() {
+        for (name, family) in [
+            ("h264_nvenc", "nvenc"),
+            ("hevc_amf", "amf"),
+            ("av1_qsv", "qsv"),
+            ("h264_videotoolbox", "videotoolbox"),
+            ("hevc_vaapi", "vaapi"),
+        ] {
+            let meta = classify(name);
+            assert_eq!(meta.kind, EncoderKind::Hardware, "{name}");
+            assert_eq!(meta.family, family, "{name}");
+        }
+    }
+
+    #[test]
+    fn classify_unknown_falls_back_to_software_no_family() {
+        let meta = classify("aac");
+        assert_eq!(meta.kind, EncoderKind::Software);
+        assert!(meta.family.is_empty());
+    }
+
+    #[test]
+    fn encoder_table_lists_software_x264_with_no_vendor() {
+        let table = video_encoder_table();
+        let x264 = table
+            .iter()
+            .find(|(name, _)| *name == "libx264")
+            .expect("libx264 present");
+        assert_eq!(x264.1, None);
+        // Every hardware entry carries a vendor tag.
+        for (name, vendor) in table.iter().filter(|(n, _)| *n != "libx264") {
+            assert!(vendor.is_some(), "{name} should have a vendor");
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn encoder_table_includes_vaapi_on_linux() {
+        let table = video_encoder_table();
+        assert!(table.iter().any(|(name, _)| *name == "h264_vaapi"));
+    }
+
+    #[test]
+    fn select_software_video_and_all_audio_present() {
+        let list = "libx264 aac libopus libmp3lame";
+        let (video, audio) = select_encoders(list, false, false, false);
+        assert_eq!(video, vec!["libx264"]);
+        assert!(audio.contains(&"aac".to_string()));
+        assert!(audio.contains(&"libopus".to_string()));
+        assert!(audio.contains(&"libmp3lame".to_string()));
+    }
+
+    #[test]
+    fn select_empty_list_falls_back_to_x264_and_aac() {
+        let (video, audio) = select_encoders("", false, false, false);
+        assert_eq!(video, vec!["libx264"]);
+        assert_eq!(audio, vec!["aac"]);
+    }
+
+    #[test]
+    fn select_gates_nvenc_on_detected_nvidia() {
+        let list = "h264_nvenc hevc_nvenc";
+        let (without, _) = select_encoders(list, false, false, false);
+        // No vendor match + no libx264 in the list → fallback to libx264.
+        assert_eq!(without, vec!["libx264"]);
+
+        let (with, _) = select_encoders(list, true, false, false);
+        assert!(with.contains(&"h264_nvenc".to_string()));
+        assert!(with.contains(&"hevc_nvenc".to_string()));
+        assert!(!with.contains(&"libx264".to_string()));
+    }
+
+    #[test]
+    fn select_gates_amf_on_detected_amd() {
+        let list = "h264_amf";
+        assert!(!select_encoders(list, false, false, false)
+            .0
+            .contains(&"h264_amf".to_string()));
+        assert!(select_encoders(list, false, true, false)
+            .0
+            .contains(&"h264_amf".to_string()));
+    }
+
+    #[test]
+    fn select_gates_qsv_on_detected_intel() {
+        let list = "h264_qsv";
+        assert!(!select_encoders(list, false, false, false)
+            .0
+            .contains(&"h264_qsv".to_string()));
+        assert!(select_encoders(list, false, false, true)
+            .0
+            .contains(&"h264_qsv".to_string()));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn select_gates_vaapi_on_amd_or_intel() {
+        let list = "h264_vaapi";
+        assert!(!select_encoders(list, false, false, false)
+            .0
+            .contains(&"h264_vaapi".to_string()));
+        assert!(select_encoders(list, false, true, false)
+            .0
+            .contains(&"h264_vaapi".to_string()));
+        assert!(select_encoders(list, false, false, true)
+            .0
+            .contains(&"h264_vaapi".to_string()));
     }
 }

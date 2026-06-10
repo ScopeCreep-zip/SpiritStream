@@ -40,7 +40,7 @@ export function StatusStrip({ profile, onOpenModal }: StatusStripProps): React.R
     } catch (err) {
       logger.error('[status-strip] start failed', err);
       toast.error(
-        t('toast.startFailed', { error: err instanceof Error ? err.message : String(err) }),
+        t('toast.startFailed', { error: err instanceof Error ? err.message : String(err) })
       );
     } finally {
       setStarting(false);
@@ -56,7 +56,7 @@ export function StatusStrip({ profile, onOpenModal }: StatusStripProps): React.R
           count: result.streamsStopped,
           ms: result.elapsedMs,
           defaultValue: 'Panic disconnect: stopped {{count}} streams in {{ms}}ms',
-        }),
+        })
       );
     } catch (err) {
       logger.error('[status-strip] panic failed', err);
@@ -64,7 +64,7 @@ export function StatusStrip({ profile, onOpenModal }: StatusStripProps): React.R
         t('toast.panicFailed', {
           defaultValue: 'Panic disconnect failed: {{error}}',
           error: err instanceof Error ? err.message : String(err),
-        }),
+        })
       );
     } finally {
       setPanicking(false);
@@ -100,7 +100,7 @@ export function StatusStrip({ profile, onOpenModal }: StatusStripProps): React.R
             'inline-flex items-center gap-2 px-4 h-10 min-w-[44px]',
             'rounded-md bg-error-bg text-error-text border border-error-border',
             'hover:bg-error-bg/80 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring-default',
-            'font-medium text-sm transition-colors',
+            'font-medium text-sm transition-colors'
           )}
         >
           <Square className="w-4 h-4" aria-hidden="true" />
@@ -116,7 +116,7 @@ export function StatusStrip({ profile, onOpenModal }: StatusStripProps): React.R
             'rounded-md bg-primary text-primary-foreground',
             'hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring-default',
             'disabled:opacity-50 disabled:cursor-not-allowed',
-            'font-medium text-sm transition-colors',
+            'font-medium text-sm transition-colors'
           )}
         >
           {starting ? (
@@ -134,14 +134,16 @@ export function StatusStrip({ profile, onOpenModal }: StatusStripProps): React.R
         type="button"
         onClick={handlePanic}
         disabled={panicking}
-        aria-label={t('a11y.panic', { defaultValue: 'Panic disconnect — stop all streams immediately (⌘P)' })}
+        aria-label={t('a11y.panic', {
+          defaultValue: 'Panic disconnect — stop all streams immediately (⌘P)',
+        })}
         className={cn(
           'inline-flex items-center justify-center h-12 w-12',
           'rounded-md bg-error-bg text-error-text border-2 border-error-border',
           'hover:bg-error-border hover:text-text-inverse',
           'focus-visible:outline-none focus-visible:ring-[4px] focus-visible:ring-error-border focus-visible:ring-offset-2',
           'disabled:opacity-70 disabled:cursor-wait',
-          'font-bold transition-colors',
+          'font-bold transition-colors'
         )}
       >
         {panicking ? <Loader2 className="w-5 h-5 animate-spin" /> : <Shield className="w-5 h-5" />}
@@ -165,7 +167,7 @@ function ProfilePill({ profile, onClick }: ProfilePillProps): React.ReactElement
         'inline-flex items-center gap-2 px-3 h-9 rounded-md',
         'bg-bg-muted text-text-primary border border-border-default',
         'hover:bg-bg-hover focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring-default',
-        'text-sm font-medium transition-colors',
+        'text-sm font-medium transition-colors'
       )}
     >
       <span className="w-2 h-2 rounded-full bg-primary" aria-hidden="true" />
@@ -189,7 +191,7 @@ function LiveBadge({ status, uptime, activeCount }: LiveBadgeProps): React.React
       <span
         className={cn(
           'w-2.5 h-2.5 rounded-full',
-          isLive ? 'bg-error-text animate-pulse' : 'bg-text-muted',
+          isLive ? 'bg-error-text animate-pulse' : 'bg-text-muted'
         )}
         aria-hidden="true"
       />
@@ -200,7 +202,9 @@ function LiveBadge({ status, uptime, activeCount }: LiveBadgeProps): React.React
       </span>
       {isLive && (
         <>
-          <span className="text-text-tertiary tabular-nums">{formatUptime(Math.floor(uptime))}</span>
+          <span className="text-text-tertiary tabular-nums">
+            {formatUptime(Math.floor(uptime))}
+          </span>
           <span className="text-text-tertiary">
             ·{' '}
             {t('status.activeTargets', {

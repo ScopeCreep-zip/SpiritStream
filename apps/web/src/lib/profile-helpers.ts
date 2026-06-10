@@ -118,7 +118,6 @@ export const createDefaultChatSettings = (): ChatSettings => ({
   twitchChannel: '',
   youtubeChannelId: '',
   trovoChannelId: '',
-  stripchatUsername: '',
   kickChannel: '',
   tiktokUsername: '',
   facebookLiveVideoId: '',
@@ -126,7 +125,6 @@ export const createDefaultChatSettings = (): ChatSettings => ({
   twitchSendEnabled: false,
   youtubeSendEnabled: false,
   trovoSendEnabled: false,
-  stripchatSendEnabled: false,
   kickSendEnabled: false,
   sendAllEnabled: true,
   crosspostEnabled: false,
@@ -196,4 +194,3 @@ export const formatResolution = (video: VideoSettings): string => {
  *  must stay in lockstep, which is why this is a single helper. */
 export const incomingRtmpUrl = (input: RtmpInput): string =>
   `rtmp://${input.bindAddress}:${input.port}/${input.application}`;
-

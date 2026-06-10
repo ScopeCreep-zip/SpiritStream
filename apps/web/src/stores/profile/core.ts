@@ -18,10 +18,7 @@ type CoreSlice = Pick<
   | 'saveProfile'
   | 'deleteProfile'
   | 'createProfile'
-  | 'isProfileEncrypted'
   | 'reorderProfiles'
-  | 'setProfiles'
-  | 'setCurrentProfile'
   | 'setLoading'
   | 'setError'
   | 'selectProfile'
@@ -39,15 +36,16 @@ export const createCoreSlice: StateCreator<ProfileState, [], [], CoreSlice> = (s
   loadProfiles: async () => {
     const isInitialLoad = get().profiles.length === 0;
     if (isInitialLoad) {
-      set({ loading: true, error: null });
-    } else {
-      set({ error: null });
+      get().setLoading(true);
     }
+    get().setError(null);
     try {
       const summaries = await api.profile.getSummaries();
-      set({ profiles: summaries, loading: false });
+      set({ profiles: summaries });
+      get().setLoading(false);
     } catch (error) {
-      set({ error: String(error), loading: false });
+      get().setError(String(error));
+      get().setLoading(false);
     }
   },
 
@@ -56,14 +54,15 @@ export const createCoreSlice: StateCreator<ProfileState, [], [], CoreSlice> = (s
     const isRefresh = currentName === name;
 
     if (!isRefresh) {
-      set({ loading: true, error: null, passwordError: null });
-    } else {
-      set({ error: null, passwordError: null });
+      get().setLoading(true);
     }
+    get().setError(null);
+    set({ passwordError: null });
     try {
       const isEncrypted = await api.profile.isEncrypted(name);
       if (isEncrypted && !password) {
-        set({ loading: false, pendingPasswordProfile: name });
+        set({ pendingPasswordProfile: name });
+        get().setLoading(false);
         return;
       }
 
@@ -77,10 +76,10 @@ export const createCoreSlice: StateCreator<ProfileState, [], [], CoreSlice> = (s
       });
       set({
         current: profile,
-        loading: false,
         pendingPasswordProfile: null,
         passwordError: null,
       });
+      get().setLoading(false);
       // The backend also emits a `profile_activated` event that drives the
       // same cascade — both paths converge, but the synchronous call closes
       // the boot-time race where the event-bus listener hasn't finished its
@@ -102,15 +101,14 @@ export const createCoreSlice: StateCreator<ProfileState, [], [], CoreSlice> = (s
     } catch (error) {
       const errorMsg = String(error);
       if (password && errorMsg.includes('decrypt')) {
-        set({ passwordError: 'Incorrect password', loading: false });
+        set({ passwordError: 'Incorrect password' });
+        get().setLoading(false);
       } else {
-        set({ error: errorMsg, loading: false, pendingPasswordProfile: null });
+        set({ pendingPasswordProfile: null });
+        get().setError(errorMsg);
+        get().setLoading(false);
       }
     }
-  },
-
-  isProfileEncrypted: async (name) => {
-    return await api.profile.isEncrypted(name);
   },
 
   saveProfile: async (password) => {
@@ -125,19 +123,20 @@ export const createCoreSlice: StateCreator<ProfileState, [], [], CoreSlice> = (s
 
     // Don't set loading: true — this causes the UI to flash "Loading...".
     // The caller should have already updated the state optimistically.
-    set({ error: null });
+    get().setError(null);
     try {
       await api.profile.save(current, password);
       logger.debug('[ProfileStore] saveProfile completed (backend save successful)');
       await get().loadProfiles();
     } catch (error) {
       logger.error('[ProfileStore] saveProfile failed:', error);
-      set({ error: String(error) });
+      get().setError(String(error));
     }
   },
 
   deleteProfile: async (name) => {
-    set({ loading: true, error: null });
+    get().setLoading(true);
+    get().setError(null);
     try {
       await api.profile.delete(name);
       const profiles = get().profiles.filter((p) => p.name !== name);
@@ -145,8 +144,8 @@ export const createCoreSlice: StateCreator<ProfileState, [], [], CoreSlice> = (s
       set({
         profiles,
         current: current?.name === name ? null : current,
-        loading: false,
       });
+      get().setLoading(false);
       // Clear `lastProfile` if it pointed at the deleted name — otherwise the
       // next boot tries to activate a missing profile and the user lands on
       // the no-profile UI without explanation. Null is the idiomatic "no
@@ -160,7 +159,8 @@ export const createCoreSlice: StateCreator<ProfileState, [], [], CoreSlice> = (s
         logger.warn('[ProfileStore] Failed to clear lastProfile after delete:', clearError);
       }
     } catch (error) {
-      set({ error: String(error), loading: false });
+      get().setError(String(error));
+      get().setLoading(false);
     }
   },
 
@@ -171,12 +171,10 @@ export const createCoreSlice: StateCreator<ProfileState, [], [], CoreSlice> = (s
       await api.profile.save(newProfile);
       await get().loadProfiles();
     } catch (error) {
-      set({ error: String(error) });
+      get().setError(String(error));
     }
   },
 
-  setProfiles: (profiles) => set({ profiles }),
-  setCurrentProfile: (profile) => set({ current: profile }),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
 
@@ -195,7 +193,7 @@ export const createCoreSlice: StateCreator<ProfileState, [], [], CoreSlice> = (s
       await api.profile.save(newProfile);
       await get().loadProfiles();
     } catch (error) {
-      set({ error: String(error) });
+      get().setError(String(error));
     }
   },
 
@@ -246,7 +244,8 @@ export const createCoreSlice: StateCreator<ProfileState, [], [], CoreSlice> = (s
       await api.profile.setProfileOrder(next.map((p) => p.name));
     } catch (err) {
       // Revert on failure + surface error.
-      set({ profiles, error: String(err) });
+      set({ profiles });
+      get().setError(String(err));
     }
   },
 });

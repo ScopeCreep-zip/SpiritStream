@@ -17,138 +17,35 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use spiritstream_core::models::{
-    ChatConnectionStatus, ChatLogStatus, ChatPlatform, ChatPlatformStatus, ChatSendResult,
-};
 use spiritstream_core::services::EventSink;
 
 use crate::AppState;
 
-// ---------------------------------------------------------------------------
-// Wire-mirror types for utoipa.
-// ---------------------------------------------------------------------------
-
-/// Mirror of [`ChatPlatform`] with `ToSchema`.
-#[derive(Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum ChatPlatformWire {
-    Twitch,
-    #[serde(rename = "tiktok")]
-    TikTok,
-    YouTube,
-    Trovo,
-    Stripchat,
-    Kick,
-    Facebook,
-}
-
-impl From<ChatPlatform> for ChatPlatformWire {
-    fn from(value: ChatPlatform) -> Self {
-        match value {
-            ChatPlatform::Twitch => Self::Twitch,
-            ChatPlatform::TikTok => Self::TikTok,
-            ChatPlatform::YouTube => Self::YouTube,
-            ChatPlatform::Trovo => Self::Trovo,
-            ChatPlatform::Stripchat => Self::Stripchat,
-            ChatPlatform::Kick => Self::Kick,
-            ChatPlatform::Facebook => Self::Facebook,
-        }
-    }
-}
-
-/// Mirror of [`ChatConnectionStatus`] with `ToSchema`.
-#[derive(Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum ChatConnectionStatusWire {
-    Disconnected,
-    Connecting,
-    Connected,
-    Error,
-}
-
-impl From<ChatConnectionStatus> for ChatConnectionStatusWire {
-    fn from(value: ChatConnectionStatus) -> Self {
-        match value {
-            ChatConnectionStatus::Disconnected => Self::Disconnected,
-            ChatConnectionStatus::Connecting => Self::Connecting,
-            ChatConnectionStatus::Connected => Self::Connected,
-            ChatConnectionStatus::Error => Self::Error,
-        }
-    }
-}
-
-/// Mirror of [`ChatPlatformStatus`] with `ToSchema`.
-#[derive(Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ChatPlatformStatusWire {
-    pub platform: ChatPlatformWire,
-    pub status: ChatConnectionStatusWire,
-    pub message_count: u64,
-    pub error: Option<String>,
-}
-
-impl From<ChatPlatformStatus> for ChatPlatformStatusWire {
-    fn from(value: ChatPlatformStatus) -> Self {
-        Self {
-            platform: value.platform.into(),
-            status: value.status.into(),
-            message_count: value.message_count,
-            error: value.error,
-        }
-    }
-}
-
-/// Mirror of [`ChatSendResult`] with `ToSchema`.
-#[derive(Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ChatSendResultWire {
-    pub platform: ChatPlatformWire,
-    pub success: bool,
-    pub error: Option<String>,
-    pub error_code: Option<String>,
-}
-
-impl From<ChatSendResult> for ChatSendResultWire {
-    fn from(value: ChatSendResult) -> Self {
-        Self {
-            platform: value.platform.into(),
-            success: value.success,
-            error: value.error,
-            error_code: value.error_code,
-        }
-    }
-}
-
-/// Mirror of [`ChatLogStatus`] with `ToSchema`. The core type already
-/// has `serde` derives; the mirror exists purely to add `ToSchema`.
-#[derive(Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ChatLogStatusWire {
-    pub active: bool,
-    pub started_at: i64,
-}
-
-impl From<ChatLogStatus> for ChatLogStatusWire {
-    fn from(value: ChatLogStatus) -> Self {
-        Self {
-            active: value.active,
-            started_at: value.started_at,
-        }
-    }
-}
-
-/// Empty 200 OK response — used for handlers whose success payload is
-/// just acknowledgement (`connect`, `disconnect`, `retry`, `export`).
-/// Serialises as `{}`.
-#[derive(Serialize, Deserialize, ToSchema)]
-pub struct ChatAckResponse {}
-
-/// `GET /chat/connected` response.
-#[derive(Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ChatConnectedResponse {
-    pub connected: bool,
-}
+// K5: wire-mirror types live in `v1/chat/wire.rs` and the log-status /
+// export / search handlers in `v1/chat/log.rs` so this orchestrator
+// stays under the 600 LOC ceiling. Re-export with their original
+// public paths so the OpenAPI doc + downstream consumers see no
+// contract change.
+#[path = "chat/log.rs"]
+pub mod log_handlers;
+#[path = "chat/wire.rs"]
+pub mod wire;
+pub use log_handlers::{
+    v1_chat_export_log_proxy, v1_chat_log_status_proxy, v1_chat_search_session_proxy,
+    ChatExportRequest, ChatSearchRequest,
+};
+// utoipa's `paths(...)` macro looks for a `__path_<handler>` companion
+// struct at the same module path as the handler use. Re-export those
+// so the OpenApi derive in `v1/mod.rs` resolves them too.
+pub use log_handlers::{
+    __path_v1_chat_export_log_proxy, __path_v1_chat_log_status_proxy,
+    __path_v1_chat_search_session_proxy,
+};
+pub use wire::{
+    ChatAckResponse, ChatConfigWire, ChatConnectedResponse, ChatConnectionStatusWire,
+    ChatCredentialsWire, ChatLogStatusWire, ChatPlatformStatusWire, ChatPlatformWire,
+    ChatSendResultWire, TwitchAuthWire, YouTubeAuthWire,
+};
 
 // Chat.
 
@@ -163,7 +60,7 @@ pub async fn v1_chat_status_proxy(
 }
 
 #[utoipa::path(post, path = "/chat/connections", tag = "chat",
-    request_body = serde_json::Value,
+    request_body = ChatConfigWire,
     responses(
         (status = 200, body = ChatAckResponse),
         (status = 400, body = ApiErrorBody),
@@ -173,14 +70,11 @@ pub async fn v1_chat_status_proxy(
 pub async fn v1_chat_connect_proxy(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
-    axum::Json(req): axum::Json<serde_json::Value>,
+    axum::Json(wire): axum::Json<ChatConfigWire>,
 ) -> Result<Json<ChatAckResponse>, crate::ApiError> {
-    use spiritstream_core::models::{ChatConfig, ChatCredentials, ChatPlatform, TwitchAuth, YouTubeAuth};
+    use spiritstream_core::models::{ChatCredentials, ChatPlatform, TwitchAuth, YouTubeAuth};
 
-    let mut config: ChatConfig = serde_json::from_value(req.get("config").cloned().unwrap_or(req))
-        .map_err(|e| spiritstream_core::CoreError::Internal {
-            context: format!("invalid ChatConfig payload: {e}"),
-        })?;
+    let mut config: spiritstream_core::models::ChatConfig = wire.into();
 
     // Facebook gate: identity-revealing connect path must be deliberate.
     // The client first calls `POST /api/v1/security/confirm-token { intent:
@@ -478,6 +372,19 @@ pub async fn v1_chat_retry_proxy(
 #[serde(rename_all = "camelCase")]
 pub struct ChatSendRequest {
     pub message: String,
+    /// Optional per-message target override. When `Some`, dispatch
+    /// only to the listed platforms (subject to each connector's
+    /// `can_send()` gate). When `None`, the handler auto-builds the
+    /// target set from the profile's `*_send_enabled` flags — the
+    /// "broadcast to all enabled" behaviour controlled by
+    /// `chatSettings.sendAllEnabled` on the frontend.
+    ///
+    /// Platform identifiers match the wire form of `ChatPlatform`:
+    /// `twitch | youtube | trovo | kick | facebook | tiktok`.
+    /// Unknown values are silently dropped to keep additive enum
+    /// changes non-breaking.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_platforms: Option<Vec<String>>,
 }
 
 #[utoipa::path(post, path = "/chat/messages", tag = "chat",
@@ -506,19 +413,43 @@ pub async fn v1_chat_send_proxy(
         .into());
     }
 
-    let mut targets = Vec::new();
     let chat_settings = state.chat_manager.profile_chat_settings().await;
-    if chat_settings.twitch_send_enabled {
-        targets.push(ChatPlatform::Twitch);
-    }
-    if chat_settings.youtube_send_enabled && !chat_settings.youtube_use_api_key {
-        targets.push(ChatPlatform::YouTube);
-    }
-    if chat_settings.trovo_send_enabled {
-        targets.push(ChatPlatform::Trovo);
-    }
-    if chat_settings.stripchat_send_enabled {
-        targets.push(ChatPlatform::Stripchat);
+    let mut targets: Vec<ChatPlatform> = Vec::new();
+    // Per-message override path: respect explicit picks from the
+    // ChatComposer when `sendAllEnabled=false`. Each entry is mapped
+    // back to a `ChatPlatform` enum value; unknown strings drop.
+    if let Some(explicit) = req.target_platforms.as_ref() {
+        for p in explicit {
+            let mapped = match p.as_str() {
+                "twitch" => Some(ChatPlatform::Twitch),
+                "youtube" => Some(ChatPlatform::YouTube),
+                "trovo" => Some(ChatPlatform::Trovo),
+                "kick" => Some(ChatPlatform::Kick),
+                "facebook" => Some(ChatPlatform::Facebook),
+                "tiktok" => Some(ChatPlatform::TikTok),
+                _ => None,
+            };
+            if let Some(platform) = mapped {
+                if !targets.contains(&platform) {
+                    targets.push(platform);
+                }
+            }
+        }
+    } else {
+        // Broadcast path: derive from the per-platform send-enable flags
+        // (the `sendAllEnabled=true` behaviour).
+        if chat_settings.twitch_send_enabled {
+            targets.push(ChatPlatform::Twitch);
+        }
+        if chat_settings.youtube_send_enabled && !chat_settings.youtube_use_api_key {
+            targets.push(ChatPlatform::YouTube);
+        }
+        if chat_settings.trovo_send_enabled {
+            targets.push(ChatPlatform::Trovo);
+        }
+        if chat_settings.kick_send_enabled {
+            targets.push(ChatPlatform::Kick);
+        }
     }
     if targets.is_empty() {
         return Err(spiritstream_core::CoreError::ValidationFailed {
@@ -602,212 +533,6 @@ pub async fn v1_chat_is_connected_proxy(
 ) -> Result<Json<ChatConnectedResponse>, crate::ApiError> {
     let connected = state.chat_manager.is_any_connected().await;
     Ok(Json(ChatConnectedResponse { connected }))
-}
-
-#[utoipa::path(get, path = "/chat/log", tag = "chat",
-    responses((status = 200, body = ChatLogStatusWire)),
-    security(("session_cookie" = []), ("bearer" = [])))]
-pub async fn v1_chat_log_status_proxy(
-    State(state): State<AppState>,
-) -> Result<Json<ChatLogStatusWire>, crate::ApiError> {
-    let start_ms = state.chat_manager.log_session_start_ms();
-    Ok(Json(ChatLogStatusWire {
-        active: start_ms.is_some(),
-        started_at: start_ms.unwrap_or(0),
-    }))
-}
-
-#[derive(Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ChatExportRequest {
-    pub path: String,
-}
-
-#[utoipa::path(post, path = "/chat/log/export", tag = "chat",
-    request_body = ChatExportRequest,
-    responses(
-        (status = 200, description = "Chat log exported.", body = ChatAckResponse),
-        (status = 400, body = ApiErrorBody, description = "No active chat session."),
-        (status = 403, body = ApiErrorBody, description = "Export path outside allowed root."),
-        (status = 500, body = ApiErrorBody, description = "Internal error writing export."),
-    ),
-    security(("session_cookie" = []), ("bearer" = [])))]
-pub async fn v1_chat_export_log_proxy(
-    State(state): State<AppState>,
-    axum::Json(req): axum::Json<ChatExportRequest>,
-) -> Result<Json<ChatAckResponse>, crate::ApiError> {
-    use chrono::{Local, TimeZone};
-    use spiritstream_core::models::ChatMessage;
-    use std::fs::File;
-    use std::io::{BufRead, BufReader, BufWriter, Write};
-
-    // Validate the user-supplied export path stays inside the
-    // data dir or home dir before opening — path_validator catches `..`
-    // traversal + symlink escapes.
-    let export_path = std::path::PathBuf::from(&req.path);
-    let mut allowed_dirs: Vec<&std::path::Path> = vec![state.app_data_dir.as_path()];
-    if let Some(ref home) = state.home_dir {
-        allowed_dirs.push(home.as_path());
-    }
-    spiritstream_core::services::validate_path_within_any(&export_path, &allowed_dirs)?;
-
-    let start_ms = state.chat_manager.log_session_start_ms().ok_or_else(|| {
-        spiritstream_core::CoreError::ValidationFailed {
-            reasons: vec![spiritstream_core::errors::ValidationIssue {
-                code: "no_active_chat_session".into(),
-                message: "No active chat session to export".into(),
-                path: None,
-            }],
-        }
-    })?;
-    state.chat_manager.flush_chat_logs().await?;
-    let end_ms = Local::now().timestamp_millis();
-    let start_dt = Local
-        .timestamp_millis_opt(start_ms)
-        .single()
-        .unwrap_or_else(Local::now);
-    let end_dt = Local
-        .timestamp_millis_opt(end_ms)
-        .single()
-        .unwrap_or_else(Local::now);
-    let hour_keys = crate::build_hour_keys(start_dt, end_dt);
-    let mut writer = BufWriter::new(File::create(&req.path).map_err(|e| {
-        spiritstream_core::CoreError::Internal {
-            context: format!("Failed to create export file: {e}"),
-        }
-    })?);
-    for key in hour_keys {
-        let src_path = state.log_dir.join(format!("chatlog_{}.jsonl", key));
-        if !src_path.exists() {
-            continue;
-        }
-        let file = File::open(&src_path).map_err(|e| spiritstream_core::CoreError::Internal {
-            context: format!("Failed to read chat log {}: {e}", src_path.display()),
-        })?;
-        let reader = BufReader::new(file);
-        for line in reader.lines() {
-            let line = line.map_err(|e| spiritstream_core::CoreError::Internal {
-                context: format!("Failed to read chat log: {e}"),
-            })?;
-            if line.trim().is_empty() {
-                continue;
-            }
-            if let Ok(message) = serde_json::from_str::<ChatMessage>(&line) {
-                if message.timestamp >= start_ms && message.timestamp <= end_ms {
-                    writer.write_all(line.as_bytes()).map_err(|e| {
-                        spiritstream_core::CoreError::Internal {
-                            context: format!("Failed to write export file: {e}"),
-                        }
-                    })?;
-                    writer.write_all(b"\n").map_err(|e| {
-                        spiritstream_core::CoreError::Internal {
-                            context: format!("Failed to write export file: {e}"),
-                        }
-                    })?;
-                }
-            }
-        }
-    }
-    writer
-        .flush()
-        .map_err(|e| spiritstream_core::CoreError::Internal {
-            context: format!("Failed to finalize export file: {e}"),
-        })?;
-    Ok(Json(ChatAckResponse {}))
-}
-
-#[derive(Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ChatSearchRequest {
-    pub query: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub limit: Option<usize>,
-}
-
-// Search response is `Vec<ChatMessage>`. `ChatMessage` lives in
-// `spiritstream-core` and has no `ToSchema` (utoipa is transport-only).
-// Mirroring it would mean duplicating ~30 nested fragment/payload variants
-// that are actively in flux per the in-flight chat-features branch; the
-// schema lands once that work settles. The wire format is still typed by
-// serde (the `ChatMessage` Serialize impl); only the OpenAPI surface is
-// loose for now, matching what `@hey-api/openapi-ts` already emits as
-// `unknown[]` for the api-client.
-#[utoipa::path(post, path = "/chat/log/search", tag = "chat",
-    request_body = ChatSearchRequest,
-    responses((status = 200, body = Vec<serde_json::Value>,
-        description = "Matching ChatMessage entries (typed schema deferred until in-flight ChatMessage shape stabilises).")),
-    security(("session_cookie" = []), ("bearer" = [])))]
-pub async fn v1_chat_search_session_proxy(
-    State(state): State<AppState>,
-    axum::Json(req): axum::Json<ChatSearchRequest>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
-    use chrono::{Local, TimeZone};
-    use spiritstream_core::models::ChatMessage;
-    use std::fs::File;
-    use std::io::{BufRead, BufReader};
-
-    let limit = req.limit.unwrap_or(500);
-    let start_ms = state.chat_manager.log_session_start_ms().ok_or_else(|| {
-        spiritstream_core::CoreError::ValidationFailed {
-            reasons: vec![spiritstream_core::errors::ValidationIssue {
-                code: "no_active_chat_session".into(),
-                message: "No active chat session to search".into(),
-                path: None,
-            }],
-        }
-    })?;
-    let query = req.query.trim().to_lowercase();
-    if query.is_empty() {
-        return Ok(Json(serde_json::json!([])));
-    }
-    let end_ms = Local::now().timestamp_millis();
-    let start_dt = Local
-        .timestamp_millis_opt(start_ms)
-        .single()
-        .unwrap_or_else(Local::now);
-    let end_dt = Local
-        .timestamp_millis_opt(end_ms)
-        .single()
-        .unwrap_or_else(Local::now);
-    let hour_keys = crate::build_hour_keys(start_dt, end_dt);
-    let mut matches: Vec<ChatMessage> = Vec::new();
-    for key in hour_keys {
-        if matches.len() >= limit {
-            break;
-        }
-        let src_path = state.log_dir.join(format!("chatlog_{}.jsonl", key));
-        if !src_path.exists() {
-            continue;
-        }
-        let file = File::open(&src_path).map_err(|e| spiritstream_core::CoreError::Internal {
-            context: format!("Failed to read chat log {}: {e}", src_path.display()),
-        })?;
-        let reader = BufReader::new(file);
-        for line in reader.lines() {
-            if matches.len() >= limit {
-                break;
-            }
-            let line = line.map_err(|e| spiritstream_core::CoreError::Internal {
-                context: format!("Failed to read chat log: {e}"),
-            })?;
-            if line.trim().is_empty() {
-                continue;
-            }
-            let message = match serde_json::from_str::<ChatMessage>(&line) {
-                Ok(m) => m,
-                Err(_) => continue,
-            };
-            if message.timestamp < start_ms || message.timestamp > end_ms {
-                continue;
-            }
-            let username = message.username.to_lowercase();
-            let text = message.message.to_lowercase();
-            if username.contains(&query) || text.contains(&query) {
-                matches.push(message);
-            }
-        }
-    }
-    Ok(Json(serde_json::json!(matches)))
 }
 
 // --------------------------------------------------------------------------

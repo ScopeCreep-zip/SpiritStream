@@ -42,6 +42,13 @@ export type AppVersionResponse = {
     version: string;
 };
 
+export type AudioSettingsWire = {
+    bitrate: string;
+    channels: number;
+    codec: string;
+    sampleRate: number;
+};
+
 /**
  * Wire-mirror of [`AuditChainStatus`] with `ToSchema` for OpenAPI.
  * utoipa is a transport-only dep — keeping `ToSchema` on a core type
@@ -86,6 +93,14 @@ export type AuditLogResponse = {
  */
 export type AuditRecordedResponse = {
     recorded: boolean;
+};
+
+export type BackendSettingsWire = {
+    host: string;
+    port: number;
+    remoteEnabled: boolean;
+    token: string;
+    uiEnabled: boolean;
 };
 
 /**
@@ -135,7 +150,7 @@ export type ChatPlatformStatusWire = {
 /**
  * Mirror of [`ChatPlatform`] with `ToSchema`.
  */
-export type ChatPlatformWire = 'twitch' | 'tiktok' | 'youtube' | 'trovo' | 'stripchat' | 'kick' | 'facebook';
+export type ChatPlatformWire = 'twitch' | 'tiktok' | 'youtube' | 'trovo' | 'kick' | 'facebook';
 
 export type ChatSearchRequest = {
     limit?: number | null;
@@ -144,6 +159,20 @@ export type ChatSearchRequest = {
 
 export type ChatSendRequest = {
     message: string;
+    /**
+     * Optional per-message target override. When `Some`, dispatch
+     * only to the listed platforms (subject to each connector's
+     * `can_send()` gate). When `None`, the handler auto-builds the
+     * target set from the profile's `*_send_enabled` flags — the
+     * "broadcast to all enabled" behaviour controlled by
+     * `chatSettings.sendAllEnabled` on the frontend.
+     *
+     * Platform identifiers match the wire form of `ChatPlatform`:
+     * `twitch | youtube | trovo | kick | facebook | tiktok`.
+     * Unknown values are silently dropped to keep additive enum
+     * changes non-breaking.
+     */
+    targetPlatforms?: Array<string> | null;
 };
 
 /**
@@ -154,6 +183,25 @@ export type ChatSendResultWire = {
     errorCode?: string | null;
     platform: ChatPlatformWire;
     success: boolean;
+};
+
+export type ChatSettingsWire = {
+    crosspostEnabled: boolean;
+    facebookLiveVideoId: string;
+    kickChannel: string;
+    kickSendEnabled: boolean;
+    sendAllEnabled: boolean;
+    tiktokUsername: string;
+    trovoChannelId: string;
+    trovoSendEnabled: boolean;
+    twitchChannel: string;
+    twitchSendEnabled: boolean;
+    visibilityPanelCollapsed: boolean;
+    visiblePlatforms: Array<string>;
+    youtubeApiKey: string;
+    youtubeChannelId: string;
+    youtubeSendEnabled: boolean;
+    youtubeUseApiKey: boolean;
 };
 
 export type ClientConfigResponse = {
@@ -222,12 +270,25 @@ export type ClientConfigResponse = {
     toastDurationMs: number;
 };
 
+export type ContainerSettingsWire = {
+    format: string;
+};
+
 /**
  * Empty 200 ack body for `DELETE /discord/webhook/cooldown`. Serialises
  * as `{}`.
  */
 export type DiscordAckResponse = {
     [key: string]: unknown;
+};
+
+export type DiscordSettingsWire = {
+    cooldownEnabled: boolean;
+    cooldownSeconds: number;
+    goLiveMessage: string;
+    imagePath: string;
+    webhookEnabled: boolean;
+    webhookUrl: string;
 };
 
 export type DiscordWebhookTestRequest = {
@@ -371,6 +432,15 @@ export type OAuthAccountStatusResponse = {
     username: string;
 };
 
+export type OAuthAccountWire = {
+    accessToken: string;
+    displayName: string;
+    expiresAt: number;
+    refreshToken: string;
+    userId: string;
+    username: string;
+};
+
 /**
  * Empty 200 ack body for handlers whose success payload is just
  * acknowledgement (disconnect / forget / config update). Serialises
@@ -428,8 +498,33 @@ export type OAuthFlowResponse = {
     state: string;
 };
 
+/**
+ * Result of an OAuth `forget` call.
+ *
+ * `localCleared` is always true on success — the on-device token /
+ * refresh token / user-info is wiped from the profile regardless of
+ * whether the upstream revoke succeeded. `revokeFailed` is `Some(msg)`
+ * when the provider's revoke endpoint refused / errored; the frontend
+ * surfaces that so the user knows to also revoke from the provider's
+ * own settings page (the upstream token may still be valid until its
+ * natural expiry). For harassment-prone users this distinction matters:
+ * "I clicked forget and it succeeded" must not mean "attacker's stolen
+ * session is now invalidated" if the revoke endpoint was unreachable.
+ */
+export type OAuthForgetResponse = {
+    localCleared: boolean;
+    revokeFailed?: string | null;
+};
+
 export type OAuthRefreshRequest = {
     refreshToken: string;
+};
+
+export type OAuthSettingsWire = {
+    facebook: OAuthAccountWire;
+    kick: OAuthAccountWire;
+    twitch: OAuthAccountWire;
+    youtube: OAuthAccountWire;
 };
 
 /**
@@ -486,11 +581,22 @@ export type ObsConnectedResponse = {
 
 export type ObsConnectionStatusWire = 'disconnected' | 'connecting' | 'connected' | 'error';
 
+export type ObsIntegrationDirectionWire = 'obs-to-spiritstream' | 'spiritstream-to-obs' | 'bidirectional' | 'disabled';
+
 export type ObsSetConfigRequest = {
     autoConnect: boolean;
     direction: string;
     host: string;
     password?: string | null;
+    port: number;
+    useAuth: boolean;
+};
+
+export type ObsSettingsWire = {
+    autoConnect: boolean;
+    direction: ObsIntegrationDirectionWire;
+    host: string;
+    password: string;
     port: number;
     useAuth: boolean;
 };
@@ -504,6 +610,17 @@ export type ObsStateResponse = {
 };
 
 export type ObsStreamStatusWire = 'inactive' | 'starting' | 'active' | 'stopping' | 'unknown';
+
+export type OutputGroupWire = {
+    audio: AudioSettingsWire;
+    container: ContainerSettingsWire;
+    generatePts: boolean;
+    id: string;
+    isDefault: boolean;
+    name: string;
+    streamTargets: Array<StreamTargetWire>;
+    video: VideoSettingsWire;
+};
 
 /**
  * Empty 200 ack body for handlers whose success payload is just
@@ -559,9 +676,9 @@ export type ProfileLockedListResponse = {
 
 /**
  * `{indices: {name → order}}` envelope used by the `/profiles/order`
- * + `/profiles/order/ensure` endpoints. Wraps the raw map so OpenAPI
- * gets a named schema instead of an inline `additionalProperties`
- * object.
+ * and `/profiles/order/ensure` endpoints. Wraps the raw map so
+ * OpenAPI gets a named schema instead of an inline
+ * `additionalProperties` object.
  */
 export type ProfileOrderMapResponse = {
     indices: {
@@ -587,6 +704,18 @@ export type ProfileSaveRequest = {
 export type ProfileSaveResponse = {
     name: string;
     saved: boolean;
+};
+
+export type ProfileSettingsWire = {
+    backend: BackendSettingsWire;
+    chat: ChatSettingsWire;
+    discord: DiscordSettingsWire;
+    encryptStreamKeys: boolean;
+    language: string;
+    oauth: OAuthSettingsWire;
+    obs: ObsSettingsWire;
+    showNotifications: boolean;
+    themeId: string;
 };
 
 export type ProfileShowQuery = {
@@ -632,6 +761,19 @@ export type ProfileUnlockResponse = {
 export type ProfileValidateInputRequest = {
     input: unknown;
     profileId: string;
+};
+
+export type ProfileWire = {
+    anonymousLogging: boolean;
+    anonymousSalt: string;
+    encrypted: boolean;
+    id: string;
+    input: RtmpInputWire;
+    name: string;
+    outputGroups: Array<OutputGroupWire>;
+    piiBlocklist: Array<string>;
+    piiFuzzy: boolean;
+    settings: ProfileSettingsWire;
 };
 
 export type ProfilesListResponse = {
@@ -696,6 +838,13 @@ export type RotationReportWire = {
     totalProfiles: number;
 };
 
+export type RtmpInputWire = {
+    application: string;
+    bindAddress: string;
+    port: number;
+    type: string;
+};
+
 export type RtmpTestRequest = {
     streamKey: string;
     url: string;
@@ -743,14 +892,27 @@ export type SettingsProfilesPathResponse = {
 };
 
 export type SettingsSaveRequest = {
-    /**
-     * Full settings body (matches the `Settings` ts-rs export).
-     */
-    settings: unknown;
+    settings: SettingsWire;
 };
 
 export type SettingsSaveResponse = {
     saved: boolean;
+};
+
+/**
+ * Wire mirror of [`spiritstream_core::models::Settings`]. The core
+ * struct can't derive `ToSchema` directly (utoipa is a transport-only
+ * dependency per the architecture rules); this mirror gives utoipa a
+ * schema to reference while keeping the wire shape byte-identical to
+ * the ts-rs export. G5.
+ */
+export type SettingsWire = {
+    errorReportingEnabled: boolean;
+    errorReportingEndpoint: string;
+    ffmpegPath: string;
+    lastProfile?: string | null;
+    logRetentionDays: number;
+    startMinimized: boolean;
 };
 
 export type StreamRetryResponse = {
@@ -797,6 +959,21 @@ export type StreamStopAllResponse = {
  */
 export type StreamTargetDisabledResponse = {
     disabled: boolean;
+};
+
+export type StreamTargetWire = {
+    id: string;
+    name: string;
+    /**
+     * Streaming platform name — matches a `displayName` in
+     * `data/streaming-platforms.json` or `"Custom"`. Flattened to
+     * `String` on the wire because the generated `Platform` enum has
+     * ~80 variants; the TS side reads the typed union from the ts-rs
+     * export at `@spiritstream/types/Platform`.
+     */
+    service: string;
+    streamKey: string;
+    url: string;
 };
 
 export type StreamToggleTargetRequest = {
@@ -879,6 +1056,17 @@ export type ThemeTokensResponse = {
     tokens: {
         [key: string]: string;
     };
+};
+
+export type VideoSettingsWire = {
+    bitrate: string;
+    codec: string;
+    fps: number;
+    height: number;
+    keyframeIntervalSeconds?: number | null;
+    preset?: string | null;
+    profile?: string | null;
+    width: number;
 };
 
 export type WebhookResultResponse = {
@@ -1410,7 +1598,7 @@ export type V1OauthForgetProxyData = {
 };
 
 export type V1OauthForgetProxyResponses = {
-    200: OAuthAckResponse;
+    200: OAuthForgetResponse;
 };
 
 export type V1OauthForgetProxyResponse = V1OauthForgetProxyResponses[keyof V1OauthForgetProxyResponses];
@@ -1828,10 +2016,12 @@ export type V1ProfileShowError = V1ProfileShowErrors[keyof V1ProfileShowErrors];
 
 export type V1ProfileShowResponses = {
     /**
-     * Profile body (see @spiritstream/types/Profile).
+     * Profile body.
      */
-    200: unknown;
+    200: ProfileWire;
 };
+
+export type V1ProfileShowResponse = V1ProfileShowResponses[keyof V1ProfileShowResponses];
 
 export type V1ProfileSaveData = {
     body: ProfileSaveRequest;
@@ -1906,10 +2096,12 @@ export type V1ProfileActivateError = V1ProfileActivateErrors[keyof V1ProfileActi
 
 export type V1ProfileActivateResponses = {
     /**
-     * Profile activated; body matches @spiritstream/types/Profile.
+     * Profile activated; body is the resolved profile.
      */
-    200: unknown;
+    200: ProfileWire;
 };
+
+export type V1ProfileActivateResponse = V1ProfileActivateResponses[keyof V1ProfileActivateResponses];
 
 export type V1ProfileDecryptData = {
     body: ProfileDecryptRequest;
@@ -2118,10 +2310,12 @@ export type V1SettingsGetError = V1SettingsGetErrors[keyof V1SettingsGetErrors];
 
 export type V1SettingsGetResponses = {
     /**
-     * Resolved settings (see @spiritstream/types/Settings).
+     * Resolved settings.
      */
-    200: unknown;
+    200: SettingsWire;
 };
+
+export type V1SettingsGetResponse = V1SettingsGetResponses[keyof V1SettingsGetResponses];
 
 export type V1SettingsSaveData = {
     body: SettingsSaveRequest;

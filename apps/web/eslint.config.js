@@ -43,10 +43,10 @@ export default [
     },
     plugins: {
       '@typescript-eslint': tsPlugin,
-      'react': reactPlugin,
+      react: reactPlugin,
       'react-hooks': reactHooksPlugin,
-      'security': securityPlugin,
-      'sonarjs': sonarjsPlugin,
+      security: securityPlugin,
+      sonarjs: sonarjsPlugin,
     },
     settings: {
       react: { version: 'detect' },

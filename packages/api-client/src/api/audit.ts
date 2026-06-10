@@ -31,7 +31,7 @@ export const audit = {
     return fetchTypedJson<AuditLogResponse>(
       'GET',
       '/api/v1/audit/log',
-      Object.keys(params).length > 0 ? params : undefined,
+      Object.keys(params).length > 0 ? params : undefined
     );
   },
 };

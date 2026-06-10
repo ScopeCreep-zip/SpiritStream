@@ -51,15 +51,11 @@ export const backendMode: BackendMode = 'http';
  * For external URLs in Tauri context, the HTTP plugin is used to bypass
  * CORS/CSP restrictions (not currently used, but available for future needs).
  */
-export async function safeFetch(
-  url: string,
-  options?: RequestInit
-): Promise<Response> {
+export async function safeFetch(url: string, options?: RequestInit): Promise<Response> {
   // For localhost requests, always use browser fetch with retry logic.
   // The Tauri HTTP plugin has known bugs with localhost/127.0.0.1.
   // Browser fetch works fine since CSP allows localhost:8008.
-  const isLocalhost =
-    url.startsWith('http://127.0.0.1') || url.startsWith('http://localhost');
+  const isLocalhost = url.startsWith('http://127.0.0.1') || url.startsWith('http://localhost');
 
   if (isLocalhost) {
     // Retry logic for localhost - handles race condition with server startup
@@ -84,7 +80,9 @@ export async function safeFetch(
               retryAfterSec >= 0 &&
               retryAfterSec <= RETRY_AFTER_MAX_SECS
             ) {
-              await new Promise((resolve) => setTimeout(resolve, Math.max(retryAfterSec * 1000, 500)));
+              await new Promise((resolve) =>
+                setTimeout(resolve, Math.max(retryAfterSec * 1000, 500))
+              );
               continue;
             }
           }

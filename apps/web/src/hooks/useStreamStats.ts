@@ -1,23 +1,19 @@
 import { useEffect } from 'react';
 import { events } from '@spiritstream/api-client';
+import type { StreamStats } from '@spiritstream/types';
 import { useStreamStore } from '@/stores/streamStore';
 import { toast } from '@/hooks/useToast';
 import { useTranslation } from 'react-i18next';
 
-/**
- * Stream statistics from FFmpeg
- */
-export interface StreamStats {
-  groupId: string;
-  frame: number;
-  fps: number;
-  bitrate: number;
-  speed: number;
-  size: number;
-  time: number;
-  droppedFrames: number;
-  dupFrames: number;
-}
+// L3: pre-fix this file shadowed every backend stream-event type with
+// a hand-maintained inline `interface` (StreamStats, StreamError,
+// StreamReconnecting, StreamRetryExhausted). They drifted from the
+// ts-rs-generated source of truth (`packages/types/src/generated/`).
+// Backend `StreamStats` is now imported above. For the other three —
+// the backend emits them as `serde_json::Value` payloads on the event
+// bus, so the local shape is the wire-side schema. Each one is named
+// `_StreamEventPayload` so it's clear they describe the bus payload
+// and not the (non-existent) backend type.
 
 /**
  * Stream error from FFmpeg crash
@@ -59,6 +55,23 @@ export interface StreamRetryExhausted {
 export function useStreamStats() {
   const { t } = useTranslation();
   const { updateStats, setStreamEnded, setStreamError } = useStreamStore();
+  const isStreaming = useStreamStore((s) => s.isStreaming);
+  const incrementUptime = useStreamStore((s) => s.incrementUptime);
+
+  // Smooth-tick the displayed uptime so the StatusStrip clock advances
+  // between authoritative `stream_stats` events. FFmpeg emits stats
+  // roughly once per second under normal load, but bursty ingest /
+  // codec-stall conditions can stretch the interval — without this
+  // tick the clock visibly freezes. `updateStats` overwrites uptime
+  // with the authoritative ffmpeg `time` value the next time stats
+  // arrive, so the tick can only ever be optimistic, never wrong.
+  useEffect(() => {
+    if (!isStreaming) return;
+    const handle = window.setInterval(() => {
+      incrementUptime();
+    }, 1000);
+    return () => window.clearInterval(handle);
+  }, [isStreaming, incrementUptime]);
 
   // Set up event listeners
   useEffect(() => {
@@ -98,14 +111,17 @@ export function useStreamStats() {
 
       // Listen for terminal retry exhaustion — backend gave up. Flip the
       // group to an error state so the UI no longer shows "active".
-      unlistenExhausted = await events.on<StreamRetryExhausted>('stream_retry_exhausted', (payload) => {
-        setStreamError(
-          payload.groupId,
-          t('streams.retryExhausted', 'Stream failed after {{max}} retries — restart manually.', {
-            max: payload.maxAttempts,
-          })
-        );
-      });
+      unlistenExhausted = await events.on<StreamRetryExhausted>(
+        'stream_retry_exhausted',
+        (payload) => {
+          setStreamError(
+            payload.groupId,
+            t('streams.retryExhausted', 'Stream failed after {{max}} retries — restart manually.', {
+              max: payload.maxAttempts,
+            })
+          );
+        }
+      );
     };
 
     setupListeners();

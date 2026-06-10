@@ -21,6 +21,24 @@ pub fn load_settings<R: Runtime>(app: &AppHandle<R>) -> Option<Settings> {
         return None;
     }
 
-    let content = std::fs::read_to_string(&settings_path).ok()?;
-    serde_json::from_str(&content).ok()
+    let content = match std::fs::read_to_string(&settings_path) {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("settings: failed to read {settings_path:?}: {e}");
+            return None;
+        }
+    };
+    match serde_json::from_str(&content) {
+        Ok(settings) => Some(settings),
+        Err(e) => {
+            // Don't silently reset the user's settings — if the JSON is
+            // corrupt (truncated mid-write, hand-edited typo), surface
+            // it loud so the operator can decide whether to repair the
+            // file vs accept the defaults.
+            log::warn!(
+                "settings: failed to parse {settings_path:?}, falling back to defaults: {e}"
+            );
+            None
+        }
+    }
 }

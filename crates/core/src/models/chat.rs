@@ -2,6 +2,14 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use uuid::Uuid;
 
+// K2: credential surface (`ChatConfig`, `ChatCredentials`, `TwitchAuth`,
+// `YouTubeAuth`) and their hand-written `Debug` impls live in a
+// submodule so this file stays under the 600 LOC ceiling. Re-exported
+// at the public path so downstream `use spiritstream_core::models::*`
+// remains source-compatible.
+mod credentials;
+pub use credentials::{ChatConfig, ChatCredentials, TwitchAuth, YouTubeAuth};
+
 /// Chat-log session status returned by `GET /api/v1/chat/log`.
 /// `started_at` is Unix-epoch milliseconds; `0` when no session has
 /// started since the last process boot (`active == false`). Sentinel
@@ -31,7 +39,6 @@ pub enum ChatPlatform {
     TikTok,
     YouTube,
     Trovo,
-    Stripchat,
     Kick,
     Facebook,
 }
@@ -43,7 +50,6 @@ impl ChatPlatform {
             ChatPlatform::TikTok => "tiktok",
             ChatPlatform::YouTube => "youtube",
             ChatPlatform::Trovo => "trovo",
-            ChatPlatform::Stripchat => "stripchat",
             ChatPlatform::Kick => "kick",
             ChatPlatform::Facebook => "facebook",
         }
@@ -60,7 +66,6 @@ impl ChatPlatform {
             ChatPlatform::Kick => 500,
             ChatPlatform::Facebook => 200,
             ChatPlatform::TikTok => 150,
-            ChatPlatform::Stripchat => 500,
         }
     }
 }
@@ -657,129 +662,6 @@ pub enum ChatMessageDirection {
 }
 
 /// Configuration for a chat platform connection
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../../packages/types/src/generated/")]
-pub struct ChatConfig {
-    /// Platform to connect to
-    pub platform: ChatPlatform,
-    /// Whether this platform is enabled
-    pub enabled: bool,
-    /// Platform-specific configuration
-    pub credentials: ChatCredentials,
-}
-
-/// Platform-specific credentials
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(tag = "type", rename_all = "lowercase")]
-#[ts(export, export_to = "../../../packages/types/src/generated/")]
-pub enum ChatCredentials {
-    #[serde(rename_all = "camelCase")]
-    Twitch {
-        /// Twitch channel name to join
-        channel: String,
-        /// Authentication method (optional - anonymous read-only if not provided)
-        auth: Option<TwitchAuth>,
-    },
-    #[serde(rename_all = "camelCase")]
-    TikTok {
-        /// TikTok username to monitor
-        username: String,
-        /// Session cookies/token (may be needed for some unofficial APIs)
-        session_token: Option<String>,
-    },
-    #[serde(rename_all = "camelCase")]
-    YouTube {
-        /// YouTube channel ID or handle (e.g., "UCxxxxxx" or "@channelname")
-        /// The backend will automatically find the current live stream
-        channel_id: String,
-        /// Authentication method
-        auth: YouTubeAuth,
-    },
-    #[serde(rename_all = "camelCase")]
-    Trovo {
-        /// Trovo channel ID (numeric user/channel ID)
-        channel_id: String,
-    },
-    #[serde(rename_all = "camelCase")]
-    Stripchat {
-        /// Stripchat model username
-        username: String,
-    },
-    #[serde(rename_all = "camelCase")]
-    Kick {
-        /// Kick channel name (case-insensitive — Kick normalises internally).
-        channel: String,
-        /// OAuth bearer for the user account doing the chatting. `None`
-        /// means read-only (anonymous Pusher subscription works without
-        /// auth); `Some(token)` enables send via `api.kick.com/public/v1/chat`.
-        #[serde(default)]
-        oauth_token: Option<String>,
-        /// Kick broadcaster user id (Kick's REST POST /chat expects the
-        /// numeric broadcaster id, NOT the username). The chat lifecycle
-        /// fetches this once when activating the profile.
-        #[serde(default)]
-        broadcaster_user_id: Option<u64>,
-    },
-    #[serde(rename_all = "camelCase")]
-    Facebook {
-        /// Facebook Live video ID
-        video_id: String,
-        /// Facebook access token
-        access_token: String,
-    },
-}
-
-/// Twitch authentication options
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(tag = "method", rename_all = "camelCase")]
-#[ts(export, export_to = "../../../packages/types/src/generated/")]
-pub enum TwitchAuth {
-    /// User-provided OAuth token (from twitchtokengenerator.com or similar)
-    #[serde(rename_all = "camelCase")]
-    UserToken {
-        /// OAuth token (with or without "oauth:" prefix)
-        oauth_token: String,
-    },
-    /// App OAuth - user authenticated via "Login with Twitch" flow
-    #[serde(rename_all = "camelCase")]
-    AppOAuth {
-        /// Access token from OAuth flow
-        #[serde(default)]
-        access_token: String,
-        /// Refresh token for renewal
-        refresh_token: Option<String>,
-        /// Token expiration timestamp (Unix epoch seconds, JSON `number`).
-        #[ts(type = "number | null")]
-        expires_at: Option<i64>,
-    },
-}
-
-/// YouTube authentication options
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
-#[serde(tag = "method", rename_all = "camelCase")]
-#[ts(export, export_to = "../../../packages/types/src/generated/")]
-pub enum YouTubeAuth {
-    /// User-provided API key (preferred - uses user's own quota)
-    #[serde(rename_all = "camelCase")]
-    ApiKey {
-        /// Google API key with YouTube Data API enabled
-        key: String,
-    },
-    /// App OAuth - user authenticated via "Login with Google" flow
-    #[serde(rename_all = "camelCase")]
-    AppOAuth {
-        /// Access token from OAuth flow
-        #[serde(default)]
-        access_token: String,
-        /// Refresh token for renewal
-        refresh_token: Option<String>,
-        /// Token expiration timestamp (Unix epoch seconds, JSON `number`).
-        #[ts(type = "number | null")]
-        expires_at: Option<i64>,
-    },
-}
-
 /// Connection status for a chat platform
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
@@ -840,8 +722,14 @@ mod fragment_wire_shape {
         };
         let json: Value = serde_json::from_str(&serde_json::to_string(&frag).unwrap()).unwrap();
         assert_eq!(json["kind"], "mention");
-        assert!(json.get("displayName").is_some(), "expected camelCase displayName: {json}");
-        assert!(json.get("userColor").is_some(), "expected camelCase userColor: {json}");
+        assert!(
+            json.get("displayName").is_some(),
+            "expected camelCase displayName: {json}"
+        );
+        assert!(
+            json.get("userColor").is_some(),
+            "expected camelCase userColor: {json}"
+        );
     }
 
     #[test]
@@ -857,8 +745,14 @@ mod fragment_wire_shape {
             url_4x: None,
         };
         let json: Value = serde_json::from_str(&serde_json::to_string(&frag).unwrap()).unwrap();
-        assert!(json.get("url1x").is_some(), "expected url1x camelCase: {json}");
-        assert!(json.get("zeroWidth").is_some(), "expected zeroWidth camelCase: {json}");
+        assert!(
+            json.get("url1x").is_some(),
+            "expected url1x camelCase: {json}"
+        );
+        assert!(
+            json.get("zeroWidth").is_some(),
+            "expected zeroWidth camelCase: {json}"
+        );
     }
 
     #[test]
@@ -876,6 +770,9 @@ mod fragment_wire_shape {
         // The known bits we declared are preserved; nothing panics.
         assert!(flags.bits() != 0);
     }
+
+    // F5 regression tests for ChatCredentials/TwitchAuth/YouTubeAuth
+    // Debug redaction moved alongside their types in `chat/credentials.rs`.
 
     #[test]
     fn fragment_color_validates_and_normalizes_hex() {

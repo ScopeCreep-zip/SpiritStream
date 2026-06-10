@@ -30,7 +30,7 @@ export function ConnectionError({
   const showDetails = Array.isArray(details) && details.length > 0;
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-bg-base">
+    <div className="fixed inset-0 z-[var(--z-emergency)] flex items-center justify-center bg-bg-base">
       <div className="max-w-md w-full mx-4 text-center">
         {/* Logo */}
         <div className="flex justify-center mb-8">
@@ -56,7 +56,8 @@ export function ConnectionError({
         <p className="text-text-secondary mb-4">
           {description ??
             t('connection.errorDescription', {
-              defaultValue: 'The backend server is not responding. Please ensure it is running and try again.',
+              defaultValue:
+                'The backend server is not responding. Please ensure it is running and try again.',
             })}
         </p>
 
@@ -96,7 +97,8 @@ export function ConnectionError({
         <p className="mt-6 text-xs text-text-muted">
           {helpText ??
             t('connection.helpText', {
-              defaultValue: 'If the problem persists, check that the server is running and the URL is correct.',
+              defaultValue:
+                'If the problem persists, check that the server is running and the URL is correct.',
             })}
         </p>
       </div>

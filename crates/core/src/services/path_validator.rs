@@ -76,15 +76,16 @@ pub fn validate_path_within_any(path: &Path, allowed_dirs: &[&Path]) -> Result<P
 /// Fails with `CoreError::ValidationFailed` carrying `code =
 /// "invalid_file_extension"` plus the list of accepted extensions.
 pub fn validate_extension(path: &Path, allowed_extensions: &[&str]) -> Result<(), CoreError> {
-    let extension = path.extension().and_then(|e| e.to_str()).ok_or_else(|| {
-        CoreError::ValidationFailed {
-            reasons: vec![ValidationIssue {
-                code: "missing_file_extension".into(),
-                message: "File must have an extension".into(),
-                path: None,
-            }],
-        }
-    })?;
+    let extension =
+        path.extension()
+            .and_then(|e| e.to_str())
+            .ok_or_else(|| CoreError::ValidationFailed {
+                reasons: vec![ValidationIssue {
+                    code: "missing_file_extension".into(),
+                    message: "File must have an extension".into(),
+                    path: None,
+                }],
+            })?;
 
     if !allowed_extensions.contains(&extension) {
         return Err(CoreError::ValidationFailed {

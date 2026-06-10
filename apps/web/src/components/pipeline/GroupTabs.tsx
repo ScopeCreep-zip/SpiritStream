@@ -58,7 +58,7 @@ export function GroupTabs({
         tabRefs.current.get(nextId)?.focus();
       }
     },
-    [groups, activeGroupId, onSelectGroup],
+    [groups, activeGroupId, onSelectGroup]
   );
 
   const hasGroups = groups.length > 0;
@@ -74,7 +74,7 @@ export function GroupTabs({
         'hover:border-border-strong hover:text-text-primary hover:bg-bg-hover',
         'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring-default',
         'disabled:opacity-50 disabled:cursor-not-allowed',
-        'transition-colors',
+        'transition-colors'
       )}
     >
       <Plus className="w-4 h-4" aria-hidden="true" />
@@ -118,11 +118,16 @@ export function GroupTabs({
                 'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring-default',
                 active
                   ? 'bg-primary text-primary-foreground'
-                  : 'bg-bg-muted text-text-secondary hover:bg-bg-hover hover:text-text-primary',
+                  : 'bg-bg-muted text-text-secondary hover:bg-bg-hover hover:text-text-primary'
               )}
             >
               <span>{g.name}</span>
-              <span className={cn('text-xs', active ? 'text-primary-foreground/80' : 'text-text-tertiary')}>
+              <span
+                className={cn(
+                  'text-xs',
+                  active ? 'text-primary-foreground/80' : 'text-text-tertiary'
+                )}
+              >
                 {g.video.height}p{g.video.fps}
               </span>
             </button>

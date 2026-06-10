@@ -27,5 +27,7 @@ export const obs = {
     await fetchTypedJson<Record<string, never>>('DELETE', '/api/v1/obs/stream');
   },
   isConnected: () =>
-    fetchTypedJson<{ connected: boolean }>('GET', '/api/v1/obs/connection').then((r) => r.connected),
+    fetchTypedJson<{ connected: boolean }>('GET', '/api/v1/obs/connection').then(
+      (r) => r.connected
+    ),
 };

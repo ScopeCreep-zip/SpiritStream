@@ -38,6 +38,10 @@ export function DiscordPanel() {
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [showWebhookUrl, setShowWebhookUrl] = useState(false);
+  // Surfaced when a save (debounced or immediate) fails. Toast is fleeting;
+  // this banner sticks until the next successful save so the user can't
+  // miss a save failure that happened off-screen during a debounce.
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Debounced save infrastructure.
   const saveTimeoutRef = useRef<number | null>(null);
@@ -49,7 +53,7 @@ export function DiscordPanel() {
       setWebhookEnabled(discordSettings.webhookEnabled);
       setWebhookUrl(discordSettings.webhookUrl);
       setGoLiveMessage(
-        discordSettings.goLiveMessage || '**Stream is now live!** \n\nCome join the stream!',
+        discordSettings.goLiveMessage || '**Stream is now live!** \n\nCome join the stream!'
       );
       setCooldownEnabled(discordSettings.cooldownEnabled);
       setCooldownSeconds(String(discordSettings.cooldownSeconds));
@@ -90,12 +94,21 @@ export function DiscordPanel() {
             discord: { ...discordSettings, ...pendingUpdatesRef.current },
           });
           pendingUpdatesRef.current = null;
+          setSaveError(null);
         } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
           logger.error('Failed to save Discord setting:', error);
+          setSaveError(message);
+          toast.error(
+            t('discord.autoSaveFailed', {
+              defaultValue: 'Failed to save Discord setting: {{error}}',
+              error: message,
+            })
+          );
         }
       }, clientConfig.AUTO_SAVE_DELAY_MS);
     },
-    [discordSettings, updateProfileSettings],
+    [discordSettings, updateProfileSettings, t]
   );
 
   // Webhook handlers.
@@ -108,10 +121,18 @@ export function DiscordPanel() {
           discord: { ...discordSettings, webhookEnabled: checked },
         });
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
         logger.error('Failed to save webhook enabled state:', error);
+        setSaveError(message);
+        toast.error(
+          t('discord.toggleSaveFailed', {
+            defaultValue: 'Failed to save Discord webhook toggle: {{error}}',
+            error: message,
+          })
+        );
       }
     },
-    [discordSettings, updateProfileSettings],
+    [discordSettings, updateProfileSettings, t]
   );
 
   const handleUrlBlur = useCallback(() => {
@@ -164,10 +185,18 @@ export function DiscordPanel() {
           discord: { ...discordSettings, cooldownEnabled: checked },
         });
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
         logger.error('Failed to save cooldown enabled state:', error);
+        setSaveError(message);
+        toast.error(
+          t('discord.toggleSaveFailed', {
+            defaultValue: 'Failed to save Discord webhook toggle: {{error}}',
+            error: message,
+          })
+        );
       }
     },
-    [discordSettings, updateProfileSettings],
+    [discordSettings, updateProfileSettings, t]
   );
 
   const handleCooldownBlur = useCallback(() => {
@@ -210,9 +239,17 @@ export function DiscordPanel() {
         discord: { ...discordSettings, imagePath: '' },
       });
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       logger.error('Failed to remove image:', error);
+      setSaveError(message);
+      toast.error(
+        t('discord.removeImageFailed', {
+          defaultValue: 'Failed to remove Discord image: {{error}}',
+          error: message,
+        })
+      );
     }
-  }, [discordSettings, updateProfileSettings]);
+  }, [discordSettings, updateProfileSettings, t]);
 
   // Webhook URL prefix list is backend-authoritative
   // (`clientConfig.DISCORD_WEBHOOK_PREFIXES`, hydrated from
@@ -220,7 +257,7 @@ export function DiscordPanel() {
   // for "what counts as a Discord webhook" so this stays in lockstep
   // with `DiscordWebhookService` server-side.
   const isValidWebhookUrl = clientConfig.DISCORD_WEBHOOK_PREFIXES.some((p) =>
-    webhookUrl.startsWith(p),
+    webhookUrl.startsWith(p)
   );
 
   if (!currentProfile) {
@@ -237,13 +274,34 @@ export function DiscordPanel() {
 
       <div className="flex items-center gap-3">
         <div className="p-2 rounded-lg bg-bg-elevated">
-          <MessageSquare className="w-5 h-5 text-[#5865F2]" />
+          <MessageSquare className="w-5 h-5 text-[var(--platform-discord-bg)]" />
         </div>
         <div>
           <h2 className="text-lg font-semibold text-text-primary">{t('discord.title')}</h2>
           <p className="text-sm text-text-secondary">{t('discord.description')}</p>
         </div>
       </div>
+
+      {saveError && (
+        <div
+          role="alert"
+          className="rounded-lg border border-error-border bg-error-subtle px-3 py-2 text-sm text-error-text flex items-center justify-between gap-3"
+        >
+          <span>
+            {t('discord.saveErrorBanner', {
+              defaultValue: 'Last save failed: {{error}}. Change a field to retry.',
+              error: saveError,
+            })}
+          </span>
+          <button
+            type="button"
+            onClick={() => setSaveError(null)}
+            className="text-xs underline opacity-80 hover:opacity-100 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring-default rounded-sm"
+          >
+            {t('common.dismiss', { defaultValue: 'Dismiss' })}
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <DiscordWebhookForm

@@ -151,7 +151,10 @@ pub fn build_chat_message_from_privmsg(msg: &PrivmsgMessage) -> ChatMessage {
 
     // --- Author ------------------------------------------------------------
 
-    let color = msg.name_color.as_ref().and_then(|c| FragmentColor::from_hex(&rgb_to_hex(c)));
+    let color = msg
+        .name_color
+        .as_ref()
+        .and_then(|c| FragmentColor::from_hex(&rgb_to_hex(c)));
     let legacy_color = color
         .as_ref()
         .map(|c| c.hex.clone())
@@ -262,9 +265,7 @@ fn walk_body(chars: &[char], emotes: &[RawTwitchEmote]) -> Vec<MessageFragment> 
         // module) and is exercised end-to-end here. Defensive `?`
         // shouldn't trigger after the bounds check above; fall back
         // to the raw id so the fragment is still renderable.
-        let name = emote
-            .text(chars)
-            .unwrap_or_else(|| emote.id.clone());
+        let name = emote.text(chars).unwrap_or_else(|| emote.id.clone());
         out.push(MessageFragment::Emote {
             provider: EmoteProvider::Twitch,
             id: emote.id.clone(),
@@ -378,7 +379,6 @@ fn mention_length(run: &[char]) -> usize {
     n
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -410,7 +410,10 @@ mod tests {
     /// Pins the structured-fragment + flag + author wiring end to end.
     #[test]
     fn builds_fragments_emote_and_flags_from_real_irc_line() {
-        let msg = make_privmsg("color=#FF6699;emotes=25:9-13;first-msg=1", "Hi all Kappa folks");
+        let msg = make_privmsg(
+            "color=#FF6699;emotes=25:9-13;first-msg=1",
+            "Hi all Kappa folks",
+        );
         let built = build_chat_message_from_privmsg(&msg);
 
         assert_eq!(built.platform, ChatPlatformEnum::Twitch);
@@ -418,10 +421,20 @@ mod tests {
         assert_eq!(built.channel_id.as_deref(), Some("42"));
         let author = built.author.as_ref().expect("author");
         assert_eq!(author.login, "alice");
-        assert_eq!(author.color.as_ref().map(|c| c.hex.as_str()), Some("#FF6699"));
+        assert_eq!(
+            author.color.as_ref().map(|c| c.hex.as_str()),
+            Some("#FF6699")
+        );
         assert!(built.flags.contains(MessageFlags::FIRST_MESSAGE));
-        let has_kappa = built.fragments.iter().any(|f| matches!(f, MessageFragment::Emote { id, .. } if id == "25"));
-        assert!(has_kappa, "expected Kappa emote fragment: {:?}", built.fragments);
+        let has_kappa = built
+            .fragments
+            .iter()
+            .any(|f| matches!(f, MessageFragment::Emote { id, .. } if id == "25"));
+        assert!(
+            has_kappa,
+            "expected Kappa emote fragment: {:?}",
+            built.fragments
+        );
         let ts_first = built
             .fragments
             .iter()
@@ -482,11 +495,18 @@ mod tests {
             .iter()
             .filter(|f| matches!(f, MessageFragment::Mention { login, .. } if login == "bob"))
             .count();
-        assert_eq!(mention_count, 1, "expected exactly one Mention fragment: {:?}", built.fragments);
-        let text_has_foo_at_bar = built.fragments.iter().any(|f| {
-            matches!(f, MessageFragment::Text { content, .. } if content.contains("foo@bar"))
-        });
-        assert!(text_has_foo_at_bar, "foo@bar should remain in Text fragment");
+        assert_eq!(
+            mention_count, 1,
+            "expected exactly one Mention fragment: {:?}",
+            built.fragments
+        );
+        let text_has_foo_at_bar = built.fragments.iter().any(
+            |f| matches!(f, MessageFragment::Text { content, .. } if content.contains("foo@bar")),
+        );
+        assert!(
+            text_has_foo_at_bar,
+            "foo@bar should remain in Text fragment"
+        );
     }
 
     #[test]

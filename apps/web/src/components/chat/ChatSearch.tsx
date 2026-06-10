@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Search } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
@@ -36,6 +36,16 @@ export function ChatSearch({
   const [searchScope, setSearchScope] = useState<'memory' | 'session'>('memory');
   const [searchResults, setSearchResults] = useState<ChatMessage[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  // Track mount status so a late-returning search response doesn't
+  // call setState on an unmounted modal (React warning + dev-mode
+  // double-cleanup error). Reset each time the modal re-opens.
+  const isMounted = useRef(true);
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
   const filteredMessages = useMemo(() => {
     if (!searchQuery.trim() || searchScope === 'session') {
@@ -45,7 +55,7 @@ export function ChatSearch({
     return messages.filter(
       (message) =>
         message.username.toLowerCase().includes(query) ||
-        message.message.toLowerCase().includes(query),
+        message.message.toLowerCase().includes(query)
     );
   }, [messages, searchQuery, searchScope]);
 
@@ -78,12 +88,18 @@ export function ChatSearch({
     try {
       setIsSearching(true);
       const results = await api.chat.searchSession(query, 500);
-      setSearchResults(results);
+      if (isMounted.current) {
+        setSearchResults(results);
+      }
     } catch (error) {
       logger.error('Failed to search chat session:', error);
-      toast.error(t('chat.searchFailed', { defaultValue: 'Failed to search chat logs.' }));
+      if (isMounted.current) {
+        toast.error(t('chat.searchFailed', { defaultValue: 'Failed to search chat logs.' }));
+      }
     } finally {
-      setIsSearching(false);
+      if (isMounted.current) {
+        setIsSearching(false);
+      }
     }
   }, [searchQuery, t]);
 

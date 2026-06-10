@@ -1,8 +1,4 @@
-use axum::{
-    extract::State,
-    http::HeaderMap,
-    Json,
-};
+use axum::{extract::State, http::HeaderMap, Json};
 use serde::{Deserialize, Serialize};
 use tower_cookies::{Cookie, Cookies};
 
@@ -164,6 +160,21 @@ pub(crate) async fn security_revoke_all_sessions(
         .unwrap_or_else(|e| e.into_inner());
     let revoked = sessions.len();
     sessions.clear();
+    // Drop the guard before the audit await so we don't hold a sync
+    // mutex across an async boundary.
+    drop(sessions);
+    // G2: durable post-incident breadcrumb. If an attacker stole a
+    // session and the legit user hit panic-revoke, the chain shows
+    // `SessionRevoked { count }` with the wall-clock time + a paired
+    // `ConfirmTokenIssued { intent: "revoke_all_sessions" }` from the
+    // issue step. Use that pair to reconstruct "user demanded all
+    // sessions out at T, N were live" in post-incident review.
+    if let Err(e) = state
+        .audit
+        .record(spiritstream_core::services::AuditAction::SessionRevoked { count: revoked })
+    {
+        log::error!("auth: SessionRevoked audit append failed: {e}");
+    }
     Ok(Json(RevokeAllSessionsResponse { revoked }))
 }
 
@@ -251,6 +262,17 @@ pub(crate) async fn confirm_token_issue(
     Json(payload): Json<ConfirmTokenRequest>,
 ) -> Result<Json<ConfirmTokenResponse>, ApiError> {
     let token = state.confirm_tokens.issue(&payload.intent);
+    // G2: record the intent (NOT the token) so post-incident review
+    // can reconstruct "user asked for X around time T." Paired with
+    // the downstream `MachineKeyRotated` / `SessionRevoked` /
+    // `ProfileDeleted` / etc. emission via wall-clock proximity.
+    if let Err(e) = state.audit.record(
+        spiritstream_core::services::AuditAction::ConfirmTokenIssued {
+            intent: payload.intent.clone(),
+        },
+    ) {
+        log::error!("auth: ConfirmTokenIssued audit append failed: {e}");
+    }
     Ok(Json(ConfirmTokenResponse {
         token,
         expires_in_seconds: CONFIRM_TOKEN_TTL_SECS,

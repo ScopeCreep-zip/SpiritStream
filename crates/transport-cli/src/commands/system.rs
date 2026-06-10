@@ -148,7 +148,6 @@ pub async fn run(
                 ChatPlatform::Kick,
                 ChatPlatform::Facebook,
                 ChatPlatform::TikTok,
-                ChatPlatform::Stripchat,
             ] {
                 chat_max_chars.insert(p.as_str().to_owned(), p.max_message_chars() as u32);
             }
@@ -253,17 +252,18 @@ pub async fn run(
             }))?;
             Ok(())
         }
-        SystemCmd::LogsExport { out: out_path, lines } => {
+        SystemCmd::LogsExport {
+            out: out_path,
+            lines,
+        } => {
             let allowed: Vec<&std::path::Path> = vec![registry.data_dir.as_path()];
             let validated =
                 spiritstream_core::services::validate_path_within_any(&out_path, &allowed)?;
             let cap = lines.unwrap_or(usize::MAX);
-            let log_lines =
-                spiritstream_core::services::read_recent_logs(&registry.log_dir, cap)?;
+            let log_lines = spiritstream_core::services::read_recent_logs(&registry.log_dir, cap)?;
             let body = log_lines.join("\n");
-            std::fs::write(&validated, &body).map_err(|e| {
-                CliError::Io(format!("write {}: {}", validated.display(), e))
-            })?;
+            std::fs::write(&validated, &body)
+                .map_err(|e| CliError::Io(format!("write {}: {}", validated.display(), e)))?;
             out.emit(&serde_json::json!({
                 "exported": true,
                 "path": validated.to_string_lossy(),
@@ -272,11 +272,9 @@ pub async fn run(
             Ok(())
         }
         SystemCmd::AuditUpdateFailure { detail } => {
-            registry
-                .audit
-                .record(spiritstream_core::services::AuditAction::AppUpdateSignatureFailed {
-                    detail,
-                })?;
+            registry.audit.record(
+                spiritstream_core::services::AuditAction::AppUpdateSignatureFailed { detail },
+            )?;
             out.emit(&serde_json::json!({ "recorded": true }))?;
             Ok(())
         }
@@ -286,7 +284,12 @@ pub async fn run(
                 Some(name) => match report.services.get(&name) {
                     None => Err(CliError::Argument(format!(
                         "unknown subsystem: {name} (valid: {})",
-                        report.services.keys().cloned().collect::<Vec<_>>().join(", ")
+                        report
+                            .services
+                            .keys()
+                            .cloned()
+                            .collect::<Vec<_>>()
+                            .join(", ")
                     ))),
                     Some(status) => {
                         let entry = serde_json::json!({
@@ -329,7 +332,9 @@ pub async fn run(
                 "failed": failed,
             }))?;
             if !ready {
-                return Err(CliError::Argument("not ready".into()));
+                // EX_UNAVAILABLE (69) so retry-loop scripts can
+                // distinguish "service starting up" from "bad flags."
+                return Err(CliError::Unavailable("not ready".into()));
             }
             Ok(())
         }

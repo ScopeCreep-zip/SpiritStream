@@ -45,7 +45,12 @@ export function FormField({
     <div className="flex flex-col gap-1">
       <label htmlFor={fieldId} className="text-sm font-medium text-text-primary">
         {label}
-        {required && <span aria-hidden="true" className="text-error-text"> *</span>}
+        {required && (
+          <span aria-hidden="true" className="text-error-text">
+            {' '}
+            *
+          </span>
+        )}
       </label>
       {children({
         id: fieldId,

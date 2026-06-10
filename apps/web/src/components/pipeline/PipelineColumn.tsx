@@ -41,7 +41,12 @@ export function PipelineColumn({
   const removeOutputGroup = useProfileStore((s) => s.removeOutputGroup);
   const removeStreamTarget = useProfileStore((s) => s.removeStreamTarget);
   const setTargetEnabled = useStreamStore((s) => s.setTargetEnabled);
+  const toggleTargetLive = useStreamStore((s) => s.toggleTargetLive);
+  const setGroupEnabled = useStreamStore((s) => s.setGroupEnabled);
+  const startGroup = useStreamStore((s) => s.startGroup);
+  const stopGroup = useStreamStore((s) => s.stopGroup);
   const enabledTargets = useStreamStore((s) => s.enabledTargets);
+  const enabledGroups = useStreamStore((s) => s.enabledGroups);
   const globalStatus = useStreamStore((s) => s.globalStatus);
   const activeGroups = useStreamStore((s) => s.activeGroups);
 
@@ -58,7 +63,7 @@ export function PipelineColumn({
         t('toast.groupAddFailed', {
           defaultValue: 'Failed to add group: {{error}}',
           error: err instanceof Error ? err.message : String(err),
-        }),
+        })
       );
     }
   }, [profile, addOutputGroup, onSelectGroup, t]);
@@ -81,7 +86,7 @@ export function PipelineColumn({
           t('toast.groupDuplicated', {
             defaultValue: 'Duplicated {{name}}',
             name: group.name,
-          }),
+          })
         );
       } catch (err) {
         logger.error('[pipeline] duplicate group failed', err);
@@ -89,11 +94,11 @@ export function PipelineColumn({
           t('toast.groupDuplicateFailed', {
             defaultValue: 'Failed to duplicate group: {{error}}',
             error: err instanceof Error ? err.message : String(err),
-          }),
+          })
         );
       }
     },
-    [addOutputGroup, onSelectGroup, t],
+    [addOutputGroup, onSelectGroup, t]
   );
 
   const handleRemoveGroup = useCallback(
@@ -107,11 +112,11 @@ export function PipelineColumn({
           t('toast.groupRemoveFailed', {
             defaultValue: 'Failed to remove group: {{error}}',
             error: err instanceof Error ? err.message : String(err),
-          }),
+          })
         );
       }
     },
-    [removeOutputGroup, t],
+    [removeOutputGroup, t]
   );
 
   const handleRemoveTarget = useCallback(
@@ -122,7 +127,7 @@ export function PipelineColumn({
           t('toast.targetRemoved', {
             defaultValue: 'Removed {{name}}',
             name: target.name,
-          }),
+          })
         );
       } catch (err) {
         logger.error('[pipeline] remove target failed', err);
@@ -130,18 +135,117 @@ export function PipelineColumn({
           t('toast.targetRemoveFailed', {
             defaultValue: 'Failed to remove target: {{error}}',
             error: err instanceof Error ? err.message : String(err),
-          }),
+          })
         );
       }
     },
-    [removeStreamTarget, t],
+    [removeStreamTarget, t]
   );
 
-  const handleToggleTargetEnabled = useCallback(
-    (target: StreamTarget) => {
-      setTargetEnabled(target.id, !enabledTargets.has(target.id));
+  const handleToggleTarget = useCallback(
+    async (group: OutputGroup, target: StreamTarget) => {
+      const nextEnabled = !enabledTargets.has(target.id);
+
+      // Pre-stream: only record the intended enable/disable in the UI set.
+      // The backend reads `disabled_targets` when the group is started.
+      if (!activeGroups.has(group.id)) {
+        setTargetEnabled(target.id, nextEnabled);
+        return;
+      }
+
+      // Live: start/stop this single target on the already-running group, so
+      // a creator can drop one destination without taking the rest offline.
+      if (!profile) return;
+      const incomingUrl = `rtmp://${profile.input.bindAddress}:${profile.input.port}/${profile.input.application}`;
+      try {
+        await toggleTargetLive(target.id, nextEnabled, group, incomingUrl);
+        toast.success(
+          nextEnabled
+            ? t('toast.targetStarted', { defaultValue: 'Started {{name}}', name: target.name })
+            : t('toast.targetStopped', { defaultValue: 'Stopped {{name}}', name: target.name })
+        );
+      } catch (err) {
+        logger.error('[pipeline] toggle target live failed', err);
+        toast.error(
+          t('toast.targetToggleFailed', {
+            defaultValue: 'Failed to toggle {{name}}: {{error}}',
+            name: target.name,
+            error: err instanceof Error ? err.message : String(err),
+          })
+        );
+      }
     },
-    [setTargetEnabled, enabledTargets],
+    [enabledTargets, activeGroups, profile, setTargetEnabled, toggleTargetLive, t]
+  );
+
+  const handleStartGroup = useCallback(
+    async (group: OutputGroup) => {
+      if (!profile) return;
+      const incomingUrl = `rtmp://${profile.input.bindAddress}:${profile.input.port}/${profile.input.application}`;
+      try {
+        await startGroup(group, incomingUrl);
+        toast.success(
+          t('toast.groupStarted', {
+            defaultValue: 'Streaming {{name}}',
+            name: group.name,
+          })
+        );
+      } catch (err) {
+        logger.error('[pipeline] start group failed', err);
+        toast.error(
+          t('toast.groupStartFailed', {
+            defaultValue: 'Failed to start {{name}}: {{error}}',
+            name: group.name,
+            error: err instanceof Error ? err.message : String(err),
+          })
+        );
+      }
+    },
+    [profile, startGroup, t]
+  );
+
+  const handleStopGroup = useCallback(
+    async (group: OutputGroup) => {
+      try {
+        await stopGroup(group.id);
+        toast.success(
+          t('toast.groupStopped', {
+            defaultValue: 'Stopped {{name}}',
+            name: group.name,
+          })
+        );
+      } catch (err) {
+        logger.error('[pipeline] stop group failed', err);
+        toast.error(
+          t('toast.groupStopFailed', {
+            defaultValue: 'Failed to stop {{name}}: {{error}}',
+            name: group.name,
+            error: err instanceof Error ? err.message : String(err),
+          })
+        );
+      }
+    },
+    [stopGroup, t]
+  );
+
+  const handleToggleGroupEnabled = useCallback(
+    (group: OutputGroup) => {
+      // `enabledGroups` empty == every group is implicitly enabled (the
+      // first-time-startup case in `startAllGroups`). Toggling off must
+      // materialise the full set first, otherwise unchecking one group
+      // would flip every other group out of the set too.
+      if (enabledGroups.size === 0 && profile) {
+        for (const g of profile.outputGroups) {
+          if (g.id !== group.id) {
+            setGroupEnabled(g.id, true);
+          }
+        }
+        setGroupEnabled(group.id, false);
+        return;
+      }
+      setGroupEnabled(group.id, !enabledGroups.has(group.id));
+    },
+    [enabledGroups, profile, setGroupEnabled]
   );
 
   if (!profile) {
@@ -169,6 +273,10 @@ export function PipelineColumn({
           group={activeGroup}
           groupStatus={resolveGroupStatus(globalStatus, activeGroups.has(activeGroup.id))}
           enabledTargets={enabledTargets}
+          isStreaming={activeGroups.has(activeGroup.id)}
+          // `enabledGroups` empty == every group is implicitly enabled
+          // (first-time startup before the user has toggled anything).
+          isEnabled={enabledGroups.size === 0 || enabledGroups.has(activeGroup.id)}
           onEditEncoder={() => onEditGroup(activeGroup)}
           onEditGroup={() => onEditGroup(activeGroup)}
           onDuplicateGroup={() => handleDuplicateGroup(activeGroup)}
@@ -176,7 +284,10 @@ export function PipelineColumn({
           onAddTarget={() => onAddTargetForGroup(activeGroup)}
           onEditTarget={(target) => onEditTarget(activeGroup, target)}
           onRemoveTarget={(target) => handleRemoveTarget(activeGroup.id, target)}
-          onToggleTargetEnabled={handleToggleTargetEnabled}
+          onToggleTargetEnabled={(target) => handleToggleTarget(activeGroup, target)}
+          onStartGroup={() => handleStartGroup(activeGroup)}
+          onStopGroup={() => handleStopGroup(activeGroup)}
+          onToggleGroupEnabled={() => handleToggleGroupEnabled(activeGroup)}
         />
       ) : (
         <div className="flex flex-col items-center gap-3 py-12 text-center text-text-tertiary">

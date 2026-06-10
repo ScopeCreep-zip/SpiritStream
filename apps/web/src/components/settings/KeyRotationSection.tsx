@@ -22,7 +22,10 @@ const formatRotationTimestamp = (timestamp: string) => {
   return formatDateTime(timestamp) || timestamp;
 };
 
-export function KeyRotationSection({ encryptStreamKeys, disabled = false }: KeyRotationSectionProps) {
+export function KeyRotationSection({
+  encryptStreamKeys,
+  disabled = false,
+}: KeyRotationSectionProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -43,7 +46,10 @@ export function KeyRotationSection({ encryptStreamKeys, disabled = false }: KeyR
     try {
       const summaries = await api.profile.getSummaries();
       setEncryptedProfiles(
-        summaries.filter((s) => s.isEncrypted).map((s) => s.name).sort(),
+        summaries
+          .filter((s) => s.isEncrypted)
+          .map((s) => s.name)
+          .sort()
       );
     } catch {
       // Best-effort pre-flight; rotation will still refuse server-side if a
@@ -111,9 +117,7 @@ export function KeyRotationSection({ encryptStreamKeys, disabled = false }: KeyR
     <>
       <div className="flex items-center justify-between py-2 gap-3">
         <div>
-          <div className="text-sm font-medium text-text-primary">
-            {t('settings.machineKey')}
-          </div>
+          <div className="text-sm font-medium text-text-primary">{t('settings.machineKey')}</div>
           <div className="text-xs text-text-tertiary">
             {t('settings.lastRotated', { timestamp: lastRotatedLabel })}
           </div>

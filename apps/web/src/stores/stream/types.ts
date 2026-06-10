@@ -1,21 +1,14 @@
-import type { OutputGroup } from '@spiritstream/types';
-import type { StreamStats, StreamStatusType, TargetStats } from '@/types/stream';
+import type { OutputGroup, StreamStats as FFmpegStats } from '@spiritstream/types';
+import type { AggregateStreamStats, StreamStatusType } from '@/types/stream';
 
-/// Real-time streaming statistics from the FFmpeg backend.
-///
-/// Maps to `crates/core/src/models/stream_stats.rs` after serde's
-/// camelCase transformation (`group_id` → `groupId`, etc.).
-export interface FFmpegStats {
-  groupId: string;
-  frame: number;
-  fps: number;
-  bitrate: number;
-  speed: number;
-  size: number;
-  time: number;
-  droppedFrames: number;
-  dupFrames: number;
-}
+// L3: re-export the backend's per-group ffmpeg stats type under the
+// historical `FFmpegStats` name so call sites in this folder keep
+// reading. The inline `interface FFmpegStats` that lived here
+// duplicated `@spiritstream/types/StreamStats` field-for-field — that
+// duplication drifted in the past (camelCase / dupFrames / size /
+// speed) and silently desynced from the ts-rs source of truth. Now
+// the type alias makes it impossible for the two to drift again.
+export type { FFmpegStats };
 
 export interface GroupStats {
   fps: number;
@@ -30,7 +23,7 @@ export interface StreamState {
   activeGroups: Set<string>;
   enabledGroups: Set<string>;
   enabledTargets: Set<string>;
-  stats: StreamStats;
+  stats: AggregateStreamStats;
   groupStats: Record<string, GroupStats>;
   uptime: number;
   globalStatus: StreamStatusType;
@@ -45,19 +38,15 @@ export interface StreamState {
     targetId: string,
     enabled: boolean,
     group: OutputGroup,
-    incomingUrl: string,
+    incomingUrl: string
   ) => Promise<void>;
 
   syncWithBackend: () => Promise<void>;
-  isGroupStreamingBackend: (groupId: string) => Promise<boolean>;
 
   setIsStreaming: (isStreaming: boolean) => void;
-  setActiveGroup: (groupId: string, active: boolean) => void;
   setGroupEnabled: (groupId: string, enabled: boolean) => void;
-  toggleTarget: (targetId: string) => void;
   setTargetEnabled: (targetId: string, enabled: boolean) => void;
   updateStats: (groupId: string, ffmpegStats: FFmpegStats) => void;
-  updateTargetStats: (targetId: string, stats: TargetStats) => void;
   setStreamEnded: (groupId: string) => void;
   setStreamError: (groupId: string, error: string) => void;
   setUptime: (uptime: number) => void;
@@ -67,9 +56,8 @@ export interface StreamState {
   reset: () => void;
 }
 
-export const initialStats: StreamStats = {
+export const initialStats: AggregateStreamStats = {
   totalBitrate: 0,
   droppedFrames: 0,
   uptime: 0,
-  targetStats: {},
 };

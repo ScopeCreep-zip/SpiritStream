@@ -120,7 +120,6 @@
     "--ring-width": "3px",
     "--ring-offset-width": "2px",
     "--font-sans": "'Fredoka', 'Comic Neue', 'Comic Sans MS', 'Chalkboard SE', 'Marker Felt', cursive, sans-serif",
-    "--font-mono": "'Fira Code', 'JetBrains Mono', monospace"
-  }
+    "--font-mono": "'Fira Code', 'JetBrains Mono', monospace",
+  },
 }
-

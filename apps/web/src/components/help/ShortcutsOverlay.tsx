@@ -33,11 +33,31 @@ export function ShortcutsOverlay({ open, onClose }: ShortcutsOverlayProps): Reac
       labelKey: 'shortcuts.panic',
       fallback: 'Panic disconnect (stop all streams)',
     },
-    { id: 'startStream', keys: [cmd, '↵'], labelKey: 'shortcuts.startStream', fallback: 'Start streaming' },
-    { id: 'stopStream', keys: [cmd, '.'], labelKey: 'shortcuts.stopStream', fallback: 'Stop streaming' },
-    { id: 'toggleChat', keys: [cmd, '\\'], labelKey: 'shortcuts.toggleChat', fallback: 'Show / hide chat panel' },
+    {
+      id: 'startStream',
+      keys: [cmd, '↵'],
+      labelKey: 'shortcuts.startStream',
+      fallback: 'Start streaming',
+    },
+    {
+      id: 'stopStream',
+      keys: [cmd, '.'],
+      labelKey: 'shortcuts.stopStream',
+      fallback: 'Stop streaming',
+    },
+    {
+      id: 'toggleChat',
+      keys: [cmd, '\\'],
+      labelKey: 'shortcuts.toggleChat',
+      fallback: 'Show / hide chat panel',
+    },
     { id: 'settings', keys: [cmd, ','], labelKey: 'shortcuts.settings', fallback: 'Open settings' },
-    { id: 'shortcuts', keys: [cmd, '/'], labelKey: 'shortcuts.shortcuts', fallback: 'Show this shortcuts list' },
+    {
+      id: 'shortcuts',
+      keys: [cmd, '/'],
+      labelKey: 'shortcuts.shortcuts',
+      fallback: 'Show this shortcuts list',
+    },
   ];
 
   return (

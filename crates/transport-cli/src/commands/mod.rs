@@ -5,6 +5,7 @@
 
 pub mod audit;
 pub mod chat;
+pub mod confirm_token;
 pub mod data;
 pub mod discord;
 pub mod events;

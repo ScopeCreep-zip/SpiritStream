@@ -14,7 +14,15 @@ export interface ModalProps {
   closeOnBackdropClick?: boolean;
 }
 
-export function Modal({ open, onClose, title, children, footer, maxWidth = '500px', closeOnBackdropClick = false }: ModalProps) {
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  footer,
+  maxWidth = '500px',
+  closeOnBackdropClick = false,
+}: ModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
   const previousActiveElement = useRef<HTMLElement | null>(null);
 
@@ -82,9 +90,17 @@ export function Modal({ open, onClose, title, children, footer, maxWidth = '500p
       });
     } else {
       document.body.style.overflow = '';
-      // Restore focus to previously focused element
-      if (previousActiveElement.current) {
-        previousActiveElement.current.focus();
+      // Restore focus to previously focused element. If that element has
+      // been removed from the DOM (e.g. modal was opened to delete the
+      // very row that triggered it), `focus()` is a no-op and focus
+      // falls to <body> — tab order resets to the top of the page.
+      // Detect detachment and fall back to <body> explicitly so screen
+      // readers and keyboard users get a predictable landing point.
+      const prev = previousActiveElement.current;
+      if (prev && document.body.contains(prev)) {
+        prev.focus();
+      } else {
+        document.body.focus();
       }
     }
     return () => {
@@ -136,9 +152,7 @@ interface ModalHeaderProps {
 export function ModalHeader({ title, onClose }: ModalHeaderProps) {
   const { t } = useTranslation();
   return (
-    <div
-      className="flex-shrink-0 border-b border-border-muted flex items-center justify-between py-5 px-6"
-    >
+    <div className="flex-shrink-0 border-b border-border-muted flex items-center justify-between py-5 px-6">
       <h3 id="modal-title" className="text-lg font-semibold text-text-primary">
         {title}
       </h3>
@@ -165,11 +179,7 @@ interface ModalBodyProps {
 }
 
 export function ModalBody({ children, className }: ModalBodyProps) {
-  return (
-    <div className={cn('flex-1 min-h-0 overflow-y-auto p-6', className)}>
-      {children}
-    </div>
-  );
+  return <div className={cn('flex-1 min-h-0 overflow-y-auto p-6', className)}>{children}</div>;
 }
 
 interface ModalFooterProps {
@@ -180,7 +190,10 @@ interface ModalFooterProps {
 export function ModalFooter({ children, className }: ModalFooterProps) {
   return (
     <div
-      className={cn('flex-shrink-0 border-t border-border-muted flex justify-end gap-3 py-4 px-6', className)}
+      className={cn(
+        'flex-shrink-0 border-t border-border-muted flex justify-end gap-3 py-4 px-6',
+        className
+      )}
     >
       {children}
     </div>

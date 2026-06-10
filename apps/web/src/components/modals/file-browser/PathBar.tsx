@@ -50,13 +50,7 @@ export function PathBar({
       >
         <ChevronUp className="w-4 h-4" />
       </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={onGoHome}
-        disabled={loading}
-        title={labels.goHome}
-      >
+      <Button variant="ghost" size="sm" onClick={onGoHome} disabled={loading} title={labels.goHome}>
         <Home className="w-4 h-4" />
       </Button>
       <Button
@@ -75,6 +69,7 @@ export function PathBar({
         onKeyDown={onPathKeyDown}
         onFocus={onPathInputFocus}
         placeholder={labels.typePath}
+        aria-label={labels.typePath}
         className="flex-1 px-3 py-1.5 bg-bg-sunken rounded text-sm font-mono text-text-secondary border border-transparent focus:border-primary focus:outline-none"
       />
       {isEditingPath && pathInput !== currentPath && (

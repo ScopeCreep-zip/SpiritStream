@@ -30,8 +30,10 @@ const normalizeLevel = (level: string): LogLevel => {
 const inferLevelFromLine = (line: string): LogLevel => {
   const upper = line.toUpperCase();
   if (upper.includes('[ERROR]') || upper.includes(' ERROR')) return 'error';
-  if (upper.includes('[WARN]') || upper.includes(' WARNING') || upper.includes(' WARN')) return 'warn';
-  if (upper.includes('[DEBUG]') || upper.includes('[TRACE]') || upper.includes(' DEBUG')) return 'debug';
+  if (upper.includes('[WARN]') || upper.includes(' WARNING') || upper.includes(' WARN'))
+    return 'warn';
+  if (upper.includes('[DEBUG]') || upper.includes('[TRACE]') || upper.includes(' DEBUG'))
+    return 'debug';
   return 'info';
 };
 

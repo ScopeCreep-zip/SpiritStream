@@ -141,6 +141,23 @@ impl super::FFmpegHandler {
         group: &OutputGroup,
         event_sink: Arc<dyn EventSink>,
     ) -> Result<u32, CoreError> {
+        // J2: iOS bans arbitrary executable spawning at the OS level.
+        // Surface a structured error early instead of letting
+        // `Command::new` succeed-then-crash on the sandbox.
+        // Production iOS builds wire a HaishinKit-backed
+        // `MediaProcessor` impl into core, bypassing this path
+        // entirely; this branch is the loud guardrail in case a
+        // mobile feature ever reaches FFmpegHandler::start by mistake.
+        #[cfg(target_os = "ios")]
+        {
+            let _ = (group, event_sink);
+            return Err(CoreError::Internal {
+                context:
+                    "FFmpeg sidecar spawn is unsupported on iOS; use the HaishinKit MediaProcessor"
+                        .into(),
+            });
+        }
+
         let args = self.build_args(group);
         let sanitized = self.sanitize_ffmpeg_args(&args, group);
         log::info!(
@@ -244,6 +261,16 @@ impl super::FFmpegHandler {
         incoming_url: &str,
         requested_groups: &HashSet<String>,
     ) -> Result<(), CoreError> {
+        // J2: same iOS guard as `start_group_process` — the relay
+        // path also spawns FFmpeg via Command::new and isn't legal on
+        // iOS sandboxes.
+        #[cfg(target_os = "ios")]
+        {
+            let _ = (incoming_url, requested_groups);
+            return Err(CoreError::Internal {
+                context: "FFmpeg relay spawn is unsupported on iOS".into(),
+            });
+        }
         let mut relay_guard = self.relay.lock().map_err(lock_poisoned)?;
 
         if let Some(relay) = relay_guard.as_mut() {
@@ -275,8 +302,18 @@ impl super::FFmpegHandler {
         let relay_groups = requested_groups.clone();
 
         if let Some(mut relay) = relay_guard.take() {
-            let _ = relay.child.kill();
-            let _ = relay.child.wait();
+            if let Err(e) = relay.child.kill() {
+                log::warn!(
+                    "ffmpeg relay: failed to kill stale relay (pid {:?}) before restart: {e}",
+                    relay.child.id()
+                );
+            }
+            if let Err(e) = relay.child.wait() {
+                log::warn!(
+                    "ffmpeg relay: wait() failed on stale relay (pid {:?}) — may leave zombie: {e}",
+                    relay.child.id()
+                );
+            }
         }
 
         let args = self.build_relay_args(incoming_url, &relay_groups)?;
@@ -336,8 +373,18 @@ impl super::FFmpegHandler {
         };
 
         if let Some(mut relay) = relay_guard.take() {
-            let _ = relay.child.kill();
-            let _ = relay.child.wait();
+            if let Err(e) = relay.child.kill() {
+                log::warn!(
+                    "ffmpeg relay: failed to kill relay (pid {:?}) on stop_relay: {e}",
+                    relay.child.id()
+                );
+            }
+            if let Err(e) = relay.child.wait() {
+                log::warn!(
+                    "ffmpeg relay: wait() failed on stop_relay (pid {:?}) — may leave zombie: {e}",
+                    relay.child.id()
+                );
+            }
         }
     }
 

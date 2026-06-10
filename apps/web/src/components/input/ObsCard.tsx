@@ -30,7 +30,7 @@ export function ObsCard({ onConfigure }: ObsCardProps): React.ReactElement {
           <span
             className={cn(
               'w-2 h-2 rounded-full',
-              isConnected ? 'bg-success-text' : 'bg-text-muted',
+              isConnected ? 'bg-success-text' : 'bg-text-muted'
             )}
             aria-hidden="true"
           />

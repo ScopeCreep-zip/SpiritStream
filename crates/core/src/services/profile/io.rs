@@ -1,10 +1,10 @@
 //! Profile file I/O: list, load (with encryption-aware decode), delete,
 //! is-encrypted probe, RTMP input-conflict scan.
 
+use super::validation::validate_profile_name;
 use crate::errors::CoreError;
 use crate::models::{Profile, ProfileSummary, RtmpInput};
 use crate::services::Encryption;
-use super::validation::validate_profile_name;
 
 // Magic bytes that identify encrypted profile files. Legacy installs
 // produced `MGLA` blobs (AES-256-GCM body); current writers produce `MGL2`
@@ -121,6 +121,12 @@ impl super::ProfileManager {
             // Profile can't lie about its own encryption state.
             let mut profile: Profile = serde_json::from_str(&content)?;
             profile.encrypted = true;
+            // Same safety-critical PII unwrap as the plaintext branch.
+            // Even for password-encrypted profiles, the blocklist
+            // entries inside the blob are individually `ENC2::` wrapped
+            // (machine-key, not the profile password), so unwrap here
+            // unconditionally.
+            self.decrypt_pii_blocklist(&mut profile)?;
             return Ok(profile);
         }
 
@@ -128,6 +134,17 @@ impl super::ProfileManager {
             let content = std::fs::read_to_string(&json_path)?;
             let mut profile: Profile = serde_json::from_str(&content)?;
             profile.encrypted = false;
+            // Safety-critical: pii_blocklist entries are written `ENC2::`
+            // wrapped (`encrypt_pii_blocklist`) so the on-disk JSON
+            // never holds real names / deadnames as plaintext.
+            // `decrypt_pii_blocklist` must run on every load path so
+            // callers see cleartext phrases — otherwise the PII filter
+            // compares messages against ciphertext blobs and silently
+            // lets blocked phrases through (regression caught by the
+            // `chat-send-pii-blocks-message` integration case).
+            // Keyed off the machine key (NOT the profile password),
+            // so it's safe to run here in the no-password branch too.
+            self.decrypt_pii_blocklist(&mut profile)?;
             return Ok(profile);
         }
 
@@ -159,6 +176,13 @@ impl super::ProfileManager {
 
         if deleted {
             log::info!("Profile deleted successfully: {name}");
+            if let Some(audit) = self.audit() {
+                if let Err(e) = audit.record(crate::services::AuditAction::ProfileDeleted {
+                    name: name.to_string(),
+                }) {
+                    log::error!("profile_manager failed to append ProfileDeleted audit entry: {e}");
+                }
+            }
             Ok(())
         } else {
             log::warn!("Profile not found for deletion: {name}");
@@ -170,6 +194,16 @@ impl super::ProfileManager {
 
     /// Check if a profile is encrypted. Returns false for invalid profile
     /// names (fails safely).
+    ///
+    /// Considers a profile encrypted if EITHER a `.mgs` file exists (the
+    /// expected case) OR a `.json` file starts with the `MGLA`/`MGL2`
+    /// magic. The magic-byte fallback covers the corruption case where
+    /// a `.mgs` file is renamed to `.json` (user mistake, backup tool
+    /// that strips unknown extensions, attacker with write access). Pre-
+    /// fix that file would be misclassified as plaintext, then the load
+    /// path would attempt to JSON-deserialize the binary ciphertext and
+    /// surface an opaque parse error instead of correctly prompting for
+    /// the password.
     pub fn is_encrypted(&self, name: &str) -> bool {
         // Validate profile name to prevent path traversal attacks. For this
         // method, we return false for invalid names (fail safely).
@@ -178,7 +212,22 @@ impl super::ProfileManager {
         }
 
         let mgs_path = self.profiles_dir.join(format!("{name}.mgs"));
-        mgs_path.exists()
+        if mgs_path.exists() {
+            return true;
+        }
+        let json_path = self.profiles_dir.join(format!("{name}.json"));
+        // Read the first 4 bytes only — magic check is cheap and we
+        // don't want to slurp big files just to classify them.
+        if let Ok(mut f) = std::fs::File::open(&json_path) {
+            use std::io::Read;
+            let mut header = [0u8; ENCRYPTED_MAGIC_LEN];
+            if f.read_exact(&mut header).is_ok()
+                && (header == *ENCRYPTED_MAGIC_V1 || header == *ENCRYPTED_MAGIC_V2)
+            {
+                return true;
+            }
+        }
+        false
     }
 
     /// Validate that no *other* profile claims the same RTMP

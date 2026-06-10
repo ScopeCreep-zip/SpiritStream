@@ -34,7 +34,7 @@ lastProfile: string | null,
  * first-party telemetry server; self-hosters point at their own
  * collector.
  */
-errorReportingEnabled: boolean,
+errorReportingEnabled: boolean, 
 /**
  * Endpoint URL when `error_reporting_enabled` is on.
  * Empty by default — the user must paste their own collector URL

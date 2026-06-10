@@ -120,7 +120,6 @@
     "--scrollbar-thumb": "#EBC8D6",
     "--scrollbar-thumb-hover": "#D8A6BB",
     "--font-sans": "'Quicksand', 'Nunito', 'Comfortaa', sans-serif",
-    "--font-mono": "'Fira Code', monospace"
-  }
+    "--font-mono": "'Fira Code', monospace",
+  },
 }
-

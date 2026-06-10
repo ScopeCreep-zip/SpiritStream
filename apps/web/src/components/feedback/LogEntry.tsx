@@ -25,9 +25,7 @@ export function LogEntry({ time, level, message }: LogEntryProps) {
   };
 
   return (
-    <div
-      className="flex border-b border-border-muted last:border-b-0 py-1.5 px-3 gap-3"
-    >
+    <div className="flex border-b border-border-muted last:border-b-0 py-1.5 px-3 gap-3">
       <span className="text-text-muted whitespace-nowrap">{time}</span>
       <span className={cn('font-semibold w-12', levelStyles[level])}>{levelLabels[level]}</span>
       <span className="text-text-primary break-words flex-1">{message}</span>

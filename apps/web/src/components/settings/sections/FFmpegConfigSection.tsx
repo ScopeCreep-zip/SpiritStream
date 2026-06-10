@@ -4,6 +4,7 @@ import { FolderOpen } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { FormGroup, FormLabel } from '@/components/ui/Form';
 import {
   useFfmpegUpdateCheck,
   useFfmpegVersion,
@@ -36,7 +37,7 @@ export function FFmpegConfigSection() {
     (event: React.ChangeEvent<HTMLInputElement>) => {
       saveSettingsMutation.mutate({ ffmpegPath: event.target.value });
     },
-    [saveSettingsMutation],
+    [saveSettingsMutation]
   );
 
   const handleBrowse = useCallback(async () => {
@@ -70,10 +71,8 @@ export function FFmpegConfigSection() {
         </div>
       </CardHeader>
       <CardBody className="p-6 flex flex-col gap-4">
-        <div className="flex flex-col gap-1.5">
-          <label className="block text-sm font-medium text-text-primary">
-            {t('settings.ffmpegPath')}
-          </label>
+        <FormGroup>
+          <FormLabel>{t('settings.ffmpegPath')}</FormLabel>
           <div className="flex gap-2">
             <Input value={ffmpegPath} onChange={handlePathChange} className="flex-1" />
             <Button variant="outline" onClick={handleBrowse}>
@@ -81,13 +80,11 @@ export function FFmpegConfigSection() {
               {t('settings.browse')}
             </Button>
           </div>
-        </div>
+        </FormGroup>
         <Input
           label={t('settings.ffmpegVersion')}
           value={
-            ffmpegLoading
-              ? t('settings.detecting')
-              : ffmpegVersion || t('settings.ffmpegNotFound')
+            ffmpegLoading ? t('settings.detecting') : ffmpegVersion || t('settings.ffmpegNotFound')
           }
           disabled
           helper={t('settings.detectedVersion')}

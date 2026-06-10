@@ -12,7 +12,9 @@ use crate::errors::CoreError;
 use crate::models::{ThemeFile, ThemeSummary};
 
 use super::validation::load_theme_file;
-use super::{theme_invalid, theme_not_found, ThemeManager, THEME_FILE_EXTENSIONS, THEME_TEMPLATE_NAME};
+use super::{
+    theme_invalid, theme_not_found, ThemeManager, THEME_FILE_EXTENSIONS, THEME_TEMPLATE_NAME,
+};
 
 impl ThemeManager {
     pub fn list_themes(&self) -> Vec<ThemeSummary> {
@@ -67,7 +69,8 @@ impl ThemeManager {
             );
             return Ok(theme.tokens);
         }
-        if let Some(tokens) = crate::services::embedded_themes::get_embedded_theme_tokens(theme_id) {
+        if let Some(tokens) = crate::services::embedded_themes::get_embedded_theme_tokens(theme_id)
+        {
             log::info!(
                 "get_theme_tokens('{theme_id}'): bundled embedded ({} tokens)",
                 tokens.len()
@@ -145,15 +148,24 @@ impl ThemeManager {
                     // Especially relevant for accessibility regressions
                     // (e.g. high-contrast theme missing tokens — silent
                     // fallback to default for low-vision users).
-                    if let Ok(slot) = self.audit_log.read() {
-                        if let Some(audit) = slot.as_ref() {
-                            let _ = audit.record(
-                                crate::services::AuditAction::ThemeValidationFailed {
-                                    file_name: file_name.clone(),
-                                    reason: err_msg.clone(),
-                                },
-                            );
+                    match self.audit_log.read() {
+                        Ok(slot) => {
+                            if let Some(audit) = slot.as_ref() {
+                                if let Err(e) = audit.record(
+                                    crate::services::AuditAction::ThemeValidationFailed {
+                                        file_name: file_name.clone(),
+                                        reason: err_msg.clone(),
+                                    },
+                                ) {
+                                    log::error!(
+                                        "theme_manager failed to append ThemeValidationFailed audit entry: {e}"
+                                    );
+                                }
+                            }
                         }
+                        Err(e) => log::error!(
+                            "theme_manager audit_log read lock poisoned — ThemeValidationFailed audit entry dropped: {e}"
+                        ),
                     }
                     themes.push(ThemeSummary {
                         id: stem.clone(),
@@ -262,5 +274,252 @@ fn is_theme_file(path: &Path) -> bool {
     match path.extension().and_then(|s| s.to_str()) {
         Some(ext) => THEME_FILE_EXTENSIONS.contains(&ext),
         None => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::validation::required_tokens;
+    use super::*;
+    use tempfile::TempDir;
+
+    fn complete_theme_jsonc(id: &str, name: &str, mode: &str) -> String {
+        let mut entries = String::new();
+        for (i, key) in required_tokens().iter().enumerate() {
+            if i > 0 {
+                entries.push_str(",\n");
+            }
+            entries.push_str(&format!("    \"{key}\": \"#101010\""));
+        }
+        format!(
+            "{{\n  \"id\": \"{id}\",\n  \"name\": \"{name}\",\n  \"mode\": \"{mode}\",\n  \"tokens\": {{\n{entries}\n  }}\n}}"
+        )
+    }
+
+    fn manager(app: &TempDir, proj: &TempDir) -> ThemeManager {
+        ThemeManager::new(app.path().to_path_buf(), proj.path().to_path_buf())
+    }
+
+    fn write_user_theme(app: &TempDir, id: &str, body: &str) {
+        let path = app.path().join("themes").join(format!("{id}.jsonc"));
+        fs::write(path, body).unwrap();
+    }
+
+    #[test]
+    fn list_themes_falls_back_to_embedded_when_dirs_empty() {
+        let app = TempDir::new().unwrap();
+        let proj = TempDir::new().unwrap();
+        let mgr = manager(&app, &proj);
+
+        let listed = mgr.list_themes();
+        let embedded = crate::services::embedded_themes::get_embedded_theme_list();
+        assert!(!listed.is_empty(), "embedded fallback populates the list");
+        assert_eq!(listed.len(), embedded.len());
+    }
+
+    #[test]
+    fn list_themes_includes_valid_user_theme_as_custom() {
+        let app = TempDir::new().unwrap();
+        let proj = TempDir::new().unwrap();
+        let mgr = manager(&app, &proj);
+        write_user_theme(
+            &app,
+            "neon-rose",
+            &complete_theme_jsonc("neon-rose", "Neon Rose", "dark"),
+        );
+
+        let listed = mgr.list_themes();
+        let entry = listed
+            .iter()
+            .find(|t| t.id == "neon-rose")
+            .expect("user theme present");
+        assert_eq!(entry.source, "custom");
+        assert!(entry.valid);
+        assert!(entry.error.is_none());
+    }
+
+    #[test]
+    fn list_themes_surfaces_broken_user_theme_as_invalid() {
+        let app = TempDir::new().unwrap();
+        let proj = TempDir::new().unwrap();
+        let mgr = manager(&app, &proj);
+        // Malformed: not even valid JSON.
+        write_user_theme(&app, "broken", "{ this is not json ");
+
+        let listed = mgr.list_themes();
+        let entry = listed
+            .iter()
+            .find(|t| t.id == "broken")
+            .expect("broken theme still listed");
+        assert!(!entry.valid, "broken theme flagged invalid");
+        assert!(
+            entry.error.is_some(),
+            "broken theme carries an error message"
+        );
+    }
+
+    #[test]
+    fn get_theme_tokens_user_override_returns_its_tokens() {
+        let app = TempDir::new().unwrap();
+        let proj = TempDir::new().unwrap();
+        let mgr = manager(&app, &proj);
+        write_user_theme(
+            &app,
+            "custom-x",
+            &complete_theme_jsonc("custom-x", "Custom X", "light"),
+        );
+
+        let tokens = mgr.get_theme_tokens("custom-x").expect("override resolves");
+        assert!(!tokens.is_empty());
+        assert!(tokens.keys().any(|k| k.starts_with("--")));
+    }
+
+    #[test]
+    fn get_theme_tokens_resolves_embedded_builtin() {
+        let app = TempDir::new().unwrap();
+        let proj = TempDir::new().unwrap();
+        let mgr = manager(&app, &proj);
+
+        let first = crate::services::embedded_themes::get_embedded_theme_list()
+            .into_iter()
+            .next()
+            .expect("at least one embedded theme");
+        let tokens = mgr
+            .get_theme_tokens(&first.id)
+            .expect("embedded builtin resolves");
+        assert!(!tokens.is_empty(), "embedded theme yields tokens");
+    }
+
+    #[test]
+    fn get_theme_tokens_unknown_id_errors() {
+        let app = TempDir::new().unwrap();
+        let proj = TempDir::new().unwrap();
+        let mgr = manager(&app, &proj);
+        let err = mgr.get_theme_tokens("no-such-theme-xyz").unwrap_err();
+        match err {
+            CoreError::ValidationFailed { reasons } => {
+                assert!(reasons.iter().any(|r| r.code == "theme_not_found"));
+            }
+            other => panic!("expected ValidationFailed/theme_not_found, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn get_theme_tokens_broken_user_override_fails_loud() {
+        let app = TempDir::new().unwrap();
+        let proj = TempDir::new().unwrap();
+        let mgr = manager(&app, &proj);
+        // A file at the conventional path that fails to parse must error,
+        // not silently fall through to the embedded copy.
+        write_user_theme(&app, "darkpurple", "{ broken json ");
+        let err = mgr.get_theme_tokens("darkpurple").unwrap_err();
+        assert!(
+            matches!(err, CoreError::ValidationFailed { .. }),
+            "broken override should fail loud, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn find_theme_in_dir_missing_directory_is_none() {
+        let app = TempDir::new().unwrap();
+        let proj = TempDir::new().unwrap();
+        let mgr = manager(&app, &proj);
+        let missing = app.path().join("does-not-exist");
+        let found = mgr.find_theme_in_dir("anything", &missing).unwrap();
+        assert!(found.is_none());
+    }
+
+    #[test]
+    fn find_theme_in_dir_id_mismatch_errors() {
+        let app = TempDir::new().unwrap();
+        let proj = TempDir::new().unwrap();
+        let mgr = manager(&app, &proj);
+        // File named claimed-id.jsonc but declaring a different inner id.
+        write_user_theme(
+            &app,
+            "claimed-id",
+            &complete_theme_jsonc("actual-id", "Mismatch", "dark"),
+        );
+        let dir = app.path().join("themes");
+        let err = mgr.find_theme_in_dir("claimed-id", &dir).unwrap_err();
+        assert!(
+            matches!(err, CoreError::ValidationFailed { .. }),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn should_skip_theme_file_filters_template_and_non_themes() {
+        let base = Path::new("/themes");
+        assert!(should_skip_theme_file(&base.join(THEME_TEMPLATE_NAME)));
+        assert!(should_skip_theme_file(&base.join("old.deprecated.jsonc")));
+        assert!(should_skip_theme_file(&base.join("notes.txt")));
+        assert!(should_skip_theme_file(&base.join("README")));
+        assert!(!should_skip_theme_file(&base.join("good.jsonc")));
+        assert!(!should_skip_theme_file(&base.join("good.json")));
+    }
+
+    #[test]
+    fn theme_paths_from_dir_orders_jsonc_before_json() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("b.json"), "{}").unwrap();
+        fs::write(dir.path().join("a.jsonc"), "{}").unwrap();
+        fs::write(dir.path().join("c.txt"), "x").unwrap();
+        let paths = theme_paths_from_dir(dir.path());
+        let exts: Vec<&str> = paths
+            .iter()
+            .filter_map(|p| p.extension().and_then(|s| s.to_str()))
+            .collect();
+        // jsonc sorts first, then json, then everything else.
+        assert_eq!(exts.first(), Some(&"jsonc"));
+        let json_pos = exts.iter().position(|e| *e == "json");
+        let txt_pos = exts.iter().position(|e| *e == "txt");
+        assert!(json_pos < txt_pos, "json must precede non-theme extensions");
+    }
+
+    #[test]
+    fn theme_paths_from_dir_missing_directory_is_empty() {
+        let paths = theme_paths_from_dir(Path::new("/no/such/dir/spiritstream-test"));
+        assert!(paths.is_empty());
+    }
+
+    /// Regression guard for the trailing-comma bug: every shipped theme
+    /// file (authored as JSONC with trailing commas) must load through the
+    /// real filesystem path. Before the `jsonc::sanitize_jsonc` fix, all of
+    /// these failed `serde_json` parsing and the embedded fallback was empty.
+    #[test]
+    fn every_shipped_theme_file_parses() {
+        let manifest = env!("CARGO_MANIFEST_DIR");
+        let themes_dir = std::path::Path::new(manifest).join("../../themes");
+        let mut loaded = 0;
+        for entry in std::fs::read_dir(&themes_dir).expect("themes dir exists") {
+            let path = entry.unwrap().path();
+            if path.extension().and_then(|e| e.to_str()) != Some("jsonc") {
+                continue;
+            }
+            if should_skip_theme_file(&path) {
+                continue;
+            }
+            load_theme_file(&path)
+                .unwrap_or_else(|e| panic!("shipped theme {path:?} must load: {e:?}"));
+            loaded += 1;
+        }
+        assert!(loaded > 0, "expected at least one shipped theme to load");
+    }
+
+    /// The embedded accessibility fallback must be non-empty — this is the
+    /// defense-in-depth path the threat model relies on for low-vision users
+    /// when the filesystem theme copies are unreachable.
+    #[test]
+    fn embedded_theme_fallback_is_populated() {
+        let list = crate::services::embedded_themes::get_embedded_theme_list();
+        assert!(
+            !list.is_empty(),
+            "embedded theme fallback must not be empty"
+        );
+        assert!(
+            list.iter().any(|t| t.id == "high-contrast-dark"),
+            "WCAG-AAA high-contrast theme must be embedded"
+        );
     }
 }

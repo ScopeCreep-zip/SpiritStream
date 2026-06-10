@@ -26,7 +26,7 @@ export async function fetchTypedJson<T>(
    * `getAuthHeaders()` still drives the session cookie / bearer; this
    * merges on top.
    */
-  extraHeaders?: Record<string, string>,
+  extraHeaders?: Record<string, string>
 ): Promise<T> {
   const baseUrl = getBackendBaseUrl();
   const qs = query ? `?${new URLSearchParams(query).toString()}` : '';
@@ -85,7 +85,7 @@ export async function fetchTypedJson<T>(
                   ? 'server_error'
                   : 'http_error';
     const err = new Error(
-      `${response.status} ${response.statusText || 'HTTP error'} for ${method} ${path}`,
+      `${response.status} ${response.statusText || 'HTTP error'} for ${method} ${path}`
     ) as Error & { kind: string; status: number };
     err.kind = kind;
     err.status = response.status;
@@ -113,13 +113,13 @@ export async function fetchTypedJson<T>(
  */
 export async function withConfirmToken<T>(
   intent: string,
-  call: (headers: Record<string, string>) => Promise<T>,
+  call: (headers: Record<string, string>) => Promise<T>
 ): Promise<T> {
   const { token } = await fetchTypedJson<{ token: string; expiresInSeconds: number }>(
     'POST',
     '/api/v1/security/confirm-token',
     undefined,
-    { intent },
+    { intent }
   );
   return call({ 'X-Confirm-Token': token });
 }

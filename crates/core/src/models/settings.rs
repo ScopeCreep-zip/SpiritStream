@@ -1,4 +1,4 @@
-﻿// Settings Model
+// Settings Model
 // Application-wide configuration (global settings only).
 // Profile-specific settings live in `ProfileSettings`.
 

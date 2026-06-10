@@ -4,6 +4,13 @@ Multi-output RTMP streaming application built for **vulnerable end users** — a
 
 **Repository**: https://github.com/ScopeCreep-zip/SpiritStream
 
+## Hard rules
+
+- **600 LOC ceiling per source file** (non-blank, non-comment). No source file may exceed 600 LOC. Enforced by `scripts/check-loc.sh` via `lefthook` (pre-commit) and CI (`loc-gate` job). Currently-grandfathered files live in `.loc-allowlist` with per-file ceilings; the gate refuses growth even within the allowlist. Splits land per `.claude/rules/coding-standards.md#file-size-limit`.
+- **No `#[allow(dead_code)]`. No `TODO`/`FIXME`/`XXX` markers in source.** Future work tracks in plans, GitHub issues, or `crates/transport-veilid/BLOCKERS.md`.
+- **No silent fallbacks in safety-sensitive paths.** Pick one path or fail loud (`feedback_no_fallback_streaming.md`).
+- **No business logic in the frontend.** If the answer is "should this happen?", it belongs in `crates/core`.
+
 ## Architecture
 
 **One React app, one Tauri 2 shell (desktop + mobile), transport-agnostic Rust core.**
@@ -106,13 +113,19 @@ VITE_BACKEND_TOKEN=secret           # Auth token
 
 # Backend server
 SPIRITSTREAM_HOST=127.0.0.1         # Bind address
-SPIRITSTREAM_PORT=8008              # HTTP port
+SPIRITSTREAM_PORT=8008              # HTTP port — must be 1024..=65535 (privileged ports + 0 rejected at startup)
 SPIRITSTREAM_API_TOKEN=secret       # Auth token (≥32 chars required in cloud mode)
+SPIRITSTREAM_DEV_TOKEN=secret       # Alias for API_TOKEN — read when API_TOKEN is unset (dev convenience)
 SPIRITSTREAM_UI_ENABLED=1           # Serve static UI bundle from the backend
 SPIRITSTREAM_DEPLOY_MODE=desktop    # desktop | cloud — cloud refuses startup without TLS + strong token
 SPIRITSTREAM_BEHIND_TLS_PROXY=1     # Required when DEPLOY_MODE=cloud (reverse-proxy attestation)
 SPIRITSTREAM_CORS_ORIGINS=https://… # Comma-separated allow-list (no wildcards in cloud)
+SPIRITSTREAM_COOKIE_MODE=same-origin # same-origin | cross-origin | localhost-dev — override the auto-probe
 SPIRITSTREAM_SECRET_STORE=keyring   # keyring | file — overrides the one-shot platform probe
+SPIRITSTREAM_DATA_DIR=./data        # Where profiles, audit log, secrets-on-disk live
+SPIRITSTREAM_LOG_DIR=./data/logs    # Log directory; defaults to {DATA_DIR}/logs when unset
+SPIRITSTREAM_THEMES_DIR=./themes    # Theme catalog directory (read for the View → Theme menu)
+SPIRITSTREAM_UI_DIR=./dist          # Static UI bundle directory when UI_ENABLED=1
 SPIRITSTREAM_LOG_FORMAT=json        # json for log shippers; text for human reading
 ```
 

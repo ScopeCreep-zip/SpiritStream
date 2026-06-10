@@ -732,15 +732,6 @@
       "color": "#9489A8"
     },
     {
-      "name": "YouTube - HLS",
-      "displayName": "YouTube (HLS)",
-      "defaultUrl": "https://a.upload.youtube.com/http_upload_hls?cid={stream_key}&copy=0&file=out.m3u8",
-      "streamKeyPlacement": "in_url_template",
-      "abbreviation": "YT",
-      "color": "#FF0000",
-      "faviconPath": "icons/platforms/youtube.svg"
-    },
-    {
       "name": "YouTube Backup - RTMPS",
       "displayName": "YouTube (Backup)",
       "defaultUrl": "rtmp://b.rtmp.youtube.com/live2/{stream_key}?backup=1",

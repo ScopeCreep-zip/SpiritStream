@@ -19,9 +19,12 @@ function readBinding(name: HotkeyName, fallback: HotkeyBinding): HotkeyBinding {
     if (!raw) return fallback;
     const parsed = JSON.parse(raw) as unknown;
     if (
-      parsed && typeof parsed === 'object' &&
-      'mods' in parsed && Array.isArray((parsed as HotkeyBinding).mods) &&
-      'key' in parsed && typeof (parsed as HotkeyBinding).key === 'string'
+      parsed &&
+      typeof parsed === 'object' &&
+      'mods' in parsed &&
+      Array.isArray((parsed as HotkeyBinding).mods) &&
+      'key' in parsed &&
+      typeof (parsed as HotkeyBinding).key === 'string'
     ) {
       return parsed as HotkeyBinding;
     }
@@ -44,11 +47,10 @@ export interface UseStoredHotkey {
   setBinding: (next: HotkeyBinding) => void;
 }
 
-export function useStoredHotkey(
-  name: HotkeyName,
-  defaultBinding: HotkeyBinding,
-): UseStoredHotkey {
-  const [binding, setBindingState] = useState<HotkeyBinding>(() => readBinding(name, defaultBinding));
+export function useStoredHotkey(name: HotkeyName, defaultBinding: HotkeyBinding): UseStoredHotkey {
+  const [binding, setBindingState] = useState<HotkeyBinding>(() =>
+    readBinding(name, defaultBinding)
+  );
 
   // Listen for cross-tab updates (another window of the same app may rebind).
   useEffect(() => {
@@ -65,7 +67,7 @@ export function useStoredHotkey(
       writeBinding(name, next);
       setBindingState(next);
     },
-    [name],
+    [name]
   );
 
   return { binding, setBinding };

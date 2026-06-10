@@ -26,7 +26,7 @@ export function NotificationsSecuritySection() {
       if (!profileSettings) return;
       await updateProfileSettings({ [key]: value });
     },
-    [profileSettings, updateProfileSettings],
+    [profileSettings, updateProfileSettings]
   );
 
   return (

@@ -75,14 +75,14 @@ function main(): void {
   // a 404 page or an HTML error rendered to disk.
   if (size < 1024 * 1024) {
     console.error(
-      `Downloaded tarball is suspiciously small (${size} bytes). Did ffmpeg.org rename or remove this release? URL: ${url}`,
+      `Downloaded tarball is suspiciously small (${size} bytes). Did ffmpeg.org rename or remove this release? URL: ${url}`
     );
     process.exit(69); // EX_UNAVAILABLE
   }
 
   console.log(`Wrote ${outPath} (${(size / 1024 / 1024).toFixed(1)} MiB).`);
   console.log(
-    `\nAttach to the GitHub release alongside binaries:\n  gh release upload vX.Y.Z ${outPath}\n`,
+    `\nAttach to the GitHub release alongside binaries:\n  gh release upload vX.Y.Z ${outPath}\n`
   );
 }
 

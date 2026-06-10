@@ -12,6 +12,7 @@ use crate::models::{
     ChatConnectionStatus, ChatCredentials, ChatMessage, ChatPlatform as ChatPlatformEnum,
 };
 
+use super::endpoints::ChatEndpoints;
 use super::platform::{ChatPlatform, PlatformError, PlatformResult};
 
 const STATUS_DISCONNECTED: u8 = 0;
@@ -37,11 +38,72 @@ fn status_from_u8(value: u8) -> ChatConnectionStatus {
     }
 }
 
-async fn fetch_chat_token(client_id: &str, channel_id: &str) -> Result<String, PlatformError> {
-    let url = format!(
-        "https://open-api.trovo.live/openplatform/chat/channel-token/{}",
-        channel_id
-    );
+/// Parse a Trovo `CHAT` frame body into chat messages.
+///
+/// Returns an empty vec for any non-`CHAT` frame or a `CHAT` frame whose
+/// `data.chats` is absent/empty, and skips individual entries with blank
+/// content. Pure — the websocket loop owns delivery and message counting,
+/// and still logs + skips frames that fail the outer JSON parse.
+pub(super) fn parse_trovo_chats(payload: &serde_json::Value) -> Vec<ChatMessage> {
+    if payload["type"].as_str().unwrap_or_default() != "CHAT" {
+        return Vec::new();
+    }
+    let Some(chats) = payload["data"]["chats"].as_array() else {
+        return Vec::new();
+    };
+
+    let mut out = Vec::new();
+    for chat in chats {
+        let content = chat["content"]
+            .as_str()
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        if content.is_empty() {
+            continue;
+        }
+        let username = chat["nick_name"]
+            .as_str()
+            .or_else(|| chat["user_name"].as_str())
+            .unwrap_or("Unknown")
+            .to_string();
+
+        let mut msg = ChatMessage::new(ChatPlatformEnum::Trovo, username, content);
+
+        if let Some(message_id) = chat["message_id"].as_str() {
+            msg = msg.with_source_id(message_id.to_string());
+        }
+        if let Some(send_time) = chat["send_time"].as_i64() {
+            // Trovo sends seconds on some events, milliseconds on others.
+            // Normalise to ms; the 10^12 threshold is ~2001 in seconds /
+            // ~1970 in ms, so any plausible live timestamp lands correctly.
+            msg.timestamp = if send_time > 1_000_000_000_000 {
+                send_time
+            } else {
+                send_time * 1000
+            };
+        }
+        if let Some(roles) = chat["roles"].as_array() {
+            let badges: Vec<String> = roles
+                .iter()
+                .filter_map(|r| r.as_str().map(|s| s.to_string()))
+                .collect();
+            if !badges.is_empty() {
+                msg = msg.with_badges(badges);
+            }
+        }
+
+        out.push(msg);
+    }
+    out
+}
+
+async fn fetch_chat_token(
+    client_id: &str,
+    channel_id: &str,
+    api_base: &str,
+) -> Result<String, PlatformError> {
+    let url = format!("{api_base}/openplatform/chat/channel-token/{channel_id}");
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
@@ -83,10 +145,18 @@ pub struct TrovoConnector {
     disconnecting: Arc<AtomicBool>,
     disconnect_tx: Option<mpsc::Sender<()>>,
     can_send: bool,
+    /// Trovo open-platform API origin (injected from `ChatEndpoints`).
+    api_base: String,
+    /// Trovo open-chat WebSocket URL (injected from `ChatEndpoints`).
+    chat_ws: String,
 }
 
 impl TrovoConnector {
     pub fn new() -> Self {
+        Self::with_endpoints(&ChatEndpoints::default())
+    }
+
+    pub fn with_endpoints(endpoints: &ChatEndpoints) -> Self {
         Self {
             status: Arc::new(AtomicU8::new(STATUS_DISCONNECTED)),
             last_error: Arc::new(StdMutex::new(None)),
@@ -94,6 +164,8 @@ impl TrovoConnector {
             disconnecting: Arc::new(AtomicBool::new(false)),
             disconnect_tx: None,
             can_send: false,
+            api_base: endpoints.trovo_api_base.clone(),
+            chat_ws: endpoints.trovo_chat_ws.clone(),
         }
     }
 }
@@ -103,7 +175,7 @@ impl ChatPlatform for TrovoConnector {
     async fn connect(
         &mut self,
         credentials: ChatCredentials,
-        message_tx: mpsc::UnboundedSender<ChatMessage>,
+        message_tx: mpsc::Sender<ChatMessage>,
     ) -> PlatformResult<()> {
         if self.is_connected() {
             return Err(PlatformError::AlreadyConnected);
@@ -143,16 +215,14 @@ impl ChatPlatform for TrovoConnector {
             self.status
                 .store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
             if let Ok(mut guard) = self.last_error.lock() {
-                *guard = Some(
-                    "Missing SPIRITSTREAM_TROVO_CLIENT_ID in environment".to_string(),
-                );
+                *guard = Some("Missing SPIRITSTREAM_TROVO_CLIENT_ID in environment".to_string());
             }
             PlatformError::InvalidConfig(
                 "Missing SPIRITSTREAM_TROVO_CLIENT_ID in environment".to_string(),
             )
         })?;
 
-        let token = fetch_chat_token(&client_id, &channel_id)
+        let token = fetch_chat_token(&client_id, &channel_id, &self.api_base)
             .await
             .map_err(|e| {
                 self.status
@@ -163,16 +233,14 @@ impl ChatPlatform for TrovoConnector {
                 e
             })?;
 
-        let (ws_stream, _) = connect_async("wss://open-chat.trovo.live/chat")
-            .await
-            .map_err(|e| {
-                self.status
-                    .store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
-                if let Ok(mut guard) = self.last_error.lock() {
-                    *guard = Some(format!("Trovo websocket connection failed: {e}"));
-                }
-                PlatformError::Connection(format!("Trovo websocket connection failed: {e}"))
-            })?;
+        let (ws_stream, _) = connect_async(self.chat_ws.as_str()).await.map_err(|e| {
+            self.status
+                .store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
+            if let Ok(mut guard) = self.last_error.lock() {
+                *guard = Some(format!("Trovo websocket connection failed: {e}"));
+            }
+            PlatformError::Connection(format!("Trovo websocket connection failed: {e}"))
+        })?;
 
         let (mut write, mut read) = ws_stream.split();
         let auth_nonce = format!("auth-{}", uuid::Uuid::new_v4());
@@ -293,59 +361,16 @@ impl ChatPlatform for TrovoConnector {
                                     }
                                 };
 
-                                let msg_type = payload["type"].as_str().unwrap_or_default();
-                                if msg_type != "CHAT" {
-                                    continue;
+                                let mut emitted = 0_u64;
+                                for msg in parse_trovo_chats(&payload) {
+                                    if message_tx.send(msg).await.is_err() {
+                                        warn!("Failed to deliver Trovo chat message: receiver dropped");
+                                        break;
+                                    }
+                                    emitted += 1;
                                 }
-
-                                if let Some(chats) = payload["data"]["chats"].as_array() {
-                                    let mut emitted = 0_u64;
-                                    for chat in chats {
-                                        let content = chat["content"].as_str().unwrap_or_default().trim().to_string();
-                                        if content.is_empty() {
-                                            continue;
-                                        }
-                                        let username = chat["nick_name"]
-                                            .as_str()
-                                            .or_else(|| chat["user_name"].as_str())
-                                            .unwrap_or("Unknown")
-                                            .to_string();
-
-                                        let mut msg = ChatMessage::new(
-                                            ChatPlatformEnum::Trovo,
-                                            username,
-                                            content,
-                                        );
-
-                                        if let Some(message_id) = chat["message_id"].as_str() {
-                                            msg = msg.with_source_id(message_id.to_string());
-                                        }
-                                        if let Some(send_time) = chat["send_time"].as_i64() {
-                                            msg.timestamp = if send_time > 1_000_000_000_000 {
-                                                send_time
-                                            } else {
-                                                send_time * 1000
-                                            };
-                                        }
-                                        if let Some(roles) = chat["roles"].as_array() {
-                                            let badges: Vec<String> = roles
-                                                .iter()
-                                                .filter_map(|r| r.as_str().map(|s| s.to_string()))
-                                                .collect();
-                                            if !badges.is_empty() {
-                                                msg = msg.with_badges(badges);
-                                            }
-                                        }
-
-                                        if message_tx.send(msg).is_err() {
-                                            warn!("Failed to deliver Trovo chat message: receiver dropped");
-                                            break;
-                                        }
-                                        emitted += 1;
-                                    }
-                                    if emitted > 0 {
-                                        message_count.fetch_add(emitted, Ordering::Relaxed);
-                                    }
+                                if emitted > 0 {
+                                    message_count.fetch_add(emitted, Ordering::Relaxed);
                                 }
                             }
                             Ok(Message::Ping(data)) => {

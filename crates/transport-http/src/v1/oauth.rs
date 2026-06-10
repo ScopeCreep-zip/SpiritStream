@@ -12,9 +12,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use spiritstream_core::services::{
-    OAuthConfig, OAuthFlowResult, OAuthTokens, OAuthUserInfo,
-};
+use spiritstream_core::services::{OAuthConfig, OAuthFlowResult, OAuthTokens, OAuthUserInfo};
 
 use crate::AppState;
 
@@ -458,20 +456,44 @@ pub async fn v1_oauth_disconnect_proxy(
     Ok(Json(OAuthAckResponse {}))
 }
 
+/// Result of an OAuth `forget` call.
+///
+/// `localCleared` is always true on success — the on-device token /
+/// refresh token / user-info is wiped from the profile regardless of
+/// whether the upstream revoke succeeded. `revokeFailed` is `Some(msg)`
+/// when the provider's revoke endpoint refused / errored; the frontend
+/// surfaces that so the user knows to also revoke from the provider's
+/// own settings page (the upstream token may still be valid until its
+/// natural expiry). For harassment-prone users this distinction matters:
+/// "I clicked forget and it succeeded" must not mean "attacker's stolen
+/// session is now invalidated" if the revoke endpoint was unreachable.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OAuthForgetResponse {
+    pub local_cleared: bool,
+    pub revoke_failed: Option<String>,
+}
+
 #[utoipa::path(post, path = "/oauth/{provider}/forget", tag = "oauth",
     params(("provider" = String, Path, description = "OAuth provider")),
-    responses((status = 200, body = OAuthAckResponse)),
+    responses((status = 200, body = OAuthForgetResponse)),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_oauth_forget_proxy(
     State(state): State<AppState>,
     AxumPath(provider): AxumPath<String>,
-) -> Result<Json<OAuthAckResponse>, crate::ApiError> {
+) -> Result<Json<OAuthForgetResponse>, crate::ApiError> {
     let profile_settings = crate::get_active_profile_settings(&state)
         .await
         .ok_or(spiritstream_core::CoreError::NoActiveProfile)?;
+    // All four providers must be reachable here — clear_profile_oauth_account
+    // already handles each, so the forget surface must too. Pre-fix only
+    // twitch + youtube matched, so kick + facebook tokens couldn't be
+    // forgotten via this endpoint and stayed on disk until profile delete.
     let token = match provider.as_str() {
         "twitch" => profile_settings.oauth.twitch.access_token,
         "youtube" => profile_settings.oauth.youtube.access_token,
+        "kick" => profile_settings.oauth.kick.access_token,
+        "facebook" => profile_settings.oauth.facebook.access_token,
         _ => {
             return Err(spiritstream_core::CoreError::NotImplemented {
                 feature: format!("Unknown provider: {provider}"),
@@ -479,6 +501,7 @@ pub async fn v1_oauth_forget_proxy(
             .into())
         }
     };
+    let mut revoke_failed: Option<String> = None;
     if !token.is_empty() {
         if let Err(e) = state
             .oauth_service
@@ -486,10 +509,18 @@ pub async fn v1_oauth_forget_proxy(
             .await
         {
             log::warn!("Failed to revoke {provider} token: {e}");
+            revoke_failed = Some(format!("{e}"));
         }
     }
+    // Always clear local even if revoke failed — getting the token off
+    // disk is more important than knowing whether the upstream side
+    // also dropped it. The revoke_failed field tells the frontend to
+    // surface "also revoke from the provider's settings page."
     crate::clear_profile_oauth_account(&state, &provider).await?;
-    Ok(Json(OAuthAckResponse {}))
+    Ok(Json(OAuthForgetResponse {
+        local_cleared: true,
+        revoke_failed,
+    }))
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]

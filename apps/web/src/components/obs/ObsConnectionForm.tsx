@@ -121,11 +121,7 @@ export function ObsConnectionForm({
           </div>
         )}
 
-        <Toggle
-          checked={autoConnect}
-          onChange={onAutoConnectChange}
-          label={t('obs.autoConnect')}
-        />
+        <Toggle checked={autoConnect} onChange={onAutoConnectChange} label={t('obs.autoConnect')} />
       </CardBody>
     </Card>
   );

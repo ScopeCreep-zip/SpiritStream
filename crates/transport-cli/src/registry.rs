@@ -8,6 +8,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use spiritstream_core::services::build_secret_store;
 use spiritstream_core::{NoopEventSink, ServiceRegistry, ServiceRegistryOptions};
 
 use crate::error::CliError;
@@ -25,6 +26,8 @@ pub fn build(
         .unwrap_or_else(|| data_dir.join("themes"));
 
     let events: Arc<dyn spiritstream_core::services::EventSink> = Arc::new(NoopEventSink);
+    let override_kind = std::env::var("SPIRITSTREAM_SECRET_STORE").ok();
+    let secret_store = build_secret_store(&data_dir, override_kind.as_deref());
 
     ServiceRegistry::build(ServiceRegistryOptions {
         data_dir,
@@ -32,6 +35,7 @@ pub fn build(
         log_dir,
         custom_ffmpeg_path: None,
         events,
+        secret_store,
     })
     .map_err(CliError::from)
 }

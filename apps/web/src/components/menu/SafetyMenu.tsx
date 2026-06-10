@@ -27,14 +27,14 @@ export function SafetyMenu({ onOpenModal }: SafetyMenuProps): React.ReactElement
           count: result.streamsStopped,
           ms: result.elapsedMs,
           defaultValue: 'Panic disconnect: stopped {{count}} streams in {{ms}}ms',
-        }),
+        })
       );
     } catch (err) {
       toast.error(
         t('toast.panicFailed', {
           defaultValue: 'Panic disconnect failed: {{error}}',
           error: err instanceof Error ? err.message : String(err),
-        }),
+        })
       );
     }
   }, [t]);

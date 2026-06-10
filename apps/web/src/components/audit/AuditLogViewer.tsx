@@ -82,10 +82,7 @@ export function AuditLogViewer(): React.ReactElement {
           rendered wrapper so it survives the conditional inside. */}
       <div data-testid="audit-tamper-slot">
         {chain?.state === 'tampered' && (
-          <div
-            role="alert"
-            className="bg-error-subtle border border-error-border rounded-lg p-4"
-          >
+          <div role="alert" className="bg-error-subtle border border-error-border rounded-lg p-4">
             <h3 className="text-error-text font-semibold">
               {t('audit.tampered.title', 'Audit log tampered')}
             </h3>
@@ -135,12 +132,8 @@ export function AuditLogViewer(): React.ReactElement {
         <table className="w-full text-sm">
           <thead className="bg-bg-muted text-text-secondary">
             <tr>
-              <th className="text-left px-3 py-2 font-medium">
-                {t('audit.colTimestamp', 'Time')}
-              </th>
-              <th className="text-left px-3 py-2 font-medium">
-                {t('audit.colKind', 'Event')}
-              </th>
+              <th className="text-left px-3 py-2 font-medium">{t('audit.colTimestamp', 'Time')}</th>
+              <th className="text-left px-3 py-2 font-medium">{t('audit.colKind', 'Event')}</th>
               <th className="text-left px-3 py-2 font-medium">
                 {t('audit.colDetails', 'Details')}
               </th>
@@ -174,9 +167,7 @@ export function AuditLogViewer(): React.ReactElement {
                   <td className="px-3 py-2 text-text-secondary whitespace-nowrap">
                     {formatDateTime(entry.timestamp)}
                   </td>
-                  <td className="px-3 py-2 text-text-primary font-medium">
-                    {entry.action.kind}
-                  </td>
+                  <td className="px-3 py-2 text-text-primary font-medium">{entry.action.kind}</td>
                   <td className="px-3 py-2 text-text-tertiary">
                     {formatActionDetails(entry.action)}
                   </td>

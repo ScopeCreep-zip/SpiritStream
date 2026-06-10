@@ -1,9 +1,24 @@
 use std::collections::HashMap;
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 
-fn main() {
+/// Halt the build with a diagnostic that includes the offending file
+/// path and the parser/structural detail. M6: pre-fix every read /
+/// parse / shape-check used `.expect("…")` which surfaced as a bare
+/// rustc panic with no breadcrumb back to `streaming-platforms.json`.
+/// `eprintln!` + `process::exit(1)` keeps Cargo happy and gives the
+/// operator something to grep.
+fn die(prefix: &str, path: &Path, detail: impl std::fmt::Display) -> ! {
+    eprintln!(
+        "spiritstream-core build.rs: {prefix} ({path}): {detail}",
+        path = path.display(),
+    );
+    std::process::exit(1)
+}
+
+fn main() -> ExitCode {
     // Read the streaming platforms JSON (workspace root: ../../data/...).
     let json_path = PathBuf::from("..")
         .join("..")
@@ -12,15 +27,28 @@ fn main() {
 
     println!("cargo:rerun-if-changed={}", json_path.display());
 
-    let json_content =
-        fs::read_to_string(&json_path).expect("Failed to read streaming-platforms.json");
+    let json_content = match fs::read_to_string(&json_path) {
+        Ok(s) => s,
+        Err(e) => die("Failed to read streaming-platforms.json", &json_path, e),
+    };
 
-    let data: serde_json::Value =
-        serde_json::from_str(&json_content).expect("Failed to parse streaming-platforms.json");
+    let data: serde_json::Value = match serde_json::from_str(&json_content) {
+        Ok(v) => v,
+        Err(e) => die(
+            "Failed to parse streaming-platforms.json (invalid JSON)",
+            &json_path,
+            format!("line {}, column {}: {}", e.line(), e.column(), e),
+        ),
+    };
 
-    let services = data["services"]
-        .as_array()
-        .expect("Expected 'services' array in JSON");
+    let services = match data.get("services").and_then(|v| v.as_array()) {
+        Some(arr) => arr,
+        None => die(
+            "Failed to parse streaming-platforms.json",
+            &json_path,
+            "missing or non-array `services` field",
+        ),
+    };
 
     // Generate enum variants
     let mut enum_code = String::from(
@@ -36,15 +64,32 @@ fn main() {
     let mut first_variant: Option<String> = None;
 
     for service in services {
-        let name = service["name"].as_str().expect("Expected 'name' field");
+        let name = match service.get("name").and_then(|v| v.as_str()) {
+            Some(s) => s,
+            None => die(
+                "platform entry missing or non-string `name` field",
+                &json_path,
+                serde_json::to_string(service).unwrap_or_default(),
+            ),
+        };
 
-        let default_url = service["defaultUrl"]
-            .as_str()
-            .expect("Expected 'defaultUrl' field");
+        let default_url = match service.get("defaultUrl").and_then(|v| v.as_str()) {
+            Some(s) => s,
+            None => die(
+                "platform entry missing or non-string `defaultUrl` field",
+                &json_path,
+                name,
+            ),
+        };
 
-        let placement = service["streamKeyPlacement"]
-            .as_str()
-            .expect("Expected 'streamKeyPlacement' field");
+        let placement = match service.get("streamKeyPlacement").and_then(|v| v.as_str()) {
+            Some(s) => s,
+            None => die(
+                "platform entry missing or non-string `streamKeyPlacement` field",
+                &json_path,
+                name,
+            ),
+        };
 
         // Filter: only include RTMP/RTMPS with "append" or "in_url_template" placement
         if !default_url.starts_with("rtmp://") && !default_url.starts_with("rtmps://") {
@@ -86,10 +131,21 @@ fn main() {
 
     enum_code.push_str("}\n");
 
-    // Write to OUT_DIR
-    let out_dir = env::var("OUT_DIR").unwrap();
+    // Write to OUT_DIR. Cargo guarantees OUT_DIR is set when build
+    // scripts run; failure to read it is a Cargo-internal issue.
+    let out_dir = match env::var("OUT_DIR") {
+        Ok(v) => v,
+        Err(e) => die(
+            "OUT_DIR is not set (cargo invocation broken?)",
+            &json_path,
+            e,
+        ),
+    };
     let dest_path = PathBuf::from(out_dir).join("generated_platforms.rs");
-    fs::write(&dest_path, enum_code).expect("Failed to write generated_platforms.rs");
+    if let Err(e) = fs::write(&dest_path, enum_code) {
+        die("Failed to write generated_platforms.rs", &dest_path, e);
+    }
+    ExitCode::SUCCESS
 }
 
 /// Sanitize a platform name to a valid Rust enum variant

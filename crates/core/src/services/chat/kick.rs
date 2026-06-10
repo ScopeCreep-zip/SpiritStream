@@ -21,13 +21,15 @@ use log::{error, info, warn};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex as TokioMutex};
+use tokio::task::JoinHandle;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 use crate::models::{
     ChatConnectionStatus, ChatCredentials, ChatMessage, ChatPlatform as ChatPlatformEnum,
 };
 
+use super::endpoints::ChatEndpoints;
 use super::platform::{ChatPlatform, PlatformError, PlatformResult};
 
 const STATUS_DISCONNECTED: u8 = 0;
@@ -35,17 +37,18 @@ const STATUS_CONNECTING: u8 = 1;
 const STATUS_CONNECTED: u8 = 2;
 const STATUS_ERROR: u8 = 3;
 
-/// Pusher Channels endpoint used by the Kick web client. The app key
-/// is the public web-client key; the cluster is `us2`. These are not
-/// secrets — the Kick web app embeds them in its JS bundle.
-const KICK_PUSHER_URL: &str = "wss://ws-us2.pusher.com/app/eb1d5f283081a78b932c?protocol=7&client=spiritstream&version=8.4.0&flash=false";
-/// Kick public REST root for channel lookup (returns chatroom id).
-const KICK_CHANNEL_LOOKUP: &str = "https://kick.com/api/v2/channels/";
-/// Kick official REST for sending chat. Requires Bearer with `chat:write`.
-const KICK_SEND_CHAT_URL: &str = "https://api.kick.com/public/v1/chat";
 /// Pusher ping interval. The Pusher protocol expects pings at least
 /// every 120s; 60s gives us a safety margin.
 const PING_INTERVAL: Duration = Duration::from_secs(60);
+/// Cap on the WebSocket handshake itself. Without this `connect_async`
+/// hangs indefinitely if Pusher accepts the TCP connection but never
+/// completes the upgrade — operator sees `Connecting` forever.
+const WS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+/// Cap on the `pusher_internal:subscription_succeeded` ACK after we
+/// send the `pusher:subscribe` frame. Without this, a rejected chatroom
+/// (deleted, banned, anti-bot blocked) leaves the connector reporting
+/// `Connected` with zero messages flowing — silent dead-stream.
+const SUBSCRIBE_ACK_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn status_to_u8(status: ChatConnectionStatus) -> u8 {
     match status {
@@ -67,11 +70,8 @@ fn status_from_u8(value: u8) -> ChatConnectionStatus {
 
 /// Fetch the chatroom id for a Kick channel slug. Anonymous public
 /// endpoint — no auth needed.
-async fn fetch_chatroom_id(channel_slug: &str) -> Result<u64, PlatformError> {
-    let url = format!(
-        "{KICK_CHANNEL_LOOKUP}{}",
-        urlencoding::encode(channel_slug)
-    );
+async fn fetch_chatroom_id(channel_slug: &str, channel_lookup: &str) -> Result<u64, PlatformError> {
+    let url = format!("{channel_lookup}{}", urlencoding::encode(channel_slug));
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
         // Kick's Cloudflare WAF blocks the default reqwest user-agent.
@@ -107,6 +107,61 @@ async fn fetch_chatroom_id(channel_slug: &str) -> Result<u64, PlatformError> {
         .ok_or_else(|| PlatformError::Platform("Kick response missing chatroom.id".to_string()))
 }
 
+/// Parse a Kick Pusher frame into a chat message.
+///
+/// Returns `None` for any frame that is not an `App\Events\ChatMessageEvent`,
+/// whose JSON-string `data` body fails to parse, or whose content is blank.
+/// Pusher wraps the application payload in a JSON-string `data` field, so the
+/// body is parsed a second time here. Pure — the websocket loop owns delivery,
+/// counting, and the outer-frame JSON parse + its warning.
+pub(super) fn parse_kick_chat_event(payload: &serde_json::Value) -> Option<ChatMessage> {
+    if payload["event"].as_str().unwrap_or("") != "App\\Events\\ChatMessageEvent" {
+        // Pusher control frames (subscription_succeeded, pong) + other
+        // Kick events (raid, follower) are ignored for now.
+        return None;
+    }
+
+    let data_str = payload["data"].as_str().unwrap_or("");
+    if data_str.is_empty() {
+        return None;
+    }
+    let chat: serde_json::Value = serde_json::from_str(data_str).ok()?;
+
+    let content = chat["content"].as_str().unwrap_or("").trim().to_string();
+    if content.is_empty() {
+        return None;
+    }
+    let username = chat["sender"]["username"]
+        .as_str()
+        .unwrap_or("Unknown")
+        .to_string();
+
+    let mut msg = ChatMessage::new(ChatPlatformEnum::Kick, username, content);
+
+    if let Some(id) = chat["id"].as_str() {
+        msg = msg.with_source_id(id.to_string());
+    }
+    if let Some(created_at) = chat["created_at"].as_str() {
+        if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(created_at) {
+            msg.timestamp = parsed.timestamp_millis();
+        }
+    }
+    if let Some(color) = chat["sender"]["identity"]["color"].as_str() {
+        msg = msg.with_color(color.to_string());
+    }
+    if let Some(badges) = chat["sender"]["identity"]["badges"].as_array() {
+        let badge_names: Vec<String> = badges
+            .iter()
+            .filter_map(|b| b["type"].as_str().map(|s| s.to_string()))
+            .collect();
+        if !badge_names.is_empty() {
+            msg = msg.with_badges(badge_names);
+        }
+    }
+
+    Some(msg)
+}
+
 /// Kick chat connector.
 ///
 /// Reads chat anonymously via Pusher WebSocket. Sending requires an
@@ -121,6 +176,30 @@ pub struct KickConnector {
     /// Send credentials captured at `connect()` time. `None` keeps the
     /// connector in read-only mode.
     send_state: Arc<StdMutex<Option<SendState>>>,
+    /// Q1: handle to the background WS poll task spawned in `connect()`.
+    /// Pre-Q1 the spawn handle was dropped on the floor, so a connector
+    /// dropped without `disconnect()` (panic-disconnect path, test
+    /// teardown, profile reactivation) leaked the task. `Drop` aborts
+    /// the handle so the runtime reclaims the WS frame loop.
+    task_handle: Arc<TokioMutex<Option<JoinHandle<()>>>>,
+    /// Kick Pusher Channels WebSocket URL (injected from `ChatEndpoints`).
+    pusher_ws: String,
+    /// Kick public REST channel-lookup prefix; the slug is appended.
+    channel_lookup: String,
+    /// Kick official REST chat-send endpoint.
+    send_chat: String,
+}
+
+impl Drop for KickConnector {
+    fn drop(&mut self) {
+        // Best-effort cancellation — `Drop` isn't async. `try_lock`
+        // avoids blocking on lock contention from a dying connector.
+        if let Ok(mut guard) = self.task_handle.try_lock() {
+            if let Some(handle) = guard.take() {
+                handle.abort();
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -131,6 +210,10 @@ struct SendState {
 
 impl KickConnector {
     pub fn new() -> Self {
+        Self::with_endpoints(&ChatEndpoints::default())
+    }
+
+    pub fn with_endpoints(endpoints: &ChatEndpoints) -> Self {
         Self {
             status: Arc::new(AtomicU8::new(STATUS_DISCONNECTED)),
             last_error: Arc::new(StdMutex::new(None)),
@@ -138,6 +221,10 @@ impl KickConnector {
             disconnecting: Arc::new(AtomicBool::new(false)),
             disconnect_tx: None,
             send_state: Arc::new(StdMutex::new(None)),
+            task_handle: Arc::new(TokioMutex::new(None)),
+            pusher_ws: endpoints.kick_pusher_ws.clone(),
+            channel_lookup: endpoints.kick_channel_lookup.clone(),
+            send_chat: endpoints.kick_send_chat.clone(),
         }
     }
 
@@ -155,7 +242,7 @@ impl ChatPlatform for KickConnector {
     async fn connect(
         &mut self,
         credentials: ChatCredentials,
-        message_tx: mpsc::UnboundedSender<ChatMessage>,
+        message_tx: mpsc::Sender<ChatMessage>,
     ) -> PlatformResult<()> {
         if self.is_connected() {
             return Err(PlatformError::AlreadyConnected);
@@ -193,14 +280,24 @@ impl ChatPlatform for KickConnector {
             ));
         }
 
-        let chatroom_id = fetch_chatroom_id(&channel)
+        let chatroom_id = fetch_chatroom_id(&channel, &self.channel_lookup)
             .await
             .inspect_err(|e| self.set_error(e.to_string()))?;
 
-        let (ws_stream, _) = connect_async(KICK_PUSHER_URL).await.map_err(|e| {
-            self.set_error(format!("Kick websocket connection failed: {e}"));
-            PlatformError::Connection(format!("Kick websocket connection failed: {e}"))
-        })?;
+        // Cap the WS handshake itself — `connect_async` has no built-in
+        // timeout and will hang forever if Pusher accepts TCP but never
+        // completes the upgrade.
+        let (ws_stream, _) =
+            tokio::time::timeout(WS_HANDSHAKE_TIMEOUT, connect_async(self.pusher_ws.as_str()))
+                .await
+                .map_err(|_| {
+                    self.set_error("Kick websocket handshake timed out");
+                    PlatformError::Connection("Kick websocket handshake timed out".to_string())
+                })?
+                .map_err(|e| {
+                    self.set_error(format!("Kick websocket connection failed: {e}"));
+                    PlatformError::Connection(format!("Kick websocket connection failed: {e}"))
+                })?;
 
         let (mut write, mut read) = ws_stream.split();
 
@@ -212,8 +309,9 @@ impl ChatPlatform for KickConnector {
                 let frame = frame
                     .map_err(|e| PlatformError::Connection(format!("Pusher read error: {e}")))?;
                 if let Message::Text(text) = frame {
-                    let payload: serde_json::Value = serde_json::from_str(&text)
-                        .map_err(|e| PlatformError::Platform(format!("Invalid Pusher frame: {e}")))?;
+                    let payload: serde_json::Value = serde_json::from_str(&text).map_err(|e| {
+                        PlatformError::Platform(format!("Invalid Pusher frame: {e}"))
+                    })?;
                     if payload["event"].as_str() == Some("pusher:connection_established") {
                         return Ok(());
                     }
@@ -225,7 +323,9 @@ impl ChatPlatform for KickConnector {
         })
         .await
         .map_err(|_| {
-            PlatformError::Connection("Timed out waiting for Pusher connection_established".to_string())
+            PlatformError::Connection(
+                "Timed out waiting for Pusher connection_established".to_string(),
+            )
         })?;
 
         established.inspect_err(|e| self.set_error(e.to_string()))?;
@@ -243,17 +343,57 @@ impl ChatPlatform for KickConnector {
                 PlatformError::Connection(format!("Failed to subscribe to Kick chatroom: {e}"))
             })?;
 
+        // Wait for the subscription ACK before reporting Connected.
+        // Pre-this fix a rejected chatroom (deleted, banned, anti-bot
+        // blocked) left the connector reporting Connected with zero
+        // messages flowing. Pusher emits one of:
+        //   `pusher_internal:subscription_succeeded`  (channel == ours)
+        //   `pusher:subscription_error`               (data carries reason)
+        // Fail loud on either timeout or explicit error so the operator
+        // sees the failure instead of a silent dead chat surface.
+        let subscribe_ack = tokio::time::timeout(SUBSCRIBE_ACK_TIMEOUT, async {
+            while let Some(frame) = read.next().await {
+                let frame = frame
+                    .map_err(|e| PlatformError::Connection(format!("Pusher read error: {e}")))?;
+                let Message::Text(text) = frame else {
+                    continue;
+                };
+                let payload: serde_json::Value = serde_json::from_str(&text)
+                    .map_err(|e| PlatformError::Platform(format!("Invalid Pusher frame: {e}")))?;
+                let event = payload["event"].as_str().unwrap_or("");
+                let chan = payload["channel"].as_str().unwrap_or("");
+                if event == "pusher_internal:subscription_succeeded" && chan == channel_name {
+                    return Ok(());
+                }
+                if event == "pusher:subscription_error" {
+                    let detail = payload["data"].as_str().unwrap_or("unknown");
+                    return Err(PlatformError::Connection(format!(
+                        "Kick rejected subscribe to {chan}: {detail}"
+                    )));
+                }
+            }
+            Err(PlatformError::Connection(
+                "Pusher closed before subscription_succeeded".to_string(),
+            ))
+        })
+        .await
+        .map_err(|_| {
+            PlatformError::Connection(format!(
+                "Kick chatroom subscribe ACK timed out (chatroom={chatroom_id})"
+            ))
+        })?;
+        subscribe_ack.inspect_err(|e| self.set_error(e.to_string()))?;
+
         // Cache send credentials (if any) for outbound messages.
-        let captured_send_state = if let (Some(token), Some(broadcaster)) =
-            (oauth_token.clone(), broadcaster_user_id)
-        {
-            Some(SendState {
-                oauth_token: token,
-                broadcaster_user_id: broadcaster,
-            })
-        } else {
-            None
-        };
+        let captured_send_state =
+            if let (Some(token), Some(broadcaster)) = (oauth_token.clone(), broadcaster_user_id) {
+                Some(SendState {
+                    oauth_token: token,
+                    broadcaster_user_id: broadcaster,
+                })
+            } else {
+                None
+            };
         if let Ok(mut guard) = self.send_state.lock() {
             *guard = captured_send_state;
         }
@@ -270,7 +410,7 @@ impl ChatPlatform for KickConnector {
         let message_count = self.message_count.clone();
         let disconnecting = self.disconnecting.clone();
 
-        tokio::spawn(async move {
+        let task_handle = tokio::spawn(async move {
             let mut ping = tokio::time::interval(PING_INTERVAL);
             // First tick fires immediately; skip to align with PING_INTERVAL.
             ping.tick().await;
@@ -311,68 +451,13 @@ impl ChatPlatform for KickConnector {
                                     }
                                 };
 
-                                let event = payload["event"].as_str().unwrap_or("");
-                                if event != "App\\Events\\ChatMessageEvent" {
-                                    // Pusher control frames (subscription_succeeded, pong) + other
-                                    // Kick events (raid, follower) are ignored for now.
-                                    continue;
-                                }
-
-                                // Pusher wraps the application payload in a JSON-string `data`
-                                // field — parse twice.
-                                let data_str = payload["data"].as_str().unwrap_or("");
-                                if data_str.is_empty() {
-                                    continue;
-                                }
-                                let chat: serde_json::Value = match serde_json::from_str(data_str) {
-                                    Ok(v) => v,
-                                    Err(err) => {
-                                        warn!("Failed to parse Kick ChatMessageEvent body: {}", err);
-                                        continue;
+                                if let Some(msg) = parse_kick_chat_event(&payload) {
+                                    if message_tx.send(msg).await.is_err() {
+                                        warn!("Failed to deliver Kick chat message: receiver dropped");
+                                        break;
                                     }
-                                };
-
-                                let content = chat["content"].as_str().unwrap_or("").to_string();
-                                if content.is_empty() {
-                                    continue;
+                                    message_count.fetch_add(1, Ordering::Relaxed);
                                 }
-                                let username = chat["sender"]["username"]
-                                    .as_str()
-                                    .unwrap_or("Unknown")
-                                    .to_string();
-
-                                let mut msg = ChatMessage::new(
-                                    ChatPlatformEnum::Kick,
-                                    username,
-                                    content,
-                                );
-
-                                if let Some(id) = chat["id"].as_str() {
-                                    msg = msg.with_source_id(id.to_string());
-                                }
-                                if let Some(created_at) = chat["created_at"].as_str() {
-                                    if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(created_at) {
-                                        msg.timestamp = parsed.timestamp_millis();
-                                    }
-                                }
-                                if let Some(color) = chat["sender"]["identity"]["color"].as_str() {
-                                    msg = msg.with_color(color.to_string());
-                                }
-                                if let Some(badges) = chat["sender"]["identity"]["badges"].as_array() {
-                                    let badge_names: Vec<String> = badges
-                                        .iter()
-                                        .filter_map(|b| b["type"].as_str().map(|s| s.to_string()))
-                                        .collect();
-                                    if !badge_names.is_empty() {
-                                        msg = msg.with_badges(badge_names);
-                                    }
-                                }
-
-                                if message_tx.send(msg).is_err() {
-                                    warn!("Failed to deliver Kick chat message: receiver dropped");
-                                    break;
-                                }
-                                message_count.fetch_add(1, Ordering::Relaxed);
                             }
                             Ok(Message::Ping(data)) => {
                                 if let Err(err) = write.send(Message::Pong(data)).await {
@@ -405,9 +490,21 @@ impl ChatPlatform for KickConnector {
             info!("Kick chat task stopped");
         });
 
-        info!(
-            "Connected to Kick chat for channel '{channel}' (chatroom_id={chatroom_id})"
-        );
+        // Q1: capture the task handle so `Drop` can abort it. Take the
+        // lock async because `connect()` is already async; this is the
+        // only contended path so cost is trivial.
+        {
+            let mut guard = self.task_handle.lock().await;
+            // Abort any prior task too (defensive — `is_connected()`
+            // check above should have rejected reconnect, but if state
+            // ever desyncs we still want a clean replacement).
+            if let Some(prev) = guard.take() {
+                prev.abort();
+            }
+            *guard = Some(task_handle);
+        }
+
+        info!("Connected to Kick chat for channel '{channel}' (chatroom_id={chatroom_id})");
         Ok(())
     }
 
@@ -451,10 +548,7 @@ impl ChatPlatform for KickConnector {
         if !self.is_connected() {
             return false;
         }
-        self.send_state
-            .lock()
-            .map(|g| g.is_some())
-            .unwrap_or(false)
+        self.send_state.lock().map(|g| g.is_some()).unwrap_or(false)
     }
 
     async fn send_message(&mut self, message: String) -> PlatformResult<()> {
@@ -486,7 +580,7 @@ impl ChatPlatform for KickConnector {
         });
 
         let response = client
-            .post(KICK_SEND_CHAT_URL)
+            .post(self.send_chat.as_str())
             .bearer_auth(&state.oauth_token)
             .header("Accept", "application/json")
             .json(&body)
@@ -501,7 +595,14 @@ impl ChatPlatform for KickConnector {
             ));
         }
         if !status.is_success() {
-            let detail = response.text().await.unwrap_or_default();
+            // Same fail-loud rule as the YouTube H6 fix — pre-this fix
+            // a body-read failure produced `Kick send failed (500): `
+            // with empty diagnostic, hiding rate-limit / quota /
+            // anti-bot rejections behind a status-only error.
+            let detail = match response.text().await {
+                Ok(b) => b,
+                Err(e) => format!("<body read failed: {e}>"),
+            };
             return Err(PlatformError::Platform(format!(
                 "Kick send failed ({status}): {}",
                 detail.chars().take(200).collect::<String>()

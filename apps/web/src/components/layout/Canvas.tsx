@@ -31,7 +31,7 @@ export function Canvas({
       className={cn(
         'grid h-[calc(100vh-var(--menubar-h,40px)-var(--statusstrip-h,56px))]',
         'grid-cols-[280px_minmax(0,1fr)_var(--chat-w)]',
-        'overflow-hidden',
+        'overflow-hidden'
       )}
       style={
         {
@@ -86,7 +86,7 @@ function ChatCollapseToggle({ collapsed, onToggle }: ChatCollapseToggleProps): R
         'border-b border-border-default text-text-tertiary',
         'hover:bg-bg-hover hover:text-text-primary',
         'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring-default',
-        'transition-colors',
+        'transition-colors'
       )}
     >
       {collapsed ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}

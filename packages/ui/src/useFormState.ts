@@ -39,7 +39,7 @@ export function useFormState<T extends object>(initialData: T): FormStateHandle<
       setValues(target);
       if (next) setInitial(next);
     },
-    [initial],
+    [initial]
   );
 
   return {

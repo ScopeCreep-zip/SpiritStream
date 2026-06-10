@@ -17,7 +17,7 @@ export const security = {
       'POST',
       '/api/v1/security/confirm-token',
       undefined,
-      { intent },
+      { intent }
     ),
   /**
    * Revoke every active session server-side, effectively logging out
@@ -30,12 +30,6 @@ export const security = {
    */
   revokeAllSessions: () =>
     withConfirmToken<{ revoked: number }>('revoke_all_sessions', (headers) =>
-      fetchTypedJson(
-        'POST',
-        '/api/v1/security/sessions/revoke-all',
-        undefined,
-        undefined,
-        headers,
-      ),
+      fetchTypedJson('POST', '/api/v1/security/sessions/revoke-all', undefined, undefined, headers)
     ),
 };

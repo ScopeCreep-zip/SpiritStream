@@ -42,9 +42,7 @@ pub(super) fn compute_hmac(key: &[u8; 32], data: &[u8]) -> [u8; 32] {
     out
 }
 
-pub(super) fn derive_audit_hmac_key(
-    app_data_dir: &Path,
-) -> Result<Zeroizing<[u8; 32]>, CoreError> {
+pub(super) fn derive_audit_hmac_key(app_data_dir: &Path) -> Result<Zeroizing<[u8; 32]>, CoreError> {
     let machine_key = crate::services::Encryption::get_or_create_machine_key_public(app_data_dir)?;
     let hk = Hkdf::<Sha256>::new(None, &*machine_key);
     let mut out = Zeroizing::new([0u8; 32]);

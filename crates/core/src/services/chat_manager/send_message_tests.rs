@@ -9,8 +9,10 @@ use crate::models::{ChatConnectionStatus, ChatCredentials, ChatMessage, ChatPlat
 use crate::services::chat::{BoxedPlatform, ChatPlatform as ChatPlatformTrait, PlatformResult};
 use crate::services::events::NoopEventSink;
 use crate::services::{
-    AuditAction, AuditLogService, EventSink, FFmpegHandler, ObsWebSocketHandler, SafetyService,
+    AuditAction, AuditLogService, EncryptedFileSecretStore, EventSink, FFmpegHandler,
+    ObsWebSocketHandler, SafetyService,
 };
+use crate::traits::SecretStore;
 
 use super::ChatManager;
 
@@ -27,7 +29,7 @@ impl ChatPlatformTrait for AlwaysOkConnector {
     async fn connect(
         &mut self,
         _credentials: ChatCredentials,
-        _message_tx: mpsc::UnboundedSender<ChatMessage>,
+        _message_tx: mpsc::Sender<ChatMessage>,
     ) -> PlatformResult<()> {
         Ok(())
     }
@@ -66,7 +68,12 @@ impl ChatManager {
 /// Build a (ChatManager, SafetyService, AuditLogService) triple
 /// sharing the same audit instance, so a test can both call
 /// `send_message(..., &safety)` and inspect the audit chain.
-fn fixture() -> (TempDir, Arc<ChatManager>, SafetyService, Arc<AuditLogService>) {
+fn fixture() -> (
+    TempDir,
+    Arc<ChatManager>,
+    SafetyService,
+    Arc<AuditLogService>,
+) {
     let dir = TempDir::new().unwrap();
     let data_dir = dir.path().to_path_buf();
     let event_sink: Arc<dyn EventSink> = Arc::new(NoopEventSink);
@@ -77,14 +84,8 @@ fn fixture() -> (TempDir, Arc<ChatManager>, SafetyService, Arc<AuditLogService>)
         FFmpegHandler::new_with_custom_path(data_dir.clone(), None).expect("test fixture"),
     );
     let obs = Arc::new(ObsWebSocketHandler::new(data_dir.clone()));
-    let safety = SafetyService::new(
-        ffmpeg,
-        mgr.clone(),
-        obs,
-        audit.clone(),
-        event_sink,
-        None,
-    );
+    let secrets: Arc<dyn SecretStore> = Arc::new(EncryptedFileSecretStore::new(data_dir.clone()));
+    let safety = SafetyService::new(ffmpeg, mgr.clone(), obs, audit.clone(), event_sink, secrets);
     (dir, mgr, safety, audit)
 }
 

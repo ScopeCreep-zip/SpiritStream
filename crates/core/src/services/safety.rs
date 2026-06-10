@@ -46,6 +46,13 @@ use crate::traits::{EventSink, SecretStore};
 pub struct PanicResult {
     pub streams_stopped: usize,
     pub elapsed_ms: u64,
+    /// Q8: errors that occurred while running the disconnect sequence
+    /// (FFmpeg stop_all, chat disconnect_all, OBS disconnect). Each
+    /// entry is a human-readable string prefixed with the failing
+    /// subsystem. Pre-Q8 these were `log::error!`-and-forgotten — the
+    /// operator had no programmatic way to detect that chat didn't
+    /// actually disconnect, only that panic "ran."
+    pub connector_errors: Vec<String>,
 }
 
 /// Coordinates the panic-disconnect flow across services.
@@ -55,7 +62,7 @@ pub struct SafetyService {
     obs: Arc<ObsWebSocketHandler>,
     audit: Arc<AuditLogService>,
     events: Arc<dyn EventSink>,
-    secrets: Option<Arc<dyn SecretStore>>,
+    secrets: Arc<dyn SecretStore>,
 }
 
 impl SafetyService {
@@ -65,7 +72,7 @@ impl SafetyService {
         obs: Arc<ObsWebSocketHandler>,
         audit: Arc<AuditLogService>,
         events: Arc<dyn EventSink>,
-        secrets: Option<Arc<dyn SecretStore>>,
+        secrets: Arc<dyn SecretStore>,
     ) -> Self {
         Self {
             ffmpeg,
@@ -140,17 +147,22 @@ impl SafetyService {
     /// decide whether to retry (the upstream actions are already done).
     pub async fn panic(&self) -> Result<PanicResult, CoreError> {
         let started = Instant::now();
+        let mut connector_errors: Vec<String> = Vec::new();
 
         // 1. Stop every active FFmpeg stream. Capture the count before
         //    stop_all clears it so the audit/event can report it.
         let streams_stopped = self.ffmpeg.active_count();
         if let Err(e) = self.ffmpeg.stop_all() {
-            log::error!("panic: ffmpeg.stop_all failed: {e}");
+            let msg = format!("ffmpeg.stop_all: {e}");
+            log::error!("panic: {msg}");
+            connector_errors.push(msg);
         }
 
         // 2. Disconnect every connected chat platform.
         if let Err(e) = self.chat.disconnect_all("panic_triggered").await {
-            log::error!("panic: chat.disconnect_all failed: {e}");
+            let msg = format!("chat.disconnect_all: {e}");
+            log::error!("panic: {msg}");
+            connector_errors.push(msg);
         }
 
         // 3. Disconnect OBS. The handler takes an EventSink generic, so
@@ -159,39 +171,46 @@ impl SafetyService {
             inner: self.events.clone(),
         };
         if let Err(e) = self.obs.disconnect(obs_event_sink).await {
-            log::error!("panic: obs.disconnect failed: {e}");
+            let msg = format!("obs.disconnect: {e}");
+            log::error!("panic: {msg}");
+            connector_errors.push(msg);
         }
 
         // 4. Wipe in-memory secret caches. The trait default is a no-op
         //    so an impl that holds no in-memory secrets (file store)
         //    just returns immediately.
-        if let Some(secrets) = &self.secrets {
-            secrets.purge_caches().await;
-        }
+        self.secrets.purge_caches().await;
 
         let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
 
         // 5. Audit. We propagate this error: if the audit write fails
         //    the user has no durable record of the panic, which is
-        //    worth surfacing.
+        //    worth surfacing. Connector errors collected above land in
+        //    the chain so the operator can see "panic ran, but Twitch
+        //    didn't actually disconnect."
         self.audit.record(AuditAction::PanicTriggered {
             streams_stopped,
             elapsed_ms,
+            connector_errors: connector_errors.clone(),
         })?;
 
         // 6. Event. Frontends listen for `panic_triggered` and render
-        //    the post-panic banner.
+        //    the post-panic banner. Connector errors travel with the
+        //    event so the UI can show a "panic completed with N
+        //    warnings" toast.
         self.events.emit(
             "panic_triggered",
             serde_json::json!({
                 "streamsStopped": streams_stopped,
                 "elapsedMs": elapsed_ms,
+                "connectorErrors": connector_errors.clone(),
             }),
         );
 
         Ok(PanicResult {
             streams_stopped,
             elapsed_ms,
+            connector_errors,
         })
     }
 }
@@ -212,6 +231,7 @@ impl EventSink for OneShotEventSink {
 mod tests {
     use super::*;
     use crate::registry::NoopEventSink;
+    use crate::services::EncryptedFileSecretStore;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tempfile::TempDir;
 
@@ -230,9 +250,48 @@ mod tests {
         }
     }
 
+    /// SecretStore wrapper that counts how many times `purge_caches`
+    /// fires. Used by `panic_invokes_secret_store_purge_caches` to
+    /// prove the F1 wiring is live (the previous `Option<…> = None`
+    /// path made the call a no-op even when secrets existed).
+    struct PurgeCountingStore {
+        inner: EncryptedFileSecretStore,
+        purges: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl SecretStore for PurgeCountingStore {
+        async fn get(
+            &self,
+            namespace: &str,
+            key: &str,
+        ) -> Result<Option<Vec<u8>>, crate::CoreError> {
+            self.inner.get(namespace, key).await
+        }
+        async fn put(
+            &self,
+            namespace: &str,
+            key: &str,
+            value: &[u8],
+        ) -> Result<(), crate::CoreError> {
+            self.inner.put(namespace, key, value).await
+        }
+        async fn delete(&self, namespace: &str, key: &str) -> Result<(), crate::CoreError> {
+            self.inner.delete(namespace, key).await
+        }
+        async fn purge_caches(&self) {
+            self.purges.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
     fn build_service(
         data_dir: &TempDir,
-    ) -> (SafetyService, Arc<CountingSink>, Arc<AuditLogService>) {
+    ) -> (
+        SafetyService,
+        Arc<CountingSink>,
+        Arc<AuditLogService>,
+        Arc<PurgeCountingStore>,
+    ) {
         let dir = data_dir.path().to_path_buf();
         let ffmpeg =
             Arc::new(FFmpegHandler::new_with_custom_path(dir.clone(), None).expect("test fixture"));
@@ -242,14 +301,19 @@ mod tests {
         let audit = Arc::new(AuditLogService::new(dir.clone()).unwrap());
         let counting = Arc::new(CountingSink::default());
         let events: Arc<dyn EventSink> = counting.clone();
-        let svc = SafetyService::new(ffmpeg, chat, obs, audit.clone(), events, None);
-        (svc, counting, audit)
+        let store = Arc::new(PurgeCountingStore {
+            inner: EncryptedFileSecretStore::new(dir.clone()),
+            purges: AtomicUsize::new(0),
+        });
+        let secrets: Arc<dyn SecretStore> = store.clone();
+        let svc = SafetyService::new(ffmpeg, chat, obs, audit.clone(), events, secrets);
+        (svc, counting, audit, store)
     }
 
     #[tokio::test]
     async fn panic_emits_event_and_audit_entry_on_fresh_install() {
         let dir = TempDir::new().unwrap();
-        let (svc, sink, audit) = build_service(&dir);
+        let (svc, sink, audit, _secrets) = build_service(&dir);
         let result = svc
             .panic()
             .await
@@ -273,7 +337,7 @@ mod tests {
     #[tokio::test]
     async fn panic_returns_result_with_elapsed_time() {
         let dir = TempDir::new().unwrap();
-        let (svc, _sink, _audit) = build_service(&dir);
+        let (svc, _sink, _audit, _secrets) = build_service(&dir);
         let result = svc.panic().await.unwrap();
         // elapsed_ms is u64; just confirm it deserialised to a finite value.
         // We can't assert a tight upper bound without flakiness on slow CI.
@@ -288,7 +352,7 @@ mod tests {
     #[tokio::test]
     async fn pii_check_clears_when_blocklist_empty() {
         let dir = TempDir::new().unwrap();
-        let (svc, _sink, _audit) = build_service(&dir);
+        let (svc, _sink, _audit, _secrets) = build_service(&dir);
         let result = svc.check_outbound_pii(&[], false, &[ChatPlatform::Twitch], "anything");
         assert!(result.is_ok());
     }
@@ -296,7 +360,7 @@ mod tests {
     #[tokio::test]
     async fn pii_check_blocks_matching_message_and_records_audit() {
         let dir = TempDir::new().unwrap();
-        let (svc, _sink, audit) = build_service(&dir);
+        let (svc, _sink, audit, _secrets) = build_service(&dir);
         let blocklist = vec!["realname".into()];
         let result = svc.check_outbound_pii(
             &blocklist,
@@ -333,7 +397,7 @@ mod tests {
     #[tokio::test]
     async fn pii_check_records_single_aggregate_entry_for_multi_platform_send() {
         let dir = TempDir::new().unwrap();
-        let (svc, _sink, audit) = build_service(&dir);
+        let (svc, _sink, audit, _secrets) = build_service(&dir);
         let blocklist = vec!["alex".into()];
         let _ = svc.check_outbound_pii(
             &blocklist,
@@ -356,27 +420,41 @@ mod tests {
     #[tokio::test]
     async fn pii_check_fuzzy_catches_leet_when_enabled() {
         let dir = TempDir::new().unwrap();
-        let (svc, _sink, _audit) = build_service(&dir);
+        let (svc, _sink, _audit, _secrets) = build_service(&dir);
         let blocklist = vec!["alex".into()];
-        let result =
-            svc.check_outbound_pii(&blocklist, true, &[ChatPlatform::Twitch], "hi @l3x");
+        let result = svc.check_outbound_pii(&blocklist, true, &[ChatPlatform::Twitch], "hi @l3x");
         assert!(matches!(result, Err(CoreError::ChatBlockedByPii { .. })));
     }
 
     #[tokio::test]
     async fn pii_check_strict_misses_leet_by_default() {
         let dir = TempDir::new().unwrap();
-        let (svc, _sink, _audit) = build_service(&dir);
+        let (svc, _sink, _audit, _secrets) = build_service(&dir);
         let blocklist = vec!["alex".into()];
-        let result =
-            svc.check_outbound_pii(&blocklist, false, &[ChatPlatform::Twitch], "hi @l3x");
+        let result = svc.check_outbound_pii(&blocklist, false, &[ChatPlatform::Twitch], "hi @l3x");
         assert!(result.is_ok(), "strict mode must not match leet variants");
+    }
+
+    #[tokio::test]
+    async fn panic_invokes_secret_store_purge_caches() {
+        // F1 regression: pre-fix the SafetyService held `secrets: None`
+        // because the registry never wired the SecretStore in. That made
+        // step 4 of the panic flow a silent no-op — panic claimed to
+        // purge in-memory secret caches and didn't.
+        let dir = TempDir::new().unwrap();
+        let (svc, _sink, _audit, secrets) = build_service(&dir);
+        svc.panic().await.unwrap();
+        assert_eq!(
+            secrets.purges.load(Ordering::SeqCst),
+            1,
+            "panic must fire SecretStore::purge_caches exactly once",
+        );
     }
 
     #[tokio::test]
     async fn panic_is_idempotent_under_repeated_calls() {
         let dir = TempDir::new().unwrap();
-        let (svc, sink, audit) = build_service(&dir);
+        let (svc, sink, audit, _secrets) = build_service(&dir);
         svc.panic().await.unwrap();
         svc.panic().await.unwrap();
         svc.panic().await.unwrap();

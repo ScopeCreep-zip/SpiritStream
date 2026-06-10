@@ -20,16 +20,13 @@ type CoreSlice = Pick<
   | 'activeStreamCount'
   | 'error'
   | 'syncWithBackend'
-  | 'isGroupStreamingBackend'
   | 'startGroup'
   | 'stopGroup'
   | 'startAllGroups'
   | 'stopAllGroups'
   | 'toggleTargetLive'
   | 'setIsStreaming'
-  | 'setActiveGroup'
   | 'setGroupEnabled'
-  | 'toggleTarget'
   | 'setTargetEnabled'
   | 'setError'
   | 'reset'
@@ -67,17 +64,9 @@ export const createCoreSlice: StateCreator<StreamState, [], [], CoreSlice> = (se
     }
   },
 
-  isGroupStreamingBackend: async (groupId: string) => {
-    try {
-      return await api.stream.isGroupStreaming(groupId);
-    } catch (error) {
-      logger.error('[StreamStore] Failed to check group streaming status:', error);
-      return false;
-    }
-  },
-
   startGroup: async (group, incomingUrl) => {
-    set({ globalStatus: 'connecting', error: null });
+    set({ globalStatus: 'connecting' });
+    get().setError(null);
     try {
       await api.stream.start(group, incomingUrl);
       const activeGroups = new Set(get().activeGroups);
@@ -86,10 +75,16 @@ export const createCoreSlice: StateCreator<StreamState, [], [], CoreSlice> = (se
         activeGroups,
         isStreaming: true,
       });
+      // Start the displayed uptime at 0 so the StatusStrip clock
+      // begins ticking from 00:00 — `useStreamStats` runs a 1Hz
+      // optimistic tick (`incrementUptime`) and `updateStats`
+      // overwrites with the ffmpeg `time` value on each stats event.
+      get().setUptime(0);
       get().setGlobalStatus('live');
       // SS→OBS trigger runs server-side in core (see top of file).
     } catch (error) {
-      set({ error: String(error), globalStatus: 'error' });
+      set({ globalStatus: 'error' });
+      get().setError(String(error));
     }
   },
 
@@ -105,13 +100,14 @@ export const createCoreSlice: StateCreator<StreamState, [], [], CoreSlice> = (se
       });
       get().setGlobalStatus(isStreaming ? 'live' : 'offline');
     } catch (error) {
-      set({ error: String(error) });
+      get().setError(String(error));
     }
   },
 
   // Backend handles filtering disabled targets via disabled_targets set.
   startAllGroups: async (groups, incomingUrl) => {
-    set({ globalStatus: 'connecting', error: null });
+    set({ globalStatus: 'connecting' });
+    get().setError(null);
 
     try {
       // Filter groups by: has targets AND is enabled.
@@ -134,9 +130,12 @@ export const createCoreSlice: StateCreator<StreamState, [], [], CoreSlice> = (se
         activeGroups.add(group.id);
       }
       set({ activeGroups, isStreaming: true });
+      // Reset displayed uptime — see `startGroup` for the rationale.
+      get().setUptime(0);
       get().setGlobalStatus('live');
     } catch (error) {
-      set({ error: String(error), globalStatus: 'error' });
+      set({ globalStatus: 'error' });
+      get().setError(String(error));
       throw error;
     }
   },
@@ -153,7 +152,7 @@ export const createCoreSlice: StateCreator<StreamState, [], [], CoreSlice> = (se
       });
       get().setGlobalStatus('offline');
     } catch (error) {
-      set({ error: String(error) });
+      get().setError(String(error));
     }
   },
 
@@ -169,7 +168,7 @@ export const createCoreSlice: StateCreator<StreamState, [], [], CoreSlice> = (se
       }
       set({ enabledTargets });
     } catch (error) {
-      set({ error: String(error) });
+      get().setError(String(error));
       throw error;
     }
   },
@@ -177,28 +176,6 @@ export const createCoreSlice: StateCreator<StreamState, [], [], CoreSlice> = (se
   setIsStreaming: (isStreaming) => {
     const status: StreamStatusType = isStreaming ? 'live' : 'offline';
     set({ isStreaming, globalStatus: status });
-  },
-
-  setActiveGroup: (groupId, active) => {
-    const activeGroups = new Set(get().activeGroups);
-    if (active) {
-      activeGroups.add(groupId);
-    } else {
-      activeGroups.delete(groupId);
-    }
-    const isStreaming = activeGroups.size > 0;
-    const globalStatus: StreamStatusType = isStreaming ? 'live' : 'offline';
-    set({ activeGroups, isStreaming, globalStatus });
-  },
-
-  toggleTarget: (targetId) => {
-    const enabledTargets = new Set(get().enabledTargets);
-    if (enabledTargets.has(targetId)) {
-      enabledTargets.delete(targetId);
-    } else {
-      enabledTargets.add(targetId);
-    }
-    set({ enabledTargets });
   },
 
   setGroupEnabled: (groupId, enabled) => {
@@ -231,8 +208,8 @@ export const createCoreSlice: StateCreator<StreamState, [], [], CoreSlice> = (se
       groupStats: {},
       uptime: 0,
       globalStatus: 'offline' as StreamStatusType,
-      error: null,
       activeStreamCount: 0,
     });
+    get().setError(null);
   },
 });

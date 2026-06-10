@@ -57,20 +57,12 @@ function splitTheme(filename) {
 
   // Write light theme
   const lightPath = path.join(themesDir, `${baseName}-light.jsonc`);
-  fs.writeFileSync(
-    lightPath,
-    JSON.stringify(lightTheme, null, 2),
-    'utf-8'
-  );
+  fs.writeFileSync(lightPath, JSON.stringify(lightTheme, null, 2), 'utf-8');
   console.log(`✅ Created: ${baseName}-light.jsonc`);
 
   // Write dark theme
   const darkPath = path.join(themesDir, `${baseName}-dark.jsonc`);
-  fs.writeFileSync(
-    darkPath,
-    JSON.stringify(darkTheme, null, 2),
-    'utf-8'
-  );
+  fs.writeFileSync(darkPath, JSON.stringify(darkTheme, null, 2), 'utf-8');
   console.log(`✅ Created: ${baseName}-dark.jsonc`);
 
   // Rename original to .deprecated

@@ -118,7 +118,6 @@
     "--gradient-surface": "linear-gradient(180deg, #6D105A 0%, #5A0F4A 100%)",
     "--scrollbar-track": "#4B0C3F",
     "--scrollbar-thumb": "#7A1A64",
-    "--scrollbar-thumb-hover": "#A53585"
-  }
+    "--scrollbar-thumb-hover": "#A53585",
+  },
 }
-

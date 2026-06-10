@@ -4,7 +4,11 @@ import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { emit, listen } from '@tauri-apps/api/event';
 
 import { ConnectionError } from '@/components/ui/ConnectionError';
-import { useProfileStore, subscribeProfileActivated, subscribeOAuthTokenExpired } from '@/stores/profileStore';
+import {
+  useProfileStore,
+  subscribeProfileActivated,
+  subscribeOAuthTokenExpired,
+} from '@/stores/profileStore';
 import { useLanguageStore } from '@/stores/languageStore';
 import { useInitialize } from '@/hooks/useInitialize';
 import { useStreamStats } from '@/hooks/useStreamStats';
@@ -77,10 +81,18 @@ function MainApp() {
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
+      // Reject sync requests from other origins — without this an
+      // iframe attacker on a different origin can request the full
+      // chat history. The reply already targets `window.location.origin`,
+      // but the request handler must also gate-keep on origin.
+      if (event.origin !== window.location.origin) return;
       if (!event.data || event.data.type !== 'chat-overlay-sync-request') return;
       const messages = useChatStore.getState().messages;
       const target = event.source as Window | null;
-      target?.postMessage({ type: 'chat-overlay-sync', messages }, { targetOrigin: window.location.origin });
+      target?.postMessage(
+        { type: 'chat-overlay-sync', messages },
+        { targetOrigin: window.location.origin }
+      );
     };
 
     window.addEventListener('message', handleMessage);
@@ -137,46 +149,50 @@ function MainApp() {
   // Docker, browser. No deployment-mode branching. No IPC. No polling
   // loop. No fallback chain. The forward-only architecture surfaces
   // exactly one source of truth: the server's readiness state.
-  const probeReadiness = useCallback(
-    async (signal: AbortSignal): Promise<void> => {
-      setIsCheckingHealth(true);
-      setServerStatus('checking');
-      setReadyDetails(null);
-      try {
-        const resp = await fetch(`${getBackendBaseUrl()}/api/v1/ready`, {
-          signal,
-          credentials: 'include',
+  const probeReadiness = useCallback(async (signal: AbortSignal): Promise<void> => {
+    setIsCheckingHealth(true);
+    setServerStatus('checking');
+    setReadyDetails(null);
+    try {
+      // L1: the readiness probe is the single intentional exception
+      // to the "no direct fetch from a component" rule. The api-client
+      // (`makeApiClient`) is configured against the server we're
+      // probing — using it here would be chicken-and-egg. See
+      // `packages/api-client/src/config.ts` (Server Readiness block).
+      const resp = await fetch(`${getBackendBaseUrl()}/api/v1/ready`, {
+        signal,
+        credentials: 'include',
+      });
+      if (signal.aborted) return;
+      if (resp.ok) {
+        setServerStatus('ready');
+        setReadyDetails(null);
+      } else {
+        const body = (await resp.json().catch(() => null)) as ServerReadyStatus | null;
+        setServerStatus('not-ready');
+        setReadyDetails({
+          ready: false,
+          status: resp.status,
+          failed: body?.failed,
+          errors: body?.errors,
+          lastError: body?.lastError,
         });
-        if (signal.aborted) return;
-        if (resp.ok) {
-          setServerStatus('ready');
-          setReadyDetails(null);
-        } else {
-          const body = (await resp.json().catch(() => null)) as ServerReadyStatus | null;
-          setServerStatus('not-ready');
-          setReadyDetails({
-            ready: false,
-            status: resp.status,
-            failed: body?.failed,
-            errors: body?.errors,
-            lastError: body?.lastError,
-          });
-        }
-      } catch (err) {
-        if (signal.aborted) return;
-        setServerStatus('unreachable');
-        logger.error('Readiness probe failed:', err);
-      } finally {
-        if (!signal.aborted) setIsCheckingHealth(false);
       }
-    },
-    [],
-  );
+    } catch (err) {
+      if (signal.aborted) return;
+      setServerStatus('unreachable');
+      logger.error('Readiness probe failed:', err);
+    } finally {
+      if (!signal.aborted) setIsCheckingHealth(false);
+    }
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
     void probeReadiness(controller.signal);
-    return () => { controller.abort(); };
+    return () => {
+      controller.abort();
+    };
   }, [probeReadiness]);
 
   // Retry handler for the connection-error overlay. Uses the same
@@ -222,7 +238,9 @@ function MainApp() {
   if (serverStatus === 'checking') {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-bg-base">
-        <div className="text-text-secondary">{t('common.loading', { defaultValue: 'Loading...' })}</div>
+        <div className="text-text-secondary">
+          {t('common.loading', { defaultValue: 'Loading...' })}
+        </div>
       </div>
     );
   }
@@ -268,15 +286,21 @@ function AppContent() {
     let unsubscribeOAuth: (() => void) | null = null;
 
     subscribeThemesUpdated()
-      .then((unsub) => { unsubscribeThemes = unsub; })
+      .then((unsub) => {
+        unsubscribeThemes = unsub;
+      })
       .catch((err) => logger.error('Failed to subscribe to themes_updated events:', err));
 
     subscribeProfileActivated()
-      .then((unsub) => { unsubscribeProfile = unsub; })
+      .then((unsub) => {
+        unsubscribeProfile = unsub;
+      })
       .catch((err) => logger.error('Failed to subscribe to profile_activated events:', err));
 
     subscribeOAuthTokenExpired()
-      .then((unsub) => { unsubscribeOAuth = unsub; })
+      .then((unsub) => {
+        unsubscribeOAuth = unsub;
+      })
       .catch((err) => logger.error('Failed to subscribe to oauth_token_expired events:', err));
 
     return () => {
@@ -396,9 +420,7 @@ function AppContent() {
     window.location.reload();
   }, []);
 
-  return (
-    <SinglePanelShell loginModalOpen={loginModalOpen} onLoginSuccess={handleLoginSuccess} />
-  );
+  return <SinglePanelShell loginModalOpen={loginModalOpen} onLoginSuccess={handleLoginSuccess} />;
 }
 
 export default App;

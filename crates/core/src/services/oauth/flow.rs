@@ -300,7 +300,11 @@ impl super::OAuthService {
         info!(
             "Exchanging {} authorization code for tokens (PKCE{})",
             provider_name,
-            if client_secret.is_some() { " + secret" } else { "" }
+            if client_secret.is_some() {
+                " + secret"
+            } else {
+                ""
+            }
         );
 
         let response = self
@@ -387,5 +391,73 @@ impl super::OAuthService {
         );
 
         Ok(OAuthCompleteResult { tokens, user_info })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::errors::CoreError;
+    use crate::services::oauth::{OAuthConfig, OAuthService};
+
+    #[test]
+    fn build_auth_url_includes_core_params_and_encodes() {
+        let p = OAuthProvider::twitch();
+        let url = OAuthService::build_auth_url(
+            &p,
+            "cid",
+            "http://localhost:8891/oauth/callback",
+            "st8",
+            "code",
+            None,
+        );
+        assert!(url.starts_with("https://id.twitch.tv/oauth2/authorize?"));
+        assert!(url.contains("client_id=cid"));
+        assert!(url.contains("redirect_uri=http%3A%2F%2Flocalhost%3A8891%2Foauth%2Fcallback"));
+        assert!(url.contains("state=st8"));
+        assert!(url.contains("response_type=code"));
+        assert!(url.contains("force_verify=true"));
+        assert!(!url.contains("code_challenge"));
+    }
+
+    #[test]
+    fn build_auth_url_adds_pkce_challenge_when_present() {
+        let p = OAuthProvider::kick();
+        let url = OAuthService::build_auth_url(&p, "cid", "http://x/cb", "s", "code", Some("CHAL"));
+        assert!(url.contains("code_challenge=CHAL"));
+        assert!(url.contains("code_challenge_method=S256"));
+    }
+
+    #[test]
+    fn build_auth_url_youtube_adds_offline_consent_and_encodes_scope() {
+        let p = OAuthProvider::youtube();
+        let url = OAuthService::build_auth_url(&p, "cid", "http://x/cb", "s", "code", Some("C"));
+        assert!(url.contains("access_type=offline"));
+        assert!(url.contains("prompt=consent"));
+        assert!(url.contains("scope=https%3A%2F%2Fwww.googleapis.com"));
+    }
+
+    #[tokio::test]
+    async fn start_flow_unknown_provider_errors() {
+        let svc = OAuthService::new(OAuthConfig::default());
+        match svc.start_flow("myspace").await {
+            Err(CoreError::NotImplemented { feature }) => assert!(feature.contains("myspace")),
+            other => panic!("expected NotImplemented, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn start_flow_kick_uses_pkce_and_registers_pending() {
+        let svc = OAuthService::new(OAuthConfig::default());
+        let res = svc.start_flow("kick").await.expect("kick flow starts");
+        assert!(res
+            .auth_url
+            .starts_with("https://id.kick.com/oauth/authorize?"));
+        assert!(res.auth_url.contains("code_challenge="));
+        assert!(res.auth_url.contains("response_type=code"));
+        assert!(!res.state.is_empty());
+        assert!(res.callback_port >= 8891);
+        let flows = svc.pending_flows.lock().await;
+        assert!(flows.contains_key(&res.state));
     }
 }

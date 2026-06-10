@@ -114,7 +114,6 @@
     "--gradient-surface": "REPLACE_ME",
     "--scrollbar-track": "REPLACE_ME",
     "--scrollbar-thumb": "REPLACE_ME",
-    "--scrollbar-thumb-hover": "REPLACE_ME"
-  }
+    "--scrollbar-thumb-hover": "REPLACE_ME",
+  },
 }
-

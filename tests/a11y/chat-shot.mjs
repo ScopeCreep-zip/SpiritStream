@@ -13,11 +13,10 @@ await mkdir(outDir, { recursive: true });
 
 const PORT = 4174;
 const previewCwd = resolve('apps/web');
-const server = spawn(
-  'pnpm',
-  ['exec', 'vite', 'preview', '--port', String(PORT), '--strictPort'],
-  { cwd: previewCwd, stdio: 'inherit' },
-);
+const server = spawn('pnpm', ['exec', 'vite', 'preview', '--port', String(PORT), '--strictPort'], {
+  cwd: previewCwd,
+  stdio: 'inherit',
+});
 
 await new Promise((r) => setTimeout(r, 2500));
 

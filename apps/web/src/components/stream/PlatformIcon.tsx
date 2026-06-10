@@ -17,20 +17,22 @@ const sizeStyles = {
 export function PlatformIcon({ platform, size = 'md', className }: PlatformIconProps) {
   const platformConfig = PLATFORMS[platform];
 
-  // Use the color from PLATFORMS constant
-  const bgStyle = { backgroundColor: platformConfig.color };
-
   return (
     <div
       className={cn(
         'rounded-md flex items-center justify-center font-semibold',
+        'bg-[var(--platform-bg)] text-[var(--platform-fg)]',
         sizeStyles[size],
         className
       )}
-      style={{
-        ...bgStyle,
-        color: platformConfig.textColor,
-      }}
+      // Per-platform brand colors come from PLATFORMS config data, so they
+      // can't be static tokens — inject them as CSS vars (Modal.tsx pattern).
+      style={
+        {
+          '--platform-bg': platformConfig.color,
+          '--platform-fg': platformConfig.textColor,
+        } as React.CSSProperties
+      }
     >
       {platformConfig.abbreviation}
     </div>

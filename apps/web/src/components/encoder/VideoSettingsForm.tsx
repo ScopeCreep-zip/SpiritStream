@@ -44,7 +44,7 @@ export function VideoSettingsForm({
   const { t } = useTranslation();
   const tDynamic = t as (
     key: string,
-    options?: { defaultValue?: string; [key: string]: string | number | undefined },
+    options?: { defaultValue?: string; [key: string]: string | number | undefined }
   ) => string;
 
   const presetValues = useMemo(() => getPresetValues(values.videoCodec), [values.videoCodec]);
@@ -57,7 +57,7 @@ export function VideoSettingsForm({
         const label = tDynamic(`encoder.encoders.${enc}`, { defaultValue: defaultLabel });
         return { value: enc, label };
       }),
-    [encoders.video, tDynamic],
+    [encoders.video, tDynamic]
   );
 
   const resolutionOptions: SelectOption[] = useMemo(
@@ -66,7 +66,7 @@ export function VideoSettingsForm({
         value,
         label: tDynamic(`encoder.resolutions.${value}`, { defaultValue: value }),
       })),
-    [tDynamic],
+    [tDynamic]
   );
 
   const fpsOptions: SelectOption[] = useMemo(
@@ -75,7 +75,7 @@ export function VideoSettingsForm({
         value,
         label: tDynamic(`encoder.frameRates.${value}`, { defaultValue: `${value} fps` }),
       })),
-    [tDynamic],
+    [tDynamic]
   );
 
   const presetOptions: SelectOption[] = useMemo(
@@ -88,7 +88,7 @@ export function VideoSettingsForm({
             }),
           }))
         : [],
-    [presetSupported, presetValues, tDynamic],
+    [presetSupported, presetValues, tDynamic]
   );
 
   const profileOptions: SelectOption[] = useMemo(
@@ -97,7 +97,7 @@ export function VideoSettingsForm({
         value,
         label: value.charAt(0).toUpperCase() + value.slice(1),
       })),
-    [],
+    []
   );
 
   // Keep `preset` consistent with the selected encoder. Codecs that
@@ -116,9 +116,7 @@ export function VideoSettingsForm({
 
   return (
     <div className="p-3 bg-bg-muted rounded-lg">
-      <div className="mb-3 text-sm font-medium text-text-primary">
-        {t('modals.videoSettings')}
-      </div>
+      <div className="mb-3 text-sm font-medium text-text-primary">{t('modals.videoSettings')}</div>
 
       <div className="grid grid-cols-2 gap-3 mb-3">
         <Select

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pencil, Plus, Trash2, Copy } from 'lucide-react';
+import { Pencil, Plus, Trash2, Copy, Play, Square } from 'lucide-react';
 import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { OutputRow, type OutputRowStatus } from './OutputRow';
@@ -11,6 +11,10 @@ interface GroupPanelProps {
   group: OutputGroup;
   groupStatus: OutputRowStatus;
   enabledTargets: ReadonlySet<string>;
+  /** Whether this group is currently streaming (member of `streamStore.activeGroups`). */
+  isStreaming: boolean;
+  /** Whether the group participates in `Start all streams`. */
+  isEnabled: boolean;
   onEditEncoder: () => void;
   onEditGroup: () => void;
   onDuplicateGroup: () => void;
@@ -19,6 +23,12 @@ interface GroupPanelProps {
   onEditTarget: (target: StreamTarget) => void;
   onRemoveTarget: (target: StreamTarget) => void;
   onToggleTargetEnabled: (target: StreamTarget) => void;
+  /** Per-group start — wires `streamStore.startGroup`. */
+  onStartGroup: () => void;
+  /** Per-group stop — wires `streamStore.stopGroup`. */
+  onStopGroup: () => void;
+  /** Toggle whether this group is included in `Start all streams`. */
+  onToggleGroupEnabled: () => void;
 }
 
 /**
@@ -30,6 +40,8 @@ export function GroupPanel({
   group,
   groupStatus,
   enabledTargets,
+  isStreaming,
+  isEnabled,
   onEditEncoder,
   onEditGroup,
   onDuplicateGroup,
@@ -38,9 +50,20 @@ export function GroupPanel({
   onEditTarget,
   onRemoveTarget,
   onToggleTargetEnabled,
+  onStartGroup,
+  onStopGroup,
+  onToggleGroupEnabled,
 }: GroupPanelProps): React.ReactElement {
   const { t } = useTranslation();
   const targets = group.streamTargets;
+  // Default passthrough is RTMP-relay only — backend refuses edit/delete and
+  // `OutputGroupModal` self-closes in edit mode for it. Disable the four
+  // mutating actions so clicks don't silently no-op.
+  const isPassthrough = group.isDefault === true;
+  // Per-group start needs at least one enabled target to push to; otherwise
+  // ffmpeg would spawn with zero outputs and immediately exit.
+  const canStart =
+    targets.length > 0 && targets.some((tgt) => enabledTargets.has(tgt.id));
 
   return (
     <section
@@ -63,7 +86,57 @@ export function GroupPanel({
             })}
           </CardTitle>
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="sm" onClick={onEditEncoder}>
+            {isStreaming ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onStopGroup}
+                aria-label={t('pipeline.group.stop', { defaultValue: 'Stop this group' })}
+              >
+                <Square className="w-4 h-4" aria-hidden="true" />
+                {t('pipeline.group.stop', { defaultValue: 'Stop' })}
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onStartGroup}
+                disabled={!canStart}
+                aria-label={t('pipeline.group.start', { defaultValue: 'Start this group' })}
+                title={
+                  canStart
+                    ? undefined
+                    : t('pipeline.group.startDisabled', {
+                        defaultValue: 'Enable at least one target to start',
+                      })
+                }
+              >
+                <Play className="w-4 h-4" aria-hidden="true" />
+                {t('pipeline.group.start', { defaultValue: 'Start' })}
+              </Button>
+            )}
+            <label className="inline-flex items-center gap-1 text-xs text-text-tertiary px-2">
+              <input
+                type="checkbox"
+                checked={isEnabled}
+                onChange={onToggleGroupEnabled}
+                disabled={isPassthrough}
+                aria-label={t('pipeline.group.enabledInStartAll', {
+                  defaultValue: 'Include in start all',
+                })}
+              />
+              <span>
+                {t('pipeline.group.enabledInStartAll', {
+                  defaultValue: 'Include in start all',
+                })}
+              </span>
+            </label>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onEditEncoder}
+              disabled={isPassthrough}
+            >
               <Pencil className="w-4 h-4" aria-hidden="true" />
               {t('pipeline.group.editEncoder', { defaultValue: 'Edit encoder' })}
             </Button>
@@ -71,6 +144,7 @@ export function GroupPanel({
               icon={<Pencil className="w-4 h-4" />}
               label={t('pipeline.group.edit', { defaultValue: 'Edit group' })}
               onClick={onEditGroup}
+              disabled={isPassthrough}
             />
             <IconButton
               icon={<Copy className="w-4 h-4" />}
@@ -82,12 +156,14 @@ export function GroupPanel({
               label={t('pipeline.group.remove', { defaultValue: 'Remove group' })}
               onClick={onRemoveGroup}
               danger
+              disabled={isPassthrough}
             />
           </div>
         </CardHeader>
         <CardBody className="p-4 flex flex-col gap-3">
           <p className="text-xs text-text-tertiary">
-            {group.audio.codec} · {group.audio.bitrate} · {group.audio.sampleRate / 1000}kHz · {group.audio.channels}ch
+            {group.audio.codec} · {group.audio.bitrate} · {group.audio.sampleRate / 1000}kHz ·{' '}
+            {group.audio.channels}ch
           </p>
 
           {targets.length > 0 ? (
@@ -106,7 +182,9 @@ export function GroupPanel({
             </ul>
           ) : (
             <p className="text-sm text-text-secondary text-center py-4">
-              {t('pipeline.group.noTargets', { defaultValue: 'No targets yet — add one to start.' })}
+              {t('pipeline.group.noTargets', {
+                defaultValue: 'No targets yet — add one to start.',
+              })}
             </p>
           )}
 
@@ -125,20 +203,29 @@ interface IconButtonProps {
   label: string;
   onClick: () => void;
   danger?: boolean;
+  disabled?: boolean;
 }
 
-function IconButton({ icon, label, onClick, danger }: IconButtonProps): React.ReactElement {
+function IconButton({
+  icon,
+  label,
+  onClick,
+  danger,
+  disabled,
+}: IconButtonProps): React.ReactElement {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-label={label}
+      disabled={disabled}
       className={cn(
         'inline-flex items-center justify-center w-8 h-8 rounded-md text-text-tertiary',
         'hover:bg-bg-hover hover:text-text-primary',
         danger && 'hover:bg-error-subtle hover:text-error-text',
         'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring-default',
-        'transition-colors',
+        'disabled:opacity-50 disabled:pointer-events-none',
+        'transition-colors'
       )}
     >
       {icon}

@@ -26,12 +26,14 @@ use log::{error, info, warn};
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex as TokioMutex};
+use tokio::task::JoinHandle;
 
 use crate::models::{
     ChatConnectionStatus, ChatCredentials, ChatMessage, ChatPlatform as ChatPlatformEnum,
 };
 
+use super::endpoints::ChatEndpoints;
 use super::platform::{ChatPlatform, PlatformError, PlatformResult};
 
 const STATUS_DISCONNECTED: u8 = 0;
@@ -66,6 +68,47 @@ fn status_from_u8(value: u8) -> ChatConnectionStatus {
     }
 }
 
+/// Parses one Facebook Graph API comment into a [`ChatMessage`] plus the
+/// comment's epoch-seconds cursor (present only when `created_time` parses).
+/// Returns `None` for comments with blank message text. Pure — the poll loop
+/// owns delivery, counting, and advancing the `since` cursor past the cursor
+/// value returned here.
+pub(super) fn parse_facebook_comment(
+    comment: &serde_json::Value,
+) -> Option<(ChatMessage, Option<i64>)> {
+    let message_text = comment["message"].as_str().unwrap_or("").trim().to_string();
+    if message_text.is_empty() {
+        return None;
+    }
+    let username = comment["from"]["name"]
+        .as_str()
+        .unwrap_or("Anonymous")
+        .to_string();
+
+    let mut chat_msg = ChatMessage::new(ChatPlatformEnum::Facebook, username, message_text);
+    if let Some(comment_id) = comment["id"].as_str() {
+        chat_msg = chat_msg.with_source_id(comment_id.to_string());
+    }
+
+    // Facebook returns ISO-8601 (`created_time`). Parse + use as both the
+    // message timestamp and the next-poll cursor. The Graph API renders the
+    // offset *without* a colon (`2017-12-17T16:01:42+0000`), which
+    // `parse_from_rfc3339` rejects; the explicit `%z` parse accepts it.
+    // Without this the cursor never advances past 0 and every poll
+    // re-fetches all comments, flooding chat with duplicates.
+    let mut epoch_secs = None;
+    if let Some(created_time) = comment["created_time"].as_str() {
+        if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(created_time)
+            .or_else(|_| chrono::DateTime::parse_from_str(created_time, "%Y-%m-%dT%H:%M:%S%z"))
+        {
+            chat_msg.timestamp = parsed.timestamp_millis();
+            epoch_secs = Some(parsed.timestamp());
+        }
+    }
+
+    Some((chat_msg, epoch_secs))
+}
+
 pub struct FacebookConnector {
     status: Arc<AtomicU8>,
     last_error: Arc<StdMutex<Option<String>>>,
@@ -74,6 +117,23 @@ pub struct FacebookConnector {
     disconnect_tx: Option<mpsc::Sender<()>>,
     /// Send credentials captured at connect time. Cleared on disconnect.
     send_state: Arc<StdMutex<Option<SendState>>>,
+    /// Q2: handle to the background Graph API poll task. Pre-this fix
+    /// the spawn handle was dropped; a connector dropped without
+    /// `disconnect()` (panic-disconnect, test teardown) leaked the
+    /// task. `Drop` aborts so the runtime reclaims it.
+    task_handle: Arc<TokioMutex<Option<JoinHandle<()>>>>,
+    /// Graph API origin; the connector appends `/{version}/{id}/comments`.
+    graph_base: String,
+}
+
+impl Drop for FacebookConnector {
+    fn drop(&mut self) {
+        if let Ok(mut guard) = self.task_handle.try_lock() {
+            if let Some(handle) = guard.take() {
+                handle.abort();
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -84,6 +144,10 @@ struct SendState {
 
 impl FacebookConnector {
     pub fn new() -> Self {
+        Self::with_endpoints(&ChatEndpoints::default())
+    }
+
+    pub fn with_endpoints(endpoints: &ChatEndpoints) -> Self {
         Self {
             status: Arc::new(AtomicU8::new(STATUS_DISCONNECTED)),
             last_error: Arc::new(StdMutex::new(None)),
@@ -91,6 +155,8 @@ impl FacebookConnector {
             disconnecting: Arc::new(AtomicBool::new(false)),
             disconnect_tx: None,
             send_state: Arc::new(StdMutex::new(None)),
+            task_handle: Arc::new(TokioMutex::new(None)),
+            graph_base: endpoints.facebook_graph_base.clone(),
         }
     }
 
@@ -108,7 +174,7 @@ impl ChatPlatform for FacebookConnector {
     async fn connect(
         &mut self,
         credentials: ChatCredentials,
-        message_tx: mpsc::UnboundedSender<ChatMessage>,
+        message_tx: mpsc::Sender<ChatMessage>,
     ) -> PlatformResult<()> {
         if self.is_connected() {
             return Err(PlatformError::AlreadyConnected);
@@ -165,7 +231,8 @@ impl ChatPlatform for FacebookConnector {
             })?;
 
         let probe_url = format!(
-            "https://graph.facebook.com/{GRAPH_API_VERSION}/{}/comments",
+            "{}/{GRAPH_API_VERSION}/{}/comments",
+            self.graph_base,
             urlencoding::encode(&video_id)
         );
         let probe = client
@@ -195,7 +262,10 @@ impl ChatPlatform for FacebookConnector {
         }
         if !probe.status().is_success() {
             let status = probe.status();
-            let detail = probe.text().await.unwrap_or_default();
+            let detail = match probe.text().await {
+                Ok(b) => b,
+                Err(e) => format!("<body read failed: {e}>"),
+            };
             let msg = format!(
                 "Facebook probe failed ({status}): {}",
                 detail.chars().take(200).collect::<String>()
@@ -229,8 +299,9 @@ impl ChatPlatform for FacebookConnector {
         let since_epoch = Arc::new(AtomicI64::new(0));
         let video_id_polling = video_id.clone();
         let access_token_polling = access_token.clone();
+        let graph_base = self.graph_base.clone();
 
-        tokio::spawn(async move {
+        let task_handle = tokio::spawn(async move {
             let mut tick = tokio::time::interval(POLL_INTERVAL);
             // First tick fires immediately — fine for "catch up since
             // connect" semantics.
@@ -239,7 +310,8 @@ impl ChatPlatform for FacebookConnector {
                 tokio::select! {
                     _ = tick.tick() => {
                         let url = format!(
-                            "https://graph.facebook.com/{GRAPH_API_VERSION}/{}/comments",
+                            "{}/{GRAPH_API_VERSION}/{}/comments",
+                            graph_base,
                             urlencoding::encode(&video_id_polling)
                         );
                         let mut query: Vec<(&str, String)> = vec![
@@ -278,11 +350,20 @@ impl ChatPlatform for FacebookConnector {
                         }
                         if !response.status().is_success() {
                             let resp_status = response.status();
-                            let detail = response.text().await.unwrap_or_default();
+                            let detail = match response.text().await {
+                                Ok(b) => b,
+                                Err(e) => format!("<body read failed: {e}>"),
+                            };
                             warn!(
                                 "Facebook comments fetch failed ({resp_status}): {}",
                                 detail.chars().take(200).collect::<String>()
                             );
+                            if let Ok(mut guard) = last_error.lock() {
+                                *guard = Some(format!(
+                                    "Facebook poll {resp_status}: {}",
+                                    detail.chars().take(120).collect::<String>()
+                                ));
+                            }
                             continue;
                         }
 
@@ -302,44 +383,17 @@ impl ChatPlatform for FacebookConnector {
                         let mut emitted = 0_u64;
                         let mut latest_epoch = since;
                         for comment in comments {
-                            let message_text = comment["message"]
-                                .as_str()
-                                .unwrap_or("")
-                                .trim()
-                                .to_string();
-                            if message_text.is_empty() {
+                            let Some((chat_msg, epoch_secs)) = parse_facebook_comment(comment)
+                            else {
                                 continue;
-                            }
-                            let username = comment["from"]["name"]
-                                .as_str()
-                                .unwrap_or("Anonymous")
-                                .to_string();
-
-                            let mut chat_msg = ChatMessage::new(
-                                ChatPlatformEnum::Facebook,
-                                username,
-                                message_text,
-                            );
-
-                            if let Some(comment_id) = comment["id"].as_str() {
-                                chat_msg = chat_msg.with_source_id(comment_id.to_string());
-                            }
-                            // Facebook returns ISO-8601 (`created_time`).
-                            // Parse + use as both the message timestamp
-                            // and the next-poll cursor.
-                            if let Some(created_time) = comment["created_time"].as_str() {
-                                if let Ok(parsed) =
-                                    chrono::DateTime::parse_from_rfc3339(created_time)
-                                {
-                                    chat_msg.timestamp = parsed.timestamp_millis();
-                                    let epoch = parsed.timestamp();
-                                    if epoch > latest_epoch {
-                                        latest_epoch = epoch;
-                                    }
+                            };
+                            if let Some(epoch) = epoch_secs {
+                                if epoch > latest_epoch {
+                                    latest_epoch = epoch;
                                 }
                             }
 
-                            if message_tx.send(chat_msg).is_err() {
+                            if message_tx.send(chat_msg).await.is_err() {
                                 warn!("Failed to deliver Facebook comment: receiver dropped");
                                 break;
                             }
@@ -370,6 +424,15 @@ impl ChatPlatform for FacebookConnector {
             }
             info!("Facebook chat task stopped");
         });
+
+        // Q2: capture the poll task handle so `Drop` aborts it.
+        {
+            let mut guard = self.task_handle.lock().await;
+            if let Some(prev) = guard.take() {
+                prev.abort();
+            }
+            *guard = Some(task_handle);
+        }
 
         info!(
             "Connected to Facebook Live comments for video {video_id} (real-name identity exposed)"
@@ -417,10 +480,7 @@ impl ChatPlatform for FacebookConnector {
         if !self.is_connected() {
             return false;
         }
-        self.send_state
-            .lock()
-            .map(|g| g.is_some())
-            .unwrap_or(false)
+        self.send_state.lock().map(|g| g.is_some()).unwrap_or(false)
     }
 
     async fn send_message(&mut self, message: String) -> PlatformResult<()> {
@@ -445,7 +505,8 @@ impl ChatPlatform for FacebookConnector {
             })?;
 
         let url = format!(
-            "https://graph.facebook.com/{GRAPH_API_VERSION}/{}/comments",
+            "{}/{GRAPH_API_VERSION}/{}/comments",
+            self.graph_base,
             urlencoding::encode(&state.video_id)
         );
 
@@ -460,15 +521,16 @@ impl ChatPlatform for FacebookConnector {
             .map_err(|e| PlatformError::Network(format!("Facebook send request failed: {e}")))?;
 
         let status = response.status();
-        if status == reqwest::StatusCode::UNAUTHORIZED
-            || status == reqwest::StatusCode::FORBIDDEN
-        {
+        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
             return Err(PlatformError::Authentication(
                 "Facebook access token rejected — re-auth required".to_string(),
             ));
         }
         if !status.is_success() {
-            let detail = response.text().await.unwrap_or_default();
+            let detail = match response.text().await {
+                Ok(b) => b,
+                Err(e) => format!("<body read failed: {e}>"),
+            };
             return Err(PlatformError::Platform(format!(
                 "Facebook send failed ({status}): {}",
                 detail.chars().take(200).collect::<String>()

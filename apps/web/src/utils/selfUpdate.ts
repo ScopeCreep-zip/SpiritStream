@@ -69,7 +69,7 @@ export async function checkForUpdate(): Promise<Update | null> {
  */
 export async function downloadAndInstall(
   update: Update,
-  onProgress?: (p: DownloadProgress) => void,
+  onProgress?: (p: DownloadProgress) => void
 ): Promise<void> {
   let downloaded = 0;
   let total: number | null = null;

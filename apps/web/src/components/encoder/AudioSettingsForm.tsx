@@ -27,7 +27,7 @@ export function AudioSettingsForm({
   const { t } = useTranslation();
   const tDynamic = t as (
     key: string,
-    options?: { defaultValue?: string; [key: string]: string | number | undefined },
+    options?: { defaultValue?: string; [key: string]: string | number | undefined }
   ) => string;
 
   const audioCodecOptions: SelectOption[] = useMemo(
@@ -36,7 +36,7 @@ export function AudioSettingsForm({
         const label = tDynamic(`audio.codecs.${enc}`, { defaultValue: enc });
         return { value: enc, label };
       }),
-    [encoders.audio, tDynamic],
+    [encoders.audio, tDynamic]
   );
 
   const audioBitrateOptions: SelectOption[] = useMemo(
@@ -45,7 +45,7 @@ export function AudioSettingsForm({
         value,
         label: tDynamic(`audio.bitrates.${value}`, { defaultValue: value }),
       })),
-    [tDynamic],
+    [tDynamic]
   );
 
   const audioChannelsOptions: SelectOption[] = useMemo(
@@ -68,7 +68,7 @@ export function AudioSettingsForm({
           }),
         };
       }),
-    [tDynamic],
+    [tDynamic]
   );
 
   const audioSampleRateOptions: SelectOption[] = useMemo(
@@ -80,14 +80,12 @@ export function AudioSettingsForm({
           label: tDynamic('audio.sampleRateKHz', { defaultValue: '{{value}} kHz', value: khz }),
         };
       }),
-    [tDynamic],
+    [tDynamic]
   );
 
   return (
     <div className="p-3 bg-bg-muted rounded-lg">
-      <div className="mb-3 text-sm font-medium text-text-primary">
-        {t('modals.audioSettings')}
-      </div>
+      <div className="mb-3 text-sm font-medium text-text-primary">{t('modals.audioSettings')}</div>
 
       <div className="grid grid-cols-2 gap-3 mb-3">
         <Select

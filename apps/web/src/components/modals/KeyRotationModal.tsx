@@ -37,7 +37,7 @@ export function KeyRotationModal({
 
   const allPasswordsProvided = useMemo(
     () => encryptedProfiles.every((name) => (passwords[name] ?? '').length > 0),
-    [encryptedProfiles, passwords],
+    [encryptedProfiles, passwords]
   );
 
   const handleClose = () => {
@@ -70,9 +70,7 @@ export function KeyRotationModal({
       }
     >
       <div className="flex flex-col gap-4">
-        <p className="text-sm text-text-secondary">
-          {t('settings.rotateMachineKeyDescription')}
-        </p>
+        <p className="text-sm text-text-secondary">{t('settings.rotateMachineKeyDescription')}</p>
 
         <div className="flex flex-col gap-2.5">
           <div className="text-sm font-medium text-text-primary">
@@ -86,9 +84,7 @@ export function KeyRotationModal({
           </div>
           <div className="flex items-start gap-2">
             <CheckCircle2 className="w-4 h-4 text-success-text mt-0.5" />
-            <span className="text-sm text-text-secondary">
-              {t('settings.rotationStepBackup')}
-            </span>
+            <span className="text-sm text-text-secondary">{t('settings.rotationStepBackup')}</span>
           </div>
           <div className="flex items-start gap-2">
             <CheckCircle2 className="w-4 h-4 text-success-text mt-0.5" />
@@ -98,9 +94,7 @@ export function KeyRotationModal({
           </div>
           <div className="flex items-start gap-2">
             <CheckCircle2 className="w-4 h-4 text-success-text mt-0.5" />
-            <span className="text-sm text-text-secondary">
-              {t('settings.rotationStepDelete')}
-            </span>
+            <span className="text-sm text-text-secondary">{t('settings.rotationStepDelete')}</span>
           </div>
         </div>
 
@@ -109,17 +103,13 @@ export function KeyRotationModal({
             <div className="text-sm font-medium text-text-primary">
               {t('settings.rotationPasswordsTitle')}
             </div>
-            <p className="text-xs text-text-tertiary">
-              {t('settings.rotationPasswordsHint')}
-            </p>
+            <p className="text-xs text-text-tertiary">{t('settings.rotationPasswordsHint')}</p>
             {encryptedProfiles.map((name) => (
               <PasswordInput
                 key={name}
                 label={name}
                 value={passwords[name] ?? ''}
-                onChange={(e) =>
-                  setPasswords((prev) => ({ ...prev, [name]: e.target.value }))
-                }
+                onChange={(e) => setPasswords((prev) => ({ ...prev, [name]: e.target.value }))}
                 disabled={inProgress}
                 placeholder={t('settings.rotationPasswordPlaceholder')}
                 autoComplete="off"

@@ -9,7 +9,7 @@ export const settings = {
   getProfilesPath: async () => {
     const { path } = await fetchTypedJson<{ path: string }>(
       'GET',
-      '/api/v1/settings/profiles-path',
+      '/api/v1/settings/profiles-path'
     );
     return path;
   },
@@ -26,7 +26,7 @@ export const settings = {
     // rejects requests missing `X-Confirm-Token`. We acquire the
     // token + attach in one helper call.
     await withConfirmToken<{ cleared: boolean }>('clear_data', (headers) =>
-      fetchTypedJson('DELETE', '/api/v1/settings/data', undefined, undefined, headers),
+      fetchTypedJson('DELETE', '/api/v1/settings/data', undefined, undefined, headers)
     );
   },
   rotateMachineKey: (unlockedPasswords: Record<string, string> = {}) =>
@@ -36,7 +36,7 @@ export const settings = {
         '/api/v1/security/machine-key/rotate',
         undefined,
         { unlockedPasswords },
-        headers,
-      ),
+        headers
+      )
     ),
 };

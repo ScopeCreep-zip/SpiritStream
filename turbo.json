@@ -1,10 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalDependencies": [
-    "server/src/**",
-    "server/Cargo.toml",
-    "themes/**"
-  ],
+  "globalDependencies": ["server/src/**", "server/Cargo.toml", "themes/**"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

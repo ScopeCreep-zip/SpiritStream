@@ -33,7 +33,7 @@ export interface FormValidationHandle<T> {
 
 export function useFormValidation<T>(
   values: T,
-  rules: Partial<Record<keyof T, ValidationRule<T>>>,
+  rules: Partial<Record<keyof T, ValidationRule<T>>>
 ): FormValidationHandle<T> {
   const [errors, setErrors] = useState<Partial<Record<keyof T, string>>>({});
 

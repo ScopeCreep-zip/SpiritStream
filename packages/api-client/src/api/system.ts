@@ -43,20 +43,20 @@ export const system = {
     fetchTypedJson<{ version: string }>('GET', '/api/v1/system/ffmpeg/test').then((r) => r.version),
   getFfmpegPath: () =>
     fetchTypedJson<{ path: string | null }>('GET', '/api/v1/system/ffmpeg/path').then(
-      (r) => r.path,
+      (r) => r.path
     ),
   checkFfmpegUpdate: (installedVersion?: string) =>
     fetchTypedJson<FFmpegVersionInfo>(
       'GET',
       '/api/v1/system/ffmpeg/update',
-      installedVersion ? { installedVersion } : undefined,
+      installedVersion ? { installedVersion } : undefined
     ),
   validateFfmpegPath: (path: string) =>
     fetchTypedJson<{ validated: string }>(
       'POST',
       '/api/v1/system/ffmpeg/validate-path',
       undefined,
-      { path },
+      { path }
     ).then((r) => r.validated),
   testRtmpTarget: (url: string, streamKey: string) =>
     fetchTypedJson<RtmpTestResult>('POST', '/api/v1/system/rtmp/test', undefined, {
@@ -67,15 +67,13 @@ export const system = {
     fetchTypedJson<{ lines: string[] }>(
       'GET',
       '/api/v1/system/logs',
-      maxLines ? { maxLines: String(maxLines) } : undefined,
+      maxLines ? { maxLines: String(maxLines) } : undefined
     ).then((r) => r.lines),
   exportLogs: async (path: string, content: string) => {
-    await fetchTypedJson<Record<string, never>>(
-      'POST',
-      '/api/v1/system/logs/export',
-      undefined,
-      { path, content },
-    );
+    await fetchTypedJson<Record<string, never>>('POST', '/api/v1/system/logs/export', undefined, {
+      path,
+      content,
+    });
   },
   /** Encoder preset matrix replacing `OutputGroupModal.tsx`'s hardcoded lists. */
   encoderPresets: () =>
@@ -88,7 +86,7 @@ export const system = {
       'POST',
       '/api/v1/system/audit/app-update-failure',
       undefined,
-      { detail },
+      { detail }
     );
   },
 };

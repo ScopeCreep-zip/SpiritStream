@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { events } from '@spiritstream/api-client';
 import { logger } from '@/lib/logger';
 import { useObsStore } from '@/stores/obsStore';
+import { useStreamStore } from '@/stores/streamStore';
 import type { ObsConnectionStatus, ObsStreamStatus } from '@spiritstream/types';
 
 interface ObsStatusEvent {
@@ -49,6 +50,7 @@ function toConnectionStatus(status: ObsStatusEvent['status']): ObsConnectionStat
  */
 export function useObsEvents() {
   const { updateFromEvent, config, loadConfig } = useObsStore();
+  const setIsStreaming = useStreamStore((s) => s.setIsStreaming);
 
   // Load OBS config on mount if not already loaded
   useEffect(() => {
@@ -58,13 +60,20 @@ export function useObsEvents() {
   }, [config, loadConfig]);
 
   useEffect(() => {
+    // Track unmount across the async setup window. Pre-fix, cleanup ran
+    // synchronously while `setupListeners()` was still awaiting — the
+    // unlisten vars were still `null` so cleanup did nothing, and the
+    // listeners that eventually registered leaked forever. Now: if the
+    // hook unmounts before a listener finishes registering, we abort
+    // each unlisten the moment it resolves so nothing escapes.
+    let cancelled = false;
     let unlistenStatus: (() => void) | null = null;
     let unlistenStreamState: (() => void) | null = null;
     let unlistenStartedByObs: (() => void) | null = null;
     let unlistenStoppedByObs: (() => void) | null = null;
 
-    const setupListeners = async () => {
-      unlistenStatus = await events.on<ObsStatusEvent>('obs://status', (payload) => {
+    const setupListeners = async (): Promise<void> => {
+      const status = await events.on<ObsStatusEvent>('obs://status', (payload) => {
         logger.debug('[useObsEvents] obs://status', payload);
         const connectionStatus = toConnectionStatus(payload.status);
         updateFromEvent({
@@ -75,32 +84,59 @@ export function useObsEvents() {
           streamStatus: payload.streamStatus,
         });
       });
+      if (cancelled) {
+        status();
+        return;
+      }
+      unlistenStatus = status;
 
-      unlistenStreamState = await events.on<ObsStreamStateEvent>(
-        'obs://stream_state',
-        (payload) => {
-          logger.debug('[useObsEvents] obs://stream_state', payload);
-          updateFromEvent({ streamStatus: payload.status });
-        },
-      );
+      const streamState = await events.on<ObsStreamStateEvent>('obs://stream_state', (payload) => {
+        logger.debug('[useObsEvents] obs://stream_state', payload);
+        updateFromEvent({ streamStatus: payload.status });
+      });
+      if (cancelled) {
+        streamState();
+        return;
+      }
+      unlistenStreamState = streamState;
 
-      // Informational: core ran the OBS→SpiritStream cascade. UI may
-      // surface a brief toast / indicator. No decision-making here.
-      unlistenStartedByObs = await events.on('stream_started_by_obs', (payload) => {
+      // Core ran the OBS→SpiritStream cascade — backend has actually
+      // started/stopped ffmpeg. Mirror the resulting streaming state
+      // into the stream store so the StatusStrip + pipeline rows
+      // reflect reality. Pre-this wiring the UI showed "offline"
+      // while ffmpeg was running after an OBS-driven start — the
+      // listener only logged the event without updating state.
+      const startedByObs = await events.on('stream_started_by_obs', (payload) => {
         logger.info('[useObsEvents] stream_started_by_obs', payload);
+        setIsStreaming(true);
       });
-      unlistenStoppedByObs = await events.on('stream_stopped_by_obs', (payload) => {
+      if (cancelled) {
+        startedByObs();
+        return;
+      }
+      unlistenStartedByObs = startedByObs;
+
+      const stoppedByObs = await events.on('stream_stopped_by_obs', (payload) => {
         logger.info('[useObsEvents] stream_stopped_by_obs', payload);
+        setIsStreaming(false);
       });
+      if (cancelled) {
+        stoppedByObs();
+        return;
+      }
+      unlistenStoppedByObs = stoppedByObs;
     };
 
-    setupListeners();
+    setupListeners().catch((error) => {
+      logger.error('[useObsEvents] failed to register listeners:', error);
+    });
 
     return () => {
+      cancelled = true;
       if (unlistenStatus) unlistenStatus();
       if (unlistenStreamState) unlistenStreamState();
       if (unlistenStartedByObs) unlistenStartedByObs();
       if (unlistenStoppedByObs) unlistenStoppedByObs();
     };
-  }, [updateFromEvent]);
+  }, [updateFromEvent, setIsStreaming]);
 }

@@ -1,0 +1,21 @@
+# SpiritStream 600 LOC ceiling — grandfathered files.
+#
+# Format: `relative/path = ceiling-loc-count`
+# Lines starting with `#` and blank lines are comments.
+# CI runs `scripts/check-loc.sh` against the whole tree; any file
+# listed here is allowed up to its named ceiling. Anything else hits
+# the 600 LOC default cap.
+#
+# The Sprint K splits land one file at a time. Each split commit
+# removes the corresponding entry below; once empty, the workspace
+# is fully under 600 LOC and this file can be deleted.
+#
+# DO NOT raise ceilings to silence growth. Always split.
+
+# All Sprint K targets landed; allowlist is empty other than these notes.
+
+# K1 — landed 2026-05-27: tests/http_surface.rs 1133→<600 (orchestrator + 6 domain submodules)
+# K2 — landed 2026-05-27: models/chat.rs 784→561 by extracting credentials cluster to models/chat/credentials.rs
+# K3 — landed 2026-05-27: chat_lifecycle.rs 898→528 by extracting profile_state + youtube submodules
+# K4 — landed 2026-05-27: lib.rs 843→561 by extracting test module + ws/helpers cluster
+# K5 — landed 2026-05-27: v1/chat.rs 709→435 by extracting wire-mirrors + log handlers

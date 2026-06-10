@@ -33,9 +33,8 @@ fn build_connect_config(
 ) -> Result<ChatConfig, CliError> {
     let credentials = match platform {
         ChatPlatform::Twitch => {
-            let channel = channel.ok_or_else(|| {
-                CliError::Argument("twitch connect requires --channel".into())
-            })?;
+            let channel = channel
+                .ok_or_else(|| CliError::Argument("twitch connect requires --channel".into()))?;
             let auth = oauth.map(|access_token| TwitchAuth::AppOAuth {
                 access_token,
                 refresh_token: None,
@@ -48,9 +47,8 @@ fn build_connect_config(
                 CliError::Argument("youtube connect requires --channel-id".into())
             })?;
             let auth = if use_api_key {
-                let key = api_key.ok_or_else(|| {
-                    CliError::Argument("--use-api-key requires --api-key".into())
-                })?;
+                let key = api_key
+                    .ok_or_else(|| CliError::Argument("--use-api-key requires --api-key".into()))?;
                 YouTubeAuth::ApiKey { key }
             } else {
                 let access_token = oauth.ok_or_else(|| {
@@ -68,16 +66,10 @@ fn build_connect_config(
             ChatCredentials::YouTube { channel_id, auth }
         }
         ChatPlatform::Trovo => {
-            let channel_id = channel_id.or(channel).ok_or_else(|| {
-                CliError::Argument("trovo connect requires --channel-id".into())
-            })?;
+            let channel_id = channel_id
+                .or(channel)
+                .ok_or_else(|| CliError::Argument("trovo connect requires --channel-id".into()))?;
             ChatCredentials::Trovo { channel_id }
-        }
-        ChatPlatform::Stripchat => {
-            let username = channel.ok_or_else(|| {
-                CliError::Argument("stripchat connect requires --channel (model username)".into())
-            })?;
-            ChatCredentials::Stripchat { username }
         }
         ChatPlatform::TikTok => {
             let username = channel.ok_or_else(|| {
@@ -116,9 +108,9 @@ pub enum ChatCmd {
     /// loading a profile first; for OAuth-bearing platforms, supply the
     /// access token via `--oauth`.
     Connect {
-        /// Platform (twitch / youtube / trovo / stripchat / tiktok).
+        /// Platform (twitch / youtube / trovo / tiktok).
         platform: String,
-        /// Twitch channel name, Trovo channel ID, Stripchat username, etc.
+        /// Twitch channel name, Trovo channel ID, etc.
         #[arg(long)]
         channel: Option<String>,
         /// YouTube channel ID (`UC…` or `@handle`).
@@ -157,7 +149,7 @@ pub enum ChatCmd {
         use_api_key: bool,
     },
     /// Disconnect a specific platform (twitch / youtube / trovo / kick /
-    /// facebook / tiktok / stripchat).
+    /// facebook / tiktok).
     Disconnect { platform: String },
     /// Disconnect every connected chat platform.
     DisconnectAll,
@@ -165,8 +157,12 @@ pub enum ChatCmd {
     Connected,
     /// Print the current chat log session start timestamp (or `null`).
     LogStatus,
-    /// Print the status for a single platform.
-    Status1 { platform: String },
+    /// Print the status for a single platform. (`PlatformStatus`
+    /// avoids the clap-derived `status1` slug the auto-numbered name
+    /// produced — the original `Status1` came from the second `Status`
+    /// variant being silently renumbered, surfaced as a confusing CLI
+    /// command name to operators.)
+    PlatformStatus { platform: String },
     /// Export the current chat log session to a file.
     ExportLog { path: std::path::PathBuf },
     /// Search the current chat log session.
@@ -194,21 +190,30 @@ pub async fn run(
                 return Err(CliError::Argument("message cannot be empty".into()));
             }
 
-            // Collect enabled send platforms from the profile chat settings —
-            // mirrors the typed REST handler's behaviour.
-            let settings = registry.chat.profile_chat_settings().await;
+            // CLI is stateless per-invocation — registry.chat's cached
+            // chat_settings + pii cache are empty on cold start. Load
+            // the active profile from disk and derive both targets and
+            // PII policy from one read.
+            let global = registry.settings.load().ok();
+            let active_name = global.as_ref().and_then(|s| s.last_profile.clone());
+            let active_profile = match active_name.as_ref() {
+                Some(name) => registry.profiles.load(name, None).await.ok(),
+                None => None,
+            };
+
+            let chat_cfg = active_profile
+                .as_ref()
+                .map(|p| p.settings.chat.clone())
+                .unwrap_or_default();
             let mut targets = Vec::new();
-            if settings.twitch_send_enabled {
+            if chat_cfg.twitch_send_enabled {
                 targets.push(ChatPlatform::Twitch);
             }
-            if settings.youtube_send_enabled && !settings.youtube_use_api_key {
+            if chat_cfg.youtube_send_enabled && !chat_cfg.youtube_use_api_key {
                 targets.push(ChatPlatform::YouTube);
             }
-            if settings.trovo_send_enabled {
+            if chat_cfg.trovo_send_enabled {
                 targets.push(ChatPlatform::Trovo);
-            }
-            if settings.stripchat_send_enabled {
-                targets.push(ChatPlatform::Stripchat);
             }
 
             if targets.is_empty() {
@@ -217,7 +222,14 @@ pub async fn run(
                 ));
             }
 
-            let results = registry.chat.send_message(trimmed, &targets).await;
+            let pii_policy = active_profile
+                .as_ref()
+                .map(|p| (p.pii_blocklist.clone(), p.pii_fuzzy));
+
+            let results = registry
+                .chat
+                .send_message(trimmed, &targets, pii_policy, &registry.safety)
+                .await;
             let out_results: Vec<ChatSendResult> = results
                 .into_iter()
                 .map(|(platform, result)| match result {
@@ -297,7 +309,7 @@ pub async fn run(
             Ok(())
         }
         ChatCmd::DisconnectAll => {
-            registry.chat.disconnect_all().await?;
+            registry.chat.disconnect_all("user_requested").await?;
             out.emit(&serde_json::json!({ "disconnectedAll": true }))?;
             Ok(())
         }
@@ -314,7 +326,7 @@ pub async fn run(
             }))?;
             Ok(())
         }
-        ChatCmd::Status1 { platform } => {
+        ChatCmd::PlatformStatus { platform } => {
             let p = parse_platform(&platform)?;
             let status = registry.chat.get_platform_status(p).await;
             out.emit(&status)?;

@@ -259,3 +259,128 @@ impl StreamStats {
             .map(|v| (v * scale) as u64)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::StreamStats;
+
+    #[test]
+    fn new_seeds_group_id_with_zeroed_defaults() {
+        let s = StreamStats::new("g1".into());
+        assert_eq!(s.group_id, "g1");
+        assert_eq!(s.frame, 0);
+        assert_eq!(s.fps, 0.0);
+        assert_eq!(s.size, 0);
+    }
+
+    #[test]
+    fn parse_line_reads_a_full_ffmpeg_stderr_line() {
+        let mut s = StreamStats::new("g1".into());
+        let parsed = s.parse_line(
+            "frame= 1234 fps= 60 q=28.0 size=   12345kB time=00:01:23.45 bitrate=1234.5kbits/s speed=1.5x",
+        );
+        assert!(parsed);
+        assert_eq!(s.frame, 1234);
+        assert_eq!(s.fps, 60.0);
+        // 12345 kB is parsed as KiB (1024 multiplier).
+        assert_eq!(s.size, 12345 * 1024);
+        assert!((s.time - (60.0 + 23.45)).abs() < 1e-6);
+        assert!((s.bitrate - 1234.5).abs() < 1e-6);
+        assert!((s.speed - 1.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn parse_line_handles_progress_microsecond_and_total_size_keys() {
+        let mut s = StreamStats::new("g1".into());
+        assert!(s.parse_line("total_size=2048 out_time_us=2500000 drop_frames=3 dup_frames=7"));
+        assert_eq!(s.size, 2048);
+        assert!((s.time - 2.5).abs() < 1e-6);
+        assert_eq!(s.dropped_frames, 3);
+        assert_eq!(s.dup_frames, 7);
+    }
+
+    #[test]
+    fn parse_bitrate_understands_mbit_and_na() {
+        let mut s = StreamStats::new("g1".into());
+        assert!(s.parse_line("bitrate=2.0mbits/s"));
+        assert!((s.bitrate - 2000.0).abs() < 1e-6);
+
+        // "N/A" leaves the prior value untouched and contributes no parse.
+        let mut idle = StreamStats::new("g1".into());
+        assert!(!idle.parse_line("bitrate=N/A"));
+        assert_eq!(idle.bitrate, 0.0);
+    }
+
+    #[test]
+    fn parse_line_returns_false_for_unrecognized_lines() {
+        let mut s = StreamStats::new("g1".into());
+        assert!(!s.parse_line("Press [q] to stop, [?] for help"));
+    }
+
+    #[test]
+    fn parse_bitrate_accepts_every_unit_suffix() {
+        let cases: &[(&str, f64)] = &[
+            ("bitrate=500kbit/s", 500.0),
+            ("bitrate=500kb/s", 500.0),
+            ("bitrate=500kbps", 500.0),
+            ("bitrate=2mbit/s", 2000.0),
+            ("bitrate=2mb/s", 2000.0),
+            ("bitrate=2mbps", 2000.0),
+            ("bitrate=8000bits/s", 8.0),
+            ("bitrate=750", 750.0),
+        ];
+        for (line, want) in cases {
+            let mut s = StreamStats::new("g".into());
+            assert!(s.parse_line(line), "should parse {line}");
+            assert!(
+                (s.bitrate - want).abs() < 1e-6,
+                "{line} → {} (want {want})",
+                s.bitrate
+            );
+        }
+    }
+
+    #[test]
+    fn parse_size_accepts_every_unit_suffix() {
+        let cases: &[(&str, u64)] = &[
+            ("size=4KiB", 4 * 1024),
+            ("size=2MiB", 2 * 1024 * 1024),
+            ("size=2MB", 2 * 1024 * 1024),
+            ("size=512B", 512),
+            ("size=999", 999),
+            ("size=N/A", 0),
+        ];
+        for (line, want) in cases {
+            let mut s = StreamStats::new("g".into());
+            s.parse_line(line);
+            assert_eq!(s.size, *want, "{line} → {} (want {want})", s.size);
+        }
+    }
+
+    #[test]
+    fn parse_line_handles_out_time_and_out_time_ms_keys() {
+        let mut a = StreamStats::new("g".into());
+        assert!(a.parse_line("out_time=01:00:30.0"));
+        assert!((a.time - 3630.0).abs() < 1e-6);
+
+        let mut b = StreamStats::new("g".into());
+        assert!(b.parse_line("out_time_ms=4500000"));
+        assert!((b.time - 4.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn parse_line_handles_short_drop_and_dup_keys() {
+        let mut s = StreamStats::new("g".into());
+        assert!(s.parse_line("drop=5 dup=9"));
+        assert_eq!(s.dropped_frames, 5);
+        assert_eq!(s.dup_frames, 9);
+    }
+
+    #[test]
+    fn parse_time_rejects_malformed_clock() {
+        // Only HH:MM:SS (three parts) is accepted; anything else → no parse.
+        let mut s = StreamStats::new("g".into());
+        assert!(!s.parse_line("time=01:30"));
+        assert_eq!(s.time, 0.0);
+    }
+}

@@ -117,9 +117,7 @@ export function UpdaterButton({ updaterSupported, controller }: UpdaterButtonPro
       onClick={handleCheckForUpdates}
       disabled={updateState.kind === 'checking' || updateState.kind === 'downloading'}
     >
-      <RefreshCw
-        className={`w-4 h-4 ${updateState.kind === 'checking' ? 'animate-spin' : ''}`}
-      />
+      <RefreshCw className={`w-4 h-4 ${updateState.kind === 'checking' ? 'animate-spin' : ''}`} />
       {updateState.kind === 'checking'
         ? t('settings.updateChecking', { defaultValue: 'Checking…' })
         : t('settings.updates')}
@@ -177,10 +175,7 @@ export function UpdaterStateView({ updaterSupported, controller }: UpdaterStateV
         <div className="text-text-secondary">
           {t('settings.updateDownloading', { defaultValue: 'Downloading update…' })}
           {updateState.total && updateState.total > 0 && (
-            <span>
-              {' '}
-              {Math.round((updateState.downloaded / updateState.total) * 100)}%
-            </span>
+            <span> {Math.round((updateState.downloaded / updateState.total) * 100)}%</span>
           )}
         </div>
       )}

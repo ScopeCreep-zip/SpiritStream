@@ -24,9 +24,9 @@ hostname: spiritstream.example.com
 # `apiToken` must be ≥ 32 characters; the server refuses to start
 # otherwise. For production, use `apiTokenSecretRef` instead so the
 # token comes from an external secret manager.
-apiToken: ""
+apiToken: ''
 apiTokenSecretRef:
-  name: ""
+  name: ''
   key: token
 
 # When true, the Helm release sets SPIRITSTREAM_BEHIND_TLS_PROXY=1.
@@ -37,7 +37,7 @@ behindTlsProxy: true
 
 # CORS / CSRF origin allow-list. Tighten to the actual UI hostname(s).
 # Wildcards are not permitted.
-corsOrigins: "https://spiritstream.example.com"
+corsOrigins: 'https://spiritstream.example.com'
 
 # Cookie attributes.
 #   same_origin   — UI served from the same host as the API
@@ -53,17 +53,17 @@ persistence:
   data:
     enabled: true
     size: 10Gi
-    storageClass: ""   # blank = cluster default
+    storageClass: '' # blank = cluster default
   logs:
     enabled: true
     size: 5Gi
-    storageClass: ""
+    storageClass: ''
 
 # Resource requests / limits. Tune to your workload; defaults track
 # the docker-compose limits.
 resources:
   limits:
-    cpu: "2"
+    cpu: '2'
     memory: 1Gi
   requests:
     cpu: 500m
@@ -84,8 +84,8 @@ ingress:
   className: nginx
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: '3600'
+    nginx.ingress.kubernetes.io/proxy-send-timeout: '3600'
   tls: true
 
 # Pod security context. Non-root, read-only-rootfs, no privilege

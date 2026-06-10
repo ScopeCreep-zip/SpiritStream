@@ -59,7 +59,7 @@ export function ObsDirectionSelector({
                 'p-4 rounded-lg border text-left transition-all cursor-pointer',
                 direction === option.value
                   ? 'border-primary bg-primary/10'
-                  : 'border-border-default bg-bg-base hover:border-border-strong',
+                  : 'border-border-default bg-bg-base hover:border-border-strong'
               )}
             >
               <div className="text-sm font-medium text-text-primary">

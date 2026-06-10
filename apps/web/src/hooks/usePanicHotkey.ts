@@ -44,7 +44,7 @@ export function usePanicHotkey(): void {
           count: result.streamsStopped,
           ms: result.elapsedMs,
           defaultValue: 'Panic disconnect: stopped {{count}} streams in {{ms}}ms',
-        }),
+        })
       );
     } catch (err) {
       logger.error('[panic] failed', err);
@@ -52,7 +52,7 @@ export function usePanicHotkey(): void {
         t('toast.panicFailed', {
           defaultValue: 'Panic disconnect failed: {{error}}',
           error: err instanceof Error ? err.message : String(err),
-        }),
+        })
       );
     }
   }, [t]);

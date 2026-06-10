@@ -17,6 +17,7 @@ This section documents SpiritStream's streaming capabilities, including FFmpeg i
 | [03. Multi-Destination](./03-multi-destination.md) | Output groups and target management | Intermediate+ |
 | [04. Encoding Reference](./04-encoding-reference.md) | Codecs, presets, hardware acceleration | All levels |
 | [05. Platform Registry](./05-platform-registry.md) | 80+ platforms, adding new platforms | All levels |
+| [06. Chat Platforms](./06-chat-platforms.md) | Per-platform chat send/receive matrix, TikTok read-only | All levels |
 
 ## Streaming Flow
 

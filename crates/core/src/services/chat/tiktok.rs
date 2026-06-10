@@ -20,11 +20,21 @@
 
 use async_trait::async_trait;
 use log::{info, warn};
+use piratetok_live_rs::structs::proto::messages::WebcastChatMessage;
 use piratetok_live_rs::structs::TikTokLiveEvent;
 use piratetok_live_rs::TikTokLive;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
-use tokio::sync::mpsc;
+use std::time::Duration;
+use tokio::sync::{mpsc, Mutex as TokioMutex};
+use tokio::task::JoinHandle;
+
+/// Cap on the upstream protobuf handshake. Without this, a TikTok
+/// protocol rotation (the documented stability caveat at the top of
+/// this file) can leave `TikTokLive::builder(...).connect()` hanging
+/// indefinitely — operator sees `Connecting` forever instead of a
+/// fail-loud error pointing at the maintainer-ritual dep bump.
+const TIKTOK_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 
 use crate::models::{
     ChatConnectionStatus, ChatCredentials, ChatMessage, ChatPlatform as ChatPlatformEnum,
@@ -55,12 +65,53 @@ fn status_from_u8(value: u8) -> ChatConnectionStatus {
     }
 }
 
+/// Builds a [`ChatMessage`] from an upstream TikTok chat event, or `None` when
+/// the comment is blank. Pure — the event loop owns delivery + counting.
+pub(super) fn parse_tiktok_chat(msg: &WebcastChatMessage) -> Option<ChatMessage> {
+    let content = msg.comment.trim().to_string();
+    if content.is_empty() {
+        return None;
+    }
+    let nick = msg
+        .user
+        .as_ref()
+        .map(|u| u.nickname.clone())
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| "Unknown".to_string());
+
+    let mut chat_msg = ChatMessage::new(ChatPlatformEnum::TikTok, nick, content);
+    // TikTok's `Common.msg_id` dedupes if the WS replays a frame; route it
+    // through `with_source_id` to mint a stable cross-event id. Falls back to
+    // the ChatMessage::new UUID when absent (msg_id == 0).
+    if let Some(msg_id) = msg.common.as_ref().map(|c| c.msg_id).filter(|&id| id != 0) {
+        chat_msg = chat_msg.with_source_id(msg_id.to_string());
+    }
+
+    Some(chat_msg)
+}
+
 pub struct TikTokConnector {
     status: Arc<AtomicU8>,
     last_error: Arc<StdMutex<Option<String>>>,
     message_count: Arc<AtomicU64>,
     disconnecting: Arc<AtomicBool>,
     disconnect_tx: Option<mpsc::Sender<()>>,
+    /// Q3: handle to the upstream `next_event()` poll task. Pre-this
+    /// fix the spawn handle was dropped; a connector dropped without
+    /// `disconnect()` (panic-disconnect, test teardown, or even a
+    /// protocol-rotation-triggered fast disconnect) leaked the task.
+    /// `Drop` aborts so the runtime reclaims it.
+    task_handle: Arc<TokioMutex<Option<JoinHandle<()>>>>,
+}
+
+impl Drop for TikTokConnector {
+    fn drop(&mut self) {
+        if let Ok(mut guard) = self.task_handle.try_lock() {
+            if let Some(handle) = guard.take() {
+                handle.abort();
+            }
+        }
+    }
 }
 
 impl TikTokConnector {
@@ -71,6 +122,7 @@ impl TikTokConnector {
             message_count: Arc::new(AtomicU64::new(0)),
             disconnecting: Arc::new(AtomicBool::new(false)),
             disconnect_tx: None,
+            task_handle: Arc::new(TokioMutex::new(None)),
         }
     }
 
@@ -88,7 +140,7 @@ impl ChatPlatform for TikTokConnector {
     async fn connect(
         &mut self,
         credentials: ChatCredentials,
-        message_tx: mpsc::UnboundedSender<ChatMessage>,
+        message_tx: mpsc::Sender<ChatMessage>,
     ) -> PlatformResult<()> {
         if self.is_connected() {
             return Err(PlatformError::AlreadyConnected);
@@ -122,7 +174,22 @@ impl ChatPlatform for TikTokConnector {
             ));
         }
 
-        let mut stream = TikTokLive::builder(&username).connect().await.map_err(|e| {
+        // Cap the upstream handshake — see TIKTOK_CONNECT_TIMEOUT.
+        let mut stream = tokio::time::timeout(
+            TIKTOK_CONNECT_TIMEOUT,
+            TikTokLive::builder(&username).connect(),
+        )
+        .await
+        .map_err(|_| {
+            let msg = format!(
+                "TikTok Live handshake timed out after {}s — TikTok may have rotated \
+                 the protobuf protocol; bump piratetok-live-rs",
+                TIKTOK_CONNECT_TIMEOUT.as_secs()
+            );
+            self.set_error(msg.clone());
+            PlatformError::Connection(msg)
+        })?
+        .map_err(|e| {
             let msg = format!("TikTok Live connection failed: {e}");
             self.set_error(msg.clone());
             PlatformError::Connection(msg)
@@ -140,7 +207,7 @@ impl ChatPlatform for TikTokConnector {
         let message_count = self.message_count.clone();
         let disconnecting = self.disconnecting.clone();
 
-        tokio::spawn(async move {
+        let task_handle = tokio::spawn(async move {
             loop {
                 tokio::select! {
                     _ = disconnect_rx.recv() => {
@@ -150,41 +217,13 @@ impl ChatPlatform for TikTokConnector {
                     next = stream.next_event() => {
                         match next {
                             Some(TikTokLiveEvent::Chat(msg)) => {
-                                let nick = msg
-                                    .user
-                                    .as_ref()
-                                    .map(|u| u.nickname.clone())
-                                    .filter(|n| !n.is_empty())
-                                    .unwrap_or_else(|| "Unknown".to_string());
-                                let content = msg.comment.trim().to_string();
-                                if content.is_empty() {
-                                    continue;
+                                if let Some(chat_msg) = parse_tiktok_chat(&msg) {
+                                    if message_tx.send(chat_msg).await.is_err() {
+                                        warn!("TikTok chat receiver dropped; stopping task");
+                                        break;
+                                    }
+                                    message_count.fetch_add(1, Ordering::Relaxed);
                                 }
-
-                                let mut chat_msg = ChatMessage::new(
-                                    ChatPlatformEnum::TikTok,
-                                    nick,
-                                    content,
-                                );
-                                // TikTok's `Common.msg_id` dedupes if the
-                                // WS replays a frame; route it through
-                                // `with_source_id` to mint a stable
-                                // cross-event id. Falls back to the
-                                // ChatMessage::new UUID when absent.
-                                if let Some(msg_id) = msg
-                                    .common
-                                    .as_ref()
-                                    .map(|c| c.msg_id)
-                                    .filter(|&id| id != 0)
-                                {
-                                    chat_msg = chat_msg.with_source_id(msg_id.to_string());
-                                }
-
-                                if message_tx.send(chat_msg).is_err() {
-                                    warn!("TikTok chat receiver dropped; stopping task");
-                                    break;
-                                }
-                                message_count.fetch_add(1, Ordering::Relaxed);
                             }
                             Some(TikTokLiveEvent::Disconnected) => {
                                 info!("TikTok Live stream ended (host went offline or disconnected)");
@@ -219,6 +258,15 @@ impl ChatPlatform for TikTokConnector {
             }
             info!("TikTok chat task stopped");
         });
+
+        // Q3: capture the upstream-poll task handle so `Drop` aborts it.
+        {
+            let mut guard = self.task_handle.lock().await;
+            if let Some(prev) = guard.take() {
+                prev.abort();
+            }
+            *guard = Some(task_handle);
+        }
 
         info!("Connected to TikTok Live chat for @{username}");
         Ok(())

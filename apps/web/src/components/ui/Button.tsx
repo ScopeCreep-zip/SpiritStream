@@ -8,18 +8,13 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 }
 
 const VARIANT_CLASSES = {
-  primary:
-    'bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active',
+  primary: 'bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-active',
   secondary:
     'bg-secondary text-secondary-foreground hover:bg-secondary-hover active:bg-secondary-active',
-  accent:
-    'bg-accent text-accent-foreground hover:bg-accent-hover active:bg-accent-active',
-  ghost:
-    'bg-transparent text-text-secondary hover:bg-bg-hover hover:text-text-primary',
-  outline:
-    'bg-transparent border-2 border-primary text-primary hover:bg-primary-subtle',
-  destructive:
-    'bg-error text-error-foreground hover:bg-error-hover active:bg-error-hover',
+  accent: 'bg-accent text-accent-foreground hover:bg-accent-hover active:bg-accent-active',
+  ghost: 'bg-transparent text-text-secondary hover:bg-bg-hover hover:text-text-primary',
+  outline: 'bg-transparent border-2 border-primary text-primary hover:bg-primary-subtle',
+  destructive: 'bg-error text-error-foreground hover:bg-error-hover active:bg-error-hover',
 } as const;
 
 const SIZE_CLASSES = {

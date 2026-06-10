@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Smile, Image as ImageIcon, X, Info } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { FormLabel, FormHelper } from '@/components/ui/Form';
 import { cn } from '@/lib/cn';
 
 /**
@@ -78,7 +79,7 @@ export function DiscordMessageTemplate({
       }
       setShowEmojiPicker(false);
     },
-    [setGoLiveMessage],
+    [setGoLiveMessage]
   );
 
   const imageFileName = imagePath ? imagePath.split(/[\\/]/).pop() : null;
@@ -99,6 +100,12 @@ export function DiscordMessageTemplate({
               onBlur={onMessageBlur}
               disabled={!webhookEnabled}
               rows={4}
+              // Discord's webhook `content` field is hard-capped at 2000
+              // characters (per Discord API docs). Without `maxLength`
+              // the user could type a longer message that silently
+              // truncates / fails at send time. The counter below the
+              // textarea warns as they approach the limit.
+              maxLength={2000}
               className={cn(
                 'w-full px-3 py-2 pe-10 rounded-lg',
                 'bg-bg-sunken border border-border-default',
@@ -106,7 +113,7 @@ export function DiscordMessageTemplate({
                 'placeholder:text-text-muted',
                 'focus:outline-none focus:ring-2 focus:ring-ring-default focus:border-transparent',
                 'disabled:opacity-50 disabled:cursor-not-allowed',
-                'resize-y min-h-[100px]',
+                'resize-y min-h-[100px]'
               )}
               placeholder={t('discord.messagePlaceholder')}
             />
@@ -119,7 +126,7 @@ export function DiscordMessageTemplate({
                   'p-1.5 rounded-md transition-colors',
                   'text-text-tertiary hover:text-text-primary',
                   'hover:bg-bg-muted',
-                  'disabled:opacity-50 disabled:cursor-not-allowed',
+                  'disabled:opacity-50 disabled:cursor-not-allowed'
                 )}
                 title={t('discord.insertEmoji')}
               >
@@ -151,6 +158,20 @@ export function DiscordMessageTemplate({
               )}
             </div>
           </div>
+          <div className="flex justify-end">
+            <span
+              className={cn(
+                'text-xs',
+                goLiveMessage.length > 1800 ? 'text-warning-text' : 'text-text-tertiary'
+              )}
+              aria-live="polite"
+            >
+              {t('discord.messageCharCount', {
+                defaultValue: '{{count}}/2000',
+                count: goLiveMessage.length,
+              })}
+            </span>
+          </div>
         </div>
 
         <div className="flex items-start gap-2 p-3 rounded-lg bg-bg-base border border-border-default">
@@ -162,9 +183,7 @@ export function DiscordMessageTemplate({
         </div>
 
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-text-primary">
-            {t('discord.attachImage')}
-          </label>
+          <FormLabel>{t('discord.attachImage')}</FormLabel>
           {imagePath ? (
             <div className="flex items-center gap-3 p-3 rounded-lg bg-bg-base border border-border-default">
               <ImageIcon className="w-5 h-5 text-text-tertiary" />
@@ -185,7 +204,7 @@ export function DiscordMessageTemplate({
               {t('discord.selectImage')}
             </Button>
           )}
-          <p className="text-xs text-text-tertiary">{t('discord.imageHint')}</p>
+          <FormHelper>{t('discord.imageHint')}</FormHelper>
         </div>
       </CardBody>
     </Card>

@@ -109,6 +109,6 @@
     "--warning-hover": "#FCD34D",
     "--warning-muted": "#3D1A03",
     "--warning-subtle": "#451A03",
-    "--warning-text": "#FCD34D"
-  }
+    "--warning-text": "#FCD34D",
+  },
 }

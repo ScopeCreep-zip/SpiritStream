@@ -26,7 +26,7 @@ export function AppBehaviorSection() {
     <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
       updateSettingMutation.mutate({ key, value });
     },
-    [updateSettingMutation],
+    [updateSettingMutation]
   );
 
   if (!settings) return null;

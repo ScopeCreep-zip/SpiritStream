@@ -21,13 +21,18 @@ impl ServerProcess {
     }
 
     pub fn kill_on_exit(&self) {
-        if let Ok(mut guard) = self.0.lock() {
-            if let Some(child) = guard.take() {
-                log::info!("Terminating backend server process");
-                if let Err(e) = child.kill() {
-                    log::warn!("Failed to kill server process: {e}");
+        match self.0.lock() {
+            Ok(mut guard) => {
+                if let Some(child) = guard.take() {
+                    log::info!("Terminating backend server process");
+                    if let Err(e) = child.kill() {
+                        log::warn!("Failed to kill server process: {e}");
+                    }
                 }
             }
+            Err(e) => log::error!(
+                "ServerProcess lock poisoned — sidecar may not be killed and could leak as a zombie: {e}"
+            ),
         }
     }
 }
@@ -65,7 +70,13 @@ async fn run_launcher<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
 
     kill_existing_servers();
 
+    #[cfg(desktop)]
     spawn_server(app)?;
+    #[cfg(not(desktop))]
+    {
+        let _ = app; // mobile: server is linked in-process; nothing to spawn.
+        log::info!("Mobile build: skipping sidecar spawn (server linked in-process)");
+    }
 
     // Wait until the server's TCP socket is accepting connections. The
     // webview is NOT created yet — the React bundle is not running and
@@ -85,18 +96,14 @@ async fn run_launcher<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     // to `App("index.html".into())`, which Tauri swaps to the dev URL
     // (`http://localhost:1420`) in `tauri dev` and to the bundled SPA
     // in release. Same call site, both modes.
-    let window = match tauri::WebviewWindowBuilder::new(
-        app,
-        "main",
-        tauri::WebviewUrl::default(),
-    )
-    .title("SpiritStream")
-    .inner_size(1500.0, 1000.0)
-    .min_inner_size(1024.0, 600.0)
-    .resizable(true)
-    .center()
-    .background_color(tauri::utils::config::Color(0x0F, 0x0A, 0x14, 0xFF))
-    .build()
+    let window = match tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::default())
+        .title("SpiritStream")
+        .inner_size(1500.0, 1000.0)
+        .min_inner_size(1024.0, 600.0)
+        .resizable(true)
+        .center()
+        .background_color(tauri::utils::config::Color(0x0F, 0x0A, 0x14, 0xFF))
+        .build()
     {
         Ok(w) => w,
         Err(e) => return Err(format!("failed to create main window: {e}")),
@@ -120,14 +127,39 @@ async fn run_launcher<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     Ok(())
 }
 
+/// Spawn the bundled `spiritstream-server` sidecar. Desktop only —
+/// J1: iOS/Android Tauri 2 builds cannot host an out-of-process
+/// sidecar (mobile sandbox + signing constraints), so the
+/// `tauri-plugin-shell` `sidecar(...)` call is unavailable on those
+/// targets. Mobile clients must link `spiritstream-core` directly and
+/// bind Axum in-process (the mobile shell entry point handles this).
+/// Compiling this for mobile would fail link-time on the missing
+/// sidecar binary anyway.
+#[cfg(desktop)]
 fn spawn_server<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    // `SPIRITSTREAM_SERVER_PATH` lets the dev iteration loop point at a
+    // freshly-rebuilt server binary outside the bundle. In RELEASE
+    // builds this would be a privilege-escalation vector: anyone who
+    // can set the user's env (compromised shell-rc, supply chain,
+    // shared host) could replace the backend binary the next time
+    // SpiritStream launched. Gate behind debug_assertions so release
+    // builds always use the bundled, signed sidecar.
+    #[cfg(debug_assertions)]
     let mut command = if let Ok(server_path) = env::var("SPIRITSTREAM_SERVER_PATH") {
+        log::warn!(
+            "SPIRITSTREAM_SERVER_PATH={server_path} overriding bundled sidecar — debug build only"
+        );
         app.shell().command(server_path)
     } else {
         app.shell()
             .sidecar("spiritstream-server")
             .map_err(|e| e.to_string())?
     };
+    #[cfg(not(debug_assertions))]
+    let mut command = app
+        .shell()
+        .sidecar("spiritstream-server")
+        .map_err(|e| e.to_string())?;
 
     // Local AppData (not Roaming) keeps everything in one machine-
     // specific location that doesn't sync; profiles / settings don't
@@ -328,7 +360,11 @@ fn resolve_themes_dir<R: Runtime>(app: &AppHandle<R>) -> Option<std::path::PathB
 
     let cwd = std::env::current_dir().ok();
     let cwd_themes = cwd.as_ref().map(|d| d.join("themes"));
-    if cwd_themes.as_ref().map(|p| has_theme_files(p)).unwrap_or(false) {
+    if cwd_themes
+        .as_ref()
+        .map(|p| has_theme_files(p))
+        .unwrap_or(false)
+    {
         log::info!("Using CWD themes directory: {:?}", cwd_themes);
         return cwd_themes;
     }
@@ -353,7 +389,10 @@ fn resolve_themes_dir<R: Runtime>(app: &AppHandle<R>) -> Option<std::path::PathB
         .map(|p| has_theme_files(p))
         .unwrap_or(false)
     {
-        log::info!("Using grandparent themes directory: {:?}", grandparent_themes);
+        log::info!(
+            "Using grandparent themes directory: {:?}",
+            grandparent_themes
+        );
         return grandparent_themes;
     }
 
@@ -387,7 +426,11 @@ fn resolve_ffmpeg_sidecar() -> Option<std::path::PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let exe_dir = exe.parent()?;
 
-    let bundled_name = if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" };
+    let bundled_name = if cfg!(windows) {
+        "ffmpeg.exe"
+    } else {
+        "ffmpeg"
+    };
     let target_triple: &str = env!("BUILD_TARGET");
     let dev_name = if cfg!(windows) {
         format!("ffmpeg-{target_triple}.exe")
@@ -412,8 +455,12 @@ fn resolve_ffmpeg_sidecar() -> Option<std::path::PathBuf> {
         [&Some(prod_candidate.clone()), &dev_candidate]
     };
     for candidate in order {
-        let Some(path) = candidate.as_ref() else { continue };
-        let Ok(meta) = std::fs::metadata(path) else { continue };
+        let Some(path) = candidate.as_ref() else {
+            continue;
+        };
+        let Ok(meta) = std::fs::metadata(path) else {
+            continue;
+        };
         if meta.is_file() && meta.len() > 0 {
             return Some(path.clone());
         }

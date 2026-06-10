@@ -14,7 +14,6 @@ type StatsSlice = Pick<
   | 'uptime'
   | 'globalStatus'
   | 'updateStats'
-  | 'updateTargetStats'
   | 'setStreamEnded'
   | 'setStreamError'
   | 'setUptime'
@@ -27,7 +26,6 @@ export const createStatsSlice: StateCreator<StreamState, [], [], StatsSlice> = (
     totalBitrate: 0,
     droppedFrames: 0,
     uptime: 0,
-    targetStats: {},
   },
   groupStats: {},
   uptime: 0,
@@ -61,19 +59,6 @@ export const createStatsSlice: StateCreator<StreamState, [], [], StatsSlice> = (
         totalBitrate,
         droppedFrames: totalDropped,
         uptime: maxUptime,
-      },
-    });
-  },
-
-  updateTargetStats: (targetId, targetStats) => {
-    const stats = get().stats;
-    set({
-      stats: {
-        ...stats,
-        targetStats: {
-          ...stats.targetStats,
-          [targetId]: targetStats,
-        },
       },
     });
   },
@@ -129,8 +114,8 @@ export const createStatsSlice: StateCreator<StreamState, [], [], StatsSlice> = (
       },
       isStreaming,
       globalStatus: isStreaming ? 'live' : 'error',
-      error: `Stream error (${groupId}): ${error}`,
     });
+    get().setError(`Stream error (${groupId}): ${error}`);
   },
 
   setUptime: (uptime) => set({ uptime }),
@@ -149,12 +134,12 @@ export const createStatsSlice: StateCreator<StreamState, [], [], StatsSlice> = (
       if (prevStatus !== 'live' && status === 'live') {
         showSystemNotification(
           i18n.t('notifications.streamStartedTitle', 'Stream Started'),
-          i18n.t('notifications.streamStartedBody', 'Your stream is now live.'),
+          i18n.t('notifications.streamStartedBody', 'Your stream is now live.')
         );
       } else if (prevStatus === 'live' && status === 'offline') {
         showSystemNotification(
           i18n.t('notifications.streamStoppedTitle', 'Stream Stopped'),
-          i18n.t('notifications.streamStoppedBody', 'Your stream has stopped.'),
+          i18n.t('notifications.streamStoppedBody', 'Your stream has stopped.')
         );
       }
     }

@@ -38,26 +38,29 @@ settings: ProfileSettings,
  * for password-protected profiles; for plaintext profiles each
  * entry is wrapped with the `ENC2::` machine-key envelope.
  */
-piiBlocklist: Array<string>,
+piiBlocklist: Array<string>, 
 /**
  * When true, the fuzzy leet-speak matcher applies in
  * addition to the strict substring matcher. Off by default to
  * minimise false positives.
  */
-piiFuzzy: boolean,
+piiFuzzy: boolean, 
 /**
  * When true (default for new profiles), chat
  * usernames in logs render as `hash:abcd1234` rather than
  * plaintext. Reversible by the local user with the per-profile
  * salt; one-way for anyone else who acquires only the log.
  */
-anonymousLogging: boolean,
+anonymousLogging: boolean, 
 /**
  * Per-profile HMAC salt for the pseudonymizer.
  * 64-char hex (32 raw bytes). Generated once at profile
  * creation; never reused across profiles. If the salt is empty
  * (legacy profiles loaded from disk before this field existed),
- * the pseudonymizer falls back to plaintext — the loader runs
- * `profile.ensure_anonymous_salt()` to populate it on first use.
+ * save and activation both run `ensure_anonymous_salt()` to
+ * populate and persist it. The pseudonymizer itself NEVER falls
+ * back to plaintext: an enabled policy with a broken salt fails
+ * activation, and any message that can't be pseudonymised is
+ * dropped rather than logged with its real username.
  */
 anonymousSalt: string, };

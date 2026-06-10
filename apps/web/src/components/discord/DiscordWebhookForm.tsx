@@ -104,14 +104,18 @@ export function DiscordWebhookForm({
             onClick={onTest}
             disabled={!webhookEnabled || !webhookUrl || isTesting}
           >
-            {isTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            {isTesting ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
             {t('discord.testWebhook')}
           </Button>
           {testResult && (
             <div
               className={cn(
                 'flex items-center gap-2 text-sm',
-                testResult.success ? 'text-status-live' : 'text-status-error',
+                testResult.success ? 'text-status-live' : 'text-status-error'
               )}
             >
               {testResult.success ? (

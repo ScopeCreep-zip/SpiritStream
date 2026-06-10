@@ -55,7 +55,14 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (!this.state.error) return this.props.children;
-    return <ErrorFallback error={this.state.error} copied={this.state.copied} onCopy={this.copy} onReset={this.reset} />;
+    return (
+      <ErrorFallback
+        error={this.state.error}
+        copied={this.state.copied}
+        onCopy={this.copy}
+        onReset={this.reset}
+      />
+    );
   }
 }
 
@@ -81,7 +88,7 @@ function ErrorFallback({ error, copied, onCopy, onReset }: FallbackProps) {
         <p className="text-sm text-text-secondary">
           {t(
             'errorBoundary.body',
-            'A component on this page hit an unexpected error. Your data on disk is unaffected. Reloading should restore the app.',
+            'A component on this page hit an unexpected error. Your data on disk is unaffected. Reloading should restore the app.'
           )}
         </p>
         <details className="text-xs text-text-tertiary">
@@ -99,9 +106,7 @@ function ErrorFallback({ error, copied, onCopy, onReset }: FallbackProps) {
             onClick={onCopy}
             className="px-3 py-2 rounded border border-border-default text-text-primary text-sm hover:bg-bg-hover"
           >
-            {copied
-              ? t('errorBoundary.copied', 'Copied')
-              : t('errorBoundary.copy', 'Copy details')}
+            {copied ? t('errorBoundary.copied', 'Copied') : t('errorBoundary.copy', 'Copy details')}
           </button>
           <button
             type="button"

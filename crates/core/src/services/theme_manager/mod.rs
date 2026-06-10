@@ -128,8 +128,11 @@ impl ThemeManager {
     /// stored handle). Before this runs, validation failures still
     /// WARN but do not audit.
     pub fn set_audit_log(&self, audit: Arc<crate::services::AuditLogService>) {
-        if let Ok(mut slot) = self.audit_log.write() {
-            *slot = Some(audit);
+        match self.audit_log.write() {
+            Ok(mut slot) => *slot = Some(audit),
+            Err(e) => {
+                log::error!("theme_manager audit_log write lock poisoned during set_audit_log: {e}")
+            }
         }
     }
 }

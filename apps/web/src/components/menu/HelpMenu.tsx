@@ -24,7 +24,7 @@ export function HelpMenu({ onOpenModal }: HelpMenuProps): React.ReactElement {
               window.open(
                 'https://github.com/ScopeCreep-zip/SpiritStream',
                 '_blank',
-                'noopener,noreferrer',
+                'noopener,noreferrer'
               )
             }
           >

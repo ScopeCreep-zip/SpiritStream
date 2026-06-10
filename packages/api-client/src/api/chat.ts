@@ -22,26 +22,25 @@ export const chat = {
    */
   connectFacebook: async (config: ChatConfig) =>
     withConfirmToken('enable_facebook_chat', (headers) =>
-      fetchTypedJson<unknown>(
-        'POST',
-        '/api/v1/chat/connections',
-        undefined,
-        { config },
-        headers,
-      ),
+      fetchTypedJson<unknown>('POST', '/api/v1/chat/connections', undefined, { config }, headers)
     ),
-  sendMessage: (message: string) =>
-    fetchTypedJson<ChatSendResult[]>('POST', '/api/v1/chat/messages', undefined, { message }),
+  sendMessage: (message: string, targetPlatforms?: ChatPlatform[]) =>
+    fetchTypedJson<ChatSendResult[]>(
+      'POST',
+      '/api/v1/chat/messages',
+      undefined,
+      targetPlatforms === undefined ? { message } : { message, targetPlatforms }
+    ),
   disconnect: async (platform: ChatPlatform) => {
     await fetchTypedJson<unknown>(
       'DELETE',
-      `/api/v1/chat/connections/${encodeURIComponent(String(platform))}`,
+      `/api/v1/chat/connections/${encodeURIComponent(String(platform))}`
     );
   },
   retryConnection: async (platform: ChatPlatform) => {
     await fetchTypedJson<unknown>(
       'POST',
-      `/api/v1/chat/connections/${encodeURIComponent(String(platform))}/retry`,
+      `/api/v1/chat/connections/${encodeURIComponent(String(platform))}/retry`
     );
   },
   disconnectAll: async () => {
@@ -57,8 +56,10 @@ export const chat = {
   getPlatformStatus: (platform: ChatPlatform) =>
     fetchTypedJson<ChatPlatformStatus | null>(
       'GET',
-      `/api/v1/chat/connections/${encodeURIComponent(String(platform))}`,
+      `/api/v1/chat/connections/${encodeURIComponent(String(platform))}`
     ),
   isConnected: () =>
-    fetchTypedJson<{ connected: boolean }>('GET', '/api/v1/chat/connected').then((r) => r.connected),
+    fetchTypedJson<{ connected: boolean }>('GET', '/api/v1/chat/connected').then(
+      (r) => r.connected
+    ),
 };

@@ -81,3 +81,33 @@ pub fn validate_ffmpeg_path(path: String) -> Result<String, CoreError> {
 
     Ok(version_line)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::validate_ffmpeg_path;
+    use crate::errors::CoreError;
+
+    fn validation_code(err: CoreError) -> String {
+        match err {
+            CoreError::ValidationFailed { reasons } => {
+                reasons.into_iter().next().expect("a reason").code
+            }
+            other => panic!("expected ValidationFailed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn missing_path_is_rejected_before_exec() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("no-such-ffmpeg");
+        let err = validate_ffmpeg_path(missing.to_string_lossy().into_owned()).unwrap_err();
+        assert_eq!(validation_code(err), "invalid_ffmpeg_path");
+    }
+
+    #[test]
+    fn directory_path_is_rejected_before_exec() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = validate_ffmpeg_path(dir.path().to_string_lossy().into_owned()).unwrap_err();
+        assert_eq!(validation_code(err), "invalid_ffmpeg_path");
+    }
+}

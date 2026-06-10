@@ -21,6 +21,8 @@ mod stats;
 mod validation;
 
 #[cfg(test)]
+mod args_tests;
+#[cfg(test)]
 mod validate_tests;
 
 pub use validation::{
@@ -133,8 +135,7 @@ impl ReconnectionState {
 /// each `impl super::FFmpegHandler { ... }` adds to the same surface.
 pub struct FFmpegHandler {
     pub(in crate::services::ffmpeg_handler) ffmpeg_path: String,
-    pub(in crate::services::ffmpeg_handler) processes:
-        Arc<Mutex<HashMap<String, ProcessInfo>>>,
+    pub(in crate::services::ffmpeg_handler) processes: Arc<Mutex<HashMap<String, ProcessInfo>>>,
     pub(in crate::services::ffmpeg_handler) stopping_groups: Arc<Mutex<HashSet<String>>>,
     pub(in crate::services::ffmpeg_handler) disabled_targets: Arc<Mutex<HashSet<String>>>,
     pub(in crate::services::ffmpeg_handler) relay: Arc<Mutex<Option<RelayProcess>>>,
@@ -239,8 +240,11 @@ impl FFmpegHandler {
     /// Install the SpiritStream→OBS trigger handle. Called once at
     /// startup by `ServiceRegistry::build` once the OBS handler exists.
     pub fn set_obs_trigger(&self, trigger: Arc<dyn ObsTrigger>) {
-        if let Ok(mut guard) = self.obs_trigger.write() {
-            *guard = Some(trigger);
+        match self.obs_trigger.write() {
+            Ok(mut guard) => *guard = Some(trigger),
+            Err(e) => log::error!(
+                "ffmpeg_handler obs_trigger write lock poisoned during set_obs_trigger: {e}"
+            ),
         }
     }
 

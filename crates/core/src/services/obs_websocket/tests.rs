@@ -1,8 +1,17 @@
 use super::types::{IntegrationDirection, ObsConfig};
 use super::ObsWebSocketHandler;
+use tempfile::TempDir;
 
-fn handler() -> ObsWebSocketHandler {
-    ObsWebSocketHandler::new(std::path::PathBuf::from("/tmp/spiritstream-obs-test"))
+/// Build a fresh handler in an isolated tempdir. J4: pre-fix the
+/// suite hard-coded `/tmp/spiritstream-obs-test`, which (a) is not
+/// portable to Windows where `/tmp` doesn't exist, and (b) shared
+/// state across parallel test runs on the same machine. `TempDir`
+/// gets dropped at scope-end so each test has its own
+/// guaranteed-clean directory.
+fn handler() -> (TempDir, ObsWebSocketHandler) {
+    let dir = TempDir::new().expect("tempdir");
+    let h = ObsWebSocketHandler::new(dir.path().to_path_buf());
+    (dir, h)
 }
 
 /// `consume_triggered_by_us` is the loop-prevention seam: after
@@ -12,7 +21,7 @@ fn handler() -> ObsWebSocketHandler {
 /// loops forever.
 #[test]
 fn mark_then_consume_returns_true_then_false() {
-    let h = handler();
+    let (_dir, h) = handler();
     assert!(
         !h.consume_triggered_by_us(),
         "fresh handler must be unmarked"
@@ -32,7 +41,7 @@ fn mark_then_consume_returns_true_then_false() {
 /// `start_stream` → `stop_stream` sequence within one session).
 #[test]
 fn mark_consume_mark_consume_rearms() {
-    let h = handler();
+    let (_dir, h) = handler();
     h.mark_triggered_by_us();
     assert!(h.consume_triggered_by_us());
     h.mark_triggered_by_us();
@@ -45,7 +54,7 @@ fn mark_consume_mark_consume_rearms() {
 /// permits neither. Single-direction variants permit exactly one path.
 #[tokio::test]
 async fn direction_gates_match_documented_transitions() {
-    let h = handler();
+    let (_dir, h) = handler();
     h.set_config(ObsConfig {
         host: "127.0.0.1".into(),
         port: 4455,
@@ -91,7 +100,7 @@ async fn direction_gates_match_documented_transitions() {
 /// path; subsequent state events (no flag) proceed normally.
 #[test]
 fn loop_scenario_first_event_skips_trigger() {
-    let h = handler();
+    let (_dir, h) = handler();
     h.mark_triggered_by_us();
     let was_self = h.consume_triggered_by_us();
     assert!(

@@ -23,14 +23,15 @@ use twitch_irc::{ClientConfig, SecureTCPTransport, TwitchIRCClient};
 
 use crate::models::{ChatConnectionStatus, ChatCredentials, ChatMessage, TwitchAuth};
 
+use super::endpoints::ChatEndpoints;
 use super::platform::{ChatPlatform, PlatformError, PlatformResult};
 
 /// Validate a Twitch channel exists using Twitch's public GraphQL API.
 /// Uses `CoreError::NetworkError` for transport / parse failures so the
 /// caller can branch on the error kind rather than parse string messages.
-async fn validate_channel_exists(channel: &str) -> Result<bool, CoreError> {
+async fn validate_channel_exists(channel: &str, gql_url: &str) -> Result<bool, CoreError> {
     // Use Twitch's public GQL endpoint - no auth required for basic channel lookup
-    let url = "https://gql.twitch.tv/gql";
+    let url = gql_url;
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
@@ -121,10 +122,18 @@ pub struct TwitchConnector {
     channel: Option<String>,
     self_login: Option<String>,
     recent_outbound: Arc<StdMutex<VecDeque<OutboundMessage>>>,
+    /// Twitch GQL channel-lookup endpoint (injected from `ChatEndpoints`).
+    gql_url: String,
+    /// Twitch OAuth token-validate endpoint (injected from `ChatEndpoints`).
+    validate_url: String,
 }
 
 impl TwitchConnector {
     pub fn new() -> Self {
+        Self::with_endpoints(&ChatEndpoints::default())
+    }
+
+    pub fn with_endpoints(endpoints: &ChatEndpoints) -> Self {
         Self {
             client: None,
             status: Arc::new(AtomicU8::new(STATUS_DISCONNECTED)),
@@ -135,13 +144,15 @@ impl TwitchConnector {
             channel: None,
             self_login: None,
             recent_outbound: Arc::new(StdMutex::new(VecDeque::new())),
+            gql_url: endpoints.twitch_gql.clone(),
+            validate_url: endpoints.twitch_validate.clone(),
         }
     }
 
     /// Returns the resolved Twitch login from a valid OAuth token.
     /// `CoreError::Unauthorized` for token rejection (4xx);
     /// `CoreError::NetworkError` for transport / parse / non-auth failures.
-    async fn validate_oauth_user(token: &str) -> Result<String, CoreError> {
+    async fn validate_oauth_user(token: &str, validate_url: &str) -> Result<String, CoreError> {
         #[derive(serde::Deserialize)]
         struct ValidateResponse {
             login: String,
@@ -155,7 +166,7 @@ impl TwitchConnector {
             })?;
 
         let response = client
-            .get("https://id.twitch.tv/oauth2/validate")
+            .get(validate_url)
             .header("Authorization", format!("OAuth {token}"))
             .send()
             .await
@@ -178,9 +189,10 @@ impl TwitchConnector {
             });
         }
 
-        let data: ValidateResponse = response.json().await.map_err(|e| CoreError::NetworkError {
-            detail: format!("Failed to parse validation response: {e}"),
-        })?;
+        let data: ValidateResponse =
+            response.json().await.map_err(|e| CoreError::NetworkError {
+                detail: format!("Failed to parse validation response: {e}"),
+            })?;
 
         Ok(data.login)
     }
@@ -191,7 +203,7 @@ impl ChatPlatform for TwitchConnector {
     async fn connect(
         &mut self,
         credentials: ChatCredentials,
-        message_tx: mpsc::UnboundedSender<ChatMessage>,
+        message_tx: mpsc::Sender<ChatMessage>,
     ) -> PlatformResult<()> {
         if self.is_connected() {
             return Err(PlatformError::AlreadyConnected);
@@ -233,7 +245,9 @@ impl ChatPlatform for TwitchConnector {
 
         // Validate channel exists before connecting
         let channel_lower = channel.to_lowercase();
-        match validate_channel_exists(&channel_lower).await {
+        let gql_url = self.gql_url.clone();
+        let validate_url = self.validate_url.clone();
+        match validate_channel_exists(&channel_lower, &gql_url).await {
             Ok(true) => {
                 info!("Twitch channel '{}' validated successfully", channel_lower);
             }
@@ -268,7 +282,7 @@ impl ChatPlatform for TwitchConnector {
         if let Some(token) = oauth_token {
             let token_clean = token.strip_prefix("oauth:").unwrap_or(&token).to_string();
             clean_token = Some(token_clean.clone());
-            match Self::validate_oauth_user(&token_clean).await {
+            match Self::validate_oauth_user(&token_clean, &validate_url).await {
                 Ok(login) => {
                     info!("Using authenticated connection for Twitch as {}", login);
                     oauth_login = Some(login.clone());
@@ -356,10 +370,9 @@ impl ChatPlatform for TwitchConnector {
                         // log fields (username / message / color / badges)
                         // are mirrored inside the builder so old JSONL
                         // chat-log files keep round-tripping.
-                        let chat_message =
-                            fragments::build_chat_message_from_privmsg(&msg);
+                        let chat_message = fragments::build_chat_message_from_privmsg(&msg);
 
-                        if message_tx.send(chat_message).is_err() {
+                        if message_tx.send(chat_message).await.is_err() {
                             warn!("Failed to send Twitch message: receiver dropped");
                             break;
                         }
@@ -378,16 +391,13 @@ impl ChatPlatform for TwitchConnector {
                     // documented deferral.
                     ServerMessage::UserNotice(notice) => {
                         if let Some(built) = events::build_from_user_notice(&notice) {
-                            if message_tx.send(built).is_err() {
+                            if message_tx.send(built).await.is_err() {
                                 warn!("Failed to send Twitch USERNOTICE: receiver dropped");
                                 break;
                             }
                             message_count_clone.fetch_add(1, Ordering::Relaxed);
                         } else {
-                            info!(
-                                "Dropping unmapped USERNOTICE event_id={}",
-                                notice.event_id
-                            );
+                            info!("Dropping unmapped USERNOTICE event_id={}", notice.event_id);
                         }
                     }
                     // CLEARMSG → MessageDeleted event. The frontend
@@ -395,7 +405,7 @@ impl ChatPlatform for TwitchConnector {
                     // DISABLED on the matching past message row.
                     ServerMessage::ClearMsg(clear) => {
                         let built = events::build_from_clear_msg(&clear);
-                        if message_tx.send(built).is_err() {
+                        if message_tx.send(built).await.is_err() {
                             warn!("Failed to send Twitch CLEARMSG: receiver dropped");
                             break;
                         }
@@ -407,7 +417,7 @@ impl ChatPlatform for TwitchConnector {
                     // returns None and we drop the message.
                     ServerMessage::ClearChat(clear) => {
                         if let Some(built) = events::build_from_clear_chat(&clear) {
-                            if message_tx.send(built).is_err() {
+                            if message_tx.send(built).await.is_err() {
                                 warn!("Failed to send Twitch CLEARCHAT: receiver dropped");
                                 break;
                             }
@@ -422,7 +432,7 @@ impl ChatPlatform for TwitchConnector {
                     // local aggregate state.
                     ServerMessage::RoomState(state) => {
                         if let Some(built) = events::build_from_room_state(&state) {
-                            if message_tx.send(built).is_err() {
+                            if message_tx.send(built).await.is_err() {
                                 warn!("Failed to send Twitch ROOMSTATE: receiver dropped");
                                 break;
                             }
@@ -475,9 +485,13 @@ impl ChatPlatform for TwitchConnector {
             Ordering::Relaxed,
         );
         self.can_send = false;
-        if let Ok(mut guard) = self.last_error.lock() {
-            *guard = None;
-        }
+        // Q8: do NOT clear `last_error` on disconnect. The panic flow
+        // calls `disconnect_all("panic_triggered")` after a failure
+        // condition triggered the panic in the first place — wiping
+        // the connector's error context here would erase the forensic
+        // trail the operator needs to see what actually broke. Next
+        // successful `connect()` resets the field; until then, the
+        // last observed error stays accessible via `last_error()`.
 
         info!("Disconnected from Twitch");
         Ok(())

@@ -25,8 +25,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write     # required to publish to GHCR npm registry
-      id-token: write     # required for npm provenance statements
+      packages: write # required to publish to GHCR npm registry
+      id-token: write # required for npm provenance statements
     steps:
       - name: Harden runner
         uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.19.3

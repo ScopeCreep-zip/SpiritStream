@@ -39,7 +39,7 @@ export function StreamMenu({ onEditEncoder, canEditEncoder }: StreamMenuProps): 
     } catch (err) {
       logger.error('[menu] start failed', err);
       toast.error(
-        t('toast.startFailed', { error: err instanceof Error ? err.message : String(err) }),
+        t('toast.startFailed', { error: err instanceof Error ? err.message : String(err) })
       );
     }
   }, [current, startAllGroups, t]);
@@ -59,7 +59,7 @@ export function StreamMenu({ onEditEncoder, canEditEncoder }: StreamMenuProps): 
       }
     } catch (err) {
       toast.error(
-        t('toast.testFailed', { error: err instanceof Error ? err.message : String(err) }),
+        t('toast.testFailed', { error: err instanceof Error ? err.message : String(err) })
       );
     }
   }, [current, t]);
@@ -79,7 +79,11 @@ export function StreamMenu({ onEditEncoder, canEditEncoder }: StreamMenuProps): 
             <span>{t('menu.stream.start', { defaultValue: 'Start streaming' })}</span>
             <span className={SHORTCUT_CLASS}>⌘↵</span>
           </Menubar.Item>
-          <Menubar.Item className={ITEM_CLASS} disabled={!isStreaming} onSelect={() => stopAllGroups()}>
+          <Menubar.Item
+            className={ITEM_CLASS}
+            disabled={!isStreaming}
+            onSelect={() => stopAllGroups()}
+          >
             <span>{t('menu.stream.stop', { defaultValue: 'Stop streaming' })}</span>
             <span className={SHORTCUT_CLASS}>⌘.</span>
           </Menubar.Item>

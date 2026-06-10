@@ -25,7 +25,7 @@ export function RemoteAccessSection() {
         backend: { ...profileSettings.backend, [key]: value },
       });
     },
-    [profileSettings, updateProfileSettings],
+    [profileSettings, updateProfileSettings]
   );
 
   return (
@@ -112,8 +112,7 @@ export function RemoteAccessSection() {
                 updateBackendSetting('token', e.target.value)
               }
               helper={t('settings.remoteAccessTokenHelper', {
-                defaultValue:
-                  'Clients must send this token as a Bearer auth header when enabled.',
+                defaultValue: 'Clients must send this token as a Bearer auth header when enabled.',
               })}
               autoComplete="off"
               renderToggleIcon={(visible) =>

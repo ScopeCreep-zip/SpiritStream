@@ -6,6 +6,24 @@ use crate::services::PlatformRegistry;
 
 use super::ffmpeg_internal;
 
+/// Stream-URL schemes that may carry a credential and must be redacted before
+/// a command line or ffmpeg log line is written. RTMP(S) keys live in the path;
+/// HTTP(S) ingests may carry the key in the path or query string.
+const STREAM_URL_SCHEMES: [&str; 4] = ["rtmp://", "rtmps://", "https://", "http://"];
+
+/// True if `arg` contains any redactable stream-URL scheme.
+fn contains_stream_url(arg: &str) -> bool {
+    STREAM_URL_SCHEMES.iter().any(|scheme| arg.contains(scheme))
+}
+
+/// Byte offset of the earliest stream-URL scheme in `segment`, if any.
+fn find_stream_url_start(segment: &str) -> Option<usize> {
+    STREAM_URL_SCHEMES
+        .iter()
+        .filter_map(|scheme| segment.find(scheme))
+        .min()
+}
+
 impl super::FFmpegHandler {
     /// Normalize an RTMP URL for consistency.
     pub(super) fn normalize_rtmp_url(url: &str) -> String {
@@ -29,43 +47,42 @@ impl super::FFmpegHandler {
 
     /// Sanitize a single argument with platform context for accurate redaction.
     pub(super) fn sanitize_arg_with_context(&self, arg: &str, group: &OutputGroup) -> String {
-        if !(arg.contains("rtmp://") || arg.contains("rtmps://")) {
+        if !contains_stream_url(arg) {
             return arg.to_string();
         }
 
         let mut parts = Vec::new();
         for segment in arg.split('|') {
-            let redacted =
-                if let Some(pos) = segment.find("rtmp://").or_else(|| segment.find("rtmps://")) {
-                    let prefix = &segment[..pos];
-                    let url_start = pos;
-                    let url_end = segment[url_start..]
-                        .find(' ')
-                        .map(|i| url_start + i)
-                        .unwrap_or(segment.len());
-                    let url = &segment[url_start..url_end];
-                    let suffix = &segment[url_end..];
+            let redacted = if let Some(pos) = find_stream_url_start(segment) {
+                let prefix = &segment[..pos];
+                let url_start = pos;
+                let url_end = segment[url_start..]
+                    .find(' ')
+                    .map(|i| url_start + i)
+                    .unwrap_or(segment.len());
+                let url = &segment[url_start..url_end];
+                let suffix = &segment[url_end..];
 
-                    let platform_redacted = group
-                        .stream_targets
-                        .iter()
-                        .find(|target| {
-                            let normalized = Self::normalize_rtmp_url(&target.url);
-                            url.starts_with(&normalized) || url.contains(&target.url)
+                let platform_redacted = group
+                    .stream_targets
+                    .iter()
+                    .find(|target| {
+                        let normalized = Self::normalize_rtmp_url(&target.url);
+                        url.starts_with(&normalized) || url.contains(&target.url)
+                    })
+                    .and_then(|target| {
+                        self.platform_registry.get(&target.service).map(|config| {
+                            format!("[{}] {}", config.display_name(), config.redact_url(url))
                         })
-                        .and_then(|target| {
-                            self.platform_registry.get(&target.service).map(|config| {
-                                format!("[{}] {}", config.display_name(), config.redact_url(url))
-                            })
-                        });
+                    });
 
-                    let redacted_url = platform_redacted
-                        .unwrap_or_else(|| PlatformRegistry::generic_redact(url));
+                let redacted_url =
+                    platform_redacted.unwrap_or_else(|| PlatformRegistry::generic_redact(url));
 
-                    format!("{prefix}{redacted_url}{suffix}")
-                } else {
-                    segment.to_string()
-                };
+                format!("{prefix}{redacted_url}{suffix}")
+            } else {
+                segment.to_string()
+            };
             parts.push(redacted);
         }
 
@@ -82,23 +99,13 @@ impl super::FFmpegHandler {
     /// Static version of sanitize_arg for use in background threads.
     /// Uses generic platform-agnostic redaction.
     pub(super) fn sanitize_arg_static(arg: &str) -> String {
-        if !(arg.contains("rtmp://") || arg.contains("rtmps://")) {
+        if !contains_stream_url(arg) {
             return arg.to_string();
         }
 
         let mut parts = Vec::new();
         for segment in arg.split('|') {
-            let redacted = if let Some(pos) = segment.find("rtmp://") {
-                let prefix = &segment[..pos];
-                let url_start = pos;
-                let url_end = segment[url_start..]
-                    .find(' ')
-                    .map(|i| url_start + i)
-                    .unwrap_or(segment.len());
-                let url = &segment[url_start..url_end];
-                let suffix = &segment[url_end..];
-                format!("{prefix}{}{suffix}", PlatformRegistry::generic_redact(url))
-            } else if let Some(pos) = segment.find("rtmps://") {
+            let redacted = if let Some(pos) = find_stream_url_start(segment) {
                 let prefix = &segment[..pos];
                 let url_start = pos;
                 let url_end = segment[url_start..]
@@ -495,4 +502,3 @@ impl super::FFmpegHandler {
         args
     }
 }
-

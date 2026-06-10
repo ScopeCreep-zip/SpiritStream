@@ -109,6 +109,6 @@
     "--gradient-surface": "linear-gradient(180deg, #FCFCFD 0%, #F8F8FA 100%)",
     "--scrollbar-track": "#F3F4F6",
     "--scrollbar-thumb": "#D1D5DB",
-    "--scrollbar-thumb-hover": "#9CA3AF"
-  }
+    "--scrollbar-thumb-hover": "#9CA3AF",
+  },
 }

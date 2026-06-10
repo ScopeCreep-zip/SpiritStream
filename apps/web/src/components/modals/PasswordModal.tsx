@@ -13,6 +13,7 @@ interface PasswordModalProps {
   mode: 'encrypt' | 'decrypt';
   profileName?: string;
   error?: string;
+  onErrorClear?: () => void;
 }
 
 export function PasswordModal({
@@ -22,6 +23,7 @@ export function PasswordModal({
   mode,
   profileName,
   error,
+  onErrorClear,
 }: PasswordModalProps) {
   const { t } = useTranslation();
   const [password, setPassword] = useState('');
@@ -50,9 +52,7 @@ export function PasswordModal({
 
     if (mode === 'encrypt') {
       if (password.length < clientConfig.PASSWORD_MIN_LENGTH) {
-        setLocalError(
-          t('validation.passwordMinLength', { min: clientConfig.PASSWORD_MIN_LENGTH }),
-        );
+        setLocalError(t('validation.passwordMinLength', { min: clientConfig.PASSWORD_MIN_LENGTH }));
         return;
       }
       // The "passwords match" UI check compares two values typed by the
@@ -95,7 +95,13 @@ export function PasswordModal({
                 label={t('modals.password.password')}
                 type={showPassword ? 'text' : 'password'}
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  // Clear the server-side error (e.g. "Incorrect password")
+                  // the moment the user starts correcting it, so the red
+                  // banner doesn't linger over a fresh attempt.
+                  if (error) onErrorClear?.();
+                }}
                 placeholder={
                   mode === 'encrypt' ? t('modals.enterStrongPassword') : t('modals.enterPassword')
                 }

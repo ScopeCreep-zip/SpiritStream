@@ -16,7 +16,7 @@ type OutputGroupsSlice = Pick<
 
 export const createOutputGroupsSlice: StateCreator<ProfileState, [], [], OutputGroupsSlice> = (
   set,
-  get,
+  get
 ) => ({
   addOutputGroup: async (group) => {
     const current = get().current;
@@ -38,7 +38,7 @@ export const createOutputGroupsSlice: StateCreator<ProfileState, [], [], OutputG
         current: {
           ...current,
           outputGroups: current.outputGroups.map((g) =>
-            g.id === groupId ? { ...g, ...updates } : g,
+            g.id === groupId ? { ...g, ...updates } : g
           ),
         },
       });
@@ -72,7 +72,7 @@ export const createOutputGroupsSlice: StateCreator<ProfileState, [], [], OutputG
         current: {
           ...current,
           outputGroups: current.outputGroups.map((g) =>
-            g.id === groupId ? { ...g, streamTargets: [...g.streamTargets, target] } : g,
+            g.id === groupId ? { ...g, streamTargets: [...g.streamTargets, target] } : g
           ),
         },
       });
@@ -91,10 +91,10 @@ export const createOutputGroupsSlice: StateCreator<ProfileState, [], [], OutputG
               ? {
                   ...g,
                   streamTargets: g.streamTargets.map((t) =>
-                    t.id === targetId ? { ...t, ...updates } : t,
+                    t.id === targetId ? { ...t, ...updates } : t
                   ),
                 }
-              : g,
+              : g
           ),
         },
       });
@@ -111,7 +111,7 @@ export const createOutputGroupsSlice: StateCreator<ProfileState, [], [], OutputG
           outputGroups: current.outputGroups.map((g) =>
             g.id === groupId
               ? { ...g, streamTargets: g.streamTargets.filter((t) => t.id !== targetId) }
-              : g,
+              : g
           ),
         },
       });

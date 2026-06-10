@@ -209,8 +209,8 @@ jobs:
   publish-tauri:
     needs: build-ffmpeg
     permissions:
-      contents: write    # upload to draft release
-      id-token: write    # for actions/attest-build-provenance OIDC
+      contents: write # upload to draft release
+      id-token: write # for actions/attest-build-provenance OIDC
       attestations: write # for actions/attest-build-provenance writes
     strategy:
       fail-fast: false
@@ -554,7 +554,7 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       contents: write
-      id-token: write   # required for keyless sigstore signing
+      id-token: write # required for keyless sigstore signing
     steps:
       - name: Harden runner
         uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.19.3
@@ -658,3 +658,56 @@ jobs:
             artifacts/SHA256SUMS.cosign.sig \
             artifacts/SHA256SUMS.cosign.crt \
             --clobber
+
+  # M7: auto-generate the draft release's "What changed" notes from the
+  # conventional-commit history instead of shipping a hand-written template.
+  # git-cliff (config in `cliff.toml`) reads every commit since the previous
+  # tag, groups by type, and rewrites the draft body. Runs after the draft
+  # exists; the inline `releaseBody` in publish-tauri stays as a fallback so a
+  # git-cliff failure never leaves the release with empty notes.
+  release-notes:
+    needs: publish-tauri
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.19.3
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0 # git-cliff walks the full tag + commit history
+
+      - name: Install git-cliff
+        uses: taiki-e/install-action@84c20235bedc3797c7eee0a8f5803338efb13a3a # v2.62.51
+        with:
+          tool: git-cliff
+
+      - name: Generate release notes
+        run: |
+          # `--latest` = the range since the previous tag; `--strip all`
+          # drops cliff's header/footer so only the grouped "What changed"
+          # body remains. The static download / verification footer the
+          # maintainer wants on every release is appended below.
+          git cliff --latest --strip all --output RELEASE_NOTES.md
+          cat >> RELEASE_NOTES.md <<'EOF'
+
+          ### Downloads
+          - **macOS (Apple Silicon)**: `.dmg` ending in `aarch64`
+          - **macOS (Intel)**: `.dmg` ending in `x64`
+          - **Windows**: `.msi` or `.exe` installer
+          - **Linux**: `.AppImage` / `.deb` / `.rpm`
+
+          ### Verification
+          Every artifact carries SLSA L3 provenance (`*.sigstore`), a keyless
+          cosign signature (`*.cosign.sig` / `*.cosign.crt`), and a signed
+          `SHA256SUMS` manifest.
+          EOF
+          cat RELEASE_NOTES.md
+
+      - name: Rewrite draft release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${GITHUB_REF_NAME}" --notes-file RELEASE_NOTES.md

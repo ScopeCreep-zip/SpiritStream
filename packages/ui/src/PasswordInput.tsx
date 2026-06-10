@@ -1,4 +1,4 @@
-import { forwardRef, useState, type ComponentProps } from 'react';
+import { forwardRef, useId, useState, type ComponentProps } from 'react';
 
 /**
  * Reveal-toggling password input. Wraps a standard `<input>`
@@ -14,12 +14,14 @@ import { forwardRef, useState, type ComponentProps } from 'react';
  * `data-*` attributes + Tailwind utility classes wired in the host
  * stylesheet.
  */
-export interface PasswordInputProps
-  extends Omit<ComponentProps<'input'>, 'type'> {
+export interface PasswordInputProps extends Omit<ComponentProps<'input'>, 'type'> {
   /**
    * Optional label rendered above the input. The `<label>` element
-   * uses `htmlFor` so screen readers associate it correctly; callers
-   * must pass an `id` if the input is reachable via label click.
+   * uses `htmlFor` so screen readers associate it correctly. If the
+   * caller doesn't supply an explicit `id`, the component falls back
+   * to a React-generated stable id (useId) so label-click + screen-
+   * reader association still work without leaving the consumer to
+   * remember to set one.
    */
   label?: string;
   /** Translatable label for the visibility toggle (aria-label). */
@@ -62,7 +64,7 @@ export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
       id,
       ...inputProps
     },
-    ref,
+    ref
   ) => {
     const [internalVisible, setInternalVisible] = useState(false);
     const isControlled = visibleProp !== undefined;
@@ -74,12 +76,18 @@ export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
         setInternalVisible(next);
       }
     };
-    const describedById = helper || error ? `${id ?? 'pw'}-describedby` : undefined;
+    // Fall back to a React-generated id when the caller didn't supply
+    // one — otherwise `<label htmlFor={undefined}>` + `<input id={undefined}>`
+    // renders no `for=`/`id=` attributes, and screen readers can't
+    // associate the label with the input.
+    const generatedId = useId();
+    const effectiveId = id ?? generatedId;
+    const describedById = helper || error ? `${effectiveId}-describedby` : undefined;
     return (
       <div className="relative">
         {label && (
           <label
-            htmlFor={id}
+            htmlFor={effectiveId}
             className="block text-sm font-medium text-text-primary mb-1.5"
           >
             {label}
@@ -87,7 +95,7 @@ export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
         )}
         <input
           ref={ref}
-          id={id}
+          id={effectiveId}
           type={visible ? 'text' : 'password'}
           aria-invalid={error ? true : undefined}
           aria-describedby={describedById}
@@ -119,18 +127,14 @@ export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
         {(helper || error) && (
           <p
             id={describedById}
-            className={
-              error
-                ? 'mt-1 text-xs text-error-text'
-                : 'mt-1 text-xs text-text-tertiary'
-            }
+            className={error ? 'mt-1 text-xs text-error-text' : 'mt-1 text-xs text-text-tertiary'}
           >
             {error ?? helper}
           </p>
         )}
       </div>
     );
-  },
+  }
 );
 
 PasswordInput.displayName = 'PasswordInput';

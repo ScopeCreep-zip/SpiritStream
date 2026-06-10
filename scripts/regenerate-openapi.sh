@@ -33,6 +33,11 @@ echo "[1/3] cargo build -p spiritstream-server"
 cargo build --manifest-path "$ROOT/Cargo.toml" -p spiritstream-server >&2
 
 # Find a free port (TCP bind & release).
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "error: python3 not found in PATH — required for ephemeral-port allocation" >&2
+    echo "  install python3 (macOS: 'brew install python', linux: 'apt install python3')" >&2
+    exit 1
+fi
 PORT=$(python3 -c '
 import socket
 s = socket.socket()
@@ -40,6 +45,10 @@ s.bind(("127.0.0.1", 0))
 print(s.getsockname()[1])
 s.close()
 ')
+if [[ -z "$PORT" ]]; then
+    echo "error: failed to allocate ephemeral port" >&2
+    exit 1
+fi
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"; [[ -n "${PID:-}" ]] && kill "$PID" 2>/dev/null || true' EXIT
 

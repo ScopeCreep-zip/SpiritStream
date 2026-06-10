@@ -374,3 +374,193 @@ fn flv_with_h264_aac_validates() {
     };
     FFmpegHandler::validate_config(&p).expect("h264/aac/flv must pass");
 }
+
+// --- validate_output_group / collect_group_issues ---
+//
+// validate_config inlines its own copy of the per-group matrix; the single-
+// group entry point used by start() reaches collect_group_issues instead.
+// These exercise that separate path directly.
+
+fn enc_video() -> VideoSettings {
+    VideoSettings {
+        codec: "libx264".into(),
+        width: 1280,
+        height: 720,
+        fps: 30,
+        bitrate: "6000k".into(),
+        preset: None,
+        profile: None,
+        keyframe_interval_seconds: Some(2),
+    }
+}
+
+fn enc_audio() -> AudioSettings {
+    AudioSettings {
+        codec: "aac".into(),
+        bitrate: "160k".into(),
+        channels: 2,
+        sample_rate: 48000,
+    }
+}
+
+fn group_with(
+    video: VideoSettings,
+    audio: AudioSettings,
+    targets: Vec<StreamTarget>,
+) -> OutputGroup {
+    OutputGroup {
+        id: "g".into(),
+        name: "G".into(),
+        is_default: false,
+        generate_pts: true,
+        video,
+        audio,
+        container: ContainerSettings::default(),
+        stream_targets: targets,
+    }
+}
+
+fn group_codes(group: &OutputGroup) -> Vec<String> {
+    match FFmpegHandler::validate_output_group(group).unwrap_err() {
+        CoreError::InvalidStreamConfig { reasons } => reasons.into_iter().map(|r| r.code).collect(),
+        other => panic!("expected InvalidStreamConfig, got {other:?}"),
+    }
+}
+
+#[test]
+fn output_group_passthrough_with_target_passes() {
+    let g = group_with(
+        copy_video(),
+        copy_audio(),
+        vec![target("rtmp://x/live", "k")],
+    );
+    FFmpegHandler::validate_output_group(&g).expect("passthrough group must validate");
+}
+
+#[test]
+fn output_group_encoded_with_target_passes() {
+    let g = group_with(enc_video(), enc_audio(), vec![target("rtmp://x/live", "k")]);
+    FFmpegHandler::validate_output_group(&g).expect("valid encoded group must validate");
+}
+
+#[test]
+fn output_group_empty_video_codec_is_flagged() {
+    let mut v = enc_video();
+    v.codec = "".into();
+    let g = group_with(v, enc_audio(), vec![target("rtmp://x/live", "k")]);
+    assert!(group_codes(&g).contains(&"group_missing_video_codec".to_string()));
+}
+
+#[test]
+fn output_group_empty_target_url_is_flagged() {
+    let g = group_with(copy_video(), copy_audio(), vec![target("", "k")]);
+    assert!(group_codes(&g).contains(&"target_missing_url".to_string()));
+}
+
+#[test]
+fn output_group_empty_stream_key_is_flagged() {
+    let g = group_with(
+        copy_video(),
+        copy_audio(),
+        vec![target("rtmp://x/live", "")],
+    );
+    assert!(group_codes(&g).contains(&"target_missing_stream_key".to_string()));
+}
+
+#[test]
+fn output_group_missing_resolution_is_flagged() {
+    let mut v = enc_video();
+    v.width = 0;
+    v.height = 0;
+    let g = group_with(v, enc_audio(), vec![target("rtmp://x/live", "k")]);
+    assert!(group_codes(&g).contains(&"group_missing_resolution".to_string()));
+}
+
+#[test]
+fn output_group_resolution_too_small_is_flagged() {
+    let mut v = enc_video();
+    v.width = 8;
+    v.height = 8;
+    let g = group_with(v, enc_audio(), vec![target("rtmp://x/live", "k")]);
+    assert!(group_codes(&g).contains(&"video_resolution_too_small".to_string()));
+}
+
+#[test]
+fn output_group_odd_resolution_is_flagged() {
+    let mut v = enc_video();
+    v.width = 1281;
+    let g = group_with(v, enc_audio(), vec![target("rtmp://x/live", "k")]);
+    assert!(group_codes(&g).contains(&"video_resolution_odd".to_string()));
+}
+
+#[test]
+fn output_group_unparseable_bitrate_is_flagged() {
+    let mut v = enc_video();
+    v.bitrate = "nope".into();
+    let g = group_with(v, enc_audio(), vec![target("rtmp://x/live", "k")]);
+    assert!(group_codes(&g).contains(&"video_bitrate_unparseable".to_string()));
+}
+
+#[test]
+fn output_group_bitrate_out_of_range_is_flagged() {
+    let mut v = enc_video();
+    v.bitrate = "60000k".into();
+    let g = group_with(v, enc_audio(), vec![target("rtmp://x/live", "k")]);
+    assert!(group_codes(&g).contains(&"video_bitrate_out_of_range".to_string()));
+}
+
+#[test]
+fn output_group_fps_out_of_range_is_flagged() {
+    let mut v = enc_video();
+    v.fps = 300;
+    let g = group_with(v, enc_audio(), vec![target("rtmp://x/live", "k")]);
+    assert!(group_codes(&g).contains(&"video_fps_out_of_range".to_string()));
+}
+
+#[test]
+fn output_group_keyframe_out_of_range_is_flagged() {
+    let mut v = enc_video();
+    v.keyframe_interval_seconds = Some(60);
+    let g = group_with(v, enc_audio(), vec![target("rtmp://x/live", "k")]);
+    assert!(group_codes(&g).contains(&"video_keyframe_interval_out_of_range".to_string()));
+}
+
+// --- parse_error_details ---
+
+fn details(line: &str) -> Option<String> {
+    let mut q = std::collections::VecDeque::new();
+    q.push_back(line.to_string());
+    FFmpegHandler::parse_error_details(&q)
+}
+
+#[test]
+fn parse_error_details_maps_known_codes() {
+    assert!(details("a 10054 b").unwrap().contains("WSAECONNRESET"));
+    assert!(details("a 10053 b").unwrap().contains("WSAECONNABORTED"));
+    assert!(details("a 10060 b").unwrap().contains("WSAETIMEDOUT"));
+    assert!(details("a 10061 b").unwrap().contains("WSAECONNREFUSED"));
+    assert!(details("a 10065 b").unwrap().contains("WSAEHOSTUNREACH"));
+    assert!(details("error code: -5").unwrap().contains("EIO"));
+    assert!(details("code -5 here").unwrap().contains("EIO"));
+    assert_eq!(
+        details("Connection refused"),
+        Some("RTMP server refused connection".to_string())
+    );
+    assert_eq!(
+        details("Connection timed out"),
+        Some("RTMP server connection timed out".to_string())
+    );
+    assert!(details("error muxing packet").unwrap().contains("network"));
+    assert_eq!(details("nothing interesting here"), None);
+}
+
+#[test]
+fn parse_error_details_scans_from_newest_line() {
+    let mut q = std::collections::VecDeque::new();
+    q.push_back("10054 older".to_string());
+    q.push_back("10060 newer".to_string());
+    // rev() iteration means the most recently pushed line wins.
+    assert!(FFmpegHandler::parse_error_details(&q)
+        .unwrap()
+        .contains("WSAETIMEDOUT"));
+}

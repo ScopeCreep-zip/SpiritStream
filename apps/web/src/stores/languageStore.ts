@@ -1,7 +1,18 @@
 import { create } from 'zustand';
 import i18n from '@/lib/i18n';
 
-export type Language = 'en' | 'es' | 'fr' | 'de' | 'ja' | 'ar' | 'zh-CN' | 'ko' | 'uk' | 'ru' | 'af';
+export type Language =
+  | 'en'
+  | 'es'
+  | 'fr'
+  | 'de'
+  | 'ja'
+  | 'ar'
+  | 'zh-CN'
+  | 'ko'
+  | 'uk'
+  | 'ru'
+  | 'af';
 
 const rtlLanguages = new Set<Language>(['ar']);
 

@@ -1,16 +1,21 @@
+mod endpoints;
 mod facebook;
 mod kick;
 mod platform;
-mod stripchat;
 mod tiktok;
 mod trovo;
 mod twitch;
 mod youtube;
 
+#[cfg(test)]
+mod connector_tests;
+#[cfg(test)]
+mod integration_harness;
+
+pub use endpoints::ChatEndpoints;
 pub use facebook::FacebookConnector;
 pub use kick::KickConnector;
 pub use platform::{BoxedPlatform, ChatPlatform, PlatformResult};
-pub use stripchat::StripchatConnector;
 pub use tiktok::TikTokConnector;
 pub use trovo::TrovoConnector;
 pub use twitch::TwitchConnector;

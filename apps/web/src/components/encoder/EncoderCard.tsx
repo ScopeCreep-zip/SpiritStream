@@ -159,9 +159,11 @@ export function EncoderCard({
                 {encoder.type !== 'passthrough' && (
                   <span className="text-text-tertiary">
                     {' '}
-                    ({encoder.type === 'hardware'
+                    (
+                    {encoder.type === 'hardware'
                       ? tDynamic('encoder.hardware', { defaultValue: 'Hardware' })
-                      : tDynamic('encoder.software', { defaultValue: 'Software' })})
+                      : tDynamic('encoder.software', { defaultValue: 'Software' })}
+                    )
                   </span>
                 )}
               </p>
@@ -173,9 +175,7 @@ export function EncoderCard({
         </div>
 
         {/* Video Settings Grid */}
-        <div
-          className="grid grid-cols-4 gap-4 py-4 border-t border-b border-border-muted"
-        >
+        <div className="grid grid-cols-4 gap-4 py-4 border-t border-b border-border-muted">
           <div className="flex flex-col items-center text-center">
             <Monitor className="w-4 h-4 text-text-tertiary mb-1" />
             <span className="text-xs text-text-tertiary uppercase">
@@ -255,7 +255,9 @@ export function EncoderCard({
             )}
             {isDefaultGroup && (
               <span className="text-xs text-text-tertiary italic px-2">
-                {tDynamic('encoder.defaultPassthrough', { defaultValue: 'Default RTMP relay - cannot be edited or deleted' })}
+                {tDynamic('encoder.defaultPassthrough', {
+                  defaultValue: 'Default RTMP relay - cannot be edited or deleted',
+                })}
               </span>
             )}
           </div>

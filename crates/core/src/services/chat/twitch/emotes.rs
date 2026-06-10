@@ -96,7 +96,10 @@ pub fn parse_twitch_emotes_tag(tag: &str, msg_chars: &[char]) -> Vec<RawTwitchEm
             let Some((start_str, end_str)) = range.split_once('-') else {
                 continue;
             };
-            let (Ok(start), Ok(end)) = (start_str.trim().parse::<usize>(), end_str.trim().parse::<usize>()) else {
+            let (Ok(start), Ok(end)) = (
+                start_str.trim().parse::<usize>(),
+                end_str.trim().parse::<usize>(),
+            ) else {
                 continue;
             };
             if end < start || end >= msg_len {

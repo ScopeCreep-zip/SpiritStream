@@ -8,7 +8,7 @@ export const stream = {
       'POST',
       `/api/v1/streams/groups/${encodeURIComponent(group.id)}`,
       undefined,
-      { group, incomingUrl },
+      { group, incomingUrl }
     );
     return pid;
   },
@@ -18,7 +18,7 @@ export const stream = {
       'POST',
       '/api/v1/streams',
       undefined,
-      { groups, incomingUrl },
+      { groups, incomingUrl }
     );
     return pids;
   },
@@ -26,7 +26,7 @@ export const stream = {
   stop: async (groupId: string) => {
     await fetchTypedJson<{ stopped: boolean }>(
       'DELETE',
-      `/api/v1/streams/groups/${encodeURIComponent(groupId)}`,
+      `/api/v1/streams/groups/${encodeURIComponent(groupId)}`
     );
   },
   /** Stop all active streams */
@@ -36,48 +36,38 @@ export const stream = {
   getActiveCount: async () => {
     const status = await fetchTypedJson<{ activeCount: number; activeGroupIds: string[] }>(
       'GET',
-      '/api/v1/streams',
+      '/api/v1/streams'
     );
     return status.activeCount;
   },
-  isGroupStreaming: async (groupId: string) => {
-    const status = await fetchTypedJson<{ activeGroupIds: string[] }>(
-      'GET',
-      '/api/v1/streams',
-    );
-    return status.activeGroupIds.includes(groupId);
-  },
   getActiveGroupIds: async () => {
-    const status = await fetchTypedJson<{ activeGroupIds: string[] }>(
-      'GET',
-      '/api/v1/streams',
-    );
+    const status = await fetchTypedJson<{ activeGroupIds: string[] }>('GET', '/api/v1/streams');
     return status.activeGroupIds;
   },
   toggleTarget: async (
     targetId: string,
     enabled: boolean,
     group: OutputGroup,
-    incomingUrl: string,
+    incomingUrl: string
   ) => {
     const { pid } = await fetchTypedJson<{ pid: number }>(
       'PATCH',
       `/api/v1/streams/targets/${encodeURIComponent(targetId)}`,
       undefined,
-      { enabled, group, incomingUrl },
+      { enabled, group, incomingUrl }
     );
     return pid;
   },
   isTargetDisabled: (targetId: string) =>
     fetchTypedJson<{ disabled: boolean }>(
       'GET',
-      `/api/v1/streams/targets/${encodeURIComponent(targetId)}/disabled`,
+      `/api/v1/streams/targets/${encodeURIComponent(targetId)}/disabled`
     ).then((r) => r.disabled),
   /** Retry a failed stream. Returns PID and next delay if another retry is needed */
   retry: (groupId: string) =>
     fetchTypedJson<{ pid: number; nextDelaySecs: number | null }>(
       'POST',
-      `/api/v1/streams/groups/${encodeURIComponent(groupId)}/retry`,
+      `/api/v1/streams/groups/${encodeURIComponent(groupId)}/retry`
     ),
   /**
    * Validate an entire profile's encoding config server-side. Throws on

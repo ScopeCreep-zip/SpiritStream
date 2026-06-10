@@ -184,3 +184,99 @@ impl OAuthConfig {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn env_unset(key: &str) -> bool {
+        std::env::var(key).is_err()
+    }
+
+    #[test]
+    fn has_provider_flags_are_always_true() {
+        let c = OAuthConfig::default();
+        assert!(c.has_twitch());
+        assert!(c.has_youtube());
+        assert!(c.has_kick());
+        assert!(c.has_facebook());
+    }
+
+    #[test]
+    fn explicit_client_id_override_is_trimmed_and_returned() {
+        let c = OAuthConfig {
+            twitch_client_id: Some("  tw-id  ".into()),
+            youtube_client_id: Some("yt-id".into()),
+            kick_client_id: Some("kick-id".into()),
+            facebook_client_id: Some("fb-id".into()),
+            ..OAuthConfig::default()
+        };
+        assert_eq!(c.get_twitch_client_id(), "tw-id");
+        assert_eq!(c.get_youtube_client_id(), "yt-id");
+        assert_eq!(c.get_kick_client_id(), "kick-id");
+        assert_eq!(c.get_facebook_client_id(), "fb-id");
+    }
+
+    #[test]
+    fn explicit_client_secret_override_is_trimmed_and_returned() {
+        let c = OAuthConfig {
+            twitch_client_secret: Some("  tw-secret  ".into()),
+            youtube_client_secret: Some("yt-secret".into()),
+            kick_client_secret: Some("kick-secret".into()),
+            facebook_client_secret: Some("fb-secret".into()),
+            ..OAuthConfig::default()
+        };
+        assert_eq!(c.get_twitch_client_secret().as_deref(), Some("tw-secret"));
+        assert_eq!(c.get_youtube_client_secret().as_deref(), Some("yt-secret"));
+        assert_eq!(c.get_kick_client_secret().as_deref(), Some("kick-secret"));
+        assert_eq!(c.get_facebook_client_secret().as_deref(), Some("fb-secret"));
+    }
+
+    #[test]
+    fn whitespace_only_override_falls_through_to_non_empty_value() {
+        let c = OAuthConfig {
+            twitch_client_id: Some("   ".into()),
+            ..OAuthConfig::default()
+        };
+        let resolved = c.get_twitch_client_id();
+        // Whitespace-only override is ignored; resolution continues to env
+        // or the embedded placeholder — never the blank string itself.
+        assert!(!resolved.is_empty());
+        assert_ne!(resolved, "   ");
+    }
+
+    #[test]
+    fn client_id_falls_back_to_placeholder_when_unset() {
+        // Only meaningful when the CI/dev shell hasn't injected real IDs.
+        let c = OAuthConfig::default();
+        if env_unset("SPIRITSTREAM_TWITCH_CLIENT_ID") {
+            assert_eq!(c.get_twitch_client_id(), "TWITCH_CLIENT_ID_PLACEHOLDER");
+        }
+        if env_unset("SPIRITSTREAM_YOUTUBE_CLIENT_ID") {
+            assert_eq!(c.get_youtube_client_id(), "YOUTUBE_CLIENT_ID_PLACEHOLDER");
+        }
+        if env_unset("SPIRITSTREAM_KICK_CLIENT_ID") {
+            assert_eq!(c.get_kick_client_id(), "KICK_CLIENT_ID_PLACEHOLDER");
+        }
+        if env_unset("SPIRITSTREAM_FACEBOOK_CLIENT_ID") {
+            assert_eq!(c.get_facebook_client_id(), "FACEBOOK_CLIENT_ID_PLACEHOLDER");
+        }
+    }
+
+    #[test]
+    fn client_secret_defaults_to_none_when_unset() {
+        let c = OAuthConfig::default();
+        if env_unset("SPIRITSTREAM_TWITCH_CLIENT_SECRET") {
+            assert!(c.get_twitch_client_secret().is_none());
+        }
+        if env_unset("SPIRITSTREAM_YOUTUBE_CLIENT_SECRET") {
+            assert!(c.get_youtube_client_secret().is_none());
+        }
+        if env_unset("SPIRITSTREAM_KICK_CLIENT_SECRET") {
+            assert!(c.get_kick_client_secret().is_none());
+        }
+        if env_unset("SPIRITSTREAM_FACEBOOK_CLIENT_SECRET") {
+            assert!(c.get_facebook_client_secret().is_none());
+        }
+    }
+}

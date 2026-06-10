@@ -120,7 +120,6 @@
     "--scrollbar-thumb": "#F2C9EA",
     "--scrollbar-thumb-hover": "#E5A8D9",
     "--font-sans": "'Fredoka', 'Comic Neue', 'Comic Sans MS', 'Chalkboard SE', 'Marker Felt', cursive, sans-serif",
-    "--font-mono": "'Fira Code', 'JetBrains Mono', monospace"
-  }
+    "--font-mono": "'Fira Code', 'JetBrains Mono', monospace",
+  },
 }
-

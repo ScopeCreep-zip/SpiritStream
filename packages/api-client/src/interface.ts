@@ -40,10 +40,7 @@ import type {
   FileBrowseResponse,
   FileHomeResponse,
 } from '@spiritstream/types';
-import type {
-  EncoderPresetsResponse,
-  ClientConfigResponse,
-} from './api';
+import type { EncoderPresetsResponse, ClientConfigResponse } from './api';
 
 export interface ProfileApi {
   getAll(): Promise<string[]>;
@@ -71,9 +68,13 @@ export interface StreamApi {
   stop(groupId: string): Promise<void>;
   stopAll(): Promise<void>;
   getActiveCount(): Promise<number>;
-  isGroupStreaming(groupId: string): Promise<boolean>;
   getActiveGroupIds(): Promise<string[]>;
-  toggleTarget(targetId: string, enabled: boolean, group: OutputGroup, incomingUrl: string): Promise<number>;
+  toggleTarget(
+    targetId: string,
+    enabled: boolean,
+    group: OutputGroup,
+    incomingUrl: string
+  ): Promise<number>;
   isTargetDisabled(targetId: string): Promise<boolean>;
   retry(groupId: string): Promise<{ pid: number; nextDelaySecs: number | null }>;
   /**
@@ -152,7 +153,9 @@ export interface ObsApi {
 }
 
 export interface DiscordApi {
-  testWebhook(url: string): Promise<{ success: boolean; message: string; skippedCooldown: boolean }>;
+  testWebhook(
+    url: string
+  ): Promise<{ success: boolean; message: string; skippedCooldown: boolean }>;
   sendNotification(): Promise<{ success: boolean; message: string; skippedCooldown: boolean }>;
   resetCooldown(): Promise<void>;
 }
@@ -163,7 +166,16 @@ export interface ChatApi {
    *  identity-warning + token flow. Identical payload shape to
    *  `connect`, separate method so the gate is unmissable. */
   connectFacebook(config: ChatConfig): Promise<unknown>;
-  sendMessage(message: string): Promise<ChatSendResult[]>;
+  /**
+   * Send `message` to chat. Without `targetPlatforms` the backend
+   * dispatches to every platform whose `*_send_enabled` flag is on —
+   * the broadcast behaviour gated by `chatSettings.sendAllEnabled`.
+   * With `targetPlatforms` set, dispatch only to that list (each
+   * subject to the connector's `can_send()` gate). The composer
+   * passes the array when the user has flipped sendAllEnabled off
+   * and picked a single platform.
+   */
+  sendMessage(message: string, targetPlatforms?: ChatPlatform[]): Promise<ChatSendResult[]>;
   disconnect(platform: ChatPlatform): Promise<void>;
   retryConnection(platform: ChatPlatform): Promise<void>;
   disconnectAll(): Promise<void>;
@@ -184,7 +196,11 @@ export interface FilesApi {
 export interface OAuthApi {
   isConfigured(provider: string): Promise<boolean>;
   startFlow(provider: string): Promise<OAuthFlowResult>;
-  completeFlow(provider: string, code: string, state: string): Promise<{
+  completeFlow(
+    provider: string,
+    code: string,
+    state: string
+  ): Promise<{
     provider: string;
     userId: string;
     username: string;
@@ -193,7 +209,10 @@ export interface OAuthApi {
   getAccount(provider: string): Promise<OAuthAccountStatus>;
   disconnect(provider: string): Promise<void>;
   forget(provider: string): Promise<void>;
-  refreshToken(provider: string, refreshToken: string): Promise<{
+  refreshToken(
+    provider: string,
+    refreshToken: string
+  ): Promise<{
     accessToken: string;
     refreshToken?: string;
     expiresIn?: number;

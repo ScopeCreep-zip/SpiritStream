@@ -131,6 +131,6 @@
 
     "--scrollbar-track": "#FFFFFF",
     "--scrollbar-thumb": "#000000",
-    "--scrollbar-thumb-hover": "#0000AA"
-  }
+    "--scrollbar-thumb-hover": "#0000AA",
+  },
 }

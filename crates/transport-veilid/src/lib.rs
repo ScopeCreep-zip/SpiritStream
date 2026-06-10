@@ -59,7 +59,8 @@ impl Transport for VeilidTransport {
              real implementation must close."
         );
         Err(CoreError::NotImplemented {
-            feature: "VeilidTransport::serve — contract-validation spike, no working transport".into(),
+            feature: "VeilidTransport::serve — contract-validation spike, no working transport"
+                .into(),
         })
     }
 

@@ -44,7 +44,7 @@ export function PlatformSignInButton({
       toast.info(
         t('chat.oauth.browserOpened', {
           defaultValue: 'Check your browser to complete authentication',
-        }),
+        })
       );
     } catch (error) {
       logger.error(`[PlatformSignInButton] ${provider} sign-in failed:`, error);
@@ -52,7 +52,7 @@ export function PlatformSignInButton({
         t('chat.oauth.startFailed', {
           defaultValue: 'Failed to start sign-in: {{error}}',
           error: error instanceof Error ? error.message : String(error),
-        }),
+        })
       );
     } finally {
       setBusy(false);
@@ -67,10 +67,16 @@ export function PlatformSignInButton({
         t('chat.oauth.signedOut', {
           defaultValue: 'Signed out of {{platform}}',
           platform: provider,
-        }),
+        })
       );
     } catch (error) {
       logger.error(`[PlatformSignInButton] ${provider} sign-out failed:`, error);
+      toast.error(
+        t('chat.oauth.signOutFailed', {
+          defaultValue: 'Failed to sign out: {{error}}',
+          error: error instanceof Error ? error.message : String(error),
+        })
+      );
     } finally {
       setBusy(false);
     }

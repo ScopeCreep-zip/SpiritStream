@@ -3,7 +3,11 @@ import type { TwitchAuth } from "./TwitchAuth";
 import type { YouTubeAuth } from "./YouTubeAuth";
 
 /**
- * Platform-specific credentials
+ * Platform-specific credentials.
+ *
+ * `Debug` is hand-written (F5) so OAuth tokens, session cookies, and
+ * API keys never reach a panic message, log line, or `dbg!()`
+ * rendering. Serde is unaffected.
  */
 export type ChatCredentials = { "type": "twitch", 
 /**

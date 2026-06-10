@@ -63,11 +63,7 @@ export function LoginModal({ open, onSuccess }: LoginModalProps) {
   };
 
   return (
-    <Modal
-      open={open}
-      onClose={() => {}}
-      title={t('login.title', 'Authentication Required')}
-    >
+    <Modal open={open} onClose={() => {}} title={t('login.title', 'Authentication Required')}>
       <form onSubmit={handleSubmit}>
         <ModalBody>
           <div className="flex items-center gap-3 mb-4 p-3 bg-bg-muted rounded-lg">
@@ -119,9 +115,7 @@ export function LoginModal({ open, onSuccess }: LoginModalProps) {
 
         <ModalFooter>
           <Button type="submit" variant="primary" disabled={loading}>
-            {loading
-              ? t('login.authenticating', 'Authenticating...')
-              : t('login.submit', 'Login')}
+            {loading ? t('login.authenticating', 'Authenticating...') : t('login.submit', 'Login')}
           </Button>
         </ModalFooter>
       </form>

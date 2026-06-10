@@ -180,6 +180,6 @@
     "--shadow-color": "rgba(0, 0, 0, 0.5)",
     "--scrollbar-track": "#1E1E2E",
     "--scrollbar-thumb": "#45475A",
-    "--scrollbar-thumb-hover": "#585B70"
-  }
+    "--scrollbar-thumb-hover": "#585B70",
+  },
 }

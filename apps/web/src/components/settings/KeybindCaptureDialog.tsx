@@ -75,9 +75,7 @@ export function KeybindCaptureDialog({
       }
     >
       <div className="flex flex-col items-center gap-4 py-2">
-        {label && (
-          <p className="text-sm text-text-secondary text-center">{label}</p>
-        )}
+        {label && <p className="text-sm text-text-secondary text-center">{label}</p>}
         <p className="text-xs text-text-tertiary text-center">
           {t('hotkey.capture.prompt', {
             defaultValue: 'Press the key combination you want to use.',
@@ -86,7 +84,7 @@ export function KeybindCaptureDialog({
         <div
           className={cn(
             'flex items-center gap-1 min-h-[3rem] px-4 py-3 rounded-lg',
-            'border-2 border-dashed border-border-default bg-bg-sunken',
+            'border-2 border-dashed border-border-default bg-bg-sunken'
           )}
         >
           {preview ? (

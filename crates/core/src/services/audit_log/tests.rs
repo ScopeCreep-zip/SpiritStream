@@ -17,6 +17,7 @@ fn append_then_read_roundtrips_and_carries_seq_plus_hmac() {
     svc.record(AuditAction::PanicTriggered {
         streams_stopped: 2,
         elapsed_ms: 145,
+        connector_errors: Vec::new(),
     })
     .unwrap();
     let entries = svc.entries().unwrap();
@@ -112,6 +113,64 @@ fn audit_log_file_is_0600() {
     svc.record(AuditAction::AppStarted).unwrap();
     let perms = std::fs::metadata(svc.log_path()).unwrap().permissions();
     assert_eq!(perms.mode() & 0o777, 0o600);
+}
+
+/// G2: SessionRevoked is one of the four "destructive ops" the plan
+/// requires the chain to surface. Pre-G2 the variant didn't exist and
+/// `revoke-all-sessions` wrote no audit breadcrumb — post-incident review
+/// couldn't reconstruct "user demanded all sessions out at T."
+#[test]
+fn session_revoked_entry_lands_in_chain() {
+    let (_dir, svc) = svc();
+    svc.record(AuditAction::SessionRevoked { count: 7 })
+        .unwrap();
+    let entries = svc.entries().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert!(matches!(
+        entries[0].action,
+        AuditAction::SessionRevoked { count: 7 }
+    ));
+    // Chain verifies — adding a new variant must not break the HMAC.
+    assert!(matches!(
+        svc.verify_chain().unwrap(),
+        AuditChainStatus::Ok {
+            entries_verified: 1
+        }
+    ));
+}
+
+/// G2: ConfirmTokenIssued records the INTENT but never the token value.
+/// The chain entry is the proof that the user asked for X around time T,
+/// independent of whether they followed through with the destructive
+/// op (which gets its own subsequent entry — pair via wall-clock).
+#[test]
+fn confirm_token_issued_records_intent_not_token() {
+    let (_dir, svc) = svc();
+    svc.record(AuditAction::ConfirmTokenIssued {
+        intent: "rotate_machine_key".into(),
+    })
+    .unwrap();
+    let entries = svc.entries().unwrap();
+    assert_eq!(entries.len(), 1);
+    match &entries[0].action {
+        AuditAction::ConfirmTokenIssued { intent } => {
+            assert_eq!(intent, "rotate_machine_key");
+        }
+        other => panic!("expected ConfirmTokenIssued, got {other:?}"),
+    }
+    // Sanity: the raw JSON line carries the intent but no `token` field.
+    let line = std::fs::read_to_string(svc.log_path()).unwrap();
+    assert!(line.contains("rotate_machine_key"));
+    assert!(
+        !line.contains("\"token\":"),
+        "ConfirmTokenIssued must not record the token value, got: {line}",
+    );
+    assert!(matches!(
+        svc.verify_chain().unwrap(),
+        AuditChainStatus::Ok {
+            entries_verified: 1
+        }
+    ));
 }
 
 #[test]

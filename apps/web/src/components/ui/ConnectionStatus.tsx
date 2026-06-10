@@ -88,7 +88,7 @@ export function ConnectionStatus({ className }: ConnectionStatusProps) {
       className={cn(
         'inline-flex items-center gap-2 text-xs font-medium',
         config.textClass,
-        className,
+        className
       )}
       role="status"
       aria-live="polite"
@@ -97,7 +97,7 @@ export function ConnectionStatus({ className }: ConnectionStatusProps) {
         className={cn(
           'w-2 h-2 rounded-full shrink-0',
           config.dotClass,
-          config.animate && 'animate-pulse',
+          config.animate && 'animate-pulse'
         )}
         aria-hidden="true"
       />

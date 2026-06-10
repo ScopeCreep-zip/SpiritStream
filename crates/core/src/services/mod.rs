@@ -13,6 +13,7 @@ mod encryption;
 mod events;
 mod ffmpeg_handler;
 mod ffmpeg_locator;
+mod jsonc;
 mod log_manager;
 mod media_sanitizer;
 mod oauth;

@@ -89,3 +89,71 @@ fn read_log_lines(path: &Path, max_lines: usize) -> Result<Vec<String>, CoreErro
     let start = lines.len().saturating_sub(max_lines);
     Ok(lines[start..].to_vec())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{prune_logs, read_recent_logs};
+    use filetime::{set_file_mtime, FileTime};
+    use std::fs;
+    use std::time::{Duration, SystemTime};
+    use tempfile::TempDir;
+
+    fn backdate(path: &std::path::Path, days_ago: u64) {
+        let when = SystemTime::now() - Duration::from_secs(days_ago * 24 * 60 * 60);
+        set_file_mtime(path, FileTime::from_system_time(when)).expect("set mtime");
+    }
+
+    #[test]
+    fn prune_with_zero_retention_is_a_noop() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("a.log"), b"x").unwrap();
+        assert_eq!(prune_logs(dir.path(), 0).unwrap(), 0);
+        assert!(dir.path().join("a.log").exists());
+    }
+
+    #[test]
+    fn prune_missing_dir_is_a_noop() {
+        let dir = TempDir::new().unwrap();
+        let missing = dir.path().join("does-not-exist");
+        assert_eq!(prune_logs(&missing, 7).unwrap(), 0);
+    }
+
+    #[test]
+    fn prune_removes_only_old_log_files() {
+        let dir = TempDir::new().unwrap();
+        let old = dir.path().join("old.log");
+        let fresh = dir.path().join("fresh.log");
+        let other = dir.path().join("keep.txt");
+        fs::write(&old, b"old").unwrap();
+        fs::write(&fresh, b"fresh").unwrap();
+        fs::write(&other, b"not a log").unwrap();
+        backdate(&old, 30);
+        backdate(&other, 30);
+
+        let removed = prune_logs(dir.path(), 7).unwrap();
+        assert_eq!(removed, 1);
+        assert!(!old.exists(), "stale .log should be pruned");
+        assert!(fresh.exists(), "recent .log should be kept");
+        assert!(other.exists(), "non-.log files are never pruned");
+    }
+
+    #[test]
+    fn read_recent_logs_empty_when_no_log_files() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("notes.txt"), b"ignored").unwrap();
+        assert!(read_recent_logs(dir.path(), 10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn read_recent_logs_returns_tail_of_latest_file_skipping_blanks() {
+        let dir = TempDir::new().unwrap();
+        let older = dir.path().join("older.log");
+        let newer = dir.path().join("newer.log");
+        fs::write(&older, "should-not-appear\n").unwrap();
+        fs::write(&newer, "l1\n\n   \nl2\nl3\n").unwrap();
+        backdate(&older, 5);
+
+        let tail = read_recent_logs(dir.path(), 2).unwrap();
+        assert_eq!(tail, vec!["l2".to_string(), "l3".to_string()]);
+    }
+}

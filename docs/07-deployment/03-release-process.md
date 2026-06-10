@@ -451,6 +451,23 @@ git push origin "v$VERSION"
 echo "Release v$VERSION initiated"
 ```
 
+## Step 8: Regenerate release notes from conventional commits
+
+The release workflow ships a static template covering Downloads / Requirements / Verification. To prepend an auto-generated "What changed" section grouped by commit type (feat / fix / perf / refactor / etc), use the `cliff.toml` config at the repo root:
+
+```bash
+# one-time install (per maintainer machine)
+cargo install --locked git-cliff
+
+# generate notes for the tag you just pushed
+git cliff --tag "v$VERSION" --strip all > /tmp/release-notes.md
+
+# inject them into the draft release the workflow created
+gh release edit "v$VERSION" --notes-file /tmp/release-notes.md --draft=false
+```
+
+Conventional-commit hygiene matters here — `git cliff` filters out commits that don't match the `commit_parsers` patterns in `cliff.toml`. If a major change doesn't show up, check that its commit message follows `type(scope): subject` (commitlint enforces this on PRs, but tag-time amendments can drift).
+
 ---
 
 **Related:** [Building](./01-building.md) | [Platform Guides](./02-platform-guides.md)

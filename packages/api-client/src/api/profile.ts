@@ -11,7 +11,7 @@ export const profile = {
     fetchTypedJson<Profile>(
       'GET',
       `/api/v1/profiles/${encodeURIComponent(name)}`,
-      password ? { password } : undefined,
+      password ? { password } : undefined
     ),
   /**
    * Load + set-active in one round-trip. Server emits `profile_activated`
@@ -23,7 +23,7 @@ export const profile = {
       'POST',
       `/api/v1/profiles/${encodeURIComponent(name)}/activate`,
       undefined,
-      { password },
+      { password }
     ),
   /** Unlock an encrypted profile in the server-side session unlock set. */
   unlock: (name: string, password: string) =>
@@ -31,7 +31,7 @@ export const profile = {
       'POST',
       `/api/v1/profiles/${encodeURIComponent(name)}/unlock`,
       undefined,
-      { password },
+      { password }
     ),
   /**
    * Atomic encryption removal: load with password + re-save without it
@@ -43,35 +43,34 @@ export const profile = {
       'POST',
       `/api/v1/profiles/${encodeURIComponent(name)}/decrypt`,
       undefined,
-      { password },
+      { password }
     ),
   /** Remove a profile from the server-side session unlock set. */
   lock: (name: string) =>
     fetchTypedJson<{ name: string; locked: boolean }>(
       'POST',
-      `/api/v1/profiles/${encodeURIComponent(name)}/lock`,
+      `/api/v1/profiles/${encodeURIComponent(name)}/lock`
     ),
   /** List every encrypted profile currently unlocked in the session. */
-  lockedList: () =>
-    fetchTypedJson<{ unlocked: string[] }>('GET', '/api/v1/profiles/locked'),
+  lockedList: () => fetchTypedJson<{ unlocked: string[] }>('GET', '/api/v1/profiles/locked'),
   save: async (profile: Profile, password?: string) => {
     await fetchTypedJson<{ saved: boolean }>(
       'PUT',
       `/api/v1/profiles/${encodeURIComponent(profile.name)}`,
       undefined,
-      { profile, password },
+      { profile, password }
     );
   },
   delete: async (name: string) => {
     await fetchTypedJson<{ deleted: boolean }>(
       'DELETE',
-      `/api/v1/profiles/${encodeURIComponent(name)}`,
+      `/api/v1/profiles/${encodeURIComponent(name)}`
     );
   },
   isEncrypted: async (name: string) => {
     const { encrypted } = await fetchTypedJson<{ encrypted: boolean }>(
       'GET',
-      `/api/v1/profiles/${encodeURIComponent(name)}/encrypted`,
+      `/api/v1/profiles/${encodeURIComponent(name)}/encrypted`
     );
     return encrypted;
   },
@@ -80,24 +79,21 @@ export const profile = {
       'POST',
       '/api/v1/profiles/validate-input',
       undefined,
-      { profileId, input },
+      { profileId, input }
     );
   },
   setProfileOrder: async (orderedNames: string[]) => {
-    await fetchTypedJson<Record<string, never>>(
-      'PATCH',
-      '/api/v1/profiles/order',
-      undefined,
-      { orderedNames },
-    );
+    await fetchTypedJson<Record<string, never>>('PATCH', '/api/v1/profiles/order', undefined, {
+      orderedNames,
+    });
   },
   getOrderIndexMap: () =>
     fetchTypedJson<{ indices: Record<string, number> }>('GET', '/api/v1/profiles/order').then(
-      (r) => r.indices,
+      (r) => r.indices
     ),
   ensureOrderIndexes: () =>
     fetchTypedJson<{ indices: Record<string, number> }>(
       'POST',
-      '/api/v1/profiles/order/ensure',
+      '/api/v1/profiles/order/ensure'
     ).then((r) => r.indices),
 };

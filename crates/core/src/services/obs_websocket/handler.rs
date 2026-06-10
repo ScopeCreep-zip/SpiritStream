@@ -1,6 +1,7 @@
 use obws::Client;
 use std::sync::Arc;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{broadcast, Mutex as TokioMutex, RwLock};
+use tokio::task::JoinHandle;
 
 use super::cascade::ObsCascadeDeps;
 use super::types::{IntegrationDirection, ObsConfig, ObsState};
@@ -35,6 +36,40 @@ pub struct ObsWebSocketHandler {
     /// without an executor. Reads on the OBS poll loop are sparse
     /// enough that the lockless cost is irrelevant.
     pub(super) cascade_deps: Arc<std::sync::RwLock<Option<ObsCascadeDeps>>>,
+    /// I1: handle to the background poll task spawned in
+    /// `start_event_listener`. Pre-I1 we spawned and dropped the join
+    /// handle, so the task outlived the handler in unit tests + on
+    /// reconnect cycles where the same handler started a fresh poll
+    /// loop without cancelling the old one. `Drop` aborts the handle
+    /// so the runtime reclaims the task immediately.
+    pub(super) listener_handle: Arc<TokioMutex<Option<JoinHandle<()>>>>,
+    /// I1: handle to the in-flight OBS→SpiritStream delayed-start task
+    /// spawned in `run_obs_to_ss_cascade`. Single-flight — a fresh
+    /// trigger aborts the previous delayed task, so OBS oscillating
+    /// active↔inactive inside the 2 s OBS_TRIGGER_DELAY_MS window
+    /// cancels the stale start instead of queueing duplicates. Drop
+    /// also aborts so the task can't outlive the handler.
+    pub(super) cascade_start_handle: Arc<TokioMutex<Option<JoinHandle<()>>>>,
+}
+
+impl Drop for ObsWebSocketHandler {
+    fn drop(&mut self) {
+        // Best-effort cancellation. `try_lock` because Drop isn't
+        // async and we don't want to block on lock contention from a
+        // dying handler. Send shutdown FIRST so a non-locked poll
+        // task can observe the broadcast.
+        let _ = self.shutdown_tx.send(());
+        if let Ok(mut guard) = self.listener_handle.try_lock() {
+            if let Some(handle) = guard.take() {
+                handle.abort();
+            }
+        }
+        if let Ok(mut guard) = self.cascade_start_handle.try_lock() {
+            if let Some(handle) = guard.take() {
+                handle.abort();
+            }
+        }
+    }
 }
 
 impl ObsWebSocketHandler {
@@ -48,6 +83,8 @@ impl ObsWebSocketHandler {
             app_data_dir,
             triggered_by_us: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             cascade_deps: Arc::new(std::sync::RwLock::new(None)),
+            listener_handle: Arc::new(TokioMutex::new(None)),
+            cascade_start_handle: Arc::new(TokioMutex::new(None)),
         }
     }
 
@@ -55,8 +92,11 @@ impl ObsWebSocketHandler {
     /// OBS→SpiritStream trigger in core. Called once by
     /// `ServiceRegistry::build` after all services exist.
     pub fn set_cascade_deps(&self, deps: ObsCascadeDeps) {
-        if let Ok(mut guard) = self.cascade_deps.write() {
-            *guard = Some(deps);
+        match self.cascade_deps.write() {
+            Ok(mut guard) => *guard = Some(deps),
+            Err(e) => {
+                log::error!("obs cascade_deps write lock poisoned during set_cascade_deps: {e}")
+            }
         }
     }
 

@@ -125,6 +125,15 @@ fn select_limiter<'a>(
     if method == Method::POST && path.starts_with("/api/v1/oauth/") && path.ends_with("/flow") {
         return (&state.endpoint_limiters.oauth_flow, subject);
     }
+    if method == Method::POST && path == "/api/v1/security/confirm-token" {
+        return (&state.endpoint_limiters.confirm_token, subject);
+    }
+    if method == Method::POST && path == "/api/v1/security/sessions/revoke-all" {
+        return (&state.endpoint_limiters.revoke_sessions, subject);
+    }
+    if method == Method::POST && path == "/api/v1/security/machine-key/rotate" {
+        return (&state.endpoint_limiters.machine_key_rotate, subject);
+    }
     (&state.endpoint_limiters.default_auth, subject)
 }
 

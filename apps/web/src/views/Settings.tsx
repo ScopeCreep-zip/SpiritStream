@@ -59,7 +59,7 @@ export function Settings() {
             'flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm font-medium transition-colors',
             activeTab === 'profile'
               ? 'bg-bg-surface text-text-primary border border-b-0 border-border-default'
-              : 'text-text-secondary hover:text-text-primary hover:bg-bg-muted',
+              : 'text-text-secondary hover:text-text-primary hover:bg-bg-muted'
           )}
         >
           <User className="w-4 h-4" />
@@ -74,7 +74,7 @@ export function Settings() {
             'flex items-center gap-2 px-4 py-2 rounded-t-lg text-sm font-medium transition-colors',
             activeTab === 'global'
               ? 'bg-bg-surface text-text-primary border border-b-0 border-border-default'
-              : 'text-text-secondary hover:text-text-primary hover:bg-bg-muted',
+              : 'text-text-secondary hover:text-text-primary hover:bg-bg-muted'
           )}
         >
           <Globe className="w-4 h-4" />

@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { FormGroup, FormLabel } from '@/components/ui/Form';
 import { ConfirmDialog } from '@spiritstream/ui';
 import { useSettings, SETTINGS_QUERY_KEY } from '@/hooks/useSettings';
 import { useFileBrowser } from '@/hooks/useFileBrowser';
@@ -19,10 +20,7 @@ export function DataManagementSection() {
   const { t } = useTranslation();
   const { data: settings } = useSettings();
   const queryClient = useQueryClient();
-  const {
-    FileBrowser,
-    openDirectoryPath: browserOpenDirectory,
-  } = useFileBrowser();
+  const { FileBrowser, openDirectoryPath: browserOpenDirectory } = useFileBrowser();
 
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [clearInProgress, setClearInProgress] = useState(false);
@@ -89,7 +87,9 @@ export function DataManagementSection() {
         <FileBrowser />
         <CardHeader>
           <div>
-            <CardTitle>{t('settings.dataManagement', { defaultValue: 'Data Management' })}</CardTitle>
+            <CardTitle>
+              {t('settings.dataManagement', { defaultValue: 'Data Management' })}
+            </CardTitle>
             <CardDescription>
               {t('settings.dataManagementDescription', {
                 defaultValue: 'Export and manage your application data.',
@@ -98,10 +98,8 @@ export function DataManagementSection() {
           </div>
         </CardHeader>
         <CardBody className="p-6 flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <label className="block text-sm font-medium text-text-primary">
-              {t('settings.profileStorage')}
-            </label>
+          <FormGroup>
+            <FormLabel>{t('settings.profileStorage')}</FormLabel>
             <div className="flex gap-2">
               <Input
                 value={settings.profileStoragePath}
@@ -113,7 +111,7 @@ export function DataManagementSection() {
                 {t('settings.open')}
               </Button>
             </div>
-          </div>
+          </FormGroup>
           <div className="flex gap-3">
             <Button variant="outline" onClick={handleExportData}>
               <Download className="w-4 h-4" />

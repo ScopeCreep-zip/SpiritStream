@@ -96,20 +96,16 @@ function verifyGpg(asc: string, tarball: string, expectedFingerprint: string): v
     if (listed.status !== 0) {
       throw new Error(`gpg --list-keys failed: ${listed.stderr}`);
     }
-    const fprLine = listed.stdout
-      .split(/\r?\n/)
-      .find((l) => l.startsWith('fpr:'));
+    const fprLine = listed.stdout.split(/\r?\n/).find((l) => l.startsWith('fpr:'));
     const importedFingerprint = fprLine ? fprLine.split(':')[9] : '';
     if (!importedFingerprint) {
       throw new Error('gpg returned no key fingerprint after import');
     }
-    if (
-      importedFingerprint.toUpperCase() !== expectedFingerprint.toUpperCase()
-    ) {
+    if (importedFingerprint.toUpperCase() !== expectedFingerprint.toUpperCase()) {
       throw new Error(
         `FFmpeg signing key fingerprint mismatch:\n` +
           `  expected: ${expectedFingerprint}\n` +
-          `  got:      ${importedFingerprint}`,
+          `  got:      ${importedFingerprint}`
       );
     }
 
@@ -118,14 +114,10 @@ function verifyGpg(asc: string, tarball: string, expectedFingerprint: string): v
       encoding: 'utf8',
     });
     if (verify.status !== 0) {
-      throw new Error(
-        `gpg --verify rejected the signature:\n${verify.stderr || verify.stdout}`,
-      );
+      throw new Error(`gpg --verify rejected the signature:\n${verify.stderr || verify.stdout}`);
     }
     if (!verify.stderr.includes('Good signature')) {
-      throw new Error(
-        `gpg --verify did not report a Good signature:\n${verify.stderr}`,
-      );
+      throw new Error(`gpg --verify did not report a Good signature:\n${verify.stderr}`);
     }
   } finally {
     rmSync(gpgHome, { recursive: true, force: true });
@@ -168,7 +160,7 @@ async function main(): Promise<void> {
     if (size < 1024 * 1024) {
       throw new Error(
         `Tarball too small (${size} bytes) — likely a 404 page from ffmpeg.org. ` +
-          `Did the version ${newVersion} get retracted?`,
+          `Did the version ${newVersion} get retracted?`
       );
     }
 

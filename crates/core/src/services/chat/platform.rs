@@ -34,11 +34,19 @@ pub enum PlatformError {
 /// Trait that all chat platform connectors must implement
 #[async_trait]
 pub trait ChatPlatform: Send + Sync {
-    /// Connect to the platform and start receiving messages
+    /// Connect to the platform and start receiving messages. The
+    /// `message_tx` is a BOUNDED channel — connectors should call
+    /// `try_send` (non-blocking) rather than `send().await` to avoid
+    /// back-pressuring the upstream platform's read loop when the
+    /// chat-manager's consumer falls behind. On `TrySendError::Full`,
+    /// log + drop the message (losing 1 chat message during a flood is
+    /// preferable to disconnecting from the platform). On
+    /// `TrySendError::Closed`, the manager is shutting down — exit
+    /// the connector loop cleanly.
     async fn connect(
         &mut self,
         credentials: ChatCredentials,
-        message_tx: mpsc::UnboundedSender<ChatMessage>,
+        message_tx: mpsc::Sender<ChatMessage>,
     ) -> PlatformResult<()>;
 
     /// Disconnect from the platform

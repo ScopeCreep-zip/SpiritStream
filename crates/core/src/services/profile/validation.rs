@@ -101,3 +101,82 @@ impl super::ProfileManager {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::ProfileManager;
+    use super::validate_profile_name;
+    use crate::errors::CoreError;
+    use crate::models::ProfileSettings;
+
+    fn codes(err: CoreError) -> Vec<String> {
+        match err {
+            CoreError::ValidationFailed { reasons } => {
+                reasons.into_iter().map(|r| r.code).collect()
+            }
+            other => panic!("expected ValidationFailed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ordinary_names_pass() {
+        validate_profile_name("My Stream-1_alpha").expect("clean name accepted");
+    }
+
+    #[test]
+    fn empty_name_is_rejected() {
+        assert_eq!(
+            codes(validate_profile_name("").unwrap_err()),
+            vec!["profile_name_empty"]
+        );
+    }
+
+    #[test]
+    fn path_separators_and_traversal_are_rejected() {
+        assert!(codes(validate_profile_name("a/b").unwrap_err())
+            .contains(&"profile_name_path_separator".to_string()));
+        assert!(codes(validate_profile_name("a\\b").unwrap_err())
+            .contains(&"profile_name_path_separator".to_string()));
+        assert!(codes(validate_profile_name("../etc").unwrap_err())
+            .contains(&"profile_name_path_traversal".to_string()));
+    }
+
+    #[test]
+    fn disallowed_characters_are_rejected() {
+        assert!(codes(validate_profile_name("bad$name").unwrap_err())
+            .contains(&"profile_name_charset".to_string()));
+    }
+
+    #[test]
+    fn overlong_name_is_rejected() {
+        let long = "a".repeat(101);
+        assert!(codes(validate_profile_name(&long).unwrap_err())
+            .contains(&"profile_name_too_long".to_string()));
+    }
+
+    #[test]
+    fn default_settings_are_within_bounds() {
+        ProfileManager::validate_profile_settings_bounds(&ProfileSettings::default())
+            .expect("defaults are valid");
+    }
+
+    #[test]
+    fn zero_backend_port_is_out_of_range() {
+        let mut settings = ProfileSettings::default();
+        settings.backend.port = 0;
+        assert!(
+            codes(ProfileManager::validate_profile_settings_bounds(&settings).unwrap_err())
+                .contains(&"backend_port_out_of_range".to_string())
+        );
+    }
+
+    #[test]
+    fn discord_cooldown_above_24h_is_out_of_range() {
+        let mut settings = ProfileSettings::default();
+        settings.discord.cooldown_seconds = super::DISCORD_COOLDOWN_SECONDS_MAX + 1;
+        assert!(
+            codes(ProfileManager::validate_profile_settings_bounds(&settings).unwrap_err())
+                .contains(&"discord_cooldown_seconds_out_of_range".to_string())
+        );
+    }
+}

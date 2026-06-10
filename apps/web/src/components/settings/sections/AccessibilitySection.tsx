@@ -19,7 +19,7 @@ export function AccessibilitySection() {
   const { enabled: highContrast, toggle: toggleHighContrast } = useHighContrast();
   const { binding: panicBinding, setBinding: setPanicBinding } = useStoredHotkey(
     'panic',
-    DEFAULT_PANIC_BINDING,
+    DEFAULT_PANIC_BINDING
   );
   const [captureOpen, setCaptureOpen] = useState(false);
   const isMac = isMacPlatform();

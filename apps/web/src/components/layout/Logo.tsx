@@ -18,23 +18,10 @@ export function Logo({ size = 'md', showText = true, className }: LogoProps) {
       <img
         src="/app-icon.png"
         alt="SpiritStream"
-        className={cn(
-          'rounded-xl',
-          'shadow-md',
-          sizes[size]
-        )}
+        className={cn('rounded-xl', 'shadow-md', sizes[size])}
       />
       {showText && (
-        <span
-          className="font-bold text-lg bg-clip-text"
-          style={{
-            background: 'var(--gradient-brand)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-          }}
-        >
-          SpiritStream
-        </span>
+        <span className="font-bold text-lg text-gradient">SpiritStream</span>
       )}
     </div>
   );

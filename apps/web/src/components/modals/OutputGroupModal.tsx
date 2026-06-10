@@ -8,7 +8,12 @@ import { useProfileStore } from '@/stores/profileStore';
 import { api } from '@/lib/client';
 import { logger } from '@/lib/logger';
 import { clientConfig } from '@/lib/constants';
-import type { OutputGroup, VideoSettings, AudioSettings, ContainerSettings } from '@spiritstream/types';
+import type {
+  OutputGroup,
+  VideoSettings,
+  AudioSettings,
+  ContainerSettings,
+} from '@spiritstream/types';
 import type { Encoders } from '@/types/stream';
 import { useFormState, useFormValidation } from '@spiritstream/ui';
 import type { ValidationRule } from '@spiritstream/ui';
@@ -18,10 +23,7 @@ import {
   type VideoFormValues,
   type VideoFormErrors,
 } from '@/components/encoder/VideoSettingsForm';
-import {
-  AudioSettingsForm,
-  type AudioFormValues,
-} from '@/components/encoder/AudioSettingsForm';
+import { AudioSettingsForm, type AudioFormValues } from '@/components/encoder/AudioSettingsForm';
 import {
   ContainerSettingsForm,
   type ContainerFormValues,
@@ -73,7 +75,11 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
   const formData = form.values;
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState<string | undefined>();
-  const [encoders, setEncoders] = useState<Encoders>({ video: ['libx264'], audio: ['aac'] });
+  const [encoders, setEncoders] = useState<Encoders>({
+    video: ['libx264'],
+    audio: ['aac'],
+    metadata: {},
+  });
   const [loadingEncoders, setLoadingEncoders] = useState(false);
 
   const isDefaultGroup = mode === 'edit' && group?.isDefault === true;
@@ -149,9 +155,9 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
     videoBitrate: (v) => {
       const bitrate = parseInt(v.videoBitrate);
       if (
-        isNaN(bitrate)
-        || bitrate < clientConfig.BITRATE_MIN
-        || bitrate > clientConfig.BITRATE_MAX
+        isNaN(bitrate) ||
+        bitrate < clientConfig.BITRATE_MIN ||
+        bitrate > clientConfig.BITRATE_MAX
       ) {
         return t('validation.bitrateRange');
       }
@@ -161,10 +167,10 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
       if (!v.keyframeIntervalSeconds.trim()) return null;
       const interval = Number(v.keyframeIntervalSeconds);
       if (
-        !Number.isFinite(interval)
-        || !Number.isInteger(interval)
-        || interval < clientConfig.KEYFRAME_MIN
-        || interval > clientConfig.KEYFRAME_MAX
+        !Number.isFinite(interval) ||
+        !Number.isInteger(interval) ||
+        interval < clientConfig.KEYFRAME_MIN ||
+        interval > clientConfig.KEYFRAME_MAX
       ) {
         return t('errors.invalidInput', { defaultValue: 'Invalid input' });
       }
@@ -177,21 +183,21 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
     <K extends keyof VideoFormValues>(field: K, value: VideoFormValues[K]): void => {
       form.set(field, value as FormData[K]);
     },
-    [form],
+    [form]
   );
 
   const handleAudioChange = useCallback(
     <K extends keyof AudioFormValues>(field: K, value: AudioFormValues[K]): void => {
       form.set(field, value as FormData[K]);
     },
-    [form],
+    [form]
   );
 
   const handleContainerChange = useCallback(
     <K extends keyof ContainerFormValues>(field: K, value: ContainerFormValues[K]): void => {
       form.set(field, value as FormData[K]);
     },
-    [form],
+    [form]
   );
 
   const handleSave = async (): Promise<void> => {
@@ -229,7 +235,10 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
 
       const groupData: OutputGroup = {
         id: mode === 'edit' && group ? group.id : crypto.randomUUID(),
-        name: formData.name,
+        // Trim to match the validator's `!v.name.trim()` rule — without
+        // this, leading/trailing whitespace survives into the persisted
+        // group and the visible name disagrees with what the user typed.
+        name: formData.name.trim(),
         isDefault: mode === 'edit' && group ? group.isDefault : false,
         generatePts: formData.generatePts,
         video,
@@ -349,10 +358,7 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
           onChange={handleAudioChange}
         />
 
-        <ContainerSettingsForm
-          values={containerValues}
-          onChange={handleContainerChange}
-        />
+        <ContainerSettingsForm values={containerValues} onChange={handleContainerChange} />
       </div>
     </Modal>
   );

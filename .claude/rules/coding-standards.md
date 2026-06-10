@@ -2,6 +2,40 @@
 
 These rules apply to all code modifications in this project.
 
+## File size limit
+
+No source file may exceed **600 LOC**, counting non-blank, non-comment lines.
+
+**Counted**: `crates/**/*.rs`, `apps/**/*.{ts,tsx}`, `packages/**/*.{ts,tsx}`, `scripts/**/*.{sh,ts,mjs}`, `server/**/*.rs`, `setup.sh`.
+
+**Excluded**: generated files under `packages/types/src/generated/`, `packages/api-client/src/generated/`, `apps/web/src/types/generated-platforms.ts`, `data/*.json`, `apps/web/src/locales/*.json`, lockfiles, `target/`, `node_modules/`, `dist/`.
+
+**Enforced by**: `scripts/check-loc.sh`.
+- Pre-commit (`lefthook.yml` → `loc-gate`) runs `--changed-only` on staged files.
+- CI (`.github/workflows/ci.yml` → `loc-gate` job) runs the full sweep.
+
+**Allowlist (`.loc-allowlist`)**: a handful of currently-over files have per-file ceilings while they wait for their Sprint K split. The gate refuses **growth** within those ceilings — drop the line when you shrink the file back under cap.
+
+### How to split
+
+Use the orchestrator pattern already in the codebase (e.g. `crates/core/src/services/theme_manager/`, `apps/web/src/stores/profile/`, `apps/web/src/components/modals/file-browser/`):
+
+```
+path/file.rs                 path/file/mod.rs         # orchestrator + re-exports
+                          ├── a.rs                    # one responsibility
+                          ├── b.rs
+                          └── c.rs
+```
+
+The orchestrator `mod.rs` declares the submodules and re-exports the original public surface so no caller needs to change. Each submodule owns one cohesive responsibility and stays well under the 600 LOC cap.
+
+Examples currently in progress (Sprint K):
+- `crates/transport-http/tests/http_surface.rs` → `http_surface/{mod,chat,auth,profiles,streams,system}`
+- `crates/core/src/models/chat.rs` → `chat/{mod,messages,events,credentials,platforms}`
+- `crates/transport-http/src/chat_lifecycle.rs` → `chat_lifecycle/{mod,oauth_refresh,auto_connect,auto_disconnect,reconnect_tasks}`
+- `crates/transport-http/src/lib.rs` → `lib/{mod,routes,middleware_stack,ws_handlers,static_serving}`
+- `crates/transport-http/src/v1/chat.rs` → `v1/chat/{mod,wire_mirrors,connect,send,status_log,search,export}`
+
 ## TypeScript Conventions
 
 ### Naming

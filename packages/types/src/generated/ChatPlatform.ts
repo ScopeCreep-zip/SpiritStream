@@ -3,4 +3,4 @@
 /**
  * Represents a platform that supports chat
  */
-export type ChatPlatform = "twitch" | "tiktok" | "youtube" | "trovo" | "stripchat" | "kick" | "facebook";
+export type ChatPlatform = "twitch" | "tiktok" | "youtube" | "trovo" | "kick" | "facebook";

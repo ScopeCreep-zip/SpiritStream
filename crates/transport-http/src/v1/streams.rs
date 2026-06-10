@@ -18,9 +18,11 @@ use crate::AppState;
 #[derive(Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct StreamValidateRequest {
-    /// Full profile body (matches the `Profile` ts-rs export). Encoding-config
-    /// rules (bitrate / keyframe / resolution / fps) are evaluated server-side.
-    pub profile: serde_json::Value,
+    /// Full profile body. Runtime type is the core `Profile`; OpenAPI
+    /// schema is `ProfileWire`. Encoding-config rules (bitrate /
+    /// keyframe / resolution / fps) are evaluated server-side.
+    #[schema(value_type = crate::v1::ProfileWire)]
+    pub profile: spiritstream_core::models::Profile,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -62,18 +64,7 @@ pub async fn v1_streams_validate(
     State(_state): State<AppState>,
     axum::Json(req): axum::Json<StreamValidateRequest>,
 ) -> Result<Json<StreamValidateResponse>, crate::ApiError> {
-    let profile: spiritstream_core::models::Profile =
-        serde_json::from_value(req.profile).map_err(|e| {
-            spiritstream_core::CoreError::InvalidStreamConfig {
-                reasons: vec![spiritstream_core::errors::ValidationIssue {
-                    code: "invalid_profile_shape".into(),
-                    message: format!("could not parse profile body: {e}"),
-                    path: None,
-                }],
-            }
-        })?;
-
-    spiritstream_core::services::FFmpegHandler::validate_config(&profile)?;
+    spiritstream_core::services::FFmpegHandler::validate_config(&req.profile)?;
     Ok(Json(StreamValidateResponse { valid: true }))
 }
 
@@ -106,7 +97,10 @@ pub async fn v1_streams_status(State(state): State<AppState>) -> Json<StreamStat
 #[derive(Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct StreamStartRequest {
-    pub group: serde_json::Value,
+    /// Output group to start. Runtime type is the core `OutputGroup`;
+    /// OpenAPI schema is `OutputGroupWire`.
+    #[schema(value_type = crate::v1::OutputGroupWire)]
+    pub group: spiritstream_core::models::OutputGroup,
     pub incoming_url: String,
 }
 
@@ -119,7 +113,10 @@ pub struct StreamStartResponse {
 #[derive(Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct StreamStartAllRequest {
-    pub groups: serde_json::Value,
+    /// Output groups to start. Runtime is `Vec<OutputGroup>`; OpenAPI
+    /// schema is `Vec<OutputGroupWire>`.
+    #[schema(value_type = Vec<crate::v1::OutputGroupWire>)]
+    pub groups: Vec<spiritstream_core::models::OutputGroup>,
     pub incoming_url: String,
 }
 
@@ -146,7 +143,10 @@ pub struct StreamRetryResponse {
 #[serde(rename_all = "camelCase")]
 pub struct StreamToggleTargetRequest {
     pub enabled: bool,
-    pub group: serde_json::Value,
+    /// Output group context for the target toggle. Runtime is core
+    /// `OutputGroup`; OpenAPI schema is `OutputGroupWire`.
+    #[schema(value_type = crate::v1::OutputGroupWire)]
+    pub group: spiritstream_core::models::OutputGroup,
     pub incoming_url: String,
 }
 
@@ -180,14 +180,13 @@ pub async fn v1_streams_start(
     axum::extract::Path(_group_id): axum::extract::Path<String>,
     axum::Json(req): axum::Json<StreamStartRequest>,
 ) -> Result<Json<StreamStartResponse>, crate::ApiError> {
-    let group: spiritstream_core::models::OutputGroup = serde_json::from_value(req.group)?;
     let was_streaming = state.ffmpeg_handler.active_count() > 0;
     let event_sink: std::sync::Arc<dyn spiritstream_core::services::EventSink> =
         std::sync::Arc::new(state.event_bus.clone());
     let pid = state
         .ffmpeg_handler
-        .start(&group, &req.incoming_url, event_sink)?;
-    state.ffmpeg_handler.reset_reconnection_state(&group.id);
+        .start(&req.group, &req.incoming_url, event_sink)?;
+    state.ffmpeg_handler.reset_reconnection_state(&req.group.id);
     if !was_streaming {
         state.chat_manager.start_log_session();
         tokio::spawn(crate::auto_connect_chat_platforms(state.clone()));
@@ -214,13 +213,12 @@ pub async fn v1_streams_start_all(
     State(state): State<AppState>,
     axum::Json(req): axum::Json<StreamStartAllRequest>,
 ) -> Result<Json<StreamStartAllResponse>, crate::ApiError> {
-    let groups: Vec<spiritstream_core::models::OutputGroup> = serde_json::from_value(req.groups)?;
     let was_streaming = state.ffmpeg_handler.active_count() > 0;
     let event_sink: std::sync::Arc<dyn spiritstream_core::services::EventSink> =
         std::sync::Arc::new(state.event_bus.clone());
     let pids = state
         .ffmpeg_handler
-        .start_all(&groups, &req.incoming_url, event_sink)?;
+        .start_all(&req.groups, &req.incoming_url, event_sink)?;
     if !was_streaming {
         state.chat_manager.start_log_session();
     }
@@ -245,7 +243,16 @@ pub async fn v1_streams_stop(
     State(state): State<AppState>,
     axum::extract::Path(group_id): axum::extract::Path<String>,
 ) -> Result<Json<StreamStopAllResponse>, crate::ApiError> {
-    state.ffmpeg_handler.stop(&group_id)?;
+    // I3: `stop_child` polls the FFmpeg child with a 100 ms sleep up to
+    // 2 s before SIGKILL. Run on the blocking pool so the async runtime
+    // thread isn't parked waiting for graceful shutdown.
+    let ffmpeg = state.ffmpeg_handler.clone();
+    let gid = group_id.clone();
+    tokio::task::spawn_blocking(move || ffmpeg.stop(&gid))
+        .await
+        .map_err(|e| spiritstream_core::CoreError::Internal {
+            context: format!("ffmpeg stop join: {e}"),
+        })??;
     if state.ffmpeg_handler.active_count() == 0 {
         state.chat_manager.end_log_session();
         let chat_mgr = state.chat_manager.clone();
@@ -273,7 +280,14 @@ pub async fn v1_streams_stop_all(
     // mid-way the chat log session is already finalized on disk; otherwise
     // we'd leak an open jsonl writer that never gets flushed/closed.
     state.chat_manager.end_log_session();
-    state.ffmpeg_handler.stop_all()?;
+    // I3: same graceful-shutdown poll loop runs per group — keep the
+    // async runtime free.
+    let ffmpeg = state.ffmpeg_handler.clone();
+    tokio::task::spawn_blocking(move || ffmpeg.stop_all())
+        .await
+        .map_err(|e| spiritstream_core::CoreError::Internal {
+            context: format!("ffmpeg stop_all join: {e}"),
+        })??;
     let chat_mgr = state.chat_manager.clone();
     let bus = state.event_bus.clone();
     tokio::spawn(crate::auto_disconnect_chat_platforms(chat_mgr, bus));
@@ -331,7 +345,6 @@ pub async fn v1_streams_toggle_target(
     axum::extract::Path(target_id): axum::extract::Path<String>,
     axum::Json(req): axum::Json<StreamToggleTargetRequest>,
 ) -> Result<Json<StreamToggleTargetResponse>, crate::ApiError> {
-    let group: spiritstream_core::models::OutputGroup = serde_json::from_value(req.group)?;
     if req.enabled {
         state.ffmpeg_handler.enable_target(&target_id);
     } else {
@@ -339,15 +352,16 @@ pub async fn v1_streams_toggle_target(
     }
     let event_sink: std::sync::Arc<dyn spiritstream_core::services::EventSink> =
         std::sync::Arc::new(state.event_bus.clone());
-    let pid =
-        state
-            .ffmpeg_handler
-            .restart_group(&group.id, &group, &req.incoming_url, event_sink)?;
+    let pid = state.ffmpeg_handler.restart_group(
+        &req.group.id,
+        &req.group,
+        &req.incoming_url,
+        event_sink,
+    )?;
     Ok(Json(StreamToggleTargetResponse { pid }))
 }
 
 // ---------------------------------------------------------------------------
-
 
 // --------------------------------------------------------------------------
 // Stream extras.

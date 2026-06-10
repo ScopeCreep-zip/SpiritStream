@@ -8,7 +8,6 @@ type PasswordSlice = Pick<
   | 'pendingPasswordProfile'
   | 'passwordError'
   | 'pendingUnlock'
-  | 'setPendingPasswordProfile'
   | 'clearPasswordError'
   | 'submitPassword'
   | 'cancelPasswordPrompt'
@@ -17,14 +16,12 @@ type PasswordSlice = Pick<
 
 export const createPasswordSlice: StateCreator<ProfileState, [], [], PasswordSlice> = (
   set,
-  get,
+  get
 ) => ({
   pendingPasswordProfile: null,
   passwordError: null,
   pendingUnlock: false,
 
-  setPendingPasswordProfile: (name) =>
-    set({ pendingPasswordProfile: name, passwordError: null }),
   clearPasswordError: () => set({ passwordError: null }),
 
   submitPassword: async (password) => {
@@ -46,7 +43,8 @@ export const createPasswordSlice: StateCreator<ProfileState, [], [], PasswordSli
           set({ passwordError: 'Incorrect password', pendingUnlock: false });
         } else {
           logger.error('[ProfileStore] Failed to remove encryption:', error);
-          set({ error: message, pendingUnlock: false });
+          set({ pendingUnlock: false });
+          get().setError(message);
         }
       }
       return;
@@ -56,13 +54,14 @@ export const createPasswordSlice: StateCreator<ProfileState, [], [], PasswordSli
     await get().loadProfile(name, password);
   },
 
-  cancelPasswordPrompt: () =>
+  cancelPasswordPrompt: () => {
     set({
       pendingPasswordProfile: null,
       passwordError: null,
       pendingUnlock: false,
-      loading: false,
-    }),
+    });
+    get().setLoading(false);
+  },
 
   unlockProfile: (name) => {
     set({

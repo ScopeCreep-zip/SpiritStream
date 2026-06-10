@@ -85,7 +85,7 @@ export function getFriendlyError(serverError: string, t: TFunction): string {
   if (serverError.includes('Access to this directory is not allowed')) {
     return t(
       'fileBrowser.accessDenied',
-      'This location is outside the allowed browsing area. You can browse your home directory and common system folders.',
+      'This location is outside the allowed browsing area. You can browse your home directory and common system folders.'
     );
   }
   if (serverError.includes('Directory not found')) {

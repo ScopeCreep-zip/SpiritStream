@@ -1,0 +1,50 @@
+/*
+ * Boot stylesheet — applied BEFORE the app bundle so the first paint already
+ * carries the theme background + text colors (zero flash of unstyled content).
+ * Served as a same-origin file (not an inline <style>) so the production CSP can
+ * use `style-src 'self'` with NO `'unsafe-inline'`. Loaded render-blocking from
+ * <head>, so it completes before first paint. Both modes are selector-based —
+ * `theme-init.js` sets `data-theme` before this parses, so no :root default is
+ * needed. Custom/installed theme tokens are layered on top by theme-init.js via
+ * CSSOM `setProperty` (also CSP-exempt).
+ */
+:root[data-theme='dark'] {
+  --bg-base: #0f0a14;
+  --bg-surface: #1a1225;
+  --bg-elevated: #251a33;
+  --bg-muted: #1a1225;
+  --bg-sunken: #0a0710;
+  --bg-canvas: #150f1d;
+  --text-primary: #f4f2f7;
+  --text-secondary: #d8d1e2;
+  --text-tertiary: #b8aeca;
+  --primary: #a78bfa;
+  --border-default: #3d3649;
+  --border-muted: #2d2838;
+}
+:root[data-theme='light'] {
+  --bg-base: #faf8f5;
+  --bg-surface: #fffdf9;
+  --bg-elevated: #fffefb;
+  --bg-muted: #f6f3ef;
+  --bg-sunken: #f2efe9;
+  --bg-canvas: #ede9e3;
+  --text-primary: #1f1a29;
+  --text-secondary: #5e5472;
+  --text-tertiary: #756a8a;
+  --primary: #7c3aed;
+  --border-default: #e8e4dd;
+  --border-muted: #f3f0ea;
+}
+html,
+body {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  margin: 0;
+  padding: 0;
+}
+/* Transparent overlay mode for chat pop-out */
+html[data-overlay-transparent='true'],
+body[data-overlay-transparent='true'] {
+  background-color: transparent !important;
+}

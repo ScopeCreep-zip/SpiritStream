@@ -48,7 +48,13 @@ impl super::ObsWebSocketHandler {
     /// → OBS triggering. Sets `triggered_by_us` first so the inbound
     /// state event doesn't bounce back through the OBS→SS cascade.
     pub(super) async fn ss_trigger_obs(&self, start: bool) {
-        let cascade = self.cascade_deps.read().ok().and_then(|g| g.clone());
+        let cascade = match self.cascade_deps.read() {
+            Ok(g) => g.clone(),
+            Err(e) => {
+                log::error!("obs cascade_deps read lock poisoned — SS→OBS trigger dropped: {e}");
+                return;
+            }
+        };
         let Some(deps) = cascade else { return };
         let Ok(settings) = deps.settings.load() else {
             return;
@@ -119,4 +125,3 @@ impl crate::services::ObsTrigger for super::ObsWebSocketHandler {
         self.ss_trigger_obs(false).await;
     }
 }
-

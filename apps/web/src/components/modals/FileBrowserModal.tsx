@@ -65,9 +65,7 @@ export function FileBrowserModal({
     if (entry.type === 'directory') return true;
 
     if (filters && filters.length > 0) {
-      const hasWildcard = filters.some((f) =>
-        f.extensions.some((e) => e === '*' || e === '.*'),
-      );
+      const hasWildcard = filters.some((f) => f.extensions.some((e) => e === '*' || e === '.*'));
       if (hasWildcard) return true;
 
       const lastDot = entry.name.lastIndexOf('.');
@@ -77,7 +75,7 @@ export function FileBrowserModal({
         f.extensions.some((e) => {
           const filterExt = e.toLowerCase().replace(/^\./, '');
           return filterExt === ext;
-        }),
+        })
       );
     }
 
@@ -105,7 +103,7 @@ export function FileBrowserModal({
         setLoading(false);
       }
     },
-    [t],
+    [t]
   );
 
   useEffect(() => {

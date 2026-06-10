@@ -7,6 +7,7 @@ use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use spiritstream_core::models::Settings;
 use spiritstream_core::services::EventSink;
 
 use crate::AppState;
@@ -15,10 +16,52 @@ use crate::AppState;
 // Settings.
 // ---------------------------------------------------------------------------
 
+/// Wire mirror of [`spiritstream_core::models::Settings`]. The core
+/// struct can't derive `ToSchema` directly (utoipa is a transport-only
+/// dependency per the architecture rules); this mirror gives utoipa a
+/// schema to reference while keeping the wire shape byte-identical to
+/// the ts-rs export. G5.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsWire {
+    pub start_minimized: bool,
+    pub ffmpeg_path: String,
+    pub log_retention_days: u32,
+    pub last_profile: Option<String>,
+    pub error_reporting_enabled: bool,
+    pub error_reporting_endpoint: String,
+}
+
+impl From<Settings> for SettingsWire {
+    fn from(s: Settings) -> Self {
+        Self {
+            start_minimized: s.start_minimized,
+            ffmpeg_path: s.ffmpeg_path,
+            log_retention_days: s.log_retention_days,
+            last_profile: s.last_profile,
+            error_reporting_enabled: s.error_reporting_enabled,
+            error_reporting_endpoint: s.error_reporting_endpoint,
+        }
+    }
+}
+
+impl From<SettingsWire> for Settings {
+    fn from(w: SettingsWire) -> Self {
+        Self {
+            start_minimized: w.start_minimized,
+            ffmpeg_path: w.ffmpeg_path,
+            log_retention_days: w.log_retention_days,
+            last_profile: w.last_profile,
+            error_reporting_enabled: w.error_reporting_enabled,
+            error_reporting_endpoint: w.error_reporting_endpoint,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct SettingsSaveRequest {
     /// Full settings body (matches the `Settings` ts-rs export).
-    pub settings: serde_json::Value,
+    pub settings: SettingsWire,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -56,22 +99,20 @@ pub struct SettingsClearDataResponse {
     path = "/settings",
     tag = "settings",
     responses(
-        // Body is the full `Settings` shape — typed by ts-rs at
-        // `@spiritstream/types/Settings`. utoipa documents the runtime as
-        // a free-form object because the Settings tree is too deep to
-        // mirror by hand and adding `ToSchema` to core would leak utoipa
-        // across the transport boundary. Wire shape is camelCase per
-        // `#[serde(rename_all = "camelCase")]` on `Settings`.
-        (status = 200, description = "Resolved settings (see @spiritstream/types/Settings).", body = serde_json::Value),
+        // Body is `SettingsWire` — the OpenAPI mirror of the core
+        // `Settings` struct. Wire shape stays byte-identical with the
+        // ts-rs export at `@spiritstream/types/Settings`. G5 retired
+        // the `serde_json::Value` placeholder.
+        (status = 200, description = "Resolved settings.", body = SettingsWire),
         (status = 500, description = "Internal error.", body = ApiErrorBody),
     ),
     security(("session_cookie" = []), ("bearer" = [])),
 )]
 pub async fn v1_settings_get(
     State(state): State<AppState>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<SettingsWire>, crate::ApiError> {
     let settings = state.settings_manager.load()?;
-    Ok(Json(serde_json::to_value(settings)?))
+    Ok(Json(settings.into()))
 }
 
 /// `PUT /settings` — replace the global settings document. Field-level bound
@@ -95,14 +136,8 @@ pub async fn v1_settings_save(
     State(state): State<AppState>,
     axum::Json(req): axum::Json<SettingsSaveRequest>,
 ) -> Result<Json<SettingsSaveResponse>, crate::ApiError> {
-    let new_settings: spiritstream_core::models::Settings = serde_json::from_value(req.settings)
-        .map_err(|e| spiritstream_core::CoreError::ValidationFailed {
-            reasons: vec![spiritstream_core::errors::ValidationIssue {
-                code: "invalid_settings_shape".into(),
-                message: format!("could not parse settings body: {e}"),
-                path: None,
-            }],
-        })?;
+    // Typed body via `SettingsWire`; no fallible `from_value` needed.
+    let new_settings: spiritstream_core::models::Settings = req.settings.into();
 
     state.settings_manager.save(&new_settings)?;
 

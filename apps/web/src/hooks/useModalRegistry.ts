@@ -44,10 +44,13 @@ const MODAL_NAMES: readonly ModalName[] = [
 ];
 
 const INITIAL_STATE: ModalState = Object.freeze(
-  MODAL_NAMES.reduce((acc, name) => {
-    acc[name] = false;
-    return acc;
-  }, {} as Record<ModalName, boolean>),
+  MODAL_NAMES.reduce(
+    (acc, name) => {
+      acc[name] = false;
+      return acc;
+    },
+    {} as Record<ModalName, boolean>
+  )
 );
 
 export interface ModalRegistry {

@@ -98,7 +98,7 @@ export function ObsPanel() {
         }
       }, clientConfig.AUTO_SAVE_DELAY_MS);
     },
-    [updateConfig],
+    [updateConfig]
   );
 
   // Field-level handlers.
@@ -136,7 +136,7 @@ export function ObsPanel() {
         logger.error('Failed to save useAuth:', error);
       }
     },
-    [updateConfig],
+    [updateConfig]
   );
 
   const handleAutoConnectChange = useCallback(
@@ -148,7 +148,7 @@ export function ObsPanel() {
         logger.error('Failed to save autoConnect:', error);
       }
     },
-    [updateConfig],
+    [updateConfig]
   );
 
   const handleDirectionSelect = useCallback(
@@ -156,7 +156,7 @@ export function ObsPanel() {
       setDirection(next);
       updateConfig({ direction: next }).catch(logger.error);
     },
-    [updateConfig],
+    [updateConfig]
   );
 
   const handleConnect = useCallback(async () => {

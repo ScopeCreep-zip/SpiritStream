@@ -8,7 +8,7 @@ pub(crate) fn parse_bool(value: &str) -> Option<bool> {
 
 /// Refuse to start in cloud mode without the safety net.
 ///
-/// Two preconditions are checked, both load-bearing for a public
+/// Three preconditions are checked, all load-bearing for a public
 /// deployment:
 ///
 /// 1. **Strong API token**: `SPIRITSTREAM_API_TOKEN` (or, falling back,
@@ -20,12 +20,30 @@ pub(crate) fn parse_bool(value: &str) -> Option<bool> {
 ///    proxy (Caddy / Traefik / nginx) terminates TLS in front of the
 ///    server. Cloud-mode HTTP-only is never acceptable — bearer
 ///    tokens and session cookies would flow in plaintext.
+/// 3. **No CORS wildcard** (H1): `SPIRITSTREAM_CORS_ORIGINS` must not
+///    contain `*`. A wildcard in cloud mode lets any origin send
+///    credentialed requests, defeating the same-origin guard that the
+///    Sec-Fetch-Site CSRF check leans on. Explicit allow-list only.
 ///
 /// `pre_deploy_mode == "cloud"` is the only trigger; localhost dev
 /// and `desktop` mode never hit this path.
 pub(crate) fn enforce_cloud_mode_preconditions(
     auth_token: &Option<String>,
     tls_declared: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    enforce_cloud_mode_preconditions_with_origins(
+        auth_token,
+        tls_declared,
+        std::env::var("SPIRITSTREAM_CORS_ORIGINS").ok().as_deref(),
+    )
+}
+
+/// Pure inner used by tests. Takes the CORS env value explicitly so
+/// parallel test runs don't trip on shared global env mutation.
+pub(crate) fn enforce_cloud_mode_preconditions_with_origins(
+    auth_token: &Option<String>,
+    tls_declared: bool,
+    cors_origins: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     const MIN_TOKEN_LEN: usize = 32;
     let token_ok = auth_token
@@ -47,6 +65,64 @@ pub(crate) fn enforce_cloud_mode_preconditions(
              Cloud deployments without TLS leak session tokens in cleartext."
             .into());
     }
-    log::info!("Cloud-mode preconditions satisfied: strong API token + TLS-fronted declared.");
+    if let Some(value) = cors_origins {
+        if value.split(',').any(|entry| entry.trim() == "*") {
+            return Err("SPIRITSTREAM_DEPLOY_MODE=cloud refuses to start: \
+                 SPIRITSTREAM_CORS_ORIGINS contains '*'. Wildcard CORS in cloud \
+                 mode lets any browser origin issue credentialed requests, \
+                 bypassing the Sec-Fetch-Site CSRF guard. Set an explicit \
+                 allow-list of origins instead."
+                .into());
+        }
+    }
+    log::info!(
+        "Cloud-mode preconditions satisfied: strong API token + TLS-fronted + explicit CORS allow-list."
+    );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn strong_token() -> Option<String> {
+        Some("0123456789abcdef0123456789abcdef".into())
+    }
+
+    #[test]
+    fn cloud_mode_refuses_cors_wildcard() {
+        let err = enforce_cloud_mode_preconditions_with_origins(
+            &strong_token(),
+            true,
+            Some("https://app.example.com, * , https://other.example.com"),
+        )
+        .expect_err("wildcard CORS must be refused in cloud mode");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("'*'"),
+            "error must call out the wildcard offender: {msg}",
+        );
+    }
+
+    #[test]
+    fn cloud_mode_accepts_explicit_origin_list() {
+        let result = enforce_cloud_mode_preconditions_with_origins(
+            &strong_token(),
+            true,
+            Some("https://app.example.com,https://admin.example.com"),
+        );
+        assert!(
+            result.is_ok(),
+            "explicit origins must be accepted: {result:?}"
+        );
+    }
+
+    #[test]
+    fn cloud_mode_accepts_unset_origins() {
+        // No SPIRITSTREAM_CORS_ORIGINS at all is fine — CORS layer
+        // defaults to no allow-list, which is the most restrictive
+        // posture available.
+        let result = enforce_cloud_mode_preconditions_with_origins(&strong_token(), true, None);
+        assert!(result.is_ok());
+    }
 }

@@ -79,56 +79,47 @@ export function useFileBrowser() {
   }, []);
 
   // Open file picker
-  const openFilePath = useCallback(
-    (options?: FileBrowserOptions): Promise<string | null> => {
-      return new Promise((resolve) => {
-        resolveRef.current = resolve;
-        setState({
-          open: true,
-          mode: 'file',
-          title: options?.title,
-          filters: options?.filters,
-          initialPath: options?.initialPath,
-        });
+  const openFilePath = useCallback((options?: FileBrowserOptions): Promise<string | null> => {
+    return new Promise((resolve) => {
+      resolveRef.current = resolve;
+      setState({
+        open: true,
+        mode: 'file',
+        title: options?.title,
+        filters: options?.filters,
+        initialPath: options?.initialPath,
       });
-    },
-    []
-  );
+    });
+  }, []);
 
   // Open directory picker
-  const openDirectoryPath = useCallback(
-    (options?: FileBrowserOptions): Promise<string | null> => {
-      return new Promise((resolve) => {
-        resolveRef.current = resolve;
-        setState({
-          open: true,
-          mode: 'directory',
-          title: options?.title,
-          initialPath: options?.initialPath,
-        });
+  const openDirectoryPath = useCallback((options?: FileBrowserOptions): Promise<string | null> => {
+    return new Promise((resolve) => {
+      resolveRef.current = resolve;
+      setState({
+        open: true,
+        mode: 'directory',
+        title: options?.title,
+        initialPath: options?.initialPath,
       });
-    },
-    []
-  );
+    });
+  }, []);
 
   // Open save file dialog
-  const saveFilePath = useCallback(
-    (options?: SaveFileOptions): Promise<string | null> => {
-      return new Promise((resolve) => {
-        resolveRef.current = resolve;
-        // Extract file name from defaultPath
-        const defaultFileName = options?.defaultPath?.split('/').pop();
-        setState({
-          open: true,
-          mode: 'save',
-          title: options?.title,
-          filters: options?.filters,
-          defaultFileName,
-        });
+  const saveFilePath = useCallback((options?: SaveFileOptions): Promise<string | null> => {
+    return new Promise((resolve) => {
+      resolveRef.current = resolve;
+      // Extract file name from defaultPath
+      const defaultFileName = options?.defaultPath?.split('/').pop();
+      setState({
+        open: true,
+        mode: 'save',
+        title: options?.title,
+        filters: options?.filters,
+        defaultFileName,
       });
-    },
-    []
-  );
+    });
+  }, []);
 
   // The modal component to render
   const FileBrowser = useCallback(

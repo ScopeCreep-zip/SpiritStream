@@ -38,12 +38,23 @@ export function AppearanceSection() {
   const [themeInstalling, setThemeInstalling] = useState(false);
   const [themeInstallError, setThemeInstallError] = useState<string | null>(null);
 
-  const themeOptions = (themes.length
-    ? themes
-    : [
-        { id: 'spirit-light', name: 'Spirit Light', mode: 'light' as const, source: 'builtin' as const },
-        { id: 'spirit-dark', name: 'Spirit Dark', mode: 'dark' as const, source: 'builtin' as const },
-      ]
+  const themeOptions = (
+    themes.length
+      ? themes
+      : [
+          {
+            id: 'spirit-light',
+            name: 'Spirit Light',
+            mode: 'light' as const,
+            source: 'builtin' as const,
+          },
+          {
+            id: 'spirit-dark',
+            name: 'Spirit Dark',
+            mode: 'dark' as const,
+            source: 'builtin' as const,
+          },
+        ]
   ).map((themeItem) => ({ value: themeItem.id, label: themeItem.name }));
 
   const handleThemeChange = useCallback(
@@ -53,7 +64,7 @@ export function AppearanceSection() {
         await updateProfileSettings({ themeId });
       }
     },
-    [setTheme, profileSettings, updateProfileSettings],
+    [setTheme, profileSettings, updateProfileSettings]
   );
 
   const handleInstallTheme = useCallback(async (): Promise<void> => {
@@ -83,7 +94,7 @@ export function AppearanceSection() {
       if (!profileSettings) return;
       await updateProfileSettings({ language: lang });
     },
-    [profileSettings, updateProfileSettings],
+    [profileSettings, updateProfileSettings]
   );
 
   return (
@@ -124,7 +135,9 @@ export function AppearanceSection() {
         <Select
           label={t('settings.language')}
           value={profileSettings?.language || 'en'}
-          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleLanguageChange(e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+            handleLanguageChange(e.target.value)
+          }
           options={LANGUAGE_OPTIONS}
         />
       </CardBody>

@@ -1,6 +1,7 @@
 import { forwardRef, useId } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { FormGroup, FormLabel, FormHelper, FormError } from './Form';
 
 export interface SelectOption {
   value: string;
@@ -24,14 +25,9 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
     const describedBy = errorId || helperId;
 
     return (
-      <div className="flex flex-col gap-1.5">
+      <FormGroup>
         {label && (
-          <label
-            htmlFor={selectId}
-            className="block text-sm font-medium text-text-primary"
-          >
-            {label}
-          </label>
+          <FormLabel htmlFor={selectId}>{label}</FormLabel>
         )}
         <div className="relative">
           <select
@@ -65,17 +61,9 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             aria-hidden="true"
           />
         </div>
-        {helper && !error && (
-          <p id={helperId} className="text-xs text-text-tertiary">
-            {helper}
-          </p>
-        )}
-        {error && (
-          <p id={errorId} className="text-xs text-error-text" role="alert">
-            {error}
-          </p>
-        )}
-      </div>
+        {helper && !error && <FormHelper id={helperId}>{helper}</FormHelper>}
+        {error && <FormError id={errorId}>{error}</FormError>}
+      </FormGroup>
     );
   }
 );

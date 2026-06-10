@@ -6,7 +6,7 @@ export const theme = {
   getTokens: (themeId: string) =>
     fetchTypedJson<{ tokens: Record<string, string> }>(
       'GET',
-      `/api/v1/themes/${encodeURIComponent(themeId)}/tokens`,
+      `/api/v1/themes/${encodeURIComponent(themeId)}/tokens`
     ).then((r) => r.tokens),
   install: (themePath: string) =>
     fetchTypedJson<ThemeSummary>('POST', '/api/v1/themes', undefined, { themePath }),

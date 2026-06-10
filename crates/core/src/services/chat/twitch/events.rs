@@ -138,7 +138,10 @@ pub fn build_from_user_notice(msg: &UserNoticeMessage) -> Option<ChatMessage> {
             ..
         } => {
             let (gifter_login, gifter_display) = if *is_sender_anonymous {
-                (ANON_GIFTER_LOGIN.to_string(), ANON_GIFTER_DISPLAY.to_string())
+                (
+                    ANON_GIFTER_LOGIN.to_string(),
+                    ANON_GIFTER_DISPLAY.to_string(),
+                )
             } else {
                 (msg.sender.login.clone(), msg.sender.name.clone())
             };
@@ -191,7 +194,12 @@ pub fn build_from_user_notice(msg: &UserNoticeMessage) -> Option<ChatMessage> {
             ChatEvent::MemberMilestone(MilestonePayload {
                 months: u32::try_from(*cumulative_months).unwrap_or(1).max(1),
                 display_name: msg.sender.name.clone(),
-                message: msg.message_text.clone().unwrap_or_default(),
+                message: msg
+                    .message_text
+                    .clone()
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string(),
             }),
             MessageFlags::SUBSCRIPTION,
         ),
@@ -299,9 +307,10 @@ pub fn build_from_room_state(msg: &RoomStateMessage) -> Option<ChatMessage> {
         None => (None, None),
     };
 
-    let slow_mode_secs = msg.slow_mode.as_ref().map(|d| {
-        u32::try_from(d.as_secs()).unwrap_or(u32::MAX)
-    });
+    let slow_mode_secs = msg
+        .slow_mode
+        .as_ref()
+        .map(|d| u32::try_from(d.as_secs()).unwrap_or(u32::MAX));
 
     let payload = RoomStatePayload {
         emote_only: msg.emote_only,

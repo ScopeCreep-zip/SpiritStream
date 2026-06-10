@@ -53,9 +53,18 @@ impl super::ObsWebSocketHandler {
         let client = self.client.clone();
         let triggered_by_us = self.triggered_by_us.clone();
         let cascade_deps = self.cascade_deps.clone();
+        let cascade_start_handle = self.cascade_start_handle.clone();
         let mut shutdown_rx = self.shutdown_tx.subscribe();
 
-        tokio::spawn(async move {
+        // I1: if a previous poll task is already running (reconnect
+        // flow), abort it before spawning the replacement. The aborted
+        // task observes a CancelError immediately so the old poll loop
+        // doesn't continue racing the fresh client.
+        if let Some(prev) = self.listener_handle.lock().await.take() {
+            prev.abort();
+        }
+
+        let handle = tokio::spawn(async move {
             loop {
                 if shutdown_rx.try_recv().is_ok() {
                     log::debug!("OBS event listener shutting down");
@@ -96,13 +105,21 @@ impl super::ObsWebSocketHandler {
                                 // whether to drive SpiritStream and run
                                 // the action server-side.
                                 if !was_self_triggered {
-                                    let deps_snapshot =
-                                        cascade_deps.read().ok().and_then(|g| g.clone());
+                                    let deps_snapshot = match cascade_deps.read() {
+                                        Ok(g) => g.clone(),
+                                        Err(e) => {
+                                            log::error!(
+                                                "obs cascade_deps read lock poisoned — OBS→SS cascade dropped: {e}"
+                                            );
+                                            None
+                                        }
+                                    };
                                     if let Some(deps) = deps_snapshot {
                                         Self::run_obs_to_ss_cascade(
                                             stream_status.active,
                                             deps,
                                             event_sink.clone(),
+                                            cascade_start_handle.clone(),
                                         )
                                         .await;
                                     }
@@ -121,16 +138,21 @@ impl super::ObsWebSocketHandler {
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             }
         });
+        *self.listener_handle.lock().await = Some(handle);
     }
 
     /// Run the OBS→SpiritStream trigger cascade. Decides whether to
     /// start/stop SpiritStream based on the active profile's
     /// `obs.direction` and current FFmpeg state. Spawns a delayed task
-    /// for the actual start so OBS has time to settle.
+    /// for the actual start so OBS has time to settle. The delayed-start
+    /// task handle is captured in `cascade_start_handle` (I1) so OBS
+    /// oscillation inside the delay window cancels the stale start
+    /// instead of queueing a duplicate.
     async fn run_obs_to_ss_cascade<E: EventSink + Send + Sync + 'static>(
         obs_now_active: bool,
         deps: ObsCascadeDeps,
         event_sink: E,
+        cascade_start_handle: Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
     ) {
         let Ok(settings) = deps.settings.load() else {
             return;
@@ -184,7 +206,7 @@ impl super::ObsWebSocketHandler {
             let delay = std::time::Duration::from_millis(OBS_TRIGGER_DELAY_MS);
             let ffmpeg = deps.ffmpeg.clone();
             let sink_arc: Arc<dyn EventSink> = Arc::new(EventSinkClone(event_sink));
-            tokio::spawn(async move {
+            let handle = tokio::spawn(async move {
                 tokio::time::sleep(delay).await;
                 match ffmpeg.start_all(&eligible, &incoming_url, sink_arc.clone()) {
                     Ok(_) => {
@@ -199,6 +221,14 @@ impl super::ObsWebSocketHandler {
                     }
                 }
             });
+            // Single-flight: cancel any prior delayed-start before
+            // recording the new one. Lock contention here is fine —
+            // we only reach this branch on an active-transition.
+            let mut guard = cascade_start_handle.lock().await;
+            if let Some(prev) = guard.take() {
+                prev.abort();
+            }
+            *guard = Some(handle);
         } else {
             // OBS stopped → stop SpiritStream if streaming.
             if deps.ffmpeg.active_count() == 0 {

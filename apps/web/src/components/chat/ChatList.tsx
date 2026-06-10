@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/cn';
+import { hasFlag, MessageFlag } from '@/lib/messageFlags';
 import type { ChatMessage, ChatPlatform } from '@spiritstream/types';
+import { Fragment } from './Fragment';
 
 // Platform → CSS-variable suffix. The colors themselves live in
 // `tokens.css` (`--platform-X-bg` / `--platform-X-fg`).
@@ -10,7 +12,6 @@ const PLATFORM_ABBREVIATIONS: Record<ChatPlatform, string> = {
   twitch: 'TW',
   youtube: 'YT',
   trovo: 'TR',
-  stripchat: 'SC',
   tiktok: 'TK',
   kick: 'KK',
   facebook: 'FB',
@@ -20,7 +21,6 @@ const KNOWN_PLATFORM_TOKENS = new Set<string>([
   'twitch',
   'youtube',
   'trovo',
-  'stripchat',
   'tiktok',
   'kick',
   'facebook',
@@ -35,7 +35,7 @@ function ChatPlatformIcon({ platform, size = 'sm' }: { platform: string; size?: 
     <div
       className={cn(
         'platform-badge rounded-md flex items-center justify-center font-semibold shrink-0',
-        sizeClass,
+        sizeClass
       )}
       data-platform={tokenKey}
     >
@@ -94,9 +94,10 @@ export function ChatList({
       ) : (
         <div className={cn('flex flex-col', densityConfig.rowGap)}>
           {messages.map((message) => {
-            const platforms = message.platforms && message.platforms.length > 0
-              ? message.platforms
-              : [message.platform as ChatPlatform];
+            const platforms =
+              message.platforms && message.platforms.length > 0
+                ? message.platforms
+                : [message.platform as ChatPlatform];
             const isOutbound = message.direction === 'outbound';
             const timestamp =
               showTimestamps && message.timestamp
@@ -106,6 +107,24 @@ export function ChatList({
                   })
                 : null;
 
+            // Phase B contract: when `fragments` is populated, the
+            // renderer reads it verbatim. Empty `fragments` means a
+            // legacy log-JSONL entry (pre-Phase-B); fall back to
+            // rendering `message.message` as plain text so the chat
+            // log replay still works.
+            const flags = message.flags ?? 0;
+            const isDisabled = hasFlag(flags, MessageFlag.DISABLED);
+            const isAction = hasFlag(flags, MessageFlag.ACTION);
+            const isHighlighted = hasFlag(flags, MessageFlag.HIGHLIGHTED);
+            const isFirstMessage = hasFlag(flags, MessageFlag.FIRST_MESSAGE);
+            const isElevated = hasFlag(flags, MessageFlag.ELEVATED_MESSAGE);
+            const isSystem = hasFlag(flags, MessageFlag.SYSTEM);
+            const isTimedOutAuthor = hasFlag(flags, MessageFlag.TIMED_OUT_AUTHOR);
+
+            const highlightStyle: React.CSSProperties | undefined = message.highlightColor
+              ? { backgroundColor: message.highlightColor.hex }
+              : undefined;
+
             return (
               <div
                 key={message.id}
@@ -113,24 +132,47 @@ export function ChatList({
                   'flex items-start gap-3 rounded-lg border p-3',
                   isOutbound
                     ? 'border-border-strong bg-bg-base'
-                    : 'border-border-subtle bg-bg-elevated'
+                    : 'border-border-subtle bg-bg-elevated',
+                  isDisabled && 'opacity-50 line-through',
+                  isAction && 'italic',
+                  isHighlighted && 'ring-1 ring-purple-violet-500',
+                  isFirstMessage && 'border-l-4 border-l-purple-violet-500',
+                  isElevated && 'border-l-4 border-l-fuchsia-500',
+                  isSystem && 'bg-bg-elevated/50',
+                  isTimedOutAuthor && 'opacity-60'
                 )}
+                style={highlightStyle}
+                data-flags={flags}
               >
                 <div className="flex items-center gap-1">
                   {platforms.map((platform) => (
                     <ChatPlatformIcon key={`${message.id}-${platform}`} platform={platform} />
                   ))}
                 </div>
-                <div className={cn('flex flex-wrap items-baseline gap-x-2 gap-y-1', densityConfig.text)}>
-                  <span className="font-semibold text-text-primary">
-                    {isOutbound ? t('chat.you') : message.username}
+                <div
+                  className={cn(
+                    'flex flex-wrap items-baseline gap-x-2 gap-y-1',
+                    densityConfig.text
+                  )}
+                >
+                  <span
+                    className="font-semibold text-text-primary"
+                    style={message.author?.color ? { color: message.author.color.hex } : undefined}
+                  >
+                    {isOutbound ? t('chat.you') : (message.author?.displayName ?? message.username)}
                   </span>
                   {timestamp && (
-                    <span className="text-[0.7rem] text-text-tertiary">
-                      {timestamp}
-                    </span>
+                    <span className="text-[0.7rem] text-text-tertiary">{timestamp}</span>
                   )}
-                  <span className="text-text-secondary break-words">{message.message}</span>
+                  {message.fragments && message.fragments.length > 0 ? (
+                    <span className="text-text-secondary break-words inline-flex flex-wrap items-baseline gap-x-1">
+                      {message.fragments.map((fragment, i) => (
+                        <Fragment key={i} fragment={fragment} />
+                      ))}
+                    </span>
+                  ) : (
+                    <span className="text-text-secondary break-words">{message.message}</span>
+                  )}
                 </div>
               </div>
             );

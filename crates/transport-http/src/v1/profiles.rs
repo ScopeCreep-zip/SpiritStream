@@ -67,8 +67,14 @@ pub struct ProfileDeleteResponse {
 
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct ProfileSaveRequest {
-    /// Full profile body (matches the `Profile` ts-rs export).
-    pub profile: serde_json::Value,
+    /// Full profile body. Runtime type is the core `Profile`; OpenAPI
+    /// schema is `ProfileWire` (byte-identical wire shape, declared in
+    /// `v1/profile_wire.rs`). utoipa's `value_type` escape hatch lets
+    /// us document the schema typed without forcing `ToSchema` onto
+    /// the core type (utoipa is transport-only per
+    /// `.claude/rules/architecture.md`).
+    #[schema(value_type = crate::v1::ProfileWire)]
+    pub profile: spiritstream_core::models::Profile,
     /// Optional password — when present the profile is encrypted on disk.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
@@ -97,14 +103,15 @@ pub struct ProfileIsEncryptedResponse {
         ("name" = String, Path, description = "Profile name"),
     ),
     responses(
-        // Body is the full `Profile` shape — typed by ts-rs at
-        // `@spiritstream/types/Profile`. utoipa documents the runtime as
-        // a free-form object because the Profile tree (OutputGroup,
-        // ProfileSettings, generated Platform enum, …) is too deep to
-        // mirror by hand and adding `ToSchema` to core would leak utoipa
-        // across the transport boundary. The wire shape is camelCase per
-        // `#[serde(rename_all = "camelCase")]` on `Profile`.
-        (status = 200, description = "Profile body (see @spiritstream/types/Profile).", body = serde_json::Value),
+        // G5: body is `ProfileWire` — the full mirror of the core
+        // `Profile` tree (RtmpInput, OutputGroup with VideoSettings/
+        // AudioSettings/ContainerSettings/StreamTarget, full
+        // ProfileSettings tree). Wire shape is byte-identical to the
+        // ts-rs export at `@spiritstream/types/Profile`. The `service`
+        // field on StreamTarget is `String` (rather than the generated
+        // 80-variant Platform enum); the TS side already has the typed
+        // union from ts-rs so callers don't lose precision.
+        (status = 200, description = "Profile body.", body = ProfileWire),
         (status = 401, description = "Password required or incorrect.", body = ApiErrorBody),
         (status = 404, description = "Profile not found.", body = ApiErrorBody),
         (status = 500, description = "Internal server error.", body = ApiErrorBody),
@@ -115,12 +122,12 @@ pub async fn v1_profile_show(
     State(state): State<AppState>,
     axum::extract::Path(name): axum::extract::Path<String>,
     axum::extract::Query(q): axum::extract::Query<ProfileShowQuery>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<crate::v1::ProfileWire>, crate::ApiError> {
     let profile = state
         .profile_manager
         .load_with_key_decryption(&name, q.password.as_deref())
         .await?;
-    Ok(Json(serde_json::to_value(profile)?))
+    Ok(Json(profile.into()))
 }
 
 /// `PUT /profiles/{name}` — create or update a profile. The request body
@@ -151,7 +158,7 @@ pub async fn v1_profile_save(
     axum::extract::Path(name): axum::extract::Path<String>,
     axum::Json(req): axum::Json<ProfileSaveRequest>,
 ) -> Result<Json<ProfileSaveResponse>, crate::ApiError> {
-    let profile: spiritstream_core::models::Profile = serde_json::from_value(req.profile)?;
+    let profile = req.profile;
     if profile.name != name {
         return Err(crate::ApiError(
             spiritstream_core::CoreError::ValidationFailed {
@@ -284,10 +291,8 @@ pub struct ProfileLockedListResponse {
     params(("name" = String, Path, description = "Profile name")),
     request_body = ProfileActivateRequest,
     responses(
-        // Same Profile shape as GET /profiles/{name} — typed by ts-rs at
-        // `@spiritstream/types/Profile`; see that handler for why utoipa
-        // documents this as a free-form object.
-        (status = 200, description = "Profile activated; body matches @spiritstream/types/Profile.", body = serde_json::Value),
+        // G5: same `ProfileWire` body as `GET /profiles/{name}`.
+        (status = 200, description = "Profile activated; body is the resolved profile.", body = ProfileWire),
         (status = 401, description = "Password required / incorrect.", body = ApiErrorBody),
         (status = 404, description = "Profile not found.", body = ApiErrorBody),
         (status = 409, description = "Activation precondition not met (e.g. no active profile resolvable).", body = ApiErrorBody),
@@ -299,7 +304,7 @@ pub async fn v1_profile_activate(
     State(state): State<AppState>,
     axum::extract::Path(name): axum::extract::Path<String>,
     axum::Json(req): axum::Json<ProfileActivateRequest>,
-) -> Result<Json<serde_json::Value>, crate::ApiError> {
+) -> Result<Json<crate::v1::ProfileWire>, crate::ApiError> {
     // Single call into the orchestrator. The service composes profile
     // load + OAuth refresh + chat/OBS propagation + `profile_activated`
     // bus emission. The transport handles only its own session state
@@ -319,7 +324,7 @@ pub async fn v1_profile_activate(
         );
     }
 
-    Ok(Json(serde_json::to_value(&outcome.profile)?))
+    Ok(Json(outcome.profile.into()))
 }
 
 /// `POST /profiles/{name}/unlock` — validate the password and add the
@@ -466,7 +471,6 @@ pub async fn v1_profile_locked_list(
     })
 }
 
-
 // --------------------------------------------------------------------------
 // Profiles — remaining proxies.
 
@@ -499,10 +503,12 @@ impl From<spiritstream_core::models::ProfileSummary> for ProfileSummaryWire {
             services: s
                 .services
                 .into_iter()
-                .map(|p| serde_json::to_value(&p)
-                    .ok()
-                    .and_then(|v| v.as_str().map(String::from))
-                    .unwrap_or_default())
+                .map(|p| {
+                    serde_json::to_value(&p)
+                        .ok()
+                        .and_then(|v| v.as_str().map(String::from))
+                        .unwrap_or_default()
+                })
                 .collect(),
             is_encrypted: s.is_encrypted,
         }
@@ -540,7 +546,10 @@ pub async fn v1_profile_summaries_proxy(
 #[serde(rename_all = "camelCase")]
 pub struct ProfileValidateInputRequest {
     pub profile_id: String,
-    pub input: serde_json::Value,
+    /// RTMP input shape — runtime type is the core `RtmpInput`;
+    /// OpenAPI schema is `RtmpInputWire`.
+    #[schema(value_type = crate::v1::RtmpInputWire)]
+    pub input: spiritstream_core::models::RtmpInput,
 }
 
 #[utoipa::path(post, path = "/profiles/validate-input", tag = "profiles",
@@ -555,10 +564,9 @@ pub async fn v1_profile_validate_input_proxy(
     State(state): State<AppState>,
     axum::Json(req): axum::Json<ProfileValidateInputRequest>,
 ) -> Result<Json<ProfileAckResponse>, crate::ApiError> {
-    let input: spiritstream_core::models::RtmpInput = serde_json::from_value(req.input)?;
     state
         .profile_manager
-        .validate_input_conflict(&req.profile_id, &input)
+        .validate_input_conflict(&req.profile_id, &req.input)
         .await?;
     Ok(Json(ProfileAckResponse {}))
 }

@@ -165,9 +165,7 @@ export const dialogs = {
 
     // Check if this is a local file path (starts with / or looks like a Windows path)
     const isLocalPath =
-      target.startsWith('/') ||
-      /^[A-Za-z]:[/\\]/.test(target) ||
-      target.startsWith('~');
+      target.startsWith('/') || /^[A-Za-z]:[/\\]/.test(target) || target.startsWith('~');
 
     if (isLocalPath) {
       // Use server's file open endpoint for local paths

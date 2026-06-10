@@ -46,6 +46,8 @@ import { Settings } from '@/views/Settings';
 import { ObsPanel } from '@/components/integrations/ObsPanel';
 import { ChatPanel } from '@/components/integrations/ChatPanel';
 import { DiscordPanel } from '@/components/integrations/DiscordPanel';
+import { ChevronUp, ChevronDown, Copy } from 'lucide-react';
+import { toast } from '@/hooks/useToast';
 import type { Platform, OutputGroup, StreamTarget } from '@spiritstream/types';
 
 export interface SinglePanelShellProps {
@@ -70,6 +72,7 @@ export function SinglePanelShell({
     submitPassword,
     cancelPasswordPrompt,
     passwordError,
+    clearPasswordError,
   } = useProfileStore();
 
   const { state: modals, open, close } = useModalRegistry();
@@ -113,7 +116,7 @@ export function SinglePanelShell({
       setDrawerGroupId(group.id);
       open('appDrawerStream');
     },
-    [open],
+    [open]
   );
 
   /** AppDrawer → user picked a service. Hand off to targetCreate modal. */
@@ -122,7 +125,7 @@ export function SinglePanelShell({
       setPendingService(platform);
       open('targetCreate');
     },
-    [open],
+    [open]
   );
 
   /** Pipeline → row-level edit. Stash the (group, target) pair and open targetEdit. */
@@ -131,7 +134,7 @@ export function SinglePanelShell({
       setEditingTarget({ group, target });
       open('targetEdit');
     },
-    [open],
+    [open]
   );
 
   /** Pipeline + Input encoder card → open OutputGroupModal in edit mode. */
@@ -140,7 +143,7 @@ export function SinglePanelShell({
       setEditingGroup(group);
       open('outputGroupEdit');
     },
-    [open],
+    [open]
   );
 
   /** Stream menu → Encoder Settings on the active group. */
@@ -162,7 +165,7 @@ export function SinglePanelShell({
         onToggleChat={toggleChat}
         chatCollapsed={chatCollapsed}
         onEditEncoder={handleEditActiveEncoder}
-        canEditEncoder={!!activeGroup}
+        canEditEncoder={!!activeGroup && !activeGroup.isDefault}
       />
 
       <StatusStrip profile={current} onOpenModal={open} />
@@ -193,7 +196,11 @@ export function SinglePanelShell({
       />
 
       {/* ─── Profile modals ─── */}
-      <ProfileModal open={modals.profileCreate} onClose={() => close('profileCreate')} mode="create" />
+      <ProfileModal
+        open={modals.profileCreate}
+        onClose={() => close('profileCreate')}
+        mode="create"
+      />
       <ProfileModal
         open={modals.profileEdit}
         onClose={() => close('profileEdit')}
@@ -323,6 +330,7 @@ export function SinglePanelShell({
         mode="decrypt"
         profileName={pendingPasswordProfile ?? undefined}
         error={passwordError ?? undefined}
+        onErrorClear={clearPasswordError}
       />
       <LoginModal open={loginModalOpen} onSuccess={onLoginSuccess} />
 
@@ -345,9 +353,21 @@ interface ViewModalProps {
   children: React.ReactNode;
 }
 
-function ViewModal({ open, onClose, title, maxWidth, children }: ViewModalProps): React.ReactElement {
+function ViewModal({
+  open,
+  onClose,
+  title,
+  maxWidth,
+  children,
+}: ViewModalProps): React.ReactElement {
   return (
-    <Modal open={open} onClose={onClose} title={title} maxWidth={maxWidth ?? '800px'} closeOnBackdropClick>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={title}
+      maxWidth={maxWidth ?? '800px'}
+      closeOnBackdropClick
+    >
       {children}
     </Modal>
   );
@@ -363,6 +383,16 @@ function OpenProfileModal({ open, onClose }: OpenProfileModalProps): React.React
   const profiles = useProfileStore((s) => s.profiles);
   const current = useProfileStore((s) => s.current);
   const selectProfile = useProfileStore((s) => s.selectProfile);
+  const reorderProfiles = useProfileStore((s) => s.reorderProfiles);
+  const duplicateProfile = useProfileStore((s) => s.duplicateProfile);
+
+  const handleDuplicate = async (name: string): Promise<void> => {
+    await duplicateProfile(name);
+    toast.success(t('toast.profileDuplicated', { name, defaultValue: 'Duplicated {{name}}' }));
+  };
+
+  const iconButtonClass =
+    'p-2 rounded-md text-text-tertiary hover:text-text-primary hover:bg-bg-hover disabled:opacity-40 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring-default';
 
   return (
     <Modal
@@ -378,15 +408,15 @@ function OpenProfileModal({ open, onClose }: OpenProfileModalProps): React.React
         </p>
       ) : (
         <ul className="flex flex-col gap-1">
-          {profiles.map((p) => (
-            <li key={p.name}>
+          {profiles.map((p, index) => (
+            <li key={p.name} className="flex items-center gap-1">
               <button
                 type="button"
                 onClick={async () => {
                   await selectProfile(p.name);
                   onClose();
                 }}
-                className="w-full text-start px-3 py-2 rounded-md text-text-primary hover:bg-bg-hover focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring-default"
+                className="flex-1 text-start px-3 py-2 rounded-md text-text-primary hover:bg-bg-hover focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring-default"
                 aria-current={current?.name === p.name ? 'true' : undefined}
               >
                 {p.name}
@@ -395,6 +425,41 @@ function OpenProfileModal({ open, onClose }: OpenProfileModalProps): React.React
                     ({t('common.current', { defaultValue: 'current' })})
                   </span>
                 )}
+              </button>
+              <button
+                type="button"
+                onClick={() => reorderProfiles(index, index - 1)}
+                disabled={index === 0}
+                aria-label={t('menu.file.moveProfileUp', {
+                  name: p.name,
+                  defaultValue: 'Move {{name}} up',
+                })}
+                className={iconButtonClass}
+              >
+                <ChevronUp className="w-4 h-4" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                onClick={() => reorderProfiles(index, index + 1)}
+                disabled={index === profiles.length - 1}
+                aria-label={t('menu.file.moveProfileDown', {
+                  name: p.name,
+                  defaultValue: 'Move {{name}} down',
+                })}
+                className={iconButtonClass}
+              >
+                <ChevronDown className="w-4 h-4" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDuplicate(p.name)}
+                aria-label={t('menu.file.duplicateProfile', {
+                  name: p.name,
+                  defaultValue: 'Duplicate {{name}}',
+                })}
+                className={iconButtonClass}
+              >
+                <Copy className="w-4 h-4" aria-hidden="true" />
               </button>
             </li>
           ))}

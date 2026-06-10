@@ -26,8 +26,7 @@ const TRANS_PRIDE_LIGHT_JSON: &str = include_str!("../../../../themes/trans-prid
 // or first launch (permission denied, disk full, sandbox restriction),
 // these tokens remain reachable so accessibility users keep their theme.
 const HIGH_CONTRAST_DARK_JSON: &str = include_str!("../../../../themes/high-contrast-dark.jsonc");
-const HIGH_CONTRAST_LIGHT_JSON: &str =
-    include_str!("../../../../themes/high-contrast-light.jsonc");
+const HIGH_CONTRAST_LIGHT_JSON: &str = include_str!("../../../../themes/high-contrast-light.jsonc");
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -66,8 +65,8 @@ pub fn get_embedded_theme_tokens(theme_id: &str) -> Option<HashMap<String, Strin
         ];
 
         for json_str in theme_sources {
-            // Strip JSONC comments before parsing
-            let clean_json = strip_jsonc_comments(json_str);
+            // Strip JSONC comments + trailing commas before parsing.
+            let clean_json = crate::services::jsonc::sanitize_jsonc(json_str);
             match serde_json::from_str::<ThemeJson>(&clean_json) {
                 Ok(theme) => {
                     log::info!(
@@ -120,7 +119,7 @@ pub fn get_embedded_theme_list() -> Vec<ThemeSummary> {
 
         let mut summaries = Vec::new();
         for json_str in theme_sources {
-            let clean_json = strip_jsonc_comments(json_str);
+            let clean_json = crate::services::jsonc::sanitize_jsonc(json_str);
             match serde_json::from_str::<ThemeJson>(&clean_json) {
                 Ok(theme) => {
                     summaries.push(ThemeSummary {
@@ -144,77 +143,4 @@ pub fn get_embedded_theme_list() -> Vec<ThemeSummary> {
     });
 
     list.clone()
-}
-
-/// Strip JSONC comments (line comments // and block comments /* */)
-fn strip_jsonc_comments(input: &str) -> String {
-    let input = input.strip_prefix('\u{FEFF}').unwrap_or(input);
-    let mut output = String::with_capacity(input.len());
-    let mut chars = input.chars().peekable();
-    let mut in_string = false;
-    let mut escape = false;
-    let mut in_line_comment = false;
-    let mut in_block_comment = false;
-
-    while let Some(ch) = chars.next() {
-        if in_line_comment {
-            if ch == '\n' {
-                in_line_comment = false;
-                output.push(ch);
-            }
-            continue;
-        }
-
-        if in_block_comment {
-            if ch == '*' {
-                if let Some('/') = chars.peek() {
-                    chars.next();
-                    in_block_comment = false;
-                }
-                continue;
-            }
-            if ch == '\n' {
-                output.push(ch);
-            }
-            continue;
-        }
-
-        if in_string {
-            output.push(ch);
-            if escape {
-                escape = false;
-            } else if ch == '\\' {
-                escape = true;
-            } else if ch == '"' {
-                in_string = false;
-            }
-            continue;
-        }
-
-        if ch == '"' {
-            in_string = true;
-            output.push(ch);
-            continue;
-        }
-
-        if ch == '/' {
-            match chars.peek() {
-                Some('/') => {
-                    chars.next();
-                    in_line_comment = true;
-                    continue;
-                }
-                Some('*') => {
-                    chars.next();
-                    in_block_comment = true;
-                    continue;
-                }
-                _ => {}
-            }
-        }
-
-        output.push(ch);
-    }
-
-    output
 }

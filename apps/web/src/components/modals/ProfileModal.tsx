@@ -133,6 +133,11 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
   };
 
   const persistProfile = async () => {
+    // Trim the name on save — the validator already rejects all-whitespace
+    // input via `!v.name.trim()` (line ~65), but only checks; without the
+    // trim here, leading/trailing spaces survive and the persisted name
+    // visually disagrees with what the user typed-and-saw.
+    const trimmedName = formData.name.trim();
     const input: RtmpInput = {
       type: 'rtmp',
       bindAddress: formData.bindAddress,
@@ -141,7 +146,7 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
     };
 
     if (mode === 'create') {
-      const newProfile = createDefaultProfile(formData.name);
+      const newProfile = createDefaultProfile(trimmedName);
       newProfile.input = input;
       const password = formData.usePassword ? formData.password : undefined;
       await api.profile.save(newProfile, password);
@@ -149,7 +154,7 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
       await loadProfiles();
       await loadProfile(newProfile.name, password);
     } else if (mode === 'edit' && current) {
-      updateProfile({ name: formData.name, input });
+      updateProfile({ name: trimmedName, input });
       await saveProfile();
     }
 
@@ -318,7 +323,9 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
             </div>
           )}
           <p className="text-text-secondary">
-            {tDynamic('modals.portConflictConfirm', { defaultValue: 'Do you want to save anyway?' })}
+            {tDynamic('modals.portConflictConfirm', {
+              defaultValue: 'Do you want to save anyway?',
+            })}
           </p>
         </div>
       </Modal>

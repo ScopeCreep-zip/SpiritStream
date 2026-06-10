@@ -5,7 +5,12 @@ import { showSystemNotification } from '@/lib/notification';
 import { useSettingsStore } from './settingsStore';
 import { useProfileStore } from './profileStore';
 import i18n from '@/lib/i18n';
-import type { ObsConnectionStatus, ObsStreamStatus, ObsConfig, ObsState } from '@spiritstream/types';
+import type {
+  ObsConnectionStatus,
+  ObsStreamStatus,
+  ObsConfig,
+  ObsState,
+} from '@spiritstream/types';
 import type { ObsSettings } from '@spiritstream/types';
 
 interface ObsStoreState {
@@ -110,16 +115,18 @@ export const useObsStore = create<ObsStoreState>((set, get) => ({
       set({ config });
 
       // Also update the backend's in-memory OBS handler so it uses the profile's config
-      api.obs.setConfig({
-        host: config.host,
-        port: config.port,
-        password: current.settings.obs.password,
-        useAuth: config.useAuth,
-        direction: config.direction,
-        autoConnect: config.autoConnect,
-      }).catch((error) => {
-        logger.error('Failed to sync OBS config to backend:', error);
-      });
+      api.obs
+        .setConfig({
+          host: config.host,
+          port: config.port,
+          password: current.settings.obs.password,
+          useAuth: config.useAuth,
+          direction: config.direction,
+          autoConnect: config.autoConnect,
+        })
+        .catch((error) => {
+          logger.error('Failed to sync OBS config to backend:', error);
+        });
     }
   },
 

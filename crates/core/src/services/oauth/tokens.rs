@@ -8,7 +8,11 @@ use super::provider::OAuthProvider;
 use super::{network, unknown_provider};
 
 /// OAuth tokens returned from the token exchange.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// `Debug` is hand-written so the bearer / refresh values never reach
+/// log lines, panic messages, or `dbg!()` output — F5 (the F-series
+/// catastrophic-secret-leak sweep). Serde is unaffected.
+#[derive(Clone, Serialize, Deserialize)]
 pub struct OAuthTokens {
     pub access_token: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -19,6 +23,21 @@ pub struct OAuthTokens {
     pub token_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scope: Option<String>,
+}
+
+impl std::fmt::Debug for OAuthTokens {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OAuthTokens")
+            .field("access_token", &"<redacted>")
+            .field(
+                "refresh_token",
+                &self.refresh_token.as_ref().map(|_| "<redacted>"),
+            )
+            .field("expires_in", &self.expires_in)
+            .field("token_type", &self.token_type)
+            .field("scope", &self.scope)
+            .finish()
+    }
 }
 
 /// Per-provider outcome of `OAuthService::refresh_profile_tokens`. Lets the
@@ -428,10 +447,7 @@ impl super::OAuthService {
     /// returns the user id + display name; the same id is the seed for
     /// looking up Pages the user manages (`/me/accounts`) — which is
     /// what the Live Video connector needs the Page Access Token of.
-    pub async fn fetch_facebook_user(
-        &self,
-        access_token: &str,
-    ) -> Result<FacebookUser, CoreError> {
+    pub async fn fetch_facebook_user(&self, access_token: &str) -> Result<FacebookUser, CoreError> {
         let response = self
             .http_client
             .get("https://graph.facebook.com/v18.0/me")
@@ -447,11 +463,12 @@ impl super::OAuthService {
             return Err(CoreError::Unauthorized);
         }
 
-        response.json::<FacebookUser>().await.map_err(|e| {
-            CoreError::Internal {
+        response
+            .json::<FacebookUser>()
+            .await
+            .map_err(|e| CoreError::Internal {
                 context: format!("Failed to parse Facebook user response: {e}"),
-            }
-        })
+            })
     }
 
     /// Fetch the bearer-identified Kick user. Kick exposes a `users` REST
@@ -566,5 +583,81 @@ impl super::OAuthService {
             }
             _ => Err(unknown_provider(provider_name)),
         }
+    }
+}
+
+#[cfg(test)]
+mod debug_redaction_tests {
+    use super::*;
+
+    /// F5 regression: `OAuthTokens` must not surface its bearer or
+    /// refresh values through `{:?}` rendering. Pre-F5 the default
+    /// derive printed the literal token any time a log line, panic
+    /// message, or `dbg!()` touched the struct.
+    #[test]
+    fn debug_redacts_oauth_tokens() {
+        let tokens = OAuthTokens {
+            access_token: "SUPER-SECRET-OAUTH-BEARER".into(),
+            refresh_token: Some("SUPER-SECRET-OAUTH-REFRESH".into()),
+            expires_in: Some(3600),
+            token_type: Some("Bearer".into()),
+            scope: Some("chat:read chat:edit".into()),
+        };
+        let rendered = format!("{tokens:?}");
+        assert!(
+            !rendered.contains("SUPER-SECRET-OAUTH-BEARER"),
+            "access_token leaked via Debug: {rendered}",
+        );
+        assert!(
+            !rendered.contains("SUPER-SECRET-OAUTH-REFRESH"),
+            "refresh_token leaked via Debug: {rendered}",
+        );
+        assert!(rendered.contains("<redacted>"));
+        // Non-secret fields survive so logs remain useful.
+        assert!(rendered.contains("Bearer"));
+        assert!(rendered.contains("chat:read"));
+    }
+
+    use super::super::{OAuthConfig, OAuthService};
+
+    fn svc() -> OAuthService {
+        OAuthService::new(OAuthConfig::default())
+    }
+
+    #[test]
+    fn token_needs_refresh_treats_zero_expiry_as_never() {
+        // `0` means "no expiry recorded" — a freshly-set profile must not
+        // churn refresh just because its expiry hasn't been issued yet.
+        assert!(!svc().token_needs_refresh(0, 60));
+        assert!(!svc().token_needs_refresh(0, 0));
+    }
+
+    #[test]
+    fn token_needs_refresh_true_when_already_past_expiry() {
+        // An expiry one hour in the past is unambiguously stale.
+        let one_hour_ago = now_secs() - 3600;
+        assert!(svc().token_needs_refresh(one_hour_ago, 0));
+    }
+
+    #[test]
+    fn token_needs_refresh_false_when_outside_leeway_window() {
+        // Expiry an hour out with a 60s leeway: plenty of runway, no refresh.
+        let one_hour_ahead = now_secs() + 3600;
+        assert!(!svc().token_needs_refresh(one_hour_ahead, 60));
+    }
+
+    #[test]
+    fn token_needs_refresh_true_when_inside_leeway_window() {
+        // Expiry 30s out with a 120s leeway: inside the pre-emptive window,
+        // refresh now to avoid an in-flight 401.
+        let thirty_seconds_ahead = now_secs() + 30;
+        assert!(svc().token_needs_refresh(thirty_seconds_ahead, 120));
+    }
+
+    fn now_secs() -> i64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0)
     }
 }

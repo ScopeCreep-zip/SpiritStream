@@ -11,11 +11,7 @@
  */
 
 export type { FileBrowseResponse, FileHomeResponse, FileEntry } from '@spiritstream/types';
-export type {
-  EncoderPresetsResponse,
-  ClientConfigResponse,
-  RangeU32,
-} from './api/system';
+export type { EncoderPresetsResponse, ClientConfigResponse, RangeU32 } from './api/system';
 export type { AuditChainStatus, AuditLogResponse } from './api/audit';
 
 import { profile } from './api/profile';

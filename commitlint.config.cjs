@@ -11,7 +11,19 @@ module.exports = {
     'type-enum': [
       2,
       'always',
-      ['feat', 'fix', 'docs', 'style', 'refactor', 'test', 'chore', 'perf', 'build', 'ci', 'revert'],
+      [
+        'feat',
+        'fix',
+        'docs',
+        'style',
+        'refactor',
+        'test',
+        'chore',
+        'perf',
+        'build',
+        'ci',
+        'revert',
+      ],
     ],
     'scope-enum': [
       2,
@@ -49,9 +61,6 @@ module.exports = {
     // Force a body on feat / fix so we capture *why* the change exists.
     // Conventional commits + the body is the contributor's chance to
     // explain motivation; missing it is a frequent AI-slop tell.
-    'body-empty': [
-      1,
-      'never',
-    ],
+    'body-empty': [1, 'never'],
   },
 };

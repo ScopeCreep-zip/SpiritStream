@@ -16,13 +16,11 @@ use super::chat_validation;
 /// - Facebook: the live video id — load-bearing because it doubles as
 ///   the audit grep key when reconstructing "did I ever enable Facebook
 ///   for this stream" history.
-/// - Stripchat: the model username.
 fn account_id_from_credentials(creds: &ChatCredentials) -> Option<String> {
     match creds {
         ChatCredentials::Twitch { channel, .. } => Some(channel.clone()),
         ChatCredentials::YouTube { channel_id, .. } => Some(channel_id.clone()),
         ChatCredentials::Trovo { channel_id } => Some(channel_id.clone()),
-        ChatCredentials::Stripchat { username } => Some(username.clone()),
         ChatCredentials::Kick { channel, .. } => Some(channel.clone()),
         ChatCredentials::TikTok { username, .. } => Some(username.clone()),
         ChatCredentials::Facebook { video_id, .. } => Some(video_id.clone()),
@@ -58,15 +56,16 @@ impl super::ChatManager {
         // "platform pending re-impl" branch.
         let mut connector = match platforms.remove(&config.platform) {
             Some(existing) => existing,
-            None => Self::create_platform_connector(config.platform).ok_or_else(|| {
-                chat_validation(
-                    "chat_platform_unsupported",
-                    format!(
-                        "Chat for {} is not yet implemented",
-                        config.platform.as_str()
-                    ),
-                )
-            })?,
+            None => Self::create_platform_connector(config.platform, &self.chat_endpoints)
+                .ok_or_else(|| {
+                    chat_validation(
+                        "chat_platform_unsupported",
+                        format!(
+                            "Chat for {} is not yet implemented",
+                            config.platform.as_str()
+                        ),
+                    )
+                })?,
         };
 
         // Capture the account_id before the connector consumes

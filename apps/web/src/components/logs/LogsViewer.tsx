@@ -125,9 +125,7 @@ export function LogsViewer() {
         <div className="flex items-center gap-3">
           <Select
             value={timeFilter}
-            onChange={(e) =>
-              setTimeFilter(e.target.value as 'all' | '15m' | '1h' | '24h' | '7d')
-            }
+            onChange={(e) => setTimeFilter(e.target.value as 'all' | '15m' | '1h' | '24h' | '7d')}
             options={timeOptions}
             className="w-44"
           />
@@ -160,11 +158,7 @@ export function LogsViewer() {
         <LogConsole maxHeight="500px">
           <div ref={consoleRef}>
             {filteredLogs.length === 0 ? (
-              <div
-                className="text-center text-text-secondary py-8 px-4"
-              >
-                {t('logs.noLogs')}
-              </div>
+              <div className="text-center text-text-secondary py-8 px-4">{t('logs.noLogs')}</div>
             ) : (
               filteredLogs.map((log) => (
                 <LogEntry

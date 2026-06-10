@@ -58,9 +58,7 @@ function detectTarget(): Target {
     return process.arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin';
   }
   if (process.platform === 'linux') {
-    return process.arch === 'arm64'
-      ? 'aarch64-unknown-linux-gnu'
-      : 'x86_64-unknown-linux-gnu';
+    return process.arch === 'arm64' ? 'aarch64-unknown-linux-gnu' : 'x86_64-unknown-linux-gnu';
   }
   throw new Error(`Unsupported platform: ${process.platform}`);
 }
@@ -103,7 +101,7 @@ function printErrorAndExit(target: Target, ext: string, dest: string): never {
       `\n  (c) Install FFmpeg via your system package manager — the app will` +
       `\n      discover it via $PATH (FFmpegLocator step 3), no sidecar needed for dev:` +
       `\n        ${sysPkgMgr}` +
-      `\n`,
+      `\n`
   );
   process.exit(69); // EX_UNAVAILABLE
 }
@@ -138,7 +136,7 @@ function downloadFromLatestRelease(target: Target, ext: string, dest: string): b
         binariesDir,
         '--clobber',
       ],
-      { stdio: 'inherit' },
+      { stdio: 'inherit' }
     );
   } catch (e) {
     console.error(`  gh release download failed: ${(e as Error).message}`);
@@ -169,7 +167,7 @@ function main(): void {
     if (size > 0) {
       console.log(
         `FFmpeg sidecar already present at ${dest} (${(size / 1024 / 1024).toFixed(1)} MiB); ` +
-          'skipping fetch. Pass --force to refresh from the latest GitHub Release.',
+          'skipping fetch. Pass --force to refresh from the latest GitHub Release.'
       );
       return;
     }
@@ -179,7 +177,7 @@ function main(): void {
   if (downloadFromLatestRelease(target, ext, dest)) {
     const size = statSync(dest).size;
     console.log(
-      `==> Installed ${dest} (${(size / 1024 / 1024).toFixed(1)} MiB) from latest release`,
+      `==> Installed ${dest} (${(size / 1024 / 1024).toFixed(1)} MiB) from latest release`
     );
     return;
   }

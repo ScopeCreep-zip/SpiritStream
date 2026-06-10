@@ -35,11 +35,10 @@ if (!existsSync(distDir)) {
 // Plain-Node static file server. Avoids dragging in another dep
 // (serve, http-server) just to host one bundle.
 const PORT = 4173;
-const server = spawn(
-  'pnpm',
-  ['exec', 'vite', 'preview', '--port', String(PORT), '--strictPort'],
-  { cwd: distDir.replace(/\/dist$/, ''), stdio: 'inherit' },
-);
+const server = spawn('pnpm', ['exec', 'vite', 'preview', '--port', String(PORT), '--strictPort'], {
+  cwd: distDir.replace(/\/dist$/, ''),
+  stdio: 'inherit',
+});
 
 const ROUTES_TO_AUDIT = ['/'];
 // Rules to ignore — these are intentional choices in SpiritStream's
@@ -61,7 +60,7 @@ async function audit(page: Page, route: string): Promise<void> {
     .analyze();
 
   const blocking = results.violations.filter(
-    (v) => v.impact === 'serious' || v.impact === 'critical',
+    (v) => v.impact === 'serious' || v.impact === 'critical'
   );
   if (blocking.length === 0) {
     console.log(`[axe] ${route}: clean`);

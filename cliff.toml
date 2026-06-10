@@ -1,0 +1,57 @@
+# git-cliff configuration for SpiritStream release notes.
+#
+# Generates conventional-commits-formatted CHANGELOG content for the
+# current release range. M7 — paired with the release workflow so the
+# static template gains an auto-generated section listing what
+# actually changed since the previous tag, grouped by commit type.
+#
+# Install (one-time, maintainer):
+#   cargo install --locked git-cliff
+#
+# Use:
+#   git cliff --latest                 # changelog for unreleased range
+#   git cliff --tag v1.2.0 --strip all # release-notes body for a tag
+#
+# The release workflow consumes `git cliff --latest --strip all` and
+# prepends it to the static template at `.github/workflows/release.yml`.
+
+[changelog]
+header = ""
+body = """
+{% if version %}\
+## What changed in {{ version }}
+{% else %}\
+## Unreleased
+{% endif %}\
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | upper_first }}
+{% for commit in commits %}
+- {% if commit.scope %}*({{ commit.scope }})* {% endif %}{{ commit.message | upper_first }}\
+{% endfor %}
+{% endfor %}\n
+"""
+footer = ""
+trim = true
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+commit_parsers = [
+  { message = "^feat", group = "Features" },
+  { message = "^fix", group = "Bug fixes" },
+  { message = "^perf", group = "Performance" },
+  { message = "^refactor", group = "Refactor" },
+  { message = "^docs", group = "Documentation" },
+  { message = "^test", group = "Tests" },
+  { message = "^build", group = "Build / CI" },
+  { message = "^chore\\(deps\\)", group = "Dependencies" },
+  { message = "^chore\\(release\\)", skip = true },
+  { message = "^chore", group = "Chores" },
+  # SpiritStream-specific scopes we emit a lot of
+  { message = "^style", group = "Style" },
+  { message = "^ci", group = "Build / CI" },
+  { message = "^security", group = "Security" },
+]
+filter_commits = true
+tag_pattern = "v[0-9]*\\.[0-9]*\\.[0-9]*"
+sort_commits = "oldest"

@@ -48,9 +48,7 @@ export function DirectoryTree({
   }
   if (entries.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-text-tertiary">
-        {emptyLabel}
-      </div>
+      <div className="flex items-center justify-center h-full text-text-tertiary">{emptyLabel}</div>
     );
   }
   return (

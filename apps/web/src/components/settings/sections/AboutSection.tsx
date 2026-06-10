@@ -5,11 +5,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/compon
 import { Button } from '@/components/ui/Button';
 import { Logo } from '@/components/layout/Logo';
 import { api } from '@/lib/client';
-import {
-  UpdaterButton,
-  UpdaterStateView,
-  useUpdaterController,
-} from './about/UpdaterCard';
+import { UpdaterButton, UpdaterStateView, useUpdaterController } from './about/UpdaterCard';
 import { LicensesModal } from './about/LicensesModal';
 
 /**
@@ -69,9 +65,7 @@ export function AboutSection() {
             <div className="text-sm text-text-secondary mb-1">
               {t('settings.version')} {appVersion || '…'}
             </div>
-            <div className="text-xs text-text-tertiary mb-6">
-              {t('settings.tagline')}
-            </div>
+            <div className="text-xs text-text-tertiary mb-6">{t('settings.tagline')}</div>
             <div className="flex justify-center gap-3">
               <Button
                 variant="ghost"
@@ -80,7 +74,7 @@ export function AboutSection() {
                   window.open(
                     'https://github.com/ScopeCreep-zip/SpiritStream',
                     '_blank',
-                    'noopener,noreferrer',
+                    'noopener,noreferrer'
                   )
                 }
               >
@@ -94,7 +88,7 @@ export function AboutSection() {
                   window.open(
                     'https://deepwiki.com/ScopeCreep-zip/SpiritStream',
                     '_blank',
-                    'noopener,noreferrer',
+                    'noopener,noreferrer'
                   )
                 }
               >

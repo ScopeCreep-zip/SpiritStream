@@ -52,12 +52,7 @@ export function makeApiClient(opts: ApiClientOptions): ApiClient {
 // the codegen-generated raw HTTP client.
 export { events, initConnection, disconnectSocket } from './events';
 export { dialogs } from './dialogs';
-export type {
-  OpenFileOptions,
-  SaveFileOptions,
-  OpenTextResult,
-  DialogFilter,
-} from './dialogTypes';
+export type { OpenFileOptions, SaveFileOptions, OpenTextResult, DialogFilter } from './dialogTypes';
 export {
   backendMode,
   backendUrlStorageKey,
@@ -71,9 +66,4 @@ export {
   getAuthHeaders,
   safeFetch,
 } from './config';
-export type {
-  AuthStatus,
-  BackendMode,
-  ServerReadyError,
-  ServerReadyStatus,
-} from './config';
+export type { AuthStatus, BackendMode, ServerReadyError, ServerReadyStatus } from './config';

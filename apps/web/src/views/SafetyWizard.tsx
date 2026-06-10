@@ -81,7 +81,7 @@ export function SafetyWizard({ onComplete, onSkip }: SafetyWizardProps): React.R
           <p>
             {t(
               'safety.wizard.shoulderSurf',
-              'Anyone watching your screen during setup learns what you type here. Complete in private if possible.',
+              'Anyone watching your screen during setup learns what you type here. Complete in private if possible.'
             )}
           </p>
         </div>
@@ -109,13 +109,13 @@ export function SafetyWizard({ onComplete, onSkip }: SafetyWizardProps): React.R
               <p className="text-sm text-text-secondary mb-3">
                 {t(
                   'safety.wizard.panicBody',
-                  'A panic disconnect stops every stream, drops chat connections, and wipes secrets in memory. The keyboard hotkey is configured in Settings → Safety after this wizard.',
+                  'A panic disconnect stops every stream, drops chat connections, and wipes secrets in memory. The keyboard hotkey is configured in Settings → Safety after this wizard.'
                 )}
               </p>
               <p className="text-sm text-text-tertiary">
                 {t(
                   'safety.wizard.panicDefault',
-                  'Default hotkey: a randomised chord is generated server-side. You can re-pick it any time.',
+                  'Default hotkey: a randomised chord is generated server-side. You can re-pick it any time.'
                 )}
               </p>
             </section>
@@ -130,25 +130,29 @@ export function SafetyWizard({ onComplete, onSkip }: SafetyWizardProps): React.R
               <p className="text-sm text-text-secondary mb-3">
                 {t(
                   'safety.wizard.blocklistBody',
-                  'Add phrases to drop before they reach chat. Real name, deadname, hometown, workplace. Entries are stored encrypted with the rest of your profile.',
+                  'Add phrases to drop before they reach chat. Real name, deadname, hometown, workplace. Entries are stored encrypted with the rest of your profile.'
                 )}
               </p>
               <div className="flex flex-col gap-2">
-                {['realName', 'otherNames', 'hometown', 'workplace'].map((field, i) => (
-                  <input
-                    key={field}
-                    type="text"
-                    placeholder={t(`safety.wizard.blocklistField.${field}`, field)}
-                    value={blocklistInput[i] ?? ''}
-                    onChange={(e) => {
-                      const next = [...blocklistInput];
-                      next[i] = e.target.value;
-                      setBlocklistInput(next);
-                    }}
-                    className="w-full px-3 py-2 text-sm rounded border border-border-default bg-bg-sunken focus:outline-none focus:ring-2 focus:ring-ring-default"
-                    autoComplete="off"
-                  />
-                ))}
+                {['realName', 'otherNames', 'hometown', 'workplace'].map((field, i) => {
+                  const label = t(`safety.wizard.blocklistField.${field}`, field);
+                  return (
+                    <input
+                      key={field}
+                      type="text"
+                      placeholder={label}
+                      aria-label={label}
+                      value={blocklistInput[i] ?? ''}
+                      onChange={(e) => {
+                        const next = [...blocklistInput];
+                        next[i] = e.target.value;
+                        setBlocklistInput(next);
+                      }}
+                      className="w-full px-3 py-2 text-sm rounded border border-border-default bg-bg-sunken focus:outline-none focus:ring-2 focus:ring-ring-default"
+                      autoComplete="off"
+                    />
+                  );
+                })}
               </div>
             </section>
           )}
@@ -162,7 +166,7 @@ export function SafetyWizard({ onComplete, onSkip }: SafetyWizardProps): React.R
               <p className="text-sm text-text-secondary mb-3">
                 {t(
                   'safety.wizard.anonymousBody',
-                  'Chat usernames render as `hash:abcd1234` in logs and exports. You can still decode them locally with your profile salt. A leaked log can NOT.',
+                  'Chat usernames render as `hash:abcd1234` in logs and exports. You can still decode them locally with your profile salt. A leaked log can NOT.'
                 )}
               </p>
               <label className="flex items-center gap-2 text-sm text-text-primary">
@@ -172,16 +176,13 @@ export function SafetyWizard({ onComplete, onSkip }: SafetyWizardProps): React.R
                   onChange={(e) => setAnonymousLogging(e.target.checked)}
                   className="w-4 h-4"
                 />
-                {t(
-                  'safety.wizard.anonymousToggle',
-                  'Keep anonymous chat logging ON (recommended)',
-                )}
+                {t('safety.wizard.anonymousToggle', 'Keep anonymous chat logging ON (recommended)')}
               </label>
               {!anonymousLogging && (
                 <p className="mt-2 text-xs text-warning-text bg-warning-subtle border border-warning-border rounded p-2">
                   {t(
                     'safety.wizard.anonymousWarning',
-                    'Disabling anonymous mode means a leaked log file enumerates everyone who appeared in your chat.',
+                    'Disabling anonymous mode means a leaked log file enumerates everyone who appeared in your chat.'
                   )}
                 </p>
               )}
@@ -197,7 +198,7 @@ export function SafetyWizard({ onComplete, onSkip }: SafetyWizardProps): React.R
               <p className="text-sm text-text-secondary mb-3">
                 {t(
                   'safety.wizard.followerOnlyBody',
-                  "Apply the platform's follower-only / subscriber-only mode to every connected chat platform on start. Reduces drive-by harassment.",
+                  "Apply the platform's follower-only / subscriber-only mode to every connected chat platform on start. Reduces drive-by harassment."
                 )}
               </p>
               <label className="flex items-center gap-2 text-sm text-text-primary">

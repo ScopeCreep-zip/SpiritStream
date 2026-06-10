@@ -24,7 +24,7 @@ export function ContainerSettingsForm({
         value,
         label: value.toUpperCase(),
       })),
-    [],
+    []
   );
 
   return (

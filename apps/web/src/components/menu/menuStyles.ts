@@ -13,19 +13,19 @@ export const TRIGGER_CLASS = cn(
   'hover:bg-bg-hover hover:text-text-primary',
   'data-[state=open]:bg-bg-hover data-[state=open]:text-text-primary',
   'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring-default',
-  'transition-colors',
+  'transition-colors'
 );
 
 export const CONTENT_CLASS = cn(
   'min-w-[220px] bg-bg-elevated border border-border-default rounded-md shadow-xl',
-  'py-1 z-[var(--z-dropdown,60)]',
+  'py-1 z-[var(--z-dropdown)]'
 );
 
 export const ITEM_CLASS = cn(
   'flex items-center justify-between gap-4 px-3 py-1.5 text-sm text-text-primary',
   'cursor-pointer select-none outline-none',
   'data-[highlighted]:bg-bg-hover',
-  'data-[disabled]:text-text-disabled data-[disabled]:cursor-default data-[disabled]:bg-transparent',
+  'data-[disabled]:text-text-disabled data-[disabled]:cursor-default data-[disabled]:bg-transparent'
 );
 
 export const SHORTCUT_CLASS = 'text-xs text-text-muted ms-auto ps-4';

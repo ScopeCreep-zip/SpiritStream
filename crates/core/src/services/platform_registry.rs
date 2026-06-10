@@ -77,8 +77,14 @@ impl PlatformConfig {
 
     /// Redact stream key from URL for logging
     pub fn redact_url(&self, url: &str) -> String {
-        // Only redact RTMP(S) URLs
         if !(url.starts_with("rtmp://") || url.starts_with("rtmps://")) {
+            // The placement logic below assumes an RTMP `{app}/{key}` shape.
+            // A custom HTTP(S) ingest can still carry the key in its path or
+            // query, so defer to the scheme-agnostic redactor rather than
+            // echoing the URL verbatim into the log.
+            if url.starts_with("http://") || url.starts_with("https://") {
+                return redact_non_rtmp_url(url);
+            }
             return url.to_string();
         }
 
@@ -93,8 +99,15 @@ impl PlatformConfig {
                     let before_key = &template[..template_start];
                     let after_key = &template[template_start + "{stream_key}".len()..];
 
-                    // Check if URL matches the template pattern
-                    if url.starts_with(before_key) && url.contains(after_key) {
+                    if url.starts_with(before_key) {
+                        // Template ends in `{stream_key}` (empty suffix): the
+                        // key runs to the end of the URL. `url.find("")`
+                        // returns `Some(0)`, so the generic branch below would
+                        // echo the entire URL — key included — into the log.
+                        // Mask everything after the known prefix instead.
+                        if after_key.is_empty() {
+                            return format!("{before_key}***");
+                        }
                         // Find where the key ends (where after_key starts in the URL)
                         if let Some(key_end) = url.find(after_key) {
                             return format!("{}***{}", before_key, &url[key_end..]);
@@ -163,6 +176,58 @@ impl PlatformConfig {
     }
 }
 
+/// Redact credential material from a non-RTMP (`http`/`https`) stream URL.
+///
+/// HTTP ingests (e.g. a custom HLS upload endpoint) don't follow the RTMP
+/// `{app}/{key}` path shape — the key may live in a query-string value
+/// (`?cid=KEY`) or as the trailing path segment (`/live/KEY`). We mask both
+/// defensively: every query-string *value* and the last path segment.
+/// Over-redaction is the correct bias on a safety-critical log path — a leaked
+/// stream key is a direct threat-model hit, a redacted endpoint name is not.
+fn redact_non_rtmp_url(url: &str) -> String {
+    let (scheme, rest) = match url.split_once("://") {
+        Some(parts) => parts,
+        None => return url.to_string(),
+    };
+
+    let (path_part, query_part) = match rest.split_once('?') {
+        Some((p, q)) => (p, Some(q)),
+        None => (rest, None),
+    };
+
+    let redacted_path = match path_part.split_once('/') {
+        Some((host, path)) => {
+            let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+            if segments.is_empty() {
+                host.to_string()
+            } else {
+                let kept = &segments[..segments.len() - 1];
+                if kept.is_empty() {
+                    format!("{host}/***")
+                } else {
+                    format!("{host}/{}/***", kept.join("/"))
+                }
+            }
+        }
+        None => path_part.to_string(),
+    };
+
+    match query_part {
+        Some(query) => {
+            let redacted_query = query
+                .split('&')
+                .map(|pair| match pair.split_once('=') {
+                    Some((key, _)) => format!("{key}=***"),
+                    None => pair.to_string(),
+                })
+                .collect::<Vec<_>>()
+                .join("&");
+            format!("{scheme}://{redacted_path}?{redacted_query}")
+        }
+        None => format!("{scheme}://{redacted_path}"),
+    }
+}
+
 /// Global platform registry
 pub struct PlatformRegistry {
     configs: HashMap<Platform, PlatformConfig>,
@@ -197,13 +262,12 @@ impl PlatformRegistry {
     /// at runtime means the build pipeline regressed).
     pub fn new() -> Result<Self, CoreError> {
         let json_content = include_str!("../../../../data/streaming-platforms.json");
-        let data: PlatformsJson = serde_json::from_str(json_content).map_err(|e| {
-            CoreError::Internal {
+        let data: PlatformsJson =
+            serde_json::from_str(json_content).map_err(|e| CoreError::Internal {
                 context: format!(
                     "platform registry: embedded streaming-platforms.json is malformed: {e}"
                 ),
-            }
-        })?;
+            })?;
 
         let mut configs = HashMap::new();
         for service in data.services {
@@ -320,6 +384,9 @@ impl PlatformRegistry {
     /// This is a public static method that can be used when platform context is not available
     pub fn generic_redact(url: &str) -> String {
         if !(url.starts_with("rtmp://") || url.starts_with("rtmps://")) {
+            if url.starts_with("http://") || url.starts_with("https://") {
+                return redact_non_rtmp_url(url);
+            }
             return url.to_string();
         }
 
@@ -401,5 +468,260 @@ mod tests {
             registry.normalize_url(&crate::models::Platform::Custom, url),
             url
         );
+    }
+
+    fn append_config(position: usize) -> PlatformConfig {
+        PlatformConfig {
+            name: "Test",
+            default_server: "rtmp://host/app",
+            placement: StreamKeyPlacement::Append,
+            default_app_path: Some("app"),
+            stream_key_position: position,
+        }
+    }
+
+    #[test]
+    fn display_name_returns_human_label() {
+        assert_eq!(append_config(2).display_name(), "Test");
+    }
+
+    /// The safety-critical path: the trailing stream-key segment must be
+    /// replaced with `***` so operator logs never carry the live key.
+    #[test]
+    fn redact_url_append_masks_trailing_key_segment() {
+        let cfg = append_config(2);
+        let redacted = cfg.redact_url("rtmp://host/app/SUPERSECRETKEY");
+        assert_eq!(redacted, "rtmp://host/app/***");
+        assert!(!redacted.contains("SUPERSECRETKEY"));
+    }
+
+    #[test]
+    fn redact_url_append_position_zero_is_noop() {
+        let cfg = append_config(0);
+        let url = "rtmp://host/app/key";
+        assert_eq!(cfg.redact_url(url), url);
+    }
+
+    /// An HTTP(S) target reaching the RTMP-shaped instance redactor must still
+    /// be masked (custom HTTPS ingest), not echoed verbatim into a log.
+    #[test]
+    fn redact_url_masks_non_rtmp_urls() {
+        let cfg = append_config(2);
+        let redacted = cfg.redact_url("https://example.com/app/key");
+        assert_eq!(redacted, "https://example.com/app/***");
+        assert!(!redacted.ends_with("/key"));
+    }
+
+    #[test]
+    fn redact_url_append_too_few_segments_is_noop() {
+        let cfg = append_config(2);
+        // Only one segment before the key position → nothing to redact.
+        let url = "rtmp://host/onlyone";
+        assert_eq!(cfg.redact_url(url), url);
+    }
+
+    /// Template placement with a suffix after `{stream_key}` redacts the
+    /// key while preserving the suffix.
+    #[test]
+    fn redact_url_template_masks_key_keeping_suffix() {
+        let cfg = PlatformConfig {
+            name: "Tmpl",
+            default_server: "rtmp://host/live2/{stream_key}/extra",
+            placement: StreamKeyPlacement::InUrlTemplate,
+            default_app_path: None,
+            stream_key_position: 0,
+        };
+        let redacted = cfg.redact_url("rtmp://host/live2/SECRET/extra");
+        assert_eq!(redacted, "rtmp://host/live2/***/extra");
+        assert!(!redacted.contains("SECRET"));
+    }
+
+    /// A template that ends in `{stream_key}` (empty suffix) must still mask
+    /// the key. `url.find("")` returns `Some(0)`, so a naive implementation
+    /// echoes the whole URL — key included — into the log. Regression for F6.
+    #[test]
+    fn redact_url_template_empty_suffix_masks_key() {
+        let cfg = PlatformConfig {
+            name: "Tmpl",
+            default_server: "rtmp://host/live2/{stream_key}",
+            placement: StreamKeyPlacement::InUrlTemplate,
+            default_app_path: None,
+            stream_key_position: 0,
+        };
+        let redacted = cfg.redact_url("rtmp://host/live2/SUPERSECRETKEY");
+        assert_eq!(redacted, "rtmp://host/live2/***");
+        assert!(!redacted.contains("SUPERSECRETKEY"));
+    }
+
+    #[test]
+    fn build_url_with_key_appends_for_append_platform() {
+        let registry = PlatformRegistry::new().expect("test fixture");
+        let url =
+            registry.build_url_with_key(&crate::models::Platform::Twitch, "rtmp://host/app", "KEY");
+        assert_eq!(url, "rtmp://host/app/KEY");
+    }
+
+    #[test]
+    fn build_url_with_key_unknown_platform_falls_back_to_append() {
+        let registry = PlatformRegistry::new().expect("test fixture");
+        let url = registry.build_url_with_key(
+            &crate::models::Platform::Custom,
+            "rtmp://host/live/",
+            "KEY",
+        );
+        assert_eq!(url, "rtmp://host/live/KEY");
+    }
+
+    /// HTTP(S) ingests can carry a stream key in the path or query string, so
+    /// `generic_redact` must mask them rather than echo them into a log line.
+    /// This matrix pins every shape an HTTPS custom target can take.
+    #[test]
+    fn generic_redact_masks_http_path_carried_key() {
+        let redacted =
+            PlatformRegistry::generic_redact("https://ingest.example.com/live/SUPERSECRET");
+        assert_eq!(redacted, "https://ingest.example.com/live/***");
+        assert!(!redacted.contains("SUPERSECRET"));
+    }
+
+    #[test]
+    fn generic_redact_masks_http_query_carried_key() {
+        // The shape the now-removed `YouTube - HLS` entry would have produced:
+        // the key rides in the `cid` query value with an inline endpoint name.
+        let url =
+            "https://a.upload.youtube.com/http_upload_hls?cid=SUPERSECRET&copy=0&file=out.m3u8";
+        let redacted = PlatformRegistry::generic_redact(url);
+        assert!(!redacted.contains("SUPERSECRET"), "key leaked: {redacted}");
+        assert_eq!(
+            redacted,
+            "https://a.upload.youtube.com/***?cid=***&copy=***&file=***"
+        );
+    }
+
+    #[test]
+    fn generic_redact_masks_http_single_segment_key() {
+        let redacted = PlatformRegistry::generic_redact("http://host/SUPERSECRET");
+        assert_eq!(redacted, "http://host/***");
+        assert!(!redacted.contains("SUPERSECRET"));
+    }
+
+    /// A host-only HTTP(S) URL has nothing to redact and passes through.
+    #[test]
+    fn generic_redact_http_host_only_is_noop() {
+        assert_eq!(
+            PlatformRegistry::generic_redact("https://host"),
+            "https://host"
+        );
+    }
+
+    /// Non-stream schemes (no rtmp/http) are still left untouched.
+    #[test]
+    fn generic_redact_unknown_scheme_is_noop() {
+        let url = "file:///etc/passwd";
+        assert_eq!(PlatformRegistry::generic_redact(url), url);
+    }
+
+    /// The instance redactor must defer to the HTTP(S) path even though its
+    /// placement template logic is RTMP-shaped — a config matched against an
+    /// HTTPS target still can't leak the key into a log.
+    #[test]
+    fn redact_url_https_target_defers_to_http_redactor() {
+        let cfg = append_config(2);
+        let redacted = cfg.redact_url("https://host/live/SUPERSECRET?token=ALSOSECRET");
+        assert!(
+            !redacted.contains("SUPERSECRET"),
+            "path key leaked: {redacted}"
+        );
+        assert!(
+            !redacted.contains("ALSOSECRET"),
+            "query key leaked: {redacted}"
+        );
+        assert_eq!(redacted, "https://host/live/***?token=***");
+    }
+
+    #[test]
+    fn generic_redact_single_segment_is_noop() {
+        let url = "rtmp://host/onlyone";
+        assert_eq!(PlatformRegistry::generic_redact(url), url);
+    }
+
+    /// A bare value with no `scheme://` still gets the app path appended —
+    /// the user may type just a hostname for a known platform.
+    #[test]
+    fn normalize_url_without_scheme_appends_app_path() {
+        let cfg = append_config(2);
+        assert_eq!(
+            cfg.normalize_url("ingest.example.com"),
+            "ingest.example.com/app"
+        );
+    }
+
+    /// A host with a trailing slash (empty path) gets the app path filled in.
+    #[test]
+    fn normalize_url_trailing_slash_fills_app_path() {
+        let cfg = append_config(2);
+        assert_eq!(cfg.normalize_url("rtmp://host/"), "rtmp://host/app");
+    }
+
+    /// A scheme+host with no path slash at all gets the app path appended.
+    #[test]
+    fn normalize_url_host_only_appends_app_path() {
+        let cfg = append_config(2);
+        assert_eq!(cfg.normalize_url("rtmp://host"), "rtmp://host/app");
+    }
+
+    /// Append redaction on a host-only URL (no path segment to redact) must
+    /// pass through untouched rather than panic on the missing segment.
+    #[test]
+    fn redact_url_append_host_only_is_noop() {
+        let cfg = append_config(2);
+        let url = "rtmp://hostonly";
+        assert_eq!(cfg.redact_url(url), url);
+    }
+
+    /// Template redaction where the configured template does NOT match the
+    /// incoming URL falls back to generic segment redaction — the last path
+    /// segment is masked so the key never reaches a log line even when the
+    /// template shape is unexpected.
+    #[test]
+    fn redact_url_template_non_matching_falls_back_to_generic() {
+        let cfg = PlatformConfig {
+            name: "Tmpl",
+            default_server: "rtmp://other-host/{stream_key}",
+            placement: StreamKeyPlacement::InUrlTemplate,
+            default_app_path: None,
+            stream_key_position: 0,
+        };
+        // URL host differs from the template host → primary match fails →
+        // generic_segment_redact masks the trailing segment.
+        let redacted = cfg.redact_url("rtmp://host/app/SUPERSECRET");
+        assert_eq!(redacted, "rtmp://host/app/***");
+        assert!(!redacted.contains("SUPERSECRET"));
+    }
+
+    #[test]
+    fn extract_app_path_without_scheme_defaults() {
+        assert_eq!(PlatformRegistry::extract_app_path("noscheme"), (None, 2));
+    }
+
+    #[test]
+    fn extract_app_path_empty_path_defaults() {
+        assert_eq!(
+            PlatformRegistry::extract_app_path("rtmp://host/"),
+            (None, 2)
+        );
+    }
+
+    #[test]
+    fn extract_app_path_takes_first_segment() {
+        assert_eq!(
+            PlatformRegistry::extract_app_path("rtmp://host/app/more/key"),
+            (Some("app".to_string()), 2)
+        );
+    }
+
+    #[test]
+    fn generic_redact_host_only_is_noop() {
+        let url = "rtmp://hostonly";
+        assert_eq!(PlatformRegistry::generic_redact(url), url);
     }
 }

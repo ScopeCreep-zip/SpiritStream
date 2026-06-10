@@ -125,6 +125,11 @@ enum Command {
         #[command(subcommand)]
         command: commands::audit::AuditCmd,
     },
+    /// Issue one-shot confirmation tokens for destructive operations.
+    ConfirmToken {
+        #[command(subcommand)]
+        command: commands::confirm_token::ConfirmTokenCmd,
+    },
 }
 
 fn main() -> ExitCode {
@@ -175,5 +180,8 @@ async fn run(cli: Cli, out: &mut Output) -> Result<(), CliError> {
         Command::Events { command } => commands::events::run(command, &registry, out).await,
         Command::Safety { command } => commands::safety::run(command, &registry, out).await,
         Command::Audit { command } => commands::audit::run(command, &registry, out).await,
+        Command::ConfirmToken { command } => {
+            commands::confirm_token::run(command, &registry, out).await
+        }
     }
 }

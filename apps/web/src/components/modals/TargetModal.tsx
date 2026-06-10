@@ -43,7 +43,14 @@ const defaultFormData: FormData = {
   streamKey: '',
 };
 
-export function TargetModal({ open, onClose, mode, groupId, target, initialService }: TargetModalProps) {
+export function TargetModal({
+  open,
+  onClose,
+  mode,
+  groupId,
+  target,
+  initialService,
+}: TargetModalProps) {
   const { t } = useTranslation();
   const { current, addStreamTarget, updateStreamTarget, moveStreamTarget } = useProfileStore();
   const form = useFormState<FormData>(defaultFormData);
@@ -196,11 +203,7 @@ export function TargetModal({ open, onClose, mode, groupId, target, initialServi
           onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedGroupId(e.target.value)}
           options={outputGroupOptions}
           disabled={outputGroups.length === 0}
-          helper={
-            outputGroups.length === 0
-              ? t('modals.noOutputGroupsAvailable')
-              : undefined
-          }
+          helper={outputGroups.length === 0 ? t('modals.noOutputGroupsAvailable') : undefined}
         />
 
         <Select
@@ -237,9 +240,9 @@ export function TargetModal({ open, onClose, mode, groupId, target, initialServi
           autoComplete="off"
           showLabel={t('common.showStreamKey')}
           hideLabel={t('common.hideStreamKey')}
-          renderToggleIcon={(visible) =>
+          renderToggleIcon={(visible) => (
             <span className="text-xs">{visible ? t('common.hide') : t('common.show')}</span>
-          }
+          )}
         />
       </div>
     </Modal>

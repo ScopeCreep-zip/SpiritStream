@@ -50,7 +50,10 @@ const PLATFORM_RULES = [
   // macOS Apple Silicon: tauri produces SpiritStream_1.2.2_aarch64.app.tar.gz
   { key: 'darwin-aarch64', test: (f) => /aarch64.*\.app\.tar\.gz$/i.test(f) },
   // macOS Intel
-  { key: 'darwin-x86_64', test: (f) => /x64.*\.app\.tar\.gz$/i.test(f) || /x86_64.*\.app\.tar\.gz$/i.test(f) },
+  {
+    key: 'darwin-x86_64',
+    test: (f) => /x64.*\.app\.tar\.gz$/i.test(f) || /x86_64.*\.app\.tar\.gz$/i.test(f),
+  },
   // Windows: tauri produces SpiritStream_1.2.2_x64-setup.nsis.zip or .msi.zip
   { key: 'windows-x86_64', test: (f) => /\.(msi|nsis)\.zip$/i.test(f) || /\.exe$/i.test(f) },
   // Linux AppImage
@@ -78,7 +81,9 @@ function main() {
   const dir = getArg('--dir', '.');
 
   if (!version || !releaseTag) {
-    console.error('Usage: build-updater-manifest.mjs --version <semver> [--release-tag vX.Y.Z] [--notes-file CHANGELOG.md] [--dir .] [--out latest.json]');
+    console.error(
+      'Usage: build-updater-manifest.mjs --version <semver> [--release-tag vX.Y.Z] [--notes-file CHANGELOG.md] [--dir .] [--out latest.json]'
+    );
     process.exit(64); // EX_USAGE
   }
 
@@ -113,7 +118,9 @@ function main() {
       continue;
     }
     if (platforms[platform]) {
-      skipped.push(`${entry} (duplicate for ${platform}; already have ${platforms[platform].url.split('/').pop()})`);
+      skipped.push(
+        `${entry} (duplicate for ${platform}; already have ${platforms[platform].url.split('/').pop()})`
+      );
       continue;
     }
 
@@ -126,7 +133,9 @@ function main() {
   }
 
   if (Object.keys(platforms).length === 0) {
-    console.error('No .sig files matched a supported platform. Did you run `tauri signer sign` first?');
+    console.error(
+      'No .sig files matched a supported platform. Did you run `tauri signer sign` first?'
+    );
     process.exit(65); // EX_DATAERR
   }
 

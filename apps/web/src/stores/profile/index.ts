@@ -68,9 +68,7 @@ interface OAuthTokenExpiredPayload {
 
 export async function subscribeOAuthTokenExpired(): Promise<() => void> {
   return events.on<OAuthTokenExpiredPayload>('oauth_token_expired', (payload) => {
-    logger.warn(
-      `[ProfileStore] OAuth token expired for ${payload.provider}; re-auth required.`,
-    );
+    logger.warn(`[ProfileStore] OAuth token expired for ${payload.provider}; re-auth required.`);
     const label = payload.provider.charAt(0).toUpperCase() + payload.provider.slice(1);
     toast.info(`${label} sign-in expired — reconnect to send chat or stream.`);
   });

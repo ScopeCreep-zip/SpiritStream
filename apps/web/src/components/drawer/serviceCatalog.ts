@@ -123,7 +123,7 @@ export function buildServiceCatalog(): ReadonlyArray<ServiceCategory> {
 export function filterCatalog(
   catalog: ReadonlyArray<ServiceCategory>,
   query: string,
-  capability: ServiceCapability,
+  capability: ServiceCapability
 ): ReadonlyArray<ServiceCategory> {
   const needle = query.trim().toLowerCase();
   return catalog

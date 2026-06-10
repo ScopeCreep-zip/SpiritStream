@@ -43,7 +43,7 @@ services:
     # No `ports:` — backend is reachable only from inside the
     # `spiritstream-internal` network. Caddy proxies in.
     expose:
-      - "8008"
+      - '8008'
 
     environment:
       # Bind inside the container; Caddy reaches us by service name.
@@ -86,7 +86,7 @@ services:
       - ${SPIRITSTREAM_UI_PATH:-./dist}:/dist:ro
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8008/api/v1/health"]
+      test: ['CMD', 'curl', '-f', 'http://localhost:8008/api/v1/health']
       interval: 30s
       timeout: 10s
       retries: 3
@@ -102,10 +102,10 @@ services:
           memory: 256M
 
     logging:
-      driver: "json-file"
+      driver: 'json-file'
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: '10m'
+        max-file: '3'
 
     # Defence in depth on the container itself.
     read_only: true
@@ -129,10 +129,10 @@ services:
     restart: unless-stopped
 
     ports:
-      - "80:80"
-      - "443:443"
+      - '80:80'
+      - '443:443'
       # QUIC / HTTP/3 — Caddy speaks both automatically.
-      - "443:443/udp"
+      - '443:443/udp'
 
     environment:
       - SPIRITSTREAM_HOSTNAME=${SPIRITSTREAM_HOSTNAME:?must set SPIRITSTREAM_HOSTNAME}
@@ -140,7 +140,7 @@ services:
 
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data       # ACME certs + account keys
+      - caddy-data:/data # ACME certs + account keys
       - caddy-config:/config
 
     depends_on:

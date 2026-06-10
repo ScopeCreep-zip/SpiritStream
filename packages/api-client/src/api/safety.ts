@@ -7,8 +7,5 @@ export const safety = {
    * entry. Returns the action summary.
    */
   panic: () =>
-    fetchTypedJson<{ streamsStopped: number; elapsedMs: number }>(
-      'POST',
-      '/api/v1/safety/panic',
-    ),
+    fetchTypedJson<{ streamsStopped: number; elapsedMs: number }>('POST', '/api/v1/safety/panic'),
 };
