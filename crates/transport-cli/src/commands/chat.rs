@@ -116,15 +116,16 @@ pub enum ChatCmd {
         /// YouTube channel ID (`UC…` or `@handle`).
         #[arg(long)]
         channel_id: Option<String>,
-        /// OAuth access token for Twitch / YouTube AppOAuth.
-        #[arg(long)]
-        oauth: Option<String>,
-        /// YouTube API key (for `--use-api-key` mode).
-        #[arg(long)]
-        api_key: Option<String>,
-        /// TikTok session cookie / token.
-        #[arg(long)]
-        session_token: Option<String>,
+        /// Source for the OAuth access token (Twitch / YouTube AppOAuth).
+        /// Secrets never ride argv — pipe via stdin or use the prompt.
+        #[arg(long = "oauth-from", value_enum)]
+        oauth_from: Option<crate::secret_input::SecretSource>,
+        /// Source for the YouTube API key (for `--use-api-key` mode).
+        #[arg(long = "api-key-from", value_enum)]
+        api_key_from: Option<crate::secret_input::SecretSource>,
+        /// Source for the TikTok session cookie / token.
+        #[arg(long = "session-token-from", value_enum)]
+        session_token_from: Option<crate::secret_input::SecretSource>,
         /// Use the YouTube API-key auth path instead of OAuth.
         #[arg(long)]
         use_api_key: bool,
@@ -139,12 +140,12 @@ pub enum ChatCmd {
         channel: Option<String>,
         #[arg(long)]
         channel_id: Option<String>,
-        #[arg(long)]
-        oauth: Option<String>,
-        #[arg(long)]
-        api_key: Option<String>,
-        #[arg(long)]
-        session_token: Option<String>,
+        #[arg(long = "oauth-from", value_enum)]
+        oauth_from: Option<crate::secret_input::SecretSource>,
+        #[arg(long = "api-key-from", value_enum)]
+        api_key_from: Option<crate::secret_input::SecretSource>,
+        #[arg(long = "session-token-from", value_enum)]
+        session_token_from: Option<crate::secret_input::SecretSource>,
         #[arg(long)]
         use_api_key: bool,
     },
@@ -164,6 +165,9 @@ pub enum ChatCmd {
     /// command name to operators.)
     PlatformStatus { platform: String },
     /// Export the current chat log session to a file.
+    /// Export the active session's chat log to `<path>`. The
+    /// destination must lie inside the data directory or the user's
+    /// home (same policy as `system logs-export`).
     ExportLog { path: std::path::PathBuf },
     /// Search the current chat log session.
     Search {
@@ -254,11 +258,19 @@ pub async fn run(
             platform,
             channel,
             channel_id,
-            oauth,
-            api_key,
-            session_token,
+            oauth_from,
+            api_key_from,
+            session_token_from,
             use_api_key,
         } => {
+            let oauth =
+                crate::secret_input::read_optional_secret(oauth_from, "OAuth access token")?;
+            let api_key =
+                crate::secret_input::read_optional_secret(api_key_from, "YouTube API key")?;
+            let session_token = crate::secret_input::read_optional_secret(
+                session_token_from,
+                "TikTok session token",
+            )?;
             let p = parse_platform(&platform)?;
             let config = build_connect_config(
                 p,
@@ -277,11 +289,19 @@ pub async fn run(
             platform,
             channel,
             channel_id,
-            oauth,
-            api_key,
-            session_token,
+            oauth_from,
+            api_key_from,
+            session_token_from,
             use_api_key,
         } => {
+            let oauth =
+                crate::secret_input::read_optional_secret(oauth_from, "OAuth access token")?;
+            let api_key =
+                crate::secret_input::read_optional_secret(api_key_from, "YouTube API key")?;
+            let session_token = crate::secret_input::read_optional_secret(
+                session_token_from,
+                "TikTok session token",
+            )?;
             let p = parse_platform(&platform)?;
             // Disconnect first; "not connected" is acceptable for retry.
             if let Err(err) = registry.chat.disconnect(p).await {
@@ -333,6 +353,15 @@ pub async fn run(
             Ok(())
         }
         ChatCmd::ExportLog { path } => {
+            // Destination policy mirrors `system logs-export`: data dir
+            // or home only — chat logs are sensitive (usernames,
+            // timestamps) and must not be writable to arbitrary paths.
+            let home = dirs_next::home_dir();
+            let mut allowed: Vec<&std::path::Path> = vec![registry.data_dir.as_path()];
+            if let Some(h) = home.as_deref() {
+                allowed.push(h);
+            }
+            let path = spiritstream_core::services::validate_path_within_any(&path, &allowed)?;
             // Replicates `POST /api/v1/chat/log/export`: flush, then read every
             // chatlog_<hour>.jsonl line whose timestamp lies in the active
             // session window, write to `<path>`.

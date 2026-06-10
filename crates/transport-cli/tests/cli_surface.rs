@@ -49,6 +49,30 @@ fn run_cli(args: &[&str], data_dir: &std::path::Path) -> Output {
         .expect("spawn spiritstream-cli")
 }
 
+/// Run the CLI with a secret piped on stdin — the only scripted way to
+/// supply secrets now that plaintext secret flags are gone.
+fn run_cli_with_stdin(args: &[&str], data_dir: &std::path::Path, stdin_body: &str) -> Output {
+    use std::io::Write;
+    use std::process::Stdio;
+    let mut child = Command::new(cli_binary())
+        .arg("--data-dir")
+        .arg(data_dir)
+        .arg("--quiet")
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn spiritstream-cli");
+    child
+        .stdin
+        .as_mut()
+        .expect("piped stdin")
+        .write_all(stdin_body.as_bytes())
+        .expect("write stdin");
+    child.wait_with_output().expect("wait for spiritstream-cli")
+}
+
 fn stdout_json(out: &Output) -> Value {
     let body = std::str::from_utf8(&out.stdout).expect("stdout is utf8");
     serde_json::from_str(body).unwrap_or_else(|e| panic!("stdout not JSON: {e}\n---\n{body}"))
@@ -267,16 +291,17 @@ fn encrypted_profile_round_trips_with_password() {
     });
     std::fs::write(&fixture, serde_json::to_vec(&minimal).unwrap()).expect("write fixture");
 
-    // Save under a password — the profile should be stored encrypted.
-    let saved = run_cli(
+    // Save under a password — piped on stdin, never argv.
+    let saved = run_cli_with_stdin(
         &[
             "profile",
             "save",
             fixture.to_str().unwrap(),
-            "--password",
-            "correct horse battery staple",
+            "--password-from",
+            "stdin",
         ],
         tmp.path(),
+        "correct horse battery staple\n",
     );
     assert!(
         saved.status.success(),
@@ -297,15 +322,10 @@ fn encrypted_profile_round_trips_with_password() {
     assert!(!denied.status.success(), "show without password must fail");
 
     // Show with the wrong password fails.
-    let wrong = run_cli(
-        &[
-            "profile",
-            "show",
-            "lockedprofile",
-            "--password",
-            "incorrect",
-        ],
+    let wrong = run_cli_with_stdin(
+        &["profile", "show", "lockedprofile", "--password-from", "stdin"],
         tmp.path(),
+        "incorrect\n",
     );
     assert!(
         !wrong.status.success(),
@@ -313,15 +333,10 @@ fn encrypted_profile_round_trips_with_password() {
     );
 
     // Show with the correct password succeeds and returns the profile body.
-    let shown = run_cli(
-        &[
-            "profile",
-            "show",
-            "lockedprofile",
-            "--password",
-            "correct horse battery staple",
-        ],
+    let shown = run_cli_with_stdin(
+        &["profile", "show", "lockedprofile", "--password-from", "stdin"],
         tmp.path(),
+        "correct horse battery staple\n",
     );
     assert!(
         shown.status.success(),

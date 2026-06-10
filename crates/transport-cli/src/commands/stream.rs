@@ -29,8 +29,8 @@ pub enum StreamCmd {
         #[arg(long)]
         group: Option<String>,
         /// Password for encrypted profiles.
-        #[arg(long)]
-        password: Option<String>,
+        #[arg(long = "password-from", value_enum)]
+        password_from: Option<crate::secret_input::SecretSource>,
     },
     /// Re-attempt a previously failed stream group with backoff policy.
     Retry { group_id: String },
@@ -59,8 +59,8 @@ pub enum StreamCmd {
         #[arg(long)]
         group: String,
         /// Password for encrypted profiles.
-        #[arg(long)]
-        password: Option<String>,
+        #[arg(long = "password-from", value_enum)]
+        password_from: Option<crate::secret_input::SecretSource>,
     },
     /// Persist a target's pre-start enabled flag on the profile. This is
     /// the data `start` / `start-all` consult — mirrors the UI toggle.
@@ -74,8 +74,8 @@ pub enum StreamCmd {
         #[arg(long)]
         profile: String,
         /// Password for encrypted profiles.
-        #[arg(long)]
-        password: Option<String>,
+        #[arg(long = "password-from", value_enum)]
+        password_from: Option<crate::secret_input::SecretSource>,
     },
     /// Persist a group's start-all eligibility flag on the profile.
     SetGroupEnabled {
@@ -88,8 +88,8 @@ pub enum StreamCmd {
         #[arg(long)]
         profile: String,
         /// Password for encrypted profiles.
-        #[arg(long)]
-        password: Option<String>,
+        #[arg(long = "password-from", value_enum)]
+        password_from: Option<crate::secret_input::SecretSource>,
     },
 }
 
@@ -155,8 +155,10 @@ pub async fn run(
         StreamCmd::Start {
             profile,
             group,
-            password,
+            password_from,
         } => {
+            let password =
+                crate::secret_input::read_optional_secret(password_from, "Profile password")?;
             let p = registry
                 .profiles
                 .load_with_key_decryption(&profile, password.as_deref())
@@ -260,8 +262,10 @@ pub async fn run(
             enabled,
             profile,
             group,
-            password,
+            password_from,
         } => {
+            let password =
+                crate::secret_input::read_optional_secret(password_from, "Profile password")?;
             let p = registry
                 .profiles
                 .load_with_key_decryption(&profile, password.as_deref())
@@ -300,8 +304,10 @@ pub async fn run(
             target_id,
             enabled,
             profile,
-            password,
+            password_from,
         } => {
+            let password =
+                crate::secret_input::read_optional_secret(password_from, "Profile password")?;
             let mut p = registry
                 .profiles
                 .load_with_key_decryption(&profile, password.as_deref())
@@ -331,8 +337,10 @@ pub async fn run(
             group_id,
             enabled,
             profile,
-            password,
+            password_from,
         } => {
+            let password =
+                crate::secret_input::read_optional_secret(password_from, "Profile password")?;
             let mut p = registry
                 .profiles
                 .load_with_key_decryption(&profile, password.as_deref())

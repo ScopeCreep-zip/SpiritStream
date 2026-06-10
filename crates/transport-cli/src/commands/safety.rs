@@ -23,8 +23,8 @@ pub enum SafetyCmd {
         #[arg(long)]
         profile: String,
         /// Password for encrypted profiles. Ignored for plaintext.
-        #[arg(long)]
-        password: Option<String>,
+        #[arg(long = "password-from", value_enum)]
+        password_from: Option<crate::secret_input::SecretSource>,
         #[command(subcommand)]
         action: BlocklistAction,
     },
@@ -103,9 +103,11 @@ pub async fn run(
         }
         SafetyCmd::Blocklist {
             profile,
-            password,
+            password_from,
             action,
         } => {
+            let password =
+                crate::secret_input::read_optional_secret(password_from, "Profile password")?;
             let mut p = registry
                 .profiles
                 .load_with_key_decryption(&profile, password.as_deref())

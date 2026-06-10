@@ -32,23 +32,31 @@ pub enum OAuthCmd {
         #[arg(long)]
         profile: String,
         /// Password for encrypted profiles.
-        #[arg(long)]
-        password: Option<String>,
+        #[arg(long = "password-from", value_enum)]
+        password_from: Option<crate::secret_input::SecretSource>,
     },
     /// Report whether `<provider>` is configured (always true with embedded client IDs).
     IsConfigured { provider: String },
-    /// Refresh an access token using the supplied refresh token.
+    /// Refresh `<provider>`'s access token using the refresh token
+    /// STORED on `--profile` (by-reference — the secret never rides
+    /// argv), and persist the rotated tokens back to the profile.
     Refresh {
         provider: String,
-        refresh_token: String,
+        /// Profile holding the account.
+        #[arg(long)]
+        profile: String,
+        /// Password source for encrypted profiles.
+        #[arg(long = "password-from", value_enum)]
+        password_from: Option<crate::secret_input::SecretSource>,
     },
-    /// Revoke the token AND forget the account locally. The CLI doesn't
-    /// have an active-profile session to read the stored token from, so
-    /// the caller supplies it via `--token`.
+    /// Revoke a token the caller supplies (for tokens NOT stored on a
+    /// profile — for stored accounts use `disconnect`). The token is
+    /// read from stdin or an interactive prompt, never argv.
     Forget {
         provider: String,
-        #[arg(long)]
-        token: String,
+        /// Source for the token to revoke.
+        #[arg(long = "token-from", value_enum)]
+        token_from: crate::secret_input::SecretSource,
     },
     /// Read or write the user-provided OAuth client credentials. The
     /// embedded client IDs always work; this command is for operators
@@ -67,8 +75,8 @@ pub enum OAuthCmd {
         provider: String,
         #[arg(long)]
         profile: String,
-        #[arg(long)]
-        password: Option<String>,
+        #[arg(long = "password-from", value_enum)]
+        password_from: Option<crate::secret_input::SecretSource>,
     },
 }
 
@@ -156,8 +164,10 @@ pub async fn run(
         OAuthCmd::Disconnect {
             provider,
             profile,
-            password,
+            password_from,
         } => {
+            let password =
+                crate::secret_input::read_optional_secret(password_from, "Profile password")?;
             // Real disconnect (the old version printed
             // `"disconnected": true` while touching nothing): load the
             // profile, best-effort revoke the live token upstream, clear
@@ -217,18 +227,71 @@ pub async fn run(
         }
         OAuthCmd::Refresh {
             provider,
-            refresh_token,
+            profile,
+            password_from,
         } => {
+            let password =
+                crate::secret_input::read_optional_secret(password_from, "Profile password")?;
+            let mut p = registry
+                .profiles
+                .load_with_key_decryption(&profile, password.as_deref())
+                .await?;
+            let stored_refresh = match provider.as_str() {
+                "twitch" => p.settings.oauth.twitch.refresh_token.clone(),
+                "youtube" => p.settings.oauth.youtube.refresh_token.clone(),
+                "kick" => p.settings.oauth.kick.refresh_token.clone(),
+                "facebook" => p.settings.oauth.facebook.refresh_token.clone(),
+                other => {
+                    return Err(CliError::Argument(format!(
+                        "unknown oauth provider: {other} (expected twitch|youtube|kick|facebook)"
+                    )));
+                }
+            };
+            if stored_refresh.is_empty() {
+                return Err(CliError::Argument(format!(
+                    "profile '{profile}' has no stored {provider} refresh token — run \
+                     `oauth start {provider}` first"
+                )));
+            }
             let tokens = registry
                 .oauth
-                .refresh_token(&provider, &refresh_token)
+                .refresh_token(&provider, &stored_refresh)
                 .await?;
-            out.emit(&tokens)?;
+            // Persist the rotated credentials — providers that rotate
+            // refresh tokens invalidate the old one on use.
+            let now = chrono::Utc::now().timestamp();
+            let expires_at = tokens
+                .expires_in
+                .map(|s| now.saturating_add(i64::try_from(s).unwrap_or(i64::MAX)))
+                .unwrap_or(0);
+            let account = match provider.as_str() {
+                "twitch" => &mut p.settings.oauth.twitch,
+                "youtube" => &mut p.settings.oauth.youtube,
+                "kick" => &mut p.settings.oauth.kick,
+                _ => &mut p.settings.oauth.facebook,
+            };
+            account.access_token = tokens.access_token.clone();
+            if let Some(rt) = tokens.refresh_token.clone() {
+                account.refresh_token = rt;
+            }
+            account.expires_at = expires_at;
+            registry
+                .profiles
+                .save_with_key_encryption(&p, password.as_deref())
+                .await?;
+            out.emit(&serde_json::json!({
+                "provider": provider,
+                "refreshed": true,
+                "expiresAt": expires_at,
+            }))?;
             Ok(())
         }
-        OAuthCmd::Forget { provider, token } => {
+        OAuthCmd::Forget {
+            provider,
+            token_from,
+        } => {
+            let token = crate::secret_input::read_secret(token_from, "OAuth token to revoke")?;
             // Revoke the supplied token (best effort) then report success.
-            // No stored-token clear from CLI — the CLI has no session state.
             if let Err(e) = registry.oauth.revoke_token(&provider, &token).await {
                 log::warn!("revoke {provider} token failed: {e}");
             }
@@ -238,8 +301,10 @@ pub async fn run(
         OAuthCmd::Account {
             provider,
             profile,
-            password,
+            password_from,
         } => {
+            let password =
+                crate::secret_input::read_optional_secret(password_from, "Profile password")?;
             let profile_obj = registry
                 .profiles
                 .load_with_key_decryption(&profile, password.as_deref())

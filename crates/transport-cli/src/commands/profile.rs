@@ -21,16 +21,16 @@ pub enum ProfileCmd {
     /// encrypted profiles and silently ignored for plaintext ones.
     Show {
         name: String,
-        #[arg(long)]
-        password: Option<String>,
+        #[arg(long = "password-from", value_enum)]
+        password_from: Option<crate::secret_input::SecretSource>,
     },
     /// Persist a profile from a JSON document on disk. `--password`
     /// re-encrypts the profile under that password (omit to leave plaintext).
     Save {
         /// Path to a JSON file containing the profile body.
         file: std::path::PathBuf,
-        #[arg(long)]
-        password: Option<String>,
+        #[arg(long = "password-from", value_enum)]
+        password_from: Option<crate::secret_input::SecretSource>,
     },
     /// Delete a profile.
     Delete { name: String },
@@ -59,15 +59,15 @@ pub enum ProfileCmd {
     /// payload the HTTP transport would emit on `/api/v1/events`.
     Activate {
         name: String,
-        #[arg(long)]
-        password: Option<String>,
+        #[arg(long = "password-from", value_enum)]
+        password_from: Option<crate::secret_input::SecretSource>,
     },
     /// Atomically remove encryption from a profile: load with `--password`,
     /// re-save unencrypted. Mirrors `POST /api/v1/profiles/{name}/decrypt`.
     Decrypt {
         name: String,
-        #[arg(long)]
-        password: String,
+        #[arg(long = "password-from", value_enum)]
+        password_from: crate::secret_input::SecretSource,
     },
     /// Verify a profile password against the encrypted blob. Mirrors
     /// `POST /api/v1/profiles/{name}/unlock`. The HTTP transport's session
@@ -75,8 +75,8 @@ pub enum ProfileCmd {
     /// session, so this command only validates the password.
     Unlock {
         name: String,
-        #[arg(long)]
-        password: String,
+        #[arg(long = "password-from", value_enum)]
+        password_from: crate::secret_input::SecretSource,
     },
     /// Mirrors `POST /api/v1/profiles/{name}/lock`. CLI is single-shot so
     /// this is a confirmation echo — no cross-invocation session state.
@@ -132,7 +132,12 @@ pub async fn run(
             out.emit(&ExistsResponse { name, exists })?;
             Ok(())
         }
-        ProfileCmd::Show { name, password } => {
+        ProfileCmd::Show {
+            name,
+            password_from,
+        } => {
+            let password =
+                crate::secret_input::read_optional_secret(password_from, "Profile password")?;
             let profile = registry
                 .profiles
                 .load_with_key_decryption(&name, password.as_deref())
@@ -140,7 +145,12 @@ pub async fn run(
             out.emit(&profile)?;
             Ok(())
         }
-        ProfileCmd::Save { file, password } => {
+        ProfileCmd::Save {
+            file,
+            password_from,
+        } => {
+            let password =
+                crate::secret_input::read_optional_secret(password_from, "Profile password")?;
             let body = std::fs::read_to_string(&file)
                 .map_err(|e| CliError::Io(format!("read {}: {}", file.display(), e)))?;
             let profile: Profile = serde_json::from_str(&body)
@@ -214,7 +224,12 @@ pub async fn run(
             out.emit(&map)?;
             Ok(())
         }
-        ProfileCmd::Activate { name, password } => {
+        ProfileCmd::Activate {
+            name,
+            password_from,
+        } => {
+            let password =
+                crate::secret_input::read_optional_secret(password_from, "Profile password")?;
             // ProfileActivationService composes load + OAuth refresh +
             // chat/OBS propagation + bus emission in a single call.
             // CLI and HTTP share the same orchestrator — wire shape and
@@ -230,7 +245,12 @@ pub async fn run(
             }))?;
             Ok(())
         }
-        ProfileCmd::Decrypt { name, password } => {
+        ProfileCmd::Decrypt {
+            name,
+            password_from,
+        } => {
+            let password =
+                crate::secret_input::read_secret(password_from, "Profile password")?;
             let profile = registry
                 .profiles
                 .load_with_key_decryption(&name, Some(&password))
@@ -242,7 +262,12 @@ pub async fn run(
             out.emit(&serde_json::json!({ "name": name, "decrypted": true }))?;
             Ok(())
         }
-        ProfileCmd::Unlock { name, password } => {
+        ProfileCmd::Unlock {
+            name,
+            password_from,
+        } => {
+            let password =
+                crate::secret_input::read_secret(password_from, "Profile password")?;
             // Validates the password by attempting decryption; the HTTP
             // transport additionally tracks an in-memory unlock set on
             // AppState, but the CLI is a one-shot process so the

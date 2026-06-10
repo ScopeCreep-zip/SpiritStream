@@ -20,7 +20,14 @@ pub fn build(
     let data_dir = data_dir
         .or_else(default_data_dir)
         .ok_or_else(|| CliError::Io("could not resolve data directory".into()))?;
-    let log_dir = data_dir.join("logs");
+    warn_if_desktop_install_elsewhere(&data_dir);
+    // Documented env contract: SPIRITSTREAM_LOG_DIR overrides; defaults
+    // to {DATA_DIR}/logs (previously the CLI silently ignored the env).
+    let log_dir = std::env::var("SPIRITSTREAM_LOG_DIR")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| data_dir.join("logs"));
     let themes_dir = themes_dir
         .or_else(default_themes_dir)
         .unwrap_or_else(|| data_dir.join("themes"));
@@ -42,6 +49,37 @@ pub fn build(
 
 fn default_data_dir() -> Option<PathBuf> {
     dirs_next::data_local_dir().map(|d| d.join("spiritstream"))
+}
+
+/// The desktop app stores its data under the Tauri bundle-identifier
+/// directory, NOT the CLI's `spiritstream` default. Silently switching
+/// would be a forbidden fallback; silently showing an empty install is
+/// a trap. Loudly name both paths instead.
+fn warn_if_desktop_install_elsewhere(data_dir: &std::path::Path) {
+    let profiles = data_dir.join("profiles");
+    let cli_has_profiles = std::fs::read_dir(&profiles)
+        .map(|mut entries| entries.next().is_some())
+        .unwrap_or(false);
+    if cli_has_profiles {
+        return;
+    }
+    let Some(desktop_dir) =
+        dirs_next::data_local_dir().map(|d| d.join("com.spiritstream.desktop"))
+    else {
+        return;
+    };
+    let desktop_has_profiles = std::fs::read_dir(desktop_dir.join("profiles"))
+        .map(|mut entries| entries.next().is_some())
+        .unwrap_or(false);
+    if desktop_has_profiles && desktop_dir != data_dir {
+        eprintln!(
+            "note: no profiles under {} but the desktop app has data at {} — \
+             pass --data-dir {} to operate on the desktop install",
+            data_dir.display(),
+            desktop_dir.display(),
+            desktop_dir.display(),
+        );
+    }
 }
 
 fn default_themes_dir() -> Option<PathBuf> {

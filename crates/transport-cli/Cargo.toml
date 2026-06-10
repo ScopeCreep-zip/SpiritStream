@@ -14,6 +14,11 @@ name = "spiritstream-cli"
 path = "src/main.rs"
 
 [dependencies]
+# No-echo terminal secret entry (`--*-from prompt`). Secrets never ride
+# argv — see src/secret_input.rs.
+rpassword = "7"
+zeroize = "1"
+
 spiritstream-core = { path = "../core" }
 
 # Command parsing + tokio runtime

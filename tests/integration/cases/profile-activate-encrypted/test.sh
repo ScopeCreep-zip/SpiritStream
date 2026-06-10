@@ -3,7 +3,7 @@
 #   1. Save the profile under a password
 #   2. activate WITHOUT --password → exit 5 (PasswordRequired)
 #   3. activate WITH wrong --password → exit 6 (PasswordIncorrect)
-#   4. activate WITH '' --password → exit 5 (empty-string treated as missing)
+#   4. activate with empty stdin secret → exit 64 (usage error)
 #   5. activate WITH correct --password → succeeds, payload carries
 #      encrypted=true and the ProfileActivatedEvent fields
 set -euo pipefail
@@ -39,7 +39,7 @@ cat >"$fixture" <<'JSON'
 JSON
 
 "$SPIRITSTREAM_CLI" --data-dir "$SPIRITSTREAM_TEST_DATA_DIR" --quiet \
-    profile save "$fixture" --password 'rosebud-twelve-chars' >/dev/null
+    profile save "$fixture" --password-from stdin >/dev/null <<<'rosebud-twelve-chars'
 
 # No password → exit 5 (PasswordRequired).
 set +e
@@ -52,22 +52,25 @@ set -e
 # Wrong password → exit 6 (PasswordIncorrect).
 set +e
 "$SPIRITSTREAM_CLI" --data-dir "$SPIRITSTREAM_TEST_DATA_DIR" --quiet \
-    profile activate encactivate --password 'wrong' >/dev/null
+    profile activate encactivate --password-from stdin >/dev/null <<<'wrong'
 code=$?
 set -e
 [[ $code -eq 6 ]] || { echo "wrong-password activate should exit 6, got $code" >&2; exit 1; }
 
-# Empty-string password → exit 5 (must be treated as missing, not wrong).
+# Empty stdin where a password was promised → usage error (64): the
+# secret-input layer refuses an empty secret rather than guessing
+# between "missing" and "wrong". (Plaintext --password '' no longer
+# exists — secrets never ride argv.)
 set +e
 "$SPIRITSTREAM_CLI" --data-dir "$SPIRITSTREAM_TEST_DATA_DIR" --quiet \
-    profile activate encactivate --password '' >/dev/null
+    profile activate encactivate --password-from stdin >/dev/null </dev/null
 code=$?
 set -e
-[[ $code -eq 5 ]] || { echo "empty-string password should exit 5 (PasswordRequired), got $code" >&2; exit 1; }
+[[ $code -eq 64 ]] || { echo "empty stdin secret should exit 64 (usage), got $code" >&2; exit 1; }
 
 # Correct password → exit 0 with the resolved profile + event.
 activated=$("$SPIRITSTREAM_CLI" --data-dir "$SPIRITSTREAM_TEST_DATA_DIR" --quiet \
-    profile activate encactivate --password 'rosebud-twelve-chars')
+    profile activate encactivate --password-from stdin <<<'rosebud-twelve-chars')
 echo "$activated" | python3 -c '
 import json, sys
 b = json.load(sys.stdin)

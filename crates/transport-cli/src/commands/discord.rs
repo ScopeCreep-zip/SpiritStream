@@ -17,8 +17,8 @@ pub enum DiscordCmd {
     Send {
         #[arg(long)]
         profile: String,
-        #[arg(long)]
-        password: Option<String>,
+        #[arg(long = "password-from", value_enum)]
+        password_from: Option<crate::secret_input::SecretSource>,
     },
     /// Reset the cooldown timer so the next send fires immediately.
     ResetCooldown,
@@ -35,7 +35,12 @@ pub async fn run(
             out.emit(&result)?;
             Ok(())
         }
-        DiscordCmd::Send { profile, password } => {
+        DiscordCmd::Send {
+            profile,
+            password_from,
+        } => {
+            let password =
+                crate::secret_input::read_optional_secret(password_from, "Profile password")?;
             let profile_obj = registry
                 .profiles
                 .load_with_key_decryption(&profile, password.as_deref())

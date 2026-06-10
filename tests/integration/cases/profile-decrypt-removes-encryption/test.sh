@@ -24,7 +24,7 @@ cat >"$fixture" <<'JSON'
 JSON
 
 "$SPIRITSTREAM_CLI" --data-dir "$SPIRITSTREAM_TEST_DATA_DIR" --quiet \
-    profile save "$fixture" --password 'pw1-twelve-chars' >/dev/null
+    profile save "$fixture" --password-from stdin >/dev/null <<<'pw1-twelve-chars'
 
 probe=$("$SPIRITSTREAM_CLI" --data-dir "$SPIRITSTREAM_TEST_DATA_DIR" --quiet \
     profile is-encrypted decryptme)
@@ -35,7 +35,7 @@ assert json.load(sys.stdin)["encrypted"] is True, "expected encrypted: true"
 
 # Atomic encryption removal.
 removed=$("$SPIRITSTREAM_CLI" --data-dir "$SPIRITSTREAM_TEST_DATA_DIR" --quiet \
-    profile decrypt decryptme --password 'pw1-twelve-chars')
+    profile decrypt decryptme --password-from stdin <<<'pw1-twelve-chars')
 echo "$removed" | python3 -c '
 import json, sys
 b = json.load(sys.stdin)
@@ -62,10 +62,10 @@ assert b["name"] == "decryptme", b
 
 # Wrong password during decrypt still rejects (exit code 6 — PasswordIncorrect).
 "$SPIRITSTREAM_CLI" --data-dir "$SPIRITSTREAM_TEST_DATA_DIR" --quiet \
-    profile save "$fixture" --password 'pw2-twelve-chars' >/dev/null
+    profile save "$fixture" --password-from stdin >/dev/null <<<'pw2-twelve-chars'
 set +e
 "$SPIRITSTREAM_CLI" --data-dir "$SPIRITSTREAM_TEST_DATA_DIR" --quiet \
-    profile decrypt decryptme --password 'wrong' >/dev/null
+    profile decrypt decryptme --password-from stdin >/dev/null <<<'wrong'
 code=$?
 set -e
 [[ $code -eq 6 ]] || { echo "expected exit 6 (PasswordIncorrect), got $code" >&2; exit 1; }

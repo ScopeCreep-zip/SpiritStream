@@ -26,11 +26,13 @@ pub enum DataCmd {
         /// the old key file if anything goes wrong mid-rotation.
         #[arg(long)]
         yes: bool,
-        /// Password for an encrypted (`.mgs`) profile, repeatable as
-        /// `--password NAME=PASSWORD`. Required once per encrypted profile;
-        /// rotation refuses to start if any are missing.
-        #[arg(long, value_name = "NAME=PASSWORD")]
-        password: Vec<String>,
+        /// Read `name:password` unlock pairs for encrypted (`.mgs`)
+        /// profiles from stdin, one per line. Without this flag, an
+        /// interactive terminal prompts per encrypted profile (no echo);
+        /// passwords never ride argv. Rotation refuses to start if any
+        /// encrypted profile's password is missing.
+        #[arg(long)]
+        passwords_stdin: bool,
     },
 }
 
@@ -69,22 +71,43 @@ pub async fn run(
             out.emit(&ClearResponse { cleared: true })?;
             Ok(())
         }
-        DataCmd::RotateMachineKey { yes, password } => {
+        DataCmd::RotateMachineKey {
+            yes,
+            passwords_stdin,
+        } => {
             if !yes {
                 return Err(CliError::Argument(
                     "rotate-machine-key changes encryption — pass --yes to confirm".into(),
                 ));
             }
-            let mut passwords: std::collections::HashMap<String, String> =
-                std::collections::HashMap::new();
-            for entry in password {
-                let (name, pw) = entry.split_once('=').ok_or_else(|| {
-                    CliError::Argument(
-                        "--password expects NAME=PASSWORD per encrypted profile".into(),
-                    )
-                })?;
-                passwords.insert(name.to_string(), pw.to_string());
-            }
+            let passwords = if passwords_stdin {
+                crate::secret_input::read_password_pairs_from_stdin()?
+            } else {
+                // Interactive path: prompt (no echo) for each encrypted
+                // profile on disk. Non-TTY without --passwords-stdin and
+                // with encrypted profiles present fails loudly inside
+                // read_secret.
+                let mut pairs = std::collections::HashMap::new();
+                let profiles_dir = registry.data_dir.join("profiles");
+                if let Ok(entries) = std::fs::read_dir(&profiles_dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.extension().and_then(|e| e.to_str()) == Some("mgs") {
+                            let name = path
+                                .file_stem()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or_default()
+                                .to_string();
+                            let pw = crate::secret_input::read_secret(
+                                crate::secret_input::SecretSource::Prompt,
+                                &format!("Password for encrypted profile '{name}'"),
+                            )?;
+                            pairs.insert(name, pw.to_string());
+                        }
+                    }
+                }
+                pairs
+            };
             // Shared core orchestration: refuses while streams are live
             // and records `MachineKeyRotated` in the HMAC chain —
             // identical rules for HTTP and CLI by construction.

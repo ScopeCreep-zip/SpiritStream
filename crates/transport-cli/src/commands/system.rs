@@ -31,7 +31,13 @@ pub enum SystemCmd {
         lines: usize,
     },
     /// Test an RTMP target by attempting a quick connection.
-    TestRtmp { url: String, stream_key: String },
+    TestRtmp {
+        url: String,
+        /// Source for the stream key — stdin pipe or interactive
+        /// prompt. Stream keys never ride argv (`ps` / shell history).
+        #[arg(long = "stream-key-from", value_enum)]
+        stream_key_from: crate::secret_input::SecretSource,
+    },
     /// Validate a path points at an FFmpeg binary, return its version string.
     ValidateFfmpegPath { path: std::path::PathBuf },
     /// Print the running app version. Mirrors `GET /api/v1/system/app-version`.
@@ -232,8 +238,14 @@ pub async fn run(
             out.emit(&logs)?;
             Ok(())
         }
-        SystemCmd::TestRtmp { url, stream_key } => {
-            let result = spiritstream_core::commands::test_rtmp_target(url, stream_key)?;
+        SystemCmd::TestRtmp {
+            url,
+            stream_key_from,
+        } => {
+            let stream_key =
+                crate::secret_input::read_secret(stream_key_from, "Stream key")?;
+            let result =
+                spiritstream_core::commands::test_rtmp_target(url, stream_key.to_string())?;
             out.emit(&result)?;
             Ok(())
         }
@@ -256,7 +268,14 @@ pub async fn run(
             out: out_path,
             lines,
         } => {
-            let allowed: Vec<&std::path::Path> = vec![registry.data_dir.as_path()];
+            // Documented contract: destinations inside the data dir OR
+            // the user's home are allowed. The code used to allow only
+            // the data dir, silently contradicting its own docs.
+            let home = dirs_next::home_dir();
+            let mut allowed: Vec<&std::path::Path> = vec![registry.data_dir.as_path()];
+            if let Some(home) = home.as_deref() {
+                allowed.push(home);
+            }
             let validated =
                 spiritstream_core::services::validate_path_within_any(&out_path, &allowed)?;
             let cap = lines.unwrap_or(usize::MAX);
@@ -299,7 +318,11 @@ pub async fn run(
                         });
                         out.emit(&entry)?;
                         if !matches!(status, SubsystemStatus::Ok) {
-                            return Err(CliError::Argument(format!(
+                            // A degraded service is an availability
+                            // condition (EX_UNAVAILABLE, 69), not a
+                            // caller-usage error — retry-loop scripts
+                            // branch on the exit code.
+                            return Err(CliError::Unavailable(format!(
                                 "subsystem '{name}' is not ok"
                             )));
                         }
@@ -309,7 +332,7 @@ pub async fn run(
                 None => {
                     out.emit(&report)?;
                     if report.status != "ok" {
-                        return Err(CliError::Argument(format!(
+                        return Err(CliError::Unavailable(format!(
                             "system health: {}",
                             report.status
                         )));

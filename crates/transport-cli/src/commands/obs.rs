@@ -27,8 +27,8 @@ pub enum ObsCmd {
         host: String,
         #[arg(long)]
         port: u16,
-        #[arg(long)]
-        password: Option<String>,
+        #[arg(long = "password-from", value_enum)]
+        password_from: Option<crate::secret_input::SecretSource>,
         #[arg(long, default_value_t = false)]
         use_auth: bool,
         /// One of `obs-to-spiritstream`, `spiritstream-to-obs`, `bidirectional`, `disabled`.
@@ -80,12 +80,16 @@ pub async fn run(
         ObsCmd::SetConfig {
             host,
             port,
-            password,
+            password_from,
             use_auth,
             direction,
             auto_connect,
         } => {
             use spiritstream_core::services::IntegrationDirection;
+            let password = crate::secret_input::read_optional_secret(
+                password_from,
+                "OBS WebSocket password",
+            )?;
             let current = registry.obs.get_config().await;
             let encrypted = if let Some(p) = password.as_deref() {
                 if p.is_empty() {

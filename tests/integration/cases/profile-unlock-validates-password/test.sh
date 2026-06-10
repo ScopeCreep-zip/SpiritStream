@@ -22,11 +22,11 @@ cat >"$fixture" <<'JSON'
 JSON
 
 "$SPIRITSTREAM_CLI" --data-dir "$SPIRITSTREAM_TEST_DATA_DIR" --quiet \
-    profile save "$fixture" --password 'right-twelve-chars' >/dev/null
+    profile save "$fixture" --password-from stdin >/dev/null <<<'right-twelve-chars'
 
 # Correct password → unlocked: true.
 ok=$("$SPIRITSTREAM_CLI" --data-dir "$SPIRITSTREAM_TEST_DATA_DIR" --quiet \
-    profile unlock unlockme --password 'right-twelve-chars')
+    profile unlock unlockme --password-from stdin <<<'right-twelve-chars')
 echo "$ok" | python3 -c '
 import json, sys
 b = json.load(sys.stdin)
@@ -37,7 +37,7 @@ assert b["name"] == "unlockme", b
 # Wrong password → exit code 6.
 set +e
 "$SPIRITSTREAM_CLI" --data-dir "$SPIRITSTREAM_TEST_DATA_DIR" --quiet \
-    profile unlock unlockme --password 'wrong' >/dev/null
+    profile unlock unlockme --password-from stdin >/dev/null <<<'wrong'
 code=$?
 set -e
 [[ $code -eq 6 ]] || { echo "expected exit 6 (PasswordIncorrect), got $code" >&2; exit 1; }

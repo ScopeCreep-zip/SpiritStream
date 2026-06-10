@@ -15,6 +15,7 @@ mod commands;
 mod error;
 mod output;
 mod registry;
+mod secret_input;
 
 use std::process::ExitCode;
 
