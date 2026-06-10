@@ -14,6 +14,7 @@ pub mod oauth;
 pub mod obs;
 pub mod profile;
 pub mod safety;
+pub mod session;
 pub mod settings;
 pub mod stream;
 pub mod system;

@@ -82,6 +82,10 @@ pub struct ServiceRegistry {
     /// for scripted use. Same service instance across transports so a
     /// token issued via one is consumable via the other (Q6).
     pub confirm_tokens: Arc<ConfirmTokenService>,
+    /// Cross-process HTTP session set (hashed, file-backed under
+    /// `run/sessions.json`). The HTTP transport validates cookies
+    /// against it; the CLI lists/revokes through it.
+    pub sessions: Arc<crate::services::SessionStore>,
     pub events: Arc<dyn EventSink>,
     pub data_dir: PathBuf,
     pub log_dir: PathBuf,
@@ -190,7 +194,11 @@ impl ServiceRegistry {
             audit.clone(),
             opts.events.clone(),
         ));
-        let confirm_tokens = Arc::new(ConfirmTokenService::new());
+        let confirm_tokens = Arc::new(ConfirmTokenService::new(&opts.data_dir));
+        // Cross-process HTTP session set (file-backed, hashed). Shared so
+        // the CLI's `session revoke-all` genuinely revokes a running
+        // server's sessions.
+        let sessions = Arc::new(crate::services::SessionStore::new(&opts.data_dir));
 
         // Profile-activation orchestrator. Constructed after every
         // participant so each Arc is cloned exactly once into the service.
@@ -258,6 +266,7 @@ impl ServiceRegistry {
             auth_surveillance,
             profile_activation,
             confirm_tokens,
+            sessions,
             events: opts.events,
             data_dir: opts.data_dir,
             log_dir: opts.log_dir,
@@ -330,7 +339,7 @@ mod tests {
             custom_ffmpeg_path: None,
             events: Arc::new(NoopEventSink),
             // File-backed store so the test never touches the OS keyring.
-            secret_store: build_secret_store(&root.join("data"), Some("file")),
+            secret_store: build_secret_store(&root.join("data"), Some("file")).unwrap(),
         }
     }
 

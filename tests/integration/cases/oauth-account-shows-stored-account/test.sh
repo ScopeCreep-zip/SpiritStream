@@ -53,10 +53,21 @@ assert b["loggedIn"] is False, b
 assert b["userId"] == "", b
 '
 
-# Unknown provider must error out.
+# kick / facebook are queryable too now (all four providers store
+# accounts on the profile); an account that was never connected reads
+# logged-out rather than erroring.
+kk=$("$SPIRITSTREAM_CLI" --data-dir "$SPIRITSTREAM_TEST_DATA_DIR" --quiet \
+    oauth account kick --profile creator)
+echo "$kk" | python3 -c '
+import json, sys
+b = json.load(sys.stdin)
+assert b["loggedIn"] is False, b
+'
+
+# A genuinely unknown provider must error out.
 set +e
 err=$("$SPIRITSTREAM_CLI" --data-dir "$SPIRITSTREAM_TEST_DATA_DIR" --quiet \
-    oauth account kick --profile creator 2>&1)
+    oauth account myspace --profile creator 2>&1)
 code=$?
 set -e
 [[ $code -ne 0 ]] || { echo "unknown provider should fail" >&2; exit 1; }

@@ -2,7 +2,7 @@ use axum::{extract::State, http::HeaderMap, Json};
 use serde::{Deserialize, Serialize};
 use tower_cookies::{Cookie, Cookies};
 
-use spiritstream_core::services::CONFIRM_TOKEN_TTL_SECS;
+use spiritstream_core::services::{CONFIRM_TOKEN_TTL_SECS, EVENT_TICKET_TTL_SECS};
 
 use crate::auth_helpers::verify_token;
 use crate::error::ApiError;
@@ -56,15 +56,9 @@ fn lockout_error(remaining: std::time::Duration) -> ApiError {
 /// * `LocalhostDev` → `HttpOnly; SameSite=Strict` (no Secure over plain HTTP)
 ///
 /// All variants set `Path=/` and `Max-Age = COOKIE_MAX_AGE_SECS` (7 days).
-fn set_session_cookie(state: &AppState, cookies: &Cookies) {
+fn set_session_cookie(state: &AppState, cookies: &Cookies) -> Result<(), ApiError> {
     let session_id = uuid::Uuid::new_v4().to_string();
-    {
-        let mut sessions = state
-            .active_sessions
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        sessions.insert(session_id.clone());
-    }
+    state.sessions.insert(&session_id)?;
     let mode: SessionCookieMode = state.cookie_mode;
     let cookie = Cookie::build((AUTH_COOKIE_NAME, session_id))
         .http_only(true)
@@ -76,6 +70,7 @@ fn set_session_cookie(state: &AppState, cookies: &Cookies) {
         ))
         .build();
     cookies.add(cookie);
+    Ok(())
 }
 
 /// `POST /api/v1/auth/login` — validate token, set HttpOnly cookie.
@@ -84,12 +79,15 @@ fn set_session_cookie(state: &AppState, cookies: &Cookies) {
 /// 1. If the account is currently locked (10 failures within 1h →
 ///    15min lockout), reply 429 with `Retry-After`. No timing work
 ///    happens so the rejection is cheap.
-/// 2. Otherwise verify the token. On success, reset failure state and
-///    set the session cookie.
-/// 3. On failure, record the attempt; sleep for the resulting
-///    exponential backoff before responding (so a pipelined attacker
-///    can't bypass the delay by ignoring our response). If the failure
-///    pushed the account into a fresh lockout, surface 429.
+/// 2. If the exponential-backoff window since the last failure has not
+///    elapsed, reply 429 with `Retry-After` BEFORE any verification —
+///    the old design only slept before responding, which a pipelined
+///    attacker bypassed by firing requests and ignoring the replies
+///    (every request still got an immediate `verify_token` call).
+/// 3. Otherwise verify the token. Success resets failure state and
+///    sets the session cookie; failure records the attempt (which may
+///    trip the lockout → 429) and returns 401 immediately — the gate
+///    in step 2 enforces the wait on the NEXT attempt.
 pub(crate) async fn auth_login(
     State(state): State<AppState>,
     cookies: Cookies,
@@ -98,6 +96,9 @@ pub(crate) async fn auth_login(
     let account = AUTH_ACCOUNT_DEFAULT;
 
     if let Some(remaining) = state.auth_service.check_locked(account) {
+        return Err(lockout_error(remaining));
+    }
+    if let Some(remaining) = state.auth_service.check_backoff(account) {
         return Err(lockout_error(remaining));
     }
 
@@ -109,18 +110,13 @@ pub(crate) async fn auth_login(
 
     if token_ok {
         state.auth_service.record_success(account);
-        set_session_cookie(&state, &cookies);
+        set_session_cookie(&state, &cookies)?;
         return Ok(Json(AuthLoginResponse {}));
     }
 
     log::warn!("auth_login: invalid token");
     match state.auth_service.record_failure(account) {
-        Ok(backoff) => {
-            // Sleep before returning so pipelined attackers can't outpace
-            // the policy by ignoring our response timing.
-            tokio::time::sleep(backoff).await;
-            Err(ApiError(spiritstream_core::CoreError::Unauthorized))
-        }
+        Ok(_next_backoff) => Err(ApiError(spiritstream_core::CoreError::Unauthorized)),
         Err(remaining) => Err(lockout_error(remaining)),
     }
 }
@@ -131,11 +127,7 @@ pub(crate) async fn auth_logout(
     cookies: Cookies,
 ) -> Result<Json<AuthLogoutResponse>, ApiError> {
     if let Some(c) = cookies.get(AUTH_COOKIE_NAME) {
-        let mut sessions = state
-            .active_sessions
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        sessions.remove(c.value());
+        state.sessions.remove(c.value())?;
     }
     let cookie = Cookie::build((AUTH_COOKIE_NAME, ""))
         .path("/")
@@ -154,15 +146,7 @@ pub(crate) async fn security_revoke_all_sessions(
     headers: HeaderMap,
 ) -> Result<Json<RevokeAllSessionsResponse>, ApiError> {
     require_confirm_token(&state, &headers, "revoke_all_sessions")?;
-    let mut sessions = state
-        .active_sessions
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    let revoked = sessions.len();
-    sessions.clear();
-    // Drop the guard before the audit await so we don't hold a sync
-    // mutex across an async boundary.
-    drop(sessions);
+    let revoked = state.sessions.revoke_all()?;
     // G2: durable post-incident breadcrumb. If an attacker stole a
     // session and the legit user hit panic-revoke, the chain shows
     // `SessionRevoked { count }` with the wall-clock time + a paired
@@ -193,16 +177,10 @@ pub(crate) async fn auth_check(
             required: false,
         }));
     }
-    let is_authenticated = match cookies.get(AUTH_COOKIE_NAME) {
-        Some(c) => {
-            let sessions = state
-                .active_sessions
-                .lock()
-                .unwrap_or_else(|e| e.into_inner());
-            sessions.contains(c.value())
-        }
-        None => false,
-    };
+    let is_authenticated = cookies
+        .get(AUTH_COOKIE_NAME)
+        .map(|c| state.sessions.is_valid(c.value()))
+        .unwrap_or(false);
     Ok(Json(AuthCheckResponse {
         authenticated: is_authenticated,
         required: true,
@@ -257,11 +235,38 @@ pub(crate) struct ConfirmTokenResponse {
     expires_in_seconds: u64,
 }
 
+/// One-shot ticket for the `/api/v1/events` WebSocket upgrade.
+///
+/// Browsers can't attach an Authorization header to a WS upgrade, and
+/// cross-origin deployments don't send the SameSite=Lax cookie on it
+/// either. The client calls this (authenticated) endpoint immediately
+/// before connecting and passes `?ticket=` on the upgrade URL; the
+/// ticket is single-use and expires in seconds, so a proxy-logged URL
+/// is dead on arrival — unlike the previous design, which put a
+/// long-lived bearer token in the query string (and which no
+/// production code could even use, since the auth middleware rejected
+/// the upgrade before the token check ran).
+#[derive(Serialize)]
+pub(crate) struct EventTicketResponse {
+    ticket: String,
+    #[serde(rename = "expiresInSeconds")]
+    expires_in_seconds: u64,
+}
+
+pub(crate) async fn events_ticket_issue(
+    State(state): State<AppState>,
+) -> Result<Json<EventTicketResponse>, ApiError> {
+    Ok(Json(EventTicketResponse {
+        ticket: state.event_tickets.issue(),
+        expires_in_seconds: EVENT_TICKET_TTL_SECS,
+    }))
+}
+
 pub(crate) async fn confirm_token_issue(
     State(state): State<AppState>,
     Json(payload): Json<ConfirmTokenRequest>,
 ) -> Result<Json<ConfirmTokenResponse>, ApiError> {
-    let token = state.confirm_tokens.issue(&payload.intent);
+    let token = state.confirm_tokens.issue(&payload.intent)?;
     // G2: record the intent (NOT the token) so post-incident review
     // can reconstruct "user asked for X around time T." Paired with
     // the downstream `MachineKeyRotated` / `SessionRevoked` /

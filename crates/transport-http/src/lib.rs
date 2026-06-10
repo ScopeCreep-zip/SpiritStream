@@ -1,25 +1,16 @@
 use axum::{
     extract::DefaultBodyLimit,
-    http::{header, HeaderValue, StatusCode},
+    http::{header, HeaderValue},
     middleware::{from_fn, from_fn_with_state},
-    response::IntoResponse,
     routing::{get, post},
     Router,
 };
 use serde::Serialize;
 use serde_json::Value;
-use std::{
-    env,
-    net::SocketAddr,
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::{env, net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex as AsyncMutex;
 use tower_cookies::CookieManagerLayer;
-use tower_http::{
-    services::{ServeDir, ServeFile},
-    set_header::SetResponseHeaderLayer,
-};
+use tower_http::set_header::SetResponseHeaderLayer;
 
 use spiritstream_core::models::ProfileSettings;
 use spiritstream_core::services::{
@@ -56,7 +47,8 @@ mod session;
 
 pub(crate) use auth::require_confirm_token;
 use auth::{
-    auth_check, auth_login, auth_logout, confirm_token_issue, security_revoke_all_sessions,
+    auth_check, auth_login, auth_logout, confirm_token_issue, events_ticket_issue,
+    security_revoke_all_sessions,
 };
 pub(crate) use chat_lifecycle::{
     auto_connect_chat_platforms, auto_disconnect_chat_platforms, build_hour_keys,
@@ -98,93 +90,6 @@ const DEFAULT_RATE_LIMIT_PER_MINUTE: u32 = 300;
 /// fuzzy-matching flag. Shared between the activation handler and the chat
 /// send path; refreshed atomically when a new profile becomes active.
 pub(crate) type ActiveProfilePii = Arc<AsyncMutex<Option<(Vec<String>, bool)>>>;
-
-/// Static HTML served at `GET /` while `ServerReadiness::ready == false`.
-/// Uses `<meta http-equiv="refresh" content="1">` so the browser polls
-/// without running any JavaScript; once services initialize, the next
-/// refresh serves the real SPA. Same dark background as the Tauri shell
-/// so users see no flash. No Content-Security-Policy issues (no inline
-/// scripts, no external resources — pure HTML + minimal inline CSS).
-const LOADING_PAGE_HTML: &str = r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="refresh" content="1" />
-  <title>SpiritStream — Starting…</title>
-  <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      height: 100%;
-      background-color: #0F0A14;
-      color: #F4F2F7;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
-    .center {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 1rem;
-    }
-    .spinner {
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      border: 3px solid rgba(167, 139, 250, 0.25);
-      border-top-color: #A78BFA;
-      animation: spin 0.8s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .label { color: #B8AECA; font-size: 0.95rem; }
-  </style>
-</head>
-<body>
-  <div class="center">
-    <div class="spinner" aria-hidden="true"></div>
-    <div class="label">Starting SpiritStream…</div>
-  </div>
-</body>
-</html>
-"#;
-
-/// CSP `style-src` source for the inline `<style>` in `LOADING_PAGE_HTML`.
-///
-/// The loading page is server-rendered static HTML carrying one inline
-/// `<style>`. The response CSP forbids `'unsafe-inline'`, so that block is
-/// allow-listed by the SHA-256 of its exact text content (the bytes between
-/// `<style>` and `</style>`). Computed from the served HTML at startup so the
-/// policy and the markup can never drift. Returns a `'sha256-…'` expression
-/// (base64-standard encoded).
-fn loading_page_style_csp_hash() -> String {
-    use base64::Engine as _;
-    use sha2::{Digest, Sha256};
-
-    const OPEN: &str = "<style>";
-    const CLOSE: &str = "</style>";
-    let html = LOADING_PAGE_HTML;
-    // Fail loud, not silent: if the markers ever leave LOADING_PAGE_HTML the
-    // CSP would otherwise hash the wrong bytes and quietly break the loading
-    // page's styling. A startup panic on this programmer-error invariant is the
-    // correct CSP-safety behavior.
-    let start = html
-        .find(OPEN)
-        .map(|i| i + OPEN.len())
-        .expect("LOADING_PAGE_HTML must contain an inline <style> block");
-    let end = html[start..]
-        .find(CLOSE)
-        .map(|i| start + i)
-        .expect("LOADING_PAGE_HTML <style> block must be closed");
-    let style = &html[start..end];
-    let digest = Sha256::digest(style.as_bytes());
-    format!(
-        "'sha256-{}'",
-        base64::engine::general_purpose::STANDARD.encode(digest)
-    )
-}
 
 /// Tracks whether all subsystems have completed startup initialization.
 /// Single source of readiness truth across every deployment shape (Tauri
@@ -250,11 +155,12 @@ pub struct AppState {
     /// One-shot scoped tokens that gate destructive ops
     /// (`clear_data`, `rotate_machine_key`, `revoke_all_sessions`).
     pub(crate) confirm_tokens: Arc<ConfirmTokenService>,
-    /// Server-tracked active session IDs. Cookies whose
-    /// value is not present here fail auth, so clearing this set
-    /// invalidates every existing session immediately. Memory-only;
-    /// a process restart implicitly revokes everything.
-    pub(crate) active_sessions: Arc<Mutex<std::collections::HashSet<String>>>,
+    /// Server-tracked sessions — cross-process, file-backed, hashed
+    /// (`core::services::SessionStore`). Cookies whose value is not in
+    /// the store fail auth, so a revoke — from THIS process or from
+    /// `spiritstream-cli session revoke-all` — invalidates every
+    /// existing session on its next request.
+    pub(crate) sessions: Arc<spiritstream_core::services::SessionStore>,
     /// Append-only audit log (panic, PII, OAuth refresh, etc.).
     pub(crate) audit: Arc<AuditLogService>,
     /// Coordinates the panic-disconnect flow.
@@ -273,6 +179,14 @@ pub struct AppState {
     /// orchestration helpers (e.g. `rotate_machine_key_checked`) call
     /// through this instead of re-implementing the rules locally.
     pub(crate) registry: spiritstream_core::ServiceRegistry,
+    /// Trusted reverse-proxy CIDRs (`SPIRITSTREAM_TRUSTED_PROXIES`).
+    /// When the direct peer is one of these, rate-limit keying reads
+    /// the rightmost-untrusted `X-Forwarded-For` hop as the client.
+    pub(crate) trusted_proxies: Arc<Vec<ipnet::IpNet>>,
+    /// One-shot tickets authenticating the `/api/v1/events` WebSocket
+    /// upgrade (browsers can't send headers there; cross-origin
+    /// deployments don't send the cookie either).
+    pub(crate) event_tickets: Arc<spiritstream_core::services::EventTicketService>,
 }
 
 #[derive(Serialize)]
@@ -301,6 +215,8 @@ pub(crate) struct FilesOpenResponse {}
 // so this orchestrator stays under the 600 LOC ceiling.
 #[path = "lib/helpers.rs"]
 mod helpers;
+#[path = "lib/static_ui.rs"]
+mod static_ui;
 use helpers::{find_themes_dir_fallback, parse_host, ws_handler};
 
 /// HTTP transport entrypoint. Invoked by the `spiritstream-server` binary
@@ -417,7 +333,10 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let secret_store = spiritstream_core::services::build_secret_store(
         &app_data_dir,
         secret_store_override.as_deref(),
-    );
+    )
+    .map_err(|e| -> Box<dyn std::error::Error> {
+        format!("secret store selection: {e}").into()
+    })?;
     let registry =
         spiritstream_core::ServiceRegistry::build(spiritstream_core::ServiceRegistryOptions {
             data_dir: app_data_dir.clone(),
@@ -481,6 +400,32 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // that TLS termination lives in front of us (Caddy / Traefik /
     // nginx). The localhost dev path is untouched; this only fires
     // for operators standing up a public instance.
+    // Trusted reverse-proxy CIDRs for proxy-aware client-IP extraction
+    // (rate-limit keying). Invalid entries are a startup error — a
+    // typo'd CIDR silently disabling proxy awareness would put every
+    // client back in one shared login bucket.
+    let trusted_proxies: Vec<ipnet::IpNet> = match env::var("SPIRITSTREAM_TRUSTED_PROXIES") {
+        Ok(raw) if !raw.trim().is_empty() => raw
+            .split(',')
+            .map(|entry| {
+                let entry = entry.trim();
+                entry.parse::<ipnet::IpNet>().or_else(|_| {
+                    entry
+                        .parse::<std::net::IpAddr>()
+                        .map(ipnet::IpNet::from)
+                        .map_err(|_| ())
+                })
+                .map_err(|_| -> Box<dyn std::error::Error> {
+                    format!(
+                        "SPIRITSTREAM_TRUSTED_PROXIES entry {entry:?} is not a valid IP or CIDR"
+                    )
+                    .into()
+                })
+            })
+            .collect::<Result<_, _>>()?,
+        _ => Vec::new(),
+    };
+
     let pre_deploy_mode = env::var("SPIRITSTREAM_DEPLOY_MODE").ok();
     if let Some(mode) = pre_deploy_mode.as_deref() {
         if mode.eq_ignore_ascii_case("cloud") {
@@ -488,7 +433,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .ok()
                 .and_then(|v| parse_bool(&v))
                 .unwrap_or(false);
-            enforce_cloud_mode_preconditions(&auth_token, tls_declared)?;
+            enforce_cloud_mode_preconditions(&auth_token, tls_declared, !trusted_proxies.is_empty())?;
         }
     }
 
@@ -592,7 +537,8 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // made the CLI subcommand decoratively useless — issued tokens
     // never reached the HTTP validator.
     let confirm_tokens = registry.confirm_tokens.clone();
-    let active_sessions = Arc::new(Mutex::new(std::collections::HashSet::new()));
+    let sessions = registry.sessions.clone();
+    let event_tickets = Arc::new(spiritstream_core::services::EventTicketService::new());
 
     // OBS, Discord, Chat, OAuth, and FFmpegLocator all come from the
     // shared registry above (see `ServiceRegistry::build`).
@@ -623,12 +569,14 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         auth_service,
         endpoint_limiters,
         confirm_tokens,
-        active_sessions,
+        sessions,
         audit: registry.audit.clone(),
         safety: registry.safety.clone(),
         profile_activation: registry.profile_activation.clone(),
         readiness: readiness.clone(),
         registry: registry.clone(),
+        trusted_proxies: Arc::new(trusted_proxies),
+        event_tickets,
     };
 
     // Start background YouTube token refresh task
@@ -655,7 +603,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // hosts so the Docker/browser path stays self-only (privacy threat model);
     // bundled fonts fall back to the system stack there.
     let csp_value = {
-        let style_hash = loading_page_style_csp_hash();
+        let style_hash = static_ui::loading_page_style_csp_hash();
         let csp = format!(
             "default-src 'self'; script-src 'self'; style-src 'self' {style_hash}; \
              connect-src 'self' ws://localhost:* wss://localhost:* http://localhost:* http://127.0.0.1:*; \
@@ -674,7 +622,9 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/v1/files/browse", get(files_browse))
         .route("/api/v1/files/home", get(files_home))
         .route("/api/v1/files/open", post(files_open))
-        .route("/api/v1/events", get(ws_handler))
+        // One-shot tickets for the events WebSocket (the upgrade itself
+        // is mounted below with its own cookie-or-ticket check).
+        .route("/api/v1/events/ticket", post(events_ticket_issue))
         // Issue confirmation tokens for destructive ops.
         // The endpoint itself requires auth; the issued token is then
         // sent back as `X-Confirm-Token` on the destructive call.
@@ -713,11 +663,38 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .merge(v1::public_router(state.clone()))
         .layer(from_fn_with_state(state.clone(), rate_limit_middleware));
 
-    // Combine all routes
+    // The events WebSocket lives OUTSIDE auth_middleware: the upgrade
+    // authenticates via session cookie (same-origin shells) OR a
+    // one-shot ticket from /api/v1/events/ticket (cross-origin
+    // browsers, which can neither send headers nor — under
+    // SameSite=Lax — the cookie on a WS upgrade). ws_handler enforces
+    // that predicate itself; CSRF still guards the upgrade at the
+    // global layer.
+    let events_routes = Router::new()
+        .route("/api/v1/events", get(ws_handler))
+        .with_state(state.clone());
+
+    // Combine all routes. NOTE: nothing may be `.route()`d after the
+    // `.layer(...)` stack below — axum layers wrap only the routes that
+    // exist when `.layer` is called, so anything added later ships with
+    // ZERO security headers. The static UI used to be mounted after the
+    // layers for exactly that reason: the self-hosted SPA document and
+    // every JS/CSS asset went out without CSP, X-Frame-Options,
+    // X-Content-Type-Options, or Referrer-Policy.
     let mut app = Router::new()
         .merge(public_routes)
         .merge(protected_routes)
         .with_state(state.clone())
+        .merge(events_routes);
+
+    // Static UI (Docker / cloud / server-bundled SPA). Mounted BEFORE the
+    // layer stack — see the layering note above — so the document and
+    // every asset carry the security headers. Implementation lives in
+    // `lib/static_ui.rs`.
+    let ui_path = PathBuf::from(ui_dir);
+    app = static_ui::mount_static_ui(app, ui_enabled, &ui_path, readiness.clone());
+
+    let app = app
         // 2 MB JSON body cap is plenty for profile/settings
         // payloads. Per-route overrides (e.g. tighter caps on uploads)
         // can be applied at the individual handler with
@@ -725,10 +702,9 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
         // CSRF guard runs before auth so a forged cross-site
         // mutation never even reaches the cookie / token check.
-        .layer(from_fn_with_state(
-            state.clone(),
-            csrf_middleware,
-        ))
+        // Safe methods pass straight through, so static GETs are
+        // unaffected by it.
+        .layer(from_fn_with_state(state.clone(), csrf_middleware))
         // Assign a request ID before any other middleware so
         // CSRF/auth/rate-limit rejections surface a useful identifier
         // for forensic correlation.
@@ -758,68 +734,6 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             header::REFERRER_POLICY,
             HeaderValue::from_static("strict-origin-when-cross-origin"),
         ));
-
-    // Optionally serve static UI files.
-    //
-    // Boot-coordination architecture: when readiness=false (services still
-    // initializing), `GET /` returns a static loading page with
-    // `<meta http-equiv="refresh" content="1">`. The browser auto-refreshes
-    // every second until services initialize, at which point the same path
-    // serves the SPA. This eliminates the "Could not connect" / 5xx cascade
-    // in the browser console for Docker / cloud deployments — a user who
-    // hits the URL before services are ready sees a styled loading page,
-    // not a fetch error storm.
-    //
-    // Tauri shells don't load via `/`; they bundle the SPA and load via
-    // `frontendDist` or `devUrl`. So this branch only matters when
-    // `SPIRITSTREAM_UI_ENABLED=1` (Docker / cloud / server-bundled).
-    let ui_path = PathBuf::from(ui_dir);
-    if ui_enabled && ui_path.exists() {
-        let index_path = ui_path.join("index.html");
-        let readiness_for_root = readiness.clone();
-        let index_for_root = index_path.clone();
-        let root_handler = move || {
-            let readiness = readiness_for_root.clone();
-            let index_path = index_for_root.clone();
-            async move {
-                use std::sync::atomic::Ordering;
-                if readiness.ready.load(Ordering::Acquire) {
-                    match tokio::fs::read_to_string(&index_path).await {
-                        Ok(html) => (
-                            StatusCode::OK,
-                            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-                            html,
-                        )
-                            .into_response(),
-                        Err(err) => {
-                            log::error!("failed to read SPA index.html: {err}");
-                            (
-                                StatusCode::INTERNAL_SERVER_ERROR,
-                                "index.html missing".to_string(),
-                            )
-                                .into_response()
-                        }
-                    }
-                } else {
-                    let mut resp = (
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-                        LOADING_PAGE_HTML,
-                    )
-                        .into_response();
-                    resp.headers_mut()
-                        .insert(header::RETRY_AFTER, HeaderValue::from_static("1"));
-                    resp
-                }
-            }
-        };
-        app = app
-            .route("/", get(root_handler.clone()))
-            .route("/index.html", get(root_handler))
-            .fallback_service(
-                ServeDir::new(&ui_path).fallback(ServeFile::new(ui_path.join("index.html"))),
-            );
-    }
 
     let address = SocketAddr::new(parse_host(&host), port);
     log::info!("SpiritStream backend listening on http://{address}");

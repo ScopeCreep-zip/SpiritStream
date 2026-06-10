@@ -125,6 +125,11 @@ enum Command {
         #[command(subcommand)]
         command: commands::audit::AuditCmd,
     },
+    /// Manage HTTP sessions (cross-process: revokes reach a running server).
+    Session {
+        #[command(subcommand)]
+        command: commands::session::SessionCmd,
+    },
     /// Issue one-shot confirmation tokens for destructive operations.
     ConfirmToken {
         #[command(subcommand)]
@@ -180,6 +185,7 @@ async fn run(cli: Cli, out: &mut Output) -> Result<(), CliError> {
         Command::Events { command } => commands::events::run(command, &registry, out).await,
         Command::Safety { command } => commands::safety::run(command, &registry, out).await,
         Command::Audit { command } => commands::audit::run(command, &registry, out).await,
+        Command::Session { command } => commands::session::run(command, &registry, out).await,
         Command::ConfirmToken { command } => {
             commands::confirm_token::run(command, &registry, out).await
         }

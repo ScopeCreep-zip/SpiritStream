@@ -5555,6 +5555,7 @@ dependencies = [
  "futures-util",
  "governor",
  "hex",
+ "ipnet",
  "log",
  "opener",
  "proptest",

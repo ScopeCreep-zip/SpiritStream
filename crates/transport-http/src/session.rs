@@ -34,7 +34,16 @@ impl SessionCookieMode {
                 "localhost_dev" | "localhost-dev" | "localhostdev" | "dev" => {
                     return Self::LocalhostDev
                 }
-                _ => {} // unrecognised — fall through to auto-detect
+                other => {
+                    // A typo'd explicit override silently picking a
+                    // different cookie policy is exactly the silent
+                    // fallback this project forbids — be loud, then
+                    // auto-detect.
+                    log::error!(
+                        "unrecognised SPIRITSTREAM_COOKIE_MODE {other:?}; falling back to \
+                         auto-detect (valid: same-origin, cross-origin, localhost-dev)"
+                    );
+                }
             }
         }
         if matches!(deploy_mode, Some(m) if m.eq_ignore_ascii_case("cloud")) {
@@ -58,6 +67,38 @@ impl SessionCookieMode {
     }
 }
 
+/// `0.0.0.0` is deliberately NOT loopback: it binds every interface,
+/// i.e. it is publicly reachable. Treating it as loopback used to put
+/// a Docker/LAN deploy into `LocalhostDev` mode and issue the session
+/// cookie WITHOUT `Secure` — sniffable in cleartext on a hostile
+/// network.
 pub(crate) fn is_loopback_host(host: &str) -> bool {
-    matches!(host, "127.0.0.1" | "::1" | "localhost" | "0.0.0.0") || host.starts_with("127.")
+    matches!(host, "127.0.0.1" | "::1" | "localhost") || host.starts_with("127.")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn all_interfaces_bind_is_not_loopback() {
+        assert!(!is_loopback_host("0.0.0.0"));
+        // → auto-detect lands on SameOrigin (Secure cookie), not dev mode.
+        assert_eq!(
+            SessionCookieMode::detect("0.0.0.0", None, None),
+            SessionCookieMode::SameOrigin
+        );
+        assert!(SessionCookieMode::detect("0.0.0.0", None, None).secure());
+    }
+
+    #[test]
+    fn loopback_binds_stay_dev_mode() {
+        for host in ["127.0.0.1", "localhost", "::1", "127.0.0.53"] {
+            assert_eq!(
+                SessionCookieMode::detect(host, None, None),
+                SessionCookieMode::LocalhostDev,
+                "{host}"
+            );
+        }
+    }
 }

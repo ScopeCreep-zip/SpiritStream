@@ -12,13 +12,19 @@
 //!   never be reused as a `rotate_machine_key` confirmation.
 //! - One-shot — consumed on success.
 //! - Short-lived — default 30-second TTL.
-//!
-//! The CLI does not use this service; it has a `--confirm` flag that
-//! the transport-cli layer reads directly.
+//! - **Cross-process** — stored hashed in
+//!   `DATA_DIR/run/confirm_tokens.json` (see
+//!   [`crate::services::TokenFileStore`]). A token issued by
+//!   `spiritstream-cli confirm-token issue` genuinely IS consumable by
+//!   the running HTTP server's destructive endpoints; the previous
+//!   in-memory design made that claim a lie (the token died with the
+//!   one-shot CLI process).
 
-use std::collections::HashMap;
-use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::path::Path;
+use std::time::Duration;
+
+use crate::errors::CoreError;
+use crate::services::TokenFileStore;
 
 /// Default lifetime for a confirmation token. Long enough for a human
 /// to read a confirmation dialog and click "yes", short enough that an
@@ -27,20 +33,18 @@ pub const CONFIRM_TOKEN_TTL_SECS: u64 = 30;
 
 /// Issues and validates one-shot confirmation tokens.
 pub struct ConfirmTokenService {
-    tokens: Mutex<HashMap<TokenKey, Instant>>,
+    store: TokenFileStore,
     ttl: Duration,
 }
 
-type TokenKey = (String, String); // (intent, token)
-
 impl ConfirmTokenService {
-    pub fn new() -> Self {
-        Self::with_ttl(Duration::from_secs(CONFIRM_TOKEN_TTL_SECS))
+    pub fn new(data_dir: &Path) -> Self {
+        Self::with_ttl(data_dir, Duration::from_secs(CONFIRM_TOKEN_TTL_SECS))
     }
 
-    pub fn with_ttl(ttl: Duration) -> Self {
+    pub fn with_ttl(data_dir: &Path, ttl: Duration) -> Self {
         Self {
-            tokens: Mutex::new(HashMap::new()),
+            store: TokenFileStore::new(data_dir, "confirm_tokens", ttl),
             ttl,
         }
     }
@@ -50,54 +54,50 @@ impl ConfirmTokenService {
     }
 
     /// Issue a fresh token scoped to `intent`. The token is returned to
-    /// the caller and stored internally; expires after [`Self::ttl`].
-    pub fn issue(&self, intent: &str) -> String {
+    /// the caller and persisted (hashed); expires after [`Self::ttl`].
+    pub fn issue(&self, intent: &str) -> Result<String, CoreError> {
         let token = uuid::Uuid::new_v4().to_string();
-        let mut store = self.tokens.lock().unwrap_or_else(|e| e.into_inner());
-        self.gc(&mut store);
-        store.insert((intent.to_string(), token.clone()), Instant::now());
-        token
+        self.store.insert(&[intent, &token])?;
+        Ok(token)
     }
 
     /// Validate and consume a token. Returns `true` if a matching
     /// non-expired entry existed (and removes it); `false` otherwise.
+    /// A store failure fails CLOSED (loudly) — a destructive op must
+    /// never proceed on an unreadable confirmation state.
     pub fn consume(&self, intent: &str, token: &str) -> bool {
-        let mut store = self.tokens.lock().unwrap_or_else(|e| e.into_inner());
-        self.gc(&mut store);
-        let key = (intent.to_string(), token.to_string());
-        match store.remove(&key) {
-            Some(issued_at) => issued_at.elapsed() <= self.ttl,
-            None => false,
+        match self.store.consume(&[intent, token]) {
+            Ok(valid) => valid,
+            Err(e) => {
+                log::error!("confirm-token store unreadable — refusing confirmation: {e}");
+                false
+            }
         }
-    }
-
-    fn gc(&self, store: &mut HashMap<TokenKey, Instant>) {
-        let ttl = self.ttl;
-        store.retain(|_, issued_at| issued_at.elapsed() <= ttl);
-    }
-}
-
-impl Default for ConfirmTokenService {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
+
+    fn svc(dir: &TempDir) -> ConfirmTokenService {
+        ConfirmTokenService::new(dir.path())
+    }
 
     #[test]
     fn issued_token_consumes_within_ttl() {
-        let svc = ConfirmTokenService::new();
-        let token = svc.issue("clear_data");
+        let dir = TempDir::new().unwrap();
+        let svc = svc(&dir);
+        let token = svc.issue("clear_data").unwrap();
         assert!(svc.consume("clear_data", &token));
     }
 
     #[test]
     fn token_is_one_shot() {
-        let svc = ConfirmTokenService::new();
-        let token = svc.issue("rotate_machine_key");
+        let dir = TempDir::new().unwrap();
+        let svc = svc(&dir);
+        let token = svc.issue("rotate_machine_key").unwrap();
         assert!(svc.consume("rotate_machine_key", &token));
         assert!(
             !svc.consume("rotate_machine_key", &token),
@@ -110,15 +110,17 @@ mod tests {
         // Token issued for one intent must not work on another, even
         // within TTL. Prevents a CSRF-shaped "use a leaked clear_data
         // token to rotate the machine key" attack.
-        let svc = ConfirmTokenService::new();
-        let token = svc.issue("clear_data");
+        let dir = TempDir::new().unwrap();
+        let svc = svc(&dir);
+        let token = svc.issue("clear_data").unwrap();
         assert!(!svc.consume("rotate_machine_key", &token));
     }
 
     #[test]
     fn token_expires_after_ttl() {
-        let svc = ConfirmTokenService::with_ttl(Duration::from_millis(50));
-        let token = svc.issue("clear_data");
+        let dir = TempDir::new().unwrap();
+        let svc = ConfirmTokenService::with_ttl(dir.path(), Duration::from_millis(50));
+        let token = svc.issue("clear_data").unwrap();
         std::thread::sleep(Duration::from_millis(120));
         assert!(
             !svc.consume("clear_data", &token),
@@ -128,15 +130,30 @@ mod tests {
 
     #[test]
     fn unknown_token_is_rejected() {
-        let svc = ConfirmTokenService::new();
+        let dir = TempDir::new().unwrap();
+        let svc = svc(&dir);
         assert!(!svc.consume("clear_data", "totally-bogus-token"));
     }
 
     #[test]
     fn each_issue_produces_unique_token() {
-        let svc = ConfirmTokenService::new();
-        let t1 = svc.issue("x");
-        let t2 = svc.issue("x");
+        let dir = TempDir::new().unwrap();
+        let svc = svc(&dir);
+        let t1 = svc.issue("x").unwrap();
+        let t2 = svc.issue("x").unwrap();
         assert_ne!(t1, t2, "tokens must be unique even for the same intent");
+    }
+
+    /// THE cross-process property the Q6 comments used to falsely
+    /// claim: a token issued by one service instance (≈ the CLI
+    /// process) is consumable by another (≈ the HTTP server).
+    #[test]
+    fn token_issued_by_one_instance_consumes_in_another() {
+        let dir = TempDir::new().unwrap();
+        let cli = ConfirmTokenService::new(dir.path());
+        let server = ConfirmTokenService::new(dir.path());
+        let token = cli.issue("clear_data").unwrap();
+        assert!(server.consume("clear_data", &token));
+        assert!(!cli.consume("clear_data", &token), "still one-shot");
     }
 }

@@ -270,6 +270,8 @@ impl super::OAuthService {
         provider_name: &str,
         refresh_token: &str,
     ) -> Result<OAuthTokens, CoreError> {
+        // Single funnel for every refresh path — see `refresh_lock`.
+        let _refresh_guard = self.refresh_lock.lock().await;
         let config = self.config.lock().await;
 
         let (provider, client_id, client_secret) = match provider_name {

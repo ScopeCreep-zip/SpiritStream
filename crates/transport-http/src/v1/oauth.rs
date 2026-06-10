@@ -274,8 +274,28 @@ pub async fn v1_oauth_start_flow_proxy(
             }
             Some(OAuthCallback::ImplicitSuccess {
                 access_token,
-                state: _,
+                state: callback_state,
             }) => {
+                // CSRF / token-injection guard: the callback's state
+                // nonce must match the pending flow we started — same
+                // rule the auth-code path enforces in `exchange_code`.
+                if let Err(err) = oauth_service
+                    .consume_implicit_state(&provider_name, &callback_state)
+                    .await
+                {
+                    log::error!(
+                        "Implicit OAuth callback for {provider_name} rejected:                          state mismatch ({err}); discarding delivered token"
+                    );
+                    use spiritstream_core::services::EventSink;
+                    state_clone.event_bus.emit(
+                        "oauth_error",
+                        serde_json::json!({
+                            "provider": provider_name,
+                            "reason": "state_mismatch",
+                        }),
+                    );
+                    return;
+                }
                 log::info!("Implicit OAuth flow completed for {provider_name}");
                 let user_info_result: Result<spiritstream_core::services::OAuthUserInfo, String> =
                     match provider_name.as_str() {

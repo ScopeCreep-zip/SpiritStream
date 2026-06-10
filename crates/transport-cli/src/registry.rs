@@ -27,7 +27,7 @@ pub fn build(
 
     let events: Arc<dyn spiritstream_core::services::EventSink> = Arc::new(NoopEventSink);
     let override_kind = std::env::var("SPIRITSTREAM_SECRET_STORE").ok();
-    let secret_store = build_secret_store(&data_dir, override_kind.as_deref());
+    let secret_store = build_secret_store(&data_dir, override_kind.as_deref())?;
 
     ServiceRegistry::build(ServiceRegistryOptions {
         data_dir,

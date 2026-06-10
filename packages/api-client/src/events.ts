@@ -1,4 +1,5 @@
 import { getBackendWsUrl } from './config';
+import { fetchTypedJson } from './api/_internal';
 
 // Connection state changes are surfaced through `window` CustomEvents so
 // frontends can listen without taking a dependency on a specific state
@@ -71,6 +72,39 @@ function notifyAuthRequired() {
   dispatch('auth-required');
 }
 
+/**
+ * Build the upgrade URL. Cross-origin connections (UI served from a
+ * different host than the API) can't ride the session cookie on a WS
+ * upgrade, so we fetch a one-shot, seconds-lived ticket from the
+ * authenticated REST endpoint and pass it as `?ticket=`. (The previous
+ * design read a long-lived bearer token out of localStorage — which no
+ * production code ever wrote, and which would have leaked into proxy
+ * logs if it had.)
+ */
+async function buildWsUrl(): Promise<string> {
+  let wsUrl = getBackendWsUrl();
+  if (typeof window !== 'undefined') {
+    const wsHost = new URL(wsUrl.replace('ws://', 'http://').replace('wss://', 'https://')).host;
+    const isCrossOrigin = wsHost !== window.location.host;
+    if (isCrossOrigin) {
+      try {
+        const { ticket } = await fetchTypedJson<{ ticket: string; expiresInSeconds: number }>(
+          'POST',
+          '/api/v1/events/ticket'
+        );
+        const separator = wsUrl.includes('?') ? '&' : '?';
+        wsUrl = `${wsUrl}${separator}ticket=${encodeURIComponent(ticket)}`;
+      } catch (error) {
+        // Not authenticated yet (or backend briefly down): connect
+        // without a ticket and let the upgrade's 401 drive the
+        // auth-required flow.
+        logger.warn('events ticket fetch failed — connecting without one:', error);
+      }
+    }
+  }
+  return wsUrl;
+}
+
 function ensureSocket(): Promise<void> {
   if (socket && socket.readyState === WebSocket.OPEN) {
     return Promise.resolve();
@@ -82,82 +116,65 @@ function ensureSocket(): Promise<void> {
 
   notifyConnecting();
 
-  // Build WebSocket URL, adding token for cross-origin connections
-  // (cookies may not be sent due to CORS restrictions)
-  let wsUrl = getBackendWsUrl();
+  openPromise = buildWsUrl().then(
+    (wsUrl) =>
+      new Promise((resolve) => {
+        socket = new WebSocket(wsUrl);
 
-  // Check if this is a cross-origin connection
-  if (typeof window !== 'undefined') {
-    const wsHost = new URL(wsUrl.replace('ws://', 'http://').replace('wss://', 'https://')).host;
-    const isCrossOrigin = wsHost !== window.location.host;
+        socket.addEventListener('open', () => {
+          openPromise = null;
+          notifyConnected();
+          resolve();
+        });
 
-    if (isCrossOrigin) {
-      // SECURITY: localStorage token is a temporary measure for cross-origin WS auth.
-      // Migrate to httpOnly cookie auth when full auth system (Workstream E) lands.
-      const token = window.localStorage.getItem('spiritstream-auth-token');
-      if (token) {
-        const separator = wsUrl.includes('?') ? '&' : '?';
-        wsUrl = `${wsUrl}${separator}token=${encodeURIComponent(token)}`;
-      }
-    }
-  }
+        socket.addEventListener('message', (event) => {
+          if (!event.data) return;
+          try {
+            const parsed = JSON.parse(event.data as string) as {
+              event?: string;
+              payload?: unknown;
+            };
+            if (!parsed.event) return;
+            const listeners = handlers.get(parsed.event);
+            if (!listeners || listeners.size === 0) return;
+            for (const handler of listeners) {
+              handler(parsed.payload);
+            }
+          } catch (error) {
+            logger.warn('Failed to parse backend event:', error);
+          }
+        });
 
-  openPromise = new Promise((resolve) => {
-    socket = new WebSocket(wsUrl);
+        socket.addEventListener('close', (event) => {
+          socket = null;
+          openPromise = null;
 
-    socket.addEventListener('open', () => {
-      openPromise = null;
-      notifyConnected();
-      resolve();
-    });
+          // Check if this is an auth failure (401 Unauthorized returns code 1008)
+          if (event.code === 1008 || event.reason === 'Unauthorized') {
+            notifyAuthRequired();
+            notifyDisconnected('Authentication required');
+            return;
+          }
 
-    socket.addEventListener('message', (event) => {
-      if (!event.data) return;
-      try {
-        const parsed = JSON.parse(event.data as string) as {
-          event?: string;
-          payload?: unknown;
-        };
-        if (!parsed.event) return;
-        const listeners = handlers.get(parsed.event);
-        if (!listeners || listeners.size === 0) return;
-        for (const handler of listeners) {
-          handler(parsed.payload);
-        }
-      } catch (error) {
-        logger.warn('Failed to parse backend event:', error);
-      }
-    });
+          notifyDisconnected();
+          if (handlers.size > 0 || keepAlive) {
+            scheduleReconnect();
+          }
+        });
 
-    socket.addEventListener('close', (event) => {
-      socket = null;
-      openPromise = null;
-
-      // Check if this is an auth failure (401 Unauthorized returns code 1008)
-      if (event.code === 1008 || event.reason === 'Unauthorized') {
-        notifyAuthRequired();
-        notifyDisconnected('Authentication required');
-        return;
-      }
-
-      notifyDisconnected();
-      if (handlers.size > 0 || keepAlive) {
-        scheduleReconnect();
-      }
-    });
-
-    socket.addEventListener('error', () => {
-      if (socket && socket.readyState === WebSocket.OPEN) {
-        return;
-      }
-      socket = null;
-      openPromise = null;
-      notifyDisconnected('Connection error');
-      if (handlers.size > 0 || keepAlive) {
-        scheduleReconnect();
-      }
-    });
-  });
+        socket.addEventListener('error', () => {
+          if (socket && socket.readyState === WebSocket.OPEN) {
+            return;
+          }
+          socket = null;
+          openPromise = null;
+          notifyDisconnected('Connection error');
+          if (handlers.size > 0 || keepAlive) {
+            scheduleReconnect();
+          }
+        });
+      })
+  );
 
   return openPromise;
 }

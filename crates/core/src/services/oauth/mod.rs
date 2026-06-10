@@ -55,6 +55,16 @@ pub struct OAuthService {
     pub(in crate::services::oauth) pending_flows:
         Arc<Mutex<HashMap<String, flow::PendingOAuthFlow>>>,
     pub(in crate::services::oauth) http_client: reqwest::Client,
+    /// Serialises token refreshes. Providers that rotate refresh tokens
+    /// on use (Twitch; Google with rotation enabled) hand out exactly
+    /// one valid refresh token at a time — two concurrent refresh paths
+    /// (activation, chat lifecycle, the standalone refresh endpoint)
+    /// spending the same token meant the loser got `invalid_grant` and
+    /// could clobber the winner's freshly-rotated credentials, leaving
+    /// the account unauthenticated mid-stream. Global (not per-profile)
+    /// on purpose: this is a single-active-profile app and the lock is
+    /// only held across one HTTP round-trip.
+    pub(in crate::services::oauth) refresh_lock: tokio::sync::Mutex<()>,
 }
 
 impl OAuthService {
@@ -63,6 +73,7 @@ impl OAuthService {
             config: Arc::new(Mutex::new(config)),
             pending_flows: Arc::new(Mutex::new(HashMap::new())),
             http_client: reqwest::Client::new(),
+            refresh_lock: tokio::sync::Mutex::new(()),
         }
     }
 

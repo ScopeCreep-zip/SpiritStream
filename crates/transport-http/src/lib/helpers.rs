@@ -23,7 +23,6 @@ use serde::Deserialize;
 use tokio::sync::broadcast;
 use tower_cookies::Cookies;
 
-use crate::auth_helpers::verify_token;
 use crate::events::ServerEvent;
 use crate::{AppState, AUTH_COOKIE_NAME};
 
@@ -68,7 +67,8 @@ pub(crate) fn find_themes_dir_fallback() -> Option<String> {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct AuthQuery {
-    token: Option<String>,
+    /// One-shot upgrade ticket from `POST /api/v1/events/ticket`.
+    ticket: Option<String>,
 }
 
 pub(crate) async fn ws_handler(
@@ -77,32 +77,27 @@ pub(crate) async fn ws_handler(
     Query(query): Query<AuthQuery>,
     cookies: Cookies,
 ) -> impl IntoResponse {
-    // Check authentication: no token required, cookie in `active_sessions`,
-    // or valid bearer-style `?token=` query param. The cookie path MUST
-    // verify membership in `active_sessions` — `revoke-all-sessions`
-    // clears the set, and anyone whose cookie still exists in their
-    // browser would otherwise stay subscribed to the event bus after
-    // their session was revoked (visible to a harassment-prone user as
-    // their attacker continuing to see go-live / chat events). Mirror
-    // the predicate in `middleware::auth_middleware`.
+    // Check authentication: no token configured, session cookie, or a
+    // one-shot `?ticket=` from `POST /api/v1/events/ticket`. The cookie
+    // path MUST verify against the session store — `revoke-all-sessions`
+    // clears it, and anyone whose cookie still exists in their browser
+    // would otherwise stay subscribed to the event bus after their
+    // session was revoked (visible to a harassment-prone user as their
+    // attacker continuing to see go-live / chat events). The previous
+    // `?token=` bearer branch was unreachable in production (the auth
+    // middleware rejected the upgrade first) AND undesirable: a
+    // long-lived credential in a URL lands in proxy logs. Tickets are
+    // single-use and expire in seconds.
     let cookie_valid = cookies
         .get(AUTH_COOKIE_NAME)
-        .map(|c| {
-            let sessions = state
-                .active_sessions
-                .lock()
-                .unwrap_or_else(|e| e.into_inner());
-            sessions.contains(c.value())
-        })
+        .map(|c| state.sessions.is_valid(c.value()))
         .unwrap_or(false);
     let authenticated = state.auth_token.is_none()
         || cookie_valid
-        || query.token.as_deref().is_some_and(|token| {
-            state
-                .auth_token
-                .as_deref()
-                .is_some_and(|expected| verify_token(expected, token))
-        });
+        || query
+            .ticket
+            .as_deref()
+            .is_some_and(|ticket| state.event_tickets.consume(ticket));
 
     if !authenticated {
         return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();

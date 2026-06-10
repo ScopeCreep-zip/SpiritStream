@@ -232,7 +232,7 @@ proptest::proptest! {
 #[test]
 fn cloud_mode_refuses_to_start_without_strong_token() {
     let weak = Some("short".to_string());
-    let err = enforce_cloud_mode_preconditions(&weak, true).unwrap_err();
+    let err = enforce_cloud_mode_preconditions(&weak, true, true).unwrap_err();
     let msg = format!("{err}");
     assert!(
         msg.contains("SPIRITSTREAM_API_TOKEN"),
@@ -244,14 +244,14 @@ fn cloud_mode_refuses_to_start_without_strong_token() {
 #[test]
 fn cloud_mode_refuses_to_start_without_token_at_all() {
     let none: Option<String> = None;
-    let err = enforce_cloud_mode_preconditions(&none, true).unwrap_err();
+    let err = enforce_cloud_mode_preconditions(&none, true, true).unwrap_err();
     assert!(format!("{err}").contains("SPIRITSTREAM_API_TOKEN"));
 }
 
 #[test]
 fn cloud_mode_refuses_to_start_without_tls_proxy_declared() {
     let strong = Some("a".repeat(32));
-    let err = enforce_cloud_mode_preconditions(&strong, false).unwrap_err();
+    let err = enforce_cloud_mode_preconditions(&strong, false, true).unwrap_err();
     let msg = format!("{err}");
     assert!(
         msg.contains("SPIRITSTREAM_BEHIND_TLS_PROXY"),
@@ -262,7 +262,7 @@ fn cloud_mode_refuses_to_start_without_tls_proxy_declared() {
 #[test]
 fn cloud_mode_starts_when_both_preconditions_satisfied() {
     let strong = Some("0123456789abcdef0123456789abcdef".to_string());
-    let result = enforce_cloud_mode_preconditions(&strong, true);
+    let result = enforce_cloud_mode_preconditions(&strong, true, true);
     assert!(result.is_ok(), "expected Ok, got: {result:?}");
 }
 
@@ -270,13 +270,13 @@ fn cloud_mode_starts_when_both_preconditions_satisfied() {
 fn cloud_mode_accepts_exactly_32_char_token() {
     // Boundary check — the policy says "≥ 32 chars".
     let exactly_32 = Some("a".repeat(32));
-    assert!(enforce_cloud_mode_preconditions(&exactly_32, true).is_ok());
+    assert!(enforce_cloud_mode_preconditions(&exactly_32, true, true).is_ok());
 }
 
 #[test]
 fn cloud_mode_rejects_31_char_token() {
     let just_under = Some("a".repeat(31));
-    assert!(enforce_cloud_mode_preconditions(&just_under, true).is_err());
+    assert!(enforce_cloud_mode_preconditions(&just_under, true, true).is_err());
 }
 
 // ----- CSP loading-page style hash (M3) -----------------------
@@ -286,7 +286,7 @@ fn cloud_mode_rejects_31_char_token() {
 
 #[test]
 fn loading_page_style_csp_hash_is_wellformed() {
-    let src = loading_page_style_csp_hash();
+    let src = crate::static_ui::loading_page_style_csp_hash();
     assert!(
         src.starts_with("'sha256-") && src.ends_with('\''),
         "expected a quoted sha256 CSP source, got {src}"
@@ -295,14 +295,14 @@ fn loading_page_style_csp_hash_is_wellformed() {
 
 #[test]
 fn loading_page_style_csp_hash_covers_only_the_style_block() {
-    let start = LOADING_PAGE_HTML
+    let start = crate::static_ui::LOADING_PAGE_HTML
         .find("<style>")
         .expect("inline <style> present")
         + "<style>".len();
-    let end = LOADING_PAGE_HTML
+    let end = crate::static_ui::LOADING_PAGE_HTML
         .find("</style>")
         .expect("inline <style> closed");
-    let style = &LOADING_PAGE_HTML[start..end];
+    let style = &crate::static_ui::LOADING_PAGE_HTML[start..end];
     // The hashed slice is the spinner CSS, not the surrounding document.
     assert!(
         style.contains(".spinner"),

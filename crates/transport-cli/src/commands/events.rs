@@ -63,7 +63,7 @@ async fn watch(
     let events: Arc<dyn EventSink> = Arc::new(StdoutEventSink::new(filters));
     let override_kind = std::env::var("SPIRITSTREAM_SECRET_STORE").ok();
     let secret_store =
-        spiritstream_core::services::build_secret_store(&data_dir, override_kind.as_deref());
+        spiritstream_core::services::build_secret_store(&data_dir, override_kind.as_deref())?;
     let _registry = spiritstream_core::ServiceRegistry::build(ServiceRegistryOptions {
         data_dir,
         themes_dir,

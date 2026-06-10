@@ -27,18 +27,12 @@ pub(crate) async fn auth_middleware(
         return next.run(request).await;
     }
 
-    // Cookie must exist AND be in the active-session set.
-    // The MutexGuard MUST drop before any `await` or the future stops
-    // being `Send`; we compute the predicate first, then await.
+    // Cookie must exist AND validate against the cross-process session
+    // store (which revalidates against the on-disk state, so a revoke
+    // from another process is honored here immediately).
     let session_valid = cookies
         .get(AUTH_COOKIE_NAME)
-        .map(|c| {
-            let sessions = state
-                .active_sessions
-                .lock()
-                .unwrap_or_else(|e| e.into_inner());
-            sessions.contains(c.value())
-        })
+        .map(|c| state.sessions.is_valid(c.value()))
         .unwrap_or(false);
     if session_valid {
         return next.run(request).await;
@@ -98,10 +92,65 @@ pub(crate) async fn rate_limit_middleware(
     }
 }
 
-/// Resolve the `(limiter, key)` pair for a request. Login uses peer IP
-/// because the caller is by definition unauthenticated; every other
-/// quota is keyed on the auth-subject hash so an attacker who steals one
-/// token can't burn the entire shared budget.
+/// Resolve the client IP for rate-limit keying.
+///
+/// When the direct peer is inside a configured trusted-proxy CIDR
+/// (`SPIRITSTREAM_TRUSTED_PROXIES` — mandatory in cloud mode, where a
+/// TLS reverse proxy fronts the server), walk `X-Forwarded-For` from
+/// RIGHT to LEFT, skipping trusted hops; the first untrusted entry is
+/// the client. Rightmost-untrusted is the only trustworthy reading —
+/// the left entries are client-supplied and trivially spoofable. When
+/// the peer is NOT a trusted proxy, the header is ignored entirely.
+/// Pre-fix the key was always the direct peer, so behind the mandatory
+/// cloud proxy every client shared ONE login bucket: any single
+/// attacker (or just normal traffic) could 429-lock login for the
+/// whole deployment.
+pub(crate) fn client_ip(
+    peer: std::net::IpAddr,
+    headers: &HeaderMap,
+    trusted: &[ipnet::IpNet],
+) -> std::net::IpAddr {
+    if trusted.is_empty() || !trusted.iter().any(|net| net.contains(&peer)) {
+        return peer;
+    }
+    let Some(xff) = headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+    else {
+        return peer;
+    };
+    for entry in xff.split(',').rev() {
+        let Some(ip) = parse_forwarded_ip(entry.trim()) else {
+            // Unparseable hop → refuse to trust the header at all.
+            return peer;
+        };
+        if !trusted.iter().any(|net| net.contains(&ip)) {
+            return ip;
+        }
+    }
+    peer
+}
+
+/// Parse one `X-Forwarded-For` entry: bare IP, `ip:port`,
+/// `[v6]`/`[v6]:port` all occur in the wild.
+fn parse_forwarded_ip(entry: &str) -> Option<std::net::IpAddr> {
+    if let Ok(ip) = entry.parse::<std::net::IpAddr>() {
+        return Some(ip);
+    }
+    if let Ok(sock) = entry.parse::<SocketAddr>() {
+        return Some(sock.ip());
+    }
+    entry
+        .strip_prefix('[')
+        .and_then(|rest| rest.strip_suffix(']'))
+        .and_then(|inner| inner.parse::<std::net::IpAddr>().ok())
+}
+
+/// Resolve the `(limiter, key)` pair for a request. Login uses client IP
+/// (proxy-aware — see [`client_ip`]) because the caller is by definition
+/// unauthenticated; every other quota is keyed on the auth-subject hash
+/// so an attacker who steals one token can't burn the entire shared
+/// budget.
 fn select_limiter<'a>(
     state: &'a AppState,
     path: &str,
@@ -110,7 +159,7 @@ fn select_limiter<'a>(
     headers: &HeaderMap,
     peer: SocketAddr,
 ) -> (&'a KeyedLimiter, String) {
-    let peer_ip = peer.ip().to_string();
+    let peer_ip = client_ip(peer.ip(), headers, &state.trusted_proxies).to_string();
     let subject = subject_key(cookies, headers).unwrap_or_else(|| peer_ip.clone());
 
     if method == Method::POST && path == "/api/v1/auth/login" {
@@ -274,4 +323,107 @@ pub(crate) async fn csrf_middleware(
     }
 
     next.run(request).await
+}
+
+#[cfg(test)]
+mod client_ip_tests {
+    use super::*;
+    use std::net::IpAddr;
+
+    fn ip(s: &str) -> IpAddr {
+        s.parse().unwrap()
+    }
+
+    fn nets(list: &[&str]) -> Vec<ipnet::IpNet> {
+        list.iter().map(|s| s.parse().unwrap()).collect()
+    }
+
+    fn headers_with_xff(value: &str) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        h.insert("x-forwarded-for", value.parse().unwrap());
+        h
+    }
+
+    /// Untrusted peer → XFF is attacker-controlled, ignore it.
+    #[test]
+    fn xff_from_untrusted_peer_is_ignored() {
+        let trusted = nets(&["172.18.0.0/16"]);
+        let got = client_ip(
+            ip("203.0.113.9"),
+            &headers_with_xff("10.0.0.1"),
+            &trusted,
+        );
+        assert_eq!(got, ip("203.0.113.9"));
+    }
+
+    /// Trusted proxy peer → rightmost-untrusted XFF entry is the client.
+    #[test]
+    fn rightmost_untrusted_entry_wins() {
+        let trusted = nets(&["172.18.0.0/16"]);
+        // Client spoofed "1.1.1.1"; proxy appended the real client.
+        let got = client_ip(
+            ip("172.18.0.2"),
+            &headers_with_xff("1.1.1.1, 198.51.100.7"),
+            &trusted,
+        );
+        assert_eq!(got, ip("198.51.100.7"));
+    }
+
+    /// Chained trusted proxies are skipped right-to-left.
+    #[test]
+    fn trusted_hops_are_skipped() {
+        let trusted = nets(&["172.18.0.0/16"]);
+        let got = client_ip(
+            ip("172.18.0.2"),
+            &headers_with_xff("198.51.100.7, 172.18.0.3"),
+            &trusted,
+        );
+        assert_eq!(got, ip("198.51.100.7"));
+    }
+
+    /// No trusted proxies configured (desktop default) → always peer.
+    #[test]
+    fn no_config_means_peer_only() {
+        let got = client_ip(ip("203.0.113.9"), &headers_with_xff("10.0.0.1"), &[]);
+        assert_eq!(got, ip("203.0.113.9"));
+    }
+
+    /// Garbage in the header → refuse to trust any of it.
+    #[test]
+    fn unparseable_hop_falls_back_to_peer() {
+        let trusted = nets(&["172.18.0.0/16"]);
+        let got = client_ip(
+            ip("172.18.0.2"),
+            &headers_with_xff("not-an-ip, 198.51.100.7"),
+            &trusted,
+        );
+        // The rightmost entry is valid+untrusted so it wins before the
+        // garbage is reached…
+        assert_eq!(got, ip("198.51.100.7"));
+        // …but garbage in the rightmost position kills the whole header.
+        let got = client_ip(
+            ip("172.18.0.2"),
+            &headers_with_xff("198.51.100.7, not-an-ip"),
+            &trusted,
+        );
+        assert_eq!(got, ip("172.18.0.2"));
+    }
+
+    /// `ip:port` and bracketed IPv6 forms parse.
+    #[test]
+    fn port_and_v6_forms_parse() {
+        let trusted = nets(&["172.18.0.0/16"]);
+        let got = client_ip(
+            ip("172.18.0.2"),
+            &headers_with_xff("198.51.100.7:4711"),
+            &trusted,
+        );
+        assert_eq!(got, ip("198.51.100.7"));
+        let got = client_ip(
+            ip("172.18.0.2"),
+            &headers_with_xff("[2001:db8::1]"),
+            &trusted,
+        );
+        assert_eq!(got, ip("2001:db8::1"));
+    }
 }

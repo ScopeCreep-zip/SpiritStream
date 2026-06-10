@@ -224,6 +224,27 @@ impl super::OAuthService {
         })
     }
 
+    /// Validate + consume the `state` nonce for an implicit-flow
+    /// callback. The auth-code path validates state inside
+    /// `exchange_code`; the implicit path used to bind `state: _` and
+    /// accept ANY access token delivered to the loopback callback —
+    /// CSRF/token-injection defense was silently absent on that one
+    /// provider path while the code claimed otherwise.
+    pub async fn consume_implicit_state(
+        &self,
+        provider_name: &str,
+        state: &str,
+    ) -> Result<(), CoreError> {
+        let pending = {
+            let mut flows = self.pending_flows.lock().await;
+            flows.remove(state)
+        };
+        match pending {
+            Some(flow) if flow.provider == provider_name && flow.state == state => Ok(()),
+            _ => Err(CoreError::Unauthorized),
+        }
+    }
+
     /// Exchange an authorization code for tokens (PKCE flow).
     pub async fn exchange_code(
         &self,

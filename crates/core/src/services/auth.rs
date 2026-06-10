@@ -60,8 +60,11 @@ impl Default for AuthBackoffConfig {
 #[derive(Debug, Default)]
 struct AccountState {
     /// Number of consecutive failures since the last successful login.
-    /// Resets to zero on success. Drives the exponential-backoff sleep.
+    /// Resets to zero on success. Drives the exponential backoff.
     consecutive_failures: u32,
+    /// When the most recent failure landed — the backoff gate measures
+    /// the required wait from here.
+    last_failure: Option<Instant>,
     /// Timestamps of failures within the lockout sliding window. Older
     /// entries are evicted lazily when `record_failure` runs.
     window_failures: Vec<Instant>,
@@ -107,14 +110,29 @@ impl AuthService {
             .map(|t| t.saturating_duration_since(Instant::now()))
     }
 
-    /// Compute the backoff that should be applied **before** the next
-    /// attempt is allowed, given the current failure history.
-    pub fn current_backoff(&self, account: &str) -> Duration {
+    /// Pre-attempt backoff gate: returns the remaining wait when the
+    /// account's exponential backoff window since its last failure has
+    /// not yet elapsed; `None` when an attempt may proceed.
+    ///
+    /// This MUST run before any credential verification. The previous
+    /// design only slept before *responding* to a failure — a pipelined
+    /// attacker who ignores responses got an immediate verification per
+    /// request, which is exactly the bypass this service was built to
+    /// close.
+    pub fn check_backoff(&self, account: &str) -> Option<Duration> {
         let accounts = self.accounts.lock().unwrap_or_else(|e| e.into_inner());
-        let Some(state) = accounts.get(account) else {
-            return Duration::ZERO;
-        };
-        backoff_for_failures(state.consecutive_failures, &self.config)
+        let state = accounts.get(account)?;
+        let required = backoff_for_failures(state.consecutive_failures, &self.config);
+        if required.is_zero() {
+            return None;
+        }
+        let ready_at = state.last_failure? + required;
+        let now = Instant::now();
+        if now < ready_at {
+            Some(ready_at.saturating_duration_since(now))
+        } else {
+            None
+        }
     }
 
     /// Record a failed login attempt. Returns:
@@ -139,6 +157,7 @@ impl AuthService {
 
         let now = Instant::now();
         state.consecutive_failures = state.consecutive_failures.saturating_add(1);
+        state.last_failure = Some(now);
         state.window_failures.push(now);
 
         // Evict any failures older than the sliding window.
@@ -165,6 +184,7 @@ impl AuthService {
         let mut accounts = self.accounts.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(state) = accounts.get_mut(account) {
             state.consecutive_failures = 0;
+            state.last_failure = None;
             state.window_failures.clear();
             state.locked_until = None;
         }
@@ -180,9 +200,13 @@ impl Default for AuthService {
 fn clear_expired_lock(state: &mut AccountState) {
     if let Some(unlock_at) = state.locked_until {
         if Instant::now() >= unlock_at {
+            // ONLY the lock itself expires. Failure history persists for
+            // the full sliding window — the old behavior zeroed it here,
+            // handing a patient attacker a fresh 10-attempt budget every
+            // 15 minutes (~960 guesses/day). With history retained, the
+            // next failure inside the window re-locks immediately; only
+            // a successful login resets the counters.
             state.locked_until = None;
-            state.window_failures.clear();
-            state.consecutive_failures = 0;
         }
     }
 }
@@ -216,8 +240,24 @@ mod tests {
     #[test]
     fn fresh_account_has_no_backoff_and_no_lock() {
         let svc = AuthService::with_config(fast_config());
-        assert_eq!(svc.current_backoff("alice"), Duration::ZERO);
+        assert_eq!(svc.check_backoff("alice"), None);
         assert_eq!(svc.check_locked("alice"), None);
+    }
+
+    /// THE pipelining regression: immediately after a failure, the NEXT
+    /// attempt must be refused by the pre-verification gate — not merely
+    /// have its response delayed.
+    #[test]
+    fn backoff_gates_the_next_attempt_not_just_the_response() {
+        let svc = AuthService::with_config(fast_config());
+        let _ = svc.record_failure("alice");
+        let remaining = svc
+            .check_backoff("alice")
+            .expect("attempt inside the backoff window must be gated");
+        assert!(remaining > Duration::ZERO);
+        // Once the window elapses the gate opens.
+        std::thread::sleep(Duration::from_millis(15));
+        assert_eq!(svc.check_backoff("alice"), None);
     }
 
     #[test]
@@ -265,8 +305,12 @@ mod tests {
             svc.check_locked("alice").is_none(),
             "lockout must clear after duration"
         );
-        // After unlock, the account is fresh again.
-        assert_eq!(svc.current_backoff("alice"), Duration::ZERO);
+        // Failure history persists across the lockout (only success
+        // resets it) — the very next failure inside the window re-locks.
+        assert!(
+            svc.record_failure("alice").is_err(),
+            "post-lockout failure inside the window must re-lock immediately"
+        );
     }
 
     #[test]
@@ -275,7 +319,7 @@ mod tests {
         let _ = svc.record_failure("alice");
         let _ = svc.record_failure("alice");
         svc.record_success("alice");
-        assert_eq!(svc.current_backoff("alice"), Duration::ZERO);
+        assert_eq!(svc.check_backoff("alice"), None);
     }
 
     #[test]
@@ -289,7 +333,7 @@ mod tests {
             svc.check_locked("bob").is_none(),
             "bob must not be locked when alice is"
         );
-        assert_eq!(svc.current_backoff("bob"), Duration::ZERO);
+        assert_eq!(svc.check_backoff("bob"), None);
     }
 
     #[test]

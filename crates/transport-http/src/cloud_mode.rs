@@ -30,11 +30,13 @@ pub(crate) fn parse_bool(value: &str) -> Option<bool> {
 pub(crate) fn enforce_cloud_mode_preconditions(
     auth_token: &Option<String>,
     tls_declared: bool,
+    trusted_proxies_configured: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     enforce_cloud_mode_preconditions_with_origins(
         auth_token,
         tls_declared,
         std::env::var("SPIRITSTREAM_CORS_ORIGINS").ok().as_deref(),
+        trusted_proxies_configured,
     )
 }
 
@@ -44,6 +46,7 @@ pub(crate) fn enforce_cloud_mode_preconditions_with_origins(
     auth_token: &Option<String>,
     tls_declared: bool,
     cors_origins: Option<&str>,
+    trusted_proxies_configured: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     const MIN_TOKEN_LEN: usize = 32;
     let token_ok = auth_token
@@ -75,8 +78,19 @@ pub(crate) fn enforce_cloud_mode_preconditions_with_origins(
                 .into());
         }
     }
+    if !trusted_proxies_configured {
+        return Err("SPIRITSTREAM_DEPLOY_MODE=cloud refuses to start: \
+             SPIRITSTREAM_TRUSTED_PROXIES is unset. Cloud mode requires a \
+             TLS-terminating reverse proxy, so the direct peer the server \
+             sees is always the proxy — without its CIDR configured, the \
+             per-IP login rate limit collapses into ONE shared bucket and \
+             any single client can 429-lock login for everyone. Set it to \
+             the proxy's address(es), e.g. \
+             SPIRITSTREAM_TRUSTED_PROXIES=172.18.0.0/16."
+            .into());
+    }
     log::info!(
-        "Cloud-mode preconditions satisfied: strong API token + TLS-fronted + explicit CORS allow-list."
+        "Cloud-mode preconditions satisfied: strong API token + TLS-fronted + explicit CORS allow-list + trusted proxies."
     );
     Ok(())
 }
@@ -95,6 +109,7 @@ mod tests {
             &strong_token(),
             true,
             Some("https://app.example.com, * , https://other.example.com"),
+            true,
         )
         .expect_err("wildcard CORS must be refused in cloud mode");
         let msg = err.to_string();
@@ -110,6 +125,7 @@ mod tests {
             &strong_token(),
             true,
             Some("https://app.example.com,https://admin.example.com"),
+            true,
         );
         assert!(
             result.is_ok(),
@@ -122,7 +138,18 @@ mod tests {
         // No SPIRITSTREAM_CORS_ORIGINS at all is fine — CORS layer
         // defaults to no allow-list, which is the most restrictive
         // posture available.
-        let result = enforce_cloud_mode_preconditions_with_origins(&strong_token(), true, None);
+        let result =
+            enforce_cloud_mode_preconditions_with_origins(&strong_token(), true, None, true);
         assert!(result.is_ok());
+    }
+
+    /// Behind the (mandatory) TLS proxy, every direct peer is the proxy
+    /// itself — without its CIDR configured the login limiter is one
+    /// shared bucket. Cloud mode must refuse to start that way.
+    #[test]
+    fn cloud_mode_requires_trusted_proxies() {
+        let err = enforce_cloud_mode_preconditions_with_origins(&strong_token(), true, None, false)
+            .expect_err("cloud mode without trusted proxies must refuse startup");
+        assert!(err.to_string().contains("SPIRITSTREAM_TRUSTED_PROXIES"));
     }
 }

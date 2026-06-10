@@ -44,7 +44,7 @@ pub async fn run(
 ) -> Result<(), CliError> {
     match cmd {
         ConfirmTokenCmd::Issue { intent } => {
-            let token = registry.confirm_tokens.issue(&intent);
+            let token = registry.confirm_tokens.issue(&intent)?;
             out.emit(&IssueResponse {
                 intent,
                 token,

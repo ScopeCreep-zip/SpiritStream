@@ -60,6 +60,16 @@ impl EncryptedFileSecretStore {
     }
 }
 
+/// AAD binding the ciphertext to its logical identity, so two secret
+/// files swapped on disk cannot decrypt under each other's identity.
+fn entry_aad(namespace: &str, key: &str) -> Vec<u8> {
+    let mut aad = Vec::with_capacity(namespace.len() + 1 + key.len());
+    aad.extend_from_slice(namespace.as_bytes());
+    aad.push(0);
+    aad.extend_from_slice(key.as_bytes());
+    aad
+}
+
 #[async_trait]
 impl SecretStore for EncryptedFileSecretStore {
     async fn get(&self, namespace: &str, key: &str) -> Result<Option<Vec<u8>>, CoreError> {
@@ -70,14 +80,42 @@ impl SecretStore for EncryptedFileSecretStore {
         let bytes = std::fs::read(&path).map_err(|e| CoreError::Internal {
             context: format!("read secret: {e}"),
         })?;
-        let plaintext = Encryption::decrypt_bytes_with_machine_key(&bytes, &self.app_data_dir)?;
-        Ok(Some(plaintext))
+        let aad = entry_aad(namespace, key);
+        match Encryption::decrypt_bytes_with_machine_key_aad(&bytes, &aad, &self.app_data_dir) {
+            Ok(plaintext) => Ok(Some(plaintext)),
+            Err(aad_err) => {
+                // One-time read migration: blobs written before AAD
+                // binding have no associated data. If the legacy decrypt
+                // succeeds, rewrite the entry AAD-bound so the legacy
+                // path retires per entry (same V1→V2 auto-upgrade shape
+                // the stream-key envelope uses).
+                match Encryption::decrypt_bytes_with_machine_key(&bytes, &self.app_data_dir) {
+                    Ok(plaintext) => {
+                        log::info!(
+                            "secret store: upgrading pre-AAD entry for namespace {namespace:?}"
+                        );
+                        let rebound = Encryption::encrypt_bytes_with_machine_key_aad(
+                            &plaintext,
+                            &aad,
+                            &self.app_data_dir,
+                        )?;
+                        write_owner_only_atomic(&path, &rebound)?;
+                        Ok(Some(plaintext))
+                    }
+                    Err(_) => Err(aad_err),
+                }
+            }
+        }
     }
 
     async fn put(&self, namespace: &str, key: &str, value: &[u8]) -> Result<(), CoreError> {
         let _ = self.ensure_secrets_dir()?;
         let path = self.entry_path(namespace, key);
-        let ciphertext = Encryption::encrypt_bytes_with_machine_key(value, &self.app_data_dir)?;
+        let ciphertext = Encryption::encrypt_bytes_with_machine_key_aad(
+            value,
+            &entry_aad(namespace, key),
+            &self.app_data_dir,
+        )?;
         write_owner_only_atomic(&path, &ciphertext)
     }
 
@@ -170,6 +208,45 @@ mod tests {
             perms.mode() & 0o777,
             0o600,
             "secret file must be owner-read/write only",
+        );
+    }
+
+    /// AAD regression: swapping two secret files on disk must NOT let
+    /// each decrypt under the other's logical identity.
+    #[tokio::test]
+    async fn swapped_files_fail_to_decrypt() {
+        let (_dir, store) = store();
+        store.put("oauth", "twitch", b"twitch-token").await.unwrap();
+        store.put("oauth", "kick", b"kick-token").await.unwrap();
+        let p_twitch = store.entry_path("oauth", "twitch");
+        let p_kick = store.entry_path("oauth", "kick");
+        let twitch_bytes = std::fs::read(&p_twitch).unwrap();
+        let kick_bytes = std::fs::read(&p_kick).unwrap();
+        std::fs::write(&p_twitch, kick_bytes).unwrap();
+        std::fs::write(&p_kick, twitch_bytes).unwrap();
+        assert!(store.get("oauth", "twitch").await.is_err());
+        assert!(store.get("oauth", "kick").await.is_err());
+    }
+
+    /// Pre-AAD blobs still read (one-time migration) and get rewritten
+    /// AAD-bound on first access.
+    #[tokio::test]
+    async fn legacy_no_aad_entry_reads_and_upgrades() {
+        let (dir, store) = store();
+        store.ensure_secrets_dir().unwrap();
+        let path = store.entry_path("ns", "legacy");
+        let legacy_blob =
+            Encryption::encrypt_bytes_with_machine_key(b"legacy-secret", dir.path()).unwrap();
+        std::fs::write(&path, &legacy_blob).unwrap();
+
+        let got = store.get("ns", "legacy").await.unwrap();
+        assert_eq!(got.as_deref(), Some(&b"legacy-secret"[..]));
+        // Rewritten on disk: bytes changed and now require the AAD.
+        let upgraded = std::fs::read(&path).unwrap();
+        assert_ne!(upgraded, legacy_blob);
+        assert_eq!(
+            store.get("ns", "legacy").await.unwrap().as_deref(),
+            Some(&b"legacy-secret"[..])
         );
     }
 

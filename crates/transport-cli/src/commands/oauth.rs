@@ -23,8 +23,18 @@ pub enum OAuthCmd {
         #[arg(long)]
         state: String,
     },
-    /// Revoke and forget a stored OAuth token for `<provider>`.
-    Disconnect { provider: String },
+    /// Disconnect `<provider>` on a profile: best-effort upstream token
+    /// revocation, then clear the stored account from the profile and
+    /// save it.
+    Disconnect {
+        provider: String,
+        /// Profile holding the account.
+        #[arg(long)]
+        profile: String,
+        /// Password for encrypted profiles.
+        #[arg(long)]
+        password: Option<String>,
+    },
     /// Report whether `<provider>` is configured (always true with embedded client IDs).
     IsConfigured { provider: String },
     /// Refresh an access token using the supplied refresh token.
@@ -143,20 +153,60 @@ pub async fn run(
             })?;
             Ok(())
         }
-        OAuthCmd::Disconnect { provider } => {
-            // Without an active-profile session the CLI can't reach the
-            // stored token; this is a no-op acknowledgement matching the
-            // HTTP layer's "session disconnect" path (which just clears the
-            // session-side tokens — the profile-saved token survives).
-            let _ = registry;
+        OAuthCmd::Disconnect {
+            provider,
+            profile,
+            password,
+        } => {
+            // Real disconnect (the old version printed
+            // `"disconnected": true` while touching nothing): load the
+            // profile, best-effort revoke the live token upstream, clear
+            // the stored account, save. Revocation failure is loud but
+            // non-fatal — the local clear is the part the user asked for.
+            let mut p = registry
+                .profiles
+                .load_with_key_decryption(&profile, password.as_deref())
+                .await?;
+            let account = match provider.as_str() {
+                "twitch" => &mut p.settings.oauth.twitch,
+                "youtube" => &mut p.settings.oauth.youtube,
+                "kick" => &mut p.settings.oauth.kick,
+                "facebook" => &mut p.settings.oauth.facebook,
+                other => {
+                    return Err(CliError::Argument(format!(
+                        "unknown oauth provider: {other} (expected twitch|youtube|kick|facebook)"
+                    )));
+                }
+            };
+            let mut revoked_upstream = false;
+            if !account.access_token.is_empty() {
+                match registry
+                    .oauth
+                    .revoke_token(&provider, &account.access_token)
+                    .await
+                {
+                    Ok(()) => revoked_upstream = true,
+                    Err(e) => log::warn!(
+                        "upstream revoke for {provider} failed (clearing locally anyway): {e}"
+                    ),
+                }
+            }
+            *account = Default::default();
+            registry
+                .profiles
+                .save_with_key_encryption(&p, password.as_deref())
+                .await?;
             #[derive(Serialize)]
+            #[serde(rename_all = "camelCase")]
             struct Resp {
                 provider: String,
                 disconnected: bool,
+                revoked_upstream: bool,
             }
             out.emit(&Resp {
                 provider,
                 disconnected: true,
+                revoked_upstream,
             })?;
             Ok(())
         }
@@ -197,9 +247,11 @@ pub async fn run(
             let account = match provider.as_str() {
                 "twitch" => &profile_obj.settings.oauth.twitch,
                 "youtube" => &profile_obj.settings.oauth.youtube,
+                "kick" => &profile_obj.settings.oauth.kick,
+                "facebook" => &profile_obj.settings.oauth.facebook,
                 other => {
                     return Err(CliError::Argument(format!(
-                        "unknown oauth provider: {other} (expected twitch|youtube)"
+                        "unknown oauth provider: {other} (expected twitch|youtube|kick|facebook)"
                     )));
                 }
             };

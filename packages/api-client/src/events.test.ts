@@ -31,6 +31,12 @@ class FakeWebSocket {
   }
 }
 
+// The cross-origin path fetches a one-shot WS ticket before connecting;
+// stub the REST call so tests stay network-free.
+vi.mock('./api/_internal', () => ({
+  fetchTypedJson: vi.fn().mockResolvedValue({ ticket: 'test-ticket', expiresInSeconds: 30 }),
+}));
+
 type EventsModule = typeof import('./events');
 let mod: EventsModule;
 let ac: AbortController;
@@ -44,6 +50,16 @@ function watch(): string[] {
 }
 
 const lastSocket = (): FakeWebSocket => FakeWebSocket.instances.at(-1)!;
+
+/// The socket is created asynchronously (the cross-origin path fetches a
+/// one-shot ticket first), so tests flush microtasks until it exists.
+async function socketCreated(): Promise<FakeWebSocket> {
+  for (let i = 0; i < 20 && FakeWebSocket.instances.length === 0; i++) {
+    await Promise.resolve();
+  }
+  expect(FakeWebSocket.instances.length).toBeGreaterThan(0);
+  return lastSocket();
+}
 
 beforeEach(async () => {
   vi.resetModules();
@@ -64,7 +80,7 @@ describe('events.on', () => {
     const seen = watch();
     const handler = vi.fn();
     const onPromise = mod.events.on<{ a: number }>('chat_message', handler);
-    lastSocket().fire('open');
+    (await socketCreated()).fire('open');
     await onPromise;
 
     expect(seen).toEqual(['connecting', 'connected']);
@@ -78,7 +94,7 @@ describe('events.on', () => {
     const handler = vi.fn();
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const onPromise = mod.events.on('known', handler);
-    lastSocket().fire('open');
+    (await socketCreated()).fire('open');
     await onPromise;
 
     lastSocket().fire('message', { data: '' });
@@ -91,25 +107,27 @@ describe('events.on', () => {
 
   it('closes the socket when the last handler unsubscribes (no keepAlive)', async () => {
     const onPromise = mod.events.on('x', vi.fn());
-    lastSocket().fire('open');
+    (await socketCreated()).fire('open');
     const unsub = await onPromise;
     const closeSpy = vi.spyOn(lastSocket(), 'close');
     unsub();
     expect(closeSpy).toHaveBeenCalled();
   });
 
-  it('appends the stored auth token for a cross-origin socket', async () => {
-    window.localStorage.setItem('spiritstream-auth-token', 'secret-tok');
+  it('appends a one-shot ticket for a cross-origin socket', async () => {
     const onPromise = mod.events.on('x', vi.fn());
-    lastSocket().fire('open');
+    const sock = await socketCreated();
+    sock.fire('open');
     await onPromise;
-    expect(lastSocket().url).toContain('token=secret-tok');
+    // jsdom's window.location.host differs from the backend ws host,
+    // so the cross-origin branch runs and appends the fetched ticket.
+    expect(sock.url).toContain('ticket=test-ticket');
   });
 
   it('raises auth-required on a 1008 close', async () => {
     const seen = watch();
     const onPromise = mod.events.on('x', vi.fn());
-    lastSocket().fire('open');
+    (await socketCreated()).fire('open');
     await onPromise;
     lastSocket().fire('close', { code: 1008, reason: 'Unauthorized' });
     expect(seen).toContain('auth-required');
@@ -121,7 +139,7 @@ describe('initConnection / disconnectSocket', () => {
   it('initConnection opens a keepAlive socket', async () => {
     const seen = watch();
     mod.initConnection();
-    lastSocket().fire('open');
+    (await socketCreated()).fire('open');
     // microtask flush so the open promise's notifyConnected runs
     await Promise.resolve();
     expect(seen).toContain('connected');

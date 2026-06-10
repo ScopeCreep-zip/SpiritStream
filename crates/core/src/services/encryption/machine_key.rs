@@ -126,6 +126,61 @@ impl super::Encryption {
             .decrypt(nonce, ciphertext)
             .map_err(|e| internal("bytes decryption failed", e))
     }
+
+    /// AAD-bound variant of [`Self::encrypt_bytes_with_machine_key`].
+    /// Binding the ciphertext to its logical identity (the secret
+    /// store passes `namespace\0key`) means two secret files can't be
+    /// swapped on disk and each decrypt cleanly under the other's
+    /// identity (e.g. a Kick token returned where a Twitch token was
+    /// requested).
+    pub fn encrypt_bytes_with_machine_key_aad(
+        data: &[u8],
+        aad: &[u8],
+        app_data_dir: &Path,
+    ) -> Result<Vec<u8>, CoreError> {
+        use aes_gcm_siv::aead::Payload;
+        use rand::Rng;
+        let machine_key = get_or_create_machine_key(app_data_dir)?;
+        let cipher = Aes256GcmSiv::new_from_slice(&*machine_key)
+            .map_err(|e| internal("Failed to create cipher", e))?;
+        let nonce_bytes: [u8; NONCE_LEN] = rand::thread_rng().gen();
+        let nonce = aes_gcm_siv::Nonce::from_slice(&nonce_bytes);
+        let ciphertext = cipher
+            .encrypt(nonce, Payload { msg: data, aad })
+            .map_err(|e| internal("bytes encryption failed", e))?;
+        let mut out = Vec::with_capacity(NONCE_LEN + ciphertext.len());
+        out.extend_from_slice(&nonce_bytes);
+        out.extend_from_slice(&ciphertext);
+        Ok(out)
+    }
+
+    /// Decrypt bytes produced by [`Self::encrypt_bytes_with_machine_key_aad`].
+    pub fn decrypt_bytes_with_machine_key_aad(
+        data: &[u8],
+        aad: &[u8],
+        app_data_dir: &Path,
+    ) -> Result<Vec<u8>, CoreError> {
+        use aes_gcm_siv::aead::Payload;
+        if data.len() < NONCE_LEN {
+            return Err(CoreError::Internal {
+                context: "encrypted bytes too short".into(),
+            });
+        }
+        let machine_key = get_or_create_machine_key(app_data_dir)?;
+        let (nonce_bytes, ciphertext) = data.split_at(NONCE_LEN);
+        let cipher = Aes256GcmSiv::new_from_slice(&*machine_key)
+            .map_err(|e| internal("Failed to create cipher", e))?;
+        let nonce = aes_gcm_siv::Nonce::from_slice(nonce_bytes);
+        cipher
+            .decrypt(
+                nonce,
+                Payload {
+                    msg: ciphertext,
+                    aad,
+                },
+            )
+            .map_err(|e| internal("bytes decryption failed", e))
+    }
 }
 
 /// Read or create the per-machine key. On disk at `app_data_dir/.stream_key`,

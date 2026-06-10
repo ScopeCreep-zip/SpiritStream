@@ -15,8 +15,10 @@
 //! `feedback_no_legacy.md`).
 //!
 //! Operators can force a choice with `SPIRITSTREAM_SECRET_STORE=keyring|file`.
-//! With no override, a one-shot canary round-trip on the OS keyring
-//! decides: success → keyring, any error → file.
+//! An unrecognised override is a STARTUP ERROR — a typo silently
+//! flipping the user onto the other store would be a forbidden silent
+//! fallback. With no override, a one-shot canary round-trip on the OS
+//! keyring decides: success → keyring, any error → file.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -42,30 +44,39 @@ pub enum SecretStoreKind {
 /// * `app_data_dir` — where the file-backed impl writes its blobs if
 ///   chosen.
 /// * `override_kind` — value of `SPIRITSTREAM_SECRET_STORE`. Recognised:
-///   `"keyring"`, `"file"`. Anything else (including `None`) falls
-///   through to the auto-detect probe.
+///   `"keyring"`, `"file"`. `None` runs the auto-detect probe; any
+///   OTHER value is a startup error (never a silent fallback).
 pub fn build_secret_store(
     app_data_dir: &Path,
     override_kind: Option<&str>,
-) -> Arc<dyn SecretStore> {
-    let chosen = resolve_kind(override_kind);
+) -> Result<Arc<dyn SecretStore>, crate::CoreError> {
+    let chosen = resolve_kind(override_kind)?;
     log::info!("Secret store: {chosen:?}");
-    match chosen {
+    Ok(match chosen {
         SecretStoreKind::Keyring => Arc::new(KeyringSecretStore::new()),
         SecretStoreKind::File => {
             Arc::new(EncryptedFileSecretStore::new(app_data_dir.to_path_buf()))
         }
-    }
+    })
 }
 
 /// Pure decision function — returns the kind without constructing it.
 /// Exposed for tests so they can verify the override + probe logic
 /// without touching the OS keyring or filesystem.
-pub fn resolve_kind(override_kind: Option<&str>) -> SecretStoreKind {
+pub fn resolve_kind(override_kind: Option<&str>) -> Result<SecretStoreKind, crate::CoreError> {
     match override_kind.map(|s| s.to_ascii_lowercase()).as_deref() {
-        Some("keyring") => SecretStoreKind::Keyring,
-        Some("file") => SecretStoreKind::File,
-        _ => probe_keyring(),
+        Some("keyring") => Ok(SecretStoreKind::Keyring),
+        Some("file") => Ok(SecretStoreKind::File),
+        Some(other) => Err(crate::CoreError::ValidationFailed {
+            reasons: vec![crate::errors::ValidationIssue {
+                code: "secret_store_override_invalid".into(),
+                message: format!(
+                    "SPIRITSTREAM_SECRET_STORE={other:?} is not recognised — use                      \"keyring\" or \"file\" (or unset it for auto-detect). Refusing                      to guess which store holds your secrets."
+                ),
+                path: None,
+            }],
+        }),
+        None => Ok(probe_keyring()),
     }
 }
 
@@ -111,22 +122,27 @@ mod tests {
     #[test]
     fn explicit_override_keyring_wins() {
         // Test the override branch directly. The probe is not invoked.
-        assert_eq!(resolve_kind(Some("keyring")), SecretStoreKind::Keyring);
-        assert_eq!(resolve_kind(Some("KEYRING")), SecretStoreKind::Keyring);
+        assert_eq!(
+            resolve_kind(Some("keyring")).unwrap(),
+            SecretStoreKind::Keyring
+        );
+        assert_eq!(
+            resolve_kind(Some("KEYRING")).unwrap(),
+            SecretStoreKind::Keyring
+        );
     }
 
     #[test]
     fn explicit_override_file_wins() {
-        assert_eq!(resolve_kind(Some("file")), SecretStoreKind::File);
-        assert_eq!(resolve_kind(Some("FILE")), SecretStoreKind::File);
+        assert_eq!(resolve_kind(Some("file")).unwrap(), SecretStoreKind::File);
+        assert_eq!(resolve_kind(Some("FILE")).unwrap(), SecretStoreKind::File);
     }
 
+    /// A typo'd override must be a startup error — never a silent
+    /// fall-through to the probe that might pick the other store.
     #[test]
-    fn unrecognised_override_falls_through_to_probe() {
-        // We can't assert which kind the probe returns in CI (depends on
-        // host capabilities) — just that the function returns SOMETHING
-        // and doesn't panic. The override path is what we control.
-        let _ = resolve_kind(Some("nonsense"));
-        let _ = resolve_kind(None);
+    fn unrecognised_override_is_a_startup_error() {
+        assert!(resolve_kind(Some("keyrng")).is_err());
+        assert!(resolve_kind(Some("nonsense")).is_err());
     }
 }

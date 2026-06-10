@@ -14,6 +14,8 @@ name = "spiritstream_transport_http"
 path = "src/lib.rs"
 
 [dependencies]
+# Trusted-proxy CIDR parsing for proxy-aware client-IP extraction.
+ipnet = "2"
 # Core business logic — this crate is a thin transport adapter around it.
 spiritstream-core = { path = "../core" }
 
