@@ -96,6 +96,10 @@ pub struct AuditLogResponse {
     /// Always computed server-side against the on-disk log;
     /// clients cannot influence it.
     pub chain: AuditChainStatusWire,
+    /// Tail-anchor persistence state: `"ok"` or `"degraded"` (anchor
+    /// writes to the secret store are failing, so truncation detection
+    /// is impaired until it recovers). Loud by design.
+    pub anchor_state: String,
 }
 
 /// `GET /api/v1/audit/log` — paginated, filterable read of the audit
@@ -154,6 +158,7 @@ pub async fn v1_audit_log(
         total,
         entries: page,
         chain,
+        anchor_state: state.audit.anchor_state().to_string(),
     }))
 }
 
@@ -174,6 +179,8 @@ fn action_kind_str(action: &spiritstream_core::services::AuditAction) -> &'stati
         AppStarted => "app_started",
         AppStopped => "app_stopped",
         AuditLogTamperDetected { .. } => "audit_log_tamper_detected",
+        ChainMigrated { .. } => "chain_migrated",
+        ChainQuarantined { .. } => "chain_quarantined",
         ThemeValidationFailed { .. } => "theme_validation_failed",
         AppUpdateSignatureFailed { .. } => "app_update_signature_failed",
         ChatMessageSent { .. } => "chat_message_sent",

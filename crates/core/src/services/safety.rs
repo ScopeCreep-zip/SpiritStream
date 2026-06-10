@@ -136,10 +136,22 @@ impl SafetyService {
             // target set the send attempted.
             let target_strs: Vec<String> =
                 platforms.iter().map(|p| p.as_str().to_string()).collect();
-            let _ = self.audit.record(AuditAction::ChatMessagePiiBlocked {
+            // The message is blocked either way (fail-safe direction);
+            // a failed audit write must still be LOUD — both in the
+            // server log and on the event bus — because the forensic
+            // record is the user's evidence trail. We keep returning
+            // ChatBlockedByPii (not an opaque Internal) so the caller
+            // still learns WHY the send was refused.
+            if let Err(e) = self.audit.record(AuditAction::ChatMessagePiiBlocked {
                 platforms: target_strs,
                 phrase_id: phrase_id.clone(),
-            });
+            }) {
+                log::error!("failed to append ChatMessagePiiBlocked audit entry: {e}");
+                self.events.emit(
+                    "audit_write_failed",
+                    serde_json::json!({ "action": "chat_message_pii_blocked" }),
+                );
+            }
             self.events.emit(
                 "pii_filter_fired",
                 serde_json::json!({
@@ -331,7 +343,7 @@ mod tests {
         let events_for_chat: Arc<dyn EventSink> = Arc::new(NoopEventSink);
         let chat = Arc::new(ChatManager::new(events_for_chat, dir.clone()));
         let obs = Arc::new(ObsWebSocketHandler::new(dir.clone()));
-        let audit = Arc::new(AuditLogService::new(dir.clone()).unwrap());
+        let audit = Arc::new(AuditLogService::new_for_tests(dir.clone()).unwrap());
         let counting = Arc::new(CountingSink::default());
         let events: Arc<dyn EventSink> = counting.clone();
         let store = Arc::new(PurgeCountingStore {

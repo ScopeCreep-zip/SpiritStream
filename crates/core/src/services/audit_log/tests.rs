@@ -6,7 +6,7 @@ use super::ZERO_HMAC_HEX;
 
 fn svc() -> (TempDir, AuditLogService) {
     let dir = TempDir::new().unwrap();
-    let svc = AuditLogService::new(dir.path().to_path_buf()).unwrap();
+    let svc = AuditLogService::new_for_tests(dir.path().to_path_buf()).unwrap();
     (dir, svc)
 }
 
@@ -48,7 +48,7 @@ fn verify_chain_passes_for_clean_log() {
 #[test]
 fn verify_chain_detects_modified_entry() {
     let dir = TempDir::new().unwrap();
-    let svc = AuditLogService::new(dir.path().to_path_buf()).unwrap();
+    let svc = AuditLogService::new_for_tests(dir.path().to_path_buf()).unwrap();
     svc.record(AuditAction::AppStarted).unwrap();
     svc.record(AuditAction::ProfileSaved {
         name: "alice".into(),
@@ -78,7 +78,7 @@ fn verify_chain_detects_modified_entry() {
 #[test]
 fn verify_chain_detects_deleted_entry() {
     let dir = TempDir::new().unwrap();
-    let svc = AuditLogService::new(dir.path().to_path_buf()).unwrap();
+    let svc = AuditLogService::new_for_tests(dir.path().to_path_buf()).unwrap();
     svc.record(AuditAction::AppStarted).unwrap();
     svc.record(AuditAction::ProfileSaved {
         name: "alice".into(),
@@ -190,11 +190,11 @@ fn pii_filter_entry_records_phrase_id_not_phrase_text() {
 fn appends_after_restart_resume_chain() {
     let dir = TempDir::new().unwrap();
     {
-        let svc = AuditLogService::new(dir.path().to_path_buf()).unwrap();
+        let svc = AuditLogService::new_for_tests(dir.path().to_path_buf()).unwrap();
         svc.record(AuditAction::AppStarted).unwrap();
     }
     // Re-open — should pick up seq=2 + the prior hmac.
-    let svc = AuditLogService::new(dir.path().to_path_buf()).unwrap();
+    let svc = AuditLogService::new_for_tests(dir.path().to_path_buf()).unwrap();
     svc.record(AuditAction::AppStopped).unwrap();
     let entries = svc.entries().unwrap();
     assert_eq!(entries.len(), 2);

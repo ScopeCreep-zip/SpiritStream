@@ -9,7 +9,7 @@ use zeroize::Zeroizing;
 use crate::errors::CoreError;
 
 use super::actions::{AuditAction, AuditEntry};
-use super::{HmacSha256, HMAC_KEY_INFO, ZERO_HMAC_HEX};
+use super::{HmacSha256, HMAC_KEY_INFO};
 
 /// Canonical pre-hash input for a given entry. **Field order matters**
 /// — any reorder breaks the chain. JSON serialisation produces stable
@@ -42,6 +42,10 @@ pub(super) fn compute_hmac(key: &[u8; 32], data: &[u8]) -> [u8; 32] {
     out
 }
 
+/// Master audit key: HKDF of the machine key under the v1 info string.
+/// Per-day chain keys derive from THIS key (see [`derive_day_key`]) —
+/// the legacy (pre-day-key) chains used it directly, which is what
+/// `verify_legacy_scheme` checks during migration.
 pub(super) fn derive_audit_hmac_key(app_data_dir: &Path) -> Result<Zeroizing<[u8; 32]>, CoreError> {
     let machine_key = crate::services::Encryption::get_or_create_machine_key_public(app_data_dir)?;
     let hk = Hkdf::<Sha256>::new(None, &*machine_key);
@@ -53,36 +57,62 @@ pub(super) fn derive_audit_hmac_key(app_data_dir: &Path) -> Result<Zeroizing<[u8
     Ok(out)
 }
 
-pub(super) fn scan_chain_tail(log_path: &Path) -> Result<(u64, String), CoreError> {
-    if !log_path.exists() {
-        return Ok((1, ZERO_HMAC_HEX.to_string()));
-    }
-    let entries = read_all_entries(log_path)?;
-    if entries.is_empty() {
-        return Ok((1, ZERO_HMAC_HEX.to_string()));
-    }
-    let last = entries.last().ok_or_else(|| CoreError::Internal {
-        context: "audit log empty after read".into(),
-    })?;
-    Ok((last.seq.saturating_add(1), last.hmac.clone()))
+/// Per-day chain key: `HMAC(master, "spiritstream/audit-log/hmac/v1/{day}")`
+/// where `day` is the entry timestamp's UTC `YYYY-MM-DD`. Key evolution
+/// per epoch (day) is the documented design ("per-day HKDF-derived
+/// keys"); deriving from the master (not the machine key directly)
+/// keeps the machine key out of this module's steady state.
+pub(super) fn derive_day_key(master: &[u8; 32], day: &str) -> Zeroizing<[u8; 32]> {
+    let mut info = Vec::with_capacity(HMAC_KEY_INFO.len() + 1 + day.len());
+    info.extend_from_slice(HMAC_KEY_INFO);
+    info.push(b'/');
+    info.extend_from_slice(day.as_bytes());
+    Zeroizing::new(compute_hmac(master, &info))
 }
 
-pub(super) fn read_all_entries(log_path: &Path) -> Result<Vec<AuditEntry>, CoreError> {
+/// UTC day bucket for a timestamp — the per-day key selector.
+pub(super) fn day_of(timestamp: &DateTime<Utc>) -> String {
+    timestamp.format("%Y-%m-%d").to_string()
+}
+
+/// A line that failed to parse. An unparseable line in an append-only
+/// HMAC-chained file IS tampering (or torn-write corruption) — callers
+/// classify it as `Tampered`, never as an I/O error, and startup
+/// quarantines rather than bricking.
+#[derive(Debug, Clone)]
+pub(super) struct MalformedLine {
+    pub(super) line_number: usize,
+    pub(super) error: String,
+}
+
+/// Read the log, returning every parseable entry plus the first
+/// malformed line (if any). Only genuine I/O failures return `Err`.
+pub(super) fn read_entries_lenient(
+    log_path: &Path,
+) -> Result<(Vec<AuditEntry>, Option<MalformedLine>), CoreError> {
     if !log_path.exists() {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), None));
     }
     let text = std::fs::read_to_string(log_path).map_err(|e| CoreError::Internal {
         context: format!("audit read: {e}"),
     })?;
     let mut entries = Vec::new();
-    for line in text.lines() {
+    for (idx, line) in text.lines().enumerate() {
         if line.trim().is_empty() {
             continue;
         }
-        let entry: AuditEntry = serde_json::from_str(line).map_err(|e| CoreError::Internal {
-            context: format!("audit parse: {e}"),
-        })?;
-        entries.push(entry);
+        match serde_json::from_str::<AuditEntry>(line) {
+            Ok(entry) => entries.push(entry),
+            Err(e) => {
+                return Ok((
+                    entries,
+                    Some(MalformedLine {
+                        line_number: idx + 1,
+                        error: e.to_string(),
+                    }),
+                ));
+            }
+        }
     }
-    Ok(entries)
+    Ok((entries, None))
 }

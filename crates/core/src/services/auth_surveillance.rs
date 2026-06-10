@@ -164,7 +164,7 @@ mod tests {
         Arc<CountingSink>,
         AuthSurveillanceService,
     ) {
-        let audit = Arc::new(AuditLogService::new(dir.path().to_path_buf()).unwrap());
+        let audit = Arc::new(AuditLogService::new_for_tests(dir.path().to_path_buf()).unwrap());
         let sink = Arc::new(CountingSink::default());
         let events: Arc<dyn EventSink> = sink.clone();
         let svc = AuthSurveillanceService::new(audit.clone(), events);
@@ -244,7 +244,7 @@ mod tests {
     #[tokio::test]
     async fn works_with_noop_event_sink() {
         let dir = TempDir::new().unwrap();
-        let audit = Arc::new(AuditLogService::new(dir.path().to_path_buf()).unwrap());
+        let audit = Arc::new(AuditLogService::new_for_tests(dir.path().to_path_buf()).unwrap());
         let events: Arc<dyn EventSink> = Arc::new(NoopEventSink);
         let svc = AuthSurveillanceService::new(audit, events);
         for _ in 0..3 {

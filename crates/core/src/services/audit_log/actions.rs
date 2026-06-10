@@ -94,6 +94,20 @@ pub enum AuditAction {
     AuditLogTamperDetected {
         last_valid_sequence: u64,
     },
+    /// The legacy single-key chain verified intact and was archived to
+    /// `audit.log.v1-archive`; this fresh chain uses per-day keys.
+    /// `verify_archive` keeps the archived history checkable.
+    ChainMigrated {
+        archived_entries: u64,
+    },
+    /// The previous log file contained an unparseable line — a tamper
+    /// or torn-write signal — and was preserved at
+    /// `audit.log.quarantined-<ts>` while this fresh chain started.
+    /// Startup must never brick on a corrupt log; the quarantine + this
+    /// entry keep the event loud and investigable.
+    ChainQuarantined {
+        reason: String,
+    },
     /// A theme file on disk failed `ThemeManager::validate_theme()` —
     /// operator-visible signal for incomplete or malformed themes
     /// (e.g. accessibility regression where a high-contrast theme is

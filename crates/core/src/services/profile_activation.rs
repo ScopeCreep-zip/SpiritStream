@@ -375,7 +375,7 @@ mod tests {
         let events: Arc<dyn EventSink> = Arc::new(NoopEventSink);
         let chat = Arc::new(ChatManager::new(events.clone(), data_dir.join("logs")));
         let obs = Arc::new(ObsWebSocketHandler::new(data_dir.to_path_buf()));
-        let audit = Arc::new(AuditLogService::new(data_dir.to_path_buf()).expect("audit log"));
+        let audit = Arc::new(AuditLogService::new_for_tests(data_dir.to_path_buf()).expect("audit log"));
         let surveillance = Arc::new(AuthSurveillanceService::new(audit, events.clone()));
         ProfileActivationService::new(profiles, settings, oauth, chat, obs, events, surveillance)
     }

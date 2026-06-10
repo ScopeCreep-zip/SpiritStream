@@ -8,6 +8,10 @@ use spiritstream_core::ServiceRegistry;
 
 #[derive(Debug, Subcommand)]
 pub enum AuditCmd {
+    /// Verify the HMAC chain (live log + the pre-migration archive,
+    /// when present) and report the tail-anchor state. Exits non-zero
+    /// when either chain is tampered.
+    Verify,
     /// Print recent audit entries as NDJSON.
     Log {
         /// Earliest entry to include (ISO 8601 timestamp). Entries
@@ -36,6 +40,36 @@ pub async fn run(
     out: &mut Output,
 ) -> Result<(), CliError> {
     match cmd {
+        AuditCmd::Verify => {
+            let chain = registry.audit.verify_chain()?;
+            let archive = registry.audit.verify_archive()?;
+            let anchor_state = registry.audit.anchor_state();
+            #[derive(serde::Serialize)]
+            #[serde(rename_all = "camelCase")]
+            struct VerifyResponse {
+                chain: spiritstream_core::services::AuditChainStatus,
+                archive: spiritstream_core::services::AuditChainStatus,
+                anchor_state: String,
+            }
+            let tampered = matches!(
+                chain,
+                spiritstream_core::services::AuditChainStatus::Tampered { .. }
+            ) || matches!(
+                archive,
+                spiritstream_core::services::AuditChainStatus::Tampered { .. }
+            );
+            out.emit(&VerifyResponse {
+                chain,
+                archive,
+                anchor_state: anchor_state.to_string(),
+            })?;
+            if tampered {
+                return Err(CliError::Unavailable(
+                    "audit chain verification failed — see JSON output".into(),
+                ));
+            }
+            Ok(())
+        }
         AuditCmd::Log {
             since,
             filter,

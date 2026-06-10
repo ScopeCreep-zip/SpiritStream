@@ -152,7 +152,10 @@ impl ServiceRegistry {
             &opts.data_dir,
             crate::services::PHRASE_ID_KEY_INFO,
         )?;
-        let audit = Arc::new(AuditLogService::new(opts.data_dir.clone())?);
+        let audit = Arc::new(AuditLogService::new(
+            opts.data_dir.clone(),
+            opts.secret_store.clone(),
+        )?);
         // Now that the chain is writable, record the startup rotation
         // recovery (if any) so the user has a durable record of what
         // happened to their keys.

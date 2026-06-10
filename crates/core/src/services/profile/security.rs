@@ -381,7 +381,7 @@ mod tests {
         use std::sync::Arc;
         let dir = TempDir::new().unwrap();
         let mgr = ProfileManager::new(dir.path().to_path_buf());
-        let audit = Arc::new(AuditLogService::new(dir.path().to_path_buf()).unwrap());
+        let audit = Arc::new(AuditLogService::new_for_tests(dir.path().to_path_buf()).unwrap());
         mgr.set_audit_log(audit.clone());
 
         let mut p = profile_with_oauth_tokens();
@@ -403,7 +403,7 @@ mod tests {
         use std::sync::Arc;
         let dir = TempDir::new().unwrap();
         let mgr = ProfileManager::new(dir.path().to_path_buf());
-        let audit = Arc::new(AuditLogService::new(dir.path().to_path_buf()).unwrap());
+        let audit = Arc::new(AuditLogService::new_for_tests(dir.path().to_path_buf()).unwrap());
         mgr.set_audit_log(audit.clone());
 
         let mut p = profile_with_oauth_tokens();
