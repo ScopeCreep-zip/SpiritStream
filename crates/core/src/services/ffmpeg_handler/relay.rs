@@ -14,14 +14,34 @@ use crate::services::EventSink;
 use super::CommandExt;
 #[cfg(windows)]
 use super::CREATE_NO_WINDOW;
-use super::{ffmpeg_internal, lock_poisoned, ReconnectionState};
+use super::{ffmpeg_internal, lock_poisoned};
 
 /// Process info for tracking active streams.
+///
+/// Reconnection state deliberately does NOT live here — the crash
+/// handler removes the `ProcessInfo` before the retry driver reads the
+/// counter (see `FFmpegHandler::reconnection_states`).
 pub(super) struct ProcessInfo {
     pub(super) child: Child,
     pub(super) start_time: Instant,
+    /// Wall-clock spawn time for the cross-process registry
+    /// (`run/stream_processes.json`).
+    pub(super) started_at_unix_ms: i64,
     pub(super) group_id: String,
-    pub(super) reconnection_state: ReconnectionState,
+}
+
+impl Drop for ProcessInfo {
+    /// Last-line orphan defense: if an entry is dropped while its
+    /// FFmpeg child is still alive (handler torn down, panic unwind,
+    /// map cleared without an explicit stop), kill and reap it. The
+    /// graceful-`q` path (`stop_child`) runs before drop on every
+    /// intentional stop, so this only fires for abnormal teardown.
+    fn drop(&mut self) {
+        if let Ok(None) = self.child.try_wait() {
+            let _ = self.child.kill();
+            let _ = self.child.wait();
+        }
+    }
 }
 
 /// Cached configuration for restarting groups when relay output set changes.
@@ -35,6 +55,33 @@ pub(super) struct RelayProcess {
     pub(super) child: Child,
     pub(super) incoming_url: String,
     pub(super) output_groups: HashSet<String>,
+}
+
+impl Drop for RelayProcess {
+    /// Same orphan defense as `ProcessInfo` — the relay holds the input
+    /// port; a leaked relay blocks every future stream start.
+    fn drop(&mut self) {
+        if let Ok(None) = self.child.try_wait() {
+            let _ = self.child.kill();
+            let _ = self.child.wait();
+        }
+    }
+}
+
+/// Put the spawned FFmpeg in its own process group on Unix so a kill
+/// of the group (or of SpiritStream's own group, e.g. Ctrl-C in a
+/// terminal session) behaves predictably and the cross-process panic
+/// path can signal it without touching unrelated processes.
+pub(super) fn configure_child_process(cmd: &mut Command) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt as _;
+        cmd.process_group(0);
+    }
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    #[cfg(not(any(unix, windows)))]
+    let _ = cmd;
 }
 
 impl super::FFmpegHandler {
@@ -167,13 +214,16 @@ impl super::FFmpegHandler {
             sanitized.join(" ")
         );
 
+        if !self.has_live_targets(group) {
+            return Err(super::no_live_targets_error(&group.id));
+        }
+
         let mut cmd = Command::new(&self.ffmpeg_path);
         cmd.args(&args)
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::piped());
-        #[cfg(windows)]
-        cmd.creation_flags(CREATE_NO_WINDOW);
+        configure_child_process(&mut cmd);
         let mut child = cmd.spawn().map_err(|_| CoreError::FfmpegNotFound)?;
 
         let pid = child.id();
@@ -191,37 +241,33 @@ impl super::FFmpegHandler {
                 ProcessInfo {
                     child,
                     start_time: Instant::now(),
+                    started_at_unix_ms: chrono::Utc::now().timestamp_millis(),
                     group_id: group_id.clone(),
-                    reconnection_state: ReconnectionState::new(),
                 },
             );
         }
 
         self.relay_refcount.fetch_add(1, Ordering::SeqCst);
+        self.sync_process_registry();
 
         let event_sink_clone = Arc::clone(&event_sink);
         let processes_clone = Arc::clone(&self.processes);
         let meter_bytes = self.start_bitrate_meter(&group_id, Arc::clone(&processes_clone));
-        let relay_clone = Arc::clone(&self.relay);
-        let stopping_clone = Arc::clone(&self.stopping_groups);
-        let relay_refcount_clone = Arc::clone(&self.relay_refcount);
-        let port_assignments_clone = Arc::clone(&self.port_assignments);
-        let next_port_offset_clone = Arc::clone(&self.next_port_offset);
         let group_id_clone = group_id.clone();
+        let ctx = super::stats::StatsReaderCtx {
+            processes: processes_clone,
+            stopping_groups: Arc::clone(&self.stopping_groups),
+            relay: Arc::clone(&self.relay),
+            relay_refcount: Arc::clone(&self.relay_refcount),
+            port_assignments: Arc::clone(&self.port_assignments),
+            next_port_offset: Arc::clone(&self.next_port_offset),
+            reconnection_states: Arc::clone(&self.reconnection_states),
+            run_dir: self.run_dir.clone(),
+            ffmpeg_path: self.ffmpeg_path.clone(),
+        };
 
         thread::spawn(move || {
-            Self::stats_reader(
-                stderr,
-                group_id_clone,
-                meter_bytes,
-                event_sink_clone,
-                processes_clone,
-                stopping_clone,
-                relay_clone,
-                relay_refcount_clone,
-                port_assignments_clone,
-                next_port_offset_clone,
-            );
+            Self::stats_reader(stderr, group_id_clone, meter_bytes, event_sink_clone, ctx);
         });
 
         Ok(pid)
@@ -331,8 +377,7 @@ impl super::FFmpegHandler {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped());
-        #[cfg(windows)]
-        cmd.creation_flags(CREATE_NO_WINDOW);
+        configure_child_process(&mut cmd);
         let mut child = cmd.spawn().map_err(|_| CoreError::FfmpegNotFound)?;
 
         if let Some(stderr) = child.stderr.take() {
@@ -361,6 +406,8 @@ impl super::FFmpegHandler {
             incoming_url: incoming_url.to_string(),
             output_groups: relay_groups,
         });
+        drop(relay_guard);
+        self.sync_process_registry();
 
         Ok(())
     }
@@ -386,6 +433,8 @@ impl super::FFmpegHandler {
                 );
             }
         }
+        drop(relay_guard);
+        self.sync_process_registry();
     }
 
     pub(super) fn stop_child(&self, child: &mut Child) {

@@ -68,6 +68,11 @@ uuid = { version = "1.0", features = ["v4", "serde"] }
 log = { version = "0.4", features = ["std"] }
 thiserror = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
+
+# Pid-identity verification for the cross-process FFmpeg registry
+# (panic button killing streams spawned by another process). Transport-
+# free — allowed in core.
+sysinfo = { version = "0.33", default-features = false, features = ["system"] }
 regex = "1.10"
 notify = "6"
 dirs-next = "2.0"

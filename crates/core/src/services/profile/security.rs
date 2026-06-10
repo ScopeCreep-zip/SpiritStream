@@ -152,6 +152,10 @@ impl super::ProfileManager {
         // saved.
         profile_to_save.ensure_anonymous_salt();
 
+        // Server-authoritative incoming URL — whatever the client sent
+        // for `input.url` is recomputed from the constituent fields.
+        profile_to_save.input.refresh_url();
+
         // `PlatformRegistry::normalize_url()` exists in core but was never
         // called on save. Pull it in. Server is now the authoritative place
         // URL normalization happens.
@@ -230,6 +234,11 @@ impl super::ProfileManager {
         // plaintext. Legacy plaintext entries pass through unchanged and
         // get wrapped on the next save.
         self.decrypt_secret_fields(&mut profile)?;
+
+        // Profiles saved before `input.url` existed deserialize with an
+        // empty string — recompute so every consumer sees the
+        // authoritative URL.
+        profile.input.refresh_url();
 
         log::info!(
             "Profile loaded successfully: {} ({} output groups, {} total targets)",

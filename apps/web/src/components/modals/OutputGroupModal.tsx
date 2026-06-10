@@ -241,6 +241,7 @@ export function OutputGroupModal({ open, onClose, mode, group }: OutputGroupModa
         name: formData.name.trim(),
         isDefault: mode === 'edit' && group ? group.isDefault : false,
         generatePts: formData.generatePts,
+        enabled: mode === 'edit' && group ? group.enabled : true,
         video,
         audio,
         container,

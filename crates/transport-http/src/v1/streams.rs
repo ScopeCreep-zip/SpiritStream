@@ -124,6 +124,10 @@ pub struct StreamStartAllRequest {
 #[serde(rename_all = "camelCase")]
 pub struct StreamStartAllResponse {
     pub pids: Vec<u32>,
+    /// Group ids core actually started (eligibility is decided
+    /// server-side). Clients set their active state from this list
+    /// instead of inferring it from what they sent.
+    pub started_group_ids: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -183,10 +187,11 @@ pub async fn v1_streams_start(
     let was_streaming = state.ffmpeg_handler.active_count() > 0;
     let event_sink: std::sync::Arc<dyn spiritstream_core::services::EventSink> =
         std::sync::Arc::new(state.event_bus.clone());
+    // `start` clears the group's retry budget itself (manual start =
+    // fresh budget).
     let pid = state
         .ffmpeg_handler
         .start(&req.group, &req.incoming_url, event_sink)?;
-    state.ffmpeg_handler.reset_reconnection_state(&req.group.id);
     if !was_streaming {
         state.chat_manager.start_log_session();
         tokio::spawn(crate::auto_connect_chat_platforms(state.clone()));
@@ -216,14 +221,18 @@ pub async fn v1_streams_start_all(
     let was_streaming = state.ffmpeg_handler.active_count() > 0;
     let event_sink: std::sync::Arc<dyn spiritstream_core::services::EventSink> =
         std::sync::Arc::new(state.event_bus.clone());
-    let pids = state
+    let started = state
         .ffmpeg_handler
         .start_all(&req.groups, &req.incoming_url, event_sink)?;
     if !was_streaming {
         state.chat_manager.start_log_session();
     }
     tokio::spawn(crate::auto_connect_chat_platforms(state.clone()));
-    Ok(Json(StreamStartAllResponse { pids }))
+    let (started_group_ids, pids) = started.into_iter().unzip();
+    Ok(Json(StreamStartAllResponse {
+        pids,
+        started_group_ids,
+    }))
 }
 
 /// `DELETE /streams/groups/{group_id}` — stop a single group. Triggers

@@ -167,6 +167,7 @@ fn action_kind_str(action: &spiritstream_core::services::AuditAction) -> &'stati
         OauthRefresh { .. } => "oauth_refresh",
         OauthRefreshUnusualLocation { .. } => "oauth_refresh_unusual_location",
         MachineKeyRotated { .. } => "machine_key_rotated",
+        PanicKilledOrphans { .. } => "panic_killed_orphans",
         KeyRotationRolledBack => "key_rotation_rolled_back",
         KeyRotationRecovered => "key_rotation_recovered",
         AnonymousModeToggled { .. } => "anonymous_mode_toggled",

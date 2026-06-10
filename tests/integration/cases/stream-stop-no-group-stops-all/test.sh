@@ -7,5 +7,7 @@ out=$("$SPIRITSTREAM_CLI" --data-dir "$SPIRITSTREAM_TEST_DATA_DIR" --quiet strea
 echo "$out" | python3 -c '
 import json, sys
 b = json.load(sys.stdin)
-assert b == {"stopped": []}, b
+# stop-all also reports the cross-process orphan sweep (registry-based);
+# a fresh install has nothing to kill.
+assert b == {"stopped": [], "orphansKilled": 0, "orphansStale": 0}, b
 '

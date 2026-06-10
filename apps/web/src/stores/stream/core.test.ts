@@ -5,10 +5,9 @@ const INGEST_URL = 'rtmp://in/live';
 
 // N5: stream core slice. The async start/stop flows own the optimistic
 // active-group set and the error surface the UI shows when a backend
-// call rejects. The eligibility filter in `startAllGroups` (has targets
-// AND enabled, with the empty-enabled = all special case) is the subtle
-// bit — a regression there either streams nothing or streams a group the
-// user disabled.
+// call rejects. Eligibility is decided SERVER-side: `startAllGroups`
+// sends every group and sets active state from the authoritative
+// `startedGroupIds` in the response.
 
 const apiStream = {
   getActiveCount: vi.fn(),
@@ -59,7 +58,6 @@ function makeGroup(id: string, targetCount: number): OutputGroup {
 beforeEach(() => {
   vi.clearAllMocks();
   useStreamStore.getState().reset();
-  useStreamStore.setState({ enabledGroups: new Set(), enabledTargets: new Set() });
 });
 
 describe('core.syncWithBackend', () => {
@@ -103,31 +101,27 @@ describe('core.startGroup', () => {
   });
 });
 
-describe('core.startAllGroups eligibility', () => {
-  it('throws when no group has targets', async () => {
-    await expect(
-      useStreamStore.getState().startAllGroups([makeGroup('g1', 0)], INGEST_URL)
-    ).rejects.toThrow(/enabled output group/);
-    expect(apiStream.startAll).not.toHaveBeenCalled();
-    expect(useStreamStore.getState().globalStatus).toBe('error');
-  });
-
-  it('treats an empty enabledGroups set as "all enabled"', async () => {
-    apiStream.startAll.mockResolvedValue(undefined);
+describe('core.startAllGroups', () => {
+  it('sends every group and adopts the server-decided started set', async () => {
+    apiStream.startAll.mockResolvedValue({ pids: [1], startedGroupIds: ['g2'] });
     const groups = [makeGroup('g1', 1), makeGroup('g2', 1)];
     await useStreamStore.getState().startAllGroups(groups, INGEST_URL);
+    // Eligibility is server-side: the FULL list goes over the wire...
     const passed = apiStream.startAll.mock.calls[0][0] as OutputGroup[];
     expect(passed.map((g) => g.id)).toEqual(['g1', 'g2']);
-    expect(useStreamStore.getState().isStreaming).toBe(true);
+    // ...and only what core reports as started becomes active.
+    const s = useStreamStore.getState();
+    expect(s.activeGroups.has('g2')).toBe(true);
+    expect(s.activeGroups.has('g1')).toBe(false);
+    expect(s.isStreaming).toBe(true);
   });
 
-  it('filters to only the explicitly-enabled group with targets', async () => {
-    apiStream.startAll.mockResolvedValue(undefined);
-    useStreamStore.setState({ enabledGroups: new Set(['g2']) });
-    const groups = [makeGroup('g1', 1), makeGroup('g2', 1)];
-    await useStreamStore.getState().startAllGroups(groups, INGEST_URL);
-    const passed = apiStream.startAll.mock.calls[0][0] as OutputGroup[];
-    expect(passed.map((g) => g.id)).toEqual(['g2']);
+  it('surfaces the server-side no_eligible_groups rejection', async () => {
+    apiStream.startAll.mockRejectedValue(new Error('no_eligible_groups'));
+    await expect(
+      useStreamStore.getState().startAllGroups([makeGroup('g1', 0)], INGEST_URL)
+    ).rejects.toThrow(/no_eligible_groups/);
+    expect(useStreamStore.getState().globalStatus).toBe('error');
   });
 });
 
@@ -144,12 +138,12 @@ describe('core.stopAllGroups', () => {
 });
 
 describe('core.toggleTargetLive', () => {
-  it('tracks the enabled target on success', async () => {
+  it('records the live override on success', async () => {
     apiStream.toggleTarget.mockResolvedValue(undefined);
     await useStreamStore
       .getState()
       .toggleTargetLive('t1', true, makeGroup('g1', 1), INGEST_URL);
-    expect(useStreamStore.getState().enabledTargets.has('t1')).toBe(true);
+    expect(useStreamStore.getState().liveTargetOverrides.get('t1')).toBe(true);
   });
 
   it('rethrows and records the error on failure', async () => {

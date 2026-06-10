@@ -44,6 +44,14 @@ pub enum BlocklistAction {
 struct SafetyPanicCliResponse {
     streams_stopped: usize,
     elapsed_ms: u64,
+    /// FFmpeg processes from OTHER SpiritStream processes (a running
+    /// desktop server, a crashed prior run) killed via the cross-process
+    /// registry. The in-process counter above can be 0 while this is
+    /// non-zero — exactly the case the old CLI panic silently no-op'd.
+    orphans_killed: usize,
+    /// Registry records dropped because the pid was dead or no longer
+    /// an FFmpeg process (never killed).
+    orphans_stale: usize,
 }
 
 #[derive(Serialize)]
@@ -59,10 +67,37 @@ pub async fn run(
 ) -> Result<(), CliError> {
     match cmd {
         SafetyCmd::Panic => {
+            // In-process flow first: stops anything THIS process started,
+            // disconnects chat/OBS, purges secret caches, records audit.
             let result = registry.safety.panic().await?;
+
+            // Then reach across processes: kill FFmpeg children recorded
+            // by any other SpiritStream process (a running desktop
+            // server, a crashed prior CLI run). The CLI is one-shot —
+            // without this, `safety panic` reported success while the
+            // user's stream kept broadcasting.
+            let run_dir = registry.data_dir.join("run");
+            let orphans = tokio::task::spawn_blocking(move || {
+                spiritstream_core::services::ffmpeg_handler::process_registry::kill_recorded_processes(&run_dir)
+            })
+            .await
+            .map_err(|e| CliError::Io(format!("orphan-kill join: {e}")))??;
+            if orphans.killed > 0 || orphans.stale > 0 {
+                if let Err(e) = registry.audit.record(
+                    spiritstream_core::services::AuditAction::PanicKilledOrphans {
+                        killed: orphans.killed,
+                        stale: orphans.stale,
+                    },
+                ) {
+                    log::error!("failed to append PanicKilledOrphans audit entry: {e}");
+                }
+            }
+
             out.emit(&SafetyPanicCliResponse {
                 streams_stopped: result.streams_stopped,
                 elapsed_ms: result.elapsed_ms,
+                orphans_killed: orphans.killed,
+                orphans_stale: orphans.stale,
             })?;
             Ok(())
         }

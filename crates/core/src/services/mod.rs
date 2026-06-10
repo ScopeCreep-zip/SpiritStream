@@ -11,7 +11,7 @@ mod discord_webhook;
 mod embedded_themes;
 mod encryption;
 mod events;
-mod ffmpeg_handler;
+pub mod ffmpeg_handler;
 mod ffmpeg_locator;
 mod jsonc;
 mod log_manager;

@@ -5,10 +5,13 @@ use std::thread;
 use std::time::Duration;
 
 use crate::errors::CoreError;
-use crate::models::OutputGroup;
+use crate::models::{OutputGroup, StreamRetryAttemptEvent, StreamRetryExhaustedEvent};
 use crate::services::{emit_event, EventSink};
 
-use super::{ffmpeg_internal, lock_poisoned, ReconnectionState};
+use super::{
+    ffmpeg_internal, lock_poisoned, no_eligible_groups_error, no_live_targets_error,
+    ReconnectionState,
+};
 
 impl super::FFmpegHandler {
     /// Start streaming for an output group with stats monitoring.
@@ -22,12 +25,24 @@ impl super::FFmpegHandler {
         // `POST /streams/validate` is decorative — this is the gate that
         // refuses a malformed config before any FFmpeg process is spawned.
         Self::validate_output_group(group)?;
+        if !group.enabled {
+            return Err(no_eligible_groups_error());
+        }
+        if !self.has_live_targets(group) {
+            return Err(no_live_targets_error(&group.id));
+        }
+
+        // Serialise admission — see the `admission` field docs.
+        let _admission = self.admission.lock().map_err(lock_poisoned)?;
 
         self.record_active_group(group, incoming_url)?;
 
         if let Some(pid) = self.get_group_pid(&group.id) {
             return Ok(pid);
         }
+
+        // Manual start = fresh retry budget.
+        self.clear_reconnection_state(&group.id);
 
         let desired_group_ids = self.collect_active_group_ids()?;
         if self.relay_needs_restart(&desired_group_ids)? {
@@ -45,20 +60,32 @@ impl super::FFmpegHandler {
     }
 
     /// Start streaming for multiple output groups in one batch.
+    ///
+    /// Eligibility (`group.enabled` + at least one enabled target) is
+    /// decided HERE, server-side — the frontend sends every group and
+    /// renders the outcome (`started (group_id, pid)` pairs, or the
+    /// `no_eligible_groups` error). Returns one `(group_id, pid)` per
+    /// started group so clients set their active state from authority
+    /// instead of inferring it.
     pub fn start_all(
         &self,
         groups: &[OutputGroup],
         incoming_url: &str,
         event_sink: Arc<dyn EventSink>,
-    ) -> Result<Vec<u32>, CoreError> {
-        // Validate every group up-front so we don't start half the stream
-        // pipeline before a later group fails its bounds check. Collect
-        // every failure into one InvalidStreamConfig with a `reasons` array.
+    ) -> Result<Vec<(String, u32)>, CoreError> {
+        let eligible: Vec<&OutputGroup> = groups
+            .iter()
+            .filter(|g| g.is_eligible() && self.has_live_targets(g))
+            .collect();
+        if eligible.is_empty() {
+            return Err(no_eligible_groups_error());
+        }
+
+        // Validate every eligible group up-front so we don't start half
+        // the stream pipeline before a later group fails its bounds
+        // check. Collect every failure into one InvalidStreamConfig.
         let mut all_issues = Vec::new();
-        for (gi, group) in groups.iter().enumerate() {
-            if group.stream_targets.is_empty() {
-                continue;
-            }
+        for (gi, group) in eligible.iter().enumerate() {
             let issues = Self::collect_group_issues(group, &format!("/groups/{gi}"));
             all_issues.extend(issues);
         }
@@ -68,6 +95,11 @@ impl super::FFmpegHandler {
             });
         }
 
+        // Admission is atomic: the check below and the reservations
+        // after it happen under one lock, so two concurrent start_all
+        // calls can't both pass the idle check and double-spawn.
+        let _admission = self.admission.lock().map_err(lock_poisoned)?;
+
         if self.active_count() > 0 {
             return Err(ffmpeg_internal("Streams already running"));
         }
@@ -75,26 +107,20 @@ impl super::FFmpegHandler {
         if let Ok(mut active) = self.active_groups.lock() {
             active.clear();
         }
+        if let Ok(mut states) = self.reconnection_states.lock() {
+            states.clear();
+        }
 
         let mut desired_group_ids: HashSet<String> = HashSet::new();
-        let mut start_groups: Vec<OutputGroup> = Vec::new();
-        for group in groups {
-            if group.stream_targets.is_empty() {
-                continue;
-            }
+        for group in &eligible {
             self.record_active_group(group, incoming_url)?;
             desired_group_ids.insert(group.id.clone());
-            start_groups.push(group.clone());
         }
 
-        if start_groups.is_empty() {
-            return Err(ffmpeg_internal("At least one stream target is required"));
-        }
-
-        let mut pids = Vec::with_capacity(start_groups.len());
-        for group in &start_groups {
+        let mut started = Vec::with_capacity(eligible.len());
+        for group in &eligible {
             let pid = self.start_group_process(group, Arc::clone(&event_sink))?;
-            pids.push(pid);
+            started.push((group.id.clone(), pid));
         }
 
         self.ensure_relay_running(incoming_url, &desired_group_ids)?;
@@ -105,12 +131,13 @@ impl super::FFmpegHandler {
         // when direction forbids it.
         self.fire_obs_trigger(true);
 
-        Ok(pids)
+        Ok(started)
     }
 
     /// Stop streaming for an output group.
     pub fn stop(&self, group_id: &str) -> Result<(), CoreError> {
         self.remove_active_group(group_id);
+        self.clear_reconnection_state(group_id);
         if let Ok(mut stopping) = self.stopping_groups.lock() {
             stopping.insert(group_id.to_string());
         }
@@ -133,6 +160,8 @@ impl super::FFmpegHandler {
             self.stop_relay();
         }
 
+        self.sync_process_registry();
+
         Ok(())
     }
 
@@ -141,11 +170,16 @@ impl super::FFmpegHandler {
         if let Ok(mut active) = self.active_groups.lock() {
             active.clear();
         }
-        let mut processes = self.processes.lock().map_err(lock_poisoned)?;
-        let mut stopping = self.stopping_groups.lock().map_err(lock_poisoned)?;
-        for (group_id, mut info) in processes.drain() {
-            stopping.insert(group_id);
-            self.stop_child(&mut info.child);
+        if let Ok(mut states) = self.reconnection_states.lock() {
+            states.clear();
+        }
+        {
+            let mut processes = self.processes.lock().map_err(lock_poisoned)?;
+            let mut stopping = self.stopping_groups.lock().map_err(lock_poisoned)?;
+            for (group_id, mut info) in processes.drain() {
+                stopping.insert(group_id);
+                self.stop_child(&mut info.child);
+            }
         }
         self.stop_relay();
 
@@ -155,6 +189,8 @@ impl super::FFmpegHandler {
             self.next_port_offset.store(0, Ordering::SeqCst);
             log::debug!("All groups stopped, cleared all port assignments");
         }
+
+        self.sync_process_registry();
 
         // SpiritStream→OBS cascade — mirror of `start_all`.
         self.fire_obs_trigger(false);
@@ -181,6 +217,13 @@ impl super::FFmpegHandler {
 
     /// Retry a failed group with exponential backoff.
     /// Returns the delay that should be waited before the next retry.
+    ///
+    /// Retry state lives in `reconnection_states` (handler-level, keyed
+    /// by group id) — NOT in `ProcessInfo`. The crash handler removes
+    /// the `ProcessInfo` before this runs, so state stored there always
+    /// read attempt=0: the counter never advanced, `max_retries` was
+    /// unreachable, and a permanently-failed group (revoked stream key,
+    /// dead platform) reconnect-looped forever, flooding the event bus.
     pub fn retry_group(
         &self,
         group_id: &str,
@@ -199,46 +242,51 @@ impl super::FFmpegHandler {
             return Err(ffmpeg_internal("Group is already streaming"));
         }
 
-        // Get or create reconnection state.
-        let mut reconnection_state = {
-            let processes = self.processes.lock().map_err(lock_poisoned)?;
-
-            processes
-                .get(group_id)
-                .map(|info| info.reconnection_state.clone())
-                .unwrap_or_else(ReconnectionState::new)
+        let attempt_decision = {
+            let mut states = self.reconnection_states.lock().map_err(lock_poisoned)?;
+            let state = states
+                .entry(group_id.to_string())
+                .or_insert_with(ReconnectionState::new);
+            if state.should_retry(&self.reconnection_config) {
+                let delay = state.next_delay(&self.reconnection_config);
+                // Count the attempt up-front so a crash between here and
+                // the next retry still advances the budget.
+                state.increment();
+                Some((state.attempt, delay))
+            } else {
+                None
+            }
         };
 
-        if !reconnection_state.should_retry(&self.reconnection_config) {
-            // Terminal state — emit `stream_retry_exhausted` so the UI knows
-            // the group is permanently failed, and tear down ALL residual
-            // state so subsequent `get_active_group_ids` / `is_streaming`
-            // queries report it correctly. Drop both the active-group config
-            // AND any dead `processes` entry (the FFmpeg child already
-            // exited; the map entry is a corpse).
+        let Some((attempt, delay)) = attempt_decision else {
+            // Terminal state — emit `stream_retry_exhausted` exactly once
+            // so the UI knows the group is permanently failed, and tear
+            // down ALL residual state (active-group config, dead process
+            // corpse, retry counter) so subsequent queries report it
+            // correctly.
             emit_event(
                 event_sink.as_ref(),
                 "stream_retry_exhausted",
-                &serde_json::json!({
-                    "groupId": group_id,
-                    "maxAttempts": self.reconnection_config.max_retries,
-                }),
+                &StreamRetryExhaustedEvent {
+                    group_id: group_id.to_string(),
+                    max_attempts: self.reconnection_config.max_retries,
+                },
             );
             self.remove_active_group(group_id);
+            self.clear_reconnection_state(group_id);
             if let Ok(mut processes) = self.processes.lock() {
                 processes.remove(group_id);
             }
+            self.sync_process_registry();
             return Err(ffmpeg_internal(format!(
                 "Maximum retry attempts ({}) reached",
                 self.reconnection_config.max_retries
             )));
-        }
-
-        let delay = reconnection_state.next_delay(&self.reconnection_config);
+        };
 
         log::info!(
             "[FFmpeg:{group_id}] Retrying stream (attempt {}/{}) after {} seconds",
-            reconnection_state.attempt + 1,
+            attempt,
             self.reconnection_config.max_retries,
             delay.as_secs()
         );
@@ -246,31 +294,26 @@ impl super::FFmpegHandler {
         emit_event(
             event_sink.as_ref(),
             "stream_retry_attempt",
-            &serde_json::json!({
-                "groupId": group_id,
-                "attempt": reconnection_state.attempt + 1,
-                "maxAttempts": self.reconnection_config.max_retries,
-                "delaySecs": delay.as_secs()
-            }),
+            &StreamRetryAttemptEvent {
+                group_id: group_id.to_string(),
+                attempt,
+                max_attempts: self.reconnection_config.max_retries,
+                delay_secs: delay.as_secs(),
+            },
         );
 
         thread::sleep(delay);
 
-        reconnection_state.increment();
-
         match self.start_group_process(&group, event_sink.clone()) {
             Ok(pid) => {
-                if let Ok(mut processes) = self.processes.lock() {
-                    if let Some(info) = processes.get_mut(group_id) {
-                        info.reconnection_state = reconnection_state.clone();
-                    }
-                }
-
                 // Calculate next retry delay in case this one fails.
-                let next_delay = if reconnection_state.should_retry(&self.reconnection_config) {
-                    Some(reconnection_state.next_delay(&self.reconnection_config))
-                } else {
-                    None
+                let next_delay = {
+                    let states = self.reconnection_states.lock().map_err(lock_poisoned)?;
+                    states.get(group_id).and_then(|state| {
+                        state
+                            .should_retry(&self.reconnection_config)
+                            .then(|| state.next_delay(&self.reconnection_config))
+                    })
                 };
 
                 log::info!("[FFmpeg:{group_id}] Stream reconnected successfully (PID: {pid})");
@@ -283,12 +326,12 @@ impl super::FFmpegHandler {
         }
     }
 
-    /// Reset reconnection state for a group (called on successful manual start).
-    pub fn reset_reconnection_state(&self, group_id: &str) {
-        if let Ok(mut processes) = self.processes.lock() {
-            if let Some(info) = processes.get_mut(group_id) {
-                info.reconnection_state.reset();
-            }
+    /// Drop the retry budget for a group — called on manual stop, on
+    /// manual (re)start, and after a stable run (the stats reader resets
+    /// once a stream survives 60s).
+    pub fn clear_reconnection_state(&self, group_id: &str) {
+        if let Ok(mut states) = self.reconnection_states.lock() {
+            states.remove(group_id);
         }
     }
 }

@@ -130,6 +130,7 @@ export function TargetModal({
         name: formData.name,
         url: formData.url.trim(),
         streamKey: formData.streamKey.trim(),
+        enabled: mode === 'edit' && target ? target.enabled : true,
       };
 
       if (mode === 'create') {

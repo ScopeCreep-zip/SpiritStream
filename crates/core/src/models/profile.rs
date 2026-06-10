@@ -23,16 +23,38 @@ pub struct RtmpInput {
 
     /// RTMP application/path (e.g., "live", "ingest")
     pub application: String,
+
+    /// Full incoming RTMP URL, computed server-side from the fields
+    /// above on every save/load (`refresh_url`). Frontends display and
+    /// send this value verbatim — they never string-build it (the old
+    /// frontend construction existed in three copies that had to stay
+    /// in lockstep with `FFmpegHandler`).
+    #[serde(default)]
+    pub url: String,
+}
+
+impl RtmpInput {
+    /// Recompute `url` from the constituent fields. Single source of
+    /// truth for the incoming-URL shape.
+    pub fn refresh_url(&mut self) {
+        self.url = format!(
+            "rtmp://{}:{}/{}",
+            self.bind_address, self.port, self.application
+        );
+    }
 }
 
 impl Default for RtmpInput {
     fn default() -> Self {
-        Self {
+        let mut input = Self {
             input_type: "rtmp".to_string(),
             bind_address: "0.0.0.0".to_string(),
             port: 1935,
             application: "live".to_string(),
-        }
+            url: String::new(),
+        };
+        input.refresh_url();
+        input
     }
 }
 
@@ -233,6 +255,7 @@ mod tests {
             service,
             url: "rtmp://x/live".into(),
             stream_key: "k".into(),
+            enabled: true,
         }
     }
 
@@ -242,6 +265,7 @@ mod tests {
             name: "g".into(),
             is_default: true,
             generate_pts: true,
+            enabled: true,
             video,
             audio: audio(),
             container: ContainerSettings::default(),

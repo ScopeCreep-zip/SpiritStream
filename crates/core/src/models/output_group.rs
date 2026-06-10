@@ -131,6 +131,14 @@ pub struct OutputGroup {
     #[serde(default = "default_generate_pts")]
     pub generate_pts: bool,
 
+    /// Whether this group participates in "start all". Persisted
+    /// profile data — replaces the frontend's `enabledGroups`
+    /// empty-set-means-all sentinel, whose edge cases re-enabled every
+    /// group when the user disabled the last one. Eligibility is
+    /// decided server-side from this flag.
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+
     /// Video encoding settings
     pub video: VideoSettings,
 
@@ -152,11 +160,20 @@ impl OutputGroup {
             name: "New Output Group".to_string(),
             is_default: false,
             generate_pts: true,
+            enabled: true,
             video: VideoSettings::default(),
             audio: AudioSettings::default(),
             container: ContainerSettings::default(),
             stream_targets: Vec::new(),
         }
+    }
+
+    /// Whether this group should participate in a stream start: the
+    /// group is enabled AND at least one of its targets is enabled.
+    /// Single source of truth for `start` / `start_all` admission — the
+    /// frontend renders the outcome, it never re-derives this.
+    pub fn is_eligible(&self) -> bool {
+        self.enabled && self.stream_targets.iter().any(|t| t.enabled)
     }
 }
 
@@ -168,5 +185,9 @@ impl Default for OutputGroup {
 
 /// Default value for generate_pts field (true)
 fn default_generate_pts() -> bool {
+    true
+}
+
+fn default_enabled() -> bool {
     true
 }

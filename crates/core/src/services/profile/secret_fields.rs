@@ -89,6 +89,7 @@ mod tests {
             name: id.into(),
             url: String::new(),
             stream_key: stream_key.into(),
+            enabled: true,
         }
     }
 

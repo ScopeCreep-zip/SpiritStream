@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { Radio, Settings } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { incomingRtmpUrl } from '@/lib/profile-helpers';
 import type { Profile } from '@spiritstream/types';
 
 interface SourceCardProps {
@@ -33,7 +32,8 @@ export function SourceCard({ profile, onConfigure }: SourceCardProps): React.Rea
     );
   }
 
-  const url = incomingRtmpUrl(profile.input);
+  // Server-computed (`RtmpInput::refresh_url`) — never string-built here.
+  const url = profile.input.url;
 
   return (
     <Card>

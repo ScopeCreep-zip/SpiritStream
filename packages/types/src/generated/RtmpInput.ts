@@ -19,4 +19,12 @@ port: number,
 /**
  * RTMP application/path (e.g., "live", "ingest")
  */
-application: string, };
+application: string, 
+/**
+ * Full incoming RTMP URL, computed server-side from the fields
+ * above on every save/load (`refresh_url`). Frontends display and
+ * send this value verbatim — they never string-build it (the old
+ * frontend construction existed in three copies that had to stay
+ * in lockstep with `FFmpegHandler`).
+ */
+url: string, };

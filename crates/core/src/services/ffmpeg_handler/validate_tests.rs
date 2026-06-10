@@ -35,6 +35,7 @@ fn target(url: &str, key: &str) -> StreamTarget {
         service: Platform::Twitch,
         url: url.into(),
         stream_key: key.into(),
+        enabled: true,
     }
 }
 
@@ -48,12 +49,14 @@ fn baseline_profile() -> Profile {
             bind_address: "127.0.0.1".into(),
             port: 1935,
             application: "live".into(),
+            url: String::new(),
         },
         output_groups: vec![OutputGroup {
             id: "g1".into(),
             name: "Group 1".into(),
             is_default: true,
             generate_pts: true,
+            enabled: true,
             video: copy_video(),
             audio: copy_audio(),
             container: ContainerSettings::default(),
@@ -413,6 +416,7 @@ fn group_with(
         name: "G".into(),
         is_default: false,
         generate_pts: true,
+        enabled: true,
         video,
         audio,
         container: ContainerSettings::default(),

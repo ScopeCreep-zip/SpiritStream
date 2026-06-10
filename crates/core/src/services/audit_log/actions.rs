@@ -74,6 +74,11 @@ pub enum AuditAction {
         profiles_updated: usize,
         keys_reencrypted: usize,
     },
+    /// A panic / stop killed FFmpeg processes recorded by another
+    /// (possibly dead) SpiritStream process via the cross-process
+    /// registry (`run/stream_processes.json`). `stale` counts records
+    /// whose pid was gone or no longer FFmpeg (dropped, never killed).
+    PanicKilledOrphans { killed: usize, stale: usize },
     /// Startup recovery found an interrupted key rotation and rolled
     /// back to the previous key (profiles restored from backup).
     KeyRotationRolledBack,

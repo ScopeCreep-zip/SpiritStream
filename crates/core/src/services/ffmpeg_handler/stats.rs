@@ -6,10 +6,62 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::models::StreamStats;
+use crate::models::{StreamErrorEvent, StreamStats};
 use crate::services::{emit_event, EventSink};
 
 use super::relay::{ProcessInfo, RelayProcess};
+use super::ReconnectionState;
+
+/// Uptime after which a group's retry budget resets — the stream
+/// demonstrably works, so a later crash starts a fresh backoff cycle
+/// instead of inheriting attempts from incidents long past.
+const STABLE_RUN_RESET: Duration = Duration::from_secs(60);
+
+/// Shared handles the per-group stats-reader thread needs to clean up
+/// after an FFmpeg exit. Bundled so the spawn site and the reader can't
+/// drift on argument order.
+pub(super) struct StatsReaderCtx {
+    pub(super) processes: Arc<Mutex<HashMap<String, ProcessInfo>>>,
+    pub(super) stopping_groups: Arc<Mutex<HashSet<String>>>,
+    pub(super) relay: Arc<Mutex<Option<RelayProcess>>>,
+    pub(super) relay_refcount: Arc<AtomicUsize>,
+    pub(super) port_assignments: Arc<Mutex<HashMap<String, u16>>>,
+    pub(super) next_port_offset: Arc<AtomicU16>,
+    pub(super) reconnection_states: Arc<Mutex<HashMap<String, ReconnectionState>>>,
+    pub(super) run_dir: std::path::PathBuf,
+    pub(super) ffmpeg_path: String,
+}
+
+impl StatsReaderCtx {
+    /// Mirror of `FFmpegHandler::sync_process_registry` for the reader
+    /// thread (which has no `&self`).
+    fn sync_process_registry(&self) {
+        let mut records: Vec<super::process_registry::StreamProcessRecord> = Vec::new();
+        if let Ok(processes) = self.processes.lock() {
+            for info in processes.values() {
+                records.push(super::process_registry::StreamProcessRecord {
+                    group_id: info.group_id.clone(),
+                    pid: info.child.id(),
+                    started_at_unix_ms: info.started_at_unix_ms,
+                    ffmpeg_path: self.ffmpeg_path.clone(),
+                });
+            }
+        }
+        if let Ok(relay) = self.relay.lock() {
+            if let Some(relay) = relay.as_ref() {
+                records.push(super::process_registry::StreamProcessRecord {
+                    group_id: super::process_registry::RELAY_GROUP_ID.to_string(),
+                    pid: relay.child.id(),
+                    started_at_unix_ms: 0,
+                    ffmpeg_path: self.ffmpeg_path.clone(),
+                });
+            }
+        }
+        if let Err(e) = super::process_registry::write_records(&self.run_dir, &records) {
+            log::error!("failed to persist stream process registry: {e}");
+        }
+    }
+}
 
 impl super::FFmpegHandler {
     pub(super) fn start_bitrate_meter(
@@ -65,24 +117,29 @@ impl super::FFmpegHandler {
     }
 
     /// Background thread that reads FFmpeg stderr and emits stats events.
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn stats_reader(
         stderr: std::process::ChildStderr,
         group_id: String,
         meter_bytes: Option<Arc<AtomicU64>>,
         event_sink: Arc<dyn EventSink>,
-        processes: Arc<Mutex<HashMap<String, ProcessInfo>>>,
-        stopping_groups: Arc<Mutex<HashSet<String>>>,
-        relay: Arc<Mutex<Option<RelayProcess>>>,
-        relay_refcount: Arc<AtomicUsize>,
-        port_assignments: Arc<Mutex<HashMap<String, u16>>>,
-        next_port_offset: Arc<AtomicU16>,
+        ctx: StatsReaderCtx,
     ) {
+        let StatsReaderCtx {
+            ref processes,
+            ref stopping_groups,
+            ref relay,
+            ref relay_refcount,
+            ref port_assignments,
+            ref next_port_offset,
+            ref reconnection_states,
+            ..
+        } = ctx;
         let reader = BufReader::new(stderr);
         let mut stats = StreamStats::new(group_id.clone());
         let mut last_emit = Instant::now();
         let emit_interval = Duration::from_millis(1000);
         let mut was_intentionally_stopped = false;
+        let mut retry_budget_reset = false;
         let mut recent_lines: VecDeque<String> = VecDeque::with_capacity(40);
         let mut last_meter_bytes = meter_bytes
             .as_ref()
@@ -102,10 +159,24 @@ impl super::FFmpegHandler {
                     }
                 }
                 if let Ok(procs) = processes.lock() {
-                    if !procs.contains_key(&group_id) {
-                        // Process was removed by stop() — intentional stop.
-                        was_intentionally_stopped = true;
-                        break;
+                    match procs.get(&group_id) {
+                        None => {
+                            // Process was removed by stop() — intentional stop.
+                            was_intentionally_stopped = true;
+                            break;
+                        }
+                        Some(info) => {
+                            // Stable run → fresh retry budget for the next
+                            // incident (see STABLE_RUN_RESET docs).
+                            if !retry_budget_reset
+                                && info.start_time.elapsed() >= STABLE_RUN_RESET
+                            {
+                                retry_budget_reset = true;
+                                if let Ok(mut states) = reconnection_states.lock() {
+                                    states.remove(&group_id);
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -222,6 +293,7 @@ impl super::FFmpegHandler {
                     None
                 }
             };
+            ctx.sync_process_registry();
 
             if let Ok(mut stopping) = stopping_groups.lock() {
                 if stopping.remove(&group_id) {
@@ -270,12 +342,14 @@ impl super::FFmpegHandler {
                 emit_event(
                     event_sink.as_ref(),
                     "stream_error",
-                    &serde_json::json!({
-                        "groupId": group_id,
-                        "error": error,
-                        "canRetry": true,
-                        "suggestion": "Stream connection lost. Click retry to reconnect automatically."
-                    }),
+                    &StreamErrorEvent {
+                        group_id: group_id.clone(),
+                        error,
+                        can_retry: true,
+                        suggestion: "Stream connection lost. Click retry to reconnect \
+                                     automatically."
+                            .to_string(),
+                    },
                 );
             } else {
                 emit_event(event_sink.as_ref(), "stream_ended", &group_id);

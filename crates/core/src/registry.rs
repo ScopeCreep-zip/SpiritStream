@@ -85,6 +85,7 @@ pub struct ServiceRegistry {
     pub events: Arc<dyn EventSink>,
     pub data_dir: PathBuf,
     pub log_dir: PathBuf,
+    pub themes_dir: PathBuf,
 }
 
 impl ServiceRegistry {
@@ -257,6 +258,7 @@ impl ServiceRegistry {
             events: opts.events,
             data_dir: opts.data_dir,
             log_dir: opts.log_dir,
+            themes_dir: opts.themes_dir,
         })
     }
 

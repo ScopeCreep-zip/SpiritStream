@@ -24,4 +24,13 @@ url: string,
 /**
  * Stream key (authentication) - supports ${ENV_VAR} syntax
  */
-streamKey: string, };
+streamKey: string, 
+/**
+ * Whether this target participates in stream starts. Persisted
+ * profile data — the pre-stream on/off toggle in the UI edits THIS
+ * field (and saves the profile), so the backend is the authority
+ * on which destinations go live. The previous design kept the
+ * toggle in frontend-only state: the UI showed a target as off
+ * while FFmpeg happily streamed to it.
+ */
+enabled: boolean, };

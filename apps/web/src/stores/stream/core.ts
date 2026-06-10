@@ -15,8 +15,7 @@ type CoreSlice = Pick<
   StreamState,
   | 'isStreaming'
   | 'activeGroups'
-  | 'enabledGroups'
-  | 'enabledTargets'
+  | 'liveTargetOverrides'
   | 'activeStreamCount'
   | 'error'
   | 'syncWithBackend'
@@ -26,8 +25,6 @@ type CoreSlice = Pick<
   | 'stopAllGroups'
   | 'toggleTargetLive'
   | 'setIsStreaming'
-  | 'setGroupEnabled'
-  | 'setTargetEnabled'
   | 'setError'
   | 'reset'
 >;
@@ -35,8 +32,7 @@ type CoreSlice = Pick<
 export const createCoreSlice: StateCreator<StreamState, [], [], CoreSlice> = (set, get) => ({
   isStreaming: false,
   activeGroups: new Set(),
-  enabledGroups: new Set(),
-  enabledTargets: new Set(),
+  liveTargetOverrides: new Map(),
   error: null,
   activeStreamCount: 0,
 
@@ -97,6 +93,8 @@ export const createCoreSlice: StateCreator<StreamState, [], [], CoreSlice> = (se
       set({
         activeGroups,
         isStreaming,
+        // Live overrides only make sense while something is live.
+        liveTargetOverrides: isStreaming ? get().liveTargetOverrides : new Map(),
       });
       get().setGlobalStatus(isStreaming ? 'live' : 'offline');
     } catch (error) {
@@ -104,32 +102,22 @@ export const createCoreSlice: StateCreator<StreamState, [], [], CoreSlice> = (se
     }
   },
 
-  // Backend handles filtering disabled targets via disabled_targets set.
+  // Eligibility (group.enabled + at least one enabled target) is decided
+  // SERVER-side: send every group, render core's verdict. Core answers
+  // with `startedGroupIds` (the authority) or a `no_eligible_groups`
+  // validation error.
   startAllGroups: async (groups, incomingUrl) => {
     set({ globalStatus: 'connecting' });
     get().setError(null);
 
     try {
-      // Filter groups by: has targets AND is enabled.
-      // If enabledGroups is empty, treat all groups as enabled (first-time startup case).
-      const enabledGroups = get().enabledGroups;
-      const eligibleGroups = groups.filter((group) => {
-        const hasTargets = group.streamTargets.length > 0;
-        const isEnabled = enabledGroups.size === 0 || enabledGroups.has(group.id);
-        return hasTargets && isEnabled;
-      });
-
-      if (eligibleGroups.length === 0) {
-        throw new Error('At least one enabled output group with stream targets is required');
-      }
-
-      await api.stream.startAll(eligibleGroups, incomingUrl);
+      const { startedGroupIds } = await api.stream.startAll(groups, incomingUrl);
 
       const activeGroups = new Set(get().activeGroups);
-      for (const group of eligibleGroups) {
-        activeGroups.add(group.id);
+      for (const groupId of startedGroupIds) {
+        activeGroups.add(groupId);
       }
-      set({ activeGroups, isStreaming: true });
+      set({ activeGroups, isStreaming: true, liveTargetOverrides: new Map() });
       // Reset displayed uptime — see `startGroup` for the rationale.
       get().setUptime(0);
       get().setGlobalStatus('live');
@@ -145,6 +133,7 @@ export const createCoreSlice: StateCreator<StreamState, [], [], CoreSlice> = (se
       await api.stream.stopAll();
       set({
         activeGroups: new Set(),
+        liveTargetOverrides: new Map(),
         isStreaming: false,
         uptime: 0,
         groupStats: {},
@@ -160,13 +149,9 @@ export const createCoreSlice: StateCreator<StreamState, [], [], CoreSlice> = (se
     try {
       await api.stream.toggleTarget(targetId, enabled, group, incomingUrl);
 
-      const enabledTargets = new Set(get().enabledTargets);
-      if (enabled) {
-        enabledTargets.add(targetId);
-      } else {
-        enabledTargets.delete(targetId);
-      }
-      set({ enabledTargets });
+      const liveTargetOverrides = new Map(get().liveTargetOverrides);
+      liveTargetOverrides.set(targetId, enabled);
+      set({ liveTargetOverrides });
     } catch (error) {
       get().setError(String(error));
       throw error;
@@ -178,32 +163,13 @@ export const createCoreSlice: StateCreator<StreamState, [], [], CoreSlice> = (se
     set({ isStreaming, globalStatus: status });
   },
 
-  setGroupEnabled: (groupId, enabled) => {
-    const enabledGroups = new Set(get().enabledGroups);
-    if (enabled) {
-      enabledGroups.add(groupId);
-    } else {
-      enabledGroups.delete(groupId);
-    }
-    set({ enabledGroups });
-  },
-
-  setTargetEnabled: (targetId, enabled) => {
-    const enabledTargets = new Set(get().enabledTargets);
-    if (enabled) {
-      enabledTargets.add(targetId);
-    } else {
-      enabledTargets.delete(targetId);
-    }
-    set({ enabledTargets });
-  },
-
   setError: (error) => set({ error }),
 
   reset: () => {
     set({
       isStreaming: false,
       activeGroups: new Set(),
+      liveTargetOverrides: new Map(),
       stats: initialStats,
       groupStats: {},
       uptime: 0,

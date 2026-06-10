@@ -214,6 +214,7 @@ async fn rotate_with_encrypted_profile_re_encrypts_stream_keys() {
         name: "Twitch".into(),
         url: "rtmp://localhost/x".into(),
         stream_key: plain_key.into(),
+        enabled: true,
     }];
     let mut plain = Profile {
         id: "plain".into(),
@@ -224,6 +225,7 @@ async fn rotate_with_encrypted_profile_re_encrypts_stream_keys() {
             bind_address: "127.0.0.1".into(),
             port: 1935,
             application: "live".into(),
+            url: String::new(),
         },
         output_groups: vec![og],
         settings: ProfileSettings {
@@ -296,6 +298,7 @@ async fn rotate_refuses_when_password_missing_for_encrypted_profile() {
             bind_address: "127.0.0.1".into(),
             port: 1935,
             application: "live".into(),
+            url: String::new(),
         },
         output_groups: vec![],
         settings: ProfileSettings::default(),
@@ -361,6 +364,7 @@ async fn rotate_rolls_back_when_re_encrypt_fails_midway() {
         name: "Twitch".into(),
         url: "rtmp://localhost/x".into(),
         stream_key: "live_real_1234567890".into(),
+        enabled: true,
     }];
     let good = Profile {
         id: "good".into(),
@@ -371,6 +375,7 @@ async fn rotate_rolls_back_when_re_encrypt_fails_midway() {
             bind_address: "127.0.0.1".into(),
             port: 1935,
             application: "live".into(),
+            url: String::new(),
         },
         output_groups: vec![og],
         settings: ProfileSettings {
@@ -501,6 +506,7 @@ async fn rotate_refuses_on_wrong_password_for_encrypted_profile() {
             bind_address: "127.0.0.1".into(),
             port: 1935,
             application: "live".into(),
+            url: String::new(),
         },
         output_groups: vec![],
         settings: ProfileSettings::default(),

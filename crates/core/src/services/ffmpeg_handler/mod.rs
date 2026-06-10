@@ -16,6 +16,7 @@
 
 mod args;
 mod lifecycle;
+pub mod process_registry;
 mod relay;
 mod stats;
 mod validation;
@@ -110,11 +111,6 @@ impl ReconnectionState {
         self.last_attempt = Some(Instant::now());
     }
 
-    pub(super) fn reset(&mut self) {
-        self.attempt = 0;
-        self.last_attempt = None;
-    }
-
     pub(super) fn should_retry(&self, config: &ReconnectionConfig) -> bool {
         self.attempt < config.max_retries
     }
@@ -131,8 +127,9 @@ impl ReconnectionState {
 // =========================================================================
 
 /// Manages FFmpeg streaming processes. Method impls live in
-/// `validation`, `args`, `relay`, `lifecycle`, and `stats` submodules —
-/// each `impl super::FFmpegHandler { ... }` adds to the same surface.
+/// `validation`, `args`, `relay`, `lifecycle`, `stats`, and
+/// `process_registry` submodules — each `impl super::FFmpegHandler
+/// { ... }` adds to the same surface.
 pub struct FFmpegHandler {
     pub(in crate::services::ffmpeg_handler) ffmpeg_path: String,
     pub(in crate::services::ffmpeg_handler) processes: Arc<Mutex<HashMap<String, ProcessInfo>>>,
@@ -146,10 +143,28 @@ pub struct FFmpegHandler {
     pub(in crate::services::ffmpeg_handler) relay_refcount: Arc<AtomicUsize>,
     pub(in crate::services::ffmpeg_handler) platform_registry: PlatformRegistry,
     pub(in crate::services::ffmpeg_handler) reconnection_config: ReconnectionConfig,
+    /// Per-group reconnection state. Lives OUTSIDE `ProcessInfo` on
+    /// purpose: the crash handler removes the `ProcessInfo` before the
+    /// retry driver runs, so state stored there always read attempt=0 —
+    /// the retry counter never advanced and a permanently-failed group
+    /// reconnect-looped forever. Cleared on manual stop, on retry
+    /// exhaustion, and after a stable (60s+) run.
+    pub(in crate::services::ffmpeg_handler) reconnection_states:
+        Arc<Mutex<HashMap<String, ReconnectionState>>>,
     /// Port assignments for groups (`group_id` → `port_offset`). Simple
     /// sequential allocation instead of hash-based.
     pub(in crate::services::ffmpeg_handler) port_assignments: Arc<Mutex<HashMap<String, u16>>>,
     pub(in crate::services::ffmpeg_handler) next_port_offset: Arc<AtomicU16>,
+    /// Serialises stream-start admission (`start` / `start_all`).
+    /// Without it, two concurrent `start_all` calls both passed the
+    /// `active_count() == 0` check before either inserted a process,
+    /// then spawned duplicate FFmpeg trees fighting over the same relay
+    /// ports.
+    pub(in crate::services::ffmpeg_handler) admission: Mutex<()>,
+    /// Where `run/stream_processes.json` lives — the cross-process
+    /// registry that lets a one-shot CLI `safety panic` kill FFmpeg
+    /// processes spawned by another (possibly dead) server process.
+    pub(in crate::services::ffmpeg_handler) run_dir: std::path::PathBuf,
     /// SpiritStream→OBS trigger handle. Set once at startup by
     /// `ServiceRegistry::build`. When present and the active profile's
     /// `obs.direction` allows the spiritstream→obs trigger, every
@@ -199,7 +214,7 @@ impl FFmpegHandler {
     /// string (`ffmpeg`) so spawn calls surface "FFmpeg missing" cleanly
     /// rather than crashing on empty.
     pub fn new_with_custom_path(
-        _app_data_dir: std::path::PathBuf,
+        app_data_dir: std::path::PathBuf,
         custom_path: Option<String>,
     ) -> Result<Self, CoreError> {
         use crate::services::{FFmpegLocator, SettingsManager};
@@ -231,8 +246,11 @@ impl FFmpegHandler {
             relay_refcount: Arc::new(AtomicUsize::new(0)),
             platform_registry: PlatformRegistry::new()?,
             reconnection_config: ReconnectionConfig::default(),
+            reconnection_states: Arc::new(Mutex::new(HashMap::new())),
             port_assignments: Arc::new(Mutex::new(HashMap::new())),
             next_port_offset: Arc::new(AtomicU16::new(0)),
+            admission: Mutex::new(()),
+            run_dir: app_data_dir.join("run"),
             obs_trigger: std::sync::RwLock::new(None),
         })
     }
@@ -313,5 +331,46 @@ impl FFmpegHandler {
             e.into_inner()
         });
         disabled.contains(target_id)
+    }
+
+    /// Whether the group has at least one target that would actually
+    /// produce an output: persisted-enabled AND not live-disabled.
+    /// Spawning FFmpeg for a group with zero live targets used to
+    /// succeed silently — the meter saw no data, the UI said
+    /// "streaming", and nothing went anywhere (dead air).
+    pub(super) fn has_live_targets(&self, group: &crate::models::OutputGroup) -> bool {
+        let disabled = self.disabled_targets.lock().unwrap_or_else(|e| {
+            log::warn!("Disabled targets mutex poisoned (has_live_targets), recovering: {e}");
+            e.into_inner()
+        });
+        group
+            .stream_targets
+            .iter()
+            .any(|t| t.enabled && !disabled.contains(&t.id))
+    }
+}
+
+pub(super) fn no_live_targets_error(group_id: &str) -> CoreError {
+    CoreError::ValidationFailed {
+        reasons: vec![crate::errors::ValidationIssue {
+            code: "no_live_targets".into(),
+            message: format!(
+                "Output group {group_id} has no enabled stream targets — refusing to start \
+                 an output-less FFmpeg process."
+            ),
+            path: None,
+        }],
+    }
+}
+
+pub(super) fn no_eligible_groups_error() -> CoreError {
+    CoreError::ValidationFailed {
+        reasons: vec![crate::errors::ValidationIssue {
+            code: "no_eligible_groups".into(),
+            message: "No enabled output group with enabled stream targets — enable at least \
+                      one group and one target."
+                .into(),
+            path: None,
+        }],
     }
 }

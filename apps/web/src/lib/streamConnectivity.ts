@@ -37,17 +37,17 @@ export type ConnectivityProgressCallback = (
 export async function testStreamConnectivity(
   profile: Profile,
   options: {
+    /** Restrict to targets whose persisted `enabled` flag is on. */
     enabledTargetsOnly?: boolean;
-    enabledTargetIds?: Set<string>;
   } = {},
   onProgress?: ConnectivityProgressCallback
 ): Promise<ConnectivityTestResult> {
-  const { enabledTargetsOnly = false, enabledTargetIds = new Set<string>() } = options;
+  const { enabledTargetsOnly = false } = options;
 
   const allTargets: Array<{ target: StreamTarget; groupName: string }> = [];
   for (const group of profile.outputGroups) {
     for (const target of group.streamTargets) {
-      if (enabledTargetsOnly && !enabledTargetIds.has(target.id)) continue;
+      if (enabledTargetsOnly && !target.enabled) continue;
       allTargets.push({ target, groupName: group.name });
     }
   }

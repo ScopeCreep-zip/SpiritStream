@@ -42,6 +42,7 @@ fn full_secret_profile(name: &str, port: u16) -> Profile {
         name: "Twitch".into(),
         url: "rtmp://localhost/x".into(),
         stream_key: "live_stream_key_1234".into(),
+        enabled: true,
     }];
 
     Profile {
@@ -53,6 +54,7 @@ fn full_secret_profile(name: &str, port: u16) -> Profile {
             bind_address: "127.0.0.1".into(),
             port,
             application: "live".into(),
+            url: String::new(),
         },
         output_groups: vec![og],
         settings,

@@ -5,7 +5,6 @@ import { api } from '@/lib/client';
 import { toast } from '@/hooks/useToast';
 import { logger } from '@/lib/logger';
 import { useStreamStore } from '@/stores/streamStore';
-import { incomingRtmpUrl } from '@/lib/profile-helpers';
 import { formatUptime, formatBitrate } from '@/hooks/useStreamStats';
 import { ConnectionStatus } from '@/components/ui/ConnectionStatus';
 import { cn } from '@/lib/cn';
@@ -35,7 +34,7 @@ export function StatusStrip({ profile, onOpenModal }: StatusStripProps): React.R
     setStarting(true);
     try {
       await api.stream.validate(profile);
-      await startAllGroups(profile.outputGroups, incomingRtmpUrl(profile.input));
+      await startAllGroups(profile.outputGroups, profile.input.url);
       toast.success(t('toast.streamStarted'));
     } catch (err) {
       logger.error('[status-strip] start failed', err);

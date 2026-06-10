@@ -27,6 +27,14 @@ isDefault: boolean,
  */
 generatePts: boolean, 
 /**
+ * Whether this group participates in "start all". Persisted
+ * profile data — replaces the frontend's `enabledGroups`
+ * empty-set-means-all sentinel, whose edge cases re-enabled every
+ * group when the user disabled the last one. Eligibility is
+ * decided server-side from this flag.
+ */
+enabled: boolean, 
+/**
  * Video encoding settings
  */
 video: VideoSettings, 

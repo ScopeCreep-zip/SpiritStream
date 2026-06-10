@@ -34,6 +34,9 @@ export const createDefaultRtmpInput = (): RtmpInput => ({
   bindAddress: '0.0.0.0',
   port: 1935,
   application: 'live',
+  // Recomputed server-side on every save/load (RtmpInput::refresh_url);
+  // the placeholder only exists until the first round-trip.
+  url: 'rtmp://0.0.0.0:1935/live',
 });
 
 export const createDefaultVideoSettings = (): VideoSettings => ({
@@ -63,6 +66,7 @@ export const createDefaultOutputGroup = (): OutputGroup => ({
   name: 'New Output Group',
   isDefault: false,
   generatePts: true,
+  enabled: true,
   video: createDefaultVideoSettings(),
   audio: createDefaultAudioSettings(),
   container: createDefaultContainerSettings(),
@@ -74,6 +78,7 @@ export const createPassthroughOutputGroup = (): OutputGroup => ({
   name: 'Passthrough (Default)',
   isDefault: true,
   generatePts: true,
+  enabled: true,
   video: createDefaultVideoSettings(),
   audio: createDefaultAudioSettings(),
   container: createDefaultContainerSettings(),
@@ -86,6 +91,7 @@ export const createDefaultStreamTarget = (service: Platform): StreamTarget => ({
   name: PLATFORMS[service].displayName,
   url: PLATFORMS[service].defaultServer,
   streamKey: '',
+  enabled: true,
 });
 
 export const createDefaultBackendSettings = (): BackendSettings => ({
@@ -190,8 +196,3 @@ export const formatResolution = (video: VideoSettings): string => {
   return `${video.height}p${video.fps}`;
 };
 
-/** Build the incoming RTMP URL for a profile. The shape mirrors what
- *  `FFmpegHandler::start_all_groups` constructs server-side; the two
- *  must stay in lockstep, which is why this is a single helper. */
-export const incomingRtmpUrl = (input: RtmpInput): string =>
-  `rtmp://${input.bindAddress}:${input.port}/${input.application}`;

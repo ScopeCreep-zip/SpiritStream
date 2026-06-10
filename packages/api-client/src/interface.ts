@@ -64,7 +64,10 @@ export interface ProfileApi {
 
 export interface StreamApi {
   start(group: OutputGroup, incomingUrl: string): Promise<number>;
-  startAll(groups: OutputGroup[], incomingUrl: string): Promise<number[]>;
+  startAll(
+    groups: OutputGroup[],
+    incomingUrl: string
+  ): Promise<{ pids: number[]; startedGroupIds: string[] }>;
   stop(groupId: string): Promise<void>;
   stopAll(): Promise<void>;
   getActiveCount(): Promise<number>;

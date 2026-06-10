@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { GroupTabs } from './GroupTabs';
 import { GroupPanel } from './GroupPanel';
@@ -40,15 +40,32 @@ export function PipelineColumn({
   const addOutputGroup = useProfileStore((s) => s.addOutputGroup);
   const removeOutputGroup = useProfileStore((s) => s.removeOutputGroup);
   const removeStreamTarget = useProfileStore((s) => s.removeStreamTarget);
-  const setTargetEnabled = useStreamStore((s) => s.setTargetEnabled);
+  const updateStreamTarget = useProfileStore((s) => s.updateStreamTarget);
+  const updateOutputGroup = useProfileStore((s) => s.updateOutputGroup);
   const toggleTargetLive = useStreamStore((s) => s.toggleTargetLive);
-  const setGroupEnabled = useStreamStore((s) => s.setGroupEnabled);
   const startGroup = useStreamStore((s) => s.startGroup);
   const stopGroup = useStreamStore((s) => s.stopGroup);
-  const enabledTargets = useStreamStore((s) => s.enabledTargets);
-  const enabledGroups = useStreamStore((s) => s.enabledGroups);
+  const liveTargetOverrides = useStreamStore((s) => s.liveTargetOverrides);
   const globalStatus = useStreamStore((s) => s.globalStatus);
   const activeGroups = useStreamStore((s) => s.activeGroups);
+
+  /**
+   * Effective per-target enablement the panel renders: the persisted
+   * `target.enabled` profile field, overlaid with any mid-stream live
+   * toggles. Both inputs are backend-authoritative — this is display
+   * composition, not policy.
+   */
+  const enabledTargets = useMemo(() => {
+    const ids = new Set<string>();
+    for (const group of profile?.outputGroups ?? []) {
+      for (const target of group.streamTargets) {
+        if (liveTargetOverrides.get(target.id) ?? target.enabled) {
+          ids.add(target.id);
+        }
+      }
+    }
+    return ids;
+  }, [profile, liveTargetOverrides]);
 
   const handleAddGroup = useCallback(async () => {
     if (!profile) return;
@@ -146,19 +163,30 @@ export function PipelineColumn({
     async (group: OutputGroup, target: StreamTarget) => {
       const nextEnabled = !enabledTargets.has(target.id);
 
-      // Pre-stream: only record the intended enable/disable in the UI set.
-      // The backend reads `disabled_targets` when the group is started.
+      // Pre-stream: persist `target.enabled` on the profile — the data
+      // core consults at start. The old frontend-only Set never reached
+      // the backend, so a target the UI showed as OFF still went live.
       if (!activeGroups.has(group.id)) {
-        setTargetEnabled(target.id, nextEnabled);
+        try {
+          await updateStreamTarget(group.id, target.id, { enabled: nextEnabled });
+        } catch (err) {
+          logger.error('[pipeline] persist target toggle failed', err);
+          toast.error(
+            t('toast.targetToggleFailed', {
+              defaultValue: 'Failed to toggle {{name}}: {{error}}',
+              name: target.name,
+              error: err instanceof Error ? err.message : String(err),
+            })
+          );
+        }
         return;
       }
 
       // Live: start/stop this single target on the already-running group, so
       // a creator can drop one destination without taking the rest offline.
       if (!profile) return;
-      const incomingUrl = `rtmp://${profile.input.bindAddress}:${profile.input.port}/${profile.input.application}`;
       try {
-        await toggleTargetLive(target.id, nextEnabled, group, incomingUrl);
+        await toggleTargetLive(target.id, nextEnabled, group, profile.input.url);
         toast.success(
           nextEnabled
             ? t('toast.targetStarted', { defaultValue: 'Started {{name}}', name: target.name })
@@ -175,15 +203,14 @@ export function PipelineColumn({
         );
       }
     },
-    [enabledTargets, activeGroups, profile, setTargetEnabled, toggleTargetLive, t]
+    [enabledTargets, activeGroups, profile, updateStreamTarget, toggleTargetLive, t]
   );
 
   const handleStartGroup = useCallback(
     async (group: OutputGroup) => {
       if (!profile) return;
-      const incomingUrl = `rtmp://${profile.input.bindAddress}:${profile.input.port}/${profile.input.application}`;
       try {
-        await startGroup(group, incomingUrl);
+        await startGroup(group, profile.input.url);
         toast.success(
           t('toast.groupStarted', {
             defaultValue: 'Streaming {{name}}',
@@ -229,23 +256,25 @@ export function PipelineColumn({
   );
 
   const handleToggleGroupEnabled = useCallback(
-    (group: OutputGroup) => {
-      // `enabledGroups` empty == every group is implicitly enabled (the
-      // first-time-startup case in `startAllGroups`). Toggling off must
-      // materialise the full set first, otherwise unchecking one group
-      // would flip every other group out of the set too.
-      if (enabledGroups.size === 0 && profile) {
-        for (const g of profile.outputGroups) {
-          if (g.id !== group.id) {
-            setGroupEnabled(g.id, true);
-          }
-        }
-        setGroupEnabled(group.id, false);
-        return;
+    async (group: OutputGroup) => {
+      // Persist `group.enabled` on the profile — core decides start-all
+      // eligibility from it. Replaces the empty-set-means-all frontend
+      // sentinel whose edge case re-enabled every group when the user
+      // disabled the last one.
+      try {
+        await updateOutputGroup(group.id, { enabled: !group.enabled });
+      } catch (err) {
+        logger.error('[pipeline] persist group toggle failed', err);
+        toast.error(
+          t('toast.groupToggleFailed', {
+            defaultValue: 'Failed to toggle {{name}}: {{error}}',
+            name: group.name,
+            error: err instanceof Error ? err.message : String(err),
+          })
+        );
       }
-      setGroupEnabled(group.id, !enabledGroups.has(group.id));
     },
-    [enabledGroups, profile, setGroupEnabled]
+    [updateOutputGroup, t]
   );
 
   if (!profile) {
@@ -274,9 +303,7 @@ export function PipelineColumn({
           groupStatus={resolveGroupStatus(globalStatus, activeGroups.has(activeGroup.id))}
           enabledTargets={enabledTargets}
           isStreaming={activeGroups.has(activeGroup.id)}
-          // `enabledGroups` empty == every group is implicitly enabled
-          // (first-time startup before the user has toggled anything).
-          isEnabled={enabledGroups.size === 0 || enabledGroups.has(activeGroup.id)}
+          isEnabled={activeGroup.enabled}
           onEditEncoder={() => onEditGroup(activeGroup)}
           onEditGroup={() => onEditGroup(activeGroup)}
           onDuplicateGroup={() => handleDuplicateGroup(activeGroup)}

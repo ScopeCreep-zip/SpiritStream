@@ -118,6 +118,8 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
       bindAddress: formData.bindAddress,
       port: parseInt(formData.port),
       application: formData.application,
+      // Recomputed authoritatively server-side on save (refresh_url).
+      url: '',
     };
 
     try {
@@ -143,6 +145,8 @@ export function ProfileModal({ open, onClose, mode, profile }: ProfileModalProps
       bindAddress: formData.bindAddress,
       port: parseInt(formData.port),
       application: formData.application,
+      // Recomputed authoritatively server-side on save (refresh_url).
+      url: '',
     };
 
     if (mode === 'create') {

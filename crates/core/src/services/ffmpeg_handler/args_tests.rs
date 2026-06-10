@@ -51,6 +51,7 @@ fn target(id: &str, url: &str, key: &str) -> StreamTarget {
         service: Platform::Custom,
         url: url.into(),
         stream_key: key.into(),
+        enabled: true,
     }
 }
 
@@ -64,6 +65,7 @@ fn group_with(
         name: "Group 1".into(),
         is_default: true,
         generate_pts: false,
+        enabled: true,
         video,
         audio,
         container: ContainerSettings::default(),

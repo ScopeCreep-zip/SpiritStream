@@ -28,4 +28,17 @@ pub struct StreamTarget {
 
     /// Stream key (authentication) - supports ${ENV_VAR} syntax
     pub stream_key: String,
+
+    /// Whether this target participates in stream starts. Persisted
+    /// profile data — the pre-stream on/off toggle in the UI edits THIS
+    /// field (and saves the profile), so the backend is the authority
+    /// on which destinations go live. The previous design kept the
+    /// toggle in frontend-only state: the UI showed a target as off
+    /// while FFmpeg happily streamed to it.
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+}
+
+fn default_enabled() -> bool {
+    true
 }

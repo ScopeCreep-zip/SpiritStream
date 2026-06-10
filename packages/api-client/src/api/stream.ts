@@ -12,15 +12,18 @@ export const stream = {
     );
     return pid;
   },
-  /** Start all output groups. Returns array of FFmpeg process PIDs */
+  /**
+   * Start streaming. Send EVERY group — eligibility (group enabled +
+   * at least one enabled target) is decided server-side. Returns the
+   * authoritative list of started group ids alongside the PIDs.
+   */
   startAll: async (groups: OutputGroup[], incomingUrl: string) => {
-    const { pids } = await fetchTypedJson<{ pids: number[] }>(
+    return fetchTypedJson<{ pids: number[]; startedGroupIds: string[] }>(
       'POST',
       '/api/v1/streams',
       undefined,
       { groups, incomingUrl }
     );
-    return pids;
   },
   /** Stop streaming for a specific output group */
   stop: async (groupId: string) => {

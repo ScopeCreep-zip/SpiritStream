@@ -167,6 +167,7 @@ mod tests {
                 bind_address: "127.0.0.1".into(),
                 port,
                 application: "live".into(),
+                url: String::new(),
             },
             output_groups: vec![],
             settings: ProfileSettings::default(),

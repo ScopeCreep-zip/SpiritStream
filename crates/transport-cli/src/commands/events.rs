@@ -38,24 +38,28 @@ pub enum EventsCmd {
 
 pub async fn run(
     cmd: EventsCmd,
-    _registry: &ServiceRegistry,
+    registry: &ServiceRegistry,
     _out: &mut Output,
 ) -> Result<(), CliError> {
     match cmd {
-        EventsCmd::Watch { filter, for_ms } => watch(filter, for_ms).await,
+        EventsCmd::Watch { filter, for_ms } => watch(registry, filter, for_ms).await,
     }
 }
 
-async fn watch(filters: Vec<String>, for_ms: Option<u64>) -> Result<(), CliError> {
+async fn watch(
+    registry: &ServiceRegistry,
+    filters: Vec<String>,
+    for_ms: Option<u64>,
+) -> Result<(), CliError> {
     // Build a *new* registry that wires a `StdoutEventSink` instead of
-    // `NoopEventSink`. The outer `cli.data_dir` resolution already happened
-    // (the registry passed in here uses Noop) — we just rebuild against the
-    // same paths.
-    let data_dir = dirs_next::data_local_dir()
-        .map(|d| d.join("spiritstream"))
-        .ok_or_else(|| CliError::Io("could not resolve data directory".into()))?;
-    let log_dir = data_dir.join("logs");
-    let themes_dir = data_dir.join("themes");
+    // `NoopEventSink`, against the SAME paths the outer registry resolved
+    // (`--data-dir` / `SPIRITSTREAM_DATA_DIR` / `--themes-dir` included).
+    // The previous implementation rebuilt from the platform default — a
+    // `--data-dir`-isolated invocation silently watched (and created
+    // services against) the user's real install.
+    let data_dir = registry.data_dir.clone();
+    let log_dir = registry.log_dir.clone();
+    let themes_dir = registry.themes_dir.clone();
     let events: Arc<dyn EventSink> = Arc::new(StdoutEventSink::new(filters));
     let override_kind = std::env::var("SPIRITSTREAM_SECRET_STORE").ok();
     let secret_store =

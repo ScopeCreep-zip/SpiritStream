@@ -125,6 +125,7 @@ mod permission_tests {
                 bind_address: "127.0.0.1".into(),
                 port: 1935,
                 application: "live".into(),
+                url: String::new(),
             },
             output_groups: vec![],
             settings: ProfileSettings::default(),

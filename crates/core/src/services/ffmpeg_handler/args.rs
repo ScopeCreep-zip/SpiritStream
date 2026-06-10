@@ -455,7 +455,10 @@ impl super::FFmpegHandler {
         });
         let mut target_outputs: Vec<String> = Vec::new();
         for target in &group.stream_targets {
-            if disabled.contains(&target.id) {
+            // Two layers: `target.enabled` is the persisted profile
+            // toggle (authoritative pre-start), the `disabled_targets`
+            // set is the live mid-stream toggle.
+            if !target.enabled || disabled.contains(&target.id) {
                 continue;
             }
 

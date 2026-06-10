@@ -62,6 +62,35 @@ pub enum StreamCmd {
         #[arg(long)]
         password: Option<String>,
     },
+    /// Persist a target's pre-start enabled flag on the profile. This is
+    /// the data `start` / `start-all` consult — mirrors the UI toggle.
+    SetTargetEnabled {
+        /// Target ID to update.
+        target_id: String,
+        /// `true` enables the target, `false` disables it.
+        #[arg(long)]
+        enabled: bool,
+        /// Profile name owning the target.
+        #[arg(long)]
+        profile: String,
+        /// Password for encrypted profiles.
+        #[arg(long)]
+        password: Option<String>,
+    },
+    /// Persist a group's start-all eligibility flag on the profile.
+    SetGroupEnabled {
+        /// Group ID to update.
+        group_id: String,
+        /// `true` includes the group in start-all, `false` excludes it.
+        #[arg(long)]
+        enabled: bool,
+        /// Profile name owning the group.
+        #[arg(long)]
+        profile: String,
+        /// Password for encrypted profiles.
+        #[arg(long)]
+        password: Option<String>,
+    },
 }
 
 #[derive(Serialize)]
@@ -71,8 +100,14 @@ struct StatusResponse {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct StopResponse {
     stopped: Vec<String>,
+    /// FFmpeg processes from other SpiritStream processes killed via the
+    /// cross-process registry (the CLI is one-shot — without this,
+    /// `stream stop` couldn't reach streams it didn't start).
+    orphans_killed: usize,
+    orphans_stale: usize,
 }
 
 pub async fn run(
@@ -91,12 +126,28 @@ pub async fn run(
             match group {
                 Some(id) => {
                     registry.ffmpeg.stop(&id)?;
-                    out.emit(&StopResponse { stopped: vec![id] })?;
+                    out.emit(&StopResponse {
+                        stopped: vec![id],
+                        orphans_killed: 0,
+                        orphans_stale: 0,
+                    })?;
                 }
                 None => {
                     let stopped = registry.ffmpeg.get_active_group_ids();
                     registry.ffmpeg.stop_all()?;
-                    out.emit(&StopResponse { stopped })?;
+                    // Stop-all also reaches across processes (see
+                    // StopResponse docs).
+                    let run_dir = registry.data_dir.join("run");
+                    let orphans = tokio::task::spawn_blocking(move || {
+                        spiritstream_core::services::ffmpeg_handler::process_registry::kill_recorded_processes(&run_dir)
+                    })
+                    .await
+                    .map_err(|e| CliError::Io(format!("orphan-kill join: {e}")))??;
+                    out.emit(&StopResponse {
+                        stopped,
+                        orphans_killed: orphans.killed,
+                        orphans_stale: orphans.stale,
+                    })?;
                 }
             }
             Ok(())
@@ -110,10 +161,8 @@ pub async fn run(
                 .profiles
                 .load_with_key_decryption(&profile, password.as_deref())
                 .await?;
-            let incoming_url = format!(
-                "rtmp://{}:{}/{}",
-                p.input.bind_address, p.input.port, p.input.application,
-            );
+            // Server-computed incoming URL (`refresh_url` runs on load).
+            let incoming_url = p.input.url.clone();
 
             let groups: Vec<spiritstream_core::models::OutputGroup> = match &group {
                 Some(id) => p
@@ -122,12 +171,7 @@ pub async fn run(
                     .filter(|g| &g.id == id)
                     .cloned()
                     .collect(),
-                None => p
-                    .output_groups
-                    .iter()
-                    .filter(|g| !g.stream_targets.is_empty())
-                    .cloned()
-                    .collect(),
+                None => p.output_groups.clone(),
             };
 
             if groups.is_empty() {
@@ -140,16 +184,24 @@ pub async fn run(
                 )));
             }
 
-            let pids =
+            // Eligibility (group.enabled + enabled targets) is decided by
+            // core — the CLI sends everything, same as the web frontend.
+            let started =
                 registry
                     .ffmpeg
                     .start_all(&groups, &incoming_url, registry.events.clone())?;
 
             #[derive(Serialize)]
+            #[serde(rename_all = "camelCase")]
             struct StartResponse {
                 pids: Vec<u32>,
+                started_group_ids: Vec<String>,
             }
-            out.emit(&StartResponse { pids })?;
+            let (started_group_ids, pids) = started.into_iter().unzip();
+            out.emit(&StartResponse {
+                pids,
+                started_group_ids,
+            })?;
             Ok(())
         }
         StreamCmd::Retry { group_id } => {
@@ -242,6 +294,66 @@ pub async fn run(
             out.emit(
                 &serde_json::json!({ "pid": pid, "targetId": target_id, "enabled": enabled }),
             )?;
+            Ok(())
+        }
+        StreamCmd::SetTargetEnabled {
+            target_id,
+            enabled,
+            profile,
+            password,
+        } => {
+            let mut p = registry
+                .profiles
+                .load_with_key_decryption(&profile, password.as_deref())
+                .await?;
+            let mut found = false;
+            for group in &mut p.output_groups {
+                for target in &mut group.stream_targets {
+                    if target.id == target_id {
+                        target.enabled = enabled;
+                        found = true;
+                    }
+                }
+            }
+            if !found {
+                return Err(CliError::Argument(format!(
+                    "stream target '{target_id}' not found in profile '{profile}'"
+                )));
+            }
+            registry
+                .profiles
+                .save_with_key_encryption(&p, password.as_deref())
+                .await?;
+            out.emit(&serde_json::json!({ "targetId": target_id, "enabled": enabled }))?;
+            Ok(())
+        }
+        StreamCmd::SetGroupEnabled {
+            group_id,
+            enabled,
+            profile,
+            password,
+        } => {
+            let mut p = registry
+                .profiles
+                .load_with_key_decryption(&profile, password.as_deref())
+                .await?;
+            let mut found = false;
+            for group in &mut p.output_groups {
+                if group.id == group_id {
+                    group.enabled = enabled;
+                    found = true;
+                }
+            }
+            if !found {
+                return Err(CliError::Argument(format!(
+                    "output group '{group_id}' not found in profile '{profile}'"
+                )));
+            }
+            registry
+                .profiles
+                .save_with_key_encryption(&p, password.as_deref())
+                .await?;
+            out.emit(&serde_json::json!({ "groupId": group_id, "enabled": enabled }))?;
             Ok(())
         }
     }

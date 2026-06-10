@@ -21,8 +21,15 @@ export interface GroupStats {
 export interface StreamState {
   isStreaming: boolean;
   activeGroups: Set<string>;
-  enabledGroups: Set<string>;
-  enabledTargets: Set<string>;
+  /**
+   * Mid-stream per-target overrides from `toggleTargetLive` (the live
+   * PATCH that restarts the group). Keyed by target id; cleared when
+   * the stream stops. Pre-stream enablement is NOT here — it's the
+   * persisted `target.enabled` / `group.enabled` profile fields, which
+   * core consults at start. The previous frontend-only Sets were
+   * cosmetic: the UI showed a target off while FFmpeg streamed to it.
+   */
+  liveTargetOverrides: Map<string, boolean>;
   stats: AggregateStreamStats;
   groupStats: Record<string, GroupStats>;
   uptime: number;
@@ -44,8 +51,6 @@ export interface StreamState {
   syncWithBackend: () => Promise<void>;
 
   setIsStreaming: (isStreaming: boolean) => void;
-  setGroupEnabled: (groupId: string, enabled: boolean) => void;
-  setTargetEnabled: (targetId: string, enabled: boolean) => void;
   updateStats: (groupId: string, ffmpegStats: FFmpegStats) => void;
   setStreamEnded: (groupId: string) => void;
   setStreamError: (groupId: string, error: string) => void;

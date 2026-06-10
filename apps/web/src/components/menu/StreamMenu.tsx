@@ -6,7 +6,6 @@ import { toast } from '@/hooks/useToast';
 import { logger } from '@/lib/logger';
 import { useProfileStore } from '@/stores/profileStore';
 import { useStreamStore } from '@/stores/streamStore';
-import { incomingRtmpUrl } from '@/lib/profile-helpers';
 import { testStreamConnectivity } from '@/lib/streamConnectivity';
 import {
   TRIGGER_CLASS,
@@ -34,7 +33,7 @@ export function StreamMenu({ onEditEncoder, canEditEncoder }: StreamMenuProps): 
     if (!current) return;
     try {
       await api.stream.validate(current);
-      await startAllGroups(current.outputGroups, incomingRtmpUrl(current.input));
+      await startAllGroups(current.outputGroups, current.input.url);
       toast.success(t('toast.streamStarted'));
     } catch (err) {
       logger.error('[menu] start failed', err);
