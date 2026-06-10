@@ -16,6 +16,14 @@ pub enum CliError {
 
     #[error("invalid argument: {0}")]
     Argument(String),
+
+    /// Service-level "not ready" / "transient failure" — distinct from
+    /// `Argument` so retry-loop scripts (`until cli system ready; do
+    /// sleep 5; done`) can tell "the service hasn't come up yet" from
+    /// "I called you with bad flags." Maps to exit 69 (EX_UNAVAILABLE),
+    /// mirroring `CoreError::NetworkError`.
+    #[error("service unavailable: {0}")]
+    Unavailable(String),
 }
 
 impl CliError {
@@ -43,11 +51,13 @@ impl CliError {
                 CoreError::ChatSendingDisabled { .. } => 18,
                 CoreError::ChatMessageLengthExceeded { .. } => 7,
                 CoreError::ChatBlockedByPii { .. } => 19,
+                CoreError::AnonymousSaltInvalid => 20,
                 CoreError::NotImplemented { .. } => 78, // EX_CONFIG
                 CoreError::NetworkError { .. } => 69,   // EX_UNAVAILABLE
                 CoreError::Internal { .. } => 70,       // EX_SOFTWARE
             },
             CliError::Argument(_) => 64,      // EX_USAGE
+            CliError::Unavailable(_) => 69,   // EX_UNAVAILABLE
             CliError::Io(_) => 74,            // EX_IOERR
             CliError::Serialization(_) => 65, // EX_DATAERR
         }
@@ -61,6 +71,7 @@ impl CliError {
         match self {
             CliError::Core(err) => err.kind(),
             CliError::Argument(_) => "argument",
+            CliError::Unavailable(_) => "unavailable",
             CliError::Io(_) => "io",
             CliError::Serialization(_) => "serialization",
         }

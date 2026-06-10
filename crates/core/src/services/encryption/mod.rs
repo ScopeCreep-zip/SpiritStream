@@ -36,18 +36,24 @@
 //!   `decrypt_v1` / `decrypt_v2`), used for `.mgs` profile files.
 //! - `machine_key` — per-machine key file + stream-key / token /
 //!   arbitrary-bytes encryption.
-//! - `rotation` — `rotate_machine_key` orchestration with backup /
-//!   re-encrypt / rollback.
+//! - `rotation` — `rotate_machine_key` orchestration with a journaled
+//!   pending key (`.stream_key.new`), re-encrypt / rollback, and startup
+//!   crash recovery (`recover_interrupted_rotation`).
+//! - `rotation_backup` — profile snapshot / restore / retention used by
+//!   rotation and its crash recovery.
 
 mod kdf;
 mod machine_key;
 mod password;
 mod rotation;
+mod rotation_backup;
 
+#[cfg(test)]
+mod rotation_recovery_tests;
 #[cfg(test)]
 mod tests;
 
-pub use rotation::RotationReport;
+pub use rotation::{RotationRecovery, RotationReport};
 
 use crate::errors::CoreError;
 

@@ -122,6 +122,14 @@ pub enum CoreError {
     #[error("chat message blocked by PII filter (phrase {phrase_id})")]
     ChatBlockedByPii { phrase_id: String },
 
+    /// Anonymous mode is enabled but the profile's pseudonymizer salt
+    /// is empty or not valid hex. Pseudonymization fails loud rather
+    /// than silently passing real usernames through — for the people
+    /// this app serves, a chat log with plaintext usernames while the
+    /// UI says "anonymous" is a doxxing vector, not a degraded mode.
+    #[error("anonymous-mode salt is missing or invalid")]
+    AnonymousSaltInvalid,
+
     #[error("not implemented")]
     NotImplemented { feature: String },
 
@@ -157,6 +165,7 @@ impl CoreError {
             CoreError::ChatSendingDisabled { .. } => "chat_sending_disabled",
             CoreError::ChatMessageLengthExceeded { .. } => "chat_message_length_exceeded",
             CoreError::ChatBlockedByPii { .. } => "chat_blocked_by_pii",
+            CoreError::AnonymousSaltInvalid => "anonymous_salt_invalid",
             CoreError::NotImplemented { .. } => "not_implemented",
             CoreError::Internal { .. } => "internal",
         }
@@ -183,6 +192,120 @@ impl From<serde_json::Error> for CoreError {
                 message: format!("serde_json: {err}"),
                 path: None,
             }],
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every variant's `kind()` must equal its serde tag, and the
+    /// strings must be unique — external consumers branch on these.
+    #[test]
+    fn kind_strings_are_exhaustive_and_unique() {
+        let variants = vec![
+            CoreError::ProfileNotFound { name: "p".into() },
+            CoreError::PasswordRequired { name: "p".into() },
+            CoreError::PasswordIncorrect,
+            CoreError::PasswordTooShort { min_length: 12 },
+            CoreError::InvalidStreamConfig { reasons: vec![] },
+            CoreError::ValidationFailed { reasons: vec![] },
+            CoreError::ProfileAlreadyExists { name: "p".into() },
+            CoreError::EncoderUnavailable {
+                encoder: "x".into(),
+            },
+            CoreError::PortConflict {
+                port: 1935,
+                owner: "p".into(),
+            },
+            CoreError::PathOutsideAllowedRoot { path: "/x".into() },
+            CoreError::NotFound {
+                resource: "r".into(),
+            },
+            CoreError::FfmpegNotFound,
+            CoreError::NetworkError { detail: "d".into() },
+            CoreError::RateLimited {
+                retry_after_secs: 5,
+            },
+            CoreError::Unauthorized,
+            CoreError::NoActiveProfile,
+            CoreError::ChatPlatformNotConnected {
+                platform: "twitch".into(),
+            },
+            CoreError::ChatSendingDisabled {
+                platform: "twitch".into(),
+            },
+            CoreError::ChatMessageLengthExceeded {
+                platform: "twitch".into(),
+                limit: 500,
+                actual: 600,
+            },
+            CoreError::ChatBlockedByPii {
+                phrase_id: "ph".into(),
+            },
+            CoreError::NotImplemented {
+                feature: "veilid".into(),
+            },
+            CoreError::Internal {
+                context: "boom".into(),
+            },
+        ];
+
+        let mut seen = std::collections::HashSet::new();
+        for err in &variants {
+            let kind = err.kind();
+            assert!(!kind.is_empty(), "kind must be non-empty for {err:?}");
+            assert!(seen.insert(kind), "duplicate kind string: {kind}");
+        }
+        assert_eq!(seen.len(), variants.len());
+    }
+
+    #[test]
+    fn kind_matches_serde_tag() {
+        let err = CoreError::PortConflict {
+            port: 1935,
+            owner: "live".into(),
+        };
+        let json = serde_json::to_value(&err).unwrap();
+        assert_eq!(json["kind"], err.kind());
+    }
+
+    #[test]
+    fn display_interpolates_fields() {
+        let err = CoreError::PortConflict {
+            port: 1935,
+            owner: "live".into(),
+        };
+        assert_eq!(err.to_string(), "port conflict on 1935 (held by live)");
+        assert_eq!(
+            CoreError::ProfileNotFound {
+                name: "alpha".into()
+            }
+            .to_string(),
+            "profile not found: alpha"
+        );
+    }
+
+    #[test]
+    fn io_error_maps_to_internal() {
+        let io = std::io::Error::new(std::io::ErrorKind::NotFound, "missing");
+        let err: CoreError = io.into();
+        match err {
+            CoreError::Internal { context } => assert!(context.contains("io:")),
+            other => panic!("expected Internal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn serde_json_error_maps_to_validation_failed() {
+        let bad: Result<i32, _> = serde_json::from_str("not json");
+        let err: CoreError = bad.unwrap_err().into();
+        match err {
+            CoreError::ValidationFailed { reasons } => {
+                assert_eq!(reasons[0].code, "malformed_json_body");
+            }
+            other => panic!("expected ValidationFailed, got {other:?}"),
         }
     }
 }

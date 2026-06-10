@@ -22,10 +22,10 @@ impl super::ChatManager {
     /// Start the chat log writer background task.
     pub(super) fn start_log_writer(
         &self,
-        mut log_rx: mpsc::UnboundedReceiver<ChatLogCommand>,
+        mut log_rx: mpsc::Receiver<ChatLogCommand>,
         log_dir: PathBuf,
     ) {
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             let _ = std::fs::create_dir_all(&log_dir);
             let mut state = ChatLogState::new(log_dir);
 
@@ -47,46 +47,73 @@ impl super::ChatManager {
                 }
             }
         });
+        if let Ok(mut slot) = self.log_writer_handle.lock() {
+            *slot = Some(handle);
+        }
     }
 
-    /// Start a new log session (stream start).
+    /// Start a new log session (stream start). Sync `pub fn` API so
+    /// callers don't need to await; uses `try_send` to stay non-blocking.
+    /// Drops on Full (5000-cmd capacity = ~166s of writes at 30 cmd/s,
+    /// so Full means the writer is wedged and one more dropped command
+    /// is the least of the problems).
     pub fn start_log_session(&self) {
         let now = Local::now().timestamp_millis();
         self.log_session_start_ms.store(now, Ordering::Relaxed);
-        let _ = self.log_tx.send(ChatLogCommand::StartSession);
+        let _ = self.log_tx.try_send(ChatLogCommand::StartSession);
     }
 
     /// End the current log session (stream end).
     pub fn end_log_session(&self) {
         self.log_session_start_ms.store(0, Ordering::Relaxed);
-        let _ = self.log_tx.send(ChatLogCommand::EndSession);
+        let _ = self.log_tx.try_send(ChatLogCommand::EndSession);
     }
 
     /// Log a message to disk (best effort). Applies the
     /// anonymous-mode pseudonymizer to the username field before
     /// queueing, so the log writer never sees plaintext usernames
-    /// when anonymous mode is on.
+    /// when anonymous mode is on. A message that cannot be
+    /// pseudonymised is DROPPED from the log — never written with its
+    /// real username.
     pub fn log_message(&self, message: ChatMessage) {
-        let message = self.apply_anonymous_policy_to_message(message);
-        let _ = self.log_tx.send(ChatLogCommand::Log(Box::new(message)));
+        match self.apply_anonymous_policy_to_message(message) {
+            Ok(message) => {
+                let _ = self.log_tx.try_send(ChatLogCommand::Log(Box::new(message)));
+            }
+            Err(e) => {
+                log::error!(
+                    "anonymous mode active but pseudonymization failed; \
+                     dropping chat-log entry: {e}"
+                );
+                self.event_sink.emit(
+                    "anonymous_mode_error",
+                    serde_json::json!({ "reason": "salt_invalid", "dropped": true }),
+                );
+            }
+        }
     }
 
     /// Hot path helper: apply the cached anonymous-mode policy to a
-    /// `ChatMessage` if active. Uses a blocking lock (`try_lock`)
-    /// because `log_message` is non-async by contract — if the policy
-    /// mutex is contended at this exact moment, we let the message
-    /// through unchanged rather than blocking. Frequency: contention
-    /// only at profile-activate-time, which is human-paced.
-    fn apply_anonymous_policy_to_message(&self, mut message: ChatMessage) -> ChatMessage {
-        if let Ok(guard) = self.anonymous_policy.try_lock() {
-            if let Some((enabled, salt)) = guard.as_ref() {
-                if *enabled && !salt.is_empty() {
-                    message.username =
-                        crate::services::pseudonymizer::pseudonymize(&message.username, salt);
-                }
+    /// `ChatMessage` if active. The policy lives behind a
+    /// `std::sync::RwLock` (readers never block each other; the only
+    /// writer is human-paced profile activation), so this sync path
+    /// always sees the policy — the previous async-mutex `try_lock`
+    /// fallback could write a PLAINTEXT username on contention.
+    fn apply_anonymous_policy_to_message(
+        &self,
+        mut message: ChatMessage,
+    ) -> Result<ChatMessage, CoreError> {
+        let guard = self
+            .anonymous_policy
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
+        if let Some((enabled, salt)) = guard.as_ref() {
+            if *enabled {
+                message.username =
+                    crate::services::pseudonymizer::pseudonymize(&message.username, salt)?;
             }
         }
-        message
+        Ok(message)
     }
 
     /// Flush pending log writes to disk.
@@ -94,6 +121,7 @@ impl super::ChatManager {
         let (tx, rx) = oneshot::channel();
         self.log_tx
             .send(ChatLogCommand::Flush(tx))
+            .await
             .map_err(|_| CoreError::Internal {
                 context: "Chat log writer is not available".into(),
             })?;
@@ -186,5 +214,67 @@ impl ChatLogState {
         if let Some(writer) = self.writer.as_mut() {
             let _ = writer.flush();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ChatLogState;
+    use crate::models::{ChatMessage, ChatPlatform};
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn sample(text: &str) -> ChatMessage {
+        ChatMessage::new(ChatPlatform::Twitch, "viewer".into(), text.into())
+    }
+
+    fn jsonl_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+        fs::read_dir(dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("jsonl"))
+            .collect()
+    }
+
+    #[test]
+    fn inactive_state_never_opens_a_file() {
+        let dir = TempDir::new().unwrap();
+        let mut state = ChatLogState::new(dir.path().to_path_buf());
+        state.write_message(&sample("dropped while inactive"));
+        assert!(jsonl_files(dir.path()).is_empty());
+    }
+
+    #[test]
+    fn active_session_writes_one_jsonl_line_per_message() {
+        let dir = TempDir::new().unwrap();
+        let mut state = ChatLogState::new(dir.path().to_path_buf());
+        state.start_session();
+        state.write_message(&sample("hello"));
+        state.write_message(&sample("world"));
+        state.end_session();
+
+        let files = jsonl_files(dir.path());
+        assert_eq!(files.len(), 1, "one hour-keyed file");
+        let body = fs::read_to_string(&files[0]).unwrap();
+        let lines: Vec<&str> = body.lines().collect();
+        assert_eq!(lines.len(), 2);
+        assert!(body.contains("hello"));
+        assert!(body.contains("world"));
+    }
+
+    #[test]
+    fn messages_after_end_session_are_dropped() {
+        let dir = TempDir::new().unwrap();
+        let mut state = ChatLogState::new(dir.path().to_path_buf());
+        state.start_session();
+        state.write_message(&sample("kept"));
+        state.end_session();
+        state.write_message(&sample("after-end"));
+
+        let files = jsonl_files(dir.path());
+        let body = fs::read_to_string(&files[0]).unwrap();
+        assert!(body.contains("kept"));
+        assert!(!body.contains("after-end"));
     }
 }

@@ -27,7 +27,11 @@ use crate::AppState;
 /// {"state": "empty"}
 /// ```
 #[derive(Serialize, Deserialize, ToSchema)]
-#[serde(tag = "state", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "state",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum AuditChainStatusWire {
     /// Every entry's HMAC verified.
     Ok { entries_verified: u64 },
@@ -118,16 +122,19 @@ pub async fn v1_audit_log(
     State(state): State<AppState>,
     axum::extract::Query(q): axum::extract::Query<AuditLogQuery>,
 ) -> Result<Json<AuditLogResponse>, crate::ApiError> {
-    // Verify the HMAC chain before serving entries. We
-    // surface the status to the client either way so the UI can show
-    // the tamper banner even when the user has filtered the page to
-    // an empty result.
-    let chain_status = state.audit.verify_chain().unwrap_or_else(|e| {
-        AuditChainStatus::Tampered {
-            last_valid_sequence: 0,
-            reason: format!("verify error: {e}"),
-        }
-    });
+    // Verify the HMAC chain before serving entries. We surface the
+    // chain status — Ok / Tampered / Empty — to the client either way
+    // so the UI can show the tamper banner even when the user has
+    // filtered the page to an empty result.
+    //
+    // G3: an Err from `verify_chain` is an I/O / read failure (the
+    // chain file couldn't even be opened), NOT a tamper. Pre-G3 we
+    // conflated the two by force-bucketing every Err into a
+    // synthetic `Tampered { last_valid_sequence: 0, reason: ... }`
+    // payload — that masked permission/disk errors as security events.
+    // Now we propagate the read failure as 500 so operators see it
+    // for what it is.
+    let chain_status = state.audit.verify_chain()?;
     let chain: AuditChainStatusWire = chain_status.into();
 
     let entries = state.audit.entries()?;
@@ -160,6 +167,8 @@ fn action_kind_str(action: &spiritstream_core::services::AuditAction) -> &'stati
         OauthRefresh { .. } => "oauth_refresh",
         OauthRefreshUnusualLocation { .. } => "oauth_refresh_unusual_location",
         MachineKeyRotated { .. } => "machine_key_rotated",
+        KeyRotationRolledBack => "key_rotation_rolled_back",
+        KeyRotationRecovered => "key_rotation_recovered",
         AnonymousModeToggled { .. } => "anonymous_mode_toggled",
         AppStarted => "app_started",
         AppStopped => "app_stopped",
@@ -169,5 +178,8 @@ fn action_kind_str(action: &spiritstream_core::services::AuditAction) -> &'stati
         ChatMessageSent { .. } => "chat_message_sent",
         ChatPlatformConnected { .. } => "chat_platform_connected",
         ChatPlatformDisconnected { .. } => "chat_platform_disconnected",
+        DiscordWebhookSent { .. } => "discord_webhook_sent",
+        SessionRevoked { .. } => "session_revoked",
+        ConfirmTokenIssued { .. } => "confirm_token_issued",
     }
 }

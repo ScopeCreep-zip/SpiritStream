@@ -1,24 +1,21 @@
 use axum::{
-    extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
-        DefaultBodyLimit, Query, State,
-    },
+    extract::DefaultBodyLimit,
     http::{header, HeaderValue, StatusCode},
     middleware::{from_fn, from_fn_with_state},
     response::IntoResponse,
     routing::{get, post},
     Router,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::Value;
 use std::{
     env,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
+    net::SocketAddr,
     path::PathBuf,
     sync::{Arc, Mutex},
 };
-use tokio::sync::{broadcast, Mutex as AsyncMutex};
-use tower_cookies::{CookieManagerLayer, Cookies};
+use tokio::sync::Mutex as AsyncMutex;
+use tower_cookies::CookieManagerLayer;
 use tower_http::{
     services::{ServeDir, ServeFile},
     set_header::SetResponseHeaderLayer,
@@ -26,10 +23,10 @@ use tower_http::{
 
 use spiritstream_core::models::ProfileSettings;
 use spiritstream_core::services::{
-    prune_logs, validate_path_within_any, AuditLogService, AuthService,
-    ChatManager, ConfirmTokenService, DiscordWebhookService, EventSink, FFmpegHandler,
-    FFmpegLocator, OAuthService, ObsWebSocketHandler, ProfileManager, SafetyService,
-    SettingsManager, ThemeManager,
+    prune_logs, validate_path_within_any, AuditLogService, AuthService, ChatManager,
+    ConfirmTokenService, DiscordWebhookService, EventSink, FFmpegHandler, FFmpegLocator,
+    OAuthService, ObsWebSocketHandler, ProfileManager, SafetyService, SettingsManager,
+    ThemeManager,
 };
 
 // Versioned REST API surface (`/api/v1/*`). New typed handlers live here.
@@ -57,11 +54,9 @@ mod rate_limit;
 mod redaction;
 mod session;
 
-use auth::{auth_check, auth_login, auth_logout, confirm_token_issue, security_revoke_all_sessions};
 pub(crate) use auth::require_confirm_token;
-use auth_helpers::verify_token;
-use chat_lifecycle::{
-    start_auto_retry_task, start_chat_reconnect_task, start_youtube_token_refresh_task,
+use auth::{
+    auth_check, auth_login, auth_logout, confirm_token_issue, security_revoke_all_sessions,
 };
 pub(crate) use chat_lifecycle::{
     auto_connect_chat_platforms, auto_disconnect_chat_platforms, build_hour_keys,
@@ -70,13 +65,16 @@ pub(crate) use chat_lifecycle::{
     get_active_profile_settings, persist_active_profile_settings, set_active_profile,
     update_profile_oauth_account,
 };
+use chat_lifecycle::{
+    start_auto_retry_task, start_chat_reconnect_task, start_youtube_token_refresh_task,
+};
 use cloud_mode::{enforce_cloud_mode_preconditions, parse_bool};
 #[cfg(test)]
 use cors::origin_matches;
 use cors::{allowed_origins_from_env, build_cors_layer};
-use events::{EventBus, ServerEvent};
-use logger::init_logger;
+use events::EventBus;
 use file_browser::{files_browse, files_home, files_open};
+use logger::init_logger;
 use middleware::{auth_middleware, csrf_middleware, rate_limit_middleware, request_id_middleware};
 use rate_limit::EndpointRateLimiters;
 #[cfg(test)]
@@ -152,6 +150,41 @@ const LOADING_PAGE_HTML: &str = r#"<!DOCTYPE html>
 </body>
 </html>
 "#;
+
+/// CSP `style-src` source for the inline `<style>` in `LOADING_PAGE_HTML`.
+///
+/// The loading page is server-rendered static HTML carrying one inline
+/// `<style>`. The response CSP forbids `'unsafe-inline'`, so that block is
+/// allow-listed by the SHA-256 of its exact text content (the bytes between
+/// `<style>` and `</style>`). Computed from the served HTML at startup so the
+/// policy and the markup can never drift. Returns a `'sha256-…'` expression
+/// (base64-standard encoded).
+fn loading_page_style_csp_hash() -> String {
+    use base64::Engine as _;
+    use sha2::{Digest, Sha256};
+
+    const OPEN: &str = "<style>";
+    const CLOSE: &str = "</style>";
+    let html = LOADING_PAGE_HTML;
+    // Fail loud, not silent: if the markers ever leave LOADING_PAGE_HTML the
+    // CSP would otherwise hash the wrong bytes and quietly break the loading
+    // page's styling. A startup panic on this programmer-error invariant is the
+    // correct CSP-safety behavior.
+    let start = html
+        .find(OPEN)
+        .map(|i| i + OPEN.len())
+        .expect("LOADING_PAGE_HTML must contain an inline <style> block");
+    let end = html[start..]
+        .find(CLOSE)
+        .map(|i| start + i)
+        .expect("LOADING_PAGE_HTML <style> block must be closed");
+    let style = &html[start..end];
+    let digest = Sha256::digest(style.as_bytes());
+    format!(
+        "'sha256-{}'",
+        base64::engine::general_purpose::STANDARD.encode(digest)
+    )
+}
 
 /// Tracks whether all subsystems have completed startup initialization.
 /// Single source of readiness truth across every deployment shape (Tauri
@@ -236,6 +269,10 @@ pub struct AppState {
     /// `ready` flips to true exactly once after all services finish init;
     /// `notify_waiters()` wakes every parked handler at that moment.
     pub(crate) readiness: Arc<ServerReadiness>,
+    /// The full wired registry. Handlers that need the cross-transport
+    /// orchestration helpers (e.g. `rotate_machine_key_checked`) call
+    /// through this instead of re-implementing the rules locally.
+    pub(crate) registry: spiritstream_core::ServiceRegistry,
 }
 
 #[derive(Serialize)]
@@ -244,7 +281,6 @@ struct InvokeResponse {
     data: Option<Value>,
     error: Option<String>,
 }
-
 
 // FilesOpenResponse is consumed by `file_browser::files_open` but defined here
 // (and exposed via `crate::FilesOpenResponse`) so v1 OpenAPI tooling can see
@@ -261,86 +297,11 @@ pub(crate) struct FilesOpenResponse {}
 // only place SpiritStream serves them — Tauri sidecar polling, Dockerfile
 // healthcheck, and reverse-proxy configs all hit those URLs directly.
 
-#[derive(Debug, Deserialize)]
-struct AuthQuery {
-    token: Option<String>,
-}
-
-async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<AppState>,
-    Query(query): Query<AuthQuery>,
-    cookies: Cookies,
-) -> impl IntoResponse {
-    // Check authentication: no token required, valid cookie, or valid query param
-    let authenticated = state.auth_token.is_none()
-        || cookies.get(AUTH_COOKIE_NAME).is_some()
-        || query.token.as_deref().is_some_and(|token| {
-            state
-                .auth_token
-                .as_deref()
-                .is_some_and(|expected| verify_token(expected, token))
-        });
-
-    if !authenticated {
-        return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
-    }
-
-    ws.on_upgrade(move |socket| handle_socket(socket, state.event_bus.subscribe()))
-}
-
-async fn handle_socket(mut socket: WebSocket, mut receiver: broadcast::Receiver<ServerEvent>) {
-    while let Ok(event) = receiver.recv().await {
-        if let Ok(payload) = serde_json::to_string(&event) {
-            if socket.send(Message::Text(payload)).await.is_err() {
-                break;
-            }
-        }
-    }
-}
-
-// ============================================================================
-// Main Entry Point
-// ============================================================================
-
-fn parse_host(host: &str) -> IpAddr {
-    host.parse().unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST))
-}
-
-/// Find themes directory by searching common relative paths from CWD.
-/// Used as fallback when SPIRITSTREAM_THEMES_DIR is not set or invalid.
-fn find_themes_dir_fallback() -> Option<String> {
-    let cwd = std::env::current_dir().ok()?;
-
-    let candidates = [
-        cwd.join("themes"),
-        cwd.join("../themes"),
-        cwd.join("../../themes"),
-        cwd.join("../../../themes"),
-    ];
-
-    for candidate in candidates {
-        if let Ok(canonical) = candidate.canonicalize() {
-            if canonical.is_dir() {
-                // Verify it has theme files
-                if std::fs::read_dir(&canonical)
-                    .map(|entries| {
-                        entries.flatten().any(|e| {
-                            e.path()
-                                .extension()
-                                .map(|ext| ext == "jsonc" || ext == "json")
-                                .unwrap_or(false)
-                        })
-                    })
-                    .unwrap_or(false)
-                {
-                    return Some(canonical.to_string_lossy().to_string());
-                }
-            }
-        }
-    }
-    None
-}
+// K4: WS handler + small env-resolution helpers live in `lib/helpers.rs`
+// so this orchestrator stays under the 600 LOC ceiling.
+#[path = "lib/helpers.rs"]
+mod helpers;
+use helpers::{find_themes_dir_fallback, parse_host, ws_handler};
 
 /// HTTP transport entrypoint. Invoked by the `spiritstream-server` binary
 /// (and, in the future, by the Tauri 2 mobile shell when running the core
@@ -349,9 +310,19 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Load .env file if present (ignore if missing)
     dotenvy::dotenv().ok();
 
-    // Load configuration from environment
-    let data_dir = env::var("SPIRITSTREAM_DATA_DIR").unwrap_or_else(|_| "data".to_string());
-    let log_dir = env::var("SPIRITSTREAM_LOG_DIR").unwrap_or_else(|_| format!("{data_dir}/logs"));
+    // Load configuration from environment. `env::var` returns Err only
+    // when the variable is *missing*; an explicitly-empty value (e.g.
+    // `SPIRITSTREAM_DATA_DIR=`) returns `Ok("")` and would silently
+    // create / look up an empty-string path. Treat empty as missing
+    // so misconfigured deploys fall back to the documented defaults.
+    let data_dir = env::var("SPIRITSTREAM_DATA_DIR")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "data".to_string());
+    let log_dir = env::var("SPIRITSTREAM_LOG_DIR")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| format!("{data_dir}/logs"));
     // Resolve themes directory with fallback logic
     // Check if env var path exists and has theme files, otherwise try fallback paths
     let themes_dir = match env::var("SPIRITSTREAM_THEMES_DIR") {
@@ -394,12 +365,34 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     };
-    let ui_dir = env::var("SPIRITSTREAM_UI_DIR").unwrap_or_else(|_| "dist".to_string());
+    let ui_dir = env::var("SPIRITSTREAM_UI_DIR")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "dist".to_string());
     // Host/port read from env vars (may be overridden by settings below)
     let env_host = env::var("SPIRITSTREAM_HOST").ok();
-    let env_port: Option<u16> = env::var("SPIRITSTREAM_PORT")
-        .ok()
-        .and_then(|value| value.parse().ok());
+    // H8: only accept ports the OS will let an unprivileged process
+    // bind. Pre-H8 we silently accepted u16::MAX or 0; the former is
+    // harmless but the latter asks the OS for "any free port" and the
+    // caller would be unable to know where the server actually came
+    // up, defeating the readiness check. Privileged ports (< 1024)
+    // need root and are typically wrong for a user-mode server; reject
+    // them too so a misconfiguration surfaces loudly.
+    let env_port: Option<u16> = match env::var("SPIRITSTREAM_PORT") {
+        Ok(value) => match value.parse::<u16>() {
+            Ok(n) if (1024..=65535).contains(&n) => Some(n),
+            Ok(other) => {
+                return Err(format!(
+                    "SPIRITSTREAM_PORT={other} is out of range; pick a port in 1024..=65535"
+                )
+                .into());
+            }
+            Err(e) => {
+                return Err(format!("SPIRITSTREAM_PORT={value:?} is not a valid u16: {e}").into());
+            }
+        },
+        Err(_) => None,
+    };
     let env_auth_token = env::var("SPIRITSTREAM_API_TOKEN")
         .or_else(|_| env::var("SPIRITSTREAM_DEV_TOKEN"))
         .ok()
@@ -420,6 +413,11 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // wire services identically. Themes are configured after the load below.
     let event_bus = EventBus::new();
     let events_for_registry: Arc<dyn EventSink> = Arc::new(event_bus.clone());
+    let secret_store_override = env::var("SPIRITSTREAM_SECRET_STORE").ok();
+    let secret_store = spiritstream_core::services::build_secret_store(
+        &app_data_dir,
+        secret_store_override.as_deref(),
+    );
     let registry =
         spiritstream_core::ServiceRegistry::build(spiritstream_core::ServiceRegistryOptions {
             data_dir: app_data_dir.clone(),
@@ -427,6 +425,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             log_dir: log_dir_path.clone(),
             custom_ffmpeg_path: None, // populated below once settings are read
             events: events_for_registry,
+            secret_store,
         })
         .map_err(|e| -> Box<dyn std::error::Error> { format!("registry build: {e}").into() })?;
     let profile_manager = registry.profiles.clone();
@@ -586,8 +585,13 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // single global governor quota. Brute-force defense.
     let endpoint_limiters = Arc::new(EndpointRateLimiters::from_env());
     let auth_service = Arc::new(AuthService::new());
-    // One-shot confirm tokens + active-session registry.
-    let confirm_tokens = Arc::new(ConfirmTokenService::new());
+    // Q6: ConfirmTokenService comes from the shared registry so a
+    // token issued via `spiritstream-cli confirm-token issue --intent`
+    // is consumable on the HTTP destructive endpoints (and vice versa).
+    // Pre-Q6 the HTTP transport constructed its own instance, which
+    // made the CLI subcommand decoratively useless — issued tokens
+    // never reached the HTTP validator.
+    let confirm_tokens = registry.confirm_tokens.clone();
     let active_sessions = Arc::new(Mutex::new(std::collections::HashSet::new()));
 
     // OBS, Discord, Chat, OAuth, and FFmpegLocator all come from the
@@ -624,6 +628,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         safety: registry.safety.clone(),
         profile_activation: registry.profile_activation.clone(),
         readiness: readiness.clone(),
+        registry: registry.clone(),
     };
 
     // Start background YouTube token refresh task
@@ -639,12 +644,25 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Build CORS layer (shares the origin allow-list)
     let cors = build_cors_layer(allowed_origins.clone());
 
-    // Build CSP header
-    let csp_value = HeaderValue::from_static(
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
-         connect-src 'self' ws://localhost:* wss://localhost:* http://localhost:* http://127.0.0.1:*; \
-         img-src 'self' data:; font-src 'self'"
-    );
+    // Build CSP header. `frame-ancestors 'none'` is the CSP-level
+    // equivalent of `X-Frame-Options: DENY` — both are emitted (H3)
+    // because some browsers (Safari pre-15.4) ignore one of them.
+    //
+    // `style-src` carries NO `'unsafe-inline'` (M3): the SPA's only inline
+    // style moved to /boot.css and custom-theme tokens apply via CSSOM, while
+    // the static loading page's one inline `<style>` is allow-listed by its
+    // SHA-256 hash. `font-src`/`style-src` intentionally omit the Google Fonts
+    // hosts so the Docker/browser path stays self-only (privacy threat model);
+    // bundled fonts fall back to the system stack there.
+    let csp_value = {
+        let style_hash = loading_page_style_csp_hash();
+        let csp = format!(
+            "default-src 'self'; script-src 'self'; style-src 'self' {style_hash}; \
+             connect-src 'self' ws://localhost:* wss://localhost:* http://localhost:* http://127.0.0.1:*; \
+             img-src 'self' data:; font-src 'self'; frame-ancestors 'none'"
+        );
+        HeaderValue::from_str(&csp).expect("CSP is valid header ASCII")
+    };
 
     // Build router with security layers
     // Protected routes (require authentication)
@@ -669,17 +687,31 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         // Typed REST surface + `invoke` dispatch bridge (the bridge
         // is retired one command at a time as typed handlers replace it).
         .merge(v1::protected_router(state.clone()))
+        // H2: rate-limit AFTER auth for protected routes. Pre-H2 the
+        // limiter sat on the global stack, so unauthenticated traffic
+        // to a protected endpoint still counted against the per-IP
+        // budget — an attacker could exhaust legit users' quotas
+        // without ever holding a credential. Now the rate limit only
+        // ticks once auth_middleware has admitted the request.
+        .layer(from_fn_with_state(
+            state.clone(),
+            rate_limit_middleware,
+        ))
         .layer(from_fn_with_state(
             state.clone(),
             auth_middleware,
         ));
 
-    // Public routes (no auth required).
+    // Public routes (no auth required). Login MUST still be
+    // IP-rate-limited (the limiter dispatcher selects the login bucket
+    // for `POST /api/v1/auth/login`) so brute-force attempts hit a
+    // ceiling even without an auth subject.
     let public_routes = Router::new()
         .route("/api/v1/auth/login", post(auth_login))
         .route("/api/v1/auth/logout", post(auth_logout))
         .route("/api/v1/auth/check", get(auth_check))
-        .merge(v1::public_router(state.clone()));
+        .merge(v1::public_router(state.clone()))
+        .layer(from_fn_with_state(state.clone(), rate_limit_middleware));
 
     // Combine all routes
     let mut app = Router::new()
@@ -691,10 +723,6 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         // can be applied at the individual handler with
         // `.layer(DefaultBodyLimit::max(N))`.
         .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
-        .layer(from_fn_with_state(
-            state.clone(),
-            rate_limit_middleware,
-        ))
         // CSRF guard runs before auth so a forged cross-site
         // mutation never even reaches the cookie / token check.
         .layer(from_fn_with_state(
@@ -707,9 +735,28 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .layer(from_fn(request_id_middleware))
         .layer(CookieManagerLayer::new())
         .layer(cors)
+        // H3: defense-in-depth response headers. Pre-H3 only CSP was
+        // emitted; missing X-Content-Type-Options enabled MIME
+        // sniffing attacks on user-controlled binary attachments,
+        // missing X-Frame-Options allowed clickjacking iframes,
+        // missing Referrer-Policy leaked full paths to outbound link
+        // targets. The CSP itself now also names `frame-ancestors`
+        // (set in `csp_value` below) for browsers that ignore XFO.
         .layer(SetResponseHeaderLayer::if_not_present(
             header::CONTENT_SECURITY_POLICY,
             csp_value,
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::X_FRAME_OPTIONS,
+            HeaderValue::from_static("DENY"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::REFERRER_POLICY,
+            HeaderValue::from_static("strict-origin-when-cross-origin"),
         ));
 
     // Optionally serve static UI files.
@@ -760,10 +807,8 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                         LOADING_PAGE_HTML,
                     )
                         .into_response();
-                    resp.headers_mut().insert(
-                        header::RETRY_AFTER,
-                        HeaderValue::from_static("1"),
-                    );
+                    resp.headers_mut()
+                        .insert(header::RETRY_AFTER, HeaderValue::from_static("1"));
                     resp
                 }
             }
@@ -798,291 +843,42 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         log::info!("SpiritStream backend ready — readiness signal raised");
     }
 
+    // G2: record startup in the HMAC chain. If the chain is already
+    // tampered, record that observation too so operators see when the
+    // tamper was first noticed by a fresh process boot.
+    let _ = registry
+        .audit
+        .record(spiritstream_core::services::AuditAction::AppStarted);
+    if let Ok(spiritstream_core::services::AuditChainStatus::Tampered {
+        last_valid_sequence,
+        ..
+    }) = registry.audit.verify_chain()
+    {
+        let _ = registry.audit.record(
+            spiritstream_core::services::AuditAction::AuditLogTamperDetected {
+                last_valid_sequence,
+            },
+        );
+    }
+
     // `into_make_service_with_connect_info::<SocketAddr>()` is
     // required so the rate-limit middleware can extract the peer IP for
     // the login route (subject_key fallback when no auth is present).
-    axum::serve(
+    let serve_result = axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
-    .await?;
+    .await;
 
+    // G2: record stop after axum::serve returns (orderly shutdown).
+    let _ = registry
+        .audit
+        .record(spiritstream_core::services::AuditAction::AppStopped);
+
+    serve_result?;
     Ok(())
 }
 
 #[cfg(test)]
-mod phase_6_tests {
-    use super::*;
-
-    // ----- SessionCookieMode detection ----------------------------
-    // `detect` is a pure function; tests pass the env override directly so
-    // they remain parallel-safe (no global process-state mutation).
-
-    #[test]
-    fn cookie_mode_loopback_defaults_to_localhost_dev() {
-        assert_eq!(
-            SessionCookieMode::detect("127.0.0.1", None, None),
-            SessionCookieMode::LocalhostDev,
-        );
-        assert_eq!(
-            SessionCookieMode::detect("localhost", None, None),
-            SessionCookieMode::LocalhostDev,
-        );
-        assert_eq!(
-            SessionCookieMode::detect("::1", None, None),
-            SessionCookieMode::LocalhostDev,
-        );
-    }
-
-    #[test]
-    fn cookie_mode_cloud_deploy_is_cross_origin() {
-        // Cloud deploys must use SameSite=Lax (Strict drops the cookie
-        // on cross-site navigation back to the UI).
-        assert_eq!(
-            SessionCookieMode::detect("0.0.0.0", Some("cloud"), None),
-            SessionCookieMode::CrossOrigin,
-        );
-        assert_eq!(
-            SessionCookieMode::detect("203.0.113.5", Some("CLOUD"), None),
-            SessionCookieMode::CrossOrigin,
-        );
-    }
-
-    #[test]
-    fn cookie_mode_non_loopback_defaults_to_same_origin() {
-        assert_eq!(
-            SessionCookieMode::detect("192.168.1.50", Some("desktop"), None),
-            SessionCookieMode::SameOrigin,
-        );
-        assert_eq!(
-            SessionCookieMode::detect("server.local", None, None),
-            SessionCookieMode::SameOrigin,
-        );
-    }
-
-    #[test]
-    fn cookie_mode_explicit_override_wins() {
-        // Explicit override always wins, even when bind address + deploy
-        // mode would auto-detect to something else.
-        assert_eq!(
-            SessionCookieMode::detect("127.0.0.1", None, Some("cross_origin")),
-            SessionCookieMode::CrossOrigin,
-        );
-        assert_eq!(
-            SessionCookieMode::detect("127.0.0.1", Some("cloud"), Some("same-origin")),
-            SessionCookieMode::SameOrigin,
-        );
-        assert_eq!(
-            SessionCookieMode::detect("public.example.com", Some("cloud"), Some("localhost-dev")),
-            SessionCookieMode::LocalhostDev,
-        );
-        // Unrecognised override falls through to auto-detect.
-        assert_eq!(
-            SessionCookieMode::detect("127.0.0.1", None, Some("nonsense")),
-            SessionCookieMode::LocalhostDev,
-        );
-    }
-
-    #[test]
-    fn cookie_mode_attributes_match_threat_model() {
-        // SameOrigin: Strict + Secure
-        assert!(SessionCookieMode::SameOrigin.secure());
-        assert_eq!(
-            SessionCookieMode::SameOrigin.same_site(),
-            tower_cookies::cookie::SameSite::Strict,
-        );
-        // CrossOrigin: Lax + Secure
-        assert!(SessionCookieMode::CrossOrigin.secure());
-        assert_eq!(
-            SessionCookieMode::CrossOrigin.same_site(),
-            tower_cookies::cookie::SameSite::Lax,
-        );
-        // LocalhostDev: no Secure (would be rejected on plain HTTP), but
-        // still Strict so even local malicious sites can't post.
-        assert!(!SessionCookieMode::LocalhostDev.secure());
-        assert_eq!(
-            SessionCookieMode::LocalhostDev.same_site(),
-            tower_cookies::cookie::SameSite::Strict,
-        );
-    }
-
-    // ----- Origin allow-list pattern matching --------------------
-
-    #[test]
-    fn origin_matcher_wildcard_port() {
-        let allowed = vec!["http://localhost:*".to_string()];
-        assert!(origin_matches("http://localhost:5173", &allowed));
-        assert!(origin_matches("http://localhost:8008", &allowed));
-        // Bare "http://localhost" (no port) does NOT match `:*` — the
-        // wildcard requires a port to be present.
-        assert!(!origin_matches("http://localhost", &allowed));
-        // Different host does not match.
-        assert!(!origin_matches("http://evil.com:5173", &allowed));
-    }
-
-    #[test]
-    fn origin_matcher_exact_match() {
-        let allowed = vec![
-            "tauri://localhost".to_string(),
-            "https://tauri.localhost".to_string(),
-        ];
-        assert!(origin_matches("tauri://localhost", &allowed));
-        assert!(origin_matches("https://tauri.localhost", &allowed));
-        assert!(!origin_matches("http://tauri.localhost", &allowed));
-        assert!(!origin_matches("tauri://evil.com", &allowed));
-    }
-
-    #[test]
-    fn origin_matcher_rejects_substring_attacks() {
-        // An attacker registering `localhost.evil.com` must not match
-        // `http://localhost:*` via prefix string matching.
-        let allowed = vec!["http://localhost:*".to_string()];
-        assert!(!origin_matches("http://localhost.evil.com:5173", &allowed));
-    }
-
-    // ----- mask_sensitive coverage + proptest -----------------
-
-    #[test]
-    fn mask_sensitive_redacts_rtmp_stream_key() {
-        let log = "Starting stream to rtmp://live.twitch.tv/app/live_12345_abcdefghijklmnop";
-        let masked = mask_sensitive(log);
-        assert!(
-            !masked.contains("live_12345_abcdefghijklmnop"),
-            "stream key leaked: {masked}"
-        );
-        assert!(masked.contains("[REDACTED]"));
-    }
-
-    #[test]
-    fn mask_sensitive_redacts_template_expansion() {
-        let log = "ffmpeg -f flv rtmp://server.example.com/app/${STREAM_KEY}";
-        let masked = mask_sensitive(log);
-        assert!(
-            !masked.contains("${STREAM_KEY}"),
-            "template var leaked: {masked}"
-        );
-        assert!(masked.contains("[REDACTED]"));
-    }
-
-    #[test]
-    fn mask_sensitive_redacts_bearer_token() {
-        let log = "Authorization: Bearer abcdefghijklmnopqrstuvwxyz1234567890";
-        let masked = mask_sensitive(log);
-        assert!(
-            !masked.contains("abcdefghijklmnopqrstuvwxyz1234567890"),
-            "bearer token leaked: {masked}",
-        );
-    }
-
-    #[test]
-    fn mask_sensitive_redacts_enc_v1_and_v2_blobs() {
-        let v1 = "ENC::dGVzdHRlc3R0ZXN0dGVzdA==";
-        let v2 = "ENC2::aGVsbG93b3JsZGhlbGxvd29ybGQ=";
-        let masked_v1 = mask_sensitive(&format!("setting={v1}"));
-        let masked_v2 = mask_sensitive(&format!("setting={v2}"));
-        assert!(
-            masked_v1.contains("[ENCRYPTED]"),
-            "v1 blob not masked: {masked_v1}"
-        );
-        assert!(
-            masked_v2.contains("[ENCRYPTED]"),
-            "v2 blob not masked: {masked_v2}"
-        );
-    }
-
-    proptest::proptest! {
-        /// Property: any token-shaped string (≥20 chars of
-        /// `[A-Za-z0-9_\-./+]`) that follows a recognised keyword like
-        /// `token=`, `bearer `, `password:`, etc. MUST be redacted from
-        /// the output of `mask_sensitive`. Fuzz coverage of this
-        /// property is required to catch new token shapes.
-        #[test]
-        fn prop_token_after_keyword_is_always_redacted(
-            keyword in "token|key|password|secret|bearer|oauth|access_token|refresh_token|authorization",
-            separator in "[:=]| ",
-            token in "[A-Za-z0-9_\\-./+]{20,80}",
-            prefix in "[a-z ]{0,30}",
-            suffix in "[a-z ]{0,30}",
-        ) {
-            let input = format!("{prefix}{keyword}{separator}{token}{suffix}");
-            let masked = mask_sensitive(&input);
-            proptest::prop_assert!(
-                !masked.contains(&token),
-                "token leaked after keyword {keyword:?}: input={input:?}, masked={masked:?}",
-            );
-        }
-
-        /// Property: any RTMP URL with a trailing path segment of 1+ char
-        /// must have that segment masked. The segment is the stream key
-        /// in both Twitch and YouTube URLs.
-        #[test]
-        fn prop_rtmp_path_segment_is_always_redacted(
-            scheme in "rtmps?",
-            host in "[a-z]{3,12}\\.[a-z]{3,5}",
-            app in "[a-z]{3,12}",
-            key in "[a-zA-Z0-9_]{8,40}",
-        ) {
-            let input = format!("{scheme}://{host}/{app}/{key}");
-            let masked = mask_sensitive(&input);
-            proptest::prop_assert!(
-                !masked.contains(&key) || masked.contains("[REDACTED]"),
-                "rtmp stream key leaked: input={input:?}, masked={masked:?}",
-            );
-        }
-    }
-
-    // ----- cloud-mode startup guard ----------------------------
-    // `enforce_cloud_mode_preconditions` is pure (takes the
-    // tls-declared flag as a parameter, not from env) so these tests
-    // are parallel-safe without `serial_test`.
-
-    #[test]
-    fn cloud_mode_refuses_to_start_without_strong_token() {
-        let weak = Some("short".to_string());
-        let err = enforce_cloud_mode_preconditions(&weak, true).unwrap_err();
-        let msg = format!("{err}");
-        assert!(
-            msg.contains("SPIRITSTREAM_API_TOKEN"),
-            "expected token error: {msg}"
-        );
-        assert!(msg.contains("32"), "expected min-length hint: {msg}");
-    }
-
-    #[test]
-    fn cloud_mode_refuses_to_start_without_token_at_all() {
-        let none: Option<String> = None;
-        let err = enforce_cloud_mode_preconditions(&none, true).unwrap_err();
-        assert!(format!("{err}").contains("SPIRITSTREAM_API_TOKEN"));
-    }
-
-    #[test]
-    fn cloud_mode_refuses_to_start_without_tls_proxy_declared() {
-        let strong = Some("a".repeat(32));
-        let err = enforce_cloud_mode_preconditions(&strong, false).unwrap_err();
-        let msg = format!("{err}");
-        assert!(
-            msg.contains("SPIRITSTREAM_BEHIND_TLS_PROXY"),
-            "expected TLS-proxy error: {msg}",
-        );
-    }
-
-    #[test]
-    fn cloud_mode_starts_when_both_preconditions_satisfied() {
-        let strong = Some("0123456789abcdef0123456789abcdef".to_string());
-        let result = enforce_cloud_mode_preconditions(&strong, true);
-        assert!(result.is_ok(), "expected Ok, got: {result:?}");
-    }
-
-    #[test]
-    fn cloud_mode_accepts_exactly_32_char_token() {
-        // Boundary check — the policy says "≥ 32 chars".
-        let exactly_32 = Some("a".repeat(32));
-        assert!(enforce_cloud_mode_preconditions(&exactly_32, true).is_ok());
-    }
-
-    #[test]
-    fn cloud_mode_rejects_31_char_token() {
-        let just_under = Some("a".repeat(31));
-        assert!(enforce_cloud_mode_preconditions(&just_under, true).is_err());
-    }
-}
+#[path = "lib/tests.rs"]
+mod phase_6_tests;

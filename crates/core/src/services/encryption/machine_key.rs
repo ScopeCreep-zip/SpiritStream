@@ -119,41 +119,98 @@ pub(super) fn get_or_create_machine_key(
 ) -> Result<Zeroizing<[u8; KEY_LEN]>, CoreError> {
     let key_file = app_data_dir.join(".stream_key");
 
-    if key_file.exists() {
-        let mut key_data =
-            std::fs::read(&key_file).map_err(|e| internal("Failed to read machine key", e))?;
+    // A pending `.stream_key.new` means a rotation was interrupted and
+    // `recover_interrupted_rotation` has not run yet. Minting or reading
+    // a key in that state is how the pre-fix code destroyed installs: a
+    // fresh random key silently replaced the journaled one and every
+    // secret decrypted to garbage. Fail loud instead.
+    if super::rotation::pending_key_path(app_data_dir).exists() {
+        return Err(CoreError::Internal {
+            context: "interrupted machine-key rotation detected (.stream_key.new present); \
+                      run startup recovery before using the machine key"
+                .into(),
+        });
+    }
 
-        if key_data.len() != KEY_LEN {
-            key_data.zeroize();
-            return Err(CoreError::Internal {
-                context: "Invalid machine key file".into(),
-            });
+    // TOCTOU-safe: try to atomically create the file (O_EXCL on Unix,
+    // CREATE_NEW on Windows). On `AlreadyExists`, fall through to the
+    // read path. Pre-fix this was `if key_file.exists() { read } else
+    // { write }` — two concurrent first-launches of the same install
+    // (double-clicked app, etc) both passed the exists() check, both
+    // generated different random keys, both wrote, second-writer-wins.
+    // Every profile encrypted under the loser's key was then orphaned.
+    loop {
+        let create_result = {
+            let mut opts = std::fs::OpenOptions::new();
+            opts.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                // Create with 0600 in one syscall so there's no window
+                // where the file is world-readable.
+                opts.mode(0o600);
+            }
+            opts.open(&key_file)
+        };
+
+        match create_result {
+            Ok(mut f) => {
+                use std::io::Write;
+                let mut rng = rand::thread_rng();
+                let mut key_bytes: [u8; KEY_LEN] = rng.gen();
+                f.write_all(&key_bytes)
+                    .map_err(|e| internal("Failed to write machine key", e))?;
+                // Drop the FD before fiddling with Windows attributes —
+                // some attribute-set APIs are unhappy with open handles.
+                drop(f);
+                #[cfg(windows)]
+                {
+                    set_windows_key_attributes(&key_file)?;
+                }
+                let mut key = Zeroizing::new([0u8; KEY_LEN]);
+                key.copy_from_slice(&key_bytes);
+                key_bytes.zeroize();
+                return Ok(key);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                // Race-lost — another process beat us to creating the
+                // file. Fall through to read its key.
+            }
+            Err(e) => return Err(internal("Failed to create machine key file", e)),
         }
 
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let perms = std::fs::Permissions::from_mode(0o600);
-            std::fs::set_permissions(&key_file, perms)
-                .map_err(|e| internal("Failed to set key file permissions", e))?;
+        match std::fs::read(&key_file) {
+            Ok(mut key_data) => {
+                if key_data.len() != KEY_LEN {
+                    key_data.zeroize();
+                    return Err(CoreError::Internal {
+                        context: "Invalid machine key file".into(),
+                    });
+                }
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let perms = std::fs::Permissions::from_mode(0o600);
+                    std::fs::set_permissions(&key_file, perms)
+                        .map_err(|e| internal("Failed to set key file permissions", e))?;
+                }
+                #[cfg(windows)]
+                {
+                    set_windows_key_attributes(&key_file)?;
+                }
+                let mut key = Zeroizing::new([0u8; KEY_LEN]);
+                key.copy_from_slice(&key_data);
+                key_data.zeroize();
+                return Ok(key);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // Extremely unlikely: the file we just lost the race to
+                // create has been deleted between our failed create_new
+                // and our read. Restart the loop.
+                continue;
+            }
+            Err(e) => return Err(internal("Failed to read machine key", e)),
         }
-
-        #[cfg(windows)]
-        {
-            set_windows_key_attributes(&key_file)?;
-        }
-
-        let mut key = Zeroizing::new([0u8; KEY_LEN]);
-        key.copy_from_slice(&key_data);
-        key_data.zeroize();
-
-        Ok(key)
-    } else {
-        // Generate new key — atomic owner-only write.
-        let mut rng = rand::thread_rng();
-        let key = Zeroizing::new(rng.gen::<[u8; KEY_LEN]>());
-        crate::services::write_owner_only_atomic(&key_file, &*key)?;
-        Ok(key)
     }
 }
 
@@ -161,8 +218,8 @@ pub(super) fn get_or_create_machine_key(
 fn set_windows_key_attributes(key_file: &Path) -> Result<(), CoreError> {
     use std::os::windows::fs::MetadataExt;
 
-    let metadata = std::fs::metadata(key_file)
-        .map_err(|e| internal("Failed to read key file metadata", e))?;
+    let metadata =
+        std::fs::metadata(key_file).map_err(|e| internal("Failed to read key file metadata", e))?;
     let mut attributes = metadata.file_attributes();
 
     const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;

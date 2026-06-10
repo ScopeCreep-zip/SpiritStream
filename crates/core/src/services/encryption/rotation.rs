@@ -10,7 +10,7 @@ use super::machine_key::{
     decode_and_decrypt_v1, decode_and_decrypt_v2, encrypt_with_machine_key_v2,
     get_or_create_machine_key,
 };
-use super::{internal, KEY_LEN, STREAM_KEY_PREFIX_V1, STREAM_KEY_PREFIX_V2};
+use super::{internal, rotation_backup, KEY_LEN, STREAM_KEY_PREFIX_V1, STREAM_KEY_PREFIX_V2};
 
 /// Report returned after successful key rotation
 #[derive(Debug, Clone, Serialize, Deserialize, ts_rs::TS)]
@@ -99,21 +99,28 @@ impl super::Encryption {
 
         // 3. Create backup AFTER pre-flight passes — no point making a backup
         //    of a state we're going to refuse to mutate.
-        let backup_path = backup_profiles_directory(app_data_dir)?;
+        let backup_path = rotation_backup::backup_profiles_directory(app_data_dir)?;
 
         // 4. Load old key.
         let old_key = get_or_create_machine_key(app_data_dir)?;
 
-        // 5. Generate new key.
+        // 5. Generate the new key and persist it to `.stream_key.new`
+        //    BEFORE rewriting any profile. Until this rotation completes,
+        //    the new key must exist somewhere durable: a crash after even
+        //    one profile is rewritten would otherwise leave secrets
+        //    encrypted under a key that exists only in this process's RAM.
+        //    `.stream_key.new` doubles as the crash-recovery journal —
+        //    see `recover_interrupted_rotation`.
         let new_key = generate_new_machine_key()?;
+        crate::services::write_owner_only_atomic(&pending_key_path(app_data_dir), &*new_key)?;
 
         let total_profiles = profile_files.len();
         let mut profiles_updated = 0;
         let mut keys_reencrypted = 0;
 
         // 6. Re-encrypt each profile. Per-profile failure rolls everything
-        //    back (the on-disk old `.stream_key` is still present and the
-        //    backup directory contains the pre-rotation profile files).
+        //    back: profiles restored from backup, pending new key removed,
+        //    old `.stream_key` untouched.
         for profile_path in &profile_files {
             let result = if profile_path.extension().and_then(|e| e.to_str()) == Some("mgs") {
                 let name = profile_path
@@ -126,13 +133,15 @@ impl super::Encryption {
                 // and re-encrypt by a future refactor. Surface that as a
                 // structured error rather than panicking mid-rotation — the
                 // post-rollback state stays consistent because step 6's
-                // restore_from_backup runs on every Err path below.
-                let pw = encrypted_passwords.get(name).ok_or_else(|| CoreError::Internal {
-                    context: format!(
-                        "rotate: password for encrypted profile '{name}' disappeared between pre-flight and re-encrypt"
-                    ),
-                })?;
-                reencrypt_mgs_profile(profile_path, pw, &old_key, &new_key)
+                // rollback runs on every Err path below.
+                match encrypted_passwords.get(name) {
+                    Some(pw) => reencrypt_mgs_profile(profile_path, pw, &old_key, &new_key),
+                    None => Err(CoreError::Internal {
+                        context: format!(
+                            "rotate: password for encrypted profile '{name}' disappeared between pre-flight and re-encrypt"
+                        ),
+                    }),
+                }
             } else {
                 reencrypt_json_profile(profile_path, &old_key, &new_key)
             };
@@ -149,7 +158,8 @@ impl super::Encryption {
                         e
                     );
                     log::error!("Rolling back changes");
-                    restore_from_backup(&backup_path, app_data_dir)?;
+                    rotation_backup::restore_from_backup(&backup_path, app_data_dir)?;
+                    let _ = std::fs::remove_file(pending_key_path(app_data_dir));
                     return Err(CoreError::Internal {
                         context: format!(
                             "Key rotation failed while updating {}: {}. All changes have been rolled back.",
@@ -161,14 +171,18 @@ impl super::Encryption {
             }
         }
 
-        // 7. Securely delete old key.
-        securely_delete_key_file(app_data_dir)?;
+        // 7. Shred the old key: overwrite then TRUNCATE TO ZERO BYTES —
+        //    deliberately not unlinked. The zero-length `.stream_key` is
+        //    the journal marker that says "profiles are fully rewritten
+        //    under `.stream_key.new`"; recovery promotes the pending key
+        //    when it sees this state.
+        securely_shred_key_file(app_data_dir)?;
 
-        // 8. Write new key.
-        write_machine_key(&new_key, app_data_dir)?;
+        // 8. Promote the pending key into place atomically.
+        promote_pending_key(app_data_dir)?;
 
         // 9. Clean up old backups (keep last 5).
-        cleanup_old_backups(app_data_dir, 5)?;
+        rotation_backup::cleanup_old_backups(app_data_dir, 5)?;
 
         log::info!(
             "Machine key rotation complete: {profiles_updated} profiles updated, {keys_reencrypted} keys re-encrypted"
@@ -219,16 +233,22 @@ fn generate_new_machine_key() -> Result<Zeroizing<[u8; KEY_LEN]>, CoreError> {
     Ok(Zeroizing::new(rng.gen::<[u8; KEY_LEN]>()))
 }
 
-fn write_machine_key(
-    key: &Zeroizing<[u8; KEY_LEN]>,
-    app_data_dir: &Path,
-) -> Result<(), CoreError> {
-    let key_file = app_data_dir.join(".stream_key");
-    crate::services::write_owner_only_atomic(&key_file, &**key)
+/// Path of the pending (journaled) new machine key during rotation.
+pub(super) fn pending_key_path(app_data_dir: &Path) -> PathBuf {
+    app_data_dir.join(".stream_key.new")
 }
 
-fn securely_delete_key_file(app_data_dir: &Path) -> Result<(), CoreError> {
-    let key_file = app_data_dir.join(".stream_key");
+fn machine_key_path(app_data_dir: &Path) -> PathBuf {
+    app_data_dir.join(".stream_key")
+}
+
+/// Overwrite the old key material (zeros, then random), then truncate
+/// to zero bytes. Deliberately NOT unlinked: the zero-length file marks
+/// "old key destroyed, profiles live under `.stream_key.new`" for crash
+/// recovery. Best-effort sanitization — filesystems with copy-on-write
+/// semantics may retain prior blocks regardless.
+fn securely_shred_key_file(app_data_dir: &Path) -> Result<(), CoreError> {
+    let key_file = machine_key_path(app_data_dir);
 
     if !key_file.exists() {
         return Ok(());
@@ -238,134 +258,130 @@ fn securely_delete_key_file(app_data_dir: &Path) -> Result<(), CoreError> {
         .map_err(|e| internal("Failed to read key file metadata", e))?;
     let size = metadata.len() as usize;
 
-    // Overwrite with zeros, then random, then unlink. Best-effort
-    // sanitization on top of unlink; filesystems with copy-on-write
-    // semantics may retain prior blocks regardless.
     let zeros = vec![0u8; size];
     std::fs::write(&key_file, &zeros).map_err(|e| internal("Failed to overwrite key file", e))?;
 
     let mut rng = rand::thread_rng();
     let random: Vec<u8> = (0..size).map(|_| rng.gen()).collect();
-    std::fs::write(&key_file, &random)
-        .map_err(|e| internal("Failed to overwrite key file", e))?;
+    std::fs::write(&key_file, &random).map_err(|e| internal("Failed to overwrite key file", e))?;
 
-    std::fs::remove_file(&key_file).map_err(|e| internal("Failed to delete key file", e))?;
+    std::fs::write(&key_file, b"").map_err(|e| internal("Failed to truncate key file", e))?;
 
     Ok(())
 }
 
-fn backup_profiles_directory(app_data_dir: &Path) -> Result<PathBuf, CoreError> {
-    let profiles_dir = app_data_dir.join("profiles");
-    let backup_dir = app_data_dir.join("profiles_backup");
-    let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
-    let backup_path = backup_dir.join(format!("backup_{timestamp}"));
-
-    log::info!("Creating backup at: {}", backup_path.display());
-
-    std::fs::create_dir_all(&backup_path)
-        .map_err(|e| internal("Failed to create backup directory", e))?;
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let perms = std::fs::Permissions::from_mode(0o700); // Owner only
-        std::fs::set_permissions(&backup_dir, perms.clone())
-            .map_err(|e| internal("Failed to set backup directory permissions", e))?;
-        std::fs::set_permissions(&backup_path, perms)
-            .map_err(|e| internal("Failed to set backup directory permissions", e))?;
+/// Move `.stream_key.new` into place as `.stream_key`.
+fn promote_pending_key(app_data_dir: &Path) -> Result<(), CoreError> {
+    let pending = pending_key_path(app_data_dir);
+    let dest = machine_key_path(app_data_dir);
+    // Windows refuses rename-over-existing; the zero-length marker (or a
+    // missing dest) is exactly the state recovery handles, so the brief
+    // window between remove and rename is covered.
+    #[cfg(windows)]
+    if dest.exists() {
+        std::fs::remove_file(&dest)
+            .map_err(|e| internal("Failed to remove shredded key file", e))?;
     }
+    std::fs::rename(&pending, &dest)
+        .map_err(|e| internal("Failed to promote pending machine key", e))?;
+    #[cfg(unix)]
+    if let Some(parent) = dest.parent() {
+        if let Ok(dir) = std::fs::File::open(parent) {
+            let _ = dir.sync_all();
+        }
+    }
+    Ok(())
+}
 
-    let entries = std::fs::read_dir(&profiles_dir)
-        .map_err(|e| internal("Failed to read profiles directory", e))?;
+/// Outcome of [`super::Encryption::recover_interrupted_rotation`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RotationRecovery {
+    /// No interrupted rotation found.
+    Clean,
+    /// A rotation died before the old key was shredded. Profiles were
+    /// restored from the pre-rotation backup and the pending key was
+    /// discarded — the install is back on the old key; the user should
+    /// re-run rotation.
+    RolledBack,
+    /// A rotation died after the old key was shredded but before the
+    /// new key was promoted. Every profile was already rewritten under
+    /// the pending key, so it was promoted into place — the rotation is
+    /// effectively complete.
+    Promoted,
+}
 
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-            if ext == "json" || ext == "mgs" {
-                if let Some(file_name) = path.file_name() {
-                    let dest = backup_path.join(file_name);
-                    std::fs::copy(&path, &dest).map_err(|e| {
-                        internal(
-                            &format!("Failed to backup {}", file_name.to_string_lossy()),
-                            e,
-                        )
-                    })?;
-                    log::debug!("Backed up: {}", file_name.to_string_lossy());
+impl super::Encryption {
+    /// Repair an interrupted machine-key rotation.
+    ///
+    /// Must run at startup (`ServiceRegistry::build`) before anything
+    /// derives keys. The journal is `.stream_key.new`:
+    ///
+    /// - absent → nothing to do.
+    /// - present + `.stream_key` still holds a valid 32-byte key → the
+    ///   crash happened while profiles were being rewritten (mixed
+    ///   state). Restore the most recent backup and discard the pending
+    ///   key: deterministic rollback to the old key.
+    /// - present + `.stream_key` empty/missing → the old key was already
+    ///   shredded, which only happens after every profile was rewritten.
+    ///   Promote the pending key: the rotation completes.
+    ///
+    /// Without this, the old behavior was catastrophic: the next launch
+    /// minted a brand-new random key and every secret decrypted to
+    /// garbage with no explanation.
+    pub fn recover_interrupted_rotation(
+        app_data_dir: &Path,
+    ) -> Result<RotationRecovery, CoreError> {
+        let pending = pending_key_path(app_data_dir);
+        if !pending.exists() {
+            return Ok(RotationRecovery::Clean);
+        }
+
+        let pending_len = std::fs::metadata(&pending)
+            .map_err(|e| internal("Failed to read pending key metadata", e))?
+            .len();
+        let dest = machine_key_path(app_data_dir);
+        let dest_valid = std::fs::metadata(&dest)
+            .map(|m| m.len() == KEY_LEN as u64)
+            .unwrap_or(false);
+
+        if dest_valid {
+            // Old key intact → profiles may be in mixed state. Roll back.
+            log::warn!(
+                "Interrupted key rotation detected (pending key present, old key intact) — \
+                 restoring profiles from backup and discarding the pending key"
+            );
+            match rotation_backup::latest_backup(app_data_dir) {
+                Some(backup) => rotation_backup::restore_from_backup(&backup, app_data_dir)?,
+                None => {
+                    return Err(CoreError::Internal {
+                        context: "interrupted key rotation detected but no profiles_backup \
+                                  snapshot exists to roll back to; refusing to guess. Restore \
+                                  the profiles directory manually, then delete .stream_key.new"
+                            .into(),
+                    });
                 }
             }
+            std::fs::remove_file(&pending)
+                .map_err(|e| internal("Failed to remove pending key after rollback", e))?;
+            return Ok(RotationRecovery::RolledBack);
         }
-    }
 
-    log::info!("Backup created successfully");
-    Ok(backup_path)
-}
-
-fn restore_from_backup(backup_path: &Path, app_data_dir: &Path) -> Result<(), CoreError> {
-    let profiles_dir = app_data_dir.join("profiles");
-
-    log::warn!("Restoring from backup: {}", backup_path.display());
-
-    let entries = std::fs::read_dir(&profiles_dir)
-        .map_err(|e| internal("Failed to read profiles directory", e))?;
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-            if ext == "json" || ext == "mgs" {
-                std::fs::remove_file(&path)
-                    .map_err(|e| internal(&format!("Failed to delete {}", path.display()), e))?;
-            }
+        // Old key shredded/missing → profiles are fully on the pending key.
+        if pending_len != KEY_LEN as u64 {
+            return Err(CoreError::Internal {
+                context: format!(
+                    "interrupted key rotation left a corrupt pending key ({pending_len} bytes) \
+                     and no valid old key; restore profiles and .stream_key from a backup"
+                ),
+            });
         }
+        log::warn!(
+            "Interrupted key rotation detected (old key already shredded) — \
+             promoting the pending key to complete the rotation"
+        );
+        promote_pending_key(app_data_dir)?;
+        Ok(RotationRecovery::Promoted)
     }
-
-    let backup_entries = std::fs::read_dir(backup_path)
-        .map_err(|e| internal("Failed to read backup directory", e))?;
-
-    for entry in backup_entries.flatten() {
-        let path = entry.path();
-        if let Some(file_name) = path.file_name() {
-            let dest = profiles_dir.join(file_name);
-            std::fs::copy(&path, &dest).map_err(|e| {
-                internal(
-                    &format!("Failed to restore {}", file_name.to_string_lossy()),
-                    e,
-                )
-            })?;
-        }
-    }
-
-    log::info!("Backup restored successfully");
-    Ok(())
-}
-
-fn cleanup_old_backups(app_data_dir: &Path, keep_count: usize) -> Result<(), CoreError> {
-    let backup_dir = app_data_dir.join("profiles_backup");
-
-    if !backup_dir.exists() {
-        return Ok(());
-    }
-
-    let entries = std::fs::read_dir(&backup_dir)
-        .map_err(|e| internal("Failed to read backup directory", e))?;
-
-    let mut backups: Vec<PathBuf> = entries
-        .flatten()
-        .filter(|e| e.path().is_dir())
-        .map(|e| e.path())
-        .collect();
-
-    backups.sort();
-
-    while backups.len() > keep_count {
-        if let Some(oldest) = backups.first() {
-            log::info!("Deleting old backup: {}", oldest.display());
-            std::fs::remove_dir_all(oldest)
-                .map_err(|e| internal("Failed to delete old backup", e))?;
-            backups.remove(0);
-        }
-    }
-
-    Ok(())
 }
 
 /// Read a `.mgs` file, strip the magic prefix, and decrypt the envelope
@@ -389,7 +405,10 @@ fn decrypt_mgs_envelope(profile_path: &Path, password: &str) -> Result<Vec<u8>, 
         super::Encryption::decrypt_v1(body, password)
     } else {
         Err(CoreError::Internal {
-            context: format!("invalid encrypted profile magic: {}", profile_path.display()),
+            context: format!(
+                "invalid encrypted profile magic: {}",
+                profile_path.display()
+            ),
         })
     }
 }
@@ -441,8 +460,8 @@ fn reencrypt_json_profile(
         std::fs::read(profile_path).map_err(|e| internal("Failed to read profile file", e))?;
     let json_str =
         String::from_utf8(content).map_err(|e| internal("Invalid UTF-8 in profile", e))?;
-    let mut profile: Profile = serde_json::from_str(&json_str)
-        .map_err(|e| internal("Failed to parse profile JSON", e))?;
+    let mut profile: Profile =
+        serde_json::from_str(&json_str).map_err(|e| internal("Failed to parse profile JSON", e))?;
 
     let keys_updated = rotate_inner_secrets(&mut profile, old_key, new_key)?;
 
@@ -454,62 +473,27 @@ fn reencrypt_json_profile(
 }
 
 /// Swap every machine-key-encrypted field on a deserialized `Profile`
-/// over to the new machine key. Stream keys live on each target; the
-/// other sensitive-settings fields (OBS password, Discord webhook,
-/// backend token, YouTube API key, OAuth access/refresh tokens) live
-/// on `profile.settings`.
+/// over to the new machine key.
+///
+/// The field inventory is the shared walker in
+/// `profile/secret_fields.rs` — the same one the save/load encryption
+/// boundary uses. Rotation re-encrypting a strict subset of what save
+/// encrypts is the data-loss bug this fixes: any field skipped here is
+/// destroyed the moment the old key is shredded (pre-fix that was the
+/// PII blocklist and the kick/facebook OAuth tokens).
 fn rotate_inner_secrets(
     profile: &mut crate::models::Profile,
     old_key: &Zeroizing<[u8; KEY_LEN]>,
     new_key: &Zeroizing<[u8; KEY_LEN]>,
 ) -> Result<usize, CoreError> {
     let mut keys_updated = 0;
-
-    for group in &mut profile.output_groups {
-        for target in &mut group.stream_targets {
-            if super::Encryption::is_stream_key_encrypted(&target.stream_key) {
-                let plaintext = decrypt_stream_key_with_key(&target.stream_key, old_key)?;
-                target.stream_key = encrypt_stream_key_with_key(&plaintext, new_key)?;
-                keys_updated += 1;
-            }
-        }
-    }
-
-    // Sensitive profile settings — same encryption scheme as stream keys.
-    let settings_fields: [&mut String; 4] = [
-        &mut profile.settings.obs.password,
-        &mut profile.settings.discord.webhook_url,
-        &mut profile.settings.backend.token,
-        &mut profile.settings.chat.youtube_api_key,
-    ];
-    for field in settings_fields {
-        if !field.is_empty() && super::Encryption::is_stream_key_encrypted(field) {
+    crate::services::profile::secret_fields::visit_secret_fields(profile, |_, field| {
+        if super::Encryption::is_stream_key_encrypted(field) {
             let plaintext = decrypt_stream_key_with_key(field, old_key)?;
             *field = encrypt_stream_key_with_key(&plaintext, new_key)?;
             keys_updated += 1;
         }
-    }
-
-    // OAuth tokens — twitch + youtube.
-    for account in [
-        &mut profile.settings.oauth.twitch,
-        &mut profile.settings.oauth.youtube,
-    ] {
-        if !account.access_token.is_empty()
-            && super::Encryption::is_stream_key_encrypted(&account.access_token)
-        {
-            let plaintext = decrypt_stream_key_with_key(&account.access_token, old_key)?;
-            account.access_token = encrypt_stream_key_with_key(&plaintext, new_key)?;
-            keys_updated += 1;
-        }
-        if !account.refresh_token.is_empty()
-            && super::Encryption::is_stream_key_encrypted(&account.refresh_token)
-        {
-            let plaintext = decrypt_stream_key_with_key(&account.refresh_token, old_key)?;
-            account.refresh_token = encrypt_stream_key_with_key(&plaintext, new_key)?;
-            keys_updated += 1;
-        }
-    }
-
+        Ok(())
+    })?;
     Ok(keys_updated)
 }

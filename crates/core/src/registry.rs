@@ -12,10 +12,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::services::{
-    AuditLogService, AuthSurveillanceService, ChatManager, DiscordWebhookService, EventSink,
-    FFmpegHandler, FFmpegLocator, OAuthConfig, OAuthService, ObsWebSocketHandler,
-    ProfileActivationService, ProfileManager, SafetyService, SettingsManager, ThemeManager,
+    AuditLogService, AuthSurveillanceService, ChatManager, ConfirmTokenService,
+    DiscordWebhookService, EventSink, FFmpegHandler, FFmpegLocator, OAuthConfig, OAuthService,
+    ObsWebSocketHandler, ProfileActivationService, ProfileManager, SafetyService, SettingsManager,
+    ThemeManager,
 };
+use crate::traits::SecretStore;
 use crate::CoreError;
 
 /// Inputs required to build a `ServiceRegistry`.
@@ -35,6 +37,11 @@ pub struct ServiceRegistryOptions {
     /// HTTP transport supplies its broadcast bus; CLI supplies a stdout writer
     /// for `spiritstream-cli events watch`, or a no-op sink for one-shot commands.
     pub events: Arc<dyn EventSink>,
+    /// Single secret store impl chosen at startup via `build_secret_store`.
+    /// Held by `SafetyService` so panic-disconnect can purge in-memory
+    /// secret caches; passed in here so callers (transport-http, CLI,
+    /// Tauri mobile shell) all funnel through one selection point.
+    pub secret_store: Arc<dyn SecretStore>,
 }
 
 /// Fully-constructed service registry.
@@ -68,6 +75,13 @@ pub struct ServiceRegistry {
     /// Mirrors the `SafetyService` shape — `Arc<participants>` in,
     /// single verb method out.
     pub profile_activation: Arc<ProfileActivationService>,
+    /// One-shot confirmation tokens for destructive operations
+    /// (clear-data, machine-key rotate, revoke-all-sessions). The HTTP
+    /// transport gates the destructive endpoints behind a
+    /// `X-Confirm-Token`; the CLI exposes `confirm-token issue --intent`
+    /// for scripted use. Same service instance across transports so a
+    /// token issued via one is consumable via the other (Q6).
+    pub confirm_tokens: Arc<ConfirmTokenService>,
     pub events: Arc<dyn EventSink>,
     pub data_dir: PathBuf,
     pub log_dir: PathBuf,
@@ -89,6 +103,31 @@ impl ServiceRegistry {
             context: format!("log_dir create: {e}"),
         })?;
 
+        // Repair an interrupted machine-key rotation BEFORE anything
+        // derives keys (AuditLogService's HMAC key, profile load, secret
+        // store). Without this, a crash mid-rotation either bricked the
+        // install (key gone) or silently minted a fresh key and turned
+        // every stored secret into garbage. The audit entry for the
+        // recovery is recorded right after `audit` is constructed below
+        // (the audit service itself needs the recovered key).
+        let rotation_recovery =
+            crate::services::Encryption::recover_interrupted_rotation(&opts.data_dir)?;
+        match rotation_recovery {
+            crate::services::RotationRecovery::Clean => {}
+            crate::services::RotationRecovery::RolledBack => {
+                log::warn!(
+                    "Recovered from interrupted key rotation by rolling back to the previous \
+                     key and restoring profiles from backup — re-run rotation when ready"
+                );
+            }
+            crate::services::RotationRecovery::Promoted => {
+                log::warn!(
+                    "Recovered from interrupted key rotation by promoting the pending key — \
+                     the rotation is now complete"
+                );
+            }
+        }
+
         let profiles = Arc::new(ProfileManager::new(opts.data_dir.clone()));
         let settings = Arc::new(SettingsManager::new(opts.data_dir.clone()));
         let themes = Arc::new(ThemeManager::new(
@@ -101,22 +140,40 @@ impl ServiceRegistry {
         )?);
         let ffmpeg_locator = Arc::new(FFmpegLocator::new()?);
         let obs = Arc::new(ObsWebSocketHandler::new(opts.data_dir.clone()));
-        let discord = Arc::new(DiscordWebhookService::new());
+        let discord = Arc::new(DiscordWebhookService::new(opts.data_dir.clone()));
         let chat = Arc::new(ChatManager::new(opts.events.clone(), opts.log_dir.clone()));
         let oauth = Arc::new(OAuthService::new(OAuthConfig::default()));
         let audit = Arc::new(AuditLogService::new(opts.data_dir.clone())?);
+        // Now that the chain is writable, record the startup rotation
+        // recovery (if any) so the user has a durable record of what
+        // happened to their keys.
+        let recovery_action = match rotation_recovery {
+            crate::services::RotationRecovery::Clean => None,
+            crate::services::RotationRecovery::RolledBack => {
+                Some(crate::services::AuditAction::KeyRotationRolledBack)
+            }
+            crate::services::RotationRecovery::Promoted => {
+                Some(crate::services::AuditAction::KeyRotationRecovered)
+            }
+        };
+        if let Some(action) = recovery_action {
+            if let Err(e) = audit.record(action) {
+                log::error!("failed to append key-rotation recovery audit entry: {e}");
+            }
+        }
         let safety = Arc::new(SafetyService::new(
             ffmpeg.clone(),
             chat.clone(),
             obs.clone(),
             audit.clone(),
             opts.events.clone(),
-            None, // SecretStore wiring lands when callers swap to it.
+            opts.secret_store.clone(),
         ));
         let auth_surveillance = Arc::new(AuthSurveillanceService::new(
             audit.clone(),
             opts.events.clone(),
         ));
+        let confirm_tokens = Arc::new(ConfirmTokenService::new());
 
         // Profile-activation orchestrator. Constructed after every
         // participant so each Arc is cloned exactly once into the service.
@@ -158,6 +215,17 @@ impl ServiceRegistry {
         // record. Matches the ThemeManager degraded-mode behavior.
         chat.set_audit_log(audit.clone());
 
+        // G2: same wiring for ProfileManager. Pre-G2 the
+        // `ProfileSaved` and `ProfileDeleted` variants existed but had
+        // nowhere to fire from — the manager lacked a handle to the
+        // audit chain.
+        profiles.set_audit_log(audit.clone());
+
+        // H9: same wiring for DiscordWebhookService so go-live
+        // notification posts (and cooldown-skipped attempts) reach
+        // the HMAC chain.
+        discord.set_audit_log(audit.clone());
+
         Ok(ServiceRegistry {
             profiles,
             settings,
@@ -172,10 +240,53 @@ impl ServiceRegistry {
             safety,
             auth_surveillance,
             profile_activation,
+            confirm_tokens,
             events: opts.events,
             data_dir: opts.data_dir,
             log_dir: opts.log_dir,
         })
+    }
+
+    /// Rotate the machine key with the cross-transport preconditions and
+    /// bookkeeping applied. Both the HTTP handler and the CLI command
+    /// MUST route through here (not `Encryption::rotate_machine_key`
+    /// directly) so the rules can't drift between transports:
+    ///
+    /// 1. Refuses while any stream is live — rotation rewrites every
+    ///    profile while FFmpeg may be reading them, and a mid-stream
+    ///    failure would force a rollback during a broadcast.
+    /// 2. Records `MachineKeyRotated` in the audit chain.
+    pub fn rotate_machine_key_checked(
+        &self,
+        unlocked_passwords: &std::collections::HashMap<String, String>,
+    ) -> Result<crate::services::RotationReport, CoreError> {
+        if self.ffmpeg.active_count() > 0 {
+            return Err(CoreError::ValidationFailed {
+                reasons: vec![crate::errors::ValidationIssue {
+                    code: "rotation_while_streaming".into(),
+                    message: "Machine-key rotation is not allowed while streams are live. \
+                              Stop all streams first."
+                        .into(),
+                    path: None,
+                }],
+            });
+        }
+        let profiles_dir = self.data_dir.join("profiles");
+        let report = crate::services::Encryption::rotate_machine_key(
+            &self.data_dir,
+            &profiles_dir,
+            unlocked_passwords,
+        )?;
+        if let Err(e) = self
+            .audit
+            .record(crate::services::AuditAction::MachineKeyRotated {
+                profiles_updated: report.profiles_updated,
+                keys_reencrypted: report.keys_reencrypted,
+            })
+        {
+            log::error!("failed to append MachineKeyRotated audit entry: {e}");
+        }
+        Ok(report)
     }
 }
 
@@ -186,4 +297,64 @@ pub struct NoopEventSink;
 
 impl EventSink for NoopEventSink {
     fn emit(&self, _event: &str, _payload: serde_json::Value) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::build_secret_store;
+
+    fn options(root: &std::path::Path) -> ServiceRegistryOptions {
+        ServiceRegistryOptions {
+            data_dir: root.join("data"),
+            themes_dir: root.join("themes"),
+            log_dir: root.join("logs"),
+            custom_ffmpeg_path: None,
+            events: Arc::new(NoopEventSink),
+            // File-backed store so the test never touches the OS keyring.
+            secret_store: build_secret_store(&root.join("data"), Some("file")),
+        }
+    }
+
+    #[tokio::test]
+    async fn build_creates_data_and_log_dirs() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let opts = options(dir.path());
+        let data_dir = opts.data_dir.clone();
+        let log_dir = opts.log_dir.clone();
+
+        let registry = ServiceRegistry::build(opts).expect("build registry");
+
+        assert!(data_dir.is_dir(), "data_dir created");
+        assert!(log_dir.is_dir(), "log_dir created");
+        assert_eq!(registry.data_dir, data_dir);
+        assert_eq!(registry.log_dir, log_dir);
+    }
+
+    #[tokio::test]
+    async fn build_is_idempotent_across_calls() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        // Two independent registries against the same dirs must both build.
+        let first = ServiceRegistry::build(options(dir.path())).expect("first build");
+        let second = ServiceRegistry::build(options(dir.path())).expect("second build");
+        assert_eq!(first.data_dir, second.data_dir);
+        assert_eq!(first.log_dir, second.log_dir);
+    }
+
+    #[tokio::test]
+    async fn build_clone_shares_service_handles() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let registry = ServiceRegistry::build(options(dir.path())).expect("build registry");
+        let cloned = registry.clone();
+        // Cloning the registry must share the same underlying Arc allocations,
+        // not deep-copy the services.
+        assert!(Arc::ptr_eq(&registry.profiles, &cloned.profiles));
+        assert!(Arc::ptr_eq(&registry.audit, &cloned.audit));
+        assert!(Arc::ptr_eq(&registry.chat, &cloned.chat));
+        assert!(Arc::ptr_eq(&registry.safety, &cloned.safety));
+        assert!(Arc::ptr_eq(
+            &registry.profile_activation,
+            &cloned.profile_activation
+        ));
+    }
 }

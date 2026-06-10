@@ -38,6 +38,13 @@ pub enum AuditAction {
     PanicTriggered {
         streams_stopped: usize,
         elapsed_ms: u64,
+        /// Q8: errors observed during the panic disconnect sequence.
+        /// Pre-Q8 these were logged-and-forgotten; the panic audit row
+        /// only said "panic ran" without telling the operator that, e.g.,
+        /// the Twitch disconnect timed out — vital context for the
+        /// post-incident "did my chat actually disconnect?" question.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        connector_errors: Vec<String>,
     },
     /// Outbound chat send was blocked because the message matched a
     /// phrase in the active profile's PII blocklist. One entry per
@@ -67,6 +74,13 @@ pub enum AuditAction {
         profiles_updated: usize,
         keys_reencrypted: usize,
     },
+    /// Startup recovery found an interrupted key rotation and rolled
+    /// back to the previous key (profiles restored from backup).
+    KeyRotationRolledBack,
+    /// Startup recovery found an interrupted key rotation whose old key
+    /// was already shredded, and promoted the pending key — the
+    /// rotation is now complete.
+    KeyRotationRecovered,
     AnonymousModeToggled {
         enabled: bool,
     },
@@ -119,6 +133,36 @@ pub enum AuditAction {
     ChatPlatformDisconnected {
         platform: String,
         reason: String,
+    },
+    /// A Discord go-live webhook send was attempted. H9 — webhook
+    /// posts are user-visible side effects (announcement messages
+    /// land in a Discord channel attached to a real audience) and
+    /// belong in the audit trail. `success` distinguishes accepted
+    /// posts from upstream rejections; `skipped_cooldown` records
+    /// the cooldown-suppressed path so operators understand why a
+    /// "go live" didn't reach Discord even when their settings
+    /// looked enabled. Webhook URL itself is never recorded.
+    DiscordWebhookSent {
+        success: bool,
+        skipped_cooldown: bool,
+    },
+    /// `POST /api/v1/security/sessions/revoke-all` ran and dropped
+    /// every active session ID. `count` is how many sessions were
+    /// in the active set at revoke time — a stolen-session incident
+    /// shows up as a non-trivial number here. G2.
+    SessionRevoked {
+        count: usize,
+    },
+    /// A one-shot confirm token was issued for a destructive intent
+    /// (`clear_data`, `rotate_machine_key`, `revoke_all_sessions`,
+    /// `enable_facebook_chat`, …). The token itself is **never**
+    /// recorded; only the intent string + the timestamp lets
+    /// operators reconstruct "did the user ask for X around time T"
+    /// when reviewing post-incident. Issue is paired with the
+    /// downstream `MachineKeyRotated` / `SessionRevoked` / etc.
+    /// emission via wall-clock proximity in the chain. G2.
+    ConfirmTokenIssued {
+        intent: String,
     },
 }
 

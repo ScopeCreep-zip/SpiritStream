@@ -4,11 +4,12 @@
 //! `ProfileActivated` event payload. Split across focused sub-modules so
 //! each concern lives in a file under 300 LOC:
 //!
-//! - `events.rs`       — `ProfileActivatedEvent` + `ActivatedObs` (DTOs)
-//! - `validation.rs`   — name + settings-bounds validation, public constants
-//! - `order_index.rs`  — order-index file I/O (drag-reorder support)
-//! - `io.rs`           — file I/O: list, load, delete, is-encrypted, port-conflict
-//! - `security.rs`     — encryption boundary (per-field + whole-file envelope)
+//! - `events.rs`        — `ProfileActivatedEvent` + `ActivatedObs` (DTOs)
+//! - `validation.rs`    — name + settings-bounds validation, public constants
+//! - `order_index.rs`   — order-index file I/O (drag-reorder support)
+//! - `io.rs`            — file I/O: list, load, delete, is-encrypted, port-conflict
+//! - `secret_fields.rs` — the walker enumerating every machine-key-encrypted field
+//! - `security.rs`      — encryption boundary (per-field + whole-file envelope)
 //!
 //! The public symbols re-export through `services/profile_manager.rs` so the
 //! historical import path `crate::services::profile_manager::ProfileManager`
@@ -17,19 +18,30 @@
 mod events;
 pub(super) mod io;
 mod order_index;
+pub(crate) mod secret_fields;
 mod security;
 mod validation;
 
 use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
 
 pub use events::{ActivatedObs, ProfileActivatedEvent};
 pub use validation::{BACKEND_PORT_MIN, DISCORD_COOLDOWN_SECONDS_MAX};
+
+use super::AuditLogService;
 
 /// Manages profile storage and retrieval.
 pub struct ProfileManager {
     pub(super) profiles_dir: PathBuf,
     pub(super) app_data_dir: PathBuf,
     pub(super) order_index_dir: PathBuf,
+    /// Audit-log handle, wired post-construction by `ServiceRegistry`
+    /// (same pattern as `ChatManager::set_audit_log` / `ThemeManager`).
+    /// G2: `ProfileSaved` + `ProfileDeleted` enum variants existed but
+    /// were never emitted because the manager had no handle to record
+    /// them. Wiring it here keeps emission single-source (every save/
+    /// delete path goes through these methods).
+    pub(super) audit_log: Arc<RwLock<Option<Arc<AuditLogService>>>>,
 }
 
 impl ProfileManager {
@@ -43,6 +55,35 @@ impl ProfileManager {
             profiles_dir,
             app_data_dir,
             order_index_dir,
+            audit_log: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    /// Wire the audit log after construction. Until this is called,
+    /// `ProfileSaved` and `ProfileDeleted` are best-effort no-ops —
+    /// matches the `ThemeManager` / `ChatManager` degraded-mode shape.
+    pub fn set_audit_log(&self, audit: Arc<AuditLogService>) {
+        match self.audit_log.write() {
+            Ok(mut guard) => *guard = Some(audit),
+            Err(e) => log::error!(
+                "profile_manager audit_log write lock poisoned during set_audit_log: {e}"
+            ),
+        }
+    }
+
+    /// Read the wired audit-log handle. Returns `None` before
+    /// `set_audit_log` runs (legitimate construction-order state) but
+    /// logs and returns `None` on poisoned lock so audit gaps caused
+    /// by an upstream panic surface in operator logs.
+    pub(super) fn audit(&self) -> Option<Arc<AuditLogService>> {
+        match self.audit_log.read() {
+            Ok(g) => g.clone(),
+            Err(e) => {
+                log::error!(
+                    "profile_manager audit_log read lock poisoned — audit entry dropped: {e}"
+                );
+                None
+            }
         }
     }
 }

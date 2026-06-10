@@ -27,6 +27,8 @@
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
+use crate::errors::CoreError;
+
 type HmacSha256 = Hmac<Sha256>;
 
 const HASH_PREFIX: &str = "hash:";
@@ -43,26 +45,47 @@ pub fn generate_salt() -> String {
 }
 
 /// Pseudonymise `value` under the hex-encoded `salt`. Returns the
-/// salted hash in the documented `hash:<16hex>` format. Returns the
-/// input unchanged if `salt` is empty or malformed — callers that
-/// have already decided to apply anonymous mode are responsible for
-/// passing a valid salt.
-pub fn pseudonymize(value: &str, salt_hex: &str) -> String {
+/// salted hash in the documented `hash:<16hex>` format.
+///
+/// Fails with [`CoreError::AnonymousSaltInvalid`] when `salt` is empty
+/// or malformed. It used to return the input unchanged in that case —
+/// a silent fallback in the one feature that exists to protect
+/// identities: anonymous mode appeared active while real usernames
+/// flowed to logs and the event stream. Callers must treat the error
+/// as "drop this message", never "pass it through".
+pub fn pseudonymize(value: &str, salt_hex: &str) -> Result<String, CoreError> {
     let Some(salt) = decode_salt(salt_hex) else {
-        return value.to_string();
+        return Err(CoreError::AnonymousSaltInvalid);
     };
     let mut mac = HmacSha256::new_from_slice(&salt).expect("HMAC accepts any key length");
     mac.update(value.as_bytes());
     let digest = mac.finalize().into_bytes();
     let encoded = hex::encode(&digest[..(HASH_PREFIX_LEN / 2)]);
-    format!("{HASH_PREFIX}{encoded}")
+    Ok(format!("{HASH_PREFIX}{encoded}"))
 }
 
 /// Test whether `candidate` plaintext would produce `pseudonym` under
 /// `salt`. The UI uses this to decode hashes back to plaintexts the
-/// user already knows about (their connected account usernames).
+/// user already knows about (their connected account usernames). The
+/// comparison is constant-time on the byte representation so the time
+/// taken doesn't leak how many bytes of the pseudonym a candidate
+/// matched — `String == String` short-circuits at the first differing
+/// byte, which over many candidate calls is a character-by-character
+/// timing oracle for an attacker who can measure the response.
 pub fn matches(candidate: &str, salt_hex: &str, pseudonym: &str) -> bool {
-    pseudonymize(candidate, salt_hex) == pseudonym
+    use subtle::ConstantTimeEq;
+    // An invalid salt can't have produced any pseudonym — no match.
+    let Ok(derived) = pseudonymize(candidate, salt_hex) else {
+        return false;
+    };
+    // `pseudonymize` always returns a fixed-shape string (HASH_PREFIX +
+    // HASH_PREFIX_LEN hex chars), so a length mismatch means the
+    // candidate input couldn't have produced this pseudonym at all —
+    // bail before ct_eq to avoid mixing different lengths.
+    if derived.len() != pseudonym.len() {
+        return false;
+    }
+    derived.as_bytes().ct_eq(pseudonym.as_bytes()).into()
 }
 
 /// Check whether a value is in the pseudonymised format. Lets the UI
@@ -89,8 +112,8 @@ mod tests {
     #[test]
     fn pseudonymize_is_deterministic_under_same_salt() {
         let salt = generate_salt();
-        let a = pseudonymize("alice", &salt);
-        let b = pseudonymize("alice", &salt);
+        let a = pseudonymize("alice", &salt).unwrap();
+        let b = pseudonymize("alice", &salt).unwrap();
         assert_eq!(a, b, "same input + same salt must yield same pseudonym");
     }
 
@@ -99,8 +122,8 @@ mod tests {
         let s1 = generate_salt();
         let s2 = generate_salt();
         assert_ne!(s1, s2, "salts must be unique per call");
-        let a = pseudonymize("alice", &s1);
-        let b = pseudonymize("alice", &s2);
+        let a = pseudonymize("alice", &s1).unwrap();
+        let b = pseudonymize("alice", &s2).unwrap();
         assert_ne!(
             a, b,
             "same name + different salt must yield different pseudonyms"
@@ -110,8 +133,8 @@ mod tests {
     #[test]
     fn pseudonymize_differs_across_inputs_under_same_salt() {
         let salt = generate_salt();
-        let alice = pseudonymize("alice", &salt);
-        let bob = pseudonymize("bob", &salt);
+        let alice = pseudonymize("alice", &salt).unwrap();
+        let bob = pseudonymize("bob", &salt).unwrap();
         assert_ne!(
             alice, bob,
             "different inputs must yield different pseudonyms"
@@ -121,41 +144,52 @@ mod tests {
     #[test]
     fn pseudonymize_format_is_hash_prefix_plus_16_hex() {
         let salt = generate_salt();
-        let out = pseudonymize("user", &salt);
+        let out = pseudonymize("user", &salt).unwrap();
         assert!(out.starts_with("hash:"));
         assert_eq!(out.len(), "hash:".len() + 16);
         assert!(out[5..].chars().all(|c| c.is_ascii_hexdigit()));
     }
 
     #[test]
-    fn empty_salt_returns_input_unchanged() {
-        assert_eq!(pseudonymize("alice", ""), "alice");
+    fn empty_salt_fails_loud() {
+        assert!(matches!(
+            pseudonymize("alice", ""),
+            Err(CoreError::AnonymousSaltInvalid)
+        ));
     }
 
     #[test]
-    fn malformed_salt_returns_input_unchanged() {
+    fn malformed_salt_fails_loud() {
         // hex::decode("xyz") fails — not hex.
-        assert_eq!(pseudonymize("alice", "xyz"), "alice");
+        assert!(matches!(
+            pseudonymize("alice", "xyz"),
+            Err(CoreError::AnonymousSaltInvalid)
+        ));
     }
 
     #[test]
     fn matches_returns_true_for_correct_candidate() {
         let salt = generate_salt();
-        let pseudonym = pseudonymize("alice", &salt);
+        let pseudonym = pseudonymize("alice", &salt).unwrap();
         assert!(matches("alice", &salt, &pseudonym));
     }
 
     #[test]
     fn matches_returns_false_for_wrong_candidate() {
         let salt = generate_salt();
-        let pseudonym = pseudonymize("alice", &salt);
+        let pseudonym = pseudonymize("alice", &salt).unwrap();
         assert!(!matches("bob", &salt, &pseudonym));
+    }
+
+    #[test]
+    fn matches_returns_false_for_invalid_salt() {
+        assert!(!matches("alice", "", "hash:1234567890abcdef"));
     }
 
     #[test]
     fn looks_pseudonymized_recognises_real_pseudonyms() {
         let salt = generate_salt();
-        let p = pseudonymize("alice", &salt);
+        let p = pseudonymize("alice", &salt).unwrap();
         assert!(looks_pseudonymized(&p));
     }
 

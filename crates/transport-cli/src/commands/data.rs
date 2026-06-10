@@ -85,13 +85,10 @@ pub async fn run(
                 })?;
                 passwords.insert(name.to_string(), pw.to_string());
             }
-            let data_dir = registry.data_dir.clone();
-            let profiles_dir = data_dir.join("profiles");
-            let report = spiritstream_core::services::Encryption::rotate_machine_key(
-                &data_dir,
-                &profiles_dir,
-                &passwords,
-            )?;
+            // Shared core orchestration: refuses while streams are live
+            // and records `MachineKeyRotated` in the HMAC chain —
+            // identical rules for HTTP and CLI by construction.
+            let report = registry.rotate_machine_key_checked(&passwords)?;
             out.emit(&report)?;
             Ok(())
         }

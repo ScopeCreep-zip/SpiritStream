@@ -7,172 +7,79 @@
 //! and the encryption helpers are tightly coupled — splitting them would
 //! risk an encryption-boundary mismatch.
 
+use super::io::{ENCRYPTED_MAGIC_LEN, ENCRYPTED_MAGIC_V2};
+use super::secret_fields::{visit_secret_fields, SecretFieldKind};
+use super::validation::validate_profile_name;
 use crate::errors::{CoreError, ValidationIssue};
 use crate::models::Profile;
 use crate::services::Encryption;
-use super::io::{ENCRYPTED_MAGIC_LEN, ENCRYPTED_MAGIC_V2};
-use super::validation::validate_profile_name;
 
 impl super::ProfileManager {
-    /// Encrypt all stream keys in a profile.
-    pub(super) fn encrypt_stream_keys(&self, profile: &mut Profile) -> Result<(), CoreError> {
-        for group in &mut profile.output_groups {
-            for target in &mut group.stream_targets {
-                // Skip if already encrypted or empty
-                if !target.stream_key.is_empty()
-                    && !Encryption::is_stream_key_encrypted(&target.stream_key)
-                {
-                    target.stream_key =
-                        Encryption::encrypt_stream_key(&target.stream_key, &self.app_data_dir)?;
-                }
+    /// Encrypt every machine-key-protected field of `profile` in place.
+    ///
+    /// The field inventory lives in [`visit_secret_fields`] — the same
+    /// walker machine-key rotation uses, so save and rotation can never
+    /// disagree about which fields are encrypted. Stream keys honor the
+    /// per-profile `encrypt_stream_keys` flag; sensitive settings, OAuth
+    /// tokens, and PII blocklist entries are always wrapped (the PII
+    /// promise dates to O.11b: plaintext profiles must never store real
+    /// names / deadnames / hometowns as raw JSON on disk). Idempotent —
+    /// already-wrapped values pass through unchanged.
+    pub(super) fn encrypt_secret_fields(
+        &self,
+        profile: &mut Profile,
+        encrypt_stream_keys: bool,
+    ) -> Result<(), CoreError> {
+        visit_secret_fields(profile, |kind, field| {
+            if kind == SecretFieldKind::StreamKey && !encrypt_stream_keys {
+                return Ok(());
             }
-        }
-        Ok(())
-    }
-
-    /// Decrypt all stream keys in a profile.
-    pub(super) fn decrypt_stream_keys(&self, profile: &mut Profile) -> Result<(), CoreError> {
-        for group in &mut profile.output_groups {
-            for target in &mut group.stream_targets {
-                // Only decrypt if encrypted
-                if Encryption::is_stream_key_encrypted(&target.stream_key) {
-                    target.stream_key =
-                        Encryption::decrypt_stream_key(&target.stream_key, &self.app_data_dir)?;
-                }
+            if !field.is_empty() && !Encryption::is_stream_key_encrypted(field) {
+                *field = Encryption::encrypt_stream_key(field, &self.app_data_dir)?;
             }
-        }
-        Ok(())
+            Ok(())
+        })
     }
 
-    /// Encrypt sensitive fields in profile settings (OBS password, Discord
-    /// webhook, backend token, YouTube API key, OAuth tokens).
-    pub(super) fn encrypt_profile_settings(&self, profile: &mut Profile) -> Result<(), CoreError> {
-        if !profile.settings.obs.password.is_empty()
-            && !Encryption::is_stream_key_encrypted(&profile.settings.obs.password)
-        {
-            profile.settings.obs.password =
-                Encryption::encrypt_stream_key(&profile.settings.obs.password, &self.app_data_dir)?;
-        }
-
-        if !profile.settings.discord.webhook_url.is_empty()
-            && !Encryption::is_stream_key_encrypted(&profile.settings.discord.webhook_url)
-        {
-            profile.settings.discord.webhook_url = Encryption::encrypt_stream_key(
-                &profile.settings.discord.webhook_url,
-                &self.app_data_dir,
-            )?;
-        }
-
-        if !profile.settings.backend.token.is_empty()
-            && !Encryption::is_stream_key_encrypted(&profile.settings.backend.token)
-        {
-            profile.settings.backend.token = Encryption::encrypt_stream_key(
-                &profile.settings.backend.token,
-                &self.app_data_dir,
-            )?;
-        }
-
-        if !profile.settings.chat.youtube_api_key.is_empty()
-            && !Encryption::is_stream_key_encrypted(&profile.settings.chat.youtube_api_key)
-        {
-            profile.settings.chat.youtube_api_key = Encryption::encrypt_stream_key(
-                &profile.settings.chat.youtube_api_key,
-                &self.app_data_dir,
-            )?;
-        }
-
-        // Encrypt OAuth tokens (per profile)
-        if !profile.settings.oauth.twitch.access_token.is_empty()
-            && !Encryption::is_stream_key_encrypted(&profile.settings.oauth.twitch.access_token)
-        {
-            profile.settings.oauth.twitch.access_token = Encryption::encrypt_stream_key(
-                &profile.settings.oauth.twitch.access_token,
-                &self.app_data_dir,
-            )?;
-        }
-        if !profile.settings.oauth.twitch.refresh_token.is_empty()
-            && !Encryption::is_stream_key_encrypted(&profile.settings.oauth.twitch.refresh_token)
-        {
-            profile.settings.oauth.twitch.refresh_token = Encryption::encrypt_stream_key(
-                &profile.settings.oauth.twitch.refresh_token,
-                &self.app_data_dir,
-            )?;
-        }
-        if !profile.settings.oauth.youtube.access_token.is_empty()
-            && !Encryption::is_stream_key_encrypted(&profile.settings.oauth.youtube.access_token)
-        {
-            profile.settings.oauth.youtube.access_token = Encryption::encrypt_stream_key(
-                &profile.settings.oauth.youtube.access_token,
-                &self.app_data_dir,
-            )?;
-        }
-        if !profile.settings.oauth.youtube.refresh_token.is_empty()
-            && !Encryption::is_stream_key_encrypted(&profile.settings.oauth.youtube.refresh_token)
-        {
-            profile.settings.oauth.youtube.refresh_token = Encryption::encrypt_stream_key(
-                &profile.settings.oauth.youtube.refresh_token,
-                &self.app_data_dir,
-            )?;
-        }
-
-        Ok(())
+    /// Inverse of [`Self::encrypt_secret_fields`] across every secret
+    /// kind. Plaintext values (legacy profiles) pass through unchanged
+    /// so they get wrapped on the next save.
+    pub(super) fn decrypt_secret_fields(&self, profile: &mut Profile) -> Result<(), CoreError> {
+        visit_secret_fields(profile, |_, field| {
+            if Encryption::is_stream_key_encrypted(field) {
+                *field = Encryption::decrypt_stream_key(field, &self.app_data_dir)?;
+            }
+            Ok(())
+        })
     }
 
-    /// Decrypt sensitive fields in profile settings (OBS password, Discord
-    /// webhook, backend token, YouTube API key, OAuth tokens).
-    pub(super) fn decrypt_profile_settings(&self, profile: &mut Profile) -> Result<(), CoreError> {
-        if Encryption::is_stream_key_encrypted(&profile.settings.obs.password) {
-            profile.settings.obs.password =
-                Encryption::decrypt_stream_key(&profile.settings.obs.password, &self.app_data_dir)?;
-        }
+    /// Unwrap only the PII blocklist entries. The inner `load()` path
+    /// needs the blocklist in cleartext on every load (the PII filter
+    /// compares against it) while leaving the other fields exactly as
+    /// stored.
+    pub(super) fn decrypt_pii_blocklist(&self, profile: &mut Profile) -> Result<(), CoreError> {
+        visit_secret_fields(profile, |kind, field| {
+            if kind == SecretFieldKind::PiiEntry && Encryption::is_stream_key_encrypted(field) {
+                *field = Encryption::decrypt_stream_key(field, &self.app_data_dir)?;
+            }
+            Ok(())
+        })
+    }
 
-        if Encryption::is_stream_key_encrypted(&profile.settings.discord.webhook_url) {
-            profile.settings.discord.webhook_url = Encryption::decrypt_stream_key(
-                &profile.settings.discord.webhook_url,
-                &self.app_data_dir,
-            )?;
-        }
+    #[cfg(test)]
+    pub(crate) fn test_encrypt_profile_settings(
+        &self,
+        profile: &mut Profile,
+    ) -> Result<(), CoreError> {
+        self.encrypt_secret_fields(profile, false)
+    }
 
-        if Encryption::is_stream_key_encrypted(&profile.settings.backend.token) {
-            profile.settings.backend.token = Encryption::decrypt_stream_key(
-                &profile.settings.backend.token,
-                &self.app_data_dir,
-            )?;
-        }
-
-        if Encryption::is_stream_key_encrypted(&profile.settings.chat.youtube_api_key) {
-            profile.settings.chat.youtube_api_key = Encryption::decrypt_stream_key(
-                &profile.settings.chat.youtube_api_key,
-                &self.app_data_dir,
-            )?;
-        }
-
-        // Decrypt OAuth tokens (per profile)
-        if Encryption::is_stream_key_encrypted(&profile.settings.oauth.twitch.access_token) {
-            profile.settings.oauth.twitch.access_token = Encryption::decrypt_stream_key(
-                &profile.settings.oauth.twitch.access_token,
-                &self.app_data_dir,
-            )?;
-        }
-        if Encryption::is_stream_key_encrypted(&profile.settings.oauth.twitch.refresh_token) {
-            profile.settings.oauth.twitch.refresh_token = Encryption::decrypt_stream_key(
-                &profile.settings.oauth.twitch.refresh_token,
-                &self.app_data_dir,
-            )?;
-        }
-        if Encryption::is_stream_key_encrypted(&profile.settings.oauth.youtube.access_token) {
-            profile.settings.oauth.youtube.access_token = Encryption::decrypt_stream_key(
-                &profile.settings.oauth.youtube.access_token,
-                &self.app_data_dir,
-            )?;
-        }
-        if Encryption::is_stream_key_encrypted(&profile.settings.oauth.youtube.refresh_token) {
-            profile.settings.oauth.youtube.refresh_token = Encryption::decrypt_stream_key(
-                &profile.settings.oauth.youtube.refresh_token,
-                &self.app_data_dir,
-            )?;
-        }
-        Ok(())
+    #[cfg(test)]
+    pub(crate) fn test_decrypt_profile_settings(
+        &self,
+        profile: &mut Profile,
+    ) -> Result<(), CoreError> {
+        self.decrypt_secret_fields(profile)
     }
 
     /// Save a profile with optional password-based encryption.
@@ -256,10 +163,13 @@ impl super::ProfileManager {
             }
         }
 
-        if encrypt_keys {
-            self.encrypt_stream_keys(&mut profile_to_save)?;
-        }
-        self.encrypt_profile_settings(&mut profile_to_save)?;
+        // One walker-driven sweep covers stream keys (gated on the
+        // per-profile flag), sensitive settings, OAuth tokens, and the
+        // PII blocklist. The blocklist is wrapped even for password-
+        // encrypted profiles (idempotent), so a profile flipping between
+        // password+no-password is always at-rest-protected on disk —
+        // real names / deadnames / hometowns never hit disk as raw JSON.
+        self.encrypt_secret_fields(&mut profile_to_save, encrypt_keys)?;
 
         let content = serde_json::to_string_pretty(&profile_to_save)?;
 
@@ -289,6 +199,13 @@ impl super::ProfileManager {
         }
 
         log::info!("Profile saved successfully: {}", profile.name);
+        if let Some(audit) = self.audit() {
+            if let Err(e) = audit.record(crate::services::AuditAction::ProfileSaved {
+                name: profile.name.clone(),
+            }) {
+                log::error!("profile_manager failed to append ProfileSaved audit entry: {e}");
+            }
+        }
         Ok(())
     }
 
@@ -301,8 +218,11 @@ impl super::ProfileManager {
         log::info!("Loading profile: {name}");
         let mut profile = self.load(name, password).await?;
 
-        self.decrypt_stream_keys(&mut profile)?;
-        self.decrypt_profile_settings(&mut profile)?;
+        // Walker-driven sweep: stream keys, sensitive settings, OAuth
+        // tokens, and the PII blocklist all unwrap here so callers see
+        // plaintext. Legacy plaintext entries pass through unchanged and
+        // get wrapped on the next save.
+        self.decrypt_secret_fields(&mut profile)?;
 
         log::info!(
             "Profile loaded successfully: {} ({} output groups, {} total targets)",
@@ -315,5 +235,171 @@ impl super::ProfileManager {
                 .sum::<usize>()
         );
         Ok(profile)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::ProfileSettings;
+    use crate::services::Encryption;
+    use crate::services::ProfileManager;
+    use tempfile::TempDir;
+
+    fn profile_with_oauth_tokens() -> Profile {
+        let mut settings = ProfileSettings::default();
+        settings.oauth.twitch.access_token = "tw-access".into();
+        settings.oauth.twitch.refresh_token = "tw-refresh".into();
+        settings.oauth.youtube.access_token = "yt-access".into();
+        settings.oauth.youtube.refresh_token = "yt-refresh".into();
+        settings.oauth.kick.access_token = "kk-access".into();
+        settings.oauth.kick.refresh_token = "kk-refresh".into();
+        settings.oauth.facebook.access_token = "fb-access".into();
+        settings.oauth.facebook.refresh_token = "fb-refresh".into();
+        Profile {
+            id: "g1-test".into(),
+            name: "g1-test".into(),
+            encrypted: false,
+            input: crate::models::RtmpInput::default(),
+            output_groups: Vec::new(),
+            settings,
+            pii_blocklist: Vec::new(),
+            pii_fuzzy: false,
+            anonymous_logging: true,
+            anonymous_salt: String::new(),
+        }
+    }
+
+    /// G1 regression: pre-fix, only twitch + youtube OAuth tokens were
+    /// encrypted. Kick + Facebook ended up on disk in plaintext even
+    /// when `encrypt_stream_keys` was on. This test pins that all four
+    /// providers round-trip through the encrypt path.
+    #[tokio::test]
+    async fn encrypts_oauth_tokens_for_all_four_providers() {
+        let dir = TempDir::new().unwrap();
+        let mgr = ProfileManager::new(dir.path().to_path_buf());
+
+        let mut p = profile_with_oauth_tokens();
+        mgr.test_encrypt_profile_settings(&mut p).unwrap();
+
+        for (provider, account) in [
+            ("twitch", &p.settings.oauth.twitch),
+            ("youtube", &p.settings.oauth.youtube),
+            ("kick", &p.settings.oauth.kick),
+            ("facebook", &p.settings.oauth.facebook),
+        ] {
+            assert!(
+                Encryption::is_stream_key_encrypted(&account.access_token),
+                "{provider} access_token not encrypted: {}",
+                account.access_token,
+            );
+            assert!(
+                Encryption::is_stream_key_encrypted(&account.refresh_token),
+                "{provider} refresh_token not encrypted: {}",
+                account.refresh_token,
+            );
+        }
+
+        // Round trip back to plaintext.
+        mgr.test_decrypt_profile_settings(&mut p).unwrap();
+        assert_eq!(p.settings.oauth.kick.access_token, "kk-access");
+        assert_eq!(p.settings.oauth.facebook.refresh_token, "fb-refresh");
+    }
+
+    /// O.11b regression: a plaintext profile's `pii_blocklist` used to
+    /// hit disk as raw JSON strings — the threat model's worst case
+    /// (real name / deadname / hometown plain-text on disk). Wrap each
+    /// entry with the `ENC2::` envelope so an attacker who reads the
+    /// `.json` file sees ciphertext, not phrases.
+    #[tokio::test]
+    async fn pii_blocklist_is_wrapped_on_save_for_plaintext_profile() {
+        let dir = TempDir::new().unwrap();
+        let mgr = ProfileManager::new(dir.path().to_path_buf());
+
+        let mut p = profile_with_oauth_tokens();
+        p.name = "pii-test".into();
+        p.id = "pii-test".into();
+        p.pii_blocklist = vec![
+            "Alice Smith".into(),
+            "alice@example.com".into(),
+            "123 Main St".into(),
+        ];
+
+        // Save plaintext (no password) — the on-disk JSON must not
+        // contain any of the raw phrases.
+        mgr.save_with_key_encryption(&p, None).await.unwrap();
+        let on_disk =
+            std::fs::read_to_string(dir.path().join("profiles").join("pii-test.json")).unwrap();
+        for phrase in ["Alice Smith", "alice@example.com", "123 Main St"] {
+            assert!(
+                !on_disk.contains(phrase),
+                "PII phrase {phrase:?} leaked into plaintext profile JSON",
+            );
+        }
+        assert!(
+            on_disk.contains("ENC2::"),
+            "Expected ENC2:: wrapping on PII entries in plaintext profile",
+        );
+
+        // Load roundtrip: callers must see the original plaintext phrases.
+        let loaded = mgr
+            .load_with_key_decryption("pii-test", None)
+            .await
+            .unwrap();
+        assert_eq!(
+            loaded.pii_blocklist,
+            vec![
+                "Alice Smith".to_string(),
+                "alice@example.com".to_string(),
+                "123 Main St".to_string(),
+            ],
+        );
+    }
+
+    /// G2 regression: `ProfileSaved` was a defined-not-emitted variant.
+    /// Wiring `set_audit_log` + emission inside `save_with_key_encryption`
+    /// makes every save observable in the HMAC chain.
+    #[tokio::test]
+    async fn save_emits_profile_saved_audit_entry() {
+        use crate::services::{AuditAction, AuditLogService};
+        use std::sync::Arc;
+        let dir = TempDir::new().unwrap();
+        let mgr = ProfileManager::new(dir.path().to_path_buf());
+        let audit = Arc::new(AuditLogService::new(dir.path().to_path_buf()).unwrap());
+        mgr.set_audit_log(audit.clone());
+
+        let mut p = profile_with_oauth_tokens();
+        p.input.port = 19350; // avoid collision with any concurrent test
+        mgr.save_with_key_encryption(&p, None).await.unwrap();
+
+        let entries = audit.entries().unwrap();
+        let saved = entries
+            .iter()
+            .filter(|e| matches!(e.action, AuditAction::ProfileSaved { .. }))
+            .count();
+        assert!(saved >= 1, "expected at least one ProfileSaved entry");
+    }
+
+    /// G2 regression: `ProfileDeleted` was also defined-not-emitted.
+    #[tokio::test]
+    async fn delete_emits_profile_deleted_audit_entry() {
+        use crate::services::{AuditAction, AuditLogService};
+        use std::sync::Arc;
+        let dir = TempDir::new().unwrap();
+        let mgr = ProfileManager::new(dir.path().to_path_buf());
+        let audit = Arc::new(AuditLogService::new(dir.path().to_path_buf()).unwrap());
+        mgr.set_audit_log(audit.clone());
+
+        let mut p = profile_with_oauth_tokens();
+        p.input.port = 19351;
+        mgr.save_with_key_encryption(&p, None).await.unwrap();
+        mgr.delete("g1-test").await.unwrap();
+
+        let entries = audit.entries().unwrap();
+        let deleted = entries
+            .iter()
+            .filter(|e| matches!(e.action, AuditAction::ProfileDeleted { .. }))
+            .count();
+        assert_eq!(deleted, 1, "expected exactly one ProfileDeleted entry");
     }
 }

@@ -115,6 +115,10 @@ fn status_for(err: &CoreError) -> StatusCode {
         // mirrors the other "rejected by policy" chat errors. The
         // response carries only the phrase_id, never the matched text.
         CoreError::ChatBlockedByPii { .. } => StatusCode::UNPROCESSABLE_ENTITY,
+        // A broken anonymous-mode salt is profile data the client can
+        // repair (re-save the profile / re-run the safety wizard), so
+        // 422 like the other policy rejections — not a 500.
+        CoreError::AnonymousSaltInvalid => StatusCode::UNPROCESSABLE_ENTITY,
         CoreError::InvalidStreamConfig { .. } => StatusCode::BAD_REQUEST,
         CoreError::ValidationFailed { .. } => StatusCode::BAD_REQUEST,
         CoreError::EncoderUnavailable { .. } => StatusCode::UNPROCESSABLE_ENTITY,

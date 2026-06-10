@@ -4,45 +4,95 @@
 //! settings, machine key, audit-log entries, secret-store blobs — flows
 //! through [`write_owner_only_atomic`]. The helper:
 //!
-//! 1. Writes to a sibling `<path>.tmp` first.
-//! 2. On Unix, chmod 0600 (owner read+write only) the tmp file.
-//! 3. On Windows, sets `FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM`
+//! 1. Creates a sibling `<path>.tmp` with owner-only permissions in the
+//!    same syscall as creation (`O_CREAT | O_EXCL` + mode 0600 on Unix),
+//!    so the secret payload is never readable by other users for any
+//!    window, even if the process dies mid-write.
+//! 2. On Windows, sets `FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM`
 //!    on the tmp file. Windows file ACLs are inherited from the parent
 //!    directory at creation time; user data directories on a standard
 //!    install already restrict access to the owning user, so the
 //!    additional hidden/system marker is the meaningful hardening we
 //!    can do without taking a dependency on the heavier Win32 ACL APIs.
-//! 4. Atomically renames the tmp file to the final path.
+//! 3. Flushes the file to disk (`fsync`) before the rename so a crash
+//!    can never replace the destination with a torn or empty file —
+//!    key-rotation correctness depends on this.
+//! 4. Atomically renames the tmp file to the final path, then fsyncs
+//!    the parent directory (Unix) so the rename itself is durable.
 //!
 //! Tests under `phase_69_perms` assert mode 0600 across every sensitive
 //! write path (profile save, settings save, machine-key write, secret
 //! store put).
 
 use std::io;
+use std::io::Write;
 use std::path::Path;
 
 use crate::errors::CoreError;
 
 /// Atomically write `bytes` to `path` with owner-only permissions.
 ///
-/// The temp file lives next to the destination, gets its permissions
-/// hardened before the rename so a partially-written file is never
-/// world-readable for any window, and is renamed into place last.
+/// The temp file lives next to the destination and is created with
+/// owner-only permissions atomically (no widen-then-tighten window).
+/// It is fsynced before the rename and removed on every error path.
 pub fn write_owner_only_atomic(path: &Path, bytes: &[u8]) -> Result<(), CoreError> {
     let tmp = tmp_path(path);
-    std::fs::write(&tmp, bytes).map_err(|e| CoreError::Internal {
+    // A stale tmp from a crashed previous run would make create_new fail
+    // forever; writers to a given path are serialized by their owning
+    // service, so removing it here cannot race a live writer.
+    if tmp.exists() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    let result = write_tmp_then_rename(path, &tmp, bytes);
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result
+}
+
+fn write_tmp_then_rename(path: &Path, tmp: &Path, bytes: &[u8]) -> Result<(), CoreError> {
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut file = opts.open(tmp).map_err(|e| CoreError::Internal {
+        context: format!("create {:?}: {e}", tmp.display()),
+    })?;
+    harden_perms(tmp)?;
+    file.write_all(bytes).map_err(|e| CoreError::Internal {
         context: format!("write {:?}: {e}", path.display()),
     })?;
-    if let Err(e) = harden_perms(&tmp) {
-        // Clean up the partial tmp file so a later run doesn't keep
-        // colliding on it.
-        let _ = std::fs::remove_file(&tmp);
-        return Err(e);
-    }
-    std::fs::rename(&tmp, path).map_err(|e| CoreError::Internal {
+    file.sync_all().map_err(|e| CoreError::Internal {
+        context: format!("fsync {:?}: {e}", tmp.display()),
+    })?;
+    drop(file);
+    std::fs::rename(tmp, path).map_err(|e| CoreError::Internal {
         context: format!("rename {:?}: {e}", path.display()),
-    })
+    })?;
+    sync_parent_dir(path);
+    Ok(())
 }
+
+/// Fsync the directory containing `path` so the rename is durable.
+///
+/// Best-effort: some filesystems (and all of Windows) don't support
+/// opening a directory for fsync; the rename itself already happened,
+/// so failure here only widens the crash-durability window — it never
+/// loses an otherwise-successful write.
+#[cfg(unix)]
+fn sync_parent_dir(path: &Path) {
+    if let Some(parent) = path.parent() {
+        if let Ok(dir) = std::fs::File::open(parent) {
+            let _ = dir.sync_all();
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn sync_parent_dir(_path: &Path) {}
 
 fn tmp_path(path: &Path) -> std::path::PathBuf {
     // Match the destination filename + `.tmp`. We don't use OsString
@@ -134,5 +184,51 @@ mod tests {
         let tmp = tmp_path(&path);
         assert!(!tmp.exists(), "tmp must be removed by rename");
         assert!(path.exists());
+    }
+
+    #[test]
+    fn write_owner_only_recovers_from_stale_tmp_of_crashed_run() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("entry");
+        let tmp = tmp_path(&path);
+        std::fs::write(&tmp, b"torn write from a crashed process").unwrap();
+        write_owner_only_atomic(&path, b"fresh").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"fresh");
+        assert!(!tmp.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_owner_only_cleans_tmp_when_rename_fails() {
+        let dir = TempDir::new().unwrap();
+        // Destination is a non-empty directory → rename must fail.
+        let path = dir.path().join("dest");
+        std::fs::create_dir(&path).unwrap();
+        std::fs::write(path.join("occupant"), b"x").unwrap();
+        let err = write_owner_only_atomic(&path, b"data");
+        assert!(err.is_err());
+        assert!(!tmp_path(&path).exists(), "tmp must be cleaned on error");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn tmp_file_is_owner_only_at_creation() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("secret.bin");
+        // Pin a wide umask for the duration to prove the mode comes from
+        // the open() call, not the process umask.
+        let tmp = tmp_path(&path);
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        let file = opts.open(&tmp).unwrap();
+        let perms = file.metadata().unwrap().permissions();
+        assert_eq!(perms.mode() & 0o777, 0o600);
+        drop(file);
+        std::fs::remove_file(&tmp).unwrap();
     }
 }

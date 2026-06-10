@@ -416,11 +416,9 @@ pub async fn v1_system_audit_app_update_failure(
     State(state): State<AppState>,
     axum::Json(req): axum::Json<AppUpdateFailureRequest>,
 ) -> Result<Json<AuditRecordedResponse>, crate::ApiError> {
-    state
-        .audit
-        .record(spiritstream_core::services::AuditAction::AppUpdateSignatureFailed {
-            detail: req.detail,
-        })?;
+    state.audit.record(
+        spiritstream_core::services::AuditAction::AppUpdateSignatureFailed { detail: req.detail },
+    )?;
     Ok(Json(AuditRecordedResponse { recorded: true }))
 }
 
@@ -444,7 +442,6 @@ pub async fn v1_system_client_config() -> Json<ClientConfigResponse> {
         ChatPlatform::Kick,
         ChatPlatform::Facebook,
         ChatPlatform::TikTok,
-        ChatPlatform::Stripchat,
     ] {
         chat_max_chars.insert(p.as_str().to_owned(), p.max_message_chars() as u32);
     }
@@ -473,8 +470,7 @@ pub async fn v1_system_client_config() -> Json<ClientConfigResponse> {
             "https://discord.com/api/webhooks/".to_string(),
             "https://discordapp.com/api/webhooks/".to_string(),
         ],
-        password_min_length:
-            spiritstream_core::services::PROFILE_PASSWORD_MIN_LENGTH as u32,
+        password_min_length: spiritstream_core::services::PROFILE_PASSWORD_MIN_LENGTH as u32,
     })
 }
 
@@ -718,12 +714,12 @@ pub async fn v1_security_rotate_machine_key_proxy(
 ) -> Result<Json<RotationReportWire>, crate::ApiError> {
     crate::require_confirm_token(&state, &headers, "rotate_machine_key")?;
     let req = body.map(|Json(r)| r).unwrap_or_default();
-    let profiles_dir = state.app_data_dir.join("profiles");
-    let report = spiritstream_core::services::Encryption::rotate_machine_key(
-        &state.app_data_dir,
-        &profiles_dir,
-        &req.unlocked_passwords,
-    )?;
+    // Shared core orchestration: refuses while streams are live and
+    // records `MachineKeyRotated` in the HMAC chain — identical rules
+    // for HTTP and CLI by construction.
+    let report = state
+        .registry
+        .rotate_machine_key_checked(&req.unlocked_passwords)?;
     // Cache invalidation — every cached active-profile field was read under
     // the OLD machine key. Clear them so the next request reloads from disk
     // and surfaces any latent rotation issue immediately rather than at

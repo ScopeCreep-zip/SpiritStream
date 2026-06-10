@@ -86,16 +86,19 @@ pub struct Profile {
     /// 64-char hex (32 raw bytes). Generated once at profile
     /// creation; never reused across profiles. If the salt is empty
     /// (legacy profiles loaded from disk before this field existed),
-    /// the pseudonymizer falls back to plaintext — the loader runs
-    /// `profile.ensure_anonymous_salt()` to populate it on first use.
+    /// save and activation both run `ensure_anonymous_salt()` to
+    /// populate and persist it. The pseudonymizer itself NEVER falls
+    /// back to plaintext: an enabled policy with a broken salt fails
+    /// activation, and any message that can't be pseudonymised is
+    /// dropped rather than logged with its real username.
     #[serde(default)]
     pub anonymous_salt: String,
 }
 
 impl Profile {
     /// Populate `anonymous_salt` if it's currently empty. Called by
-    /// the profile loader so existing legacy profiles get a salt the
-    /// first time they're read.
+    /// the profile save path and by `ProfileActivationService::activate`
+    /// so legacy profiles get a salt before anonymous mode can engage.
     pub fn ensure_anonymous_salt(&mut self) {
         if self.anonymous_salt.is_empty() {
             self.anonymous_salt = crate::services::pseudonymizer::generate_salt();
@@ -193,3 +196,155 @@ pub struct ProfileSummary {
 }
 
 pub type OrderIndexMap = HashMap<String, i32>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{
+        AudioSettings, ContainerSettings, OutputGroup, StreamTarget, VideoSettings,
+    };
+
+    fn video(codec: &str, height: u32, fps: u32, bitrate: &str) -> VideoSettings {
+        VideoSettings {
+            codec: codec.into(),
+            width: 1920,
+            height,
+            fps,
+            bitrate: bitrate.into(),
+            preset: None,
+            profile: None,
+            keyframe_interval_seconds: None,
+        }
+    }
+
+    fn audio() -> AudioSettings {
+        AudioSettings {
+            codec: "aac".into(),
+            bitrate: "160k".into(),
+            channels: 2,
+            sample_rate: 48000,
+        }
+    }
+
+    fn target(service: Platform) -> StreamTarget {
+        StreamTarget {
+            id: "t".into(),
+            name: "t".into(),
+            service,
+            url: "rtmp://x/live".into(),
+            stream_key: "k".into(),
+        }
+    }
+
+    fn group(video: VideoSettings, targets: Vec<StreamTarget>) -> OutputGroup {
+        OutputGroup {
+            id: "g".into(),
+            name: "g".into(),
+            is_default: true,
+            generate_pts: true,
+            video,
+            audio: audio(),
+            container: ContainerSettings::default(),
+            stream_targets: targets,
+        }
+    }
+
+    fn profile(groups: Vec<OutputGroup>) -> Profile {
+        Profile {
+            id: "p1".into(),
+            name: "Profile One".into(),
+            encrypted: false,
+            input: RtmpInput::default(),
+            output_groups: groups,
+            settings: ProfileSettings::default(),
+            pii_blocklist: vec![],
+            pii_fuzzy: false,
+            anonymous_logging: true,
+            anonymous_salt: String::new(),
+        }
+    }
+
+    #[test]
+    fn to_summary_passthrough_group_shows_passthrough_and_zero_bitrate() {
+        let p = profile(vec![group(
+            video("copy", 0, 0, "0k"),
+            vec![target(Platform::Twitch)],
+        )]);
+        let s = p.to_summary(false);
+        assert_eq!(s.resolution, "Passthrough");
+        assert_eq!(s.bitrate, 0);
+        assert_eq!(s.target_count, 1);
+        assert!(!s.is_encrypted);
+        assert_eq!(s.id, "p1");
+        assert_eq!(s.name, "Profile One");
+    }
+
+    #[test]
+    fn to_summary_encoded_group_formats_resolution_and_parses_bitrate() {
+        let p = profile(vec![group(
+            video("libx264", 720, 30, "6000k"),
+            vec![target(Platform::Twitch), target(Platform::YouTubeRTMPS)],
+        )]);
+        let s = p.to_summary(true);
+        assert_eq!(s.resolution, "720p30");
+        assert_eq!(s.bitrate, 6000);
+        assert_eq!(s.target_count, 2);
+        assert!(s.is_encrypted);
+        // Two distinct services collected uniquely.
+        assert_eq!(s.services.len(), 2);
+    }
+
+    #[test]
+    fn to_summary_dedupes_services_across_targets() {
+        let p = profile(vec![group(
+            video("libx264", 1080, 60, "8000k"),
+            vec![target(Platform::Twitch), target(Platform::Twitch)],
+        )]);
+        let s = p.to_summary(false);
+        assert_eq!(s.target_count, 2);
+        // Same platform twice collapses to one unique service.
+        assert_eq!(s.services.len(), 1);
+    }
+
+    #[test]
+    fn to_summary_unparseable_bitrate_falls_back_to_zero() {
+        let p = profile(vec![group(
+            video("libx264", 720, 30, "notanumber"),
+            vec![target(Platform::Twitch)],
+        )]);
+        let s = p.to_summary(false);
+        assert_eq!(s.resolution, "720p30");
+        assert_eq!(s.bitrate, 0);
+    }
+
+    #[test]
+    fn to_summary_no_output_groups_reports_none() {
+        let p = profile(vec![]);
+        let s = p.to_summary(false);
+        assert_eq!(s.resolution, "None");
+        assert_eq!(s.bitrate, 0);
+        assert_eq!(s.target_count, 0);
+        assert!(s.services.is_empty());
+    }
+
+    #[test]
+    fn ensure_anonymous_salt_populates_when_empty_and_preserves_existing() {
+        let mut p = profile(vec![]);
+        assert!(p.anonymous_salt.is_empty());
+        p.ensure_anonymous_salt();
+        assert!(!p.anonymous_salt.is_empty(), "salt generated when empty");
+
+        let existing = p.anonymous_salt.clone();
+        p.ensure_anonymous_salt();
+        assert_eq!(p.anonymous_salt, existing, "existing salt left untouched");
+    }
+
+    #[test]
+    fn rtmp_input_default_is_rtmp_live_on_1935() {
+        let input = RtmpInput::default();
+        assert_eq!(input.input_type, "rtmp");
+        assert_eq!(input.bind_address, "0.0.0.0");
+        assert_eq!(input.port, 1935);
+        assert_eq!(input.application, "live");
+    }
+}
