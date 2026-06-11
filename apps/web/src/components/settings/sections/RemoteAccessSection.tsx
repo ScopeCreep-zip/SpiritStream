@@ -104,6 +104,10 @@ export function RemoteAccessSection() {
                   updateBackendSetting('port', value);
                 }
               }}
+              helper={t('settings.remoteAccessPortHelper', {
+                defaultValue:
+                  'Used only while Remote Access is on. With it off, the port is assigned automatically at each launch.',
+              })}
             />
             <PasswordInput
               label={t('settings.remoteAccessToken', { defaultValue: 'Access token (optional)' })}

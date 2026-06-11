@@ -768,6 +768,7 @@
     "remoteAccessHost": "ربط المضيف",
     "remoteAccessHostHelper": "استخدم 0.0.0.0 للاستماع على كافة الواجهات.",
     "remoteAccessPort": "ميناء",
+    "remoteAccessPortHelper": "يُستخدم فقط عند تفعيل الوصول عن بُعد. عند إيقافه، يُعيَّن المنفذ تلقائيًا عند كل تشغيل.",
     "remoteAccessToggle": "السماح بالوصول إلى الويب عن بعد",
     "remoteAccessToggleDescription": "عند إيقاف التشغيل، ترتبط واجهة برمجة التطبيقات (API) بالمضيف المحلي فقط. إعادة التشغيل مطلوبة بعد التغييرات.",
     "remoteAccessToken": "رمز الوصول (اختياري)",

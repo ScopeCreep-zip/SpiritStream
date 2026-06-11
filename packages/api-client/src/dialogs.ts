@@ -42,6 +42,12 @@ async function openFileViaInput(options?: OpenFileOptions): Promise<File | null>
       const file = input.files && input.files.length > 0 ? input.files[0] : null;
       resolve(file);
     });
+    // Without this, dismissing the native picker left the promise
+    // pending forever — the caller's await never resumed and its
+    // "open file" UI stayed stuck in the in-flight state. The `cancel`
+    // event on <input type=file> is supported by all engines this app
+    // targets (Chromium 113+/WebKit 16.4+/Gecko 91+).
+    input.addEventListener('cancel', () => resolve(null));
     input.click();
   });
 }

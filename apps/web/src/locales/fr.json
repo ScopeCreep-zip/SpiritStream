@@ -768,6 +768,7 @@
     "remoteAccessHost": "Lier l'hôte",
     "remoteAccessHostHelper": "Utilisez 0.0.0.0 pour écouter sur toutes les interfaces.",
     "remoteAccessPort": "Port",
+    "remoteAccessPortHelper": "Utilisé uniquement lorsque l'accès distant est activé. Sinon, le port est attribué automatiquement à chaque lancement.",
     "remoteAccessToggle": "Autoriser l'accès Web à distance",
     "remoteAccessToggleDescription": "Lorsqu'elle est désactivée, l'API se lie uniquement à localhost. Redémarrage requis après les modifications.",
     "remoteAccessToken": "Jeton d'accès (facultatif)",

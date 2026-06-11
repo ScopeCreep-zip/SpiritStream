@@ -218,9 +218,12 @@ pub(crate) struct FilesOpenResponse {}
 // so this orchestrator stays under the 600 LOC ceiling.
 #[path = "lib/helpers.rs"]
 mod helpers;
+#[path = "lib/port_file.rs"]
+mod port_file;
 #[path = "lib/static_ui.rs"]
 mod static_ui;
 use helpers::{find_themes_dir_fallback, parse_host, ws_handler};
+use port_file::{remove_port_file, resolve_bind_port, write_port_file};
 
 /// HTTP transport entrypoint. Invoked by the `spiritstream-server` binary
 /// (and, in the future, by the Tauri 2 mobile shell when running the core
@@ -290,19 +293,17 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|| "dist".to_string());
     // Host/port read from env vars (may be overridden by settings below)
     let env_host = env::var("SPIRITSTREAM_HOST").ok();
-    // H8: only accept ports the OS will let an unprivileged process
-    // bind. Pre-H8 we silently accepted u16::MAX or 0; the former is
-    // harmless but the latter asks the OS for "any free port" and the
-    // caller would be unable to know where the server actually came
-    // up, defeating the readiness check. Privileged ports (< 1024)
+    // H8: accept 0 ("ask the OS for any free port" — the bound port is
+    // discoverable afterwards via `run/server.port` and the startup
+    // log) or an explicit unprivileged port. Privileged ports (1..1024)
     // need root and are typically wrong for a user-mode server; reject
-    // them too so a misconfiguration surfaces loudly.
+    // them so a misconfiguration surfaces loudly.
     let env_port: Option<u16> = match env::var("SPIRITSTREAM_PORT") {
         Ok(value) => match value.parse::<u16>() {
-            Ok(n) if (1024..=65535).contains(&n) => Some(n),
+            Ok(n) if n == 0 || (1024..=65535).contains(&n) => Some(n),
             Ok(other) => {
                 return Err(format!(
-                    "SPIRITSTREAM_PORT={other} is out of range; pick a port in 1024..=65535"
+                    "SPIRITSTREAM_PORT={other} is out of range; pick 0 (OS-assigned) or a port in 1024..=65535"
                 )
                 .into());
             }
@@ -440,30 +441,45 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Determine host/port: env vars take precedence, then settings, then defaults
-    // If remote access is disabled in settings, force localhost regardless
+    // Determine host/port. Host: env wins, then settings — and when
+    // remote access is off, localhost is forced unless env explicitly
+    // overrides. Port: env wins (including an explicit 0); otherwise
+    // the profile port applies only with remote access ON. Remote OFF
+    // means the OS assigns a free port — see `resolve_bind_port`.
     let (host, port) = {
         let remote_enabled = backend_settings.remote_enabled;
         let settings_host = backend_settings.host.clone();
-        let settings_port = backend_settings.port;
 
-        // Check if env var was explicitly set before consuming it
         let env_host_was_set = env_host.is_some();
-
-        // Env var overrides settings, settings override defaults
         let configured_host = env_host.unwrap_or(settings_host);
-        let configured_port = env_port.unwrap_or(settings_port);
-
-        // If remote access is disabled, force localhost (unless env var explicitly set)
         let final_host = if !remote_enabled && !env_host_was_set {
             "127.0.0.1".to_string()
         } else {
             configured_host
         };
 
-        (final_host, configured_port)
+        let final_port = resolve_bind_port(env_port, remote_enabled, backend_settings.port);
+        (final_host, final_port)
     };
-    log::info!("Server will bind to {host}:{port}");
+    if port == 0 {
+        // A reverse proxy (Caddy/nginx/ingress) needs a static upstream;
+        // an OS-assigned port behind one is a misconfiguration, not a
+        // convenience. Fail loud instead of binding somewhere the proxy
+        // will never find.
+        if pre_deploy_mode
+            .as_deref()
+            .is_some_and(|m| m.eq_ignore_ascii_case("cloud"))
+        {
+            return Err(
+                "cloud mode requires a fixed port: set SPIRITSTREAM_PORT to the port your \
+                 reverse proxy targets (an OS-assigned port 0 is only valid for desktop/dev)"
+                    .into(),
+            );
+        }
+        log::info!("Server will bind to {host}:<OS-assigned> (port 0 requested)");
+    } else {
+        log::info!("Server will bind to {host}:{port}");
+    }
 
     let custom_ffmpeg_path = settings.as_ref().and_then(|s| {
         if s.ffmpeg_path.is_empty() {
@@ -738,14 +754,22 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         ));
 
     let address = SocketAddr::new(parse_host(&host), port);
-    log::info!("SpiritStream backend listening on http://{address}");
+    let listener = tokio::net::TcpListener::bind(address).await?;
+    // Log AFTER binding with the listener's own address — with port 0
+    // the requested address would read ":0"; `local_addr()` carries the
+    // port the OS actually assigned.
+    let bound_addr = listener.local_addr()?;
+    log::info!("SpiritStream backend listening on http://{bound_addr}");
     if state.auth_token.is_some() {
         log::info!("  Authentication: enabled");
     } else {
         log::info!("  Authentication: disabled (no token configured)");
     }
 
-    let listener = tokio::net::TcpListener::bind(address).await?;
+    // Persist the bound port for cross-process discovery (the Tauri
+    // shell health-checks the sidecar through this file; it is the
+    // single source of truth for "where did the server come up").
+    write_port_file(&state.app_data_dir, bound_addr.port())?;
 
     // All services are constructed, background tasks are running, and the
     // TCP listener is accepting connections. Flip the readiness flag and
@@ -790,6 +814,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let _ = registry
         .audit
         .record(spiritstream_core::services::AuditAction::AppStopped);
+    remove_port_file(&state.app_data_dir);
 
     serve_result?;
     Ok(())

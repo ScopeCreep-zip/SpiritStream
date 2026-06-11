@@ -768,6 +768,7 @@
     "remoteAccessHost": "Host binden",
     "remoteAccessHostHelper": "Verwenden Sie 0.0.0.0, um alle Schnittstellen abzuhören.",
     "remoteAccessPort": "Hafen",
+    "remoteAccessPortHelper": "Gilt nur bei aktiviertem Fernzugriff. Ist er aus, wird der Port bei jedem Start automatisch zugewiesen.",
     "remoteAccessToggle": "Erlauben Sie den Remote-Webzugriff",
     "remoteAccessToggleDescription": "Wenn diese Option deaktiviert ist, bindet die API nur an localhost. Nach Änderungen ist ein Neustart erforderlich.",
     "remoteAccessToken": "Zugriffstoken (optional)",

@@ -94,6 +94,14 @@ try {
   browser = await chromium.launch();
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
+  // Pin the backend URL to a guaranteed-closed port. The PROD bundle's
+  // URL inference now uses the page origin (backend-served UI), which
+  // here is the vite preview server — its SPA fallback would answer
+  // /api/v1/ready with 200 + HTML and flip the app past the overlay
+  // this audit expects. A closed port keeps the render deterministic.
+  await page.addInitScript(() => {
+    window.localStorage.setItem('spiritstream-backend-url', 'http://127.0.0.1:1');
+  });
   for (const route of ROUTES_TO_AUDIT) {
     await audit(page, route);
   }

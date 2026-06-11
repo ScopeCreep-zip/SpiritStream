@@ -134,10 +134,10 @@ This is a pnpm + Cargo monorepo:
 ### Quick Commands
 
 ```bash
-pnpm dev             # Desktop app (recommended for most development)
-pnpm dev:web         # Frontend only (localhost:5173)
+pnpm dev             # Desktop app (recommended; backend + Vite ports are OS-negotiated)
+pnpm dev:web         # Frontend only (localhost:1420)
 pnpm dev:desktop     # Same as pnpm dev
-pnpm backend:dev     # Standalone HTTP server (localhost:8008)
+pnpm backend:dev     # Standalone HTTP server (pin SPIRITSTREAM_PORT=8008 — see .env.example)
 pnpm build           # Production build (all workspaces)
 pnpm typecheck       # Check TypeScript types
 cargo check --manifest-path server/Cargo.toml  # Check Rust server
@@ -154,7 +154,9 @@ pnpm backend:dev
 Environment variables:
 
 - `SPIRITSTREAM_HOST` (default: `127.0.0.1`)
-- `SPIRITSTREAM_PORT` (default: `8008`)
+- `SPIRITSTREAM_PORT` (`0` = OS-assigned; unset → profile port only with
+  Remote Access on, otherwise OS-assigned. The bound port is published to
+  `{DATA_DIR}/run/server.port` and the startup log.)
 - `SPIRITSTREAM_DATA_DIR` (default: `./data`)
 - `SPIRITSTREAM_LOG_DIR` (default: `./data/logs`)
 - `SPIRITSTREAM_THEMES_DIR` (default: `./themes`)

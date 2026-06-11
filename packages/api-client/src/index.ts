@@ -58,6 +58,7 @@ export {
   backendUrlStorageKey,
   getBackendBaseUrl,
   getBackendWsUrl,
+  setBackendBaseUrl,
   updateBackendUrl,
   clearBackendUrl,
   checkAuth,

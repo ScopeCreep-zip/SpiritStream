@@ -44,10 +44,12 @@ docker compose logs -f spiritstream
 ```
 
 The backend refuses to start unless the cloud-mode preconditions are
-met (strong token, TLS attestation, pinned CORS origins, and a
-`SPIRITSTREAM_TRUSTED_PROXIES` CIDR list — the shipped compose file
-sets the last three). The cloud-mode guard reports the exact missing
-piece in stderr.
+met (strong token, TLS attestation, pinned CORS origins, a
+`SPIRITSTREAM_TRUSTED_PROXIES` CIDR list, and an explicit fixed
+`SPIRITSTREAM_PORT` — desktop builds negotiate an OS-assigned port,
+but a reverse proxy needs a static upstream, so cloud mode refuses
+port 0. The shipped compose file sets all of these). The cloud-mode
+guard reports the exact missing piece in stderr.
 
 ## Trusted proxies and client IPs
 

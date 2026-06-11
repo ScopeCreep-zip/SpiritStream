@@ -10,6 +10,9 @@ interface ImportMetaEnv {
   readonly VITE_BACKEND_MODE?: 'tauri' | 'http';
   readonly VITE_BACKEND_URL?: string;
   readonly VITE_BACKEND_WS_URL?: string;
+  /** Vite built-ins: true for production builds / dev serve respectively. */
+  readonly PROD: boolean;
+  readonly DEV: boolean;
 }
 
 interface ImportMeta {

@@ -4,15 +4,40 @@
 // the iOS / Android shells (which can't have a `main` of their own) can
 // call `run()` from their `mobile_entry_point`-marked function.
 
+mod port_file;
 mod server;
 mod settings;
 mod updater;
+
+use std::sync::Mutex;
 
 use tauri::{AppHandle, Manager, RunEvent};
 use tauri_plugin_log::{Target, TargetKind};
 
 use server::{launch, ServerProcess};
 use updater::updater_supported;
+
+/// The backend URL discovered from `run/server.port` after the sidecar
+/// binds (possibly an OS-assigned port). Filled by `server::run_launcher`
+/// BEFORE the main window is built, so on the happy path the value
+/// always exists by the time any webview can invoke `backend_url`.
+#[derive(Default)]
+pub struct DiscoveredBackend(pub Mutex<Option<String>>);
+
+/// Hand the discovered backend URL to the webview. The frontend calls
+/// this once at bootstrap (before rendering) and configures its API
+/// client with the result — it never guesses a port. An `Err` here
+/// means the backend never published its port (it failed before
+/// binding); the frontend surfaces that loudly instead of falling back.
+#[tauri::command]
+fn backend_url(state: tauri::State<'_, DiscoveredBackend>) -> Result<String, String> {
+    match state.0.lock() {
+        Ok(guard) => guard
+            .clone()
+            .ok_or_else(|| "backend port not discovered — the server failed to start".to_string()),
+        Err(e) => Err(format!("backend discovery state poisoned: {e}")),
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -42,7 +67,8 @@ pub fn run() {
         // shortcut fires even when SpiritStream isn't focused.
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(ServerProcess::new())
-        .invoke_handler(tauri::generate_handler![updater_supported])
+        .manage(DiscoveredBackend::default())
+        .invoke_handler(tauri::generate_handler![updater_supported, backend_url])
         .setup(|app| {
             let mut targets = vec![
                 Target::new(TargetKind::LogDir {

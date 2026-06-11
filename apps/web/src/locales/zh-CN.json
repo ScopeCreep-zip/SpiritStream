@@ -768,6 +768,7 @@
     "remoteAccessHost": "绑定主机",
     "remoteAccessHostHelper": "使用 0.0.0.0 监听所有接口。",
     "remoteAccessPort": "港口",
+    "remoteAccessPortHelper": "仅在远程访问开启时使用。关闭时，端口会在每次启动时自动分配。",
     "remoteAccessToggle": "允许远程网络访问",
     "remoteAccessToggleDescription": "关闭时，API 仅绑定到本地主机。更改后需要重新启动。",
     "remoteAccessToken": "访问令牌（可选）",

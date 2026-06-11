@@ -198,10 +198,19 @@ This command:
 
 ### Development URLs
 
+`pnpm dev:desktop` negotiates BOTH ports with the OS so SpiritStream
+never collides with other projects: the wrapper (`scripts/dev-desktop.ts`)
+picks a free Vite port and prints it, and the backend binds port 0 and
+publishes the real port to `{DATA_DIR}/run/server.port` (also visible in
+the startup log). The Tauri shell wires the webview to both automatically.
+
+For the browser workflow (`pnpm dev:web` + a manually started backend),
+fixed ports keep the zero-config default working:
+
 | Service | URL |
 |---------|-----|
-| Frontend Dev Server | http://localhost:5173 |
-| Backend API Server | http://localhost:8008 |
+| Frontend Dev Server (standalone `pnpm dev:web`) | http://localhost:1420 |
+| Backend API Server (`SPIRITSTREAM_PORT=8008`, pinned in `.env.example`) | http://localhost:8008 |
 | Tauri DevTools | Right-click → Inspect |
 
 ### Hot Reload

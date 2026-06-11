@@ -57,3 +57,7 @@ tokio = { version = "1.0", features = ["process", "time", "net", "rt-multi-threa
 # Utilities
 log = "0.4"
 tauri-plugin-http = "2"
+
+[dev-dependencies]
+tempfile = "3.10"
+tokio = { version = "1.0", features = ["macros", "rt", "time"] }

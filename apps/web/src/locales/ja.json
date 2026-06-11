@@ -768,6 +768,7 @@
     "remoteAccessHost": "バインドホスト",
     "remoteAccessHostHelper": "すべてのインターフェイスでリッスンするには、0.0.0.0 を使用します。",
     "remoteAccessPort": "ポート",
+    "remoteAccessPortHelper": "リモートアクセスが有効な場合にのみ使用されます。無効の場合、ポートは起動のたびに自動的に割り当てられます。",
     "remoteAccessToggle": "リモート Web アクセスを許可する",
     "remoteAccessToggleDescription": "オフの場合、API はローカルホストのみにバインドします。変更後は再起動が必要です。",
     "remoteAccessToken": "アクセストークン（オプション）",

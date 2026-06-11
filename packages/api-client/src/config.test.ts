@@ -73,6 +73,19 @@ describe('backend URL resolution', () => {
     clearBackendUrl();
     expect(getBackendBaseUrl()).toBe('http://127.0.0.1:8008');
   });
+
+  // Fresh module instance: setBackendBaseUrl writes module-level state
+  // that must not leak into the singleton other tests share.
+  it('runtime-discovered URL beats the localStorage override', async () => {
+    vi.resetModules();
+    const fresh = await import('./config');
+    fresh.updateBackendUrl('10.0.0.9', 9999);
+    fresh.setBackendBaseUrl('http://127.0.0.1:54321/');
+    // Trailing slash is normalized; a port stored by a previous launch
+    // is stale by construction when ports are negotiated per launch.
+    expect(fresh.getBackendBaseUrl()).toBe('http://127.0.0.1:54321');
+    expect(fresh.getBackendWsUrl()).toBe('ws://127.0.0.1:54321/api/v1/events');
+  });
 });
 
 describe('safeFetch', () => {

@@ -768,6 +768,7 @@
     "remoteAccessHost": "Bind host",
     "remoteAccessHostHelper": "Use 0.0.0.0 to listen on all interfaces.",
     "remoteAccessPort": "Port",
+    "remoteAccessPortHelper": "Used only while Remote Access is on. With it off, the port is assigned automatically at each launch.",
     "remoteAccessToggle": "Allow remote web access",
     "remoteAccessToggleDescription": "When off, the API binds to localhost only. Restart required after changes.",
     "remoteAccessToken": "Access token (optional)",

@@ -124,7 +124,7 @@ The primary deployment mode for content creators who want local GPU acceleration
 │          │                         │               │
 │          ▼                         ▼               │
 │  ┌───────────────┐     ┌───────────────────────┐   │
-│  │ Native Webview│◀───▶│ HTTP/WS API :8008     │   │
+│  │ Native Webview│◀───▶│ HTTP/WS API (OS port) │   │
 │  │ (React UI)    │     │ FFmpeg Processes      │   │
 │  └───────────────┘     └───────────────────────┘   │
 └─────────────────────────────────────────────────────┘

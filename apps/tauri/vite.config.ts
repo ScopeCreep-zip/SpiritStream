@@ -12,7 +12,10 @@ export default defineConfig({
   root: path.resolve(__dirname, '../web'),
 
   server: {
-    port: 1420,
+    // OS-negotiated by scripts/dev-desktop.ts for `pnpm dev:desktop`;
+    // the Tauri-conventional 1420 only applies to a standalone `vite`.
+    // strictPort stays: if the negotiated port got raced, fail loud.
+    port: Number(process.env.SPIRITSTREAM_WEB_PORT ?? 1420),
     strictPort: true,
     watch: {
       ignored: ['**/src-tauri/**'],

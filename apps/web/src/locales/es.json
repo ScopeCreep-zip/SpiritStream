@@ -768,6 +768,7 @@
     "remoteAccessHost": "enlazar anfitrión",
     "remoteAccessHostHelper": "Utilice 0.0.0.0 para escuchar en todas las interfaces.",
     "remoteAccessPort": "Puerto",
+    "remoteAccessPortHelper": "Solo se usa con el acceso remoto activado. Si está desactivado, el puerto se asigna automáticamente en cada inicio.",
     "remoteAccessToggle": "Permitir acceso web remoto",
     "remoteAccessToggleDescription": "Cuando está desactivada, la API se vincula únicamente al host local. Se requiere reinicio después de los cambios.",
     "remoteAccessToken": "Token de acceso (opcional)",

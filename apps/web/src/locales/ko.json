@@ -768,6 +768,7 @@
     "remoteAccessHost": "호스트 바인딩",
     "remoteAccessHostHelper": "모든 인터페이스를 수신하려면 0.0.0.0을 사용하십시오.",
     "remoteAccessPort": "포트",
+    "remoteAccessPortHelper": "원격 접속이 켜져 있을 때만 사용됩니다. 꺼져 있으면 실행할 때마다 포트가 자동으로 할당됩니다.",
     "remoteAccessToggle": "원격 웹 액세스 허용",
     "remoteAccessToggleDescription": "꺼져 있으면 API는 localhost에만 바인딩됩니다. 변경 후에는 다시 시작해야 합니다.",
     "remoteAccessToken": "액세스 토큰(선택사항)",

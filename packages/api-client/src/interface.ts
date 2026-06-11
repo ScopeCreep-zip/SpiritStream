@@ -286,7 +286,10 @@ export type Transport = 'http';
 
 export interface HttpTransportOptions {
   transport: 'http';
-  /** Override the inferred backend URL. Falls back to localStorage / VITE_BACKEND_URL / `http://127.0.0.1:8008`. */
+  /** Override the backend URL. Resolution otherwise: runtime-discovered
+   *  (Tauri `backend_url` command, OS-negotiated port) → localStorage →
+   *  VITE_BACKEND_URL → inferred (PROD browser: page origin; dev:
+   *  `http://127.0.0.1:8008`). */
   url?: string;
 }
 

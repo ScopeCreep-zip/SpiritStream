@@ -8,7 +8,6 @@ use tauri_plugin_shell::{
 use crate::settings::load_settings;
 
 const DEFAULT_HOST: &str = "127.0.0.1";
-const DEFAULT_PORT: u16 = 8008;
 
 /// Shell-side launcher failures. Typed (per the no-`Result<T, String>`
 /// standard) so call sites can branch and logs stay greppable.
@@ -20,6 +19,8 @@ pub enum ShellError {
     Spawn(String),
     #[error("failed to create main window: {0}")]
     Window(String),
+    #[error("backend port discovery failed: {0}")]
+    PortFile(String),
 }
 
 /// Holds the server child process so we can kill it on exit. Managed
@@ -65,43 +66,65 @@ async fn run_launcher<R: Runtime>(app: &AppHandle<R>) -> Result<(), ShellError> 
     let settings = load_settings(app).unwrap_or_default();
 
     // Bind args (host/port/token) are resolved server-side from the
-    // active profile's `settings.backend`. The shell mirrors the SAME
-    // resolution (env override → active profile's backend.port →
-    // default) purely to know which port to health-check — it never
-    // injects host/port/token env vars. The CSP / capability allow-
-    // lists use wildcard loopback ports (`http://127.0.0.1:*`), so a
-    // user-edited backend port works without rebuilding the shell;
-    // pre-fix everything hardcoded 8008 and editing the port in the
-    // UI bricked the desktop app.
-    let host = DEFAULT_HOST;
-    let port = resolve_backend_port(app);
-    if port != DEFAULT_PORT {
-        log::info!("Backend port resolved to {port} (profile/env override)");
-    }
+    // active profile's `settings.backend` — with Remote Access off the
+    // server asks the OS for any free port (binds port 0). The shell
+    // never guesses or mirrors that resolution: the server publishes
+    // the REAL bound port to `run/server.port` after binding, and the
+    // shell reads it back. The CSP / capability allow-lists use
+    // wildcard loopback ports (`http://127.0.0.1:*`), so whatever port
+    // comes up works without rebuilding the shell.
+    let data_dir = crate::port_file::effective_data_dir(app)?;
 
-    kill_stale_sidecar(app, port);
+    // The previous run's port file (if any) tells us which port to
+    // verify released after reaping a stale sidecar. Read BEFORE
+    // deleting; the delete guarantees the post-spawn poll can only be
+    // satisfied by the new child's own write.
+    let stale_port = crate::port_file::read(&data_dir).map(|record| record.port);
+    kill_stale_sidecar(app, stale_port);
+    crate::port_file::remove(&data_dir);
 
+    // Desktop: spawn the sidecar, learn the negotiated port from the
+    // discovery file (written by the server only after its listener is
+    // bound), confirm the TCP socket accepts connections, and publish
+    // the URL for the `backend_url` command — all BEFORE any webview
+    // exists, so the frontend bootstrap can never race the discovery.
+    //
+    // The webview is NOT created yet — the React bundle is not running
+    // and cannot fire any HTTP requests. Once this block completes, we
+    // build the window programmatically; React mounts knowing the
+    // backend is reachable, and `/api/v1/ready` either returns 200
+    // immediately (fast path) or long-polls until services finish
+    // initializing. This ordering is the entire reason there are no
+    // console errors during boot: nothing in the webview exists to make
+    // a failed request. Tauri's `visible: false` does not provide this
+    // guarantee (issues #5583 / #7669 / #10950) — only deferred window
+    // creation does.
     #[cfg(desktop)]
-    spawn_server(app)?;
+    {
+        let server_pid = spawn_server(app)?;
+        let port =
+            crate::port_file::await_with_pid(&data_dir, server_pid, Duration::from_secs(10))
+                .await?;
+        log::info!("Backend negotiated port {port} (pid {server_pid})");
+        wait_for_tcp_listening(DEFAULT_HOST, port).await;
+
+        if let Some(discovered) = app.try_state::<crate::DiscoveredBackend>() {
+            let url = format!("http://{DEFAULT_HOST}:{port}");
+            match discovered.0.lock() {
+                Ok(mut guard) => *guard = Some(url),
+                Err(e) => log::error!("DiscoveredBackend lock poisoned: {e}"),
+            }
+        }
+    }
     #[cfg(not(desktop))]
     {
-        let _ = app; // mobile: server is linked in-process; nothing to spawn.
+        // Mobile: the server is linked in-process; nothing to spawn and
+        // no discovery to run yet. A future in-process Axum bind must
+        // write the same `run/server.port` file so the desktop discovery
+        // path extends unchanged. The window still gets built below —
+        // the webview's /ready overlay reports the missing backend.
         log::info!("Mobile build: skipping sidecar spawn (server linked in-process)");
     }
-
-    // Wait until the server's TCP socket is accepting connections. The
-    // webview is NOT created yet — the React bundle is not running and
-    // cannot fire any HTTP requests. Once this returns, we build the
-    // window programmatically; React mounts knowing the backend is
-    // reachable, and `/api/v1/ready` either returns 200 immediately
-    // (fast path) or long-polls until services finish initializing.
-    //
-    // This ordering is the entire reason there are no console errors
-    // during boot: nothing in the webview exists to make a failed
-    // request. Tauri's `visible: false` does not provide this guarantee
-    // (issues #5583 / #7669 / #10950) — only deferred window creation
-    // does.
-    wait_for_tcp_listening(host, port).await;
 
     // Build the main webview window. `WebviewUrl::default()` resolves
     // to `App("index.html".into())`, which Tauri swaps to the dev URL
@@ -147,7 +170,7 @@ async fn run_launcher<R: Runtime>(app: &AppHandle<R>) -> Result<(), ShellError> 
 /// Compiling this for mobile would fail link-time on the missing
 /// sidecar binary anyway.
 #[cfg(desktop)]
-fn spawn_server<R: Runtime>(app: &AppHandle<R>) -> Result<(), ShellError> {
+fn spawn_server<R: Runtime>(app: &AppHandle<R>) -> Result<u32, ShellError> {
     // `SPIRITSTREAM_SERVER_PATH` lets the dev iteration loop point at a
     // freshly-rebuilt server binary outside the bundle. In RELEASE
     // builds this would be a privilege-escalation vector: anyone who
@@ -252,7 +275,8 @@ fn spawn_server<R: Runtime>(app: &AppHandle<R>) -> Result<(), ShellError> {
     // process whose command line merely mentioned the name (an editor
     // on the log file, a cargo build, a second instance's healthy
     // backend).
-    write_sidecar_pid_file(&app_data_dir, child.pid());
+    let child_pid = child.pid();
+    write_sidecar_pid_file(&app_data_dir, child_pid);
 
     if let Some(server_state) = app.try_state::<ServerProcess>() {
         if let Ok(mut guard) = server_state.0.lock() {
@@ -310,7 +334,7 @@ fn spawn_server<R: Runtime>(app: &AppHandle<R>) -> Result<(), ShellError> {
         }
     });
 
-    Ok(())
+    Ok(child_pid)
 }
 
 fn has_theme_files(dir: &std::path::Path) -> bool {
@@ -493,7 +517,7 @@ fn resolve_ffmpeg_sidecar() -> Option<std::path::PathBuf> {
 /// pid comes from our own `sidecar.pid` file and is verified to still
 /// be a `spiritstream-server` process before any signal is sent — a
 /// recycled pid running someone else's program is left alone, loudly.
-fn kill_stale_sidecar<R: Runtime>(app: &AppHandle<R>, port: u16) {
+fn kill_stale_sidecar<R: Runtime>(app: &AppHandle<R>, stale_port: Option<u16>) {
     let Some(data_dir) = app.path().app_local_data_dir().ok() else {
         return;
     };
@@ -533,7 +557,13 @@ fn kill_stale_sidecar<R: Runtime>(app: &AppHandle<R>, port: u16) {
             process.kill();
         }
     }
-    // Give the kernel a beat to release the bound port.
+    // Give the kernel a beat to release the previously bound port —
+    // only knowable when the previous run left a port file behind. The
+    // new server binds port 0 in the common case, so this is purely
+    // about not surprising a fixed-port (Remote Access) setup.
+    let Some(port) = stale_port else {
+        return;
+    };
     for attempt in 1..=3 {
         if std::net::TcpListener::bind(("127.0.0.1", port)).is_ok() {
             log::info!("Port {port} is available after {attempt} attempt(s)");
@@ -549,42 +579,6 @@ fn write_sidecar_pid_file(data_dir: &std::path::Path, pid: u32) {
     if let Err(e) = std::fs::write(&path, pid.to_string()) {
         log::warn!("failed to write sidecar.pid: {e}");
     }
-}
-
-/// Resolve the backend port the way the server does: env override →
-/// active profile's plaintext `settings.backend.port` → default.
-/// Password-encrypted (`.mgs`) profiles can't be read here OR by the
-/// server's startup probe, so both sides consistently land on the
-/// default for them.
-fn resolve_backend_port<R: Runtime>(app: &AppHandle<R>) -> u16 {
-    if let Ok(value) = env::var("SPIRITSTREAM_PORT") {
-        if let Ok(port) = value.trim().parse::<u16>() {
-            return port;
-        }
-    }
-    let Some(data_dir) = app.path().app_local_data_dir().ok() else {
-        return DEFAULT_PORT;
-    };
-    let read_json = |path: &std::path::Path| -> Option<serde_json::Value> {
-        serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()
-    };
-    let Some(settings) = read_json(&data_dir.join("settings.json")) else {
-        return DEFAULT_PORT;
-    };
-    let Some(last_profile) = settings.get("lastProfile").and_then(|v| v.as_str()) else {
-        return DEFAULT_PORT;
-    };
-    let profile_path = data_dir
-        .join("profiles")
-        .join(format!("{last_profile}.json"));
-    let Some(profile) = read_json(&profile_path) else {
-        return DEFAULT_PORT;
-    };
-    profile
-        .pointer("/settings/backend/port")
-        .and_then(|v| v.as_u64())
-        .and_then(|p| u16::try_from(p).ok())
-        .unwrap_or(DEFAULT_PORT)
 }
 
 /// Emit `server-error` once a window exists to receive it. The

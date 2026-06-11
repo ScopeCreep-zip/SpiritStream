@@ -7,7 +7,7 @@
     "build:server": "tsx ../../scripts/build-server.ts",
     "build:server:release": "tsx ../../scripts/build-server.ts --release",
     "fetch:ffmpeg": "tsx ../../scripts/fetch-bundled-ffmpeg.ts",
-    "dev": "pnpm run fetch:ffmpeg && pnpm run build:server && tauri dev",
+    "dev": "pnpm run fetch:ffmpeg && pnpm run build:server && tsx ../../scripts/dev-desktop.ts",
     "build": "pnpm run fetch:ffmpeg && pnpm run build:server:release && tauri build",
     "build:debug": "pnpm run fetch:ffmpeg && pnpm run build:server && tauri build --debug",
     "tauri": "tauri"

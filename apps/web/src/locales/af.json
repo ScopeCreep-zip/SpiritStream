@@ -768,6 +768,7 @@
     "remoteAccessHost": "Bind gasheer",
     "remoteAccessHostHelper": "Gebruik 0.0.0.0 om op alle koppelvlakke te luister.",
     "remoteAccessPort": "Port",
+    "remoteAccessPortHelper": "Word slegs gebruik terwyl afstandtoegang aan is. As dit af is, word die poort outomaties by elke aanvang toegeken.",
     "remoteAccessToggle": "Laat afgeleë webtoegang toe",
     "remoteAccessToggleDescription": "Wanneer dit af is, bind die API slegs aan localhost. Herbegin vereis na veranderinge.",
     "remoteAccessToken": "Toegangtoken (opsioneel)",

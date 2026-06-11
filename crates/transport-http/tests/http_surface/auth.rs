@@ -30,21 +30,35 @@ fn login_with_correct_token_succeeds() {
 }
 
 #[test]
-fn login_with_wrong_token_returns_401_then_eventually_429() {
+fn login_wrong_token_gets_401_then_backoff_429_until_window_elapses() {
+    // The exponential backoff gate (`AuthService::check_backoff`) runs
+    // BEFORE verification and is armed by the very first failure
+    // (base delay 1s). The old expectation of four consecutive instant
+    // 401s only ever passed when each round-trip happened to exceed
+    // the backoff window — a timing flake, not the contract.
     let server = boot_with_token("correct");
-    for attempt in 1..=4 {
-        let (status, body) = post_invoke(&server, "/api/v1/auth/login", r#"{"token":"wrong"}"#);
-        assert_eq!(
-            status, 401,
-            "attempt {attempt}: expected 401 from wrong-token path, got {status}: {body}",
-        );
-    }
-    let _ = post_invoke(&server, "/api/v1/auth/login", r#"{"token":"wrong"}"#);
+
+    // First-ever attempt is never blocked: verification runs → 401.
     let (status, body) = post_invoke(&server, "/api/v1/auth/login", r#"{"token":"wrong"}"#);
-    assert_eq!(
-        status, 429,
-        "after 6 wrong-token attempts the 6th must be rate-limited: {body}",
+    assert_eq!(status, 401, "first wrong attempt must be 401: {body}");
+
+    // An immediate retry lands inside the 1s backoff window → 429 with
+    // a retry hint, and verification never ran (pipelined attackers
+    // can't buy extra guesses by ignoring responses).
+    let (status, body) = post_invoke(&server, "/api/v1/auth/login", r#"{"token":"wrong"}"#);
+    assert_eq!(status, 429, "immediate retry must hit the backoff gate: {body}");
+    let json: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(json["kind"], "rate_limited", "typed backoff rejection: {body}");
+    assert!(
+        json["details"]["retry_after_secs"].as_u64().unwrap_or(0) >= 1,
+        "backoff must carry a usable retry hint: {body}"
     );
+
+    // Honoring the backoff re-opens the verification path → 401 again
+    // (and a longer window arms behind it).
+    std::thread::sleep(std::time::Duration::from_millis(1200));
+    let (status, body) = post_invoke(&server, "/api/v1/auth/login", r#"{"token":"wrong"}"#);
+    assert_eq!(status, 401, "post-backoff attempt verifies again: {body}");
 }
 
 #[test]

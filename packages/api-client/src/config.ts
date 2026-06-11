@@ -45,8 +45,8 @@ export const backendMode: BackendMode = 'http';
  * - https://github.com/tauri-apps/plugins-workspace/issues/1484
  * - https://github.com/tauri-apps/plugins-workspace/issues/1559
  *
- * Since the CSP in tauri.conf.json already allows http://127.0.0.1:8008,
- * browser fetch works fine and is more reliable.
+ * Since the CSP in tauri.conf.json allows any loopback port
+ * (`http://127.0.0.1:*`), browser fetch works fine and is more reliable.
  *
  * For external URLs in Tauri context, the HTTP plugin is used to bypass
  * CORS/CSP restrictions (not currently used, but available for future needs).
@@ -54,7 +54,7 @@ export const backendMode: BackendMode = 'http';
 export async function safeFetch(url: string, options?: RequestInit): Promise<Response> {
   // For localhost requests, always use browser fetch with retry logic.
   // The Tauri HTTP plugin has known bugs with localhost/127.0.0.1.
-  // Browser fetch works fine since CSP allows localhost:8008.
+  // Browser fetch works fine since CSP allows any loopback port.
   const isLocalhost = url.startsWith('http://127.0.0.1') || url.startsWith('http://localhost');
 
   if (isLocalhost) {
@@ -125,17 +125,19 @@ export const backendUrlStorageKey = 'spiritstream-backend-url';
 
 const defaultBaseUrl = 'http://127.0.0.1:8008';
 
-// Infer the backend URL based on current context:
-// - If we're running on port 8008, we're likely being served by the backend itself
-// - Otherwise (e.g., Vite dev server on 1420), use the default backend URL
-const inferredBaseUrl = (() => {
+// Infer the backend URL when nothing more authoritative is configured:
+// - PROD bundle outside Tauri: the only shape that exists is the backend
+//   serving its own UI (`SPIRITSTREAM_UI_ENABLED`), so the page origin IS
+//   the API — works on any port, including an OS-assigned one.
+// - DEV (vite) outside Tauri: a separately started backend, conventional
+//   fixed port (`SPIRITSTREAM_PORT=8008`, see .env.example).
+// - Inside Tauri the shell-discovered URL arrives via `setBackendBaseUrl`
+//   before anything renders, so this inference is never consulted.
+const inferredBaseUrl = (): string => {
   if (typeof window === 'undefined') return defaultBaseUrl;
-  const origin = window.location.origin;
-  // If served directly by the backend (port 8008), use the origin
-  if (origin.includes(':8008')) return origin;
-  // Otherwise, use the default backend URL (dev server scenario)
+  if (import.meta.env.PROD && !isTauri()) return window.location.origin;
   return defaultBaseUrl;
-})();
+};
 
 const readStorageValue = (key: string): string | null => {
   if (typeof window === 'undefined') return null;
@@ -146,9 +148,27 @@ const readStorageValue = (key: string): string | null => {
   }
 };
 
+// Runtime-discovered backend URL — set once at bootstrap from the Tauri
+// shell's `backend_url` command (the port is OS-negotiated per launch).
+let runtimeBaseUrl: string | null = null;
+
+/**
+ * Configure the backend URL discovered at runtime (Tauri desktop: the
+ * shell reads the OS-negotiated port from `run/server.port` and hands
+ * it over via the `backend_url` command before the app renders).
+ *
+ * Takes precedence over EVERYTHING, including localStorage — a port
+ * stored during a previous launch is stale by construction when ports
+ * are negotiated per launch.
+ */
+export function setBackendBaseUrl(url: string): void {
+  runtimeBaseUrl = url.replace(/\/$/, '');
+}
+
 export const getBackendBaseUrl = (): string => {
+  if (runtimeBaseUrl) return runtimeBaseUrl;
   const stored = readStorageValue(backendUrlStorageKey);
-  return stored || import.meta.env.VITE_BACKEND_URL || inferredBaseUrl;
+  return stored || import.meta.env.VITE_BACKEND_URL || inferredBaseUrl();
 };
 
 const defaultWsUrl = (baseUrl: string) => {
