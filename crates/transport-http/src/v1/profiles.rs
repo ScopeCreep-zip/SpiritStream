@@ -84,6 +84,13 @@ pub struct ProfileSaveRequest {
 pub struct ProfileSaveResponse {
     pub name: String,
     pub saved: bool,
+    /// The profile as the server actually persisted it — input.url
+    /// recomputed, PII blocklist normalized. Clients MUST adopt this
+    /// over the copy they sent: keeping the request-side document made
+    /// server-computed fields go stale in memory (an edited profile's
+    /// empty `input.url` later flowed into a stream start as a blank
+    /// ingest URL).
+    pub profile: crate::v1::ProfileWire,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -174,7 +181,18 @@ pub async fn v1_profile_save(
         .profile_manager
         .save_with_key_encryption(&profile, req.password.as_deref())
         .await?;
-    Ok(Json(ProfileSaveResponse { name, saved: true }))
+    // Read back what was persisted (refresh_url + blocklist
+    // normalization ran inside save) so the client can adopt the
+    // canonical document instead of trusting its own request copy.
+    let canonical = state
+        .profile_manager
+        .load_with_key_decryption(&name, req.password.as_deref())
+        .await?;
+    Ok(Json(ProfileSaveResponse {
+        name,
+        saved: true,
+        profile: canonical.into(),
+    }))
 }
 
 /// `DELETE /profiles/{name}` — remove a profile (encrypted or plaintext).

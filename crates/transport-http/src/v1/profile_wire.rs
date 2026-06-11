@@ -37,6 +37,11 @@ pub struct RtmpInputWire {
     pub bind_address: String,
     pub port: u16,
     pub application: String,
+    /// Server-computed ingest URL (`refresh_url`). Dropping this field
+    /// from the mirror once shipped clients an input with NO url — the
+    /// UI then started streams with an empty ingest URL and FFmpeg's
+    /// relay died instantly. The drift guard below pins the full set.
+    pub url: String,
 }
 
 impl From<RtmpInput> for RtmpInputWire {
@@ -46,6 +51,7 @@ impl From<RtmpInput> for RtmpInputWire {
             bind_address: v.bind_address,
             port: v.port,
             application: v.application,
+            url: v.url,
         }
     }
 }
@@ -131,6 +137,7 @@ pub struct StreamTargetWire {
     pub name: String,
     pub url: String,
     pub stream_key: String,
+    pub enabled: bool,
 }
 
 impl From<StreamTarget> for StreamTargetWire {
@@ -149,6 +156,7 @@ impl From<StreamTarget> for StreamTargetWire {
             name: v.name,
             url: v.url,
             stream_key: v.stream_key,
+            enabled: v.enabled,
         }
     }
 }
@@ -168,6 +176,7 @@ pub struct OutputGroupWire {
     pub audio: AudioSettingsWire,
     pub container: ContainerSettingsWire,
     pub stream_targets: Vec<StreamTargetWire>,
+    pub enabled: bool,
 }
 
 impl From<OutputGroup> for OutputGroupWire {
@@ -180,6 +189,7 @@ impl From<OutputGroup> for OutputGroupWire {
             video: v.video.into(),
             audio: v.audio.into(),
             container: v.container.into(),
+            enabled: v.enabled,
             stream_targets: v.stream_targets.into_iter().map(Into::into).collect(),
         }
     }
@@ -298,6 +308,10 @@ pub struct ChatSettingsWire {
     pub youtube_use_api_key: bool,
     pub visible_platforms: Vec<String>,
     pub visibility_panel_collapsed: bool,
+    /// Apply follower-only chat at Twitch connect. Dropping this from
+    /// the mirror made a plain UI round-trip silently DISABLE it —
+    /// unacceptable for the harassment-prone users the flag protects.
+    pub follower_only_default: bool,
 }
 
 impl From<ChatSettings> for ChatSettingsWire {
@@ -319,6 +333,7 @@ impl From<ChatSettings> for ChatSettingsWire {
             youtube_use_api_key: v.youtube_use_api_key,
             visible_platforms: v.visible_platforms,
             visibility_panel_collapsed: v.visibility_panel_collapsed,
+            follower_only_default: v.follower_only_default,
         }
     }
 }
@@ -430,5 +445,103 @@ impl From<Profile> for ProfileWire {
             anonymous_logging: v.anonymous_logging,
             anonymous_salt: v.anonymous_salt,
         }
+    }
+}
+
+#[cfg(test)]
+mod drift_guard {
+    use super::*;
+
+    /// Recursively collect every object key path in a JSON value.
+    fn key_paths(value: &serde_json::Value, prefix: &str, out: &mut Vec<String>) {
+        match value {
+            serde_json::Value::Object(map) => {
+                for (k, v) in map {
+                    let path = if prefix.is_empty() {
+                        k.clone()
+                    } else {
+                        format!("{prefix}.{k}")
+                    };
+                    out.push(path.clone());
+                    key_paths(v, &path, out);
+                }
+            }
+            serde_json::Value::Array(items) => {
+                if let Some(first) = items.first() {
+                    key_paths(first, &format!("{prefix}[]"), out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// The wire mirror MUST stay key-for-key identical to the core
+    /// model's own serde shape (which is what ts-rs exports to the
+    /// frontend's types). This mirror is hand-maintained and HAS
+    /// drifted before: `input.url`, both `enabled` flags, and
+    /// `chat.followerOnlyDefault` were silently absent from every HTTP
+    /// response while the TS types claimed they existed — the UI then
+    /// started streams with an empty ingest URL. Any new model field
+    /// fails this test until the mirror carries it.
+    #[test]
+    fn profile_wire_matches_core_profile_serde_shape() {
+        // Fully-populated profile via serde defaults: one group with
+        // one target so the nested array element shapes are exercised.
+        let profile: Profile = serde_json::from_value(serde_json::json!({
+            "id": "drift",
+            "name": "drift",
+            "encrypted": false,
+            "input": {
+                "type": "rtmp",
+                "bindAddress": "127.0.0.1",
+                "port": 1935,
+                "application": "live"
+            },
+            "outputGroups": [{
+                "id": "g1",
+                "name": "g1",
+                "isDefault": true,
+                "generatePts": false,
+                "video": {
+                    "codec": "copy", "width": 1920, "height": 1080,
+                    "fps": 60, "bitrate": "6000k", "preset": "veryfast",
+                    "profile": "high", "keyframeInterval": 2
+                },
+                "audio": { "codec": "copy", "bitrate": "160k", "channels": 2, "sampleRate": 48000 },
+                "container": { "format": "flv" },
+                "streamTargets": [{
+                    "id": "t1",
+                    "service": "Custom",
+                    "name": "t1",
+                    "url": "rtmp://example/live",
+                    "streamKey": "k"
+                }]
+            }]
+        }))
+        .expect("core Profile deserializes with serde defaults");
+
+        let model_json = serde_json::to_value(&profile).expect("model serializes");
+        let wire_json =
+            serde_json::to_value(ProfileWire::from(profile)).expect("wire serializes");
+
+        let mut model_keys = Vec::new();
+        let mut wire_keys = Vec::new();
+        key_paths(&model_json, "", &mut model_keys);
+        key_paths(&wire_json, "", &mut wire_keys);
+        model_keys.sort();
+        wire_keys.sort();
+
+        let missing: Vec<_> = model_keys
+            .iter()
+            .filter(|k| !wire_keys.contains(k))
+            .collect();
+        let extra: Vec<_> = wire_keys
+            .iter()
+            .filter(|k| !model_keys.contains(k))
+            .collect();
+        assert!(
+            missing.is_empty() && extra.is_empty(),
+            "ProfileWire drifted from the core Profile serde shape.\n  missing from wire: {missing:?}\n  extra on wire: {extra:?}"
+        );
     }
 }

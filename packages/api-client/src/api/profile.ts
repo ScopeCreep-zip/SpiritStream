@@ -53,13 +53,20 @@ export const profile = {
     ),
   /** List every encrypted profile currently unlocked in the session. */
   lockedList: () => fetchTypedJson<{ unlocked: string[] }>('GET', '/api/v1/profiles/locked'),
-  save: async (profile: Profile, password?: string) => {
-    await fetchTypedJson<{ saved: boolean }>(
+  /**
+   * Persist a profile and return the CANONICAL document the server
+   * actually wrote (input.url recomputed, PII blocklist normalized).
+   * Callers should adopt the return value — the request-side copy is
+   * stale the moment the server post-processes it.
+   */
+  save: async (profile: Profile, password?: string): Promise<Profile> => {
+    const response = await fetchTypedJson<{ saved: boolean; profile: Profile }>(
       'PUT',
       `/api/v1/profiles/${encodeURIComponent(profile.name)}`,
       undefined,
       { profile, password }
     );
+    return response.profile;
   },
   delete: async (name: string) => {
     await fetchTypedJson<{ deleted: boolean }>(

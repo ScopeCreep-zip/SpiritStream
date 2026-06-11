@@ -350,6 +350,38 @@ impl FFmpegHandler {
     }
 }
 
+/// Refuse a start whose ingest URL is missing or non-RTMP. An empty
+/// URL used to flow all the way into the relay spawn as a literal
+/// empty `-i` argument — FFmpeg read "." as its input, died instantly,
+/// and OBS had no listener to connect to, with nothing telling the
+/// user why. Fail at the API boundary instead.
+pub(super) fn validate_incoming_url(incoming_url: &str) -> Result<(), CoreError> {
+    let trimmed = incoming_url.trim();
+    if trimmed.is_empty() {
+        return Err(CoreError::ValidationFailed {
+            reasons: vec![crate::errors::ValidationIssue {
+                code: "rtmp_input_url_missing".into(),
+                message: "The profile's RTMP ingest URL is empty — reload the profile so \
+                          the server-computed input URL is present, then start again."
+                    .into(),
+                path: Some("/input/url".into()),
+            }],
+        });
+    }
+    if !trimmed.starts_with("rtmp://") && !trimmed.starts_with("rtmps://") {
+        return Err(CoreError::ValidationFailed {
+            reasons: vec![crate::errors::ValidationIssue {
+                code: "rtmp_input_url_invalid".into(),
+                message: format!(
+                    "The RTMP ingest URL must start with rtmp:// or rtmps://, got {trimmed:?}."
+                ),
+                path: Some("/input/url".into()),
+            }],
+        });
+    }
+    Ok(())
+}
+
 pub(super) fn no_live_targets_error(group_id: &str) -> CoreError {
     CoreError::ValidationFailed {
         reasons: vec![crate::errors::ValidationIssue {

@@ -10,7 +10,7 @@ use crate::services::{emit_event, EventSink};
 
 use super::{
     ffmpeg_internal, lock_poisoned, no_eligible_groups_error, no_live_targets_error,
-    ReconnectionState,
+    validate_incoming_url, ReconnectionState,
 };
 
 impl super::FFmpegHandler {
@@ -24,6 +24,7 @@ impl super::FFmpegHandler {
         // Authoritative encoding-config validation. Frontend's
         // `POST /streams/validate` is decorative — this is the gate that
         // refuses a malformed config before any FFmpeg process is spawned.
+        validate_incoming_url(incoming_url)?;
         Self::validate_output_group(group)?;
         if !group.enabled {
             return Err(no_eligible_groups_error());
@@ -73,6 +74,7 @@ impl super::FFmpegHandler {
         incoming_url: &str,
         event_sink: Arc<dyn EventSink>,
     ) -> Result<Vec<(String, u32)>, CoreError> {
+        validate_incoming_url(incoming_url)?;
         let eligible: Vec<&OutputGroup> = groups
             .iter()
             .filter(|g| g.is_eligible() && self.has_live_targets(g))

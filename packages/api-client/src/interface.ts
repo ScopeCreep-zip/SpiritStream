@@ -52,7 +52,8 @@ export interface ProfileApi {
   decrypt(name: string, password: string): Promise<{ name: string; decrypted: boolean }>;
   lock(name: string): Promise<{ name: string; locked: boolean }>;
   lockedList(): Promise<{ unlocked: string[] }>;
-  save(profile: Profile, password?: string): Promise<void>;
+  /** Returns the canonical persisted profile (server-computed fields refreshed) — adopt it. */
+  save(profile: Profile, password?: string): Promise<Profile>;
   delete(name: string): Promise<void>;
   isEncrypted(name: string): Promise<boolean>;
   validateInput(profileId: string, input: RtmpInput): Promise<void>;

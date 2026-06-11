@@ -80,6 +80,9 @@ beforeEach(() => {
     pendingUnlock: false,
   });
   api.profile.getSummaries.mockResolvedValue([]);
+  // save returns the canonical persisted profile; echoing the request
+  // is the simplest faithful default.
+  api.profile.save.mockImplementation(async (p: Profile) => p);
   api.settings.get.mockResolvedValue({ lastProfile: null });
   api.settings.save.mockResolvedValue(undefined);
 });
@@ -143,10 +146,31 @@ describe('core.saveProfile', () => {
 
   it('persists the current profile then refreshes the list', async () => {
     useProfileStore.setState({ current: makeProfile() });
-    api.profile.save.mockResolvedValue(undefined);
     await useProfileStore.getState().saveProfile();
     expect(api.profile.save).toHaveBeenCalledTimes(1);
     expect(api.profile.getSummaries).toHaveBeenCalled();
+  });
+
+  it('adopts the canonical profile the server persisted', async () => {
+    useProfileStore.setState({ current: makeProfile({ id: 'p1' }) });
+    // Server post-processing recomputes fields the client zeroes out
+    // (input.url) — the store must adopt the server's document.
+    api.profile.save.mockImplementation(async (p: Profile) => ({
+      ...p,
+      input: { ...(p as Profile & { input?: object }).input, url: 'rtmp://127.0.0.1:1935/live' },
+    }));
+    await useProfileStore.getState().saveProfile();
+    const current = useProfileStore.getState().current as Profile & {
+      input?: { url?: string };
+    };
+    expect(current.input?.url).toBe('rtmp://127.0.0.1:1935/live');
+  });
+
+  it('does not adopt a canonical doc for a different profile id', async () => {
+    useProfileStore.setState({ current: makeProfile({ id: 'p1' }) });
+    api.profile.save.mockImplementation(async (p: Profile) => ({ ...p, id: 'other' }));
+    await useProfileStore.getState().saveProfile();
+    expect(useProfileStore.getState().current?.id).toBe('p1');
   });
 });
 
@@ -209,7 +233,6 @@ describe('core.reorderProfiles', () => {
 describe('core.updateProfile', () => {
   it('merges updates into current and saves', async () => {
     useProfileStore.setState({ current: makeProfile({ name: 'Main' }) });
-    api.profile.save.mockResolvedValue(undefined);
     await useProfileStore.getState().updateProfile({ name: 'Renamed' });
     expect(useProfileStore.getState().current?.name).toBe('Renamed');
     expect(api.profile.save).toHaveBeenCalled();

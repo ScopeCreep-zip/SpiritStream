@@ -135,7 +135,14 @@ export const createCoreSlice: StateCreator<ProfileState, [], [], CoreSlice> = (s
     // Don't set loading: true — this causes the UI to flash "Loading...".
     // The caller should have already updated the state optimistically.
     try {
-      await api.profile.save(current, password);
+      const canonical = await api.profile.save(current, password);
+      // Adopt the server's post-processed document (input.url recomputed,
+      // blocklist normalized) — keeping our request copy left those
+      // fields stale; an edit-then-start used to ship an EMPTY ingest
+      // URL to FFmpeg because of exactly that.
+      if (get().current?.id === canonical.id) {
+        set({ current: canonical });
+      }
       logger.debug('[ProfileStore] saveProfile completed (backend save successful)');
       await get().loadProfiles();
     } catch (error) {

@@ -58,7 +58,10 @@ impl StatsReaderCtx {
             }
         }
         if let Err(e) = super::process_registry::write_records(&self.run_dir, &records) {
-            log::error!("failed to persist stream process registry: {e}");
+            // `{e:?}` deliberately: Display for CoreError::Internal hides
+            // the context from CLIENTS, but this line is the server-side
+            // log — the one place the context is supposed to surface.
+            log::error!("failed to persist stream process registry: {e:?}");
         }
     }
 }

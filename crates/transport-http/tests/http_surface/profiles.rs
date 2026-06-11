@@ -44,6 +44,17 @@ fn profile_put_then_get_round_trips() {
     assert_eq!(put_status, 200, "PUT failed: {put_resp}");
     let put_json: Value = serde_json::from_str(&put_resp).unwrap();
     assert_eq!(put_json["saved"], true);
+    // The response carries the CANONICAL persisted document — clients
+    // adopt it so server-computed fields (input.url) never go stale in
+    // memory. Regression: a client that kept its request copy (url: "")
+    // later started a stream with an empty ingest URL.
+    let canonical_url = put_json["profile"]["input"]["url"]
+        .as_str()
+        .expect("save response carries the canonical profile");
+    assert!(
+        canonical_url.starts_with("rtmp://"),
+        "input.url must be recomputed server-side, got {canonical_url:?}"
+    );
 
     let (get_status, get_body) = get(&server, "/api/v1/profiles/roundtrip");
     assert_eq!(get_status, 200, "GET failed: {get_body}");

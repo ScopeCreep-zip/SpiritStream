@@ -487,7 +487,14 @@ jobs:
       # ACL branch). Placed after the sidecar build because the Tauri crate's
       # build.rs requires the sidecar binary to be present.
       - name: Rust test (workspace)
-        run: cargo test --workspace
+        # The explicit server build first matters: the http_surface
+        # harness spawns target/debug/spiritstream-server as a child
+        # process, and `cargo test` alone does not reliably refresh
+        # that binary before the test executables run — a stale binary
+        # makes wire-shape assertions fail confusingly.
+        run: |
+          cargo build -p spiritstream-server
+          cargo test --workspace
 
       # Desktop checks must come after sidecar build (Tauri build.rs requires sidecar binary)
       - name: Rust check (desktop)

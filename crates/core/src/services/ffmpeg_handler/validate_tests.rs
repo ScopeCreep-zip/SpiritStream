@@ -568,3 +568,35 @@ fn parse_error_details_scans_from_newest_line() {
         .unwrap()
         .contains("WSAETIMEDOUT"));
 }
+
+#[test]
+fn empty_incoming_url_is_rejected_before_any_spawn() {
+    // Regression: an empty ingest URL used to reach the relay spawn as
+    // a literal empty `-i` argument; FFmpeg died instantly and OBS had
+    // no RTMP listener to connect to.
+    let err = super::validate_incoming_url("").unwrap_err();
+    match err {
+        crate::errors::CoreError::ValidationFailed { reasons } => {
+            assert_eq!(reasons[0].code, "rtmp_input_url_missing");
+        }
+        other => panic!("expected ValidationFailed, got {other:?}"),
+    }
+    let err = super::validate_incoming_url("   ").unwrap_err();
+    assert!(matches!(
+        err,
+        crate::errors::CoreError::ValidationFailed { .. }
+    ));
+}
+
+#[test]
+fn non_rtmp_incoming_url_is_rejected() {
+    let err = super::validate_incoming_url("http://127.0.0.1:1935/live").unwrap_err();
+    match err {
+        crate::errors::CoreError::ValidationFailed { reasons } => {
+            assert_eq!(reasons[0].code, "rtmp_input_url_invalid");
+        }
+        other => panic!("expected ValidationFailed, got {other:?}"),
+    }
+    super::validate_incoming_url("rtmp://127.0.0.1:1935/live").expect("plain rtmp accepted");
+    super::validate_incoming_url("rtmps://host/live").expect("rtmps accepted");
+}
