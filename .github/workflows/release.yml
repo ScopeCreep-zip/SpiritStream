@@ -238,6 +238,24 @@ jobs:
             rust_target: 'x86_64-pc-windows-msvc'
 
     runs-on: ${{ matrix.platform }}
+    env:
+      # Embedded OAuth client credentials — compile-time, read by
+      # option_env! in crates/core/src/services/oauth/config.rs, so they
+      # must be present for the server-sidecar AND Tauri build steps.
+      # Unset repo secrets are fine: the provider ships unconfigured and
+      # the UI shows "not set up in this build" instead of a dead
+      # sign-in link. Registration walkthroughs + the secret↔env table:
+      # docs/06-tutorials/06-chat-oauth-setup.md. Twitch is a PUBLIC
+      # client (Device Code Flow) — client ID only, never a secret.
+      SPIRITSTREAM_EMBEDDED_TWITCH_CLIENT_ID: ${{ secrets.EMBEDDED_TWITCH_CLIENT_ID }}
+      SPIRITSTREAM_EMBEDDED_YOUTUBE_CLIENT_ID: ${{ secrets.EMBEDDED_YOUTUBE_CLIENT_ID }}
+      SPIRITSTREAM_EMBEDDED_YOUTUBE_CLIENT_SECRET: ${{ secrets.EMBEDDED_YOUTUBE_CLIENT_SECRET }}
+      SPIRITSTREAM_EMBEDDED_KICK_CLIENT_ID: ${{ secrets.EMBEDDED_KICK_CLIENT_ID }}
+      SPIRITSTREAM_EMBEDDED_KICK_CLIENT_SECRET: ${{ secrets.EMBEDDED_KICK_CLIENT_SECRET }}
+      SPIRITSTREAM_EMBEDDED_FACEBOOK_CLIENT_ID: ${{ secrets.EMBEDDED_FACEBOOK_CLIENT_ID }}
+      SPIRITSTREAM_EMBEDDED_FACEBOOK_CLIENT_SECRET: ${{ secrets.EMBEDDED_FACEBOOK_CLIENT_SECRET }}
+      SPIRITSTREAM_EMBEDDED_TROVO_CLIENT_ID: ${{ secrets.EMBEDDED_TROVO_CLIENT_ID }}
+      SPIRITSTREAM_EMBEDDED_TROVO_CLIENT_SECRET: ${{ secrets.EMBEDDED_TROVO_CLIENT_SECRET }}
     steps:
       - name: Harden runner
         if: runner.os == 'Linux'

@@ -96,8 +96,9 @@ pub enum OAuthCmd {
 
 #[derive(Debug, Subcommand)]
 pub enum ConfigCmd {
-    /// Print the current OAuth config as JSON. Secrets are included
-    /// when set (CLI users handle their own redaction).
+    /// Print the client-id overrides + derived per-provider configured
+    /// flags as JSON. Secret values never print — `configured` already
+    /// conveys their presence.
     Get,
     /// Replace the OAuth config. Pass the full JSON via `--json` or
     /// individual fields via `--twitch-client-id`, etc. Fields not

@@ -14,6 +14,7 @@ use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use super::super::{ChatEndpoints, ChatPlatform, FacebookConnector};
+use crate::services::oauth::FACEBOOK_GRAPH_VERSION;
 use super::recv_one;
 use crate::models::{ChatConnectionStatus, ChatCredentials, ChatMessage};
 
@@ -24,7 +25,7 @@ async fn facebook_round_trip_connect_receive_send_disconnect() {
     // Connect-time credential probe (reverse_chronological, limit 1). Just
     // needs a 2xx so the connector proceeds past the smoke test.
     Mock::given(method("GET"))
-        .and(path("/v18.0/vid123/comments"))
+        .and(path(format!("/{FACEBOOK_GRAPH_VERSION}/vid123/comments")))
         .and(query_param("order", "reverse_chronological"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": [] })))
         .mount(&http)
@@ -35,7 +36,7 @@ async fn facebook_round_trip_connect_receive_send_disconnect() {
     // colon-less `+0000` form is the Q11 bug, deliberately not exercised
     // here.
     Mock::given(method("GET"))
-        .and(path("/v18.0/vid123/comments"))
+        .and(path(format!("/{FACEBOOK_GRAPH_VERSION}/vid123/comments")))
         .and(query_param("order", "chronological"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "data": [
@@ -51,7 +52,7 @@ async fn facebook_round_trip_connect_receive_send_disconnect() {
         .await;
 
     Mock::given(method("POST"))
-        .and(path("/v18.0/vid123/comments"))
+        .and(path(format!("/{FACEBOOK_GRAPH_VERSION}/vid123/comments")))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "id": "f1_reply" })))
         .mount(&http)
         .await;

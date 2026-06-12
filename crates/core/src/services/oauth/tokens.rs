@@ -566,7 +566,10 @@ impl super::OAuthService {
                 // do — partial revocation isn't something the UI exposes.
                 let response = self
                     .http_client
-                    .delete("https://graph.facebook.com/v18.0/me/permissions")
+                    .delete(format!(
+                        "https://graph.facebook.com/{}/me/permissions",
+                        super::provider::FACEBOOK_GRAPH_VERSION
+                    ))
                     .query(&[("access_token", token)])
                     .send()
                     .await

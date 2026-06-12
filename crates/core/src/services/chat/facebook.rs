@@ -1,8 +1,9 @@
 //! Facebook Live comments connector — read + send.
 //!
 //! Uses Meta's Graph API Live Video Comments endpoint
-//! (`graph.facebook.com/v18.0/{live-video-id}/comments`) with long-polling
-//! to surface new comments and a POST against the same endpoint to send.
+//! (`graph.facebook.com/{version}/{live-video-id}/comments`) with
+//! long-polling to surface new comments and a POST against the same
+//! endpoint to send.
 //!
 //! **Identity risk.** Connecting Facebook Live binds chat to the
 //! authenticated user's real-name Facebook account per Meta's Name
@@ -46,9 +47,11 @@ const STATUS_ERROR: u8 = 3;
 /// "perceptibly real-time" threshold for chat aggregation.
 const POLL_INTERVAL: Duration = Duration::from_secs(6);
 
-/// Graph API version. Pin so a Meta-breaking change doesn't silently
-/// upgrade us mid-stream; bumping is a maintainer task.
-const GRAPH_API_VERSION: &str = "v18.0";
+/// Graph API version — shared with the OAuth provider so the dialog,
+/// token, and comments endpoints can never drift apart. Pinned so a
+/// Meta-breaking change doesn't silently upgrade us mid-stream;
+/// bumping `FACEBOOK_GRAPH_VERSION` is a maintainer task.
+const GRAPH_API_VERSION: &str = crate::services::oauth::FACEBOOK_GRAPH_VERSION;
 
 fn status_to_u8(status: ChatConnectionStatus) -> u8 {
     match status {
