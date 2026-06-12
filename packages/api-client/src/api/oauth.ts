@@ -1,6 +1,19 @@
 import type { OAuthAccountStatus, OAuthFlowResult } from '@spiritstream/types';
 import { fetchTypedJson } from './_internal';
 
+/** Per-provider "real credentials present in this build/env" flags. */
+export interface OAuthConfiguredFlags {
+  twitchConfigured: boolean;
+  youtubeConfigured: boolean;
+  kickConfigured: boolean;
+  facebookConfigured: boolean;
+  trovoConfigured: boolean;
+}
+
+/** `startFlow` response: core flow result + whether the server managed
+ *  to open the system browser (false → show a copy-link affordance). */
+export type OAuthFlowStarted = OAuthFlowResult & { browserOpened: boolean };
+
 export const oauth = {
   isConfigured: (provider: string) =>
     fetchTypedJson<{ configured: boolean }>(
@@ -8,7 +21,7 @@ export const oauth = {
       `/api/v1/oauth/${encodeURIComponent(provider)}/configured`
     ).then((r) => r.configured),
   startFlow: (provider: string) =>
-    fetchTypedJson<OAuthFlowResult>('POST', `/api/v1/oauth/${encodeURIComponent(provider)}/flow`),
+    fetchTypedJson<OAuthFlowStarted>('POST', `/api/v1/oauth/${encodeURIComponent(provider)}/flow`),
   completeFlow: (provider: string, code: string, state: string) =>
     fetchTypedJson<{
       provider: string;
@@ -44,13 +57,7 @@ export const oauth = {
     }>('POST', `/api/v1/oauth/${encodeURIComponent(provider)}/refresh`, undefined, {
       refreshToken,
     }),
-  getConfig: () =>
-    fetchTypedJson<{
-      twitchConfigured: boolean;
-      youtubeConfigured: boolean;
-      kickConfigured: boolean;
-      facebookConfigured: boolean;
-    }>('GET', '/api/v1/oauth/config'),
+  getConfig: () => fetchTypedJson<OAuthConfiguredFlags>('GET', '/api/v1/oauth/config'),
   setConfig: async (config: {
     twitchClientId?: string;
     twitchClientSecret?: string;
@@ -60,6 +67,8 @@ export const oauth = {
     kickClientSecret?: string;
     facebookClientId?: string;
     facebookClientSecret?: string;
+    trovoClientId?: string;
+    trovoClientSecret?: string;
   }) => {
     await fetchTypedJson<Record<string, never>>('PUT', '/api/v1/oauth/config', undefined, config);
   },

@@ -108,6 +108,9 @@ fn status_for(err: &CoreError) -> StatusCode {
         CoreError::PasswordTooShort { .. } => StatusCode::BAD_REQUEST,
         CoreError::Unauthorized => StatusCode::UNAUTHORIZED,
         CoreError::NoActiveProfile => StatusCode::CONFLICT,
+        // 409: the request is valid but this BUILD can't serve it until
+        // credentials are configured — distinct from 400 (caller error).
+        CoreError::OAuthProviderNotConfigured { .. } => StatusCode::CONFLICT,
         CoreError::ChatPlatformNotConnected { .. } => StatusCode::UNPROCESSABLE_ENTITY,
         CoreError::ChatSendingDisabled { .. } => StatusCode::UNPROCESSABLE_ENTITY,
         CoreError::ChatMessageLengthExceeded { .. } => StatusCode::BAD_REQUEST,

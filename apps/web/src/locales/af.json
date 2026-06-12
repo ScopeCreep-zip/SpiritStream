@@ -96,6 +96,9 @@
     "noProfile": "Aktiveer 'n profiel om klets op te stel.",
     "oauth": {
       "browserOpened": "Gaan jou blaaier na om stawing te voltooi",
+      "copyLink": "Kopieer skakel",
+      "notConfigured": "Aanmelding is nie in hierdie bou opgestel nie — geen kliëntbewyse vir hierdie platform nie.",
+      "openManually": "Jou blaaier het nie oopgemaak nie — kopieer die aanmeldskakel:",
       "signOutFailed": "Kon nie afmeld nie: {{error}}",
       "signedInAs": "Aangemeld as {{username}}",
       "signedOut": "Afgemeld van {{platform}}",

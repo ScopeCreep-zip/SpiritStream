@@ -12,7 +12,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use spiritstream_core::services::{OAuthConfig, OAuthFlowResult, OAuthTokens, OAuthUserInfo};
+use spiritstream_core::services::{OAuthConfig, OAuthTokens, OAuthUserInfo};
 
 use crate::AppState;
 
@@ -30,6 +30,19 @@ pub struct OAuthConfiguredFlagsResponse {
     pub youtube_configured: bool,
     pub kick_configured: bool,
     pub facebook_configured: bool,
+    pub trovo_configured: bool,
+}
+
+impl From<spiritstream_core::services::OAuthConfiguredFlags> for OAuthConfiguredFlagsResponse {
+    fn from(f: spiritstream_core::services::OAuthConfiguredFlags) -> Self {
+        Self {
+            twitch_configured: f.twitch,
+            youtube_configured: f.youtube,
+            kick_configured: f.kick,
+            facebook_configured: f.facebook,
+            trovo_configured: f.trovo,
+        }
+    }
 }
 
 /// `{"configured": bool}` — single-provider variant of the flags response.
@@ -65,6 +78,10 @@ pub struct OAuthConfigRequest {
     pub facebook_client_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub facebook_client_secret: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trovo_client_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trovo_client_secret: Option<String>,
 }
 
 impl From<OAuthConfigRequest> for OAuthConfig {
@@ -78,6 +95,8 @@ impl From<OAuthConfigRequest> for OAuthConfig {
             kick_client_secret: r.kick_client_secret,
             facebook_client_id: r.facebook_client_id,
             facebook_client_secret: r.facebook_client_secret,
+            trovo_client_id: r.trovo_client_id,
+            trovo_client_secret: r.trovo_client_secret,
         }
     }
 }
@@ -90,16 +109,12 @@ pub struct OAuthFlowResponse {
     pub auth_url: String,
     pub callback_port: u16,
     pub state: String,
-}
-
-impl From<OAuthFlowResult> for OAuthFlowResponse {
-    fn from(r: OAuthFlowResult) -> Self {
-        Self {
-            auth_url: r.auth_url,
-            callback_port: r.callback_port,
-            state: r.state,
-        }
-    }
+    /// Whether the server managed to open the system browser. When
+    /// false (headless session, missing xdg-open, sandboxed desktop),
+    /// the UI surfaces `auth_url` with a copy affordance instead of
+    /// telling the user to "check your browser" for a tab that never
+    /// opened.
+    pub browser_opened: bool,
 }
 
 /// Mirror of [`OAuthUserInfo`] — returned from `POST /oauth/{provider}/complete`
@@ -163,14 +178,13 @@ impl From<OAuthTokens> for OAuthTokensResponse {
     responses((status = 200, body = OAuthConfiguredFlagsResponse)),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_oauth_get_config_proxy(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
 ) -> Result<Json<OAuthConfiguredFlagsResponse>, crate::ApiError> {
-    Ok(Json(OAuthConfiguredFlagsResponse {
-        twitch_configured: true,
-        youtube_configured: true,
-        kick_configured: true,
-        facebook_configured: true,
-    }))
+    // Truthful per-provider flags from the live config (placeholder
+    // detection in core). The UI renders unconfigured providers as
+    // "not set up in this build" — these flags hardcoding `true` was
+    // half of the dead-link bug.
+    Ok(Json(state.oauth_service.configured_flags().await.into()))
 }
 
 #[utoipa::path(put, path = "/oauth/config", tag = "oauth",
@@ -215,6 +229,15 @@ pub async fn v1_oauth_start_flow_proxy(
 ) -> Result<Json<OAuthFlowResponse>, crate::ApiError> {
     use spiritstream_core::services::{OAuthCallback, OAuthCallbackServer};
 
+    // "This build has no credentials for the provider" outranks "no
+    // profile open": the former is unfixable from inside the app, so it
+    // must be the error the user sees regardless of session state.
+    if !state.oauth_service.is_configured(&provider).await {
+        return Err(spiritstream_core::CoreError::OAuthProviderNotConfigured {
+            provider: provider.clone(),
+        }
+        .into());
+    }
     if crate::get_active_profile_name(&state).await.is_none() {
         return Err(spiritstream_core::CoreError::NoActiveProfile.into());
     }
@@ -347,10 +370,19 @@ pub async fn v1_oauth_start_flow_proxy(
         callback_server.shutdown();
     });
 
-    if let Err(e) = opener::open(&result.auth_url) {
-        log::warn!("Failed to open browser: {}. URL: {}", e, result.auth_url);
-    }
-    Ok(Json(result.into()))
+    let browser_opened = match opener::open(&result.auth_url) {
+        Ok(()) => true,
+        Err(e) => {
+            log::warn!("Failed to open browser: {}. URL: {}", e, result.auth_url);
+            false
+        }
+    };
+    Ok(Json(OAuthFlowResponse {
+        auth_url: result.auth_url,
+        callback_port: result.callback_port,
+        state: result.state,
+        browser_opened,
+    }))
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]

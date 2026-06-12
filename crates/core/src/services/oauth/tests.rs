@@ -4,6 +4,28 @@ fn svc() -> OAuthService {
     OAuthService::new(OAuthConfig::default())
 }
 
+/// Service with REAL (test) credentials for every provider — flow tests
+/// must get past the configured pre-flight guard; the default config's
+/// placeholders honestly refuse to start a flow.
+fn configured_svc() -> OAuthService {
+    OAuthService::new(configured_cfg())
+}
+
+fn configured_cfg() -> OAuthConfig {
+    OAuthConfig {
+        twitch_client_id: Some("test-twitch-id".into()),
+        youtube_client_id: Some("test-yt-id".into()),
+        youtube_client_secret: Some("test-yt-secret".into()),
+        kick_client_id: Some("test-kick-id".into()),
+        kick_client_secret: Some("test-kick-secret".into()),
+        facebook_client_id: Some("test-fb-id".into()),
+        facebook_client_secret: Some("test-fb-secret".into()),
+        trovo_client_id: Some("test-trovo-id".into()),
+        trovo_client_secret: Some("test-trovo-secret".into()),
+        ..OAuthConfig::default()
+    }
+}
+
 /// `expires_at == 0` means "no expiry recorded" — must NOT trigger
 /// refresh, otherwise freshly-stored profiles would churn refresh
 /// requests on every API call.
@@ -174,12 +196,14 @@ fn config_secrets_default_to_none() {
 }
 
 #[test]
-fn config_has_flags_all_true() {
-    let cfg = OAuthConfig::default();
+fn config_has_flags_require_real_credentials() {
+    // Placeholders → unconfigured (the dead-link fix); real values → configured.
+    let cfg = configured_cfg();
     assert!(cfg.has_twitch());
     assert!(cfg.has_youtube());
     assert!(cfg.has_kick());
     assert!(cfg.has_facebook());
+    assert!(cfg.has_trovo());
 }
 
 // ===== PKCE pair shape =====
@@ -204,13 +228,30 @@ fn pkce_pair_is_distinct_and_url_safe() {
 // ===== service config accessors (mod.rs) =====
 
 #[tokio::test]
-async fn is_configured_recognises_supported_providers() {
-    let s = svc();
+async fn is_configured_reflects_real_credentials_only() {
+    let s = configured_svc();
     assert!(s.is_configured("twitch").await);
     assert!(s.is_configured("youtube").await);
     assert!(s.is_configured("kick").await);
     assert!(s.is_configured("facebook").await);
+    assert!(s.is_configured("trovo").await);
     assert!(!s.is_configured("myspace").await);
+}
+
+#[tokio::test]
+async fn start_flow_refuses_unconfigured_provider_before_binding_ports() {
+    // Default config = placeholders. The typed refusal is the dead-link
+    // fix: no callback port binds, no browser opens onto a 400 page.
+    if std::env::var("SPIRITSTREAM_TWITCH_CLIENT_ID").is_ok() {
+        return; // dev shell injected real creds; guard not observable
+    }
+    let s = svc();
+    match s.start_flow("twitch").await {
+        Err(crate::errors::CoreError::OAuthProviderNotConfigured { provider }) => {
+            assert_eq!(provider, "twitch");
+        }
+        other => panic!("expected OAuthProviderNotConfigured, got {other:?}"),
+    }
 }
 
 #[tokio::test]
@@ -229,7 +270,7 @@ async fn update_config_round_trips_through_get_config() {
 
 #[tokio::test]
 async fn start_flow_youtube_uses_pkce_code_flow() {
-    let s = svc();
+    let s = configured_svc();
     let result = s.start_flow("youtube").await.expect("youtube flow starts");
     assert!(result.auth_url.starts_with("https://accounts.google.com/"));
     assert!(result.auth_url.contains("response_type=code"));
@@ -243,7 +284,7 @@ async fn start_flow_youtube_uses_pkce_code_flow() {
 
 #[tokio::test]
 async fn start_flow_kick_uses_pkce_code_flow() {
-    let s = svc();
+    let s = configured_svc();
     let result = s.start_flow("kick").await.expect("kick flow starts");
     assert!(result.auth_url.starts_with("https://id.kick.com/"));
     assert!(result.auth_url.contains("response_type=code"));
@@ -252,7 +293,7 @@ async fn start_flow_kick_uses_pkce_code_flow() {
 
 #[tokio::test]
 async fn start_flow_facebook_uses_auth_code_without_pkce() {
-    let s = svc();
+    let s = configured_svc();
     let result = s
         .start_flow("facebook")
         .await
@@ -266,6 +307,7 @@ async fn start_flow_facebook_uses_auth_code_without_pkce() {
 #[tokio::test]
 async fn start_flow_twitch_with_secret_uses_auth_code() {
     let cfg = OAuthConfig {
+        twitch_client_id: Some("test-twitch-id".into()),
         twitch_client_secret: Some("a-secret".into()),
         ..Default::default()
     };

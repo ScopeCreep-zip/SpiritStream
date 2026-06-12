@@ -96,6 +96,9 @@
     "noProfile": "채팅을 구성하려면 프로필을 활성화하세요.",
     "oauth": {
       "browserOpened": "브라우저를 확인하여 인증을 완료하세요.",
+      "copyLink": "링크 복사",
+      "notConfigured": "이 빌드에는 로그인이 설정되어 있지 않습니다 — 이 플랫폼용 클라이언트 자격 증명이 없습니다.",
+      "openManually": "브라우저가 열리지 않았습니다 — 로그인 링크를 복사하세요:",
       "signOutFailed": "로그아웃 실패: {{error}}",
       "signedInAs": "{{username}}으로 로그인됨",
       "signedOut": "{{platform}}에서 로그아웃됨",

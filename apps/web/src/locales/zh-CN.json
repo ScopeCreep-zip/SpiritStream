@@ -96,6 +96,9 @@
     "noProfile": "激活配置文件以配置聊天。",
     "oauth": {
       "browserOpened": "检查您的浏览器以完成身份验证",
+      "copyLink": "复制链接",
+      "notConfigured": "此构建版本未配置登录功能 — 缺少该平台的客户端凭据。",
+      "openManually": "浏览器未打开 — 请复制登录链接：",
       "signOutFailed": "退出登录失败：{{error}}",
       "signedInAs": "已登录为 {{username}}",
       "signedOut": "已退出 {{platform}}",

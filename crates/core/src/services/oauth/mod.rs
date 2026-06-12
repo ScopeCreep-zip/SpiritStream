@@ -86,8 +86,44 @@ impl OAuthService {
         self.config.lock().await.clone()
     }
 
-    /// Always true with embedded client IDs.
+    /// True only when the provider's resolved credentials are REAL
+    /// (not the embedded placeholders) — see `OAuthConfig::has_*`.
+    /// This is what gates sign-in buttons; lying `true` here was the
+    /// root of the "Login with Twitch opens a dead page" bug.
     pub async fn is_configured(&self, provider: &str) -> bool {
-        matches!(provider, "twitch" | "youtube" | "kick" | "facebook")
+        let config = self.config.lock().await;
+        match provider {
+            "twitch" => config.has_twitch(),
+            "youtube" => config.has_youtube(),
+            "kick" => config.has_kick(),
+            "facebook" => config.has_facebook(),
+            "trovo" => config.has_trovo(),
+            _ => false,
+        }
     }
+
+    /// One snapshot of every provider's configured state — single source
+    /// of truth for the HTTP config endpoint AND `spiritstream-cli
+    /// oauth config`, so the two transports can't drift.
+    pub async fn configured_flags(&self) -> OAuthConfiguredFlags {
+        let config = self.config.lock().await;
+        OAuthConfiguredFlags {
+            twitch: config.has_twitch(),
+            youtube: config.has_youtube(),
+            kick: config.has_kick(),
+            facebook: config.has_facebook(),
+            trovo: config.has_trovo(),
+        }
+    }
+}
+
+/// Per-provider "are real credentials present in this build/env" flags.
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OAuthConfiguredFlags {
+    pub twitch: bool,
+    pub youtube: bool,
+    pub kick: bool,
+    pub facebook: bool,
+    pub trovo: bool,
 }

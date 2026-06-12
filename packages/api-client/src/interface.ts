@@ -200,7 +200,9 @@ export interface FilesApi {
 
 export interface OAuthApi {
   isConfigured(provider: string): Promise<boolean>;
-  startFlow(provider: string): Promise<OAuthFlowResult>;
+  /** Starts the provider's flow; `browserOpened: false` means the UI
+   *  must surface `authUrl` with a copy affordance. */
+  startFlow(provider: string): Promise<OAuthFlowResult & { browserOpened: boolean }>;
   completeFlow(
     provider: string,
     code: string,
@@ -222,12 +224,19 @@ export interface OAuthApi {
     refreshToken?: string;
     expiresIn?: number;
   }>;
-  getConfig(): Promise<{ twitchConfigured: boolean; youtubeConfigured: boolean }>;
+  /** Truthful per-provider configured flags (placeholders report false). */
+  getConfig(): Promise<import('./api/oauth').OAuthConfiguredFlags>;
   setConfig(config: {
     twitchClientId?: string;
     twitchClientSecret?: string;
     youtubeClientId?: string;
     youtubeClientSecret?: string;
+    kickClientId?: string;
+    kickClientSecret?: string;
+    facebookClientId?: string;
+    facebookClientSecret?: string;
+    trovoClientId?: string;
+    trovoClientSecret?: string;
   }): Promise<void>;
 }
 

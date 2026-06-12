@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, MessageSquare } from 'lucide-react';
 import { useProfileStore } from '@/stores/profileStore';
+import { api } from '@/lib/client';
+import type { OAuthConfiguredFlags } from '@spiritstream/api-client';
 import { toast } from '@/hooks/useToast';
 import { logger } from '@/lib/logger';
 import { createDefaultChatSettings } from '@/lib/profile-helpers';
@@ -51,6 +53,26 @@ export function ChatPanel(): React.ReactElement {
   const { t } = useTranslation();
   const currentProfile = useProfileStore((state) => state.current);
   const updateProfileSettings = useProfileStore((state) => state.updateProfileSettings);
+
+  // Backend-truth per-provider configured flags (placeholder client
+  // credentials report false). Until they load — or if the fetch fails —
+  // buttons stay in the honest "not set up" state rather than launching
+  // a flow the backend would refuse.
+  const [oauthFlags, setOauthFlags] = useState<OAuthConfiguredFlags | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api.oauth
+      .getConfig()
+      .then((flags) => {
+        if (!cancelled) setOauthFlags(flags);
+      })
+      .catch((error) => {
+        logger.error('[ChatPanel] failed to load oauth config flags:', error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const chatSettings = useMemo(
     () => currentProfile?.settings?.chat ?? createDefaultChatSettings(),
@@ -329,6 +351,7 @@ export function ChatPanel(): React.ReactElement {
               provider="twitch"
               signedInAs={currentProfile.settings.oauth.twitch.username}
               signInLabel={t('chat.twitch.loginWithTwitch', { defaultValue: 'Login with Twitch' })}
+              configured={oauthFlags?.twitchConfigured ?? false}
             />
             <div className="mt-3">
               <Toggle
@@ -395,6 +418,7 @@ export function ChatPanel(): React.ReactElement {
                 <PlatformSignInButton
                   provider="youtube"
                   signedInAs={currentProfile.settings.oauth.youtube.username}
+                  configured={oauthFlags?.youtubeConfigured ?? false}
                   signInLabel={t('chat.youtube.loginWithYouTube', {
                     defaultValue: 'Login with YouTube',
                   })}
@@ -478,6 +502,7 @@ export function ChatPanel(): React.ReactElement {
               provider="kick"
               signedInAs={currentProfile.settings.oauth.kick.username}
               signInLabel={t('chat.kick.loginWithKick', { defaultValue: 'Login with Kick' })}
+              configured={oauthFlags?.kickConfigured ?? false}
             />
             <div className="mt-3">
               <Toggle
@@ -524,7 +549,9 @@ export function ChatPanel(): React.ReactElement {
       )}
 
       {/* Facebook — identity-revealing connect gate */}
-      {resolvedVisiblePlatforms.includes('facebook') && <FacebookConnectGate />}
+      {resolvedVisiblePlatforms.includes('facebook') && (
+        <FacebookConnectGate oauthConfigured={oauthFlags?.facebookConfigured ?? false} />
+      )}
     </div>
   );
 }

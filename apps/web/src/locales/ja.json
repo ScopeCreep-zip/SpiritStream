@@ -96,6 +96,9 @@
     "noProfile": "チャットを設定するにはプロファイルを有効化してください。",
     "oauth": {
       "browserOpened": "ブラウザを確認して認証を完了してください",
+      "copyLink": "リンクをコピー",
+      "notConfigured": "このビルドではサインインが設定されていません — このプラットフォーム用のクライアント資格情報がありません。",
+      "openManually": "ブラウザが開きませんでした — サインインリンクをコピーしてください:",
       "signOutFailed": "サインアウトに失敗しました: {{error}}",
       "signedInAs": "{{username}}としてログイン中",
       "signedOut": "{{platform}}からログアウトしました",

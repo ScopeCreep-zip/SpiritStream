@@ -96,6 +96,9 @@
     "noProfile": "Activa un perfil para configurar el chat.",
     "oauth": {
       "browserOpened": "Verifique su navegador para completar la autenticación",
+      "copyLink": "Copiar enlace",
+      "notConfigured": "El inicio de sesión no está configurado en esta versión: faltan credenciales de cliente para esta plataforma.",
+      "openManually": "Tu navegador no se abrió — copia el enlace de inicio de sesión:",
       "signOutFailed": "Error al cerrar sesión: {{error}}",
       "signedInAs": "Conectado como {{username}}",
       "signedOut": "Sesión cerrada en {{platform}}",

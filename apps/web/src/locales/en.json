@@ -96,6 +96,9 @@
     "noProfile": "Activate a profile to configure chat.",
     "oauth": {
       "browserOpened": "Check your browser to complete authentication",
+      "copyLink": "Copy link",
+      "notConfigured": "Sign-in is not set up in this build — no client credentials for this platform.",
+      "openManually": "Your browser didn’t open — copy the sign-in link:",
       "signOutFailed": "Failed to sign out: {{error}}",
       "signedInAs": "Signed in as {{username}}",
       "signedOut": "Signed out of {{platform}}",

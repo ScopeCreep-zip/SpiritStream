@@ -1,25 +1,31 @@
 #!/usr/bin/env bash
-# `oauth config get` returns the OAuth client config as JSON. On a fresh
-# install (no operator overrides), every field is None / omitted —
-# `skip_serializing_if = "Option::is_none"` keeps the wire shape compact.
-# The `set` path is in-memory only (one CLI invocation = fresh process),
-# so we don't test roundtrip — that's an HTTP-mode property where the
-# server stays running.
+# `oauth config get` returns client-id overrides + the derived
+# per-provider `configured` truth flags (placeholder credentials report
+# false — the dead-link fix). Secret VALUES never print. The `set` path
+# is in-memory only (one CLI invocation = fresh process), so we don't
+# test roundtrip — that's an HTTP-mode property where the server stays
+# running.
 set -euo pipefail
+
+# A developer shell may have real credentials exported — drop them so
+# the fresh-install truth-flags assertion is hermetic.
+for v in TWITCH YOUTUBE KICK FACEBOOK TROVO; do
+  unset "SPIRITSTREAM_${v}_CLIENT_ID" "SPIRITSTREAM_${v}_CLIENT_SECRET" || true
+done
 
 out=$("$SPIRITSTREAM_CLI" --data-dir "$SPIRITSTREAM_TEST_DATA_DIR" --quiet \
   oauth config get)
 echo "$out" | python3 -c '
 import json, sys
 c = json.load(sys.stdin)
-# Wire shape: omitted-on-None fields. A fresh install should serialize as
-# an empty object (or only contain Some(...) fields if operator-overridden,
-# which fresh installs do not have).
-assert isinstance(c, dict), c
-# Spot-check that no unexpected keys leak through.
-allowed = {"twitchClientId", "twitchClientSecret", "youtubeClientId", "youtubeClientSecret"}
-unexpected = set(c.keys()) - allowed
-assert not unexpected, f"unexpected oauth config keys: {unexpected}"
+assert set(c.keys()) == {"overrides", "configured"}, c
+# No secret values anywhere in the output.
+assert not any("Secret" in k for k in c["overrides"]), c
+flags = c["configured"]
+assert set(flags.keys()) == {"twitch", "youtube", "kick", "facebook", "trovo"}, flags
+# Fresh install (no env injection in the test harness): every provider
+# honestly reports unconfigured.
+assert all(v is False for v in flags.values()), flags
 '
 
 # `oauth config set` returns success even though it does not persist

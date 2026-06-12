@@ -121,6 +121,26 @@ impl super::OAuthService {
 
         let config = self.config.lock().await;
 
+        // Fail loud BEFORE binding callback ports or building a URL.
+        // Pre-fix, an un-injected placeholder rode into the authorize
+        // URL (`client_id=TWITCH_CLIENT_ID_PLACEHOLDER`) and the user's
+        // browser opened straight onto the provider's 400 page.
+        // (`exchange_code` needs no twin guard: it requires a pending
+        // flow, and no flow can start past this check.)
+        let configured = match provider_name {
+            "twitch" => config.has_twitch(),
+            "youtube" => config.has_youtube(),
+            "kick" => config.has_kick(),
+            "facebook" => config.has_facebook(),
+            "trovo" => config.has_trovo(),
+            _ => return Err(unknown_provider(provider_name)),
+        };
+        if !configured {
+            return Err(CoreError::OAuthProviderNotConfigured {
+                provider: provider_name.to_string(),
+            });
+        }
+
         let (provider, client_id, client_secret) = match provider_name {
             "twitch" => (
                 OAuthProvider::twitch(),
@@ -277,6 +297,26 @@ impl super::OAuthService {
         }
 
         let config = self.config.lock().await;
+
+        // Fail loud BEFORE binding callback ports or building a URL.
+        // Pre-fix, an un-injected placeholder rode into the authorize
+        // URL (`client_id=TWITCH_CLIENT_ID_PLACEHOLDER`) and the user's
+        // browser opened straight onto the provider's 400 page.
+        // (`exchange_code` needs no twin guard: it requires a pending
+        // flow, and no flow can start past this check.)
+        let configured = match provider_name {
+            "twitch" => config.has_twitch(),
+            "youtube" => config.has_youtube(),
+            "kick" => config.has_kick(),
+            "facebook" => config.has_facebook(),
+            "trovo" => config.has_trovo(),
+            _ => return Err(unknown_provider(provider_name)),
+        };
+        if !configured {
+            return Err(CoreError::OAuthProviderNotConfigured {
+                provider: provider_name.to_string(),
+            });
+        }
 
         let (provider, client_id, client_secret) = match provider_name {
             "twitch" => (
@@ -469,7 +509,11 @@ mod tests {
 
     #[tokio::test]
     async fn start_flow_kick_uses_pkce_and_registers_pending() {
-        let svc = OAuthService::new(OAuthConfig::default());
+        let svc = OAuthService::new(OAuthConfig {
+            kick_client_id: Some("test-kick-id".into()),
+            kick_client_secret: Some("test-kick-secret".into()),
+            ..OAuthConfig::default()
+        });
         let res = svc.start_flow("kick").await.expect("kick flow starts");
         assert!(res
             .auth_url

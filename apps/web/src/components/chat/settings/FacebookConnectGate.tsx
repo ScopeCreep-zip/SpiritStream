@@ -24,7 +24,15 @@ import { createDefaultChatSettings } from '@/lib/profile-helpers';
  * component until the user clicks Connect; only then does the
  * combined payload reach the backend.
  */
-export function FacebookConnectGate(): React.ReactElement {
+interface FacebookConnectGateProps {
+  /** Backend-truth flag from `GET /oauth/config` — gates the OAuth
+   *  button; the manual Page-Token path below works regardless. */
+  oauthConfigured: boolean;
+}
+
+export function FacebookConnectGate({
+  oauthConfigured,
+}: FacebookConnectGateProps): React.ReactElement {
   const { t } = useTranslation();
   const currentProfile = useProfileStore((state) => state.current);
   const updateProfileSettings = useProfileStore((state) => state.updateProfileSettings);
@@ -218,6 +226,7 @@ export function FacebookConnectGate(): React.ReactElement {
           <PlatformSignInButton
             provider="facebook"
             signedInAs={currentProfile?.settings?.oauth?.facebook?.username ?? ''}
+            configured={oauthConfigured}
             signInLabel={t('chat.facebook.loginWithFacebook', {
               defaultValue: 'Login with Facebook',
             })}

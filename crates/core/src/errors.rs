@@ -91,6 +91,17 @@ pub enum CoreError {
     #[error("no active profile")]
     NoActiveProfile,
 
+    /// The OAuth provider has no real client credentials in this build —
+    /// the resolved client id (and secret, where the provider requires
+    /// one at token exchange) is still the embedded placeholder. Raised
+    /// BEFORE any browser opens: pre-fix, the placeholder rode into the
+    /// authorize URL and the user landed on the provider's 400 page.
+    #[error("oauth provider not configured: {provider}")]
+    // serde's snake_case would split the acronym ("o_auth_…"); pin the
+    // wire kind to match `CoreError::kind()` exactly.
+    #[serde(rename = "oauth_provider_not_configured")]
+    OAuthProviderNotConfigured { provider: String },
+
     /// Chat platform connector has not been opened (or has dropped) before
     /// the caller asked it to send. Plan-cited variant: "new variants are
     /// added as the migration surfaces them (e.g., `ChatPlatformNotConnected
@@ -161,6 +172,7 @@ impl CoreError {
             CoreError::RateLimited { .. } => "rate_limited",
             CoreError::Unauthorized => "unauthorized",
             CoreError::NoActiveProfile => "no_active_profile",
+            CoreError::OAuthProviderNotConfigured { .. } => "oauth_provider_not_configured",
             CoreError::ChatPlatformNotConnected { .. } => "chat_platform_not_connected",
             CoreError::ChatSendingDisabled { .. } => "chat_sending_disabled",
             CoreError::ChatMessageLengthExceeded { .. } => "chat_message_length_exceeded",
@@ -230,6 +242,9 @@ mod tests {
             },
             CoreError::Unauthorized,
             CoreError::NoActiveProfile,
+            CoreError::OAuthProviderNotConfigured {
+                provider: "twitch".into(),
+            },
             CoreError::ChatPlatformNotConnected {
                 platform: "twitch".into(),
             },

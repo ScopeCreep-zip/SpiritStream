@@ -534,18 +534,43 @@ fn settings_get_unknown_key_exits_with_argument_error() {
 }
 
 #[test]
-fn oauth_start_returns_auth_url_and_callback_port() {
-    // `oauth start` is no longer a stub. It returns the auth URL
-    // the user must open in their browser plus the callback port the server
-    // is listening on, matching the typed REST surface.
+fn oauth_start_refuses_unconfigured_and_returns_auth_url_when_configured() {
+    // Unconfigured (placeholder credentials): typed refusal, exit 78
+    // (EX_CONFIG) — pre-fix this built an authorize URL containing the
+    // literal placeholder and sent users to a provider 400 page.
     let tmp = TempDir::new().expect("tempdir");
-    let out = run_cli(&["oauth", "start", "twitch"], tmp.path());
-    assert!(out.status.success(), "oauth start should succeed: {out:?}");
+    let out = Command::new(cli_binary())
+        .arg("--data-dir")
+        .arg(tmp.path())
+        .arg("--quiet")
+        .args(["oauth", "start", "kick"])
+        .env_remove("SPIRITSTREAM_KICK_CLIENT_ID")
+        .env_remove("SPIRITSTREAM_KICK_CLIENT_SECRET")
+        .output()
+        .expect("spawn spiritstream-cli");
+    assert_eq!(
+        out.status.code(),
+        Some(78),
+        "unconfigured provider must exit EX_CONFIG: {out:?}"
+    );
+
+    // Configured via env: the loopback flow starts and returns the auth
+    // URL + bound callback port + state nonce.
+    let out = Command::new(cli_binary())
+        .arg("--data-dir")
+        .arg(tmp.path())
+        .arg("--quiet")
+        .args(["oauth", "start", "kick"])
+        .env("SPIRITSTREAM_KICK_CLIENT_ID", "test-kick-id")
+        .env("SPIRITSTREAM_KICK_CLIENT_SECRET", "test-kick-secret")
+        .output()
+        .expect("spawn spiritstream-cli");
+    assert!(out.status.success(), "configured oauth start should succeed: {out:?}");
     let body = stdout_json(&out);
     assert!(body["auth_url"]
         .as_str()
         .unwrap_or("")
-        .starts_with("https://"));
+        .starts_with("https://id.kick.com/"));
     assert!(body["callback_port"].as_u64().is_some());
     assert!(body["state"].as_str().is_some());
 }

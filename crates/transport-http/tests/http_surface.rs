@@ -39,3 +39,7 @@ mod csrf;
 
 #[path = "http_surface/auth.rs"]
 mod auth;
+
+// OAuth config truth + unconfigured pre-flight guard.
+#[path = "http_surface/oauth.rs"]
+mod oauth;

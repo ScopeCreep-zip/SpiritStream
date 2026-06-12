@@ -35,7 +35,8 @@ pub enum OAuthCmd {
         #[arg(long = "password-from", value_enum)]
         password_from: Option<crate::secret_input::SecretSource>,
     },
-    /// Report whether `<provider>` is configured (always true with embedded client IDs).
+    /// Report whether `<provider>` has REAL credentials in this build
+    /// (env override or release-embedded — placeholders report false).
     IsConfigured { provider: String },
     /// Refresh `<provider>`'s access token using the refresh token
     /// STORED on `--profile` (by-reference — the secret never rides
@@ -112,6 +113,10 @@ pub struct ConfigSetArgs {
     pub facebook_client_id: Option<String>,
     #[arg(long)]
     pub facebook_client_secret: Option<String>,
+    #[arg(long)]
+    pub trovo_client_id: Option<String>,
+    #[arg(long)]
+    pub trovo_client_secret: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -331,8 +336,22 @@ pub async fn run(
         }
         OAuthCmd::Config { action } => match action {
             ConfigCmd::Get => {
+                // Client-id overrides + the derived per-provider truth
+                // flags (same source the HTTP config endpoint serves).
+                // Secret VALUES are deliberately omitted — `configured`
+                // already conveys their presence.
                 let config = registry.oauth.get_config().await;
-                out.emit(&config)?;
+                let flags = registry.oauth.configured_flags().await;
+                out.emit(&serde_json::json!({
+                    "overrides": {
+                        "twitchClientId": config.twitch_client_id,
+                        "youtubeClientId": config.youtube_client_id,
+                        "kickClientId": config.kick_client_id,
+                        "facebookClientId": config.facebook_client_id,
+                        "trovoClientId": config.trovo_client_id,
+                    },
+                    "configured": flags,
+                }))?;
                 Ok(())
             }
             ConfigCmd::Set(args) => {
@@ -346,6 +365,8 @@ pub async fn run(
                     kick_client_secret,
                     facebook_client_id,
                     facebook_client_secret,
+                    trovo_client_id,
+                    trovo_client_secret,
                 } = *args;
                 let config: spiritstream_core::services::OAuthConfig = if let Some(raw) = json {
                     serde_json::from_str(&raw)
@@ -360,6 +381,8 @@ pub async fn run(
                         kick_client_secret,
                         facebook_client_id,
                         facebook_client_secret,
+                        trovo_client_id,
+                        trovo_client_secret,
                     }
                 };
                 registry.oauth.update_config(config).await;
