@@ -111,6 +111,7 @@ fn status_for(err: &CoreError) -> StatusCode {
         // 409: the request is valid but this BUILD can't serve it until
         // credentials are configured — distinct from 400 (caller error).
         CoreError::OAuthProviderNotConfigured { .. } => StatusCode::CONFLICT,
+        CoreError::OAuthFlowRequiresDevice { .. } => StatusCode::CONFLICT,
         CoreError::ChatPlatformNotConnected { .. } => StatusCode::UNPROCESSABLE_ENTITY,
         CoreError::ChatSendingDisabled { .. } => StatusCode::UNPROCESSABLE_ENTITY,
         CoreError::ChatMessageLengthExceeded { .. } => StatusCode::BAD_REQUEST,

@@ -38,6 +38,19 @@ pub enum OAuthCmd {
     /// Report whether `<provider>` has REAL credentials in this build
     /// (env override or release-embedded — placeholders report false).
     IsConfigured { provider: String },
+    /// Sign in via the Device Code Flow (Twitch's mandated desktop
+    /// path): prints a short code + verification URL, polls until you
+    /// approve in any browser, then persists the account to
+    /// `--profile`. No loopback server, no redirect URI.
+    Device {
+        provider: String,
+        /// Profile to persist the signed-in account onto.
+        #[arg(long)]
+        profile: String,
+        /// Password source for encrypted profiles.
+        #[arg(long = "password-from", value_enum)]
+        password_from: Option<crate::secret_input::SecretSource>,
+    },
     /// Refresh `<provider>`'s access token using the refresh token
     /// STORED on `--profile` (by-reference — the secret never rides
     /// argv), and persist the rotated tokens back to the profile.
@@ -228,6 +241,64 @@ pub async fn run(
         OAuthCmd::IsConfigured { provider } => {
             let configured = registry.oauth.is_configured(&provider).await;
             out.emit(&serde_json::json!({ "provider": provider, "configured": configured }))?;
+            Ok(())
+        }
+        OAuthCmd::Device {
+            provider,
+            profile,
+            password_from,
+        } => {
+            let password =
+                crate::secret_input::read_optional_secret(password_from, "Profile password")?;
+            // Load the profile FIRST so a bad name/password fails before
+            // the user goes through the approve-in-browser dance.
+            let mut p = registry
+                .profiles
+                .load_with_key_decryption(&profile, password.as_deref())
+                .await?;
+
+            let start = registry.oauth.start_device_flow(&provider).await?;
+            eprintln!(
+                "Visit {} and enter code: {}  (expires in {}s)",
+                start.verification_uri, start.user_code, start.expires_in
+            );
+            let result = registry.oauth.poll_device_flow(&provider, &start).await?;
+
+            let now = chrono::Utc::now().timestamp();
+            let expires_at = result
+                .tokens
+                .expires_in
+                .map(|s| now.saturating_add(i64::try_from(s).unwrap_or(i64::MAX)))
+                .unwrap_or(0);
+            let account = match provider.as_str() {
+                "twitch" => &mut p.settings.oauth.twitch,
+                "youtube" => &mut p.settings.oauth.youtube,
+                "kick" => &mut p.settings.oauth.kick,
+                "facebook" => &mut p.settings.oauth.facebook,
+                other => {
+                    return Err(CliError::Argument(format!(
+                        "unknown oauth provider: {other} (expected twitch|youtube|kick|facebook)"
+                    )));
+                }
+            };
+            account.access_token = result.tokens.access_token.clone();
+            if let Some(rt) = result.tokens.refresh_token.clone() {
+                account.refresh_token = rt;
+            }
+            account.expires_at = expires_at;
+            account.user_id = result.user_info.user_id.clone();
+            account.username = result.user_info.username.clone();
+            account.display_name = result.user_info.display_name.clone();
+            registry
+                .profiles
+                .save_with_key_encryption(&p, password.as_deref())
+                .await?;
+            out.emit(&serde_json::json!({
+                "provider": provider,
+                "loggedIn": true,
+                "username": result.user_info.username,
+                "expiresAt": expires_at,
+            }))?;
             Ok(())
         }
         OAuthCmd::Refresh {

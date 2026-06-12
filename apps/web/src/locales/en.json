@@ -96,7 +96,11 @@
     "noProfile": "Activate a profile to configure chat.",
     "oauth": {
       "browserOpened": "Check your browser to complete authentication",
+      "copyCode": "Copy code",
       "copyLink": "Copy link",
+      "deviceExpires": "Code expires in {{seconds}}s. This panel closes when sign-in completes.",
+      "deviceFailed": "Sign-in did not complete: {{reason}}",
+      "deviceInstruction": "Open this page on any device and enter the code:",
       "notConfigured": "Sign-in is not set up in this build — no client credentials for this platform.",
       "openManually": "Your browser didn’t open — copy the sign-in link:",
       "signOutFailed": "Failed to sign out: {{error}}",

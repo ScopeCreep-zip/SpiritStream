@@ -1,4 +1,4 @@
-import type { OAuthAccountStatus, OAuthFlowResult } from '@spiritstream/types';
+import type { OAuthAccountStatus } from '@spiritstream/types';
 import { fetchTypedJson } from './_internal';
 
 /** Per-provider "real credentials present in this build/env" flags. */
@@ -10,9 +10,25 @@ export interface OAuthConfiguredFlags {
   trovoConfigured: boolean;
 }
 
-/** `startFlow` response: core flow result + whether the server managed
- *  to open the system browser (false → show a copy-link affordance). */
-export type OAuthFlowStarted = OAuthFlowResult & { browserOpened: boolean };
+/**
+ * `startFlow` response — the BACKEND chooses the grant per provider:
+ * - `flow: 'redirect'` → loopback authorization-code; `authUrl` etc.
+ *   present, `browserOpened: false` means show a copy-link affordance.
+ * - `flow: 'device'`   → RFC 8628 device code (Twitch's mandated
+ *   desktop sign-in); render `userCode` + `verificationUri` and wait
+ *   for the `oauth_complete` event.
+ */
+export interface OAuthFlowStarted {
+  flow: 'redirect' | 'device';
+  authUrl?: string;
+  callbackPort?: number;
+  state?: string;
+  browserOpened?: boolean;
+  userCode?: string;
+  verificationUri?: string;
+  expiresIn?: number;
+  interval?: number;
+}
 
 export const oauth = {
   isConfigured: (provider: string) =>

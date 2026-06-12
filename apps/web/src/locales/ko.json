@@ -96,7 +96,11 @@
     "noProfile": "채팅을 구성하려면 프로필을 활성화하세요.",
     "oauth": {
       "browserOpened": "브라우저를 확인하여 인증을 완료하세요.",
+      "copyCode": "코드 복사",
       "copyLink": "링크 복사",
+      "deviceExpires": "코드는 {{seconds}}초 후 만료됩니다. 로그인이 완료되면 이 패널이 닫힙니다.",
+      "deviceFailed": "로그인이 완료되지 않았습니다: {{reason}}",
+      "deviceInstruction": "아무 기기에서나 이 페이지를 열고 코드를 입력하세요:",
       "notConfigured": "이 빌드에는 로그인이 설정되어 있지 않습니다 — 이 플랫폼용 클라이언트 자격 증명이 없습니다.",
       "openManually": "브라우저가 열리지 않았습니다 — 로그인 링크를 복사하세요:",
       "signOutFailed": "로그아웃 실패: {{error}}",

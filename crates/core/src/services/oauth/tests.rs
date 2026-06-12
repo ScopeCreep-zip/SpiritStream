@@ -396,3 +396,57 @@ fn empty_profile() -> crate::models::Profile {
         anonymous_salt: String::new(),
     }
 }
+
+// ===== public-client refresh (wiremock; Twitch ships without a secret) =====
+
+#[tokio::test]
+async fn twitch_public_client_refresh_omits_secret_and_returns_rotated_tokens() {
+    use wiremock::matchers::{body_string_contains, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/oauth2/token"))
+        .and(body_string_contains("grant_type=refresh_token"))
+        .and(body_string_contains("client_id=test-twitch-id"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "access_token": "rotated-access",
+            "refresh_token": "rotated-refresh",
+            "expires_in": 14400,
+            "token_type": "bearer"
+        })))
+        .mount(&server)
+        .await;
+
+    let svc = OAuthService::new(OAuthConfig {
+        twitch_client_id: Some("test-twitch-id".into()),
+        // No secret: the shipped Twitch app is a PUBLIC client; its
+        // refresh must not send client_secret (and must still work —
+        // public-client refresh tokens rotate on every use and expire
+        // after 30 idle days, so this path keeps users signed in).
+        ..OAuthConfig::default()
+    });
+    svc.override_provider(OAuthProvider {
+        name: "twitch".into(),
+        auth_url: format!("{}/oauth2/authorize", server.uri()),
+        token_url: format!("{}/oauth2/token", server.uri()),
+        device_url: Some(format!("{}/oauth2/device", server.uri())),
+        user_info_url: format!("{}/helix/users", server.uri()),
+        scopes: vec!["chat:read"],
+    });
+
+    let tokens = svc
+        .refresh_token("twitch", "old-refresh")
+        .await
+        .expect("public-client refresh succeeds");
+    assert_eq!(tokens.access_token, "rotated-access");
+    assert_eq!(tokens.refresh_token.as_deref(), Some("rotated-refresh"));
+
+    // The mock matched on body contents; assert the secret was absent.
+    let requests = server.received_requests().await.unwrap();
+    let body = String::from_utf8_lossy(&requests[0].body).to_string();
+    assert!(
+        !body.contains("client_secret"),
+        "public client must not send a secret: {body}"
+    );
+}

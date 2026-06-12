@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use super::pkce::generate_pkce_pair;
 use super::provider::OAuthProvider;
-use super::tokens::{OAuthCompleteResult, OAuthTokens, OAuthUserInfo};
+use super::tokens::{OAuthCompleteResult, OAuthTokens};
 use super::{network, unknown_provider};
 
 /// Result of initiating an OAuth flow. ts-rs-exported so the
@@ -170,17 +170,28 @@ impl super::OAuthService {
         let port = Self::find_available_port()?;
         let redirect_uri = format!("http://localhost:{}/oauth/callback", port);
 
-        let (use_implicit, use_pkce) = match provider_name {
-            // Twitch requires client secret for auth-code token exchange.
-            // Fall back to implicit flow when no secret is configured.
-            "twitch" => (client_secret.is_none(), false),
+        let use_pkce = match provider_name {
+            // Twitch does not support PKCE at the token exchange — the
+            // loopback auth-code flow only works with a confidential
+            // secret override (power users). The shipped PUBLIC client
+            // signs in via the Device Code Flow; the old implicit-grant
+            // fallback is gone (no refresh token, not the 2026 desktop
+            // pattern, and Twitch mandates DCF for desktop apps).
+            "twitch" => {
+                if client_secret.is_none() {
+                    return Err(CoreError::OAuthFlowRequiresDevice {
+                        provider: provider_name.to_string(),
+                    });
+                }
+                false
+            }
             // Kick mandates auth code + PKCE (OAuth 2.1 — no implicit flow).
-            "kick" => (false, true),
+            "kick" => true,
             // Facebook's web OAuth uses auth code + App Secret (no PKCE).
             // The token exchange requires both client_id + client_secret.
-            "facebook" => (false, false),
+            "facebook" => false,
             // YouTube uses auth code + PKCE.
-            _ => (false, true),
+            _ => true,
         };
 
         let (code_verifier, code_challenge) = if use_pkce {
@@ -191,13 +202,12 @@ impl super::OAuthService {
         };
 
         let state = uuid::Uuid::new_v4().to_string();
-        let response_type = if use_implicit { "token" } else { "code" };
         let auth_url = Self::build_auth_url(
             &provider,
             &client_id,
             &redirect_uri,
             &state,
-            response_type,
+            "code",
             code_challenge.as_deref(),
         );
 
@@ -225,13 +235,7 @@ impl super::OAuthService {
             flows.insert(state.clone(), pending_flow);
         }
 
-        let flow_label = if use_implicit {
-            "implicit"
-        } else if use_pkce {
-            "PKCE"
-        } else {
-            "auth code"
-        };
+        let flow_label = if use_pkce { "PKCE" } else { "auth code" };
         info!(
             "Starting {} OAuth flow with {} on port {}",
             provider_name, flow_label, port
@@ -242,27 +246,6 @@ impl super::OAuthService {
             callback_port: port,
             state,
         })
-    }
-
-    /// Validate + consume the `state` nonce for an implicit-flow
-    /// callback. The auth-code path validates state inside
-    /// `exchange_code`; the implicit path used to bind `state: _` and
-    /// accept ANY access token delivered to the loopback callback —
-    /// CSRF/token-injection defense was silently absent on that one
-    /// provider path while the code claimed otherwise.
-    pub async fn consume_implicit_state(
-        &self,
-        provider_name: &str,
-        state: &str,
-    ) -> Result<(), CoreError> {
-        let pending = {
-            let mut flows = self.pending_flows.lock().await;
-            flows.remove(state)
-        };
-        match pending {
-            Some(flow) if flow.provider == provider_name && flow.state == state => Ok(()),
-            _ => Err(CoreError::Unauthorized),
-        }
     }
 
     /// Exchange an authorization code for tokens (PKCE flow).
@@ -296,46 +279,22 @@ impl super::OAuthService {
             });
         }
 
+        // No configured guard here: an exchange requires a pending flow,
+        // and no flow can start past `start_flow`'s guard. Endpoints via
+        // `provider_for` (test-overridable); credentials from config.
+        let provider = self.provider_for(provider_name)?;
         let config = self.config.lock().await;
-
-        // Fail loud BEFORE binding callback ports or building a URL.
-        // Pre-fix, an un-injected placeholder rode into the authorize
-        // URL (`client_id=TWITCH_CLIENT_ID_PLACEHOLDER`) and the user's
-        // browser opened straight onto the provider's 400 page.
-        // (`exchange_code` needs no twin guard: it requires a pending
-        // flow, and no flow can start past this check.)
-        let configured = match provider_name {
-            "twitch" => config.has_twitch(),
-            "youtube" => config.has_youtube(),
-            "kick" => config.has_kick(),
-            "facebook" => config.has_facebook(),
-            "trovo" => config.has_trovo(),
-            _ => return Err(unknown_provider(provider_name)),
-        };
-        if !configured {
-            return Err(CoreError::OAuthProviderNotConfigured {
-                provider: provider_name.to_string(),
-            });
-        }
-
-        let (provider, client_id, client_secret) = match provider_name {
+        let (client_id, client_secret) = match provider_name {
             "twitch" => (
-                OAuthProvider::twitch(),
                 config.get_twitch_client_id(),
                 config.get_twitch_client_secret(),
             ),
             "youtube" => (
-                OAuthProvider::youtube(),
                 config.get_youtube_client_id(),
                 config.get_youtube_client_secret(),
             ),
-            "kick" => (
-                OAuthProvider::kick(),
-                config.get_kick_client_id(),
-                config.get_kick_client_secret(),
-            ),
+            "kick" => (config.get_kick_client_id(), config.get_kick_client_secret()),
             "facebook" => (
-                OAuthProvider::facebook(),
                 config.get_facebook_client_id(),
                 config.get_facebook_client_secret(),
             ),
@@ -405,10 +364,30 @@ impl super::OAuthService {
         state: &str,
     ) -> Result<OAuthCompleteResult, CoreError> {
         let tokens = self.exchange_code(provider_name, code, state).await?;
+        let user_info = self
+            .fetch_user_info(provider_name, &tokens.access_token)
+            .await?;
 
+        info!(
+            "OAuth flow complete for {} user: {}",
+            provider_name, user_info.display_name
+        );
+
+        Ok(OAuthCompleteResult { tokens, user_info })
+    }
+
+    /// Bearer-identified user lookup, normalized into [`OAuthUserInfo`].
+    /// Shared by the loopback `complete_flow` and the device flow's
+    /// grant handler — one persistence shape for both sign-in paths.
+    pub(in crate::services::oauth) async fn fetch_user_info(
+        &self,
+        provider_name: &str,
+        access_token: &str,
+    ) -> Result<crate::services::oauth::OAuthUserInfo, CoreError> {
+        use crate::services::oauth::OAuthUserInfo;
         let user_info = match provider_name {
             "twitch" => {
-                let user = self.fetch_twitch_user(&tokens.access_token).await?;
+                let user = self.fetch_twitch_user(access_token).await?;
                 OAuthUserInfo {
                     provider: "twitch".to_string(),
                     user_id: user.id,
@@ -417,7 +396,7 @@ impl super::OAuthService {
                 }
             }
             "youtube" => {
-                let channel = self.fetch_youtube_channel(&tokens.access_token).await?;
+                let channel = self.fetch_youtube_channel(access_token).await?;
                 OAuthUserInfo {
                     provider: "youtube".to_string(),
                     user_id: channel.id.clone(),
@@ -426,7 +405,7 @@ impl super::OAuthService {
                 }
             }
             "facebook" => {
-                let user = self.fetch_facebook_user(&tokens.access_token).await?;
+                let user = self.fetch_facebook_user(access_token).await?;
                 OAuthUserInfo {
                     provider: "facebook".to_string(),
                     user_id: user.id,
@@ -435,7 +414,7 @@ impl super::OAuthService {
                 }
             }
             "kick" => {
-                let user = self.fetch_kick_user(&tokens.access_token).await?;
+                let user = self.fetch_kick_user(access_token).await?;
                 OAuthUserInfo {
                     provider: "kick".to_string(),
                     user_id: user.user_id.to_string(),
@@ -445,13 +424,7 @@ impl super::OAuthService {
             }
             _ => return Err(unknown_provider(provider_name)),
         };
-
-        info!(
-            "OAuth flow complete for {} user: {}",
-            provider_name, user_info.display_name
-        );
-
-        Ok(OAuthCompleteResult { tokens, user_info })
+        Ok(user_info)
     }
 }
 

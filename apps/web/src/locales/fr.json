@@ -96,7 +96,11 @@
     "noProfile": "Activez un profil pour configurer le chat.",
     "oauth": {
       "browserOpened": "Vérifiez votre navigateur pour terminer l'authentification",
+      "copyCode": "Copier le code",
       "copyLink": "Copier le lien",
+      "deviceExpires": "Le code expire dans {{seconds}} s. Ce panneau se ferme une fois la connexion terminée.",
+      "deviceFailed": "La connexion n'a pas abouti : {{reason}}",
+      "deviceInstruction": "Ouvrez cette page sur n'importe quel appareil et saisissez le code :",
       "notConfigured": "La connexion n'est pas configurée dans cette version — aucun identifiant client pour cette plateforme.",
       "openManually": "Votre navigateur ne s'est pas ouvert — copiez le lien de connexion :",
       "signOutFailed": "Échec de la déconnexion : {{error}}",

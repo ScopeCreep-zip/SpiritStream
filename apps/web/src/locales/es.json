@@ -96,7 +96,11 @@
     "noProfile": "Activa un perfil para configurar el chat.",
     "oauth": {
       "browserOpened": "Verifique su navegador para completar la autenticación",
+      "copyCode": "Copiar código",
       "copyLink": "Copiar enlace",
+      "deviceExpires": "El código caduca en {{seconds}} s. Este panel se cierra al completar el inicio de sesión.",
+      "deviceFailed": "El inicio de sesión no se completó: {{reason}}",
+      "deviceInstruction": "Abre esta página en cualquier dispositivo e introduce el código:",
       "notConfigured": "El inicio de sesión no está configurado en esta versión: faltan credenciales de cliente para esta plataforma.",
       "openManually": "Tu navegador no se abrió — copia el enlace de inicio de sesión:",
       "signOutFailed": "Error al cerrar sesión: {{error}}",

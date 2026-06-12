@@ -53,6 +53,7 @@ impl CliError {
                 CoreError::ChatBlockedByPii { .. } => 19,
                 CoreError::AnonymousSaltInvalid => 20,
                 CoreError::OAuthProviderNotConfigured { .. } => 78, // EX_CONFIG
+                CoreError::OAuthFlowRequiresDevice { .. } => 64,    // EX_USAGE: use `oauth device`
                 CoreError::NotImplemented { .. } => 78, // EX_CONFIG
                 CoreError::NetworkError { .. } => 69,   // EX_UNAVAILABLE
                 CoreError::Internal { .. } => 70,       // EX_SOFTWARE

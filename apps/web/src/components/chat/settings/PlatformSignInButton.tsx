@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Copy, LogIn, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { DeviceCodePanel } from '@/components/chat/settings/DeviceCodePanel';
 import { api } from '@/lib/client';
 import { toast } from '@/hooks/useToast';
 import { logger } from '@/lib/logger';
@@ -45,20 +46,34 @@ export function PlatformSignInButton({
   // URL is rendered with a copy affordance instead of a toast pointing
   // at a tab that never opened.
   const [manualUrl, setManualUrl] = useState<string | null>(null);
+  // Set when the backend answered with a device-code grant (it chooses
+  // the flow) — render the code panel with the values it provided.
+  const [devicePanel, setDevicePanel] = useState<{
+    userCode: string;
+    verificationUri: string;
+    expiresIn: number;
+  } | null>(null);
   const isSignedIn = signedInAs.trim().length > 0;
 
   const handleSignIn = useCallback(async () => {
     setBusy(true);
     setManualUrl(null);
+    setDevicePanel(null);
     try {
       const started = await api.oauth.startFlow(provider);
-      if (started.browserOpened) {
+      if (started.flow === 'device' && started.userCode && started.verificationUri) {
+        setDevicePanel({
+          userCode: started.userCode,
+          verificationUri: started.verificationUri,
+          expiresIn: started.expiresIn ?? 600,
+        });
+      } else if (started.browserOpened) {
         toast.info(
           t('chat.oauth.browserOpened', {
             defaultValue: 'Check your browser to complete authentication',
           })
         );
-      } else {
+      } else if (started.authUrl) {
         setManualUrl(started.authUrl);
       }
     } catch (error) {
@@ -137,10 +152,23 @@ export function PlatformSignInButton({
 
   return (
     <div className="mt-3">
-      <Button variant="primary" size="sm" onClick={handleSignIn} disabled={busy}>
+      <Button
+        variant="primary"
+        size="sm"
+        onClick={handleSignIn}
+        disabled={busy || devicePanel !== null}
+      >
         <LogIn className="w-3.5 h-3.5" />
         {signInLabel}
       </Button>
+      {devicePanel && (
+        <DeviceCodePanel
+          userCode={devicePanel.userCode}
+          verificationUri={devicePanel.verificationUri}
+          expiresIn={devicePanel.expiresIn}
+          onFinished={() => setDevicePanel(null)}
+        />
+      )}
       {manualUrl && (
         <div className="mt-2 flex items-center gap-2">
           <span className="text-xs text-text-secondary">

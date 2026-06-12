@@ -101,20 +101,58 @@ impl From<OAuthConfigRequest> for OAuthConfig {
     }
 }
 
-/// Mirror of [`OAuthFlowResult`] — `POST /oauth/{provider}/flow` returns
-/// the authorization URL + bound callback port + PKCE state nonce.
+/// `POST /oauth/{provider}/flow` response — a backend-chosen variant.
+/// `flow: "redirect"` carries the loopback fields; `flow: "device"`
+/// carries the device-code fields. The frontend renders whichever
+/// arrives and never decides which grant a provider uses.
 #[derive(Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct OAuthFlowResponse {
-    pub auth_url: String,
-    pub callback_port: u16,
-    pub state: String,
-    /// Whether the server managed to open the system browser. When
-    /// false (headless session, missing xdg-open, sandboxed desktop),
-    /// the UI surfaces `auth_url` with a copy affordance instead of
-    /// telling the user to "check your browser" for a tab that never
-    /// opened.
-    pub browser_opened: bool,
+    /// `"redirect"` (loopback authorization-code) or `"device"` (RFC
+    /// 8628 device code — Twitch's mandated desktop sign-in).
+    pub flow: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auth_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub callback_port: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
+    /// Redirect flows only: whether the server managed to open the
+    /// system browser. When false (headless session, missing xdg-open,
+    /// sandboxed desktop), the UI surfaces `auth_url` with a copy
+    /// affordance instead of telling the user to "check your browser"
+    /// for a tab that never opened.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub browser_opened: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verification_uri: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_in: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interval: Option<u64>,
+}
+
+impl OAuthFlowResponse {
+    pub(super) fn device(
+        user_code: String,
+        verification_uri: String,
+        expires_in: u64,
+        interval: u64,
+    ) -> Self {
+        Self {
+            flow: "device".into(),
+            auth_url: None,
+            callback_port: None,
+            state: None,
+            browser_opened: None,
+            user_code: Some(user_code),
+            verification_uri: Some(verification_uri),
+            expires_in: Some(expires_in),
+            interval: Some(interval),
+        }
+    }
 }
 
 /// Mirror of [`OAuthUserInfo`] — returned from `POST /oauth/{provider}/complete`
@@ -241,7 +279,20 @@ pub async fn v1_oauth_start_flow_proxy(
     if crate::get_active_profile_name(&state).await.is_none() {
         return Err(spiritstream_core::CoreError::NoActiveProfile.into());
     }
-    let result = state.oauth_service.start_flow(&provider).await?;
+    let result = match state.oauth_service.start_flow(&provider).await {
+        Ok(result) => result,
+        // Core's flow routing: a public client on a provider that
+        // refuses PKCE token exchange (Twitch) signs in via the device
+        // flow. The transport runs it transparently behind the SAME
+        // endpoint — the response's `flow` field tells the UI what to
+        // render.
+        Err(spiritstream_core::CoreError::OAuthFlowRequiresDevice { .. }) => {
+            return super::oauth_device::run_device_flow(&state, &provider)
+                .await
+                .map(Json);
+        }
+        Err(other) => return Err(other.into()),
+    };
 
     let (callback_server, mut callback_rx) =
         OAuthCallbackServer::start(result.callback_port).await?;
@@ -295,69 +346,6 @@ pub async fn v1_oauth_start_flow_proxy(
                     Err(err) => log::error!("OAuth completion failed for {provider_name}: {err}"),
                 }
             }
-            Some(OAuthCallback::ImplicitSuccess {
-                access_token,
-                state: callback_state,
-            }) => {
-                // CSRF / token-injection guard: the callback's state
-                // nonce must match the pending flow we started — same
-                // rule the auth-code path enforces in `exchange_code`.
-                if let Err(err) = oauth_service
-                    .consume_implicit_state(&provider_name, &callback_state)
-                    .await
-                {
-                    log::error!(
-                        "Implicit OAuth callback for {provider_name} rejected:                          state mismatch ({err}); discarding delivered token"
-                    );
-                    use spiritstream_core::services::EventSink;
-                    state_clone.event_bus.emit(
-                        "oauth_error",
-                        serde_json::json!({
-                            "provider": provider_name,
-                            "reason": "state_mismatch",
-                        }),
-                    );
-                    return;
-                }
-                log::info!("Implicit OAuth flow completed for {provider_name}");
-                let user_info_result: Result<spiritstream_core::services::OAuthUserInfo, String> =
-                    match provider_name.as_str() {
-                        "twitch" => oauth_service
-                            .fetch_twitch_user(&access_token)
-                            .await
-                            .map(|u| spiritstream_core::services::OAuthUserInfo {
-                                provider: "twitch".to_string(),
-                                user_id: u.id,
-                                username: u.login,
-                                display_name: u.display_name,
-                            })
-                            .map_err(|e| e.to_string()),
-                        _ => Err("Implicit flow not supported for this provider".to_string()),
-                    };
-                match user_info_result {
-                    Ok(user_info) => {
-                        match crate::update_profile_oauth_account(
-                            &state_clone,
-                            &provider_name,
-                            access_token,
-                            None,
-                            0,
-                            &user_info,
-                        )
-                        .await
-                        {
-                            Ok(()) => {
-                                use spiritstream_core::services::EventSink;
-                                state_clone
-                                    .event_bus
-                                    .emit("oauth_complete", serde_json::json!(user_info));
-                            }
-                            Err(err) => log::error!("Failed to save OAuth profile settings: {err}"),
-                        }
-                    }
-                    Err(err) => log::error!("Failed to fetch user info for {provider_name}: {err}"),
-                }
-            }
             Some(OAuthCallback::Error { error, description }) => {
                 if let Some(d) = description {
                     log::warn!("OAuth callback error for {provider_name}: {error} ({d})");
@@ -378,10 +366,15 @@ pub async fn v1_oauth_start_flow_proxy(
         }
     };
     Ok(Json(OAuthFlowResponse {
-        auth_url: result.auth_url,
-        callback_port: result.callback_port,
-        state: result.state,
-        browser_opened,
+        flow: "redirect".into(),
+        auth_url: Some(result.auth_url),
+        callback_port: Some(result.callback_port),
+        state: Some(result.state),
+        browser_opened: Some(browser_opened),
+        user_code: None,
+        verification_uri: None,
+        expires_in: None,
+        interval: None,
     }))
 }
 

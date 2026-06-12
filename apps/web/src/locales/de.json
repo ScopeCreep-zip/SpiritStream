@@ -96,7 +96,11 @@
     "noProfile": "Aktivieren Sie ein Profil, um den Chat zu konfigurieren.",
     "oauth": {
       "browserOpened": "Überprüfen Sie Ihren Browser, um die Authentifizierung abzuschließen",
+      "copyCode": "Code kopieren",
       "copyLink": "Link kopieren",
+      "deviceExpires": "Der Code läuft in {{seconds}} s ab. Dieses Feld schließt sich nach der Anmeldung.",
+      "deviceFailed": "Anmeldung nicht abgeschlossen: {{reason}}",
+      "deviceInstruction": "Öffne diese Seite auf einem beliebigen Gerät und gib den Code ein:",
       "notConfigured": "Anmeldung ist in diesem Build nicht eingerichtet — keine Client-Zugangsdaten für diese Plattform.",
       "openManually": "Dein Browser hat sich nicht geöffnet — kopiere den Anmeldelink:",
       "signOutFailed": "Abmeldung fehlgeschlagen: {{error}}",

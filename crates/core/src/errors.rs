@@ -102,6 +102,15 @@ pub enum CoreError {
     #[serde(rename = "oauth_provider_not_configured")]
     OAuthProviderNotConfigured { provider: String },
 
+    /// The provider's public client cannot run the loopback
+    /// authorization-code flow (Twitch refuses PKCE at the token
+    /// exchange) — sign-in goes through the Device Code Flow instead.
+    /// Transports route this: HTTP runs the device flow transparently;
+    /// the CLI names `oauth device <provider>`.
+    #[error("provider {provider} signs in via the device code flow")]
+    #[serde(rename = "oauth_flow_requires_device")]
+    OAuthFlowRequiresDevice { provider: String },
+
     /// Chat platform connector has not been opened (or has dropped) before
     /// the caller asked it to send. Plan-cited variant: "new variants are
     /// added as the migration surfaces them (e.g., `ChatPlatformNotConnected
@@ -173,6 +182,7 @@ impl CoreError {
             CoreError::Unauthorized => "unauthorized",
             CoreError::NoActiveProfile => "no_active_profile",
             CoreError::OAuthProviderNotConfigured { .. } => "oauth_provider_not_configured",
+            CoreError::OAuthFlowRequiresDevice { .. } => "oauth_flow_requires_device",
             CoreError::ChatPlatformNotConnected { .. } => "chat_platform_not_connected",
             CoreError::ChatSendingDisabled { .. } => "chat_sending_disabled",
             CoreError::ChatMessageLengthExceeded { .. } => "chat_message_length_exceeded",
@@ -243,6 +253,9 @@ mod tests {
             CoreError::Unauthorized,
             CoreError::NoActiveProfile,
             CoreError::OAuthProviderNotConfigured {
+                provider: "twitch".into(),
+            },
+            CoreError::OAuthFlowRequiresDevice {
                 provider: "twitch".into(),
             },
             CoreError::ChatPlatformNotConnected {

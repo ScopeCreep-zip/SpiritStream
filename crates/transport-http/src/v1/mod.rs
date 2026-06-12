@@ -31,6 +31,7 @@ mod chat;
 mod chat_message_wire;
 mod discord;
 mod oauth;
+mod oauth_device;
 mod obs;
 mod openapi_doc;
 mod profile_wire;

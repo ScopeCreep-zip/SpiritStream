@@ -96,7 +96,11 @@
     "noProfile": "Aktiveer 'n profiel om klets op te stel.",
     "oauth": {
       "browserOpened": "Gaan jou blaaier na om stawing te voltooi",
+      "copyCode": "Kopieer kode",
       "copyLink": "Kopieer skakel",
+      "deviceExpires": "Die kode verval oor {{seconds}} s. Hierdie paneel sluit wanneer aanmelding voltooi is.",
+      "deviceFailed": "Aanmelding is nie voltooi nie: {{reason}}",
+      "deviceInstruction": "Maak hierdie bladsy op enige toestel oop en voer die kode in:",
       "notConfigured": "Aanmelding is nie in hierdie bou opgestel nie — geen kliëntbewyse vir hierdie platform nie.",
       "openManually": "Jou blaaier het nie oopgemaak nie — kopieer die aanmeldskakel:",
       "signOutFailed": "Kon nie afmeld nie: {{error}}",

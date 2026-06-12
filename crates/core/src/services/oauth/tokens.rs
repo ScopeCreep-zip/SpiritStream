@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::provider::OAuthProvider;
 use super::{network, unknown_provider};
 
 /// OAuth tokens returned from the token exchange.
@@ -272,26 +271,21 @@ impl super::OAuthService {
     ) -> Result<OAuthTokens, CoreError> {
         // Single funnel for every refresh path — see `refresh_lock`.
         let _refresh_guard = self.refresh_lock.lock().await;
+        // Endpoints via `provider_for` (test-overridable); credentials
+        // from the live config.
+        let provider = self.provider_for(provider_name)?;
         let config = self.config.lock().await;
-
-        let (provider, client_id, client_secret) = match provider_name {
+        let (client_id, client_secret) = match provider_name {
             "twitch" => (
-                OAuthProvider::twitch(),
                 config.get_twitch_client_id(),
                 config.get_twitch_client_secret(),
             ),
             "youtube" => (
-                OAuthProvider::youtube(),
                 config.get_youtube_client_id(),
                 config.get_youtube_client_secret(),
             ),
-            "kick" => (
-                OAuthProvider::kick(),
-                config.get_kick_client_id(),
-                config.get_kick_client_secret(),
-            ),
+            "kick" => (config.get_kick_client_id(), config.get_kick_client_secret()),
             "facebook" => (
-                OAuthProvider::facebook(),
                 config.get_facebook_client_id(),
                 config.get_facebook_client_secret(),
             ),
@@ -353,9 +347,10 @@ impl super::OAuthService {
         let client_id = config.get_twitch_client_id();
         drop(config);
 
+        let user_info_url = self.provider_for("twitch")?.user_info_url;
         let response = self
             .http_client
-            .get("https://api.twitch.tv/helix/users")
+            .get(&user_info_url)
             .header("Authorization", format!("Bearer {}", access_token))
             .header("Client-Id", client_id)
             .send()
@@ -393,7 +388,7 @@ impl super::OAuthService {
     ) -> Result<YouTubeChannel, CoreError> {
         let response = self
             .http_client
-            .get("https://www.googleapis.com/youtube/v3/channels")
+            .get(&self.provider_for("youtube")?.user_info_url)
             .query(&[("part", "snippet"), ("mine", "true")])
             .header("Authorization", format!("Bearer {}", access_token))
             .send()
@@ -452,7 +447,7 @@ impl super::OAuthService {
     pub async fn fetch_facebook_user(&self, access_token: &str) -> Result<FacebookUser, CoreError> {
         let response = self
             .http_client
-            .get("https://graph.facebook.com/v18.0/me")
+            .get(&self.provider_for("facebook")?.user_info_url)
             .query(&[("fields", "id,name"), ("access_token", access_token)])
             .send()
             .await
@@ -479,7 +474,7 @@ impl super::OAuthService {
     pub async fn fetch_kick_user(&self, access_token: &str) -> Result<KickUser, CoreError> {
         let response = self
             .http_client
-            .get("https://api.kick.com/public/v1/users")
+            .get(&self.provider_for("kick")?.user_info_url)
             .header("Authorization", format!("Bearer {access_token}"))
             .header("Accept", "application/json")
             .send()

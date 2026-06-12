@@ -34,7 +34,6 @@ import type {
   ChatMessage,
   ChatLogStatus,
   OAuthAccountStatus,
-  OAuthFlowResult,
   ValidationIssue,
   FileBrowseResponse,
   FileHomeResponse,
@@ -200,9 +199,10 @@ export interface FilesApi {
 
 export interface OAuthApi {
   isConfigured(provider: string): Promise<boolean>;
-  /** Starts the provider's flow; `browserOpened: false` means the UI
-   *  must surface `authUrl` with a copy affordance. */
-  startFlow(provider: string): Promise<OAuthFlowResult & { browserOpened: boolean }>;
+  /** Starts the provider's flow. The backend chooses the grant: a
+   *  `redirect` response carries `authUrl` (+ `browserOpened`), a
+   *  `device` response carries `userCode`/`verificationUri` to render. */
+  startFlow(provider: string): Promise<import('./api/oauth').OAuthFlowStarted>;
   completeFlow(
     provider: string,
     code: string,

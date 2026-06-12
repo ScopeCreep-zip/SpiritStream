@@ -96,7 +96,11 @@
     "noProfile": "激活配置文件以配置聊天。",
     "oauth": {
       "browserOpened": "检查您的浏览器以完成身份验证",
+      "copyCode": "复制代码",
       "copyLink": "复制链接",
+      "deviceExpires": "代码将在 {{seconds}} 秒后过期。登录完成后此面板会关闭。",
+      "deviceFailed": "登录未完成：{{reason}}",
+      "deviceInstruction": "在任意设备上打开此页面并输入代码：",
       "notConfigured": "此构建版本未配置登录功能 — 缺少该平台的客户端凭据。",
       "openManually": "浏览器未打开 — 请复制登录链接：",
       "signOutFailed": "退出登录失败：{{error}}",

@@ -66,18 +66,13 @@ impl OAuthCallbackServer {
                                     let _ = callback_tx.send(callback);
                                     break;
                                 } else {
-                                    // No query params — might be implicit flow with token in fragment.
-                                    let first_line = request.lines().next().unwrap_or("");
-                                    let path = first_line.split_whitespace().nth(1).unwrap_or("");
-                                    if path.starts_with("/oauth/callback") {
-                                        // Serve HTML that extracts fragment and redirects with query params.
-                                        let response = Self::fragment_extraction_response();
-                                        let _ = socket.write_all(response.as_bytes()).await;
-                                        // Don't break — wait for the second request with query params.
-                                    } else {
-                                        let response = Self::error_response("Invalid callback");
-                                        let _ = socket.write_all(response.as_bytes()).await;
-                                    }
+                                    // Every flow is an authorization-code grant
+                                    // now — a callback without code/state query
+                                    // params is malformed, full stop. (The old
+                                    // implicit grant's fragment-extraction HTML
+                                    // lived here; it died with the implicit flow.)
+                                    let response = Self::error_response("Invalid callback");
+                                    let _ = socket.write_all(response.as_bytes()).await;
                                 }
                             }
                         }
@@ -98,15 +93,7 @@ impl OAuthCallbackServer {
             return None;
         }
 
-        let query = match path.split('?').nth(1) {
-            Some(q) => q,
-            None => {
-                // No query params — implicit flow redirect with the token
-                // in the URL fragment (client-side only). Return None so
-                // the callback server serves the fragment-extraction HTML.
-                return None;
-            }
-        };
+        let query = path.split('?').nth(1)?;
 
         let params: HashMap<&str, &str> = query
             .split('&')
@@ -138,14 +125,6 @@ impl OAuthCallbackServer {
             });
         }
 
-        if let Some(access_token) = params.get("access_token") {
-            let state = params.get("state")?;
-            return Some(OAuthCallback::ImplicitSuccess {
-                access_token: urlencoding::decode(access_token).ok()?.to_string(),
-                state: urlencoding::decode(state).ok()?.to_string(),
-            });
-        }
-
         let code = params.get("code")?;
         let state = params.get("state")?;
 
@@ -153,46 +132,6 @@ impl OAuthCallbackServer {
             code: urlencoding::decode(code).ok()?.to_string(),
             state: urlencoding::decode(state).ok()?.to_string(),
         })
-    }
-
-    /// HTML page that extracts OAuth token from URL fragment (implicit flow)
-    /// and redirects to the same URL with the fragment as query parameters.
-    fn fragment_extraction_response() -> String {
-        let body = r#"<!DOCTYPE html>
-<html>
-<head>
-    <title>Processing Authentication...</title>
-    <style>
-        body { font-family: system-ui; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #1a1a2e; color: #eee; }
-        .container { text-align: center; }
-        h1 { color: #a78bfa; }
-        p { color: #9ca3af; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Processing...</h1>
-        <p>Completing authentication, please wait.</p>
-    </div>
-    <script>
-        // The OAuth token is in the URL fragment (#access_token=...)
-        // Fragments aren't sent to the server, so we redirect with them as query params
-        if (window.location.hash) {
-            var params = window.location.hash.substring(1);
-            window.location.replace('/oauth/callback?' + params);
-        } else {
-            document.querySelector('h1').textContent = 'Authentication Failed';
-            document.querySelector('p').textContent = 'No authentication data received.';
-        }
-    </script>
-</body>
-</html>"#;
-
-        format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-            body.len(),
-            body
-        )
     }
 
     fn success_response() -> String {
@@ -263,12 +202,8 @@ impl OAuthCallbackServer {
 /// OAuth callback result.
 #[derive(Debug, Clone)]
 pub enum OAuthCallback {
-    /// Authorization code flow callback (YouTube, etc.).
+    /// Authorization code flow callback.
     Success { code: String, state: String },
-    /// Implicit flow callback — token arrives directly in the
-    /// redirect URL (Twitch implicit grant; fragment hoisted into the
-    /// query by the callback HTML before SpiritStream sees it).
-    ImplicitSuccess { access_token: String, state: String },
     Error {
         error: String,
         description: Option<String>,
@@ -308,18 +243,11 @@ mod tests {
     }
 
     #[test]
-    fn parses_implicit_token_callback() {
-        let req = "GET /oauth/callback?access_token=tok&state=st HTTP/1.1\r\n\r\n";
-        match parse(req) {
-            Some(OAuthCallback::ImplicitSuccess {
-                access_token,
-                state,
-            }) => {
-                assert_eq!(access_token, "tok");
-                assert_eq!(state, "st");
-            }
-            other => panic!("expected ImplicitSuccess, got {other:?}"),
-        }
+    fn queryless_callback_is_rejected_not_treated_as_implicit() {
+        // The implicit grant is gone: a callback with no query params is
+        // malformed, never an invitation to serve fragment-hoisting HTML.
+        let req = "GET /oauth/callback HTTP/1.1\r\n\r\n";
+        assert!(parse(req).is_none());
     }
 
     #[test]
@@ -385,11 +313,4 @@ mod tests {
         assert!(resp.contains("boom"));
     }
 
-    #[test]
-    fn fragment_extraction_response_redirects_via_script() {
-        let resp = OAuthCallbackServer::fragment_extraction_response();
-        assert!(resp.starts_with("HTTP/1.1 200 OK"));
-        assert!(resp.contains("window.location.hash"));
-        assert!(resp.contains("/oauth/callback?"));
-    }
 }

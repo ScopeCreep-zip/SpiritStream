@@ -11,6 +11,7 @@
 //!   redirect URI.
 
 mod config;
+mod device;
 mod flow;
 mod loopback;
 mod pkce;
@@ -21,6 +22,7 @@ mod tokens;
 mod tests;
 
 pub use config::OAuthConfig;
+pub use device::OAuthDeviceFlowStart;
 pub use flow::OAuthFlowResult;
 pub use loopback::{OAuthCallback, OAuthCallbackServer};
 pub use provider::OAuthProvider;
@@ -65,6 +67,11 @@ pub struct OAuthService {
     /// on purpose: this is a single-active-profile app and the lock is
     /// only held across one HTTP round-trip.
     pub(in crate::services::oauth) refresh_lock: tokio::sync::Mutex<()>,
+    /// Test-only endpoint rebasing (wiremock) — same philosophy as
+    /// `ChatEndpoints::for_mock`. Empty in production.
+    #[cfg(test)]
+    pub(in crate::services::oauth) provider_overrides:
+        std::sync::Mutex<HashMap<String, OAuthProvider>>,
 }
 
 impl OAuthService {
@@ -74,7 +81,41 @@ impl OAuthService {
             pending_flows: Arc::new(Mutex::new(HashMap::new())),
             http_client: reqwest::Client::new(),
             refresh_lock: tokio::sync::Mutex::new(()),
+            #[cfg(test)]
+            provider_overrides: std::sync::Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Resolve a provider's endpoint set. The single lookup every flow
+    /// (loopback, device, refresh) goes through, so tests can rebase
+    /// one provider onto wiremock and exercise the real request code.
+    pub(in crate::services::oauth) fn provider_for(
+        &self,
+        name: &str,
+    ) -> Result<OAuthProvider, CoreError> {
+        #[cfg(test)]
+        {
+            if let Ok(overrides) = self.provider_overrides.lock() {
+                if let Some(p) = overrides.get(name) {
+                    return Ok(p.clone());
+                }
+            }
+        }
+        match name {
+            "twitch" => Ok(OAuthProvider::twitch()),
+            "youtube" => Ok(OAuthProvider::youtube()),
+            "kick" => Ok(OAuthProvider::kick()),
+            "facebook" => Ok(OAuthProvider::facebook()),
+            _ => Err(unknown_provider(name)),
+        }
+    }
+
+    #[cfg(test)]
+    pub(in crate::services::oauth) fn override_provider(&self, provider: OAuthProvider) {
+        self.provider_overrides
+            .lock()
+            .expect("override lock")
+            .insert(provider.name.clone(), provider);
     }
 
     pub async fn update_config(&self, config: OAuthConfig) {
