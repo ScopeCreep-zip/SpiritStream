@@ -162,6 +162,11 @@ impl super::OAuthService {
                 config.get_facebook_client_id(),
                 config.get_facebook_client_secret(),
             ),
+            "trovo" => (
+                OAuthProvider::trovo(),
+                config.get_trovo_client_id(),
+                config.get_trovo_client_secret(),
+            ),
             _ => return Err(unknown_provider(provider_name)),
         };
 
@@ -190,6 +195,9 @@ impl super::OAuthService {
             // Facebook's web OAuth uses auth code + App Secret (no PKCE).
             // The token exchange requires both client_id + client_secret.
             "facebook" => false,
+            // Trovo: plain auth code + secret (JSON exchange; no PKCE in
+            // the Open Platform docs).
+            "trovo" => false,
             // YouTube uses auth code + PKCE.
             _ => true,
         };
@@ -283,6 +291,27 @@ impl super::OAuthService {
         // and no flow can start past `start_flow`'s guard. Endpoints via
         // `provider_for` (test-overridable); credentials from config.
         let provider = self.provider_for(provider_name)?;
+
+        // Trovo deviates from RFC form-encoding — JSON body + client-id
+        // header; the request lives in `oauth/trovo.rs`.
+        if provider_name == "trovo" {
+            let config = self.config.lock().await;
+            let (client_id, client_secret) = (
+                config.get_trovo_client_id(),
+                config.get_trovo_client_secret().unwrap_or_default(),
+            );
+            drop(config);
+            return self
+                .exchange_trovo_code(
+                    &provider.token_url,
+                    &client_id,
+                    &client_secret,
+                    code,
+                    &pending_flow.redirect_uri,
+                )
+                .await;
+        }
+
         let config = self.config.lock().await;
         let (client_id, client_secret) = match provider_name {
             "twitch" => (
@@ -420,6 +449,15 @@ impl super::OAuthService {
                     user_id: user.user_id.to_string(),
                     username: user.name.clone(),
                     display_name: user.name,
+                }
+            }
+            "trovo" => {
+                let user = self.fetch_trovo_user(access_token).await?;
+                OAuthUserInfo {
+                    provider: "trovo".to_string(),
+                    user_id: user.user_id,
+                    username: user.user_name,
+                    display_name: user.nick_name,
                 }
             }
             _ => return Err(unknown_provider(provider_name)),

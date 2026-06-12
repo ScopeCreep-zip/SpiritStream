@@ -96,55 +96,37 @@ pub(crate) async fn update_profile_oauth_account(
         .await
         .ok_or(spiritstream_core::CoreError::NoActiveProfile)?;
 
-    match provider {
-        "twitch" => {
-            profile_settings.oauth.twitch.access_token = access_token;
-            if let Some(rt) = refresh_token {
-                profile_settings.oauth.twitch.refresh_token = rt;
-            }
-            profile_settings.oauth.twitch.expires_at = expires_at;
-            profile_settings.oauth.twitch.user_id = user_info.user_id.clone();
-            profile_settings.oauth.twitch.username = user_info.username.clone();
-            profile_settings.oauth.twitch.display_name = user_info.display_name.clone();
-        }
-        "youtube" => {
-            profile_settings.oauth.youtube.access_token = access_token;
-            if let Some(rt) = refresh_token {
-                profile_settings.oauth.youtube.refresh_token = rt;
-            }
-            profile_settings.oauth.youtube.expires_at = expires_at;
-            profile_settings.oauth.youtube.user_id = user_info.user_id.clone();
-            profile_settings.oauth.youtube.username = user_info.username.clone();
-            profile_settings.oauth.youtube.display_name = user_info.display_name.clone();
-        }
-        "kick" => {
-            profile_settings.oauth.kick.access_token = access_token;
-            if let Some(rt) = refresh_token {
-                profile_settings.oauth.kick.refresh_token = rt;
-            }
-            profile_settings.oauth.kick.expires_at = expires_at;
-            profile_settings.oauth.kick.user_id = user_info.user_id.clone();
-            profile_settings.oauth.kick.username = user_info.username.clone();
-            profile_settings.oauth.kick.display_name = user_info.display_name.clone();
-        }
-        "facebook" => {
-            profile_settings.oauth.facebook.access_token = access_token;
-            if let Some(rt) = refresh_token {
-                profile_settings.oauth.facebook.refresh_token = rt;
-            }
-            profile_settings.oauth.facebook.expires_at = expires_at;
-            profile_settings.oauth.facebook.user_id = user_info.user_id.clone();
-            profile_settings.oauth.facebook.username = user_info.username.clone();
-            profile_settings.oauth.facebook.display_name = user_info.display_name.clone();
-        }
-        _ => {
-            return Err(spiritstream_core::CoreError::NotImplemented {
-                feature: format!("Unknown provider: {provider}"),
-            })
-        }
+    let account = oauth_account_mut(&mut profile_settings.oauth, provider)?;
+    account.access_token = access_token;
+    if let Some(rt) = refresh_token {
+        account.refresh_token = rt;
     }
+    account.expires_at = expires_at;
+    account.user_id = user_info.user_id.clone();
+    account.username = user_info.username.clone();
+    account.display_name = user_info.display_name.clone();
 
     persist_active_profile_settings(state, profile_settings).await
+}
+
+/// Provider-name → mutable account slot. One lookup shared by the
+/// update + clear paths so adding a provider is a one-line change
+/// (the old per-provider copy-paste blocks silently skipped new
+/// providers).
+fn oauth_account_mut<'a>(
+    oauth: &'a mut spiritstream_core::models::OAuthSettings,
+    provider: &str,
+) -> Result<&'a mut spiritstream_core::models::OAuthAccount, spiritstream_core::CoreError> {
+    match provider {
+        "twitch" => Ok(&mut oauth.twitch),
+        "youtube" => Ok(&mut oauth.youtube),
+        "kick" => Ok(&mut oauth.kick),
+        "facebook" => Ok(&mut oauth.facebook),
+        "trovo" => Ok(&mut oauth.trovo),
+        _ => Err(spiritstream_core::CoreError::NotImplemented {
+            feature: format!("Unknown provider: {provider}"),
+        }),
+    }
 }
 
 pub(crate) async fn clear_profile_oauth_account(
@@ -155,25 +137,7 @@ pub(crate) async fn clear_profile_oauth_account(
         .await
         .ok_or(spiritstream_core::CoreError::NoActiveProfile)?;
 
-    match provider {
-        "twitch" => {
-            profile_settings.oauth.twitch = Default::default();
-        }
-        "youtube" => {
-            profile_settings.oauth.youtube = Default::default();
-        }
-        "kick" => {
-            profile_settings.oauth.kick = Default::default();
-        }
-        "facebook" => {
-            profile_settings.oauth.facebook = Default::default();
-        }
-        _ => {
-            return Err(spiritstream_core::CoreError::NotImplemented {
-                feature: format!("Unknown provider: {provider}"),
-            })
-        }
-    }
+    *oauth_account_mut(&mut profile_settings.oauth, provider)? = Default::default();
 
     persist_active_profile_settings(state, profile_settings).await
 }

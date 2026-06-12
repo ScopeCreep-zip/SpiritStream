@@ -159,7 +159,8 @@
       "channelId": "Channel ID",
       "channelIdHint": "Requires SPIRITSTREAM_TROVO_CLIENT_ID in environment. Read-only chat is supported.",
       "channelIdPlaceholder": "e.g. 100000021",
-      "description": "Read Trovo chat using channel ID"
+      "description": "Read Trovo chat using channel ID; sign in to send",
+      "loginWithTrovo": "Login with Trovo"
     },
     "twitch": {
       "channel": "Channel Name",

@@ -159,7 +159,8 @@
       "channelId": "チャンネルID",
       "channelIdHint": "環境に SPIRITSTREAM_TROVO_CLIENT_ID が必要です。読み取り専用チャットがサポートされています。",
       "channelIdPlaceholder": "例えば100000021",
-      "description": "チャネル ID を使用して Trovo チャットを読み取る"
+      "description": "チャンネルIDでTrovoチャットを読み取り。送信にはサインインが必要です",
+      "loginWithTrovo": "Trovoでログイン"
     },
     "twitch": {
       "channel": "チャンネル名",

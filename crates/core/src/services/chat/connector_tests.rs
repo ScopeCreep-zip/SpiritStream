@@ -39,6 +39,7 @@ async fn connect_err(connector: &mut dyn ChatPlatform, cred: ChatCredentials) ->
 fn foreign_cred() -> ChatCredentials {
     ChatCredentials::Trovo {
         channel_id: "someone-else".into(),
+        oauth_token: None,
     }
 }
 

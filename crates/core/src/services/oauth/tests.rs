@@ -431,6 +431,7 @@ async fn twitch_public_client_refresh_omits_secret_and_returns_rotated_tokens() 
         auth_url: format!("{}/oauth2/authorize", server.uri()),
         token_url: format!("{}/oauth2/token", server.uri()),
         device_url: Some(format!("{}/oauth2/device", server.uri())),
+        refresh_url: None,
         user_info_url: format!("{}/helix/users", server.uri()),
         scopes: vec!["chat:read"],
     });

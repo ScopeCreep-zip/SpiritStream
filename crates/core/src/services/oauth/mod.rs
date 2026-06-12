@@ -17,6 +17,7 @@ mod loopback;
 mod pkce;
 mod provider;
 mod tokens;
+mod trovo;
 
 #[cfg(test)]
 mod tests;
@@ -30,6 +31,7 @@ pub use tokens::{
     OAuthCompleteResult, OAuthRefreshOutcome, OAuthTokens, OAuthUserInfo, TwitchUser,
     YouTubeChannel,
 };
+pub use trovo::TrovoUser;
 
 use crate::errors::CoreError;
 use std::collections::HashMap;
@@ -106,6 +108,7 @@ impl OAuthService {
             "youtube" => Ok(OAuthProvider::youtube()),
             "kick" => Ok(OAuthProvider::kick()),
             "facebook" => Ok(OAuthProvider::facebook()),
+            "trovo" => Ok(OAuthProvider::trovo()),
             _ => Err(unknown_provider(name)),
         }
     }

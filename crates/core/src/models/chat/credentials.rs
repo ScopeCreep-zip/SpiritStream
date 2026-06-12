@@ -61,6 +61,13 @@ pub enum ChatCredentials {
     Trovo {
         /// Trovo channel ID (numeric user/channel ID)
         channel_id: String,
+        /// OAuth bearer (`Authorization: OAuth <token>` — Trovo's
+        /// scheme) for the signed-in account. `None` = read-only chat
+        /// via the client-id-only channel chat token; `Some(token)`
+        /// enables send through `openplatform/chat/send`
+        /// (`chat_send_self` scope).
+        #[serde(default)]
+        oauth_token: Option<String>,
     },
     #[serde(rename_all = "camelCase")]
     Kick {
@@ -171,9 +178,13 @@ impl std::fmt::Debug for ChatCredentials {
                 .field("channel_id", channel_id)
                 .field("auth", auth)
                 .finish(),
-            ChatCredentials::Trovo { channel_id } => f
+            ChatCredentials::Trovo {
+                channel_id,
+                oauth_token,
+            } => f
                 .debug_struct("ChatCredentials::Trovo")
                 .field("channel_id", channel_id)
+                .field("oauth_token", &oauth_token.as_ref().map(|_| "<redacted>"))
                 .finish(),
             ChatCredentials::Kick {
                 channel,
@@ -374,6 +385,7 @@ mod tests {
     fn debug_trovo_renders_channel_id() {
         let creds = ChatCredentials::Trovo {
             channel_id: "1234567".into(),
+            oauth_token: None,
         };
         let rendered = format!("{creds:?}");
         assert!(

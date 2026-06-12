@@ -69,7 +69,12 @@ fn build_connect_config(
             let channel_id = channel_id
                 .or(channel)
                 .ok_or_else(|| CliError::Argument("trovo connect requires --channel-id".into()))?;
-            ChatCredentials::Trovo { channel_id }
+            // Optional send credential via the same `--oauth-from`
+            // source the other platforms use; read-only without it.
+            ChatCredentials::Trovo {
+                channel_id,
+                oauth_token: oauth,
+            }
         }
         ChatPlatform::TikTok => {
             let username = channel.ok_or_else(|| {

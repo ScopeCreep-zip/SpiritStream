@@ -20,7 +20,7 @@ fn account_id_from_credentials(creds: &ChatCredentials) -> Option<String> {
     match creds {
         ChatCredentials::Twitch { channel, .. } => Some(channel.clone()),
         ChatCredentials::YouTube { channel_id, .. } => Some(channel_id.clone()),
-        ChatCredentials::Trovo { channel_id } => Some(channel_id.clone()),
+        ChatCredentials::Trovo { channel_id, .. } => Some(channel_id.clone()),
         ChatCredentials::Kick { channel, .. } => Some(channel.clone()),
         ChatCredentials::TikTok { username, .. } => Some(username.clone()),
         ChatCredentials::Facebook { video_id, .. } => Some(video_id.clone()),

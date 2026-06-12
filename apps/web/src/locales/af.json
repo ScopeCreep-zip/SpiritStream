@@ -159,7 +159,8 @@
       "channelId": "Kanaal-ID",
       "channelIdHint": "Vereis SPIRITSTREAM_TROVO_CLIENT_ID in omgewing. Leesalleenklets word ondersteun.",
       "channelIdPlaceholder": "bv. 100000021",
-      "description": "Lees Trovo-klets deur kanaal-ID te gebruik"
+      "description": "Lees Trovo-klets met kanaal-ID; meld aan om te stuur",
+      "loginWithTrovo": "Meld aan met Trovo"
     },
     "twitch": {
       "channel": "Kanaalnaam",

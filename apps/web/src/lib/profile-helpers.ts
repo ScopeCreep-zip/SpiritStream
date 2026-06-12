@@ -154,6 +154,7 @@ export const createDefaultOAuthSettings = (): OAuthSettings => ({
   youtube: createDefaultOAuthAccount(),
   kick: createDefaultOAuthAccount(),
   facebook: createDefaultOAuthAccount(),
+  trovo: createDefaultOAuthAccount(),
 });
 
 export const createDefaultProfileSettings = (): ProfileSettings => ({

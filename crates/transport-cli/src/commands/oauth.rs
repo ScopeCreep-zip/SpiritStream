@@ -200,9 +200,10 @@ pub async fn run(
                 "youtube" => &mut p.settings.oauth.youtube,
                 "kick" => &mut p.settings.oauth.kick,
                 "facebook" => &mut p.settings.oauth.facebook,
+                "trovo" => &mut p.settings.oauth.trovo,
                 other => {
                     return Err(CliError::Argument(format!(
-                        "unknown oauth provider: {other} (expected twitch|youtube|kick|facebook)"
+                        "unknown oauth provider: {other} (expected twitch|youtube|kick|facebook|trovo)"
                     )));
                 }
             };
@@ -275,9 +276,10 @@ pub async fn run(
                 "youtube" => &mut p.settings.oauth.youtube,
                 "kick" => &mut p.settings.oauth.kick,
                 "facebook" => &mut p.settings.oauth.facebook,
+                "trovo" => &mut p.settings.oauth.trovo,
                 other => {
                     return Err(CliError::Argument(format!(
-                        "unknown oauth provider: {other} (expected twitch|youtube|kick|facebook)"
+                        "unknown oauth provider: {other} (expected twitch|youtube|kick|facebook|trovo)"
                     )));
                 }
             };
@@ -317,9 +319,10 @@ pub async fn run(
                 "youtube" => p.settings.oauth.youtube.refresh_token.clone(),
                 "kick" => p.settings.oauth.kick.refresh_token.clone(),
                 "facebook" => p.settings.oauth.facebook.refresh_token.clone(),
+                "trovo" => p.settings.oauth.trovo.refresh_token.clone(),
                 other => {
                     return Err(CliError::Argument(format!(
-                        "unknown oauth provider: {other} (expected twitch|youtube|kick|facebook)"
+                        "unknown oauth provider: {other} (expected twitch|youtube|kick|facebook|trovo)"
                     )));
                 }
             };
@@ -344,6 +347,7 @@ pub async fn run(
                 "twitch" => &mut p.settings.oauth.twitch,
                 "youtube" => &mut p.settings.oauth.youtube,
                 "kick" => &mut p.settings.oauth.kick,
+                "trovo" => &mut p.settings.oauth.trovo,
                 _ => &mut p.settings.oauth.facebook,
             };
             account.access_token = tokens.access_token.clone();
@@ -390,9 +394,10 @@ pub async fn run(
                 "youtube" => &profile_obj.settings.oauth.youtube,
                 "kick" => &profile_obj.settings.oauth.kick,
                 "facebook" => &profile_obj.settings.oauth.facebook,
+                "trovo" => &profile_obj.settings.oauth.trovo,
                 other => {
                     return Err(CliError::Argument(format!(
-                        "unknown oauth provider: {other} (expected twitch|youtube|kick|facebook)"
+                        "unknown oauth provider: {other} (expected twitch|youtube|kick|facebook|trovo)"
                     )));
                 }
             };

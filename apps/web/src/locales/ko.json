@@ -159,7 +159,8 @@
       "channelId": "채널 ID",
       "channelIdHint": "환경에 SPIRITSTREAM_TROVO_CLIENT_ID가 필요합니다. 읽기 전용 채팅이 지원됩니다.",
       "channelIdPlaceholder": "예를 들어 100000021",
-      "description": "채널 ID를 사용하여 Trovo 채팅 읽기"
+      "description": "채널 ID로 Trovo 채팅 읽기; 보내려면 로그인하세요",
+      "loginWithTrovo": "Trovo로 로그인"
     },
     "twitch": {
       "channel": "채널 이름",

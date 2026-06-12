@@ -222,7 +222,11 @@ pub enum ChatCredentialsWire {
         auth: YouTubeAuthWire,
     },
     #[serde(rename_all = "camelCase")]
-    Trovo { channel_id: String },
+    Trovo {
+        channel_id: String,
+        #[serde(default)]
+        oauth_token: Option<String>,
+    },
     #[serde(rename_all = "camelCase")]
     Kick {
         channel: String,
@@ -256,7 +260,13 @@ impl From<ChatCredentialsWire> for ChatCredentials {
                 channel_id,
                 auth: auth.into(),
             },
-            ChatCredentialsWire::Trovo { channel_id } => Self::Trovo { channel_id },
+            ChatCredentialsWire::Trovo {
+                channel_id,
+                oauth_token,
+            } => Self::Trovo {
+                channel_id,
+                oauth_token,
+            },
             ChatCredentialsWire::Kick {
                 channel,
                 oauth_token,

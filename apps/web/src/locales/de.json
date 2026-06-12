@@ -159,7 +159,8 @@
       "channelId": "Kanal-ID",
       "channelIdHint": "Erfordert SPIRITSTREAM_TROVO_CLIENT_ID in der Umgebung. Schreibgeschützter Chat wird unterstützt.",
       "channelIdPlaceholder": "z.B. 100000021",
-      "description": "Lesen Sie den Trovo-Chat mithilfe der Kanal-ID"
+      "description": "Trovo-Chat per Kanal-ID lesen; zum Senden anmelden",
+      "loginWithTrovo": "Mit Trovo anmelden"
     },
     "twitch": {
       "channel": "Kanalname",

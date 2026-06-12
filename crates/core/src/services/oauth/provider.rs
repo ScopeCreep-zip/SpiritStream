@@ -16,6 +16,9 @@ pub struct OAuthProvider {
     /// support the Device Code Flow set this (Twitch, which MANDATES
     /// it for desktop-class public clients).
     pub device_url: Option<String>,
+    /// Refresh endpoint when it differs from `token_url` (Trovo's
+    /// `refreshtoken`); `None` means refresh at `token_url` (RFC).
+    pub refresh_url: Option<String>,
     /// Bearer-identified user/channel lookup (per-provider shape).
     pub user_info_url: String,
     pub scopes: Vec<&'static str>,
@@ -28,6 +31,7 @@ impl OAuthProvider {
             auth_url: "https://id.twitch.tv/oauth2/authorize".into(),
             token_url: "https://id.twitch.tv/oauth2/token".into(),
             device_url: Some("https://id.twitch.tv/oauth2/device".into()),
+            refresh_url: None,
             user_info_url: "https://api.twitch.tv/helix/users".into(),
             // `moderator:manage:chat_settings` powers the safety
             // wizard's follower-only default (Helix PATCH
@@ -53,6 +57,7 @@ impl OAuthProvider {
             // Google's limited-input device flow does not allow the
             // youtube.force-ssl scope — loopback + PKCE stays.
             device_url: None,
+            refresh_url: None,
             user_info_url: "https://www.googleapis.com/youtube/v3/channels".into(),
             scopes: vec!["https://www.googleapis.com/auth/youtube.force-ssl"],
         }
@@ -71,6 +76,7 @@ impl OAuthProvider {
             auth_url: "https://id.kick.com/oauth/authorize".into(),
             token_url: "https://id.kick.com/oauth/token".into(),
             device_url: None,
+            refresh_url: None,
             user_info_url: "https://api.kick.com/public/v1/users".into(),
             scopes: vec!["user:read", "chat:write"],
         }
@@ -102,6 +108,7 @@ impl OAuthProvider {
                 "https://graph.facebook.com/{FACEBOOK_GRAPH_VERSION}/oauth/access_token"
             ),
             device_url: None,
+            refresh_url: None,
             user_info_url: format!("https://graph.facebook.com/{FACEBOOK_GRAPH_VERSION}/me"),
             scopes: vec![
                 "publish_video",
@@ -109,6 +116,24 @@ impl OAuthProvider {
                 "pages_manage_posts",
                 "pages_show_list",
             ],
+        }
+    }
+
+    /// Trovo Open Platform. JSON token requests with a `client-id`
+    /// header and `Authorization: OAuth` for API calls — the request
+    /// plumbing lives in `oauth/trovo.rs`. Client secret required at
+    /// `exchangetoken`. The client id alone still powers READ-ONLY
+    /// chat via the channel chat token (the connector's existing
+    /// path); OAuth adds identity + chat send.
+    pub fn trovo() -> Self {
+        Self {
+            name: "trovo".into(),
+            auth_url: "https://open.trovo.live/page/login.html".into(),
+            token_url: "https://open-api.trovo.live/openplatform/exchangetoken".into(),
+            device_url: None,
+            refresh_url: Some("https://open-api.trovo.live/openplatform/refreshtoken".into()),
+            user_info_url: "https://open-api.trovo.live/openplatform/getuserinfo".into(),
+            scopes: vec!["user_details_self", "chat_send_self", "send_to_my_channel"],
         }
     }
 }

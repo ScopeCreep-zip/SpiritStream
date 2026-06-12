@@ -10,7 +10,11 @@ import { useProfileStore } from '@/stores/profileStore';
 import { api } from '@/lib/client';
 import { toast } from '@/hooks/useToast';
 import { logger } from '@/lib/logger';
-import { createDefaultChatSettings } from '@/lib/profile-helpers';
+import {
+  createDefaultChatSettings,
+  createDefaultOAuthAccount,
+  createDefaultOAuthSettings,
+} from '@/lib/profile-helpers';
 
 /**
  * Identity-revealing Facebook Live chat connect, gated by a
@@ -63,49 +67,11 @@ export function FacebookConnectGate({
       await updateProfileSettings({
         chat: { ...chatSettings, facebookLiveVideoId: videoId.trim() },
         oauth: {
-          ...(currentProfile?.settings?.oauth ?? {
-            twitch: {
-              accessToken: '',
-              refreshToken: '',
-              expiresAt: 0,
-              userId: '',
-              username: '',
-              displayName: '',
-            },
-            youtube: {
-              accessToken: '',
-              refreshToken: '',
-              expiresAt: 0,
-              userId: '',
-              username: '',
-              displayName: '',
-            },
-            kick: {
-              accessToken: '',
-              refreshToken: '',
-              expiresAt: 0,
-              userId: '',
-              username: '',
-              displayName: '',
-            },
-            facebook: {
-              accessToken: '',
-              refreshToken: '',
-              expiresAt: 0,
-              userId: '',
-              username: '',
-              displayName: '',
-            },
-          }),
+          // Factory-backed fallback: the old inline literal silently
+          // drifted whenever OAuthSettings gained a provider.
+          ...(currentProfile?.settings?.oauth ?? createDefaultOAuthSettings()),
           facebook: {
-            ...(currentProfile?.settings?.oauth?.facebook ?? {
-              accessToken: '',
-              refreshToken: '',
-              expiresAt: 0,
-              userId: '',
-              username: '',
-              displayName: '',
-            }),
+            ...(currentProfile?.settings?.oauth?.facebook ?? createDefaultOAuthAccount()),
             accessToken: accessToken.trim(),
           },
         },

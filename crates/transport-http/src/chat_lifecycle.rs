@@ -221,7 +221,39 @@ pub(crate) async fn auto_connect_chat_platforms(state: AppState) {
             .unwrap_or(false);
 
         if !already_connected {
-            connect_trovo_chat(&state.chat_manager, &chat_settings, &state.event_bus).await;
+            // Refresh the Trovo OAuth token before capturing the bearer
+            // for the connector — same rationale as Kick below.
+            if !profile_settings.oauth.trovo.access_token.is_empty() {
+                if let Ok(fresh) = ensure_fresh_oauth_token(
+                    "trovo",
+                    &profile_settings.oauth.trovo.access_token,
+                    &profile_settings.oauth.trovo.refresh_token,
+                    profile_settings.oauth.trovo.expires_at,
+                    &state.oauth_service,
+                )
+                .await
+                {
+                    if fresh.refreshed {
+                        profile_settings.oauth.trovo.access_token = fresh.access_token.clone();
+                        if let Some(rt) = fresh.refresh_token {
+                            profile_settings.oauth.trovo.refresh_token = rt;
+                        }
+                        profile_settings.oauth.trovo.expires_at = fresh.expires_at;
+                        if let Err(err) =
+                            persist_active_profile_settings(&state, profile_settings.clone()).await
+                        {
+                            log::warn!("Failed to persist Trovo OAuth refresh: {err}");
+                        }
+                    }
+                }
+            }
+            connect_trovo_chat(
+                &state.chat_manager,
+                &chat_settings,
+                &profile_settings,
+                &state.event_bus,
+            )
+            .await;
         } else {
             log::debug!("Trovo chat already connected, skipping auto-connect");
         }
@@ -378,13 +410,25 @@ pub(crate) async fn connect_twitch_chat(
 pub(crate) async fn connect_trovo_chat(
     chat_manager: &Arc<ChatManager>,
     chat_settings: &ChatSettings,
+    profile_settings: &ProfileSettings,
     event_bus: &EventBus,
 ) {
+    // Mirror the Kick shape: send only when the user enabled it AND a
+    // signed-in account exists. Reads stay client-id-only either way.
+    let oauth_token = if chat_settings.trovo_send_enabled
+        && !profile_settings.oauth.trovo.access_token.is_empty()
+    {
+        Some(profile_settings.oauth.trovo.access_token.clone())
+    } else {
+        None
+    };
+
     let config = ChatConfig {
         platform: ChatPlatform::Trovo,
         enabled: true,
         credentials: ChatCredentials::Trovo {
             channel_id: chat_settings.trovo_channel_id.clone(),
+            oauth_token,
         },
     };
     match chat_manager.connect(config).await {
@@ -607,8 +651,13 @@ pub(crate) async fn start_chat_reconnect_task(state: AppState) {
                         if chat_settings.trovo_channel_id.is_empty() {
                             continue;
                         }
-                        connect_trovo_chat(&state.chat_manager, &chat_settings, &state.event_bus)
-                            .await;
+                        connect_trovo_chat(
+                            &state.chat_manager,
+                            &chat_settings,
+                            &profile_settings,
+                            &state.event_bus,
+                        )
+                        .await;
                     }
                     ChatPlatform::YouTube => {
                         let has_oauth = !chat_settings.youtube_use_api_key

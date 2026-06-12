@@ -159,7 +159,8 @@
       "channelId": "通道号",
       "channelIdHint": "环境中需要 SPIRITSTREAM_TROVO_CLIENT_ID。支持只读聊天。",
       "channelIdPlaceholder": "例如100000021",
-      "description": "使用频道 ID 读取 Trovo 聊天"
+      "description": "通过频道 ID 读取 Trovo 聊天；登录后可发送",
+      "loginWithTrovo": "使用 Trovo 登录"
     },
     "twitch": {
       "channel": "频道名称",

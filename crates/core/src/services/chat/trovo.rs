@@ -137,7 +137,9 @@ async fn fetch_chat_token(
         .ok_or_else(|| PlatformError::Platform("Trovo token response missing token".to_string()))
 }
 
-/// Trovo chat connector (read-only for now)
+/// Trovo chat connector. Reads via the client-id-only channel chat
+/// token; SENDS via `openplatform/chat/send` when connected with an
+/// OAuth token (`chat_send_self`).
 pub struct TrovoConnector {
     status: Arc<AtomicU8>,
     last_error: Arc<StdMutex<Option<String>>>,
@@ -149,6 +151,10 @@ pub struct TrovoConnector {
     api_base: String,
     /// Trovo open-chat WebSocket URL (injected from `ChatEndpoints`).
     chat_ws: String,
+    /// Captured at connect for the send path (Client-ID header).
+    client_id: Option<String>,
+    /// OAuth bearer for `Authorization: OAuth <token>` sends.
+    oauth_token: Option<String>,
 }
 
 impl TrovoConnector {
@@ -166,6 +172,8 @@ impl TrovoConnector {
             can_send: false,
             api_base: endpoints.trovo_api_base.clone(),
             chat_ws: endpoints.trovo_chat_ws.clone(),
+            client_id: None,
+            oauth_token: None,
         }
     }
 }
@@ -192,8 +200,11 @@ impl ChatPlatform for TrovoConnector {
             *guard = None;
         }
 
-        let channel_id = match credentials {
-            ChatCredentials::Trovo { channel_id } => channel_id,
+        let (channel_id, oauth_token) = match credentials {
+            ChatCredentials::Trovo {
+                channel_id,
+                oauth_token,
+            } => (channel_id, oauth_token),
             _ => {
                 self.status
                     .store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
@@ -312,6 +323,11 @@ impl ChatPlatform for TrovoConnector {
 
         let (disconnect_tx, mut disconnect_rx) = mpsc::channel::<()>(1);
         self.disconnect_tx = Some(disconnect_tx);
+        // Send capability = an OAuth token arrived with the credentials
+        // (chat_send_self). Reads work either way.
+        self.client_id = Some(client_id.clone());
+        self.can_send = oauth_token.is_some();
+        self.oauth_token = oauth_token;
         self.status.store(
             status_to_u8(ChatConnectionStatus::Connected),
             Ordering::Relaxed,
@@ -427,6 +443,42 @@ impl ChatPlatform for TrovoConnector {
             *guard = None;
         }
 
+        Ok(())
+    }
+
+    /// Send to the signed-in user's own channel via
+    /// `POST {api_base}/openplatform/chat/send` (scope `chat_send_self`).
+    /// Trovo's auth scheme is `Authorization: OAuth <token>` + a
+    /// `Client-ID` header — not Bearer.
+    async fn send_message(&mut self, message: String) -> PlatformResult<()> {
+        let (Some(token), Some(client_id)) = (self.oauth_token.clone(), self.client_id.clone())
+        else {
+            return Err(PlatformError::Platform(
+                "Trovo send requires signing in with Trovo first".to_string(),
+            ));
+        };
+        let url = format!("{}/openplatform/chat/send", self.api_base);
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(15))
+            .build()
+            .map_err(|e| PlatformError::Network(format!("Failed to build HTTP client: {e}")))?;
+        let response = client
+            .post(url)
+            .header("Accept", "application/json")
+            .header("Client-ID", client_id)
+            .header("Authorization", format!("OAuth {token}"))
+            .json(&serde_json::json!({ "content": message }))
+            .send()
+            .await
+            .map_err(|e| PlatformError::Network(format!("Trovo send failed: {e}")))?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            let body: String = body.chars().take(200).collect();
+            return Err(PlatformError::Platform(format!(
+                "Trovo send rejected ({status}): {body}"
+            )));
+        }
         Ok(())
     }
 

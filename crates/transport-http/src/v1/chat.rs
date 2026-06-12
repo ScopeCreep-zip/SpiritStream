@@ -335,7 +335,13 @@ pub async fn v1_chat_retry_proxy(
                 }
                 .into());
             }
-            crate::connect_trovo_chat(&state.chat_manager, &chat_settings, &state.event_bus).await;
+            crate::connect_trovo_chat(
+                &state.chat_manager,
+                &chat_settings,
+                &profile_settings,
+                &state.event_bus,
+            )
+            .await;
         }
         ChatPlatform::YouTube => {
             let has_oauth = !chat_settings.youtube_use_api_key

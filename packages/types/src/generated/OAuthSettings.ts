@@ -10,4 +10,11 @@ export type OAuthSettings = { twitch: OAuthAccount, youtube: OAuthAccount, kick:
  * the other providers; `access_token` is used as the Graph API
  * bearer for both reading live comments and sending them.
  */
-facebook: OAuthAccount, };
+facebook: OAuthAccount, 
+/**
+ * Trovo Open Platform account. The access token powers chat SEND
+ * (`chat_send_self`); read-only chat keeps working without it via
+ * the client-id-only channel chat token. serde default so
+ * profiles saved before this field existed deserialize cleanly.
+ */
+trovo: OAuthAccount, };

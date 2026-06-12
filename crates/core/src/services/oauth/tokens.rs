@@ -274,6 +274,24 @@ impl super::OAuthService {
         // Endpoints via `provider_for` (test-overridable); credentials
         // from the live config.
         let provider = self.provider_for(provider_name)?;
+
+        // Trovo: JSON refresh at its dedicated endpoint (oauth/trovo.rs).
+        if provider_name == "trovo" {
+            let config = self.config.lock().await;
+            let (client_id, client_secret) = (
+                config.get_trovo_client_id(),
+                config.get_trovo_client_secret().unwrap_or_default(),
+            );
+            drop(config);
+            let refresh_url = provider
+                .refresh_url
+                .clone()
+                .unwrap_or_else(|| provider.token_url.clone());
+            return self
+                .refresh_trovo_token(&refresh_url, &client_id, &client_secret, refresh_token)
+                .await;
+        }
+
         let config = self.config.lock().await;
         let (client_id, client_secret) = match provider_name {
             "twitch" => (

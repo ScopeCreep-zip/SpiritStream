@@ -159,7 +159,8 @@
       "channelId": "ID de chaîne",
       "channelIdHint": "Nécessite SPIRITSTREAM_TROVO_CLIENT_ID dans l'environnement. Le chat en lecture seule est pris en charge.",
       "channelIdPlaceholder": "par ex. 100000021",
-      "description": "Lire le chat Trovo à l'aide de l'ID de canal"
+      "description": "Lire le chat Trovo via l'ID de chaîne ; connectez-vous pour envoyer",
+      "loginWithTrovo": "Se connecter avec Trovo"
     },
     "twitch": {
       "channel": "Nom de la chaîne",

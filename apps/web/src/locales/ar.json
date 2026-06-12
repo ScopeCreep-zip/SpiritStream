@@ -159,7 +159,8 @@
       "channelId": "معرف القناة",
       "channelIdHint": "يتطلب SPIRITSTREAM_TROVO_CLIENT_ID في البيئة. يتم دعم الدردشة للقراءة فقط.",
       "channelIdPlaceholder": "على سبيل المثال 100000021",
-      "description": "قراءة دردشة Trovo باستخدام معرف القناة"
+      "description": "قراءة دردشة Trovo عبر معرّف القناة؛ سجّل الدخول للإرسال",
+      "loginWithTrovo": "تسجيل الدخول عبر Trovo"
     },
     "twitch": {
       "channel": "اسم القناة",

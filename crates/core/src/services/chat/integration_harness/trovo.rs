@@ -78,6 +78,7 @@ async fn trovo_round_trip_connect_receive_disconnect() {
         .connect(
             ChatCredentials::Trovo {
                 channel_id: "12345".into(),
+                oauth_token: None,
             },
             tx,
         )

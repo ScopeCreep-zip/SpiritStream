@@ -446,7 +446,9 @@ export function ChatPanel(): React.ReactElement {
             <div>
               <CardTitle>{t('chat.platforms.trovo')}</CardTitle>
               <CardDescription>
-                {t('chat.trovo.description', { defaultValue: 'Read Trovo chat using channel ID' })}
+                {t('chat.trovo.description', {
+                  defaultValue: 'Read Trovo chat using channel ID; sign in to send',
+                })}
               </CardDescription>
             </div>
           </CardHeader>
@@ -460,6 +462,12 @@ export function ChatPanel(): React.ReactElement {
               helper={t('chat.trovo.channelIdHint', {
                 defaultValue: 'Requires SPIRITSTREAM_TROVO_CLIENT_ID in environment.',
               })}
+            />
+            <PlatformSignInButton
+              provider="trovo"
+              signedInAs={currentProfile.settings.oauth.trovo.username}
+              signInLabel={t('chat.trovo.loginWithTrovo', { defaultValue: 'Login with Trovo' })}
+              configured={oauthFlags?.trovoConfigured ?? false}
             />
             <div className="mt-3">
               <Toggle

@@ -212,6 +212,7 @@ mod tests {
             auth_url: format!("{mock_base}/oauth2/authorize"),
             token_url: format!("{mock_base}/oauth2/token"),
             device_url: Some(format!("{mock_base}/oauth2/device")),
+            refresh_url: None,
             user_info_url: format!("{mock_base}/helix/users"),
             scopes: vec!["chat:read", "chat:edit"],
         });

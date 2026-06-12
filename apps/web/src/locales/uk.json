@@ -159,7 +159,8 @@
       "channelId": "ID каналу",
       "channelIdHint": "Потрібен SPIRITSTREAM_TROVO_CLIENT_ID у середовищі. Підтримується чат лише для читання.",
       "channelIdPlaceholder": "напр. 100000021",
-      "description": "Читайте чат Trovo за допомогою ідентифікатора каналу"
+      "description": "Читання чату Trovo за ID каналу; увійдіть, щоб надсилати",
+      "loginWithTrovo": "Увійти через Trovo"
     },
     "twitch": {
       "channel": "Назва каналу",

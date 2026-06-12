@@ -369,6 +369,7 @@ pub struct OAuthSettingsWire {
     pub youtube: OAuthAccountWire,
     pub kick: OAuthAccountWire,
     pub facebook: OAuthAccountWire,
+    pub trovo: OAuthAccountWire,
 }
 
 impl From<OAuthSettings> for OAuthSettingsWire {
@@ -378,6 +379,7 @@ impl From<OAuthSettings> for OAuthSettingsWire {
             youtube: v.youtube.into(),
             kick: v.kick.into(),
             facebook: v.facebook.into(),
+            trovo: v.trovo.into(),
         }
     }
 }

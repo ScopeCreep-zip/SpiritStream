@@ -375,6 +375,12 @@ pub struct OAuthSettings {
     /// bearer for both reading live comments and sending them.
     #[serde(default)]
     pub facebook: OAuthAccount,
+    /// Trovo Open Platform account. The access token powers chat SEND
+    /// (`chat_send_self`); read-only chat keeps working without it via
+    /// the client-id-only channel chat token. serde default so
+    /// profiles saved before this field existed deserialize cleanly.
+    #[serde(default)]
+    pub trovo: OAuthAccount,
 }
 
 // ============================================================================
