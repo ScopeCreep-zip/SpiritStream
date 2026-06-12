@@ -186,6 +186,18 @@
       "description": "Se connecter à un chat en direct YouTube",
       "loginWithYouTube": "Se connecter avec YouTube",
       "useApiKey": "Utiliser une clé API (lecture seule) au lieu d'OAuth"
+    },
+    "status": {
+      "connected": "Connecté",
+      "connecting": "Connexion…",
+      "error": "Erreur de connexion",
+      "disconnected": "Non connecté"
+    },
+    "followerOnly": {
+      "applied": "Le chat réservé aux followers est activé sur Twitch.",
+      "reauth": "Reconnectez-vous à Twitch pour accorder la permission du chat réservé aux followers.",
+      "unsupported": "{{platform}} ne prend pas en charge le chat réservé aux followers — cette protection n’y est pas active.",
+      "failed": "Impossible d’activer le chat réservé aux followers : {{reason}}"
     }
   },
   "common": {

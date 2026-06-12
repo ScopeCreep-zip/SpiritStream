@@ -186,6 +186,18 @@
       "description": "Conecta con un chat en vivo de YouTube",
       "loginWithYouTube": "Iniciar sesión con YouTube",
       "useApiKey": "Usar clave de API (solo lectura) en lugar de OAuth"
+    },
+    "status": {
+      "connected": "Conectado",
+      "connecting": "Conectando…",
+      "error": "Error de conexión",
+      "disconnected": "No conectado"
+    },
+    "followerOnly": {
+      "applied": "El chat solo para seguidores está activado en Twitch.",
+      "reauth": "Vuelva a iniciar sesión con Twitch para conceder el permiso de chat solo para seguidores.",
+      "unsupported": "{{platform}} no admite el chat solo para seguidores; esa protección no está activa allí.",
+      "failed": "No se pudo activar el chat solo para seguidores: {{reason}}"
     }
   },
   "common": {

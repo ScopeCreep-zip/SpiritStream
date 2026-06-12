@@ -17,6 +17,14 @@ interface ChatStore {
   messages: ChatMessage[];
   overlayTransparent: boolean;
   overlayAlwaysOnTop: boolean;
+  /**
+   * Set when the backend reports the follower-only default could not be
+   * applied because the Twitch token lacks the moderator scope (event
+   * `follower_only_unsupported`, reason `follower_only_missing_scope` /
+   * `no_oauth_token`). Drives the "sign in with Twitch again" hint in
+   * the chat settings panel. Not persisted — re-derived per session.
+   */
+  followerOnlyReauthNeeded: boolean;
 
   addMessage: (message: ChatMessage) => void;
   addMessages: (messages: ChatMessage[]) => void;
@@ -39,6 +47,7 @@ interface ChatStore {
   markUserTimedOut: (login: string) => void;
   setOverlayTransparent: (transparent: boolean) => void;
   setOverlayAlwaysOnTop: (alwaysOnTop: boolean) => void;
+  setFollowerOnlyReauthNeeded: (needed: boolean) => void;
 }
 
 export const useChatStore = create<ChatStore>()(
@@ -47,6 +56,7 @@ export const useChatStore = create<ChatStore>()(
       messages: [],
       overlayTransparent: false,
       overlayAlwaysOnTop: true,
+      followerOnlyReauthNeeded: false,
 
       addMessage: (message) =>
         set((state) => ({
@@ -87,6 +97,8 @@ export const useChatStore = create<ChatStore>()(
       setOverlayTransparent: (transparent) => set({ overlayTransparent: transparent }),
 
       setOverlayAlwaysOnTop: (alwaysOnTop) => set({ overlayAlwaysOnTop: alwaysOnTop }),
+
+      setFollowerOnlyReauthNeeded: (needed) => set({ followerOnlyReauthNeeded: needed }),
     }),
     {
       name: 'spiritstream-chat',

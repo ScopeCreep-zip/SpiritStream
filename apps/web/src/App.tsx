@@ -18,6 +18,7 @@ import { useConnectionStatus } from '@/hooks/useConnectionStatus';
 import { useBackendConnection } from '@/hooks/useBackendConnection';
 import { useDataSync } from '@/hooks/useDataSync';
 import { useObsEvents } from '@/hooks/useObsEvents';
+import { useFollowerOnlyNotices } from '@/hooks/useFollowerOnlyNotices';
 import { useThemeStore, subscribeThemesUpdated } from '@/stores/themeStore';
 import { hydrateClientConfig } from '@/lib/constants';
 import { hydrateEncoderPresets, hydrateEncoderMetadata } from '@/lib/encoderPresets';
@@ -358,6 +359,9 @@ function AppContent() {
 
   // Listen for OBS WebSocket events and handle OBS -> SpiritStream triggering
   useObsEvents();
+
+  // Surface follower-only applied/unsupported outcomes (toast + re-auth hint)
+  useFollowerOnlyNotices();
 
   // Set up handler to close chat overlay when main window closes
   useEffect(() => setupMainWindowCloseHandler(), []);

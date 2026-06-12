@@ -13,7 +13,11 @@ import { Input } from '@/components/ui/Input';
 import { Toggle } from '@/components/ui/Toggle';
 import { FacebookConnectGate } from '@/components/chat/settings/FacebookConnectGate';
 import { PlatformSignInButton } from '@/components/chat/settings/PlatformSignInButton';
+import { PlatformConnectionBadge } from '@/components/chat/PlatformStatusDot';
+import { useChatPlatformStatus } from '@/hooks/useChatPlatformStatus';
+import { useChatStore } from '@/stores/chatStore';
 import { cn } from '@/lib/cn';
+import type { ChatPlatformStatus } from '@spiritstream/types';
 
 type ChatField =
   | 'twitch_channel'
@@ -78,6 +82,20 @@ export function ChatPanel(): React.ReactElement {
     () => currentProfile?.settings?.chat ?? createDefaultChatSettings(),
     [currentProfile]
   );
+
+  // Live per-platform connection state (backend truth, polled). Same
+  // hook the Chat view uses for the composer pills — this surface just
+  // renders a badge per settings card.
+  const { statuses } = useChatPlatformStatus();
+  const statusFor = useCallback(
+    (platform: ChatPlatformStatus['platform']): ChatPlatformStatus['status'] =>
+      statuses.find((s) => s.platform === platform)?.status ?? 'disconnected',
+    [statuses]
+  );
+
+  // Sticky "sign in with Twitch again" hint, set by useFollowerOnlyNotices
+  // when the backend reports the follower-only scope is missing.
+  const followerOnlyReauthNeeded = useChatStore((s) => s.followerOnlyReauthNeeded);
 
   const [twitchChannel, setTwitchChannel] = useState('');
   const [twitchSend, setTwitchSend] = useState(false);
@@ -336,6 +354,7 @@ export function ChatPanel(): React.ReactElement {
                 {t('chat.twitch.description', { defaultValue: 'Connect to a Twitch channel chat' })}
               </CardDescription>
             </div>
+            <PlatformConnectionBadge status={statusFor('twitch')} />
           </CardHeader>
           <CardBody>
             <Input
@@ -353,6 +372,16 @@ export function ChatPanel(): React.ReactElement {
               signInLabel={t('chat.twitch.loginWithTwitch', { defaultValue: 'Login with Twitch' })}
               configured={oauthFlags?.twitchConfigured ?? false}
             />
+            {followerOnlyReauthNeeded && (
+              <p
+                role="alert"
+                className="text-xs text-warning-text mt-2 p-2 bg-warning-subtle rounded"
+              >
+                {t('chat.followerOnly.reauth', {
+                  defaultValue: 'Sign in with Twitch again to grant the follower-only permission.',
+                })}
+              </p>
+            )}
             <div className="mt-3">
               <Toggle
                 checked={twitchSend}
@@ -377,6 +406,7 @@ export function ChatPanel(): React.ReactElement {
                 {t('chat.youtube.description', { defaultValue: 'Connect to a YouTube live chat' })}
               </CardDescription>
             </div>
+            <PlatformConnectionBadge status={statusFor('youtube')} />
           </CardHeader>
           <CardBody>
             <Input
@@ -451,6 +481,7 @@ export function ChatPanel(): React.ReactElement {
                 })}
               </CardDescription>
             </div>
+            <PlatformConnectionBadge status={statusFor('trovo')} />
           </CardHeader>
           <CardBody>
             <Input
@@ -495,6 +526,7 @@ export function ChatPanel(): React.ReactElement {
                 })}
               </CardDescription>
             </div>
+            <PlatformConnectionBadge status={statusFor('kick')} />
           </CardHeader>
           <CardBody>
             <Input
@@ -540,6 +572,7 @@ export function ChatPanel(): React.ReactElement {
                 })}
               </CardDescription>
             </div>
+            <PlatformConnectionBadge status={statusFor('tiktok')} />
           </CardHeader>
           <CardBody>
             <Input
@@ -558,7 +591,10 @@ export function ChatPanel(): React.ReactElement {
 
       {/* Facebook — identity-revealing connect gate */}
       {resolvedVisiblePlatforms.includes('facebook') && (
-        <FacebookConnectGate oauthConfigured={oauthFlags?.facebookConfigured ?? false} />
+        <FacebookConnectGate
+          oauthConfigured={oauthFlags?.facebookConfigured ?? false}
+          connectionStatus={statusFor('facebook')}
+        />
       )}
     </div>
   );

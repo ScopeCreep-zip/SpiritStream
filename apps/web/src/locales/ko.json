@@ -186,6 +186,18 @@
       "description": "YouTube 라이브 채팅에 연결",
       "loginWithYouTube": "YouTube로 로그인",
       "useApiKey": "OAuth 대신 API 키(읽기 전용) 사용"
+    },
+    "status": {
+      "connected": "연결됨",
+      "connecting": "연결 중…",
+      "error": "연결 오류",
+      "disconnected": "연결 안 됨"
+    },
+    "followerOnly": {
+      "applied": "Twitch에서 팔로워 전용 채팅이 켜졌습니다.",
+      "reauth": "팔로워 전용 채팅 권한을 부여하려면 Twitch에 다시 로그인하세요.",
+      "unsupported": "{{platform}}은(는) 팔로워 전용 채팅을 지원하지 않으므로 해당 보호 기능이 적용되지 않습니다.",
+      "failed": "팔로워 전용 채팅을 켤 수 없습니다: {{reason}}"
     }
   },
   "common": {

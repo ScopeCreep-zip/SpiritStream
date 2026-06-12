@@ -186,6 +186,18 @@
       "description": "Mit einem YouTube-Live-Chat verbinden",
       "loginWithYouTube": "Mit YouTube anmelden",
       "useApiKey": "API-Schlüssel (schreibgeschützt) statt OAuth verwenden"
+    },
+    "status": {
+      "connected": "Verbunden",
+      "connecting": "Verbinden…",
+      "error": "Verbindungsfehler",
+      "disconnected": "Nicht verbunden"
+    },
+    "followerOnly": {
+      "applied": "Nur-Follower-Chat ist für Twitch aktiviert.",
+      "reauth": "Melde dich erneut bei Twitch an, um die Berechtigung für den Nur-Follower-Chat zu erteilen.",
+      "unsupported": "{{platform}} unterstützt keinen Nur-Follower-Chat – dieser Schutz ist dort nicht aktiv.",
+      "failed": "Nur-Follower-Chat konnte nicht aktiviert werden: {{reason}}"
     }
   },
   "common": {

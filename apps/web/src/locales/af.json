@@ -186,6 +186,18 @@
       "description": "Verbind met 'n YouTube-liveklets",
       "loginWithYouTube": "Teken in met YouTube",
       "useApiKey": "Gebruik API-sleutel (lees-alleen) in plaas van OAuth"
+    },
+    "status": {
+      "connected": "Gekoppel",
+      "connecting": "Koppel tans…",
+      "error": "Verbindingsfout",
+      "disconnected": "Nie gekoppel nie"
+    },
+    "followerOnly": {
+      "applied": "Slegs-volgers-klets is aan vir Twitch.",
+      "reauth": "Meld weer by Twitch aan om die slegs-volgers-toestemming toe te staan.",
+      "unsupported": "{{platform}} ondersteun nie slegs-volgers-klets nie — daardie beskerming is nie daar aktief nie.",
+      "failed": "Kon nie slegs-volgers-klets aanskakel nie: {{reason}}"
     }
   },
   "common": {

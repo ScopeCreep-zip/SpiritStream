@@ -186,6 +186,18 @@
       "description": "YouTubeライブチャットに接続",
       "loginWithYouTube": "YouTubeでログイン",
       "useApiKey": "OAuthの代わりにAPIキー(読み取り専用)を使用"
+    },
+    "status": {
+      "connected": "接続済み",
+      "connecting": "接続中…",
+      "error": "接続エラー",
+      "disconnected": "未接続"
+    },
+    "followerOnly": {
+      "applied": "Twitch でフォロワー限定チャットが有効になりました。",
+      "reauth": "フォロワー限定チャットの権限を付与するには、もう一度 Twitch にサインインしてください。",
+      "unsupported": "{{platform}} はフォロワー限定チャットに対応していないため、この保護は適用されません。",
+      "failed": "フォロワー限定チャットを有効にできませんでした: {{reason}}"
     }
   },
   "common": {

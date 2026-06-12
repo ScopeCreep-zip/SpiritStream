@@ -54,3 +54,20 @@ fn oauth_flow_start_refuses_unconfigured_provider_with_typed_409() {
     assert_eq!(json["kind"], "oauth_provider_not_configured", "{json}");
     assert_eq!(json["details"]["provider"], "twitch", "{json}");
 }
+
+#[test]
+fn facebook_chat_connect_without_confirm_token_is_rejected() {
+    // The identity-warning checkbox in FacebookConnectGate is UX; THIS
+    // is the enforcement: a Facebook connect must carry a one-shot
+    // `enable_facebook_chat` confirm token or the server refuses it.
+    let server = boot();
+    let (status, body) = post_invoke(
+        &server,
+        "/api/v1/chat/connections",
+        r#"{"platform":"facebook","enabled":true,"credentials":{"type":"facebook","videoId":"123","accessToken":"tok"}}"#,
+    );
+    assert!(
+        status == 403 || status == 401 || status == 400,
+        "facebook connect without confirm token must be rejected, got {status}: {body}"
+    );
+}

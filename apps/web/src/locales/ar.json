@@ -186,6 +186,18 @@
       "description": "الاتصال بمحادثة بث مباشر على YouTube",
       "loginWithYouTube": "تسجيل الدخول بـ YouTube",
       "useApiKey": "استخدام مفتاح API (للقراءة فقط) بدلاً من OAuth"
+    },
+    "status": {
+      "connected": "متصل",
+      "connecting": "جارٍ الاتصال…",
+      "error": "خطأ في الاتصال",
+      "disconnected": "غير متصل"
+    },
+    "followerOnly": {
+      "applied": "دردشة المتابعين فقط مفعّلة على Twitch.",
+      "reauth": "سجّل الدخول إلى Twitch مرة أخرى لمنح إذن دردشة المتابعين فقط.",
+      "unsupported": "{{platform}} لا يدعم دردشة المتابعين فقط — هذه الحماية غير مفعّلة هناك.",
+      "failed": "تعذّر تفعيل دردشة المتابعين فقط: {{reason}}"
     }
   },
   "common": {

@@ -9,6 +9,7 @@ import { toast } from '@/hooks/useToast';
 import { logger } from '@/lib/logger';
 import { createDefaultChatSettings } from '@/lib/profile-helpers';
 import { cn } from '@/lib/cn';
+import { statusDotClass } from '@/components/chat/PlatformStatusDot';
 import type { ChatPlatformStatus } from '@spiritstream/types';
 
 interface ChatComposerProps {
@@ -339,17 +340,4 @@ export function ChatComposer({
       )}
     </div>
   );
-}
-
-function statusDotClass(status: ChatPlatformStatus['status']): string {
-  switch (status) {
-    case 'connected':
-      return 'bg-status-live';
-    case 'connecting':
-      return 'bg-status-connecting';
-    case 'error':
-      return 'bg-status-error';
-    default:
-      return 'bg-text-tertiary';
-  }
 }

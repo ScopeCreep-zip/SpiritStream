@@ -6,6 +6,8 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Toggle } from '@/components/ui/Toggle';
 import { PlatformSignInButton } from '@/components/chat/settings/PlatformSignInButton';
+import { PlatformConnectionBadge } from '@/components/chat/PlatformStatusDot';
+import type { ChatPlatformStatus } from '@spiritstream/types';
 import { useProfileStore } from '@/stores/profileStore';
 import { api } from '@/lib/client';
 import { toast } from '@/hooks/useToast';
@@ -32,10 +34,13 @@ interface FacebookConnectGateProps {
   /** Backend-truth flag from `GET /oauth/config` — gates the OAuth
    *  button; the manual Page-Token path below works regardless. */
   oauthConfigured: boolean;
+  /** Live connection state from the parent's `useChatPlatformStatus`. */
+  connectionStatus: ChatPlatformStatus['status'];
 }
 
 export function FacebookConnectGate({
   oauthConfigured,
+  connectionStatus,
 }: FacebookConnectGateProps): React.ReactElement {
   const { t } = useTranslation();
   const currentProfile = useProfileStore((state) => state.current);
@@ -139,6 +144,7 @@ export function FacebookConnectGate({
             })}
           </CardDescription>
         </div>
+        <PlatformConnectionBadge status={connectionStatus} />
       </CardHeader>
       <CardBody>
         {/* Identity warning. The <details> block defaults closed; the

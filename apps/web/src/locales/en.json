@@ -186,6 +186,18 @@
       "description": "Connect to a YouTube live chat",
       "loginWithYouTube": "Login with YouTube",
       "useApiKey": "Use API key (read-only) instead of OAuth"
+    },
+    "status": {
+      "connected": "Connected",
+      "connecting": "Connecting…",
+      "error": "Connection error",
+      "disconnected": "Not connected"
+    },
+    "followerOnly": {
+      "applied": "Follower-only chat is on for Twitch.",
+      "reauth": "Sign in with Twitch again to grant the follower-only permission.",
+      "unsupported": "{{platform}} does not support follower-only chat — that protection is not active there.",
+      "failed": "Could not turn on follower-only chat: {{reason}}"
     }
   },
   "common": {

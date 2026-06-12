@@ -186,6 +186,18 @@
       "description": "连接到 YouTube 直播聊天",
       "loginWithYouTube": "使用 YouTube 登录",
       "useApiKey": "使用 API 密钥(只读)而非 OAuth"
+    },
+    "status": {
+      "connected": "已连接",
+      "connecting": "连接中…",
+      "error": "连接错误",
+      "disconnected": "未连接"
+    },
+    "followerOnly": {
+      "applied": "Twitch 的仅限关注者聊天已开启。",
+      "reauth": "请重新登录 Twitch 以授予仅限关注者聊天权限。",
+      "unsupported": "{{platform}} 不支持仅限关注者聊天——该保护在那里不会生效。",
+      "failed": "无法开启仅限关注者聊天：{{reason}}"
     }
   },
   "common": {

@@ -166,12 +166,19 @@ impl super::ChatManager {
                 }
                 Err(e) => {
                     log::warn!("follower-only default could not be applied: {e}");
+                    // Surface the specific validation code (e.g.
+                    // `follower_only_missing_scope`) instead of the flat
+                    // `validation_failed` kind — the UI prompts a Twitch
+                    // re-auth only for the missing-scope case.
+                    let reason = match &e {
+                        CoreError::ValidationFailed { reasons } if !reasons.is_empty() => {
+                            reasons[0].code.clone()
+                        }
+                        other => other.kind().to_string(),
+                    };
                     events.emit(
                         "follower_only_unsupported",
-                        serde_json::json!({
-                            "platform": "twitch",
-                            "reason": e.kind(),
-                        }),
+                        serde_json::json!({ "platform": "twitch", "reason": reason }),
                     );
                 }
             }
