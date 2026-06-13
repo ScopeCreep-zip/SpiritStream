@@ -44,6 +44,8 @@ impl super::ChatManager {
         let anonymous_policy = self.anonymous_policy.clone();
         let outbound_guard = self.outbound_guard.clone();
         let pii_policy = self.pii_policy.clone();
+        let recent_messages = self.recent_messages.clone();
+        let last_activity = self.last_activity.clone();
 
         let handle = tokio::spawn(async move {
             use std::collections::{HashSet, VecDeque};
@@ -104,6 +106,24 @@ impl super::ChatManager {
                     let _ = log_tx
                         .send(ChatLogCommand::Log(Box::new(message.clone())))
                         .await;
+
+                    // Push into the in-memory recent ring (server-side
+                    // replay source for refresh / WS reconnect — never
+                    // browser storage, per OWASP) and stamp liveness
+                    // activity. Both before emit so a just-(re)connected
+                    // frontend that fetches `recent` then subscribes can't
+                    // miss this message.
+                    {
+                        let mut ring = recent_messages.lock().await;
+                        ring.push_back(message.clone());
+                        while ring.len() > super::RECENT_MESSAGES_CAP {
+                            ring.pop_front();
+                        }
+                    }
+                    last_activity
+                        .lock()
+                        .await
+                        .insert(message.platform, chrono::Local::now().timestamp_millis());
 
                     // Emit message to frontend via EventSink.
                     if let Ok(payload) = serde_json::to_value(&message) {
@@ -409,7 +429,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let sink = Arc::new(RecordingSink::default());
         let event_sink: Arc<dyn EventSink> = sink.clone();
-        let manager = ChatManager::new(event_sink, dir.path().to_path_buf());
+        let manager = ChatManager::new(event_sink, dir.path().to_path_buf(), dir.path().to_path_buf());
         (manager, sink, dir)
     }
 

@@ -22,8 +22,9 @@ mod crosspost_tests;
 mod send_message_tests;
 
 use log_writer::ChatLogCommand;
+pub use log_writer::{read_messages_from_file, read_recent};
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicI64};
 use std::sync::Arc;
@@ -150,12 +151,26 @@ pub struct ChatManager {
     /// Deliberately not env-overridable — redirecting chat/OAuth traffic
     /// at runtime would be an exfiltration vector (see `endpoints.rs`).
     pub(super) chat_endpoints: ChatEndpoints,
+    /// Last ~N emitted (already-pseudonymized) messages, in memory, for
+    /// instant replay on a webview refresh / WS reconnect. Server-side
+    /// per OWASP (never browser storage); seeded from the encrypted
+    /// history on boot; cleared on panic.
+    pub(super) recent_messages: Arc<Mutex<VecDeque<ChatMessage>>>,
+    /// Per-platform last-inbound-activity epoch ms — liveness
+    /// observability (a true socket death surfaces as `Error`; this is
+    /// for "last message Xs ago", NOT a staleness-kill which would
+    /// false-positive on quiet channels).
+    pub(super) last_activity: Arc<Mutex<HashMap<ChatPlatform, i64>>>,
 }
+
+/// In-memory recent-message ring capacity — matches the frontend view
+/// cap so a refresh repopulates exactly what would be on screen.
+pub const RECENT_MESSAGES_CAP: usize = 500;
 
 impl ChatManager {
     /// Create a new ChatManager with the production network endpoints.
-    pub fn new(event_sink: Arc<dyn EventSink>, log_dir: PathBuf) -> Self {
-        Self::with_endpoints(event_sink, log_dir, ChatEndpoints::default())
+    pub fn new(event_sink: Arc<dyn EventSink>, log_dir: PathBuf, app_data_dir: PathBuf) -> Self {
+        Self::with_endpoints(event_sink, log_dir, app_data_dir, ChatEndpoints::default())
     }
 
     /// Create a ChatManager with caller-supplied connector endpoints.
@@ -165,6 +180,7 @@ impl ChatManager {
     pub(crate) fn with_endpoints(
         event_sink: Arc<dyn EventSink>,
         log_dir: PathBuf,
+        app_data_dir: PathBuf,
         chat_endpoints: ChatEndpoints,
     ) -> Self {
         // Bounded channels prevent OOM under pathological chat flood
@@ -200,12 +216,14 @@ impl ChatManager {
             status_monitor_handle: std::sync::Mutex::new(None),
             log_writer_handle: std::sync::Mutex::new(None),
             chat_endpoints,
+            recent_messages: Arc::new(Mutex::new(VecDeque::with_capacity(RECENT_MESSAGES_CAP))),
+            last_activity: Arc::new(Mutex::new(HashMap::new())),
         };
 
         // Start message handler.
         manager.start_message_handler();
         manager.start_status_monitor();
-        manager.start_log_writer(log_rx, log_dir);
+        manager.start_log_writer(log_rx, log_dir, app_data_dir);
 
         manager
     }
@@ -313,6 +331,32 @@ impl ChatManager {
     /// same-profile re-activation, so a panic survives settings saves.
     pub async fn clear_all_disconnect_intent(&self) {
         self.user_disconnected.lock().await.clear();
+    }
+
+    /// Snapshot of the in-memory recent-message ring (oldest→newest) for
+    /// `GET /chat/messages/recent` — the refresh/reconnect replay source.
+    pub async fn recent_messages(&self) -> Vec<ChatMessage> {
+        self.recent_messages.lock().await.iter().cloned().collect()
+    }
+
+    /// Wipe the in-memory recent-message ring (panic / profile switch).
+    pub async fn clear_recent_messages(&self) {
+        self.recent_messages.lock().await.clear();
+    }
+
+    /// Seed the ring from durable history at startup so a full app
+    /// restart repopulates the view (messages arrive oldest→newest).
+    pub async fn seed_recent_messages(&self, messages: Vec<ChatMessage>) {
+        let mut ring = self.recent_messages.lock().await;
+        ring.clear();
+        for m in messages.into_iter().rev().take(RECENT_MESSAGES_CAP).rev() {
+            ring.push_back(m);
+        }
+    }
+
+    /// Last inbound activity per platform (epoch ms).
+    pub async fn last_activity_ms(&self, platform: ChatPlatform) -> Option<i64> {
+        self.last_activity.lock().await.get(&platform).copied()
     }
 
     /// Initialize a platform connector. Returns `None` for platforms

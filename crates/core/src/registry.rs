@@ -146,7 +146,11 @@ impl ServiceRegistry {
         let ffmpeg_locator = Arc::new(FFmpegLocator::new()?);
         let obs = Arc::new(ObsWebSocketHandler::new(opts.data_dir.clone()));
         let discord = Arc::new(DiscordWebhookService::new(opts.data_dir.clone()));
-        let chat = Arc::new(ChatManager::new(opts.events.clone(), opts.log_dir.clone()));
+        let chat = Arc::new(ChatManager::new(
+            opts.events.clone(),
+            opts.log_dir.clone(),
+            opts.data_dir.clone(),
+        ));
         let oauth = Arc::new(OAuthService::new(
             OAuthConfig::default(),
             opts.secret_store.clone(),

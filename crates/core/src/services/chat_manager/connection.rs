@@ -328,6 +328,14 @@ impl super::ChatManager {
             }
         }
 
+        // Panic = "make it disappear": wipe the in-memory recent-message
+        // ring AND the on-disk encrypted history, alongside the secret
+        // wipe the safety service already performs.
+        if reason == "panic_triggered" {
+            self.clear_recent_messages().await;
+            self.purge_chat_history();
+        }
+
         if let Some(audit) = self.audit() {
             for platform in &disconnected {
                 let _ = audit.record(AuditAction::ChatPlatformDisconnected {

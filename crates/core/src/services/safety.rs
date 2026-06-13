@@ -341,7 +341,7 @@ mod tests {
         let ffmpeg =
             Arc::new(FFmpegHandler::new_with_custom_path(dir.clone(), None).expect("test fixture"));
         let events_for_chat: Arc<dyn EventSink> = Arc::new(NoopEventSink);
-        let chat = Arc::new(ChatManager::new(events_for_chat, dir.clone()));
+        let chat = Arc::new(ChatManager::new(events_for_chat, dir.clone(), dir.clone()));
         let obs = Arc::new(ObsWebSocketHandler::new(dir.clone()));
         let audit = Arc::new(AuditLogService::new_for_tests(dir.clone()).unwrap());
         let counting = Arc::new(CountingSink::default());

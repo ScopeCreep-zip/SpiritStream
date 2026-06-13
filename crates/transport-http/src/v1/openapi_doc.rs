@@ -90,6 +90,7 @@ use super::*;
         v1_discord_send_notification_proxy,
         v1_discord_reset_cooldown_proxy,
         v1_chat_status_proxy,
+        v1_chat_recent_messages_proxy,
         v1_chat_connect_proxy,
         v1_chat_disconnect_all_proxy,
         v1_chat_platform_status_proxy,

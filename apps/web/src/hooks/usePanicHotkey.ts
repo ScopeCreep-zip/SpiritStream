@@ -6,6 +6,7 @@ import { api } from '@/lib/client';
 import { toast } from '@/hooks/useToast';
 import { logger } from '@/lib/logger';
 import { useStoredHotkey } from '@/hooks/useStoredHotkey';
+import { useChatStore } from '@/stores/chatStore';
 import { matchesEvent, toTauriShortcut, type HotkeyBinding } from '@/lib/hotkey';
 
 /**
@@ -39,6 +40,12 @@ export function usePanicHotkey(): void {
   const handlePanic = useCallback(async (): Promise<void> => {
     try {
       const result = await api.safety.panic();
+      // Wipe the in-memory chat view too — the backend already cleared
+      // its recent-message ring + on-disk history; clearing here means a
+      // panic makes the on-screen stranger chat vanish immediately,
+      // matching "make it disappear" (ASVS: clear client data on session
+      // termination).
+      useChatStore.getState().clearMessages();
       toast.success(
         t('toast.panicStopped', {
           count: result.streamsStopped,

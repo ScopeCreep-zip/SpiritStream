@@ -61,6 +61,14 @@ export const chat = {
     await fetchTypedJson<unknown>('DELETE', '/api/v1/chat/connections');
   },
   getStatus: () => fetchTypedJson<ChatPlatformStatus[]>('GET', '/api/v1/chat/connections'),
+  /**
+   * Recent messages from the backend's in-memory ring — the server-side
+   * replay source fetched on page load / WS reconnect to repopulate
+   * chat. Sensitive chat stays server-side (OWASP: never browser
+   * storage); the response is `Cache-Control: no-store`.
+   */
+  getRecentMessages: () =>
+    fetchTypedJson<ChatMessage[]>('GET', '/api/v1/chat/messages/recent'),
   getLogStatus: () => fetchTypedJson<ChatLogStatus>('GET', '/api/v1/chat/log'),
   exportLog: async (path: string) => {
     await fetchTypedJson<unknown>('POST', '/api/v1/chat/log/export', undefined, { path });

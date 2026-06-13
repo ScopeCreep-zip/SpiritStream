@@ -43,6 +43,41 @@ pub fn prune_logs(log_dir: &Path, retention_days: u32) -> Result<usize, CoreErro
     Ok(removed)
 }
 
+/// Age-prune the encrypted chat-history records (`chatlog_*.enc`) by the
+/// same retention window as the app logs (storage-limitation: keep chat
+/// no longer than necessary — NIST 800-122 / GDPR Art. 5(1)(e)). A
+/// `retention_days` of 0 disables pruning (keep until the user clears).
+pub fn prune_chat_history(log_dir: &Path, retention_days: u32) -> Result<usize, CoreError> {
+    if retention_days == 0 || !log_dir.exists() {
+        return Ok(0);
+    }
+    let cutoff = SystemTime::now()
+        .checked_sub(Duration::from_secs(retention_days as u64 * 24 * 60 * 60))
+        .unwrap_or(SystemTime::UNIX_EPOCH);
+    let entries = fs::read_dir(log_dir).map_err(|e| CoreError::Internal {
+        context: format!("Failed to read log dir: {e}"),
+    })?;
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let is_chat_history = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.starts_with("chatlog_") && n.ends_with(".enc"));
+        if !is_chat_history {
+            continue;
+        }
+        let modified = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .unwrap_or(SystemTime::UNIX_EPOCH);
+        if modified < cutoff && fs::remove_file(&path).is_ok() {
+            removed += 1;
+        }
+    }
+    Ok(removed)
+}
+
 pub fn read_recent_logs(log_dir: &Path, max_lines: usize) -> Result<Vec<String>, CoreError> {
     let log_file = match find_latest_log_file(log_dir) {
         Some(path) => path,

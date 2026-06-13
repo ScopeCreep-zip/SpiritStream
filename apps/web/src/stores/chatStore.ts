@@ -102,6 +102,14 @@ export const useChatStore = create<ChatStore>()(
     }),
     {
       name: 'spiritstream-chat',
+      // `messages` is DELIBERATELY excluded from localStorage. Inbound
+      // chat is sensitive (harassment/doxxing content + PII) and the
+      // webview renders chat from strangers — an XSS-exposed surface.
+      // OWASP (HTML5 Cheat Sheet / ASVS V14) is explicit: sensitive data
+      // belongs server-side, never in browser storage (one XSS drains
+      // localStorage). History is repopulated from the backend's recent-
+      // message endpoint on (re)connect instead; only the non-sensitive
+      // overlay UI prefs persist here.
       partialize: (state) => ({
         overlayTransparent: state.overlayTransparent,
         overlayAlwaysOnTop: state.overlayAlwaysOnTop,

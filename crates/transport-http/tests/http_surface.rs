@@ -43,3 +43,6 @@ mod auth;
 // OAuth config truth + unconfigured pre-flight guard.
 #[path = "http_surface/oauth.rs"]
 mod oauth;
+
+#[path = "http_surface/chat.rs"]
+mod chat;

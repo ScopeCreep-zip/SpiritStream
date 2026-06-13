@@ -179,7 +179,7 @@ mod tests {
 
     fn manager() -> (ChatManager, tempfile::TempDir) {
         let dir = tempfile::tempdir().expect("tempdir");
-        let mgr = ChatManager::new(Arc::new(NoopSink), dir.path().to_path_buf());
+        let mgr = ChatManager::new(Arc::new(NoopSink), dir.path().to_path_buf(), dir.path().to_path_buf());
         (mgr, dir)
     }
 
@@ -294,6 +294,32 @@ mod tests {
         // Profile switch clears the whole slate.
         mgr.clear_all_disconnect_intent().await;
         assert!(!mgr.is_disconnect_intended(ChatPlatform::Kick).await);
+    }
+
+    // ---- recent-message ring (refresh/restart replay) ----
+
+    fn msg(text: &str) -> crate::models::ChatMessage {
+        crate::models::ChatMessage::new(ChatPlatform::Twitch, "viewer".into(), text.into())
+    }
+
+    #[tokio::test]
+    async fn ring_seed_keeps_last_n_in_order_and_clear_empties() {
+        let (mgr, _dir) = manager();
+        // Seed more than the cap; only the last RECENT_MESSAGES_CAP survive.
+        let many: Vec<_> = (0..(super::super::RECENT_MESSAGES_CAP + 5))
+            .map(|i| msg(&format!("m{i}")))
+            .collect();
+        mgr.seed_recent_messages(many).await;
+        let got = mgr.recent_messages().await;
+        assert_eq!(got.len(), super::super::RECENT_MESSAGES_CAP);
+        // Order preserved, oldest→newest, ending at the newest seeded.
+        assert_eq!(
+            got.last().unwrap().message,
+            format!("m{}", super::super::RECENT_MESSAGES_CAP + 4)
+        );
+
+        mgr.clear_recent_messages().await;
+        assert!(mgr.recent_messages().await.is_empty());
     }
 
     /// Changing a channel for a NOT-connected platform is a no-op for the

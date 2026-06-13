@@ -73,7 +73,7 @@ async fn fixture() -> Fixture {
     let dir = TempDir::new().unwrap();
     let data_dir = dir.path().to_path_buf();
     let event_sink: Arc<dyn EventSink> = Arc::new(NoopEventSink);
-    let mgr = Arc::new(ChatManager::new(event_sink.clone(), data_dir.clone()));
+    let mgr = Arc::new(ChatManager::new(event_sink.clone(), data_dir.clone(), data_dir.clone()));
     let audit = Arc::new(AuditLogService::new_for_tests(data_dir.clone()).unwrap());
     mgr.set_audit_log(audit.clone());
     let ffmpeg = Arc::new(

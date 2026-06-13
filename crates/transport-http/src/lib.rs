@@ -14,7 +14,8 @@ use tower_http::set_header::SetResponseHeaderLayer;
 
 use spiritstream_core::models::ProfileSettings;
 use spiritstream_core::services::{
-    prune_logs, validate_path_within_any, AuditLogService, AuthService, ChatManager,
+    prune_chat_history, prune_logs, validate_path_within_any, AuditLogService, AuthService,
+    ChatManager,
     ConfirmTokenService, DiscordWebhookService, EventSink, FFmpegHandler, FFmpegLocator,
     OAuthService, ObsWebSocketHandler, ProfileManager, SafetyService, SettingsManager,
     ThemeManager,
@@ -359,6 +360,22 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     if let Err(e) = registry.oauth.load_persisted().await {
         log::error!("failed to load stored OAuth client credentials: {e}");
     }
+    // Chat history is always-on (decoupled from streaming): start the
+    // log session once at boot, and seed the in-memory recent ring from
+    // the encrypted on-disk history so a full app restart repopulates the
+    // chat view (server-side replay; nothing in browser storage).
+    registry.chat.start_log_session();
+    {
+        let recent = spiritstream_core::services::read_recent(
+            &log_dir_path,
+            &app_data_dir,
+            spiritstream_core::services::RECENT_MESSAGES_CAP,
+        );
+        if !recent.is_empty() {
+            registry.chat.seed_recent_messages(recent).await;
+        }
+    }
+
     let profile_manager = registry.profiles.clone();
     let settings_manager = registry.settings.clone();
     let theme_manager = registry.themes.clone();
@@ -499,6 +516,8 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     if let Some(settings) = settings.as_ref() {
         let _ = prune_logs(&log_dir_path, settings.log_retention_days);
+        // Same retention bound on the encrypted chat history (storage limitation).
+        let _ = prune_chat_history(&log_dir_path, settings.log_retention_days);
     }
 
     // Wire the FFmpeg handler against the user's optional custom path. The

@@ -149,6 +149,7 @@ pub async fn v1_settings_save(
     // forward-only replacement).
 
     let _ = crate::prune_logs(&state.log_dir, new_settings.log_retention_days);
+    let _ = crate::prune_chat_history(&state.log_dir, new_settings.log_retention_days);
     state
         .event_bus
         .emit("settings_changed", serde_json::json!({}));

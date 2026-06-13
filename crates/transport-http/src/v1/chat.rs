@@ -59,6 +59,33 @@ pub async fn v1_chat_status_proxy(
     Ok(Json(status.into_iter().map(Into::into).collect()))
 }
 
+/// `GET /chat/messages/recent` — the in-memory recent-message ring
+/// (oldest→newest), the server-side replay source the frontend fetches
+/// on every (re)connect / page load to repopulate chat. Sensitive chat
+/// stays server-side (OWASP: never browser storage) and the response is
+/// `Cache-Control: no-store` so the webview can't cache it (OWASP ASVS
+/// anti-caching for sensitive data).
+#[utoipa::path(get, path = "/chat/messages/recent", tag = "chat",
+    responses((status = 200, body = Vec<crate::v1::ChatMessageWire>)),
+    security(("session_cookie" = []), ("bearer" = [])))]
+pub async fn v1_chat_recent_messages_proxy(
+    State(state): State<AppState>,
+) -> Result<axum::response::Response, crate::ApiError> {
+    use axum::response::IntoResponse;
+    let wire: Vec<crate::v1::ChatMessageWire> = state
+        .chat_manager
+        .recent_messages()
+        .await
+        .into_iter()
+        .map(Into::into)
+        .collect();
+    Ok((
+        [(axum::http::header::CACHE_CONTROL, "no-store")],
+        Json(wire),
+    )
+        .into_response())
+}
+
 #[utoipa::path(post, path = "/chat/connections", tag = "chat",
     request_body = ChatConfigWire,
     responses(

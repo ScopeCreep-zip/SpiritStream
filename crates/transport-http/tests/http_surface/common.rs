@@ -164,6 +164,24 @@ pub fn get(server: &ServerHandle, path: &str) -> (u16, String) {
     (status, body)
 }
 
+/// GET returning (status, a named response header value, body) — for
+/// asserting cache-control on sensitive endpoints.
+pub fn get_with_header(server: &ServerHandle, path: &str, header: &str) -> (u16, String, String) {
+    let resp = reqwest::blocking::Client::new()
+        .get(format!("{}{}", server.base, path))
+        .send()
+        .expect("GET");
+    let status = resp.status().as_u16();
+    let hdr = resp
+        .headers()
+        .get(header)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    let body = resp.text().expect("body");
+    (status, hdr, body)
+}
+
 pub fn post_invoke(server: &ServerHandle, path: &str, payload: &str) -> (u16, String) {
     let resp = reqwest::blocking::Client::new()
         .post(format!("{}{}", server.base, path))

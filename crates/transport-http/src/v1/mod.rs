@@ -228,6 +228,10 @@ pub fn protected_router(state: AppState) -> Router<AppState> {
             post(v1_chat_retry_proxy),
         )
         .route("/api/v1/chat/messages", post(v1_chat_send_proxy))
+        .route(
+            "/api/v1/chat/messages/recent",
+            get(v1_chat_recent_messages_proxy),
+        )
         .route("/api/v1/chat/connected", get(v1_chat_is_connected_proxy))
         .route("/api/v1/chat/log", get(v1_chat_log_status_proxy))
         .route("/api/v1/chat/log/export", post(v1_chat_export_log_proxy))

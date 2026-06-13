@@ -183,6 +183,7 @@ export interface ChatApi {
   disconnect(platform: ChatPlatform): Promise<void>;
   retryConnection(platform: ChatPlatform): Promise<void>;
   connectPlatform(platform: ChatPlatform): Promise<void>;
+  getRecentMessages(): Promise<ChatMessage[]>;
   disconnectAll(): Promise<void>;
   getStatus(): Promise<ChatPlatformStatus[]>;
   getLogStatus(): Promise<ChatLogStatus>;

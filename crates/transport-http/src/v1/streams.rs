@@ -193,7 +193,8 @@ pub async fn v1_streams_start(
         .ffmpeg_handler
         .start(&req.group, &req.incoming_url, event_sink)?;
     if !was_streaming {
-        state.chat_manager.start_log_session();
+        // Chat (and its always-on encrypted history) is decoupled from
+        // streaming — the log session is started once at boot, not here.
         tokio::spawn(crate::auto_connect_chat_platforms(state.clone()));
     }
     Ok(Json(StreamStartResponse { pid }))
@@ -218,15 +219,11 @@ pub async fn v1_streams_start_all(
     State(state): State<AppState>,
     axum::Json(req): axum::Json<StreamStartAllRequest>,
 ) -> Result<Json<StreamStartAllResponse>, crate::ApiError> {
-    let was_streaming = state.ffmpeg_handler.active_count() > 0;
     let event_sink: std::sync::Arc<dyn spiritstream_core::services::EventSink> =
         std::sync::Arc::new(state.event_bus.clone());
     let started = state
         .ffmpeg_handler
         .start_all(&req.groups, &req.incoming_url, event_sink)?;
-    if !was_streaming {
-        state.chat_manager.start_log_session();
-    }
     tokio::spawn(crate::auto_connect_chat_platforms(state.clone()));
     let (started_group_ids, pids) = started.into_iter().unzip();
     Ok(Json(StreamStartAllResponse {
@@ -262,11 +259,8 @@ pub async fn v1_streams_stop(
         .map_err(|e| spiritstream_core::CoreError::Internal {
             context: format!("ffmpeg stop join: {e}"),
         })??;
-    if state.ffmpeg_handler.active_count() == 0 {
-        // Chat is decoupled from streaming — stopping a stream no longer
-        // tears down chat. The log session still brackets the broadcast.
-        state.chat_manager.end_log_session();
-    }
+    // Chat + its always-on encrypted history are decoupled from
+    // streaming — stopping a stream no longer ends the log session.
     Ok(Json(StreamStopAllResponse { stopped: true }))
 }
 
@@ -284,12 +278,9 @@ pub async fn v1_streams_stop(
 pub async fn v1_streams_stop_all(
     State(state): State<AppState>,
 ) -> Result<Json<StreamStopAllResponse>, crate::ApiError> {
-    // End the log session BEFORE attempting the stop. If stop_all fails
-    // mid-way the chat log session is already finalized on disk; otherwise
-    // we'd leak an open jsonl writer that never gets flushed/closed.
-    state.chat_manager.end_log_session();
-    // I3: same graceful-shutdown poll loop runs per group — keep the
-    // async runtime free.
+    // I3: graceful-shutdown poll loop runs per group — keep the async
+    // runtime free. Chat history is always-on (stream-decoupled), so the
+    // log session is NOT ended here.
     let ffmpeg = state.ffmpeg_handler.clone();
     tokio::task::spawn_blocking(move || ffmpeg.stop_all())
         .await

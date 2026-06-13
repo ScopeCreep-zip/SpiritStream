@@ -45,9 +45,8 @@ pub async fn v1_chat_export_log_proxy(
     axum::Json(req): axum::Json<ChatExportRequest>,
 ) -> Result<Json<ChatAckResponse>, crate::ApiError> {
     use chrono::{Local, TimeZone};
-    use spiritstream_core::models::ChatMessage;
     use std::fs::File;
-    use std::io::{BufRead, BufReader, BufWriter, Write};
+    use std::io::{BufWriter, Write};
 
     // Validate the user-supplied export path stays inside the
     // data dir or home dir before opening — path_validator catches `..`
@@ -85,23 +84,18 @@ pub async fn v1_chat_export_log_proxy(
         }
     })?);
     for key in hour_keys {
-        let src_path = state.log_dir.join(format!("chatlog_{}.jsonl", key));
+        let src_path = state.log_dir.join(format!("chatlog_{}.enc", key));
         if !src_path.exists() {
             continue;
         }
-        let file = File::open(&src_path).map_err(|e| spiritstream_core::CoreError::Internal {
-            context: format!("Failed to read chat log {}: {e}", src_path.display()),
-        })?;
-        let reader = BufReader::new(file);
-        for line in reader.lines() {
-            let line = line.map_err(|e| spiritstream_core::CoreError::Internal {
-                context: format!("Failed to read chat log: {e}"),
-            })?;
-            if line.trim().is_empty() {
-                continue;
-            }
-            if let Ok(message) = serde_json::from_str::<ChatMessage>(&line) {
-                if message.timestamp >= start_ms && message.timestamp <= end_ms {
+        // The on-disk history is encrypted at rest — decrypt the records
+        // here. The user-chosen export file is a deliberate plaintext
+        // export (their explicit act).
+        for message in
+            spiritstream_core::services::read_messages_from_file(&src_path, &state.app_data_dir)
+        {
+            if message.timestamp >= start_ms && message.timestamp <= end_ms {
+                if let Ok(line) = serde_json::to_string(&message) {
                     writer.write_all(line.as_bytes()).map_err(|e| {
                         spiritstream_core::CoreError::Internal {
                             context: format!("Failed to write export file: {e}"),
@@ -147,8 +141,6 @@ pub async fn v1_chat_search_session_proxy(
 ) -> Result<Json<Vec<crate::v1::ChatMessageWire>>, crate::ApiError> {
     use chrono::{Local, TimeZone};
     use spiritstream_core::models::ChatMessage;
-    use std::fs::File;
-    use std::io::{BufRead, BufReader};
 
     let limit = req.limit.unwrap_or(500);
     let start_ms = state.chat_manager.log_session_start_ms().ok_or_else(|| {
@@ -179,28 +171,17 @@ pub async fn v1_chat_search_session_proxy(
         if matches.len() >= limit {
             break;
         }
-        let src_path = state.log_dir.join(format!("chatlog_{}.jsonl", key));
+        let src_path = state.log_dir.join(format!("chatlog_{}.enc", key));
         if !src_path.exists() {
             continue;
         }
-        let file = File::open(&src_path).map_err(|e| spiritstream_core::CoreError::Internal {
-            context: format!("Failed to read chat log {}: {e}", src_path.display()),
-        })?;
-        let reader = BufReader::new(file);
-        for line in reader.lines() {
+        // Decrypt the encrypted-at-rest history records for searching.
+        for message in
+            spiritstream_core::services::read_messages_from_file(&src_path, &state.app_data_dir)
+        {
             if matches.len() >= limit {
                 break;
             }
-            let line = line.map_err(|e| spiritstream_core::CoreError::Internal {
-                context: format!("Failed to read chat log: {e}"),
-            })?;
-            if line.trim().is_empty() {
-                continue;
-            }
-            let message = match serde_json::from_str::<ChatMessage>(&line) {
-                Ok(m) => m,
-                Err(_) => continue,
-            };
             if message.timestamp < start_ms || message.timestamp > end_ms {
                 continue;
             }

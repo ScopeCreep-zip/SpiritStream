@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { events } from '@spiritstream/api-client';
+import { api } from '@/lib/client';
 import { logger } from '@/lib/logger';
 import { useChatStore } from '@/stores/chatStore';
 import type { ChatMessage } from '@spiritstream/types';
@@ -9,6 +10,7 @@ type UnlistenFn = () => void;
 
 export function useChatListener() {
   const addMessage = useChatStore((state) => state.addMessage);
+  const addMessages = useChatStore((state) => state.addMessages);
   const markMessageDeleted = useChatStore((state) => state.markMessageDeleted);
   const markUserTimedOut = useChatStore((state) => state.markUserTimedOut);
   const setOverlayTransparent = useChatStore((state) => state.setOverlayTransparent);
@@ -19,6 +21,26 @@ export function useChatListener() {
     let cancelled = false;
     let unlistenMessages: UnlistenFn | null = null;
     let unlistenOverlay: UnlistenFn | null = null;
+
+    // Repopulate chat history from the BACKEND on first load and on every
+    // (re)connect — the message store is in-memory only (OWASP: sensitive
+    // chat never goes to browser storage), so a refresh / WS reconnect
+    // needs a server-side replay. `addMessages` dedups by id, so overlap
+    // with live events collapses harmlessly.
+    const seedRecent = (): void => {
+      if (cancelled) return;
+      api.chat
+        .getRecentMessages()
+        .then((recent) => {
+          if (!cancelled && recent.length > 0) addMessages(recent);
+        })
+        .catch((error) => logger.error('Failed to load recent chat history:', error));
+    };
+    seedRecent();
+    // The api-client dispatches `backend:connected` / `backend:reconnected`
+    // window events when the realtime socket (re)establishes.
+    window.addEventListener('backend:connected', seedRecent);
+    window.addEventListener('backend:reconnected', seedRecent);
 
     events
       .on<ChatMessage>(CHAT_MESSAGE_EVENT, (payload) => {
@@ -67,6 +89,8 @@ export function useChatListener() {
 
     return () => {
       cancelled = true;
+      window.removeEventListener('backend:connected', seedRecent);
+      window.removeEventListener('backend:reconnected', seedRecent);
       if (unlistenMessages) {
         unlistenMessages();
       }
@@ -74,5 +98,5 @@ export function useChatListener() {
         unlistenOverlay();
       }
     };
-  }, [addMessage, markMessageDeleted, markUserTimedOut, setOverlayTransparent]);
+  }, [addMessage, addMessages, markMessageDeleted, markUserTimedOut, setOverlayTransparent]);
 }
