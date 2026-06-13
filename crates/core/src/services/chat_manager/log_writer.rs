@@ -358,13 +358,32 @@ impl ChatLogState {
 
 #[cfg(test)]
 mod tests {
-    use super::{read_messages_from_file, read_recent, ChatLogState};
+    use super::{list_history_files, read_messages_from_file, read_recent, record_aad, ChatLogState};
     use crate::models::{ChatMessage, ChatPlatform};
+    use crate::services::Encryption;
+    use std::io::Write;
     use std::path::Path;
     use tempfile::TempDir;
 
     fn sample(text: &str) -> ChatMessage {
         ChatMessage::new(ChatPlatform::Twitch, "viewer".into(), text.into())
+    }
+
+    /// Append one record to `chatlog_{hour_key}.enc` exactly as the writer
+    /// would — same per-file AAD and `[u32-LE len][ciphertext]` framing —
+    /// so a test can stage a multi-hour history without time travel.
+    fn append_record(dir: &Path, hour_key: &str, msg: &ChatMessage) {
+        let json = serde_json::to_vec(msg).unwrap();
+        let aad = record_aad(hour_key);
+        let ct = Encryption::encrypt_bytes_with_machine_key_aad(&json, &aad, dir).unwrap();
+        let path = dir.join(format!("chatlog_{hour_key}.enc"));
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .unwrap();
+        f.write_all(&(ct.len() as u32).to_le_bytes()).unwrap();
+        f.write_all(&ct).unwrap();
     }
 
     fn enc_files(dir: &Path) -> Vec<std::path::PathBuf> {
@@ -435,5 +454,36 @@ mod tests {
         let recent = read_recent(dir.path(), dir.path(), 3);
         let texts: Vec<&str> = recent.iter().map(|m| m.message.as_str()).collect();
         assert_eq!(texts, vec!["m7", "m8", "m9"]);
+    }
+
+    /// Export/search read the FULL retained history: `list_history_files`
+    /// discovers every hour-file and sorts them chronologically, then each
+    /// is decrypted under its own file-bound AAD. This pins the multi-file
+    /// path (export covers history across hour rotations and restarts), not
+    /// just a single file — and that `list_history_files` sorts, so the
+    /// merged stream is chronological regardless of dir-walk order.
+    #[test]
+    fn export_reads_full_history_across_hour_files_in_order() {
+        let dir = TempDir::new().unwrap();
+        // Stage two hour-files; write the later hour FIRST so a naive
+        // unsorted read would interleave wrong.
+        append_record(dir.path(), "20200101-11", &sample("later-1"));
+        append_record(dir.path(), "20200101-10", &sample("earlier-1"));
+        append_record(dir.path(), "20200101-10", &sample("earlier-2"));
+        append_record(dir.path(), "20200101-11", &sample("later-2"));
+
+        let files = list_history_files(dir.path());
+        assert_eq!(files.len(), 2, "both hour-files discovered");
+
+        let merged: Vec<String> = files
+            .iter()
+            .flat_map(|p| read_messages_from_file(p, dir.path()))
+            .map(|m| m.message)
+            .collect();
+        assert_eq!(
+            merged,
+            vec!["earlier-1", "earlier-2", "later-1", "later-2"],
+            "full history, chronological across hour-files"
+        );
     }
 }

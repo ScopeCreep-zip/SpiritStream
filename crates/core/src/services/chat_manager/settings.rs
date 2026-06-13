@@ -256,6 +256,49 @@ mod tests {
         mgr.set_anonymous_policy(false, String::new()).unwrap();
     }
 
+    /// End-to-end: with anonymous mode on, an inbound message's real
+    /// username must be pseudonymized BEFORE it is persisted — the
+    /// plaintext name must never reach the encrypted history on disk.
+    /// The isolated `apply_anonymous_policy_inbound` unit test can't catch
+    /// a regression where the handler stops calling it before the writer
+    /// (the pre-F2 bug); this drives the full handler → writer → disk path
+    /// and reads the record back.
+    #[tokio::test]
+    async fn anonymous_mode_persists_pseudonymized_username_to_disk() {
+        use crate::services::chat_manager::{list_history_files, read_messages_from_file};
+
+        let (mgr, dir) = manager();
+        mgr.set_anonymous_policy(true, "deadbeef".into()).unwrap();
+        mgr.start_log_session();
+
+        let msg =
+            crate::models::ChatMessage::new(ChatPlatform::Twitch, "RealUser".into(), "hi".into());
+        mgr.message_tx.send(msg).await.expect("handler alive");
+
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        mgr.flush_chat_logs().await.unwrap();
+
+        let files = list_history_files(dir.path());
+        assert_eq!(files.len(), 1, "one hour-file written");
+        let persisted = read_messages_from_file(&files[0], dir.path());
+        assert_eq!(persisted.len(), 1, "the message was persisted");
+        assert_ne!(
+            persisted[0].username, "RealUser",
+            "the real username must never reach disk under anonymous mode"
+        );
+        assert!(
+            crate::services::pseudonymizer::looks_pseudonymized(&persisted[0].username),
+            "persisted username must be pseudonymized: {}",
+            persisted[0].username
+        );
+        // The ciphertext itself must not contain the plaintext name either.
+        let raw = std::fs::read(&files[0]).unwrap();
+        assert!(
+            !raw.windows("RealUser".len()).any(|w| w == b"RealUser"),
+            "ciphertext must not leak the real username"
+        );
+    }
+
     // ---- manual-disconnect intent (the decouple-from-streaming safety spine) ----
 
     #[tokio::test]
