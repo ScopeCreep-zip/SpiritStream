@@ -265,6 +265,9 @@ impl From<ChatCredentialsWire> for ChatCredentials {
                 oauth_token,
             } => Self::Trovo {
                 channel_id,
+                // Never wire-supplied: the connect handler resolves it
+                // from the OAuth config after this conversion.
+                client_id: None,
                 oauth_token,
             },
             ChatCredentialsWire::Kick {

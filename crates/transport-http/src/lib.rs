@@ -351,6 +351,14 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             secret_store,
         })
         .map_err(|e| -> Box<dyn std::error::Error> { format!("registry build: {e}").into() })?;
+    // Restore client credentials the user saved through the in-app
+    // setup form. Failure is logged loudly but doesn't abort startup:
+    // the affected providers report unconfigured, which the UI shows
+    // honestly — locking the user out of the whole app over optional
+    // sign-in config would be the worse failure for this population.
+    if let Err(e) = registry.oauth.load_persisted().await {
+        log::error!("failed to load stored OAuth client credentials: {e}");
+    }
     let profile_manager = registry.profiles.clone();
     let settings_manager = registry.settings.clone();
     let theme_manager = registry.themes.clone();

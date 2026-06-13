@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { Copy, LogIn, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { DeviceCodePanel } from '@/components/chat/settings/DeviceCodePanel';
+import { ProviderCredentialsForm } from '@/components/chat/settings/ProviderCredentialsForm';
+import type { OAuthProviderSummary } from '@spiritstream/api-client';
 import { api } from '@/lib/client';
 import { toast } from '@/hooks/useToast';
 import { logger } from '@/lib/logger';
@@ -13,11 +15,12 @@ interface PlatformSignInButtonProps {
    *  means signed in; rendered as the button label when present. */
   signedInAs: string;
   signInLabel: string;
-  /** Backend-reported flag from `GET /oauth/config` — false means this
-   *  build/env carries no real client credentials for the provider, so
-   *  the button renders an honest "not set up" hint instead of kicking
-   *  off a flow that would land on the provider's 400 page. */
-  configured: boolean;
+  /** Backend setup state from `GET /oauth/config`. `null` while loading.
+   *  Unconfigured providers render the in-app credentials form instead
+   *  of kicking off a flow that would land on the provider's 400 page. */
+  summary: OAuthProviderSummary | null;
+  /** Bubbles the post-save summaries up so the panel refreshes every card. */
+  onCredentialsSaved: (updated: OAuthProviderSummary[]) => void;
 }
 
 /**
@@ -38,7 +41,8 @@ export function PlatformSignInButton({
   provider,
   signedInAs,
   signInLabel,
-  configured,
+  summary,
+  onCredentialsSaved,
 }: PlatformSignInButtonProps) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
@@ -129,14 +133,16 @@ export function PlatformSignInButton({
     );
   }
 
-  if (!configured) {
+  if (!summary || !summary.configured) {
     return (
-      <p className="mt-3 text-xs text-text-tertiary">
-        {t('chat.oauth.notConfigured', {
-          defaultValue:
-            'Sign-in is not set up in this build — no client credentials for this platform.',
-        })}
-      </p>
+      <div className="mt-3">
+        <p className="text-xs text-text-tertiary">
+          {t('chat.oauth.notConfigured', {
+            defaultValue: 'Sign-in needs a one-time setup for this platform.',
+          })}
+        </p>
+        {summary && <ProviderCredentialsForm summary={summary} onSaved={onCredentialsSaved} />}
+      </div>
     );
   }
 
@@ -181,6 +187,12 @@ export function PlatformSignInButton({
             {t('chat.oauth.copyLink', { defaultValue: 'Copy link' })}
           </Button>
         </div>
+      )}
+      {/* Configured via user-entered credentials: keep the form
+          reachable (collapsed) so a typo'd id or rotated secret can be
+          corrected without env vars. Saving empty values clears it. */}
+      {summary.overrideClientId && (
+        <ProviderCredentialsForm summary={summary} onSaved={onCredentialsSaved} />
       )}
     </div>
   );

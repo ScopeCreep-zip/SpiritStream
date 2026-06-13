@@ -28,6 +28,10 @@ fi
 
 export SPIRITSTREAM_CLI="$CLI"
 export SPIRITSTREAM_THEMES_DIR="$WORKSPACE/themes"
+# Hermetic secrets: pin the encrypted-file store so cases that persist
+# credentials (oauth config) write inside their throwaway data dir, not
+# the developer's OS keychain (the default platform probe on macOS).
+export SPIRITSTREAM_SECRET_STORE=file
 
 cases=()
 if [[ $# -gt 0 ]]; then

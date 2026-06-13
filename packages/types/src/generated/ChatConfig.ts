@@ -3,7 +3,7 @@ import type { ChatCredentials } from "./ChatCredentials";
 import type { ChatPlatform } from "./ChatPlatform";
 
 /**
- * Configuration for a chat platform connection
+ * Configuration for connecting a chat platform.
  */
 export type ChatConfig = { 
 /**

@@ -8,6 +8,7 @@ import { Toggle } from '@/components/ui/Toggle';
 import { PlatformSignInButton } from '@/components/chat/settings/PlatformSignInButton';
 import { PlatformConnectionBadge } from '@/components/chat/PlatformStatusDot';
 import type { ChatPlatformStatus } from '@spiritstream/types';
+import type { OAuthProviderSummary } from '@spiritstream/api-client';
 import { useProfileStore } from '@/stores/profileStore';
 import { api } from '@/lib/client';
 import { toast } from '@/hooks/useToast';
@@ -31,15 +32,19 @@ import {
  * combined payload reach the backend.
  */
 interface FacebookConnectGateProps {
-  /** Backend-truth flag from `GET /oauth/config` — gates the OAuth
-   *  button; the manual Page-Token path below works regardless. */
-  oauthConfigured: boolean;
+  /** Backend setup state from `GET /oauth/config` — drives the OAuth
+   *  button + in-app credentials form; the manual Page-Token path
+   *  below works regardless. */
+  oauthSummary: OAuthProviderSummary | null;
+  /** Bubbles post-save summaries up so the panel refreshes every card. */
+  onCredentialsSaved: (updated: OAuthProviderSummary[]) => void;
   /** Live connection state from the parent's `useChatPlatformStatus`. */
   connectionStatus: ChatPlatformStatus['status'];
 }
 
 export function FacebookConnectGate({
-  oauthConfigured,
+  oauthSummary,
+  onCredentialsSaved,
   connectionStatus,
 }: FacebookConnectGateProps): React.ReactElement {
   const { t } = useTranslation();
@@ -198,7 +203,8 @@ export function FacebookConnectGate({
           <PlatformSignInButton
             provider="facebook"
             signedInAs={currentProfile?.settings?.oauth?.facebook?.username ?? ''}
-            configured={oauthConfigured}
+            summary={oauthSummary}
+            onCredentialsSaved={onCredentialsSaved}
             signInLabel={t('chat.facebook.loginWithFacebook', {
               defaultValue: 'Login with Facebook',
             })}

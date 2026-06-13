@@ -101,12 +101,21 @@
       "deviceExpires": "تنتهي صلاحية الرمز خلال {{seconds}} ثانية. تُغلق هذه اللوحة عند اكتمال تسجيل الدخول.",
       "deviceFailed": "لم يكتمل تسجيل الدخول: {{reason}}",
       "deviceInstruction": "افتح هذه الصفحة على أي جهاز وأدخل الرمز:",
-      "notConfigured": "تسجيل الدخول غير مُهيأ في هذا الإصدار — لا توجد بيانات اعتماد عميل لهذه المنصة.",
+      "notConfigured": "يتطلب تسجيل الدخول إعدادًا لمرة واحدة لهذه المنصة.",
       "openManually": "لم يُفتح المتصفح — انسخ رابط تسجيل الدخول:",
       "signOutFailed": "فشل تسجيل الخروج: {{error}}",
       "signedInAs": "تم تسجيل الدخول كـ {{username}}",
       "signedOut": "تم تسجيل الخروج من {{platform}}",
-      "startFailed": "فشل بدء تسجيل الدخول: {{error}}"
+      "startFailed": "فشل بدء تسجيل الدخول: {{error}}",
+      "setup": "إعداد تسجيل الدخول",
+      "setupHint": "إعداد لمرة واحدة: أنشئ تطبيقًا (مجانيًا) على موقع مطوّري {{platform}} ثم الصق بياناته هنا. تُخزَّن مشفّرة على هذا الجهاز.",
+      "openPortal": "افتح بوابة مطوّري {{platform}}",
+      "clientId": "معرّف العميل",
+      "clientSecret": "سر العميل",
+      "credentialsSaved": "تم حفظ بيانات تسجيل الدخول.",
+      "credentialsSaveFailed": "تعذّر حفظ البيانات: {{error}}",
+      "saving": "جارٍ الحفظ…",
+      "saveCredentials": "احفظ وفعّل تسجيل الدخول"
     },
     "platformReadOnly": "للقراءة فقط",
     "platforms": {
@@ -157,7 +166,7 @@
     "transparentOverlay": "تراكب شفاف",
     "trovo": {
       "channelId": "معرف القناة",
-      "channelIdHint": "يتطلب SPIRITSTREAM_TROVO_CLIENT_ID في البيئة. يتم دعم الدردشة للقراءة فقط.",
+      "channelIdHint": "تستخدم قراءة الدردشة إعداد تسجيل الدخول لمرة واحدة أدناه. الدردشة للقراءة فقط مدعومة.",
       "channelIdPlaceholder": "على سبيل المثال 100000021",
       "description": "قراءة دردشة Trovo عبر معرّف القناة؛ سجّل الدخول للإرسال",
       "loginWithTrovo": "تسجيل الدخول عبر Trovo"

@@ -251,6 +251,7 @@ pub(crate) async fn auto_connect_chat_platforms(state: AppState) {
                 &state.chat_manager,
                 &chat_settings,
                 &profile_settings,
+                state.oauth_service.get_config().await.get_trovo_client_id(),
                 &state.event_bus,
             )
             .await;
@@ -411,6 +412,7 @@ pub(crate) async fn connect_trovo_chat(
     chat_manager: &Arc<ChatManager>,
     chat_settings: &ChatSettings,
     profile_settings: &ProfileSettings,
+    trovo_client_id: String,
     event_bus: &EventBus,
 ) {
     // Mirror the Kick shape: send only when the user enabled it AND a
@@ -428,6 +430,10 @@ pub(crate) async fn connect_trovo_chat(
         enabled: true,
         credentials: ChatCredentials::Trovo {
             channel_id: chat_settings.trovo_channel_id.clone(),
+            // Resolved by the caller from the OAuth config chain
+            // (in-app setup → env → embedded); the connector fails
+            // loud on a placeholder.
+            client_id: Some(trovo_client_id),
             oauth_token,
         },
     };
@@ -655,6 +661,7 @@ pub(crate) async fn start_chat_reconnect_task(state: AppState) {
                             &state.chat_manager,
                             &chat_settings,
                             &profile_settings,
+                            state.oauth_service.get_config().await.get_trovo_client_id(),
                             &state.event_bus,
                         )
                         .await;

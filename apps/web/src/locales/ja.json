@@ -101,12 +101,21 @@
       "deviceExpires": "コードは {{seconds}} 秒で期限切れになります。サインイン完了後にこのパネルは閉じます。",
       "deviceFailed": "サインインが完了しませんでした: {{reason}}",
       "deviceInstruction": "任意のデバイスでこのページを開き、コードを入力してください:",
-      "notConfigured": "このビルドではサインインが設定されていません — このプラットフォーム用のクライアント資格情報がありません。",
+      "notConfigured": "このプラットフォームのサインインには初回のみの設定が必要です。",
       "openManually": "ブラウザが開きませんでした — サインインリンクをコピーしてください:",
       "signOutFailed": "サインアウトに失敗しました: {{error}}",
       "signedInAs": "{{username}}としてログイン中",
       "signedOut": "{{platform}}からログアウトしました",
-      "startFailed": "サインインの開始に失敗しました: {{error}}"
+      "startFailed": "サインインの開始に失敗しました: {{error}}",
+      "setup": "サインインを設定",
+      "setupHint": "初回のみの設定です。{{platform}} の開発者サイトで（無料の）アプリを作成し、その認証情報をここに貼り付けてください。この端末に暗号化して保存されます。",
+      "openPortal": "{{platform}} 開発者ポータルを開く",
+      "clientId": "クライアント ID",
+      "clientSecret": "クライアントシークレット",
+      "credentialsSaved": "サインイン認証情報を保存しました。",
+      "credentialsSaveFailed": "認証情報を保存できませんでした: {{error}}",
+      "saving": "保存中…",
+      "saveCredentials": "保存してサインインを有効化"
     },
     "platformReadOnly": "読み取り専用",
     "platforms": {
@@ -157,7 +166,7 @@
     "transparentOverlay": "透明なオーバーレイ",
     "trovo": {
       "channelId": "チャンネルID",
-      "channelIdHint": "環境に SPIRITSTREAM_TROVO_CLIENT_ID が必要です。読み取り専用チャットがサポートされています。",
+      "channelIdHint": "チャットの読み取りには、下の初回サインイン設定を使用します。読み取り専用チャットに対応しています。",
       "channelIdPlaceholder": "例えば100000021",
       "description": "チャンネルIDでTrovoチャットを読み取り。送信にはサインインが必要です",
       "loginWithTrovo": "Trovoでログイン"

@@ -639,7 +639,7 @@ mod debug_redaction_tests {
     use super::super::{OAuthConfig, OAuthService};
 
     fn svc() -> OAuthService {
-        OAuthService::new(OAuthConfig::default())
+        OAuthService::new_for_tests(OAuthConfig::default())
     }
 
     #[test]

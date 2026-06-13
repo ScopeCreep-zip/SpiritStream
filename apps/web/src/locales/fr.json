@@ -101,12 +101,21 @@
       "deviceExpires": "Le code expire dans {{seconds}} s. Ce panneau se ferme une fois la connexion terminée.",
       "deviceFailed": "La connexion n'a pas abouti : {{reason}}",
       "deviceInstruction": "Ouvrez cette page sur n'importe quel appareil et saisissez le code :",
-      "notConfigured": "La connexion n'est pas configurée dans cette version — aucun identifiant client pour cette plateforme.",
+      "notConfigured": "La connexion nécessite une configuration unique pour cette plateforme.",
       "openManually": "Votre navigateur ne s'est pas ouvert — copiez le lien de connexion :",
       "signOutFailed": "Échec de la déconnexion : {{error}}",
       "signedInAs": "Connecté en tant que {{username}}",
       "signedOut": "Déconnecté de {{platform}}",
-      "startFailed": "Échec du démarrage de la connexion : {{error}}"
+      "startFailed": "Échec du démarrage de la connexion : {{error}}",
+      "setup": "Configurer la connexion",
+      "setupHint": "Configuration unique : créez une application (gratuite) sur le site développeurs de {{platform}}, puis collez ses identifiants ici. Ils sont stockés chiffrés sur cet appareil.",
+      "openPortal": "Ouvrir le portail développeurs {{platform}}",
+      "clientId": "ID client",
+      "clientSecret": "Secret client",
+      "credentialsSaved": "Identifiants de connexion enregistrés.",
+      "credentialsSaveFailed": "Impossible d’enregistrer les identifiants : {{error}}",
+      "saving": "Enregistrement…",
+      "saveCredentials": "Enregistrer et activer la connexion"
     },
     "platformReadOnly": "lecture seule",
     "platforms": {
@@ -157,7 +166,7 @@
     "transparentOverlay": "Superposition transparente",
     "trovo": {
       "channelId": "ID de chaîne",
-      "channelIdHint": "Nécessite SPIRITSTREAM_TROVO_CLIENT_ID dans l'environnement. Le chat en lecture seule est pris en charge.",
+      "channelIdHint": "La lecture du chat utilise la configuration de connexion unique ci-dessous. Le chat en lecture seule est pris en charge.",
       "channelIdPlaceholder": "par ex. 100000021",
       "description": "Lire le chat Trovo via l'ID de chaîne ; connectez-vous pour envoyer",
       "loginWithTrovo": "Se connecter avec Trovo"

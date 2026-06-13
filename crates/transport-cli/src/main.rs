@@ -171,6 +171,12 @@ fn main() -> ExitCode {
 
 async fn run(cli: Cli, out: &mut Output) -> Result<(), CliError> {
     let registry = registry::build(cli.data_dir, cli.themes_dir)?;
+    // Same startup step the HTTP server runs: restore client
+    // credentials saved through the in-app/CLI setup so `oauth config
+    // get` and flow starts see them. Loud-log on failure, don't abort.
+    if let Err(e) = registry.oauth.load_persisted().await {
+        log::error!("failed to load stored OAuth client credentials: {e}");
+    }
     match cli.command {
         Command::Profile { command } => commands::profile::run(command, &registry, out).await,
         Command::Stream { command } => commands::stream::run(command, &registry, out).await,

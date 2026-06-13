@@ -15,7 +15,7 @@ use super::{network, unknown_provider};
 /// the wire shape — no parallel hand-written TS file.
 #[derive(Debug, Clone, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../../../packages/types/src/generated/")]
+#[ts(export, export_to = "../../../packages/types/src/generated/")]
 pub struct OAuthFlowResult {
     /// The URL to open in the browser
     pub auth_url: String,
@@ -511,7 +511,7 @@ mod tests {
 
     #[tokio::test]
     async fn start_flow_unknown_provider_errors() {
-        let svc = OAuthService::new(OAuthConfig::default());
+        let svc = OAuthService::new_for_tests(OAuthConfig::default());
         match svc.start_flow("myspace").await {
             Err(CoreError::NotImplemented { feature }) => assert!(feature.contains("myspace")),
             other => panic!("expected NotImplemented, got {other:?}"),
@@ -520,7 +520,7 @@ mod tests {
 
     #[tokio::test]
     async fn start_flow_kick_uses_pkce_and_registers_pending() {
-        let svc = OAuthService::new(OAuthConfig {
+        let svc = OAuthService::new_for_tests(OAuthConfig {
             kick_client_id: Some("test-kick-id".into()),
             kick_client_secret: Some("test-kick-secret".into()),
             ..OAuthConfig::default()

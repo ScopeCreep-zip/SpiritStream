@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use futures_util::{SinkExt, StreamExt};
 use log::{error, info, warn};
-use std::env;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
@@ -200,11 +199,12 @@ impl ChatPlatform for TrovoConnector {
             *guard = None;
         }
 
-        let (channel_id, oauth_token) = match credentials {
+        let (channel_id, client_id, oauth_token) = match credentials {
             ChatCredentials::Trovo {
                 channel_id,
+                client_id,
                 oauth_token,
-            } => (channel_id, oauth_token),
+            } => (channel_id, client_id, oauth_token),
             _ => {
                 self.status
                     .store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
@@ -217,21 +217,25 @@ impl ChatPlatform for TrovoConnector {
             }
         };
 
-        // Canonical env var name: every SPIRITSTREAM_* secret follows the
-        // prefixed convention. The unprefixed `TROVO_CLIENT_ID` fallback was
-        // a holdover that violated `feedback_no_fallback_streaming.md` — two
-        // names is a footgun for operators (which one wins, why isn't mine
-        // working, etc).
-        let client_id = env::var("SPIRITSTREAM_TROVO_CLIENT_ID").map_err(|_| {
-            self.status
-                .store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
-            if let Ok(mut guard) = self.last_error.lock() {
-                *guard = Some("Missing SPIRITSTREAM_TROVO_CLIENT_ID in environment".to_string());
+        // The client id arrives on the credentials, resolved by the
+        // transport from the OAuth config chain (in-app setup → env →
+        // embedded). Reading the environment here — the old behaviour —
+        // silently ignored credentials saved through the in-app form.
+        // Fail loud on absent/placeholder so the user gets an
+        // actionable error, not a mystery disconnect.
+        const NO_CLIENT_ID: &str =
+            "Trovo client ID is not configured — complete the one-time sign-in setup in chat settings";
+        let client_id = match client_id {
+            Some(id) if crate::services::oauth::credential_is_real(&id) => id,
+            _ => {
+                self.status
+                    .store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
+                if let Ok(mut guard) = self.last_error.lock() {
+                    *guard = Some(NO_CLIENT_ID.to_string());
+                }
+                return Err(PlatformError::InvalidConfig(NO_CLIENT_ID.to_string()));
             }
-            PlatformError::InvalidConfig(
-                "Missing SPIRITSTREAM_TROVO_CLIENT_ID in environment".to_string(),
-            )
-        })?;
+        };
 
         let token = fetch_chat_token(&client_id, &channel_id, &self.api_base)
             .await

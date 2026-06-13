@@ -52,7 +52,7 @@ const FFMPEG_BIN: &str = if cfg!(windows) {
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, ts_rs::TS)]
-#[ts(export, export_to = "../../../../packages/types/src/generated/")]
+#[ts(export, export_to = "../../../packages/types/src/generated/")]
 #[serde(rename_all = "camelCase")]
 pub struct FFmpegVersionInfo {
     /// Currently installed version (None if not installed)

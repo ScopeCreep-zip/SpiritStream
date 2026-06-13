@@ -12,7 +12,7 @@ use super::{find_ffmpeg, hide_console};
 /// Result of testing an RTMP target
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../../../packages/types/src/generated/")]
+#[ts(export, export_to = "../../../packages/types/src/generated/")]
 pub struct RtmpTestResult {
     pub success: bool,
     pub message: String,

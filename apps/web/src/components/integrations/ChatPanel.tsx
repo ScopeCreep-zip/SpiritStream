@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { ChevronDown, MessageSquare } from 'lucide-react';
 import { useProfileStore } from '@/stores/profileStore';
 import { api } from '@/lib/client';
-import type { OAuthConfiguredFlags } from '@spiritstream/api-client';
+import type { OAuthProviderSummary } from '@spiritstream/api-client';
 import { toast } from '@/hooks/useToast';
 import { logger } from '@/lib/logger';
 import { createDefaultChatSettings } from '@/lib/profile-helpers';
@@ -58,25 +58,32 @@ export function ChatPanel(): React.ReactElement {
   const currentProfile = useProfileStore((state) => state.current);
   const updateProfileSettings = useProfileStore((state) => state.updateProfileSettings);
 
-  // Backend-truth per-provider configured flags (placeholder client
-  // credentials report false). Until they load — or if the fetch fails —
-  // buttons stay in the honest "not set up" state rather than launching
-  // a flow the backend would refuse.
-  const [oauthFlags, setOauthFlags] = useState<OAuthConfiguredFlags | null>(null);
+  // Backend-truth per-provider setup summaries (placeholder client
+  // credentials report unconfigured). Until they load — or if the fetch
+  // fails — buttons stay in the honest "needs setup" state rather than
+  // launching a flow the backend would refuse. The credentials form's
+  // save response carries fresh summaries, so a successful in-app setup
+  // flips the sign-in button live without a refetch or restart.
+  const [oauthSummaries, setOauthSummaries] = useState<OAuthProviderSummary[] | null>(null);
   useEffect(() => {
     let cancelled = false;
     api.oauth
       .getConfig()
-      .then((flags) => {
-        if (!cancelled) setOauthFlags(flags);
+      .then((summaries) => {
+        if (!cancelled) setOauthSummaries(summaries);
       })
       .catch((error) => {
-        logger.error('[ChatPanel] failed to load oauth config flags:', error);
+        logger.error('[ChatPanel] failed to load oauth config:', error);
       });
     return () => {
       cancelled = true;
     };
   }, []);
+  const oauthSummaryFor = useCallback(
+    (provider: OAuthProviderSummary['provider']): OAuthProviderSummary | null =>
+      oauthSummaries?.find((s) => s.provider === provider) ?? null,
+    [oauthSummaries]
+  );
 
   const chatSettings = useMemo(
     () => currentProfile?.settings?.chat ?? createDefaultChatSettings(),
@@ -370,7 +377,8 @@ export function ChatPanel(): React.ReactElement {
               provider="twitch"
               signedInAs={currentProfile.settings.oauth.twitch.username}
               signInLabel={t('chat.twitch.loginWithTwitch', { defaultValue: 'Login with Twitch' })}
-              configured={oauthFlags?.twitchConfigured ?? false}
+              summary={oauthSummaryFor('twitch')}
+              onCredentialsSaved={setOauthSummaries}
             />
             {followerOnlyReauthNeeded && (
               <p
@@ -448,7 +456,8 @@ export function ChatPanel(): React.ReactElement {
                 <PlatformSignInButton
                   provider="youtube"
                   signedInAs={currentProfile.settings.oauth.youtube.username}
-                  configured={oauthFlags?.youtubeConfigured ?? false}
+                  summary={oauthSummaryFor('youtube')}
+              onCredentialsSaved={setOauthSummaries}
                   signInLabel={t('chat.youtube.loginWithYouTube', {
                     defaultValue: 'Login with YouTube',
                   })}
@@ -491,14 +500,15 @@ export function ChatPanel(): React.ReactElement {
               onBlur={(e) => handleBlur('trovo_channel', e.target.value)}
               placeholder={t('chat.trovo.channelIdPlaceholder', { defaultValue: 'e.g. 100000021' })}
               helper={t('chat.trovo.channelIdHint', {
-                defaultValue: 'Requires SPIRITSTREAM_TROVO_CLIENT_ID in environment.',
+                defaultValue: 'Reading chat uses the one-time sign-in setup below.',
               })}
             />
             <PlatformSignInButton
               provider="trovo"
               signedInAs={currentProfile.settings.oauth.trovo.username}
               signInLabel={t('chat.trovo.loginWithTrovo', { defaultValue: 'Login with Trovo' })}
-              configured={oauthFlags?.trovoConfigured ?? false}
+              summary={oauthSummaryFor('trovo')}
+              onCredentialsSaved={setOauthSummaries}
             />
             <div className="mt-3">
               <Toggle
@@ -542,7 +552,8 @@ export function ChatPanel(): React.ReactElement {
               provider="kick"
               signedInAs={currentProfile.settings.oauth.kick.username}
               signInLabel={t('chat.kick.loginWithKick', { defaultValue: 'Login with Kick' })}
-              configured={oauthFlags?.kickConfigured ?? false}
+              summary={oauthSummaryFor('kick')}
+              onCredentialsSaved={setOauthSummaries}
             />
             <div className="mt-3">
               <Toggle
@@ -592,7 +603,8 @@ export function ChatPanel(): React.ReactElement {
       {/* Facebook — identity-revealing connect gate */}
       {resolvedVisiblePlatforms.includes('facebook') && (
         <FacebookConnectGate
-          oauthConfigured={oauthFlags?.facebookConfigured ?? false}
+          oauthSummary={oauthSummaryFor('facebook')}
+          onCredentialsSaved={setOauthSummaries}
           connectionStatus={statusFor('facebook')}
         />
       )}

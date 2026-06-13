@@ -12,7 +12,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use spiritstream_core::services::{OAuthConfig, OAuthTokens, OAuthUserInfo};
+use spiritstream_core::services::{OAuthTokens, OAuthUserInfo};
 
 use crate::AppState;
 
@@ -20,30 +20,6 @@ use crate::AppState;
 // Wire-mirror types. utoipa is transport-only, so mirror every core
 // payload we hand to / accept from the OAuth router instead of leaking
 // `ToSchema` into the core crate.
-
-/// `{"twitchConfigured": …, "youtubeConfigured": …}` — pre-flight check
-/// the UI runs before showing "Sign in with Twitch / YouTube" buttons.
-#[derive(Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct OAuthConfiguredFlagsResponse {
-    pub twitch_configured: bool,
-    pub youtube_configured: bool,
-    pub kick_configured: bool,
-    pub facebook_configured: bool,
-    pub trovo_configured: bool,
-}
-
-impl From<spiritstream_core::services::OAuthConfiguredFlags> for OAuthConfiguredFlagsResponse {
-    fn from(f: spiritstream_core::services::OAuthConfiguredFlags) -> Self {
-        Self {
-            twitch_configured: f.twitch,
-            youtube_configured: f.youtube,
-            kick_configured: f.kick,
-            facebook_configured: f.facebook,
-            trovo_configured: f.trovo,
-        }
-    }
-}
 
 /// `{"configured": bool}` — single-provider variant of the flags response.
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -56,50 +32,6 @@ pub struct OAuthConfiguredResponse {
 /// as `{}`.
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct OAuthAckResponse {}
-
-/// Mirror of [`OAuthConfig`] — accepted by `PUT /oauth/config` and
-/// surfaced in OpenAPI instead of the previous `serde_json::Value`.
-#[derive(Serialize, Deserialize, ToSchema, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct OAuthConfigRequest {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub twitch_client_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub twitch_client_secret: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub youtube_client_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub youtube_client_secret: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub kick_client_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub kick_client_secret: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub facebook_client_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub facebook_client_secret: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub trovo_client_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub trovo_client_secret: Option<String>,
-}
-
-impl From<OAuthConfigRequest> for OAuthConfig {
-    fn from(r: OAuthConfigRequest) -> Self {
-        Self {
-            twitch_client_id: r.twitch_client_id,
-            twitch_client_secret: r.twitch_client_secret,
-            youtube_client_id: r.youtube_client_id,
-            youtube_client_secret: r.youtube_client_secret,
-            kick_client_id: r.kick_client_id,
-            kick_client_secret: r.kick_client_secret,
-            facebook_client_id: r.facebook_client_id,
-            facebook_client_secret: r.facebook_client_secret,
-            trovo_client_id: r.trovo_client_id,
-            trovo_client_secret: r.trovo_client_secret,
-        }
-    }
-}
 
 /// `POST /oauth/{provider}/flow` response — a backend-chosen variant.
 /// `flow: "redirect"` carries the loopback fields; `flow: "device"`
@@ -211,34 +143,6 @@ impl From<OAuthTokens> for OAuthTokensResponse {
 
 // --------------------------------------------------------------------------
 // OAuth handlers.
-
-#[utoipa::path(get, path = "/oauth/config", tag = "oauth",
-    responses((status = 200, body = OAuthConfiguredFlagsResponse)),
-    security(("session_cookie" = []), ("bearer" = [])))]
-pub async fn v1_oauth_get_config_proxy(
-    State(state): State<AppState>,
-) -> Result<Json<OAuthConfiguredFlagsResponse>, crate::ApiError> {
-    // Truthful per-provider flags from the live config (placeholder
-    // detection in core). The UI renders unconfigured providers as
-    // "not set up in this build" — these flags hardcoding `true` was
-    // half of the dead-link bug.
-    Ok(Json(state.oauth_service.configured_flags().await.into()))
-}
-
-#[utoipa::path(put, path = "/oauth/config", tag = "oauth",
-    request_body = OAuthConfigRequest,
-    responses(
-        (status = 200, body = OAuthAckResponse, description = "OAuth config persisted."),
-        (status = 400, body = ApiErrorBody, description = "Malformed OAuthConfig payload."),
-    ),
-    security(("session_cookie" = []), ("bearer" = [])))]
-pub async fn v1_oauth_set_config_proxy(
-    State(state): State<AppState>,
-    axum::Json(req): axum::Json<OAuthConfigRequest>,
-) -> Result<Json<OAuthAckResponse>, crate::ApiError> {
-    state.oauth_service.update_config(req.into()).await;
-    Ok(Json(OAuthAckResponse {}))
-}
 
 #[utoipa::path(get, path = "/oauth/{provider}/configured", tag = "oauth",
     params(("provider" = String, Path, description = "OAuth provider")),

@@ -4,9 +4,11 @@
 
 ---
 
-This guide is for **maintainers and self-builders**: how to register the OAuth applications that power the "Login with …" buttons in the chat settings panel, and how those credentials reach a build.
+This guide covers registering the OAuth applications that power the "Login with …" buttons in the chat settings panel, and how those credentials reach the app.
 
-End users never register anything — official releases embed maintainer-registered client IDs at build time, the same model used by Chatterino, Firebot, OBS Studio, and SAMMI. A build without credentials shows an honest "Sign-in is not set up in this build" state instead of a dead link.
+End users of **official releases** never register anything — releases embed maintainer-registered client IDs at build time, the same model used by Chatterino, Firebot, OBS Studio, and SAMMI.
+
+**Self-builders set everything up inside the app**: each platform card in Tools → Chat platforms shows a **Set up sign-in** form when the provider is unconfigured. It links to the provider's developer portal (the registration walkthroughs below), takes the Client ID (and secret where the provider requires one), and stores them encrypted on the device — no env files, no rebuild, survives restarts. The only steps outside the app are on the provider's own site.
 
 ---
 
@@ -14,9 +16,10 @@ End users never register anything — official releases embed maintainer-registe
 
 Resolution order per provider (first real value wins):
 
-1. **Runtime env override** — `SPIRITSTREAM_<PROVIDER>_CLIENT_ID` / `_CLIENT_SECRET` (see `.env.example`). For development and self-hosting.
-2. **Embedded at compile time** — `SPIRITSTREAM_EMBEDDED_<PROVIDER>_CLIENT_ID` / `_CLIENT_SECRET` read with `option_env!` in `crates/core/src/services/oauth/config.rs`. The release workflow injects these from GitHub repo secrets.
-3. **Placeholder** — the provider reports unconfigured; `GET /api/v1/oauth/config` returns `false` for it and every flow attempt fails with the typed `oauth_provider_not_configured` error before any browser opens.
+1. **In-app setup** — the "Set up sign-in" form (or `spiritstream-cli oauth config set-provider`); persisted through the encrypted secret store.
+2. **Runtime env override** — `SPIRITSTREAM_<PROVIDER>_CLIENT_ID` / `_CLIENT_SECRET` (see `.env.example`). For development and CI.
+3. **Embedded at compile time** — `SPIRITSTREAM_EMBEDDED_<PROVIDER>_CLIENT_ID` / `_CLIENT_SECRET` read with `option_env!` in `crates/core/src/services/oauth/config.rs`. The release workflow injects these from GitHub repo secrets.
+4. **Placeholder** — the provider reports unconfigured; `GET /api/v1/oauth/config` reports it and every flow attempt fails with the typed `oauth_provider_not_configured` error before any browser opens.
 
 What counts as "configured":
 
@@ -84,8 +87,13 @@ Unset secrets are fine — the corresponding provider ships unconfigured and the
 ## Verifying a build
 
 ```bash
-# Flags reflect what this build/environment can actually do:
+# Per-provider setup summaries (configured, needsSecret, override id):
 spiritstream-cli oauth config get
+
+# Store one provider's credentials (CLI mirror of the in-app form;
+# persists across invocations — the secret rides stdin, never argv):
+printf '%s' "$KICK_SECRET" | spiritstream-cli oauth config set-provider kick \
+  --client-id <id> --client-secret-from stdin
 
 # Device flow end-to-end (prints code + URL, polls, persists):
 spiritstream-cli oauth device twitch --profile <name>
@@ -94,4 +102,4 @@ spiritstream-cli oauth device twitch --profile <name>
 spiritstream-cli oauth start kick
 ```
 
-In the app: every chat-platform card shows either a working sign-in button or the "not set up in this build" hint — never a dead link.
+In the app: every chat-platform card shows either a working sign-in button or the **Set up sign-in** form — never a dead link.

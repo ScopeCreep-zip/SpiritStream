@@ -152,7 +152,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn trovo_svc(mock_base: &str) -> OAuthService {
-        let svc = OAuthService::new(OAuthConfig {
+        let svc = OAuthService::new_for_tests(OAuthConfig {
             trovo_client_id: Some("test-trovo-id".into()),
             trovo_client_secret: Some("test-trovo-secret".into()),
             ..OAuthConfig::default()

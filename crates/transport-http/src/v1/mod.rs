@@ -31,6 +31,7 @@ mod chat;
 mod chat_message_wire;
 mod discord;
 mod oauth;
+mod oauth_config;
 mod oauth_device;
 mod obs;
 mod openapi_doc;
@@ -46,6 +47,7 @@ pub use chat::*;
 pub use chat_message_wire::*;
 pub use discord::*;
 pub use oauth::*;
+pub use oauth_config::*;
 pub use obs::*;
 pub use openapi_doc::{serve_openapi, ApiDoc};
 pub use profile_wire::*;
@@ -237,6 +239,10 @@ pub fn protected_router(state: AppState) -> Router<AppState> {
         .route(
             "/api/v1/oauth/config",
             get(v1_oauth_get_config_proxy).put(v1_oauth_set_config_proxy),
+        )
+        .route(
+            "/api/v1/oauth/config/:provider",
+            put(v1_oauth_set_provider_credentials_proxy),
         )
         .route(
             "/api/v1/oauth/:provider/configured",

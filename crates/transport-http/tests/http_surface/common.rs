@@ -98,6 +98,11 @@ fn boot_inner(token: Option<&str>) -> ServerHandle {
             .env("SPIRITSTREAM_PORT", port.to_string())
             .env("SPIRITSTREAM_DATA_DIR", data_dir.path())
             .env("SPIRITSTREAM_UI_ENABLED", "0")
+            // Hermetic secrets: without this the platform probe selects
+            // keyring on macOS/Windows and store-writing tests (OAuth
+            // credentials, audit keys) would touch the developer's REAL
+            // keychain instead of the throwaway TempDir.
+            .env("SPIRITSTREAM_SECRET_STORE", "file")
             .stdout(Stdio::null())
             .stderr(Stdio::null());
         match token {

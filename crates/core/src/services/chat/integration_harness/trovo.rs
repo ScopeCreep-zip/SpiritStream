@@ -58,10 +58,6 @@ async fn trovo_ws(mut ws: MockWs) -> bool {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn trovo_round_trip_connect_receive_disconnect() {
-    // The connector reads its client id from the environment. Set it
-    // before connect; no other test depends on this var being unset.
-    std::env::set_var("SPIRITSTREAM_TROVO_CLIENT_ID", "harness-client-id");
-
     let http = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/openplatform/chat/channel-token/12345"))
@@ -78,6 +74,10 @@ async fn trovo_round_trip_connect_receive_disconnect() {
         .connect(
             ChatCredentials::Trovo {
                 channel_id: "12345".into(),
+                // Transport-resolved in production; supplied directly
+                // here — the env-var read this replaced ignored
+                // credentials saved through the in-app setup form.
+                client_id: Some("harness-client-id".into()),
                 oauth_token: None,
             },
             tx,

@@ -313,7 +313,10 @@ mod tests {
     async fn refresh_skips_tokens_outside_leeway() {
         let data_dir = fresh_dir();
         let mgr = ProfileManager::new(data_dir.clone());
-        let oauth = Arc::new(OAuthService::new(OAuthConfig::default()));
+        let oauth = Arc::new(OAuthService::new(
+            OAuthConfig::default(),
+            crate::services::build_secret_store(&data_dir, Some("file")).expect("file store"),
+        ));
 
         let far_future = now_secs() + 3600;
         save_profile_with_oauth(&mgr, "still-fresh", far_future, "refresh-token-abc").await;
@@ -345,7 +348,10 @@ mod tests {
     async fn refresh_skips_provider_without_refresh_token() {
         let data_dir = fresh_dir();
         let mgr = ProfileManager::new(data_dir.clone());
-        let oauth = Arc::new(OAuthService::new(OAuthConfig::default()));
+        let oauth = Arc::new(OAuthService::new(
+            OAuthConfig::default(),
+            crate::services::build_secret_store(&data_dir, Some("file")).expect("file store"),
+        ));
 
         let almost_expired = now_secs() + 60;
         save_profile_with_oauth(&mgr, "no-refresh", almost_expired, "").await;
@@ -371,7 +377,10 @@ mod tests {
     fn build_service(data_dir: &std::path::Path) -> ProfileActivationService {
         let profiles = Arc::new(ProfileManager::new(data_dir.to_path_buf()));
         let settings = Arc::new(SettingsManager::new(data_dir.to_path_buf()));
-        let oauth = Arc::new(OAuthService::new(OAuthConfig::default()));
+        let oauth = Arc::new(OAuthService::new(
+            OAuthConfig::default(),
+            crate::services::build_secret_store(data_dir, Some("file")).expect("file store"),
+        ));
         let events: Arc<dyn EventSink> = Arc::new(NoopEventSink);
         let chat = Arc::new(ChatManager::new(events.clone(), data_dir.join("logs")));
         let obs = Arc::new(ObsWebSocketHandler::new(data_dir.to_path_buf()));

@@ -224,8 +224,13 @@ export interface OAuthApi {
     refreshToken?: string;
     expiresIn?: number;
   }>;
-  /** Truthful per-provider configured flags (placeholders report false). */
-  getConfig(): Promise<import('./api/oauth').OAuthConfiguredFlags>;
+  /** Truthful per-provider setup summaries (placeholders report unconfigured). */
+  getConfig(): Promise<import('./api/oauth').OAuthProviderSummary[]>;
+  /** Store one provider's client credentials (in-app setup form); persists. */
+  setProviderCredentials(
+    provider: string,
+    credentials: { clientId?: string; clientSecret?: string }
+  ): Promise<import('./api/oauth').OAuthProviderSummary[]>;
   setConfig(config: {
     twitchClientId?: string;
     twitchClientSecret?: string;

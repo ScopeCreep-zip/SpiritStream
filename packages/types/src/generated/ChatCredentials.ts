@@ -38,11 +38,25 @@ auth: YouTubeAuth, } | { "type": "trovo",
 /**
  * Trovo channel ID (numeric user/channel ID)
  */
-channelId: string, } | { "type": "stripchat", 
+channelId: string, 
 /**
- * Stripchat model username
+ * Trovo application client id, resolved by the TRANSPORT from
+ * the OAuth config chain (in-app setup → env → embedded) —
+ * the connector must not read the environment itself, or
+ * credentials saved through the in-app form would be ignored.
+ * Required even for read-only chat (the channel chat token is
+ * minted with it); the connector fails loud when it's absent
+ * or a placeholder.
  */
-username: string, } | { "type": "kick", 
+clientId: string | null, 
+/**
+ * OAuth bearer (`Authorization: OAuth <token>` — Trovo's
+ * scheme) for the signed-in account. `None` = read-only chat
+ * via the client-id-only channel chat token; `Some(token)`
+ * enables send through `openplatform/chat/send`
+ * (`chat_send_self` scope).
+ */
+oauthToken: string | null, } | { "type": "kick", 
 /**
  * Kick channel name (case-insensitive — Kick normalises internally).
  */

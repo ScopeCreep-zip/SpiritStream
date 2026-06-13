@@ -1,14 +1,14 @@
 use super::{OAuthConfig, OAuthProvider, OAuthService};
 
 fn svc() -> OAuthService {
-    OAuthService::new(OAuthConfig::default())
+    OAuthService::new_for_tests(OAuthConfig::default())
 }
 
 /// Service with REAL (test) credentials for every provider — flow tests
 /// must get past the configured pre-flight guard; the default config's
 /// placeholders honestly refuse to start a flow.
 fn configured_svc() -> OAuthService {
-    OAuthService::new(configured_cfg())
+    OAuthService::new_for_tests(configured_cfg())
 }
 
 fn configured_cfg() -> OAuthConfig {
@@ -261,7 +261,7 @@ async fn update_config_round_trips_through_get_config() {
         twitch_client_id: Some("rotated".into()),
         ..Default::default()
     };
-    s.update_config(new_cfg).await;
+    s.update_config(new_cfg).await.expect("update persists");
     let read_back = s.get_config().await;
     assert_eq!(read_back.twitch_client_id.as_deref(), Some("rotated"));
 }
@@ -311,7 +311,7 @@ async fn start_flow_twitch_with_secret_uses_auth_code() {
         twitch_client_secret: Some("a-secret".into()),
         ..Default::default()
     };
-    let s = OAuthService::new(cfg);
+    let s = OAuthService::new_for_tests(cfg);
     let result = s.start_flow("twitch").await.expect("twitch flow starts");
     assert!(result.auth_url.contains("response_type=code"));
     assert!(result.auth_url.contains("force_verify=true"));
@@ -418,7 +418,7 @@ async fn twitch_public_client_refresh_omits_secret_and_returns_rotated_tokens() 
         .mount(&server)
         .await;
 
-    let svc = OAuthService::new(OAuthConfig {
+    let svc = OAuthService::new_for_tests(OAuthConfig {
         twitch_client_id: Some("test-twitch-id".into()),
         // No secret: the shipped Twitch app is a PUBLIC client; its
         // refresh must not send client_secret (and must still work —
@@ -450,4 +450,89 @@ async fn twitch_public_client_refresh_omits_secret_and_returns_rotated_tokens() 
         !body.contains("client_secret"),
         "public client must not send a secret: {body}"
     );
+}
+
+/// The in-app setup contract: credentials saved through
+/// `set_provider_credentials` survive a service rebuild over the same
+/// secret store — i.e. an app restart. In-memory-only config was the
+/// original sin here (setup silently vanished on every relaunch).
+#[tokio::test]
+async fn provider_credentials_persist_across_service_rebuild() {
+    if std::env::var("SPIRITSTREAM_KICK_CLIENT_ID").is_ok()
+        || std::env::var("SPIRITSTREAM_KICK_CLIENT_SECRET").is_ok()
+    {
+        return; // dev shell carries real creds; placeholder assertions invalid
+    }
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = crate::services::build_secret_store(dir.path(), Some("file")).expect("store");
+
+    let first = OAuthService::new(OAuthConfig::default(), store.clone());
+    first
+        .set_provider_credentials(
+            "kick",
+            Some("pasted-id".into()),
+            Some("  pasted-secret  ".into()),
+        )
+        .await
+        .expect("save credentials");
+    assert!(first.is_configured("kick").await);
+
+    // "Restart": fresh service over the same store, default config.
+    let second = OAuthService::new(OAuthConfig::default(), store);
+    assert!(!second.is_configured("kick").await, "pre-load: defaults");
+    second.load_persisted().await.expect("load persisted");
+    assert!(second.is_configured("kick").await, "post-load: restored");
+    let cfg = second.get_config().await;
+    assert_eq!(cfg.kick_client_id.as_deref(), Some("pasted-id"));
+    assert_eq!(cfg.kick_client_secret.as_deref(), Some("pasted-secret"), "inputs are trimmed");
+}
+
+/// Clearing = saving empty values; the override drops back to None and
+/// the provider reports unconfigured again (placeholder tier).
+#[tokio::test]
+async fn empty_credentials_clear_the_override() {
+    if std::env::var("SPIRITSTREAM_TROVO_CLIENT_ID").is_ok()
+        || std::env::var("SPIRITSTREAM_TROVO_CLIENT_SECRET").is_ok()
+    {
+        return;
+    }
+    let svc = OAuthService::new_for_tests(OAuthConfig::default());
+    svc.set_provider_credentials("trovo", Some("id".into()), Some("sec".into()))
+        .await
+        .expect("set");
+    assert!(svc.is_configured("trovo").await);
+    svc.set_provider_credentials("trovo", Some("   ".into()), None)
+        .await
+        .expect("clear");
+    assert!(!svc.is_configured("trovo").await);
+    assert!(svc.get_config().await.trovo_client_id.is_none());
+}
+
+/// Summaries carry what the setup form renders: needs_secret per
+/// provider (Twitch public-client exception) + the registration portal.
+#[tokio::test]
+async fn provider_summaries_describe_setup_requirements() {
+    let svc = OAuthService::new_for_tests(OAuthConfig::default());
+    let summaries = svc.provider_summaries().await;
+    assert_eq!(summaries.len(), 5);
+    let by_name = |n: &str| summaries.iter().find(|s| s.provider == n).expect("present");
+    assert!(!by_name("twitch").needs_secret, "twitch is a public client");
+    for p in ["youtube", "kick", "facebook", "trovo"] {
+        assert!(by_name(p).needs_secret, "{p} requires a secret");
+    }
+    for s in &summaries {
+        assert!(s.registration_url.starts_with("https://"), "{}", s.provider);
+    }
+}
+
+/// `set_provider_credentials` on an unknown provider is a typed error,
+/// not a silent no-op write.
+#[tokio::test]
+async fn unknown_provider_credentials_are_rejected() {
+    let svc = OAuthService::new_for_tests(OAuthConfig::default());
+    let err = svc
+        .set_provider_credentials("myspace", Some("id".into()), None)
+        .await
+        .expect_err("unknown provider must refuse");
+    assert_eq!(err.kind(), "not_implemented");
 }

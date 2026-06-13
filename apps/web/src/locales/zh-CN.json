@@ -101,12 +101,21 @@
       "deviceExpires": "代码将在 {{seconds}} 秒后过期。登录完成后此面板会关闭。",
       "deviceFailed": "登录未完成：{{reason}}",
       "deviceInstruction": "在任意设备上打开此页面并输入代码：",
-      "notConfigured": "此构建版本未配置登录功能 — 缺少该平台的客户端凭据。",
+      "notConfigured": "此平台的登录需要一次性设置。",
       "openManually": "浏览器未打开 — 请复制登录链接：",
       "signOutFailed": "退出登录失败：{{error}}",
       "signedInAs": "已登录为 {{username}}",
       "signedOut": "已退出 {{platform}}",
-      "startFailed": "无法开始登录:{{error}}"
+      "startFailed": "无法开始登录:{{error}}",
+      "setup": "设置登录",
+      "setupHint": "一次性设置：在 {{platform}} 的开发者网站上创建一个（免费）应用，然后将其凭据粘贴到此处。凭据将加密存储在本设备上。",
+      "openPortal": "打开 {{platform}} 开发者门户",
+      "clientId": "客户端 ID",
+      "clientSecret": "客户端密钥",
+      "credentialsSaved": "登录凭据已保存。",
+      "credentialsSaveFailed": "无法保存凭据：{{error}}",
+      "saving": "保存中…",
+      "saveCredentials": "保存并启用登录"
     },
     "platformReadOnly": "只读",
     "platforms": {
@@ -157,7 +166,7 @@
     "transparentOverlay": "透明覆盖层",
     "trovo": {
       "channelId": "通道号",
-      "channelIdHint": "环境中需要 SPIRITSTREAM_TROVO_CLIENT_ID。支持只读聊天。",
+      "channelIdHint": "读取聊天使用下方的一次性登录设置。支持只读聊天。",
       "channelIdPlaceholder": "例如100000021",
       "description": "通过频道 ID 读取 Trovo 聊天；登录后可发送",
       "loginWithTrovo": "使用 Trovo 登录"

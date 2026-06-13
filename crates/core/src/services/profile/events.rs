@@ -11,7 +11,7 @@ use crate::models::Profile;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../../../packages/types/src/generated/")]
+#[ts(export, export_to = "../../../packages/types/src/generated/")]
 pub struct ProfileActivatedEvent {
     pub name: String,
     pub theme_id: String,
@@ -24,7 +24,7 @@ pub struct ProfileActivatedEvent {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../../../packages/types/src/generated/")]
+#[ts(export, export_to = "../../../packages/types/src/generated/")]
 pub struct ActivatedObs {
     pub host: String,
     pub port: u16,

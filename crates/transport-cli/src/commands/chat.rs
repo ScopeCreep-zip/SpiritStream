@@ -30,6 +30,7 @@ fn build_connect_config(
     api_key: Option<String>,
     session_token: Option<String>,
     use_api_key: bool,
+    trovo_client_id: String,
 ) -> Result<ChatConfig, CliError> {
     let credentials = match platform {
         ChatPlatform::Twitch => {
@@ -73,6 +74,10 @@ fn build_connect_config(
             // source the other platforms use; read-only without it.
             ChatCredentials::Trovo {
                 channel_id,
+                // Resolved from the OAuth config chain (in-app setup →
+                // env → embedded) by the caller; the connector fails
+                // loud on a placeholder.
+                client_id: Some(trovo_client_id),
                 oauth_token: oauth,
             }
         }
@@ -292,6 +297,7 @@ pub async fn run(
                 api_key,
                 session_token,
                 use_api_key,
+                registry.oauth.get_config().await.get_trovo_client_id(),
             )?;
             registry.chat.connect(config).await?;
             out.emit(&serde_json::json!({ "platform": p, "connected": true }))?;
@@ -329,6 +335,7 @@ pub async fn run(
                 api_key,
                 session_token,
                 use_api_key,
+                registry.oauth.get_config().await.get_trovo_client_id(),
             )?;
             registry.chat.connect(config).await?;
             out.emit(&serde_json::json!({ "platform": p, "reconnected": true }))?;

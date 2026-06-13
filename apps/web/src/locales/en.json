@@ -101,12 +101,21 @@
       "deviceExpires": "Code expires in {{seconds}}s. This panel closes when sign-in completes.",
       "deviceFailed": "Sign-in did not complete: {{reason}}",
       "deviceInstruction": "Open this page on any device and enter the code:",
-      "notConfigured": "Sign-in is not set up in this build — no client credentials for this platform.",
+      "notConfigured": "Sign-in needs a one-time setup for this platform.",
       "openManually": "Your browser didn’t open — copy the sign-in link:",
       "signOutFailed": "Failed to sign out: {{error}}",
       "signedInAs": "Signed in as {{username}}",
       "signedOut": "Signed out of {{platform}}",
-      "startFailed": "Failed to start sign-in: {{error}}"
+      "startFailed": "Failed to start sign-in: {{error}}",
+      "setup": "Set up sign-in",
+      "setupHint": "One-time setup: create a (free) app on {{platform}}’s developer site, then paste its credentials here. They’re stored encrypted on this device.",
+      "openPortal": "Open {{platform}} developer portal",
+      "clientId": "Client ID",
+      "clientSecret": "Client secret",
+      "credentialsSaved": "Sign-in credentials saved.",
+      "credentialsSaveFailed": "Could not save credentials: {{error}}",
+      "saving": "Saving…",
+      "saveCredentials": "Save and enable sign-in"
     },
     "platformReadOnly": "read-only",
     "platforms": {
@@ -157,7 +166,7 @@
     "transparentOverlay": "Transparent overlay",
     "trovo": {
       "channelId": "Channel ID",
-      "channelIdHint": "Requires SPIRITSTREAM_TROVO_CLIENT_ID in environment. Read-only chat is supported.",
+      "channelIdHint": "Reading chat uses the one-time sign-in setup below. Read-only chat is supported.",
       "channelIdPlaceholder": "e.g. 100000021",
       "description": "Read Trovo chat using channel ID; sign in to send",
       "loginWithTrovo": "Login with Trovo"

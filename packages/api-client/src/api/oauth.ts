@@ -1,13 +1,22 @@
 import type { OAuthAccountStatus } from '@spiritstream/types';
 import { fetchTypedJson } from './_internal';
 
-/** Per-provider "real credentials present in this build/env" flags. */
-export interface OAuthConfiguredFlags {
-  twitchConfigured: boolean;
-  youtubeConfigured: boolean;
-  kickConfigured: boolean;
-  facebookConfigured: boolean;
-  trovoConfigured: boolean;
+/**
+ * One provider's setup state from `GET /oauth/config`. Everything the
+ * in-app "Set up sign-in" form renders comes from here — the frontend
+ * holds zero provider knowledge (which fields to show, where to
+ * register). Secret values never appear on this surface.
+ */
+export interface OAuthProviderSummary {
+  provider: 'twitch' | 'youtube' | 'kick' | 'facebook' | 'trovo';
+  /** Real credentials present (user-entered, env, or release-embedded). */
+  configured: boolean;
+  /** Whether the credentials form must collect a client secret. */
+  needsSecret: boolean;
+  /** The stored client-id override, when the user entered one. */
+  overrideClientId?: string | null;
+  /** The provider's developer-portal page for registering an app. */
+  registrationUrl: string;
 }
 
 /**
@@ -73,7 +82,23 @@ export const oauth = {
     }>('POST', `/api/v1/oauth/${encodeURIComponent(provider)}/refresh`, undefined, {
       refreshToken,
     }),
-  getConfig: () => fetchTypedJson<OAuthConfiguredFlags>('GET', '/api/v1/oauth/config'),
+  getConfig: () => fetchTypedJson<OAuthProviderSummary[]>('GET', '/api/v1/oauth/config'),
+  /**
+   * Store one provider's client credentials (the in-app setup form).
+   * Persisted server-side via the secret store — survives restarts.
+   * Empty/absent values clear the stored override. Returns the updated
+   * summaries so the caller can refresh without a second round-trip.
+   */
+  setProviderCredentials: (
+    provider: string,
+    credentials: { clientId?: string; clientSecret?: string }
+  ) =>
+    fetchTypedJson<OAuthProviderSummary[]>(
+      'PUT',
+      `/api/v1/oauth/config/${encodeURIComponent(provider)}`,
+      undefined,
+      credentials
+    ),
   setConfig: async (config: {
     twitchClientId?: string;
     twitchClientSecret?: string;

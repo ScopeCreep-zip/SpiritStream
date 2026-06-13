@@ -101,12 +101,21 @@
       "deviceExpires": "Der Code läuft in {{seconds}} s ab. Dieses Feld schließt sich nach der Anmeldung.",
       "deviceFailed": "Anmeldung nicht abgeschlossen: {{reason}}",
       "deviceInstruction": "Öffne diese Seite auf einem beliebigen Gerät und gib den Code ein:",
-      "notConfigured": "Anmeldung ist in diesem Build nicht eingerichtet — keine Client-Zugangsdaten für diese Plattform.",
+      "notConfigured": "Die Anmeldung benötigt eine einmalige Einrichtung für diese Plattform.",
       "openManually": "Dein Browser hat sich nicht geöffnet — kopiere den Anmeldelink:",
       "signOutFailed": "Abmeldung fehlgeschlagen: {{error}}",
       "signedInAs": "Angemeldet als {{username}}",
       "signedOut": "Von {{platform}} abgemeldet",
-      "startFailed": "Anmeldung konnte nicht gestartet werden: {{error}}"
+      "startFailed": "Anmeldung konnte nicht gestartet werden: {{error}}",
+      "setup": "Anmeldung einrichten",
+      "setupHint": "Einmalige Einrichtung: Erstelle eine (kostenlose) App auf der Entwicklerseite von {{platform}} und füge die Zugangsdaten hier ein. Sie werden verschlüsselt auf diesem Gerät gespeichert.",
+      "openPortal": "{{platform}}-Entwicklerportal öffnen",
+      "clientId": "Client-ID",
+      "clientSecret": "Client-Secret",
+      "credentialsSaved": "Anmeldedaten gespeichert.",
+      "credentialsSaveFailed": "Zugangsdaten konnten nicht gespeichert werden: {{error}}",
+      "saving": "Speichern…",
+      "saveCredentials": "Speichern und Anmeldung aktivieren"
     },
     "platformReadOnly": "schreibgeschützt",
     "platforms": {
@@ -157,7 +166,7 @@
     "transparentOverlay": "Transparente Auflage",
     "trovo": {
       "channelId": "Kanal-ID",
-      "channelIdHint": "Erfordert SPIRITSTREAM_TROVO_CLIENT_ID in der Umgebung. Schreibgeschützter Chat wird unterstützt.",
+      "channelIdHint": "Das Lesen des Chats nutzt die einmalige Anmeldeeinrichtung unten. Nur-Lese-Chat wird unterstützt.",
       "channelIdPlaceholder": "z.B. 100000021",
       "description": "Trovo-Chat per Kanal-ID lesen; zum Senden anmelden",
       "loginWithTrovo": "Mit Trovo anmelden"

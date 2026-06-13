@@ -147,7 +147,10 @@ impl ServiceRegistry {
         let obs = Arc::new(ObsWebSocketHandler::new(opts.data_dir.clone()));
         let discord = Arc::new(DiscordWebhookService::new(opts.data_dir.clone()));
         let chat = Arc::new(ChatManager::new(opts.events.clone(), opts.log_dir.clone()));
-        let oauth = Arc::new(OAuthService::new(OAuthConfig::default()));
+        let oauth = Arc::new(OAuthService::new(
+            OAuthConfig::default(),
+            opts.secret_store.clone(),
+        ));
         // Keyed phrase-id secret for the PII filter's audit identifiers
         // (HMAC, not bare SHA-256 — blocklist phrases are guessable, so
         // an unkeyed hash would let anyone holding the audit log confirm

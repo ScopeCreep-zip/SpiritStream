@@ -23,6 +23,7 @@ mod trovo;
 mod tests;
 
 pub use config::OAuthConfig;
+pub(crate) use config::is_real as credential_is_real;
 pub use device::OAuthDeviceFlowStart;
 pub use flow::OAuthFlowResult;
 pub use loopback::{OAuthCallback, OAuthCallbackServer};
@@ -34,9 +35,17 @@ pub use tokens::{
 pub use trovo::TrovoUser;
 
 use crate::errors::CoreError;
+use crate::traits::SecretStore;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+
+/// SecretStore location for user-entered client credentials (the
+/// "explicit override" tier of the resolution chain). One JSON blob —
+/// ids and secrets travel together so a partial write can't leave a
+/// half-updated provider.
+const CRED_NAMESPACE: &str = "oauth";
+const CRED_KEY: &str = "client_credentials";
 
 pub(super) fn unknown_provider(name: &str) -> CoreError {
     CoreError::NotImplemented {
@@ -56,6 +65,10 @@ pub(super) fn network(detail: impl Into<String>) -> CoreError {
 /// accessors stay here so submods can `impl super::OAuthService`.
 pub struct OAuthService {
     pub(in crate::services::oauth) config: Arc<Mutex<OAuthConfig>>,
+    /// At-rest home for user-entered client credentials, so setup done
+    /// in the UI survives restarts. Loaded once via `load_persisted`
+    /// at startup; written through on every credential change.
+    pub(in crate::services::oauth) secret_store: Arc<dyn SecretStore>,
     pub(in crate::services::oauth) pending_flows:
         Arc<Mutex<HashMap<String, flow::PendingOAuthFlow>>>,
     pub(in crate::services::oauth) http_client: reqwest::Client,
@@ -77,15 +90,103 @@ pub struct OAuthService {
 }
 
 impl OAuthService {
-    pub fn new(config: OAuthConfig) -> Self {
+    pub fn new(config: OAuthConfig, secret_store: Arc<dyn SecretStore>) -> Self {
         Self {
             config: Arc::new(Mutex::new(config)),
+            secret_store,
             pending_flows: Arc::new(Mutex::new(HashMap::new())),
             http_client: reqwest::Client::new(),
             refresh_lock: tokio::sync::Mutex::new(()),
             #[cfg(test)]
             provider_overrides: std::sync::Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Unit-test constructor: file-backed secret store in a fresh temp
+    /// dir (leaked so the store outlives the test body — the OS reaps
+    /// the tmpdir). Persistence-roundtrip tests build their own store
+    /// over a shared dir instead.
+    #[cfg(test)]
+    pub(in crate::services::oauth) fn new_for_tests(config: OAuthConfig) -> Self {
+        let dir = tempfile::tempdir().expect("tempdir for oauth test store");
+        let store = crate::services::build_secret_store(dir.path(), Some("file"))
+            .expect("file secret store for oauth tests");
+        std::mem::forget(dir);
+        Self::new(config, store)
+    }
+
+    /// Load the credential overrides saved by `set_provider_credentials`
+    /// / `update_config` back into memory. Transports call this once at
+    /// startup, right after registry build — without it, setup done in
+    /// the UI would silently vanish on restart.
+    pub async fn load_persisted(&self) -> Result<(), CoreError> {
+        let Some(bytes) = self.secret_store.get(CRED_NAMESPACE, CRED_KEY).await? else {
+            return Ok(());
+        };
+        let stored: OAuthConfig =
+            serde_json::from_slice(&bytes).map_err(|e| CoreError::Internal {
+                context: format!("stored OAuth client credentials are unreadable: {e}"),
+            })?;
+        *self.config.lock().await = stored;
+        Ok(())
+    }
+
+    async fn persist(&self, config: &OAuthConfig) -> Result<(), CoreError> {
+        let bytes = serde_json::to_vec(config).map_err(|e| CoreError::Internal {
+            context: format!("serialize OAuth client credentials: {e}"),
+        })?;
+        self.secret_store.put(CRED_NAMESPACE, CRED_KEY, &bytes).await
+    }
+
+    /// Set (or clear, with `None`) one provider's client credentials and
+    /// persist the result. This is the backend behind the in-app
+    /// "Set up sign-in" form — the user pastes credentials from the
+    /// provider's developer portal and never touches an env file.
+    /// Empty/whitespace inputs clear the override.
+    pub async fn set_provider_credentials(
+        &self,
+        provider: &str,
+        client_id: Option<String>,
+        client_secret: Option<String>,
+    ) -> Result<(), CoreError> {
+        let normalize = |v: Option<String>| -> Option<String> {
+            v.and_then(|s| {
+                let trimmed = s.trim().to_string();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed)
+                }
+            })
+        };
+        let id = normalize(client_id);
+        let secret = normalize(client_secret);
+
+        let mut config = self.config.lock().await;
+        match provider {
+            "twitch" => {
+                config.twitch_client_id = id;
+                config.twitch_client_secret = secret;
+            }
+            "youtube" => {
+                config.youtube_client_id = id;
+                config.youtube_client_secret = secret;
+            }
+            "kick" => {
+                config.kick_client_id = id;
+                config.kick_client_secret = secret;
+            }
+            "facebook" => {
+                config.facebook_client_id = id;
+                config.facebook_client_secret = secret;
+            }
+            "trovo" => {
+                config.trovo_client_id = id;
+                config.trovo_client_secret = secret;
+            }
+            other => return Err(unknown_provider(other)),
+        }
+        self.persist(&config).await
     }
 
     /// Resolve a provider's endpoint set. The single lookup every flow
@@ -121,9 +222,12 @@ impl OAuthService {
             .insert(provider.name.clone(), provider);
     }
 
-    pub async fn update_config(&self, config: OAuthConfig) {
+    /// Full-replace of the credential overrides (CLI `oauth config set`
+    /// and the admin HTTP PUT). Persists like the per-provider setter.
+    pub async fn update_config(&self, config: OAuthConfig) -> Result<(), CoreError> {
         let mut current = self.config.lock().await;
         *current = config;
+        self.persist(&current).await
     }
 
     pub async fn get_config(&self) -> OAuthConfig {
@@ -146,28 +250,46 @@ impl OAuthService {
         }
     }
 
-    /// One snapshot of every provider's configured state — single source
-    /// of truth for the HTTP config endpoint AND `spiritstream-cli
-    /// oauth config`, so the two transports can't drift.
-    pub async fn configured_flags(&self) -> OAuthConfiguredFlags {
+    /// One snapshot of every provider's setup state — single source of
+    /// truth for the HTTP config endpoint AND `spiritstream-cli oauth
+    /// config`, so the two transports can't drift. Carries everything
+    /// the in-app setup form needs (which fields to show, where to
+    /// register, what override is active) so the frontend holds zero
+    /// provider knowledge. Secret values never appear here.
+    pub async fn provider_summaries(&self) -> Vec<OAuthProviderSummary> {
         let config = self.config.lock().await;
-        OAuthConfiguredFlags {
-            twitch: config.has_twitch(),
-            youtube: config.has_youtube(),
-            kick: config.has_kick(),
-            facebook: config.has_facebook(),
-            trovo: config.has_trovo(),
-        }
+        let summary = |provider: &str, configured: bool, needs_secret: bool, id: &Option<String>| {
+            OAuthProviderSummary {
+                provider: provider.to_string(),
+                configured,
+                needs_secret,
+                override_client_id: id.clone(),
+                registration_url: provider::registration_url(provider).to_string(),
+            }
+        };
+        vec![
+            // Twitch is a public client (Device Code Flow): id only.
+            summary("twitch", config.has_twitch(), false, &config.twitch_client_id),
+            summary("youtube", config.has_youtube(), true, &config.youtube_client_id),
+            summary("kick", config.has_kick(), true, &config.kick_client_id),
+            summary("facebook", config.has_facebook(), true, &config.facebook_client_id),
+            summary("trovo", config.has_trovo(), true, &config.trovo_client_id),
+        ]
     }
 }
 
-/// Per-provider "are real credentials present in this build/env" flags.
-#[derive(Debug, Clone, Copy, serde::Serialize)]
+/// Per-provider setup state for the config surface. `configured` gates
+/// the sign-in buttons; the rest drives the in-app credentials form.
+#[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct OAuthConfiguredFlags {
-    pub twitch: bool,
-    pub youtube: bool,
-    pub kick: bool,
-    pub facebook: bool,
-    pub trovo: bool,
+pub struct OAuthProviderSummary {
+    pub provider: String,
+    /// Real credentials present (override, env, or release-embedded).
+    pub configured: bool,
+    /// Whether this provider's token exchange requires a client secret.
+    pub needs_secret: bool,
+    /// The stored client-id override, when the user has entered one.
+    pub override_client_id: Option<String>,
+    /// The provider's developer-portal page where the app is registered.
+    pub registration_url: String,
 }

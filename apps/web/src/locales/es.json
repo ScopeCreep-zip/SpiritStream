@@ -101,12 +101,21 @@
       "deviceExpires": "El código caduca en {{seconds}} s. Este panel se cierra al completar el inicio de sesión.",
       "deviceFailed": "El inicio de sesión no se completó: {{reason}}",
       "deviceInstruction": "Abre esta página en cualquier dispositivo e introduce el código:",
-      "notConfigured": "El inicio de sesión no está configurado en esta versión: faltan credenciales de cliente para esta plataforma.",
+      "notConfigured": "El inicio de sesión requiere una configuración única para esta plataforma.",
       "openManually": "Tu navegador no se abrió — copia el enlace de inicio de sesión:",
       "signOutFailed": "Error al cerrar sesión: {{error}}",
       "signedInAs": "Conectado como {{username}}",
       "signedOut": "Sesión cerrada en {{platform}}",
-      "startFailed": "Error al iniciar el inicio de sesión: {{error}}"
+      "startFailed": "Error al iniciar el inicio de sesión: {{error}}",
+      "setup": "Configurar el inicio de sesión",
+      "setupHint": "Configuración única: cree una aplicación (gratuita) en el sitio de desarrolladores de {{platform}} y pegue sus credenciales aquí. Se guardan cifradas en este dispositivo.",
+      "openPortal": "Abrir el portal de desarrolladores de {{platform}}",
+      "clientId": "ID de cliente",
+      "clientSecret": "Secreto de cliente",
+      "credentialsSaved": "Credenciales de inicio de sesión guardadas.",
+      "credentialsSaveFailed": "No se pudieron guardar las credenciales: {{error}}",
+      "saving": "Guardando…",
+      "saveCredentials": "Guardar y habilitar el inicio de sesión"
     },
     "platformReadOnly": "solo lectura",
     "platforms": {
@@ -157,7 +166,7 @@
     "transparentOverlay": "Superposición transparente",
     "trovo": {
       "channelId": "ID de canal",
-      "channelIdHint": "Requiere SPIRITSTREAM_TROVO_CLIENT_ID en el entorno. Se admite el chat de solo lectura.",
+      "channelIdHint": "La lectura del chat usa la configuración única de inicio de sesión de abajo. Se admite el chat de solo lectura.",
       "channelIdPlaceholder": "p.ej. 100000021",
       "description": "Lee el chat de Trovo con el ID de canal; inicia sesión para enviar",
       "loginWithTrovo": "Iniciar sesión con Trovo"

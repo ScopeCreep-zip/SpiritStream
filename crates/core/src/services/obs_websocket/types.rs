@@ -4,7 +4,7 @@ use ts_rs::TS;
 /// OBS connection status
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
-#[ts(export, export_to = "../../../../packages/types/src/generated/")]
+#[ts(export, export_to = "../../../packages/types/src/generated/")]
 pub enum ObsConnectionStatus {
     #[default]
     Disconnected,
@@ -16,7 +16,7 @@ pub enum ObsConnectionStatus {
 /// OBS streaming status
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
-#[ts(export, export_to = "../../../../packages/types/src/generated/")]
+#[ts(export, export_to = "../../../packages/types/src/generated/")]
 pub enum ObsStreamStatus {
     Inactive,
     Starting,
@@ -29,7 +29,7 @@ pub enum ObsStreamStatus {
 /// Integration directionality — controls how stream state syncs.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]
-#[ts(export, export_to = "../../../../packages/types/src/generated/")]
+#[ts(export, export_to = "../../../packages/types/src/generated/")]
 pub enum IntegrationDirection {
     /// OBS controls SpiritStream (OBS start → SpiritStream start)
     ObsToSpiritstream,
@@ -45,7 +45,7 @@ pub enum IntegrationDirection {
 /// OBS WebSocket configuration (stored in settings)
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../../../packages/types/src/generated/")]
+#[ts(export, export_to = "../../../packages/types/src/generated/")]
 pub struct ObsConfig {
     /// WebSocket host (e.g., "localhost")
     pub host: String,
@@ -77,7 +77,7 @@ impl ObsConfig {
 /// Current OBS state snapshot
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../../../packages/types/src/generated/")]
+#[ts(export, export_to = "../../../packages/types/src/generated/")]
 pub struct ObsState {
     pub connection_status: ObsConnectionStatus,
     pub stream_status: ObsStreamStatus,

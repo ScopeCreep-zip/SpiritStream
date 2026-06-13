@@ -96,14 +96,25 @@ pub enum OAuthCmd {
 
 #[derive(Debug, Subcommand)]
 pub enum ConfigCmd {
-    /// Print the client-id overrides + derived per-provider configured
-    /// flags as JSON. Secret values never print — `configured` already
-    /// conveys their presence.
+    /// Print per-provider setup summaries as JSON (configured flag,
+    /// needs_secret, override client id, registration URL). Secret
+    /// values never print — `configured` already conveys their presence.
     Get,
     /// Replace the OAuth config. Pass the full JSON via `--json` or
     /// individual fields via `--twitch-client-id`, etc. Fields not
     /// provided clear (set to `None`) — mirrors the HTTP PUT semantics.
     Set(Box<ConfigSetArgs>),
+    /// Store ONE provider's client credentials (the CLI mirror of the
+    /// in-app "Set up sign-in" form; persists across restarts). Omit
+    /// both values to clear the provider's override. The secret rides
+    /// stdin/prompt/env via `--client-secret-from`, never argv.
+    SetProvider {
+        provider: String,
+        #[arg(long)]
+        client_id: Option<String>,
+        #[arg(long = "client-secret-from", value_enum)]
+        client_secret_from: Option<crate::secret_input::SecretSource>,
+    },
 }
 
 #[derive(Debug, clap::Args)]
@@ -413,22 +424,33 @@ pub async fn run(
         }
         OAuthCmd::Config { action } => match action {
             ConfigCmd::Get => {
-                // Client-id overrides + the derived per-provider truth
-                // flags (same source the HTTP config endpoint serves).
-                // Secret VALUES are deliberately omitted — `configured`
-                // already conveys their presence.
-                let config = registry.oauth.get_config().await;
-                let flags = registry.oauth.configured_flags().await;
-                out.emit(&serde_json::json!({
-                    "overrides": {
-                        "twitchClientId": config.twitch_client_id,
-                        "youtubeClientId": config.youtube_client_id,
-                        "kickClientId": config.kick_client_id,
-                        "facebookClientId": config.facebook_client_id,
-                        "trovoClientId": config.trovo_client_id,
-                    },
-                    "configured": flags,
-                }))?;
+                // Per-provider setup summaries (same core source the
+                // HTTP config endpoint serves). Secret VALUES are
+                // deliberately omitted — `configured` already conveys
+                // their presence.
+                let summaries = registry.oauth.provider_summaries().await;
+                out.emit(&serde_json::json!({ "providers": summaries }))?;
+                Ok(())
+            }
+            ConfigCmd::SetProvider {
+                provider,
+                client_id,
+                client_secret_from,
+            } => {
+                let secret = crate::secret_input::read_optional_secret(
+                    client_secret_from,
+                    "client secret",
+                )?;
+                registry
+                    .oauth
+                    .set_provider_credentials(
+                        &provider,
+                        client_id,
+                        secret.map(|s| s.to_string()),
+                    )
+                    .await?;
+                let summaries = registry.oauth.provider_summaries().await;
+                out.emit(&serde_json::json!({ "providers": summaries }))?;
                 Ok(())
             }
             ConfigCmd::Set(args) => {
@@ -462,7 +484,7 @@ pub async fn run(
                         trovo_client_secret,
                     }
                 };
-                registry.oauth.update_config(config).await;
+                registry.oauth.update_config(config).await?;
                 out.emit(&serde_json::json!({ "updated": true }))?;
                 Ok(())
             }

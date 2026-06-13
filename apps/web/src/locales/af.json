@@ -101,12 +101,21 @@
       "deviceExpires": "Die kode verval oor {{seconds}} s. Hierdie paneel sluit wanneer aanmelding voltooi is.",
       "deviceFailed": "Aanmelding is nie voltooi nie: {{reason}}",
       "deviceInstruction": "Maak hierdie bladsy op enige toestel oop en voer die kode in:",
-      "notConfigured": "Aanmelding is nie in hierdie bou opgestel nie — geen kliëntbewyse vir hierdie platform nie.",
+      "notConfigured": "Aanmelding benodig ’n eenmalige opstelling vir hierdie platform.",
       "openManually": "Jou blaaier het nie oopgemaak nie — kopieer die aanmeldskakel:",
       "signOutFailed": "Kon nie afmeld nie: {{error}}",
       "signedInAs": "Aangemeld as {{username}}",
       "signedOut": "Afgemeld van {{platform}}",
-      "startFailed": "Kon nie aanmelding begin nie: {{error}}"
+      "startFailed": "Kon nie aanmelding begin nie: {{error}}",
+      "setup": "Stel aanmelding op",
+      "setupHint": "Eenmalige opstelling: skep ’n (gratis) app op {{platform}} se ontwikkelaarwebwerf en plak die bewyse hier. Hulle word geënkripteer op hierdie toestel gestoor.",
+      "openPortal": "Maak {{platform}}-ontwikkelaarportaal oop",
+      "clientId": "Kliënt-ID",
+      "clientSecret": "Kliëntgeheim",
+      "credentialsSaved": "Aanmeldbewyse gestoor.",
+      "credentialsSaveFailed": "Kon nie bewyse stoor nie: {{error}}",
+      "saving": "Stoor tans…",
+      "saveCredentials": "Stoor en aktiveer aanmelding"
     },
     "platformReadOnly": "leesalleen",
     "platforms": {
@@ -157,7 +166,7 @@
     "transparentOverlay": "Deursigtige oorleg",
     "trovo": {
       "channelId": "Kanaal-ID",
-      "channelIdHint": "Vereis SPIRITSTREAM_TROVO_CLIENT_ID in omgewing. Leesalleenklets word ondersteun.",
+      "channelIdHint": "Die lees van klets gebruik die eenmalige aanmeldopstelling hieronder. Lees-alleen-klets word ondersteun.",
       "channelIdPlaceholder": "bv. 100000021",
       "description": "Lees Trovo-klets met kanaal-ID; meld aan om te stuur",
       "loginWithTrovo": "Meld aan met Trovo"

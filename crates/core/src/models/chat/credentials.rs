@@ -5,8 +5,12 @@
 //! 600 LOC ceiling. Pure data with hand-written `Debug` impls (F5) so
 //! tokens never reach log lines.
 //!
-//! ts-rs `export_to` paths point four directories up from this file
-//! (`crates/core/src/models/chat/`) to reach `packages/types/`.
+//! ts-rs resolves `export_to` relative to the crate manifest dir
+//! (`crates/core/`), NOT the source file, so every exported type uses
+//! the same `../../../packages/types/src/generated/` path regardless of
+//! how deeply nested the source module is. An extra `../` here silently
+//! wrote the bindings OUTSIDE the repo (to `/Users/<you>/packages/…`),
+//! leaving the in-repo copies stale.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -16,7 +20,7 @@ use super::ChatPlatform;
 /// Configuration for connecting a chat platform.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../../../packages/types/src/generated/")]
+#[ts(export, export_to = "../../../packages/types/src/generated/")]
 pub struct ChatConfig {
     /// Platform to connect to
     pub platform: ChatPlatform,
@@ -33,7 +37,7 @@ pub struct ChatConfig {
 /// rendering. Serde is unaffected.
 #[derive(Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "lowercase")]
-#[ts(export, export_to = "../../../../packages/types/src/generated/")]
+#[ts(export, export_to = "../../../packages/types/src/generated/")]
 pub enum ChatCredentials {
     #[serde(rename_all = "camelCase")]
     Twitch {
@@ -61,6 +65,15 @@ pub enum ChatCredentials {
     Trovo {
         /// Trovo channel ID (numeric user/channel ID)
         channel_id: String,
+        /// Trovo application client id, resolved by the TRANSPORT from
+        /// the OAuth config chain (in-app setup → env → embedded) —
+        /// the connector must not read the environment itself, or
+        /// credentials saved through the in-app form would be ignored.
+        /// Required even for read-only chat (the channel chat token is
+        /// minted with it); the connector fails loud when it's absent
+        /// or a placeholder.
+        #[serde(default)]
+        client_id: Option<String>,
         /// OAuth bearer (`Authorization: OAuth <token>` — Trovo's
         /// scheme) for the signed-in account. `None` = read-only chat
         /// via the client-id-only channel chat token; `Some(token)`
@@ -99,7 +112,7 @@ pub enum ChatCredentials {
 /// never reach a log line via the default derive. Serde is unaffected.
 #[derive(Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "method", rename_all = "camelCase")]
-#[ts(export, export_to = "../../../../packages/types/src/generated/")]
+#[ts(export, export_to = "../../../packages/types/src/generated/")]
 pub enum TwitchAuth {
     /// User-provided OAuth token (from twitchtokengenerator.com or similar)
     #[serde(rename_all = "camelCase")]
@@ -127,7 +140,7 @@ pub enum TwitchAuth {
 /// reach a log line via the default derive. Serde is unaffected.
 #[derive(Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "method", rename_all = "camelCase")]
-#[ts(export, export_to = "../../../../packages/types/src/generated/")]
+#[ts(export, export_to = "../../../packages/types/src/generated/")]
 pub enum YouTubeAuth {
     /// User-provided API key (preferred - uses user's own quota)
     #[serde(rename_all = "camelCase")]
@@ -180,10 +193,13 @@ impl std::fmt::Debug for ChatCredentials {
                 .finish(),
             ChatCredentials::Trovo {
                 channel_id,
+                client_id,
                 oauth_token,
             } => f
                 .debug_struct("ChatCredentials::Trovo")
                 .field("channel_id", channel_id)
+                // Client ids are public by design — safe to log.
+                .field("client_id", client_id)
                 .field("oauth_token", &oauth_token.as_ref().map(|_| "<redacted>"))
                 .finish(),
             ChatCredentials::Kick {
@@ -385,6 +401,7 @@ mod tests {
     fn debug_trovo_renders_channel_id() {
         let creds = ChatCredentials::Trovo {
             channel_id: "1234567".into(),
+            client_id: Some("public-client-id".into()),
             oauth_token: None,
         };
         let rendered = format!("{creds:?}");

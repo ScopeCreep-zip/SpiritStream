@@ -226,6 +226,18 @@ pub async fn v1_chat_connect_proxy(
                 auth: enriched_auth,
             }
         }
+        // The frontend never knows client ids — the transport resolves
+        // Trovo's from the OAuth config chain (in-app setup → env →
+        // embedded) and the connector fails loud on a placeholder.
+        ChatCredentials::Trovo {
+            channel_id,
+            oauth_token,
+            ..
+        } => ChatCredentials::Trovo {
+            channel_id,
+            client_id: Some(state.oauth_service.get_config().await.get_trovo_client_id()),
+            oauth_token,
+        },
         other => other,
     };
 
@@ -339,6 +351,7 @@ pub async fn v1_chat_retry_proxy(
                 &state.chat_manager,
                 &chat_settings,
                 &profile_settings,
+                state.oauth_service.get_config().await.get_trovo_client_id(),
                 &state.event_bus,
             )
             .await;

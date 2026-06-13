@@ -101,12 +101,21 @@
       "deviceExpires": "코드는 {{seconds}}초 후 만료됩니다. 로그인이 완료되면 이 패널이 닫힙니다.",
       "deviceFailed": "로그인이 완료되지 않았습니다: {{reason}}",
       "deviceInstruction": "아무 기기에서나 이 페이지를 열고 코드를 입력하세요:",
-      "notConfigured": "이 빌드에는 로그인이 설정되어 있지 않습니다 — 이 플랫폼용 클라이언트 자격 증명이 없습니다.",
+      "notConfigured": "이 플랫폼의 로그인에는 한 번의 초기 설정이 필요합니다.",
       "openManually": "브라우저가 열리지 않았습니다 — 로그인 링크를 복사하세요:",
       "signOutFailed": "로그아웃 실패: {{error}}",
       "signedInAs": "{{username}}으로 로그인됨",
       "signedOut": "{{platform}}에서 로그아웃됨",
-      "startFailed": "로그인 시작 실패: {{error}}"
+      "startFailed": "로그인 시작 실패: {{error}}",
+      "setup": "로그인 설정",
+      "setupHint": "한 번만 설정하면 됩니다. {{platform}} 개발자 사이트에서 (무료) 앱을 만든 뒤 자격 증명을 여기에 붙여넣으세요. 이 기기에 암호화되어 저장됩니다.",
+      "openPortal": "{{platform}} 개발자 포털 열기",
+      "clientId": "클라이언트 ID",
+      "clientSecret": "클라이언트 시크릿",
+      "credentialsSaved": "로그인 자격 증명이 저장되었습니다.",
+      "credentialsSaveFailed": "자격 증명을 저장할 수 없습니다: {{error}}",
+      "saving": "저장 중…",
+      "saveCredentials": "저장하고 로그인 활성화"
     },
     "platformReadOnly": "읽기 전용",
     "platforms": {
@@ -157,7 +166,7 @@
     "transparentOverlay": "투명한 오버레이",
     "trovo": {
       "channelId": "채널 ID",
-      "channelIdHint": "환경에 SPIRITSTREAM_TROVO_CLIENT_ID가 필요합니다. 읽기 전용 채팅이 지원됩니다.",
+      "channelIdHint": "채팅 읽기는 아래의 일회성 로그인 설정을 사용합니다. 읽기 전용 채팅이 지원됩니다.",
       "channelIdPlaceholder": "예를 들어 100000021",
       "description": "채널 ID로 Trovo 채팅 읽기; 보내려면 로그인하세요",
       "loginWithTrovo": "Trovo로 로그인"

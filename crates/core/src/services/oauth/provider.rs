@@ -3,6 +3,21 @@
 /// ~2-year cycle — bump deliberately (pinned-deps rule), in ONE place.
 pub const FACEBOOK_GRAPH_VERSION: &str = "v24.0";
 
+/// Where a maintainer/self-builder registers an OAuth app for the
+/// provider — surfaced by the in-app credentials form so the only step
+/// outside SpiritStream is the registration itself. Unknown names map
+/// to the docs tutorial rather than a broken link.
+pub(in crate::services::oauth) fn registration_url(provider: &str) -> &'static str {
+    match provider {
+        "twitch" => "https://dev.twitch.tv/console/apps/create",
+        "youtube" => "https://console.cloud.google.com/auth/clients",
+        "kick" => "https://kick.com/settings/developer",
+        "facebook" => "https://developers.facebook.com/apps/",
+        "trovo" => "https://developer.trovo.live/",
+        _ => "https://github.com/ScopeCreep-zip/SpiritStream/blob/main/docs/06-tutorials/06-chat-oauth-setup.md",
+    }
+}
+
 /// OAuth provider endpoint configuration. Owned `String`s (not
 /// `&'static str`) so tests can rebase endpoints onto a wiremock
 /// server via `OAuthService::override_provider` — same philosophy as

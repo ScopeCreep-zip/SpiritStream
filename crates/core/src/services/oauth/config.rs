@@ -60,8 +60,10 @@ const TROVO_CLIENT_SECRET: &str = match option_env!("SPIRITSTREAM_EMBEDDED_TROVO
 /// A credential is "real" when it's non-empty after trimming and not an
 /// un-injected placeholder. This is the single predicate behind every
 /// `has_*` flag — and therefore behind whether sign-in buttons render
-/// as live or as "not set up in this build".
-fn is_real(value: &str) -> bool {
+/// as live or as "not set up in this build". `pub(crate)` because chat
+/// connectors that receive a transport-resolved client id (Trovo) use
+/// the same predicate to fail loud on placeholders.
+pub(crate) fn is_real(value: &str) -> bool {
     let trimmed = value.trim();
     !trimmed.is_empty() && !trimmed.ends_with("_PLACEHOLDER")
 }

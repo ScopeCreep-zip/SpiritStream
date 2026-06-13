@@ -203,7 +203,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn twitch_svc(mock_base: &str) -> OAuthService {
-        let svc = OAuthService::new(OAuthConfig {
+        let svc = OAuthService::new_for_tests(OAuthConfig {
             twitch_client_id: Some("test-twitch-id".into()),
             ..OAuthConfig::default()
         });
@@ -251,7 +251,7 @@ mod tests {
 
     #[tokio::test]
     async fn start_device_flow_refuses_unconfigured_provider() {
-        let svc = OAuthService::new(OAuthConfig::default());
+        let svc = OAuthService::new_for_tests(OAuthConfig::default());
         if std::env::var("SPIRITSTREAM_TWITCH_CLIENT_ID").is_ok() {
             return;
         }
@@ -263,7 +263,7 @@ mod tests {
 
     #[tokio::test]
     async fn start_device_flow_refuses_provider_without_device_endpoint() {
-        let svc = OAuthService::new(OAuthConfig {
+        let svc = OAuthService::new_for_tests(OAuthConfig {
             kick_client_id: Some("id".into()),
             kick_client_secret: Some("secret".into()),
             ..OAuthConfig::default()

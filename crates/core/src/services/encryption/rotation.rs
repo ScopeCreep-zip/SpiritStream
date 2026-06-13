@@ -15,7 +15,7 @@ use super::{internal, rotation_backup, KEY_LEN, STREAM_KEY_PREFIX_V1, STREAM_KEY
 /// Report returned after successful key rotation
 #[derive(Debug, Clone, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, export_to = "../../../../packages/types/src/generated/")]
+#[ts(export, export_to = "../../../packages/types/src/generated/")]
 pub struct RotationReport {
     pub profiles_updated: usize,
     pub keys_reencrypted: usize,
