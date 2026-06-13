@@ -66,7 +66,6 @@
     "exportFailed": "채팅 로그를 내보내지 못했습니다.",
     "exportLog": "채팅 내보내기",
     "exportNoSession": "내보낼 활성 채팅 세션이 없습니다.",
-    "exportRequiresStream": "현재 채팅 세션을 내보내려면 스트림을 시작하세요.",
     "exportSuccess": "채팅 로그를 내보냈습니다.",
     "facebook": {
       "accessToken": "페이지 액세스 토큰",

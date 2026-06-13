@@ -381,62 +381,34 @@ pub async fn run(
                 allowed.push(h);
             }
             let path = spiritstream_core::services::validate_path_within_any(&path, &allowed)?;
-            // Replicates `POST /api/v1/chat/log/export`: flush, then read every
-            // chatlog_<hour>.jsonl line whose timestamp lies in the active
-            // session window, write to `<path>`.
-            use chrono::{Local, TimeZone};
-            use spiritstream_core::models::ChatMessage;
+            // Mirror `POST /api/v1/chat/log/export`: flush, then decrypt
+            // the FULL retained encrypted history (the shared core
+            // readers) and write plaintext jsonl to `<path>`. (The old
+            // path read `chatlog_*.jsonl` with a mismatched hour-key
+            // format — doubly broken once history became encrypted.)
             use std::fs::File;
-            use std::io::{BufRead, BufReader, BufWriter, Write};
+            use std::io::{BufWriter, Write};
 
-            let start_ms = registry
-                .chat
-                .log_session_start_ms()
-                .ok_or_else(|| CliError::Argument("no active chat session to export".into()))?;
             registry.chat.flush_chat_logs().await?;
-            let end_ms = Local::now().timestamp_millis();
-            let start_dt = Local
-                .timestamp_millis_opt(start_ms)
-                .single()
-                .unwrap_or_else(Local::now);
-            let end_dt = Local
-                .timestamp_millis_opt(end_ms)
-                .single()
-                .unwrap_or_else(Local::now);
-
-            // Reuse the same hour-key builder the HTTP path uses.
-            let mut keys: Vec<String> = Vec::new();
-            let mut cursor = start_dt;
-            while cursor <= end_dt {
-                keys.push(cursor.format("%Y-%m-%d_%H").to_string());
-                cursor += chrono::Duration::hours(1);
+            let files = spiritstream_core::services::list_history_files(&registry.log_dir);
+            if files.is_empty() {
+                return Err(CliError::Argument("no chat history to export".into()));
             }
-
             let mut writer = BufWriter::new(
                 File::create(&path)
                     .map_err(|e| CliError::Io(format!("create {}: {e}", path.display())))?,
             );
-            for key in keys {
-                let src = registry.log_dir.join(format!("chatlog_{}.jsonl", key));
-                if !src.exists() {
-                    continue;
-                }
-                let f = File::open(&src)
-                    .map_err(|e| CliError::Io(format!("read {}: {e}", src.display())))?;
-                for line in BufReader::new(f).lines() {
-                    let line = line.map_err(|e| CliError::Io(format!("read chat log: {e}")))?;
-                    if line.trim().is_empty() {
-                        continue;
-                    }
-                    if let Ok(m) = serde_json::from_str::<ChatMessage>(&line) {
-                        if m.timestamp >= start_ms && m.timestamp <= end_ms {
-                            writer
-                                .write_all(line.as_bytes())
-                                .map_err(|e| CliError::Io(format!("write export: {e}")))?;
-                            writer
-                                .write_all(b"\n")
-                                .map_err(|e| CliError::Io(format!("write export: {e}")))?;
-                        }
+            for src in files {
+                for m in
+                    spiritstream_core::services::read_messages_from_file(&src, &registry.data_dir)
+                {
+                    if let Ok(line) = serde_json::to_string(&m) {
+                        writer
+                            .write_all(line.as_bytes())
+                            .map_err(|e| CliError::Io(format!("write export: {e}")))?;
+                        writer
+                            .write_all(b"\n")
+                            .map_err(|e| CliError::Io(format!("write export: {e}")))?;
                     }
                 }
             }
@@ -447,61 +419,23 @@ pub async fn run(
             Ok(())
         }
         ChatCmd::Search { query, limit } => {
-            use chrono::{Local, TimeZone};
             use spiritstream_core::models::ChatMessage;
-            use std::fs::File;
-            use std::io::{BufRead, BufReader};
 
             let limit = limit.unwrap_or(500);
-            let start_ms = registry
-                .chat
-                .log_session_start_ms()
-                .ok_or_else(|| CliError::Argument("no active chat session to search".into()))?;
             let q = query.trim().to_lowercase();
             if q.is_empty() {
                 out.emit(&Vec::<ChatMessage>::new())?;
                 return Ok(());
             }
-            let end_ms = Local::now().timestamp_millis();
-            let start_dt = Local
-                .timestamp_millis_opt(start_ms)
-                .single()
-                .unwrap_or_else(Local::now);
-            let end_dt = Local
-                .timestamp_millis_opt(end_ms)
-                .single()
-                .unwrap_or_else(Local::now);
-            let mut keys: Vec<String> = Vec::new();
-            let mut cursor = start_dt;
-            while cursor <= end_dt {
-                keys.push(cursor.format("%Y-%m-%d_%H").to_string());
-                cursor += chrono::Duration::hours(1);
-            }
+            // Search the full retained encrypted history via the shared
+            // core readers (same as the HTTP handler).
             let mut matches: Vec<ChatMessage> = Vec::new();
-            for key in keys {
-                if matches.len() >= limit {
-                    break;
-                }
-                let src = registry.log_dir.join(format!("chatlog_{}.jsonl", key));
-                if !src.exists() {
-                    continue;
-                }
-                let f = File::open(&src)
-                    .map_err(|e| CliError::Io(format!("read {}: {e}", src.display())))?;
-                for line in BufReader::new(f).lines() {
+            'outer: for src in spiritstream_core::services::list_history_files(&registry.log_dir) {
+                for m in
+                    spiritstream_core::services::read_messages_from_file(&src, &registry.data_dir)
+                {
                     if matches.len() >= limit {
-                        break;
-                    }
-                    let line = line.map_err(|e| CliError::Io(format!("read chat log: {e}")))?;
-                    if line.trim().is_empty() {
-                        continue;
-                    }
-                    let m = match serde_json::from_str::<ChatMessage>(&line) {
-                        Ok(m) => m,
-                        Err(_) => continue,
-                    };
-                    if m.timestamp < start_ms || m.timestamp > end_ms {
-                        continue;
+                        break 'outer;
                     }
                     if m.username.to_lowercase().contains(&q)
                         || m.message.to_lowercase().contains(&q)

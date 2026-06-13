@@ -66,7 +66,6 @@
     "exportFailed": "Échec de l'exportation du journal de discussion.",
     "exportLog": "Exporter le chat",
     "exportNoSession": "Aucune session de chat active à exporter.",
-    "exportRequiresStream": "Démarrez un flux pour exporter la session de discussion en cours.",
     "exportSuccess": "Journal de discussion exporté.",
     "facebook": {
       "accessToken": "Jeton d'accès de page",

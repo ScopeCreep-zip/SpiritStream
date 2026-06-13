@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
-use chrono::{DateTime, Duration, Local, Timelike};
 use serde_json::json;
 use tokio::sync::broadcast;
 
@@ -79,29 +78,6 @@ pub(crate) async fn ensure_fresh_oauth_token(
         expires_at: new_expires_at,
         refreshed: true,
     })
-}
-
-pub(crate) fn build_hour_keys(start: DateTime<Local>, end: DateTime<Local>) -> Vec<String> {
-    let mut keys = Vec::new();
-
-    let start_hour = start
-        .with_minute(0)
-        .and_then(|d| d.with_second(0))
-        .and_then(|d| d.with_nanosecond(0))
-        .unwrap_or(start);
-    let end_hour = end
-        .with_minute(0)
-        .and_then(|d| d.with_second(0))
-        .and_then(|d| d.with_nanosecond(0))
-        .unwrap_or(end);
-
-    let mut cursor = start_hour;
-    while cursor <= end_hour {
-        keys.push(cursor.format("%Y%m%d-%H").to_string());
-        cursor += Duration::hours(1);
-    }
-
-    keys
 }
 
 // K3: profile-state mutators + YouTube-specific lifecycle live in

@@ -212,13 +212,12 @@ pub fn read_messages_from_file(path: &Path, app_data_dir: &Path) -> Vec<ChatMess
     messages
 }
 
-/// The last `n` persisted messages across all `.enc` files, oldest→newest.
-/// Reads newest files first and stops once it has enough — used to seed
-/// the in-memory ring on boot (full-restart replay).
-pub fn read_recent(log_dir: &Path, app_data_dir: &Path, n: usize) -> Vec<ChatMessage> {
-    if n == 0 {
-        return Vec::new();
-    }
+/// All `chatlog_*.enc` history files, sorted oldest→newest (hour keys
+/// sort lexicographically == chronologically). The single source of the
+/// retained-history file list — export/search iterate it so they cover
+/// the FULL retained window (across app restarts), not just the current
+/// run's hours.
+pub fn list_history_files(log_dir: &Path) -> Vec<PathBuf> {
     let mut files: Vec<PathBuf> = std::fs::read_dir(log_dir)
         .into_iter()
         .flatten()
@@ -226,8 +225,18 @@ pub fn read_recent(log_dir: &Path, app_data_dir: &Path, n: usize) -> Vec<ChatMes
         .map(|e| e.path())
         .filter(|p| hour_key_from_path(p).is_some())
         .collect();
-    // Hour keys sort lexicographically == chronologically.
     files.sort();
+    files
+}
+
+/// The last `n` persisted messages across all `.enc` files, oldest→newest.
+/// Reads newest files first and stops once it has enough — used to seed
+/// the in-memory ring on boot (full-restart replay).
+pub fn read_recent(log_dir: &Path, app_data_dir: &Path, n: usize) -> Vec<ChatMessage> {
+    if n == 0 {
+        return Vec::new();
+    }
+    let files = list_history_files(log_dir);
     let mut collected: Vec<ChatMessage> = Vec::new();
     for path in files.iter().rev() {
         let mut msgs = read_messages_from_file(path, app_data_dir);

@@ -66,7 +66,6 @@
     "exportFailed": "Kon nie kletslogboek uitvoer nie.",
     "exportLog": "Voer klets uit",
     "exportNoSession": "Geen aktiewe kletssessie om uit te voer nie.",
-    "exportRequiresStream": "Begin 'n stroom om die huidige kletssessie uit te voer.",
     "exportSuccess": "Kletslogboek uitgevoer.",
     "facebook": {
       "accessToken": "Bladsy-toegangstoken",

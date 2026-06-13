@@ -29,25 +29,18 @@ export function Chat() {
   const { FileBrowser, saveFilePath: browserSaveFile } = useFileBrowser();
   const messages = useChatStore((state) => state.messages);
   const clearMessages = useChatStore((state) => state.clearMessages);
-  const { statuses, activeStreamCount } = useChatPlatformStatus();
+  const { statuses } = useChatPlatformStatus();
   const [searchOpen, setSearchOpen] = useState(false);
 
   const handleExportLog = useCallback(async (): Promise<void> => {
     try {
-      if (activeStreamCount === 0) {
-        toast.error(
-          t('chat.exportRequiresStream', {
-            defaultValue: 'Start a stream to export the current chat session.',
-          })
-        );
-        return;
-      }
-
+      // Chat history is always-on (encrypted, stream-decoupled), so export
+      // works whenever there's a session — no "start a stream first" gate.
       const status = await api.chat.getLogStatus();
       if (!status.active || status.startedAt === 0) {
         toast.error(
           t('chat.exportNoSession', {
-            defaultValue: 'No active chat session to export.',
+            defaultValue: 'No chat history to export yet.',
           })
         );
         return;
@@ -75,7 +68,7 @@ export function Chat() {
       logger.error('Failed to export chat log:', error);
       toast.error(t('chat.exportFailed', { defaultValue: 'Failed to export chat log.' }));
     }
-  }, [activeStreamCount, browserSaveFile, t]);
+  }, [browserSaveFile, t]);
 
   return (
     <>
@@ -110,7 +103,6 @@ export function Chat() {
               variant="ghost"
               size="icon"
               onClick={handleExportLog}
-              disabled={activeStreamCount === 0}
               aria-label={t('chat.exportLog', { defaultValue: 'Export chat' })}
               title={t('chat.exportLog', { defaultValue: 'Export chat' })}
             >
@@ -145,7 +137,6 @@ export function Chat() {
           open={searchOpen}
           onClose={() => setSearchOpen(false)}
           messages={messages}
-          activeStreamCount={activeStreamCount}
         />
       </Card>
     </>

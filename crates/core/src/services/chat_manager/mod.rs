@@ -22,7 +22,7 @@ mod crosspost_tests;
 mod send_message_tests;
 
 use log_writer::ChatLogCommand;
-pub use log_writer::{read_messages_from_file, read_recent};
+pub use log_writer::{list_history_files, read_messages_from_file, read_recent};
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;

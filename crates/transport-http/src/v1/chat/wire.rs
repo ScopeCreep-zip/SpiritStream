@@ -67,7 +67,10 @@ pub struct ChatPlatformStatusWire {
     pub status: ChatConnectionStatusWire,
     pub message_count: u64,
     pub error: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    // No `skip_serializing_if`: the ts-rs type is `number | null`
+    // (non-optional), so the field must always be present — serialize
+    // `null` when absent, matching `error` above. Omitting it would make
+    // the runtime shape (`undefined`) disagree with the generated type.
     pub last_activity_ms: Option<i64>,
 }
 

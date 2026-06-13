@@ -66,7 +66,6 @@
     "exportFailed": "No se pudo exportar el registro de chat.",
     "exportLog": "Exportar chat",
     "exportNoSession": "No hay sesión de chat activa para exportar.",
-    "exportRequiresStream": "Inicie una transmisión para exportar la sesión de chat actual.",
     "exportSuccess": "Registro de chat exportado.",
     "facebook": {
       "accessToken": "Token de acceso de página",

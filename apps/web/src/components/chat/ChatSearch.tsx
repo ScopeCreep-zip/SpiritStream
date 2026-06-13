@@ -15,8 +15,6 @@ interface ChatSearchProps {
   onClose: () => void;
   /** On-screen messages, used by the "On screen" scope filter. */
   messages: ChatMessage[];
-  /** Live stream count; gates the "Full session" scope. */
-  activeStreamCount: number;
 }
 
 /**
@@ -29,7 +27,6 @@ export function ChatSearch({
   open,
   onClose,
   messages,
-  activeStreamCount,
 }: ChatSearchProps): React.ReactElement {
   const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
@@ -137,7 +134,6 @@ export function ChatSearch({
               variant={searchScope === 'session' ? 'secondary' : 'ghost'}
               size="sm"
               onClick={() => setSearchScope('session')}
-              disabled={activeStreamCount === 0}
             >
               {t('chat.searchSession', { defaultValue: 'Full session' })}
             </Button>

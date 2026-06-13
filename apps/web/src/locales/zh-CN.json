@@ -66,7 +66,6 @@
     "exportFailed": "导出聊天记录失败。",
     "exportLog": "导出聊天记录",
     "exportNoSession": "没有要导出的活动聊天会话。",
-    "exportRequiresStream": "启动流以导出当前聊天会话。",
     "exportSuccess": "聊天记录导出。",
     "facebook": {
       "accessToken": "页面访问令牌",
