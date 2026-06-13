@@ -27,8 +27,8 @@ const configured: OAuthProviderSummary = {
   setup: { steps: [], consoleFields: [] },
 };
 
-describe('PlatformSignInButton re-auth affordance', () => {
-  it('shows "Sign in again" alongside "Sign out" when signed-in but read-only', () => {
+describe('PlatformSignInButton account state', () => {
+  it('makes "Sign back in" the primary action when connected read-only (dead token)', () => {
     render(
       <PlatformSignInButton
         provider="twitch"
@@ -36,14 +36,18 @@ describe('PlatformSignInButton re-auth affordance', () => {
         signInLabel="Login with Twitch"
         summary={configured}
         onCredentialsSaved={vi.fn()}
-        reauthAvailable
+        connectionStatus="connected"
+        canSend={false}
       />
     );
-    expect(screen.getByRole('button', { name: /sign in again/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /sign back in/i })).toBeInTheDocument();
+    // The read-only situation is explained in-place, not via a stray flag.
+    expect(screen.getByText(/sign-in expired/i)).toBeInTheDocument();
+    // Sign out is demoted to a secondary affordance, not the primary.
     expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument();
   });
 
-  it('shows only "Sign out" when signed in and healthy', () => {
+  it('shows only "Sign out" when signed in and send-capable', () => {
     render(
       <PlatformSignInButton
         provider="twitch"
@@ -51,9 +55,26 @@ describe('PlatformSignInButton re-auth affordance', () => {
         signInLabel="Login with Twitch"
         summary={configured}
         onCredentialsSaved={vi.fn()}
+        connectionStatus="connected"
+        canSend={true}
       />
     );
-    expect(screen.queryByRole('button', { name: /sign in again/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /sign back in/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/signed in as alice/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument();
+  });
+
+  it('shows "Sign in" when no account is stored', () => {
+    render(
+      <PlatformSignInButton
+        provider="twitch"
+        signedInAs=""
+        signInLabel="Login with Twitch"
+        summary={configured}
+        onCredentialsSaved={vi.fn()}
+      />
+    );
+    expect(screen.getByRole('button', { name: /login with twitch/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /sign out/i })).not.toBeInTheDocument();
   });
 });

@@ -245,8 +245,8 @@
     "reauth": {
       "prompt": "Meld weer aan by {{platform}} om boodskappe te stuur.",
       "openSettings": "Open instellings",
-      "readOnly": "Gekoppel maar slegs-lees — meld weer aan om boodskappe te stuur.",
-      "signInAgain": "Meld weer aan"
+      "expired": "Jou {{platform}}-aanmelding het verval — jy kan die klets lees, maar nie stuur voordat jy weer aanmeld nie.",
+      "signBackIn": "Meld weer by {{platform}} aan"
     },
     "sendReauthNeeded": "Jou klets-aanmelding is slegs-lees — meld weer aan om te stuur."
   },

@@ -100,14 +100,12 @@ export function ChatPanel(): React.ReactElement {
       statuses.find((s) => s.platform === platform)?.status ?? 'disconnected',
     [statuses]
   );
-  // A platform connected but unable to send (Twitch anonymous read-only
-  // fallback / expired token). Drives the read-only warning + "Sign in
-  // again" affordance so the user can recover from this panel.
-  const isReadOnly = useCallback(
-    (platform: ChatPlatformStatus['platform']): boolean => {
-      const s = statuses.find((st) => st.platform === platform);
-      return s?.status === 'connected' && !s.canSend;
-    },
+  // Full live status for a platform — the sign-in control reads `canSend`
+  // from it to detect a stored-but-dead sign-in (connected read-only) and
+  // surface "Sign back in".
+  const fullStatusFor = useCallback(
+    (platform: ChatPlatformStatus['platform']): ChatPlatformStatus | undefined =>
+      statuses.find((s) => s.platform === platform),
     [statuses]
   );
 
@@ -384,23 +382,14 @@ export function ChatPanel(): React.ReactElement {
                 defaultValue: 'e.g. spiritartlife',
               })}
             />
-            {isReadOnly('twitch') && (
-              <p
-                role="alert"
-                className="text-xs text-warning-text mt-2 p-2 bg-warning-subtle rounded"
-              >
-                {t('chat.reauth.readOnly', {
-                  defaultValue: 'Connected but read-only — sign in again to send messages.',
-                })}
-              </p>
-            )}
             <PlatformSignInButton
               provider="twitch"
               signedInAs={currentProfile.settings.oauth.twitch.username}
               signInLabel={t('chat.twitch.loginWithTwitch', { defaultValue: 'Login with Twitch' })}
               summary={oauthSummaryFor('twitch')}
               onCredentialsSaved={setOauthSummaries}
-              reauthAvailable={isReadOnly('twitch')}
+              connectionStatus={statusFor('twitch')}
+              canSend={fullStatusFor('twitch')?.canSend}
             />
             {followerOnlyReauthNeeded && (
               <p
@@ -480,10 +469,12 @@ export function ChatPanel(): React.ReactElement {
                   provider="youtube"
                   signedInAs={currentProfile.settings.oauth.youtube.username}
                   summary={oauthSummaryFor('youtube')}
-              onCredentialsSaved={setOauthSummaries}
+                  onCredentialsSaved={setOauthSummaries}
                   signInLabel={t('chat.youtube.loginWithYouTube', {
                     defaultValue: 'Login with YouTube',
                   })}
+                  connectionStatus={statusFor('youtube')}
+                  canSend={fullStatusFor('youtube')?.canSend}
                 />
                 <div className="mt-3">
                   <Toggle
@@ -533,6 +524,8 @@ export function ChatPanel(): React.ReactElement {
               signInLabel={t('chat.trovo.loginWithTrovo', { defaultValue: 'Login with Trovo' })}
               summary={oauthSummaryFor('trovo')}
               onCredentialsSaved={setOauthSummaries}
+              connectionStatus={statusFor('trovo')}
+              canSend={fullStatusFor('trovo')?.canSend}
             />
             <div className="mt-3">
               <Toggle
@@ -579,6 +572,8 @@ export function ChatPanel(): React.ReactElement {
               signInLabel={t('chat.kick.loginWithKick', { defaultValue: 'Login with Kick' })}
               summary={oauthSummaryFor('kick')}
               onCredentialsSaved={setOauthSummaries}
+              connectionStatus={statusFor('kick')}
+              canSend={fullStatusFor('kick')?.canSend}
             />
             <div className="mt-3">
               <Toggle

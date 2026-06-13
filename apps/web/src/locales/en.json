@@ -245,8 +245,8 @@
     "reauth": {
       "prompt": "Sign in to {{platform}} again to send messages.",
       "openSettings": "Open settings",
-      "readOnly": "Connected but read-only — sign in again to send messages.",
-      "signInAgain": "Sign in again"
+      "expired": "Your {{platform}} sign-in expired — you can read chat, but you can’t send until you sign back in.",
+      "signBackIn": "Sign back in to {{platform}}"
     },
     "sendReauthNeeded": "Your chat sign-in is read-only — sign in again to send."
   },

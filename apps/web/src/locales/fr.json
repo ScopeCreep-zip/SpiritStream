@@ -245,8 +245,8 @@
     "reauth": {
       "prompt": "Reconnecte-toi à {{platform}} pour envoyer des messages.",
       "openSettings": "Ouvrir les paramètres",
-      "readOnly": "Connecté mais en lecture seule — reconnecte-toi pour envoyer des messages.",
-      "signInAgain": "Se reconnecter"
+      "expired": "Ta connexion {{platform}} a expiré — tu peux lire le chat, mais pas envoyer tant que tu ne t’es pas reconnecté.",
+      "signBackIn": "Se reconnecter à {{platform}}"
     },
     "sendReauthNeeded": "Ta connexion au chat est en lecture seule — reconnecte-toi pour envoyer."
   },

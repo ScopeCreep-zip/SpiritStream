@@ -245,8 +245,8 @@
     "reauth": {
       "prompt": "Melde dich erneut bei {{platform}} an, um Nachrichten zu senden.",
       "openSettings": "Einstellungen öffnen",
-      "readOnly": "Verbunden, aber schreibgeschützt – melde dich erneut an, um zu senden.",
-      "signInAgain": "Erneut anmelden"
+      "expired": "Deine {{platform}}-Anmeldung ist abgelaufen – du kannst den Chat lesen, aber erst senden, wenn du dich erneut anmeldest.",
+      "signBackIn": "Erneut bei {{platform}} anmelden"
     },
     "sendReauthNeeded": "Deine Chat-Anmeldung ist schreibgeschützt – melde dich erneut an, um zu senden."
   },

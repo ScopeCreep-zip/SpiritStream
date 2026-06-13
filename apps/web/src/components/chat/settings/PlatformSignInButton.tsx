@@ -1,10 +1,11 @@
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Copy, LogIn, LogOut } from 'lucide-react';
+import { AlertTriangle, Copy, LogIn, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { DeviceCodePanel } from '@/components/chat/settings/DeviceCodePanel';
 import { ProviderCredentialsForm } from '@/components/chat/settings/ProviderCredentialsForm';
 import type { OAuthProviderSummary } from '@spiritstream/api-client';
+import type { ChatPlatformStatus } from '@spiritstream/types';
 import { api } from '@/lib/client';
 import { toast } from '@/hooks/useToast';
 import { logger } from '@/lib/logger';
@@ -12,7 +13,7 @@ import { logger } from '@/lib/logger';
 interface PlatformSignInButtonProps {
   provider: 'twitch' | 'youtube' | 'kick' | 'facebook' | 'trovo';
   /** Username from `profile.settings.oauth.{provider}.username` — non-empty
-   *  means signed in; rendered as the button label when present. */
+   *  means an account is stored. */
   signedInAs: string;
   signInLabel: string;
   /** Backend setup state from `GET /oauth/config`. `null` while loading.
@@ -21,25 +22,41 @@ interface PlatformSignInButtonProps {
   summary: OAuthProviderSummary | null;
   /** Bubbles the post-save summaries up so the panel refreshes every card. */
   onCredentialsSaved: (updated: OAuthProviderSummary[]) => void;
-  /** When true, the stored sign-in is signed-in-but-unusable (connected
-   *  read-only / expired token). Surfaces "Sign in again" in the signed-in
-   *  branch so the user can re-auth without signing out first. */
-  reauthAvailable?: boolean;
+  /** Live connection truth (from `useChatPlatformStatus`). Lets the control
+   *  detect that a STORED sign-in is actually broken — connected but unable
+   *  to send (the Twitch anonymous read-only fallback after a dead token) —
+   *  and make "Sign back in" the primary action instead of "Sign out". */
+  connectionStatus?: ChatPlatformStatus['status'];
+  canSend?: boolean;
+}
+
+type AccountState = 'needsSetup' | 'signedOut' | 'needsReauth' | 'signedIn';
+
+/** The single source of truth for what the control renders. */
+function deriveAccountState(
+  hasAccount: boolean,
+  broken: boolean,
+  configured: boolean
+): AccountState {
+  if (hasAccount) return broken ? 'needsReauth' : 'signedIn';
+  return configured ? 'signedOut' : 'needsSetup';
 }
 
 /**
- * Generic OAuth sign-in / sign-out toggle for chat platforms.
+ * State-driven OAuth account control for a chat platform. The rendered
+ * primary action follows the REAL account state, not a flag:
  *
- * Click → `api.oauth.startFlow(provider)` which the backend handles by
- * spinning up a localhost callback server, opening the platform's
- * authorize URL in the user's browser, and persisting the resulting
- * tokens to the active profile's `oauth.{provider}` slot once the
- * callback fires. The frontend listens for `oauth_complete` events
- * elsewhere; this button only kicks off the flow + surfaces a toast.
+ * - `needsSetup`   — no app credentials → in-app credentials form.
+ * - `signedOut`    — configured, no account → "Sign in" + guided flow.
+ * - `needsReauth`  — account stored but the connection can't send (token
+ *                    expired / anonymous read-only): "Sign back in" is the
+ *                    PRIMARY action with the device/browser guidance; "Sign
+ *                    out" is demoted to a secondary affordance.
+ * - `signedIn`     — healthy → "Signed in as X" + "Sign out".
  *
- * When already signed in (parent passes `signedInAs`), the button
- * flips to a "Sign out" affordance that calls `api.oauth.forget` to
- * revoke + clear the stored token.
+ * On success the backend persists the token, reconnects the chat with it,
+ * and emits `oauth_complete` (handled by `useOAuthCompletion`); the status
+ * poll then flips the card back to `signedIn`.
  */
 export function PlatformSignInButton({
   provider,
@@ -47,23 +64,32 @@ export function PlatformSignInButton({
   signInLabel,
   summary,
   onCredentialsSaved,
-  reauthAvailable,
+  connectionStatus,
+  canSend,
 }: PlatformSignInButtonProps) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
-  // Set when the backend could not open the system browser — the auth
-  // URL is rendered with a copy affordance instead of a toast pointing
-  // at a tab that never opened.
+  // Set when the backend could not open the system browser — the auth URL is
+  // rendered with a copy affordance instead of a toast pointing at a tab that
+  // never opened.
   const [manualUrl, setManualUrl] = useState<string | null>(null);
-  // Set when the backend answered with a device-code grant (it chooses
-  // the flow) — render the code panel with the values it provided.
+  // Set when the backend answered with a device-code grant (it chooses the
+  // flow) — render the code panel with the values it provided.
   const [devicePanel, setDevicePanel] = useState<{
     userCode: string;
     verificationUri: string;
     expiresIn: number;
     browserOpened: boolean;
   } | null>(null);
-  const isSignedIn = signedInAs.trim().length > 0;
+
+  const hasAccount = signedInAs.trim().length > 0;
+  // A stored account whose live connection is up but can't send is a dead
+  // token, not a healthy sign-in. `canSend` is only meaningful while
+  // connected, so we only treat connected-but-!canSend as broken.
+  const broken = connectionStatus === 'connected' && canSend === false;
+  const accountState = deriveAccountState(hasAccount, broken, !!summary?.configured);
+
+  const platformLabel = t(`chat.platforms.${provider}`, provider);
 
   const handleSignIn = useCallback(async () => {
     setBusy(true);
@@ -107,7 +133,7 @@ export function PlatformSignInButton({
       toast.success(
         t('chat.oauth.signedOut', {
           defaultValue: 'Signed out of {{platform}}',
-          platform: provider,
+          platform: platformLabel,
         })
       );
     } catch (error) {
@@ -121,7 +147,7 @@ export function PlatformSignInButton({
     } finally {
       setBusy(false);
     }
-  }, [provider, t]);
+  }, [provider, platformLabel, t]);
 
   const handleCopyUrl = async (): Promise<void> => {
     if (!manualUrl) return;
@@ -133,9 +159,8 @@ export function PlatformSignInButton({
     }
   };
 
-  // Device-code / manual-URL panels render the SAME in both the signed-in
-  // (re-auth) and signed-out branches, so a "Sign in again" click surfaces
-  // the flow UI rather than silently setting unrendered state.
+  // Device-code / manual-URL guidance renders the same wherever a flow can
+  // be started, so "Sign in" and "Sign back in" both walk the user through.
   const flowPanels = (
     <>
       {devicePanel && (
@@ -163,41 +188,14 @@ export function PlatformSignInButton({
     </>
   );
 
-  if (isSignedIn) {
-    return (
-      <div className="mt-3">
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-text-secondary flex-1">
-            {t('chat.oauth.signedInAs', {
-              defaultValue: 'Signed in as {{username}}',
-              username: signedInAs,
-            })}
-          </span>
-          {/* Signed-in username persists even when the token is dead
-              (read-only). `reauthAvailable` surfaces a re-sign-in here so
-              the user doesn't have to Sign out first to recover. */}
-          {reauthAvailable && summary?.configured && (
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={handleSignIn}
-              disabled={busy || devicePanel !== null}
-            >
-              <LogIn className="w-3.5 h-3.5" />
-              {t('chat.reauth.signInAgain', { defaultValue: 'Sign in again' })}
-            </Button>
-          )}
-          <Button variant="ghost" size="sm" onClick={handleSignOut} disabled={busy}>
-            <LogOut className="w-3.5 h-3.5" />
-            {t('chat.signOut', { defaultValue: 'Sign out' })}
-          </Button>
-        </div>
-        {flowPanels}
-      </div>
-    );
-  }
+  const signOutButton = (
+    <Button variant="ghost" size="sm" onClick={handleSignOut} disabled={busy}>
+      <LogOut className="w-3.5 h-3.5" />
+      {t('chat.signOut', { defaultValue: 'Sign out' })}
+    </Button>
+  );
 
-  if (!summary || !summary.configured) {
+  if (accountState === 'needsSetup') {
     return (
       <div className="mt-3">
         <p className="text-xs text-text-tertiary">
@@ -210,6 +208,51 @@ export function PlatformSignInButton({
     );
   }
 
+  if (accountState === 'needsReauth') {
+    return (
+      <div className="mt-3 space-y-2">
+        <div className="flex items-start gap-2 rounded p-2 bg-warning-subtle">
+          <AlertTriangle className="w-4 h-4 text-warning-text mt-0.5 shrink-0" />
+          <p className="text-xs text-warning-text">
+            {t('chat.reauth.expired', {
+              defaultValue:
+                'Your {{platform}} sign-in expired — you can read chat, but you can’t send until you sign back in.',
+              platform: platformLabel,
+            })}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={handleSignIn}
+            disabled={busy || devicePanel !== null}
+          >
+            <LogIn className="w-3.5 h-3.5" />
+            {t('chat.reauth.signBackIn', { defaultValue: 'Sign back in to {{platform}}', platform: platformLabel })}
+          </Button>
+          {signOutButton}
+        </div>
+        {flowPanels}
+      </div>
+    );
+  }
+
+  if (accountState === 'signedIn') {
+    return (
+      <div className="mt-3 flex items-center gap-2">
+        <span className="text-sm text-text-secondary flex-1">
+          {t('chat.oauth.signedInAs', {
+            defaultValue: 'Signed in as {{username}}',
+            username: signedInAs,
+          })}
+        </span>
+        {signOutButton}
+      </div>
+    );
+  }
+
+  // signedOut
   return (
     <div className="mt-3">
       <Button
@@ -222,10 +265,10 @@ export function PlatformSignInButton({
         {signInLabel}
       </Button>
       {flowPanels}
-      {/* Configured via user-entered credentials: keep the form
-          reachable (collapsed) so a typo'd id or rotated secret can be
-          corrected without env vars. Saving empty values clears it. */}
-      {summary.overrideClientId && (
+      {/* Configured via user-entered credentials: keep the form reachable
+          (collapsed) so a typo'd id or rotated secret can be corrected
+          without env vars. Saving empty values clears it. */}
+      {summary?.overrideClientId && (
         <ProviderCredentialsForm summary={summary} onSaved={onCredentialsSaved} />
       )}
     </div>

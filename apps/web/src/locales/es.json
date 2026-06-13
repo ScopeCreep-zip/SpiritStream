@@ -245,8 +245,8 @@
     "reauth": {
       "prompt": "Inicia sesión en {{platform}} de nuevo para enviar mensajes.",
       "openSettings": "Abrir ajustes",
-      "readOnly": "Conectado pero de solo lectura: inicia sesión de nuevo para enviar mensajes.",
-      "signInAgain": "Iniciar sesión de nuevo"
+      "expired": "Tu sesión de {{platform}} caducó: puedes leer el chat, pero no podrás enviar hasta que vuelvas a iniciar sesión.",
+      "signBackIn": "Volver a iniciar sesión en {{platform}}"
     },
     "sendReauthNeeded": "Tu sesión de chat es de solo lectura: inicia sesión de nuevo para enviar."
   },
