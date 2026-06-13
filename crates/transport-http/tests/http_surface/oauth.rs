@@ -49,6 +49,22 @@ fn oauth_config_reports_placeholder_providers_unconfigured() {
     // the public-client exception.
     assert_eq!(summary(&json, "twitch")["needsSecret"], false, "{json}");
     assert_eq!(summary(&json, "kick")["needsSecret"], true, "{json}");
+
+    // Guided setup flows through the wire so the UI can pre-fill the
+    // console fields — the user never figures out what to type.
+    let twitch_setup = &summary(&json, "twitch")["setup"];
+    let fields = twitch_setup["consoleFields"]
+        .as_array()
+        .expect("twitch setup has console fields");
+    assert!(!fields.is_empty(), "twitch must carry pre-filled fields: {json}");
+    assert!(
+        fields.iter().any(|f| f["value"] == "http://localhost:3000"),
+        "twitch redirect must be the ported localhost form: {json}"
+    );
+    assert!(
+        fields.iter().any(|f| f["value"] == "Public"),
+        "twitch must surface the Public client-type value: {json}"
+    );
 }
 
 #[test]

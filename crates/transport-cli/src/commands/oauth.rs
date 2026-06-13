@@ -428,7 +428,7 @@ pub async fn run(
                 // HTTP config endpoint serves). Secret VALUES are
                 // deliberately omitted — `configured` already conveys
                 // their presence.
-                let summaries = registry.oauth.provider_summaries().await;
+                let summaries = registry.oauth.provider_summaries(&std::collections::HashMap::new()).await;
                 out.emit(&serde_json::json!({ "providers": summaries }))?;
                 Ok(())
             }
@@ -449,7 +449,7 @@ pub async fn run(
                         secret.map(|s| s.to_string()),
                     )
                     .await?;
-                let summaries = registry.oauth.provider_summaries().await;
+                let summaries = registry.oauth.provider_summaries(&std::collections::HashMap::new()).await;
                 out.emit(&serde_json::json!({ "providers": summaries }))?;
                 Ok(())
             }

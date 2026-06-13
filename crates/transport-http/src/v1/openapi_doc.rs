@@ -189,6 +189,8 @@ use super::*;
         RtmpTestResultWire,
         RotationReportWire,
         OAuthProviderSummaryWire,
+        OAuthProviderSetupWire,
+        OAuthConsoleFieldWire,
         OAuthProviderCredentialsRequest,
         OAuthConfiguredResponse,
         OAuthAckResponse,

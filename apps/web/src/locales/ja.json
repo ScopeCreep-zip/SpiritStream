@@ -115,7 +115,11 @@
       "credentialsSaved": "サインイン認証情報を保存しました。",
       "credentialsSaveFailed": "認証情報を保存できませんでした: {{error}}",
       "saving": "保存中…",
-      "saveCredentials": "保存してサインインを有効化"
+      "saveCredentials": "保存してサインインを有効化",
+      "deviceOpened": "ブラウザでサインインページを開きました。そこにこのコードを入力してください:",
+      "portalLabel": "開発者ポータル（ブラウザで開く）",
+      "pasteTheseValues": "アプリのフォームでこれらの値を使用してください:",
+      "copyValue": "{{label}}をコピー"
     },
     "platformReadOnly": "読み取り専用",
     "platforms": {

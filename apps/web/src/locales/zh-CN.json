@@ -115,7 +115,11 @@
       "credentialsSaved": "登录凭据已保存。",
       "credentialsSaveFailed": "无法保存凭据：{{error}}",
       "saving": "保存中…",
-      "saveCredentials": "保存并启用登录"
+      "saveCredentials": "保存并启用登录",
+      "deviceOpened": "我们已在您的浏览器中打开登录页面。请在那里输入此代码：",
+      "portalLabel": "开发者门户（在浏览器中打开）",
+      "pasteTheseValues": "在应用表单中使用这些值：",
+      "copyValue": "复制 {{label}}"
     },
     "platformReadOnly": "只读",
     "platforms": {

@@ -115,7 +115,11 @@
       "credentialsSaved": "Credenciales de inicio de sesión guardadas.",
       "credentialsSaveFailed": "No se pudieron guardar las credenciales: {{error}}",
       "saving": "Guardando…",
-      "saveCredentials": "Guardar y habilitar el inicio de sesión"
+      "saveCredentials": "Guardar y habilitar el inicio de sesión",
+      "deviceOpened": "Abrimos la página de inicio de sesión en tu navegador. Ingresa este código allí:",
+      "portalLabel": "Portal de desarrolladores (abrir en el navegador)",
+      "pasteTheseValues": "Usa estos valores en el formulario de la app:",
+      "copyValue": "Copiar {{label}}"
     },
     "platformReadOnly": "solo lectura",
     "platforms": {

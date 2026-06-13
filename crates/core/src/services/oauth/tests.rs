@@ -513,7 +513,7 @@ async fn empty_credentials_clear_the_override() {
 #[tokio::test]
 async fn provider_summaries_describe_setup_requirements() {
     let svc = OAuthService::new_for_tests(OAuthConfig::default());
-    let summaries = svc.provider_summaries().await;
+    let summaries = svc.provider_summaries(&std::collections::HashMap::new()).await;
     assert_eq!(summaries.len(), 5);
     let by_name = |n: &str| summaries.iter().find(|s| s.provider == n).expect("present");
     assert!(!by_name("twitch").needs_secret, "twitch is a public client");

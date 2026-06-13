@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Copy, ExternalLink } from 'lucide-react';
+import { Copy } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { events } from '@spiritstream/api-client';
 import { toast } from '@/hooks/useToast';
@@ -12,6 +12,12 @@ interface DeviceCodePanelProps {
   userCode: string;
   verificationUri: string;
   expiresIn: number;
+  /** Whether the backend already opened the verification page in the
+   *  user's browser. The webview can't open external URLs itself
+   *  (`shell:open` is denied), so the open happens server-side; this
+   *  tells us whether to say "we opened it" or show the copy-link
+   *  fallback. */
+  browserOpened: boolean;
   /** Called when the backend reports the sign-in finished (success or
    *  failure) so the parent can clear the panel. */
   onFinished: () => void;
@@ -23,11 +29,17 @@ interface DeviceCodePanelProps {
  * `oauth_error` events (the backend owns the polling). The profile
  * refresh that flips the parent to "Signed in as …" rides the same
  * event path every other OAuth flow uses.
+ *
+ * The verification URL is rendered as selectable text with a copy
+ * button — NOT a clickable `target="_blank"` link. In the Tauri webview
+ * that anchor is routed to `shell.open`, which capability denies, so it
+ * threw "shell.open not allowed". The backend opens the page instead.
  */
 export function DeviceCodePanel({
   userCode,
   verificationUri,
   expiresIn,
+  browserOpened,
   onFinished,
 }: DeviceCodePanelProps): React.ReactElement {
   const { t } = useTranslation();
@@ -93,26 +105,26 @@ export function DeviceCodePanel({
   return (
     <div className="mt-3 rounded-lg border border-border-default bg-bg-elevated p-4">
       <p className="text-sm text-text-secondary">
-        {t('chat.oauth.deviceInstruction', {
-          defaultValue: 'Open this page on any device and enter the code:',
-        })}
+        {browserOpened
+          ? t('chat.oauth.deviceOpened', {
+              defaultValue:
+                'We opened the sign-in page in your browser. Enter this code there:',
+            })
+          : t('chat.oauth.deviceInstruction', {
+              defaultValue: 'Open this page in any browser and enter the code:',
+            })}
       </p>
       <div className="mt-2 flex items-center gap-2">
-        <a
-          href={verificationUri}
-          target="_blank"
-          rel="noreferrer"
-          className="text-sm text-primary underline break-all"
-        >
+        <span className="text-sm text-text-primary underline break-all select-all">
           {verificationUri}
-        </a>
+        </span>
         <Button
           variant="ghost"
           size="sm"
           onClick={() => copy(verificationUri)}
           aria-label={t('chat.oauth.copyLink', { defaultValue: 'Copy link' })}
         >
-          <ExternalLink className="w-3.5 h-3.5" />
+          <Copy className="w-3.5 h-3.5" />
         </Button>
       </div>
       <div className="mt-3 flex items-center gap-3">

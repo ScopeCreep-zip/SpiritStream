@@ -115,7 +115,11 @@
       "credentialsSaved": "Identifiants de connexion enregistrés.",
       "credentialsSaveFailed": "Impossible d’enregistrer les identifiants : {{error}}",
       "saving": "Enregistrement…",
-      "saveCredentials": "Enregistrer et activer la connexion"
+      "saveCredentials": "Enregistrer et activer la connexion",
+      "deviceOpened": "Nous avons ouvert la page de connexion dans votre navigateur. Saisissez-y ce code :",
+      "portalLabel": "Portail développeurs (ouvrir dans le navigateur)",
+      "pasteTheseValues": "Utilisez ces valeurs dans le formulaire de l’application :",
+      "copyValue": "Copier {{label}}"
     },
     "platformReadOnly": "lecture seule",
     "platforms": {

@@ -115,7 +115,11 @@
       "credentialsSaved": "Sign-in credentials saved.",
       "credentialsSaveFailed": "Could not save credentials: {{error}}",
       "saving": "Saving…",
-      "saveCredentials": "Save and enable sign-in"
+      "saveCredentials": "Save and enable sign-in",
+      "deviceOpened": "We opened the sign-in page in your browser. Enter this code there:",
+      "portalLabel": "Developer portal (open in browser)",
+      "pasteTheseValues": "Use these values in the app form:",
+      "copyValue": "Copy {{label}}"
     },
     "platformReadOnly": "read-only",
     "platforms": {

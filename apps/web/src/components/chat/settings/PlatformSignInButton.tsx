@@ -56,6 +56,7 @@ export function PlatformSignInButton({
     userCode: string;
     verificationUri: string;
     expiresIn: number;
+    browserOpened: boolean;
   } | null>(null);
   const isSignedIn = signedInAs.trim().length > 0;
 
@@ -70,6 +71,7 @@ export function PlatformSignInButton({
           userCode: started.userCode,
           verificationUri: started.verificationUri,
           expiresIn: started.expiresIn ?? 600,
+          browserOpened: started.browserOpened ?? false,
         });
       } else if (started.browserOpened) {
         toast.info(
@@ -172,6 +174,7 @@ export function PlatformSignInButton({
           userCode={devicePanel.userCode}
           verificationUri={devicePanel.verificationUri}
           expiresIn={devicePanel.expiresIn}
+          browserOpened={devicePanel.browserOpened}
           onFinished={() => setDevicePanel(null)}
         />
       )}

@@ -21,11 +21,31 @@ pub(super) async fn run_device_flow(
 ) -> Result<super::oauth::OAuthFlowResponse, crate::ApiError> {
     let start = state.oauth_service.start_device_flow(provider).await?;
 
+    // Open the verification page on the user's machine, the same way the
+    // loopback flow opens its `auth_url`. The webview can't do this
+    // itself (`shell:open` is denied by capability — it renders chat
+    // from strangers), so without this the user had no working path to
+    // `twitch.tv/activate`: clicking the panel link hit "shell.open not
+    // allowed". When this fails (headless / remote backend),
+    // `browser_opened` is false and the panel shows the copy-link
+    // fallback.
+    let browser_opened = match opener::open(&start.verification_uri) {
+        Ok(()) => true,
+        Err(e) => {
+            log::warn!(
+                "Failed to open device verification page: {e}. URL: {}",
+                start.verification_uri
+            );
+            false
+        }
+    };
+
     let response = super::oauth::OAuthFlowResponse::device(
         start.user_code.clone(),
         start.verification_uri.clone(),
         start.expires_in,
         start.interval,
+        browser_opened,
     );
 
     let oauth_service = state.oauth_service.clone();

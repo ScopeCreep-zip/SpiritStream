@@ -115,7 +115,11 @@
       "credentialsSaved": "تم حفظ بيانات تسجيل الدخول.",
       "credentialsSaveFailed": "تعذّر حفظ البيانات: {{error}}",
       "saving": "جارٍ الحفظ…",
-      "saveCredentials": "احفظ وفعّل تسجيل الدخول"
+      "saveCredentials": "احفظ وفعّل تسجيل الدخول",
+      "deviceOpened": "فتحنا صفحة تسجيل الدخول في متصفحك. أدخل هذا الرمز هناك:",
+      "portalLabel": "بوابة المطوّرين (افتحها في المتصفح)",
+      "pasteTheseValues": "استخدم هذه القيم في نموذج التطبيق:",
+      "copyValue": "نسخ {{label}}"
     },
     "platformReadOnly": "للقراءة فقط",
     "platforms": {

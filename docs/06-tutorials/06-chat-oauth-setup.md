@@ -34,7 +34,7 @@ What counts as "configured":
 ## Twitch — Public client, Device Code Flow
 
 1. Create the app at <https://dev.twitch.tv/console/apps/create>.
-2. Category: Application Integration. **Client type: Public.** No redirect URL is needed for the device flow (Twitch requires one in the form — `http://localhost` is fine; it is never used).
+2. Category: Application Integration. **Client type: Public.** The Device Code Flow uses no redirect URI, but the console form still requires one — enter **`http://localhost:3000`** (bare `http://localhost` with no port trips the console's "Redirect URIs must use HTTPS protocol" check; the localhost HTTP exception only applies when a port is present). Fill the single field and Save — don't click "Add" to create a second, empty field, which also fails validation. The value is never used.
 3. Copy the Client ID. **Do not generate or embed a client secret** — SpiritStream treats Twitch as a public client: sign-in runs the [Device Code Flow](https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/#device-code-grant-flow) (user enters a short code at `twitch.tv/activate`), and token refresh omits the secret and persists the rotated refresh token on every cycle.
 4. Scopes requested: `chat:read chat:edit moderator:manage:chat_settings` (the last one powers the follower-only-default safety feature).
 

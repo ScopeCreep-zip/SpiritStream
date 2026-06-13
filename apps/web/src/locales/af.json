@@ -115,7 +115,11 @@
       "credentialsSaved": "Aanmeldbewyse gestoor.",
       "credentialsSaveFailed": "Kon nie bewyse stoor nie: {{error}}",
       "saving": "Stoor tans…",
-      "saveCredentials": "Stoor en aktiveer aanmelding"
+      "saveCredentials": "Stoor en aktiveer aanmelding",
+      "deviceOpened": "Ons het die aanmeldbladsy in jou blaaier oopgemaak. Voer hierdie kode daar in:",
+      "portalLabel": "Ontwikkelaarportaal (maak in blaaier oop)",
+      "pasteTheseValues": "Gebruik hierdie waardes in die app-vorm:",
+      "copyValue": "Kopieer {{label}}"
     },
     "platformReadOnly": "leesalleen",
     "platforms": {

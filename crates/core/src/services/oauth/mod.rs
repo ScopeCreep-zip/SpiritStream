@@ -16,6 +16,7 @@ mod flow;
 mod loopback;
 mod pkce;
 mod provider;
+mod setup;
 mod tokens;
 mod trovo;
 
@@ -28,6 +29,7 @@ pub use device::OAuthDeviceFlowStart;
 pub use flow::OAuthFlowResult;
 pub use loopback::{OAuthCallback, OAuthCallbackServer};
 pub use provider::{OAuthProvider, FACEBOOK_GRAPH_VERSION};
+pub use setup::{OAuthConsoleField, OAuthProviderSetup};
 pub use tokens::{
     OAuthCompleteResult, OAuthRefreshOutcome, OAuthTokens, OAuthUserInfo, TwitchUser,
     YouTubeChannel,
@@ -256,7 +258,15 @@ impl OAuthService {
     /// the in-app setup form needs (which fields to show, where to
     /// register, what override is active) so the frontend holds zero
     /// provider knowledge. Secret values never appear here.
-    pub async fn provider_summaries(&self) -> Vec<OAuthProviderSummary> {
+    /// `channel_hints` maps provider → the channel/username the user
+    /// already entered for that platform (read from the active profile
+    /// by the transport). It's woven into the guided console setup so
+    /// the suggested app name is pre-filled — the user never has to
+    /// invent one.
+    pub async fn provider_summaries(
+        &self,
+        channel_hints: &HashMap<String, String>,
+    ) -> Vec<OAuthProviderSummary> {
         let config = self.config.lock().await;
         let summary = |provider: &str, configured: bool, needs_secret: bool, id: &Option<String>| {
             OAuthProviderSummary {
@@ -265,6 +275,7 @@ impl OAuthService {
                 needs_secret,
                 override_client_id: id.clone(),
                 registration_url: provider::registration_url(provider).to_string(),
+                setup: setup::console_setup(provider, channel_hints.get(provider).map(String::as_str)),
             }
         };
         vec![
@@ -292,4 +303,7 @@ pub struct OAuthProviderSummary {
     pub override_client_id: Option<String>,
     /// The provider's developer-portal page where the app is registered.
     pub registration_url: String,
+    /// Pre-filled, copy-pasteable console fields + steps so the user
+    /// never has to figure out what to type into the developer portal.
+    pub setup: OAuthProviderSetup,
 }

@@ -115,7 +115,11 @@
       "credentialsSaved": "로그인 자격 증명이 저장되었습니다.",
       "credentialsSaveFailed": "자격 증명을 저장할 수 없습니다: {{error}}",
       "saving": "저장 중…",
-      "saveCredentials": "저장하고 로그인 활성화"
+      "saveCredentials": "저장하고 로그인 활성화",
+      "deviceOpened": "브라우저에서 로그인 페이지를 열었습니다. 거기에 이 코드를 입력하세요:",
+      "portalLabel": "개발자 포털 (브라우저에서 열기)",
+      "pasteTheseValues": "앱 양식에 다음 값을 사용하세요:",
+      "copyValue": "{{label}} 복사"
     },
     "platformReadOnly": "읽기 전용",
     "platforms": {

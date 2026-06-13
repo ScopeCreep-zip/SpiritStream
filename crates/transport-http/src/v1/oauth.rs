@@ -72,13 +72,20 @@ impl OAuthFlowResponse {
         verification_uri: String,
         expires_in: u64,
         interval: u64,
+        browser_opened: bool,
     ) -> Self {
         Self {
             flow: "device".into(),
             auth_url: None,
             callback_port: None,
             state: None,
-            browser_opened: None,
+            // Whether the backend (running on the user's machine in the
+            // desktop sidecar) managed to open the verification page.
+            // The webview itself can't open external URLs — `shell:open`
+            // is denied by capability, because it renders chat from
+            // strangers — so the open happens server-side, exactly like
+            // the loopback flow's `auth_url`.
+            browser_opened: Some(browser_opened),
             user_code: Some(user_code),
             verification_uri: Some(verification_uri),
             expires_in: Some(expires_in),

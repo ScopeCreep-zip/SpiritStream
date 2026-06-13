@@ -115,7 +115,11 @@
       "credentialsSaved": "Облікові дані для входу збережено.",
       "credentialsSaveFailed": "Не вдалося зберегти облікові дані: {{error}}",
       "saving": "Збереження…",
-      "saveCredentials": "Зберегти й увімкнути вхід"
+      "saveCredentials": "Зберегти й увімкнути вхід",
+      "deviceOpened": "Ми відкрили сторінку входу у вашому браузері. Введіть там цей код:",
+      "portalLabel": "Портал розробників (відкрити у браузері)",
+      "pasteTheseValues": "Використайте ці значення у формі застосунку:",
+      "copyValue": "Копіювати {{label}}"
     },
     "platformReadOnly": "лише читання",
     "platforms": {

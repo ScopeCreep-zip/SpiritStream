@@ -115,7 +115,11 @@
       "credentialsSaved": "Anmeldedaten gespeichert.",
       "credentialsSaveFailed": "Zugangsdaten konnten nicht gespeichert werden: {{error}}",
       "saving": "Speichern…",
-      "saveCredentials": "Speichern und Anmeldung aktivieren"
+      "saveCredentials": "Speichern und Anmeldung aktivieren",
+      "deviceOpened": "Wir haben die Anmeldeseite in deinem Browser geöffnet. Gib dort diesen Code ein:",
+      "portalLabel": "Entwicklerportal (im Browser öffnen)",
+      "pasteTheseValues": "Verwende diese Werte im App-Formular:",
+      "copyValue": "{{label}} kopieren"
     },
     "platformReadOnly": "schreibgeschützt",
     "platforms": {

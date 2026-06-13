@@ -1,11 +1,31 @@
 import type { OAuthAccountStatus } from '@spiritstream/types';
 import { fetchTypedJson } from './_internal';
 
+/** One value the user pastes/selects in a provider's dev console. */
+export interface OAuthConsoleField {
+  /** The console's own field label, e.g. "Name" or "OAuth Redirect URL". */
+  label: string;
+  /** The exact value to paste, or the option to choose. */
+  value: string;
+  /** `true` → show a copy button; `false` → it's a selection, nothing to copy. */
+  copyable: boolean;
+  /** One-line caveat shown under the field. */
+  note?: string | null;
+}
+
+/** Pre-filled guided walkthrough for registering an app — all backend-computed. */
+export interface OAuthProviderSetup {
+  /** Plain-language steps shown before the fields (may be empty). */
+  steps: string[];
+  /** The labeled values to paste/select into the console form, in order. */
+  consoleFields: OAuthConsoleField[];
+}
+
 /**
  * One provider's setup state from `GET /oauth/config`. Everything the
  * in-app "Set up sign-in" form renders comes from here — the frontend
- * holds zero provider knowledge (which fields to show, where to
- * register). Secret values never appear on this surface.
+ * holds zero provider knowledge (which fields to show, what to paste,
+ * where to register). Secret values never appear on this surface.
  */
 export interface OAuthProviderSummary {
   provider: 'twitch' | 'youtube' | 'kick' | 'facebook' | 'trovo';
@@ -17,6 +37,8 @@ export interface OAuthProviderSummary {
   overrideClientId?: string | null;
   /** The provider's developer-portal page for registering an app. */
   registrationUrl: string;
+  /** Pre-filled, copy-pasteable console fields + steps. */
+  setup: OAuthProviderSetup;
 }
 
 /**

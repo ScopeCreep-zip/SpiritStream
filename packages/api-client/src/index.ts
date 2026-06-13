@@ -53,7 +53,12 @@ export function makeApiClient(opts: ApiClientOptions): ApiClient {
 export { events, initConnection, disconnectSocket } from './events';
 export { dialogs } from './dialogs';
 export type { OpenFileOptions, SaveFileOptions, OpenTextResult, DialogFilter } from './dialogTypes';
-export type { OAuthProviderSummary, OAuthFlowStarted } from './api/oauth';
+export type {
+  OAuthProviderSummary,
+  OAuthProviderSetup,
+  OAuthConsoleField,
+  OAuthFlowStarted,
+} from './api/oauth';
 export {
   backendMode,
   backendUrlStorageKey,
