@@ -20,7 +20,7 @@ use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 
-use chrono::Local;
+use chrono::Utc;
 use log::warn;
 use tokio::sync::{mpsc, oneshot};
 
@@ -45,7 +45,6 @@ fn hour_key_from_path(path: &Path) -> Option<String> {
 /// Internal command queue for the background chat-log writer task.
 pub(crate) enum ChatLogCommand {
     StartSession,
-    EndSession,
     Log(Box<ChatMessage>),
     Flush(oneshot::Sender<()>),
     /// Panic wipe: close the writer and delete every `chatlog_*.enc`
@@ -70,7 +69,6 @@ impl super::ChatManager {
             while let Some(cmd) = log_rx.recv().await {
                 match cmd {
                     ChatLogCommand::StartSession => state.start_session(),
-                    ChatLogCommand::EndSession => state.end_session(),
                     ChatLogCommand::Log(message) => state.write_message(&message),
                     ChatLogCommand::Flush(tx) => {
                         state.flush();
@@ -90,15 +88,9 @@ impl super::ChatManager {
     /// Now driven by chat-connect / activation, not stream start — chat
     /// is decoupled from streaming.
     pub fn start_log_session(&self) {
-        let now = Local::now().timestamp_millis();
+        let now = Utc::now().timestamp_millis();
         self.log_session_start_ms.store(now, Ordering::Relaxed);
         let _ = self.log_tx.try_send(ChatLogCommand::StartSession);
-    }
-
-    /// End the current log session.
-    pub fn end_log_session(&self) {
-        self.log_session_start_ms.store(0, Ordering::Relaxed);
-        let _ = self.log_tx.try_send(ChatLogCommand::EndSession);
     }
 
     /// Log a message to disk (best effort). Applies the anonymous-mode
@@ -275,18 +267,15 @@ impl ChatLogState {
         self.writer = None;
     }
 
-    fn end_session(&mut self) {
-        self.active = false;
-        self.flush();
-        self.writer = None;
-        self.current_hour_key = None;
-    }
-
     fn write_message(&mut self, message: &ChatMessage) {
         if !self.active {
             return;
         }
-        let hour_key = Local::now().format("%Y%m%d-%H").to_string();
+        // UTC hour key: offset-invariant filenames so `list_history_files`
+        // lexicographic sort == chronological even across timezone/DST
+        // changes between runs. (AAD is filename-derived, so decryption is
+        // self-consistent regardless.)
+        let hour_key = Utc::now().format("%Y%m%d-%H").to_string();
         if self.current_hour_key.as_deref() != Some(&hour_key) {
             if let Err(e) = self.rotate_file(&hour_key) {
                 warn!("Failed to rotate chat log file: {e}");
@@ -316,6 +305,15 @@ impl ChatLogState {
             let len = ct.len() as u32;
             if writer.write_all(&len.to_le_bytes()).is_err() || writer.write_all(&ct).is_err() {
                 warn!("Failed to write chat log record");
+                return;
+            }
+            // Flush each record to the OS so the on-disk file is always
+            // current: a separate process (spiritstream-cli export/search)
+            // can't flush THIS process's buffer, and it improves crash
+            // durability. Chat is low-rate, so per-record flush is cheap
+            // (a write syscall, no fsync).
+            if let Err(e) = writer.flush() {
+                warn!("Failed to flush chat log record: {e}");
             }
         }
     }
@@ -393,7 +391,7 @@ mod tests {
         state.start_session();
         state.write_message(&sample("hello"));
         state.write_message(&sample("world"));
-        state.end_session();
+        state.flush();
 
         let files = enc_files(dir.path());
         assert_eq!(files.len(), 1, "one hour-keyed encrypted file");
@@ -415,7 +413,7 @@ mod tests {
         let mut state = ChatLogState::new(dir.path().to_path_buf(), dir.path().to_path_buf());
         state.start_session();
         state.write_message(&sample("secret"));
-        state.end_session();
+        state.flush();
         let path = enc_files(dir.path()).pop().unwrap();
         // Decrypting under a different machine key (different data dir)
         // yields nothing — records are never readable as plaintext.
@@ -432,7 +430,7 @@ mod tests {
         for i in 0..10 {
             state.write_message(&sample(&format!("m{i}")));
         }
-        state.end_session();
+        state.flush();
 
         let recent = read_recent(dir.path(), dir.path(), 3);
         let texts: Vec<&str> = recent.iter().map(|m| m.message.as_str()).collect();

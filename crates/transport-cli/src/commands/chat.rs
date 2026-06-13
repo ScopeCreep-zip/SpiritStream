@@ -389,7 +389,10 @@ pub async fn run(
             use std::fs::File;
             use std::io::{BufWriter, Write};
 
-            registry.chat.flush_chat_logs().await?;
+            // No flush here: the CLI is a separate process from the
+            // server that owns the writer, so flushing the CLI's own
+            // (idle) writer is a no-op. The server flushes each record on
+            // write, so the on-disk history is already current.
             let files = spiritstream_core::services::list_history_files(&registry.log_dir);
             if files.is_empty() {
                 return Err(CliError::Argument("no chat history to export".into()));

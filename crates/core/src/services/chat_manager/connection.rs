@@ -198,6 +198,9 @@ impl super::ChatManager {
         // concurrent reconnect can't slip in and re-establish the
         // platform between disconnect and the flag being set.
         self.user_disconnected.lock().await.insert(platform);
+        // Drop the stale activity timestamp — a disconnected platform has
+        // no "last message Xs ago" to advertise.
+        self.last_activity.lock().await.remove(&platform);
 
         let mut platforms = self.platforms.lock().await;
 
@@ -263,6 +266,22 @@ impl super::ChatManager {
     pub async fn disconnect_all(&self, reason: &str) -> Result<(), CoreError> {
         info!("Disconnecting from all chat platforms (reason={reason})");
 
+        // Panic = "make it disappear". Stamp the purge boundary FIRST, before
+        // the (up-to-5s-per-connector) socket teardown — otherwise messages
+        // already buffered in the handler channel would drain and EMIT to the
+        // frontend during teardown, repopulating the view AFTER the panic-
+        // hotkey cleared it. With the boundary set up front, the message
+        // handler's gate drops every straggler (timestamp <= boundary) for
+        // the whole teardown window: it can't reach disk, the ring, or the
+        // UI. The ring/history/activity wipe still runs at the end to clear
+        // anything that landed before this instant.
+        if reason == "panic_triggered" {
+            self.purge_epoch_ms.store(
+                chrono::Utc::now().timestamp_millis(),
+                std::sync::atomic::Ordering::SeqCst,
+            );
+        }
+
         const DISCONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
         let mut to_disconnect: Vec<(ChatPlatform, crate::services::chat::BoxedPlatform)> = {
@@ -327,12 +346,21 @@ impl super::ChatManager {
                 intent.insert(*platform);
             }
         }
+        // Disconnected platforms have no current activity to advertise.
+        {
+            let mut activity = self.last_activity.lock().await;
+            for platform in &disconnected {
+                activity.remove(platform);
+            }
+        }
 
-        // Panic = "make it disappear": wipe the in-memory recent-message
-        // ring AND the on-disk encrypted history, alongside the secret
-        // wipe the safety service already performs.
+        // The purge boundary was already stamped at the top of this fn (so
+        // the handler gate covered the whole teardown). Now wipe what's
+        // already stored: the in-memory ring, the activity timestamps, and
+        // the on-disk history.
         if reason == "panic_triggered" {
             self.clear_recent_messages().await;
+            self.last_activity.lock().await.clear();
             self.purge_chat_history();
         }
 

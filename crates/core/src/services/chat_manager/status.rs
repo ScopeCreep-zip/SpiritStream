@@ -46,6 +46,7 @@ impl super::ChatManager {
         let pii_policy = self.pii_policy.clone();
         let recent_messages = self.recent_messages.clone();
         let last_activity = self.last_activity.clone();
+        let purge_epoch_ms = self.purge_epoch_ms.clone();
 
         let handle = tokio::spawn(async move {
             use std::collections::{HashSet, VecDeque};
@@ -62,6 +63,16 @@ impl super::ChatManager {
                 info!("Chat message handler started");
 
                 while let Some(message) = receiver.recv().await {
+                    // Panic boundary: a message created at/before the last
+                    // panic is a straggler from before "make it disappear"
+                    // — drop it at this single choke point so it can't be
+                    // logged to disk, pushed to the ring, or emitted to the
+                    // UI after the wipe. (Post-panic/reconnect messages have
+                    // a later timestamp and pass.)
+                    let epoch = purge_epoch_ms.load(std::sync::atomic::Ordering::SeqCst);
+                    if epoch > 0 && message.timestamp <= epoch {
+                        continue;
+                    }
                     if seen_ids.contains(&message.id) {
                         continue;
                     }
@@ -123,7 +134,7 @@ impl super::ChatManager {
                     last_activity
                         .lock()
                         .await
-                        .insert(message.platform, chrono::Local::now().timestamp_millis());
+                        .insert(message.platform, chrono::Utc::now().timestamp_millis());
 
                     // Emit message to frontend via EventSink.
                     if let Ok(payload) = serde_json::to_value(&message) {

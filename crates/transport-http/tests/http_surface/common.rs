@@ -10,6 +10,7 @@ use std::{
     net::TcpListener,
     path::PathBuf,
     process::{Child, Command, Stdio},
+    sync::OnceLock,
     thread,
     time::{Duration, Instant},
 };
@@ -33,11 +34,31 @@ impl Drop for ServerHandle {
     }
 }
 
-/// Locate the built `spiritstream-server` binary by walking up from this
-/// test's source dir until we find `target/debug/spiritstream-server`. Cargo
-/// builds the workspace binary before running integration tests, so it must
-/// exist by the time this code runs.
+/// Path to the `spiritstream-server` binary, **rebuilt from current source
+/// before first use**. `spiritstream-server` is a separate binary crate, so
+/// `cargo test -p spiritstream-transport-http` does NOT rebuild it as a test
+/// dependency — it only recompiles the library under test. Without this
+/// step the suite would spawn whatever stale binary happened to be on disk
+/// and silently pass/fail against old routing (a verification hole that
+/// once masked a missing endpoint). The build runs exactly once per test
+/// process via `OnceLock`; the outer `cargo test` has finished building by
+/// the time tests run, so the build lock is free for this nested invocation.
 fn server_binary() -> PathBuf {
+    static BINARY: OnceLock<PathBuf> = OnceLock::new();
+    BINARY
+        .get_or_init(|| {
+            let status = Command::new(env!("CARGO"))
+                .args(["build", "-p", "spiritstream-server"])
+                .status()
+                .expect("spawn `cargo build -p spiritstream-server`");
+            assert!(status.success(), "failed to build spiritstream-server");
+            locate_server_binary()
+        })
+        .clone()
+}
+
+/// Walk up from this test's source dir to find `target/debug/spiritstream-server`.
+fn locate_server_binary() -> PathBuf {
     let mut dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     loop {
         let candidate = dir.join("target").join("debug").join(server_binary_name());
@@ -46,7 +67,9 @@ fn server_binary() -> PathBuf {
         }
         if !dir.pop() {
             panic!(
-                "could not find spiritstream-server binary; run `cargo build -p spiritstream-server` first"
+                "could not find spiritstream-server binary after building; \
+                 expected target/debug/{}",
+                server_binary_name()
             );
         }
     }

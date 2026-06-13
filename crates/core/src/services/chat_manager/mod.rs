@@ -19,6 +19,8 @@ mod status;
 #[cfg(test)]
 mod crosspost_tests;
 #[cfg(test)]
+mod panic_tests;
+#[cfg(test)]
 mod send_message_tests;
 
 use log_writer::ChatLogCommand;
@@ -161,6 +163,14 @@ pub struct ChatManager {
     /// for "last message Xs ago", NOT a staleness-kill which would
     /// false-positive on quiet channels).
     pub(super) last_activity: Arc<Mutex<HashMap<ChatPlatform, i64>>>,
+    /// Panic boundary: epoch-ms of the last panic. Any inbound message
+    /// created at/before this instant is a straggler from before the
+    /// panic and is DROPPED at the message-handler entry — so it can't
+    /// be logged to disk, pushed to the ring, or emitted to the UI after
+    /// "make it disappear". Closes the race where a message in flight
+    /// (in the channel / mid-pseudonymize) when panic fires would land
+    /// in a freshly-recreated history file.
+    pub(super) purge_epoch_ms: Arc<AtomicI64>,
 }
 
 /// In-memory recent-message ring capacity — matches the frontend view
@@ -218,6 +228,7 @@ impl ChatManager {
             chat_endpoints,
             recent_messages: Arc::new(Mutex::new(VecDeque::with_capacity(RECENT_MESSAGES_CAP))),
             last_activity: Arc::new(Mutex::new(HashMap::new())),
+            purge_epoch_ms: Arc::new(AtomicI64::new(0)),
         };
 
         // Start message handler.
@@ -281,8 +292,13 @@ impl ChatManager {
     /// connectors. The prior stale `last_errors` cache was redundant and
     /// surfaced stale errors after a connector recovered.
     pub async fn get_status(&self) -> Vec<ChatPlatformStatus> {
+        // Snapshot `last_activity` and release its lock BEFORE taking
+        // `platforms`, so the canonical lock order is always
+        // last_activity → platforms (matching `get_platform_status`) and
+        // there's no AB/BA inversion to deadlock on. The map is ≤ 6
+        // entries, so the clone is trivial.
+        let activity = self.last_activity.lock().await.clone();
         let platforms = self.platforms.lock().await;
-        let activity = self.last_activity.lock().await;
         platforms
             .iter()
             .map(|(platform, connector)| ChatPlatformStatus {

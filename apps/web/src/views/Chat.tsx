@@ -34,26 +34,13 @@ export function Chat() {
 
   const handleExportLog = useCallback(async (): Promise<void> => {
     try {
-      // Chat history is always-on (encrypted, stream-decoupled), so export
-      // works whenever there's a session — no "start a stream first" gate.
-      const status = await api.chat.getLogStatus();
-      if (!status.active || status.startedAt === 0) {
-        toast.error(
-          t('chat.exportNoSession', {
-            defaultValue: 'No chat history to export yet.',
-          })
-        );
-        return;
-      }
-
-      // `startedAt` is `bigint` (ts-rs maps Rust `i64` to bigint). The
-      // `Date` constructor needs a `number` — Unix epoch ms safely fits
-      // in JS `number` for any timestamp before year ~285,000.
-      const start = new Date(Number(status.startedAt));
-      const end = new Date();
-      const defaultName = `chatlog_${formatTimestampForFile(start)}_to_${formatTimestampForFile(
-        end
-      )}.jsonl`;
+      // Chat history is always-on (encrypted, stream-decoupled) and export
+      // covers the FULL retained history across restarts — not a single
+      // session — so the filename is stamped with the export moment, not a
+      // session range. Emptiness is the server's call: it returns a
+      // `no_chat_history` validation error, surfaced below. No client-side
+      // session gate (it would duplicate the authoritative server check).
+      const defaultName = `chatlog_export_${formatTimestampForFile(new Date())}.jsonl`;
 
       const path = await browserSaveFile({
         defaultPath: defaultName,
@@ -66,6 +53,18 @@ export function Chat() {
       toast.success(t('chat.exportSuccess', { defaultValue: 'Chat log exported.' }));
     } catch (error) {
       logger.error('Failed to export chat log:', error);
+      // The server returns `ValidationFailed { reasons: [{ code:
+      // "no_chat_history" }] }` for an empty history. The api-client
+      // attaches that body's `details` to the thrown Error; the code is
+      // there, not in `.message` (which is the variant tag).
+      if (hasValidationCode(error, 'no_chat_history')) {
+        toast.error(
+          t('chat.exportNoSession', {
+            defaultValue: 'No chat history to export yet.',
+          })
+        );
+        return;
+      }
       toast.error(t('chat.exportFailed', { defaultValue: 'Failed to export chat log.' }));
     }
   }, [browserSaveFile, t]);
@@ -148,4 +147,23 @@ function formatTimestampForFile(date: Date): string {
   return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(
     date.getHours()
   )}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+}
+
+/**
+ * True when `error` is an api-client error carrying a `ValidationFailed`
+ * body whose `reasons` include `code`. The api-client attaches the parsed
+ * error body's `details` to the thrown Error.
+ */
+function hasValidationCode(error: unknown, code: string): boolean {
+  if (!(error instanceof Error)) return false;
+  const details = (error as { details?: unknown }).details;
+  if (!details || typeof details !== 'object') return false;
+  const reasons = (details as { reasons?: unknown }).reasons;
+  if (!Array.isArray(reasons)) return false;
+  return reasons.some(
+    (reason): boolean =>
+      typeof reason === 'object' &&
+      reason !== null &&
+      (reason as { code?: unknown }).code === code
+  );
 }
