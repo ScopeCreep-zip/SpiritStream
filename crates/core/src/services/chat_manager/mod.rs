@@ -282,6 +282,7 @@ impl ChatManager {
     /// surfaced stale errors after a connector recovered.
     pub async fn get_status(&self) -> Vec<ChatPlatformStatus> {
         let platforms = self.platforms.lock().await;
+        let activity = self.last_activity.lock().await;
         platforms
             .iter()
             .map(|(platform, connector)| ChatPlatformStatus {
@@ -289,21 +290,22 @@ impl ChatManager {
                 status: connector.status(),
                 message_count: connector.message_count(),
                 error: connector.last_error(),
+                last_activity_ms: activity.get(platform).copied(),
             })
             .collect()
     }
 
     /// Get status of a specific platform.
     pub async fn get_platform_status(&self, platform: ChatPlatform) -> Option<ChatPlatformStatus> {
+        let last_activity_ms = self.last_activity.lock().await.get(&platform).copied();
         let platforms = self.platforms.lock().await;
-        platforms
-            .get(&platform)
-            .map(|connector| ChatPlatformStatus {
-                platform,
-                status: connector.status(),
-                message_count: connector.message_count(),
-                error: connector.last_error(),
-            })
+        platforms.get(&platform).map(|connector| ChatPlatformStatus {
+            platform,
+            status: connector.status(),
+            message_count: connector.message_count(),
+            error: connector.last_error(),
+            last_activity_ms,
+        })
     }
 
     /// Check if any platform is connected.
@@ -354,10 +356,6 @@ impl ChatManager {
         }
     }
 
-    /// Last inbound activity per platform (epoch ms).
-    pub async fn last_activity_ms(&self, platform: ChatPlatform) -> Option<i64> {
-        self.last_activity.lock().await.get(&platform).copied()
-    }
 
     /// Initialize a platform connector. Returns `None` for platforms
     /// SpiritStream has not yet implemented — `connect()` surfaces a

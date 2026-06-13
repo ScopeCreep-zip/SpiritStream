@@ -683,6 +683,12 @@ pub struct ChatPlatformStatus {
     #[ts(type = "number")]
     pub message_count: u64,
     pub error: Option<String>,
+    /// Epoch-ms of the last inbound message/event on this platform, if
+    /// any. Liveness observability — lets the UI show "last message Xs
+    /// ago"; a genuinely dead socket still surfaces as `Error` + the
+    /// reconnect loop, so this is informational, not a kill signal.
+    #[ts(type = "number | null")]
+    pub last_activity_ms: Option<i64>,
 }
 
 /// Result of sending a chat message to a platform.

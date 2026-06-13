@@ -67,6 +67,8 @@ pub struct ChatPlatformStatusWire {
     pub status: ChatConnectionStatusWire,
     pub message_count: u64,
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_activity_ms: Option<i64>,
 }
 
 impl From<ChatPlatformStatus> for ChatPlatformStatusWire {
@@ -76,6 +78,7 @@ impl From<ChatPlatformStatus> for ChatPlatformStatusWire {
             status: value.status.into(),
             message_count: value.message_count,
             error: value.error,
+            last_activity_ms: value.last_activity_ms,
         }
     }
 }

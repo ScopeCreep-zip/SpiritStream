@@ -127,7 +127,7 @@ fn read_log_lines(path: &Path, max_lines: usize) -> Result<Vec<String>, CoreErro
 
 #[cfg(test)]
 mod tests {
-    use super::{prune_logs, read_recent_logs};
+    use super::{prune_chat_history, prune_logs, read_recent_logs};
     use filetime::{set_file_mtime, FileTime};
     use std::fs;
     use std::time::{Duration, SystemTime};
@@ -170,6 +170,27 @@ mod tests {
         assert!(!old.exists(), "stale .log should be pruned");
         assert!(fresh.exists(), "recent .log should be kept");
         assert!(other.exists(), "non-.log files are never pruned");
+    }
+
+    #[test]
+    fn prune_chat_history_removes_only_old_enc_records() {
+        let dir = TempDir::new().unwrap();
+        let old = dir.path().join("chatlog_20200101-00.enc");
+        let fresh = dir.path().join("chatlog_20990101-00.enc");
+        let applog = dir.path().join("app.log");
+        fs::write(&old, b"cipher").unwrap();
+        fs::write(&fresh, b"cipher").unwrap();
+        fs::write(&applog, b"log").unwrap();
+        backdate(&old, 30);
+        backdate(&applog, 30);
+
+        let removed = prune_chat_history(dir.path(), 7).unwrap();
+        assert_eq!(removed, 1);
+        assert!(!old.exists(), "stale chat history should be pruned");
+        assert!(fresh.exists(), "recent chat history should be kept");
+        assert!(applog.exists(), "non-chat files are never touched here");
+        // retention_days == 0 disables pruning.
+        assert_eq!(prune_chat_history(dir.path(), 0).unwrap(), 0);
     }
 
     #[test]

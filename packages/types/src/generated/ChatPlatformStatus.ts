@@ -5,4 +5,11 @@ import type { ChatPlatform } from "./ChatPlatform";
 /**
  * Status information for a chat platform
  */
-export type ChatPlatformStatus = { platform: ChatPlatform, status: ChatConnectionStatus, messageCount: number, error: string | null, };
+export type ChatPlatformStatus = { platform: ChatPlatform, status: ChatConnectionStatus, messageCount: number, error: string | null, 
+/**
+ * Epoch-ms of the last inbound message/event on this platform, if
+ * any. Liveness observability — lets the UI show "last message Xs
+ * ago"; a genuinely dead socket still surfaces as `Error` + the
+ * reconnect loop, so this is informational, not a kill signal.
+ */
+lastActivityMs: number | null, };
