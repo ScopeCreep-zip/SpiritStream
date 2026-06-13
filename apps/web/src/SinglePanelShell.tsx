@@ -242,7 +242,7 @@ export function SinglePanelShell({
             onEditGroup={handleEditGroup}
           />
         }
-        chat={<Chat />}
+        chat={<Chat onOpenIntegrations={() => open('chat')} />}
       />
 
       {/* ─── Profile modals ─── */}

@@ -27,7 +27,14 @@ import { logger } from '@/lib/logger';
  * poller. Each sub-component is a focused, self-contained module under
  * `components/chat/`.
  */
-export function Chat() {
+interface ChatProps {
+  /** Opens the Integrations → Chat panel (modal key 'chat') where OAuth
+   *  setup + sign-in live. Threaded from SinglePanelShell's modal registry
+   *  so the re-auth banner can route there. */
+  onOpenIntegrations?: () => void;
+}
+
+export function Chat({ onOpenIntegrations }: ChatProps = {}) {
   const { t } = useTranslation();
   const { FileBrowser, saveFilePath: browserSaveFile } = useFileBrowser();
   const messages = useChatStore((state) => state.messages);
@@ -133,7 +140,7 @@ export function Chat() {
             />
           </div>
 
-          <ChatReauthBanner statuses={statuses} />
+          <ChatReauthBanner statuses={statuses} onOpenIntegrations={onOpenIntegrations} />
 
           <div className="mt-3 shrink-0">
             <ChatComposer statuses={statuses} />

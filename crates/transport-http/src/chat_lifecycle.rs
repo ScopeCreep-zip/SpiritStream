@@ -86,12 +86,15 @@ pub(crate) async fn ensure_fresh_oauth_token(
 // call sites compile unchanged.
 #[path = "chat_lifecycle/profile_state.rs"]
 mod profile_state;
+#[path = "chat_lifecycle/twitch.rs"]
+mod twitch;
 #[path = "chat_lifecycle/youtube.rs"]
 mod youtube;
 pub(crate) use profile_state::{
     clear_profile_oauth_account, get_active_profile_name, get_active_profile_settings,
     persist_active_profile_settings, set_active_profile, update_profile_oauth_account,
 };
+pub(crate) use twitch::start_twitch_token_refresh_task;
 pub(crate) use youtube::{connect_youtube_chat_with_retry, start_youtube_token_refresh_task};
 
 /// Auto-connect all configured chat platforms when a stream starts.

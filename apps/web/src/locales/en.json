@@ -244,7 +244,7 @@
     },
     "reauth": {
       "prompt": "Sign in to {{platform}} again to send messages.",
-      "signIn": "Sign in"
+      "openSettings": "Open settings"
     },
     "sendReauthNeeded": "Your chat sign-in is read-only — sign in again to send."
   },

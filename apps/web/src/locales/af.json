@@ -244,7 +244,7 @@
     },
     "reauth": {
       "prompt": "Meld weer aan by {{platform}} om boodskappe te stuur.",
-      "signIn": "Meld aan"
+      "openSettings": "Open instellings"
     },
     "sendReauthNeeded": "Jou klets-aanmelding is slegs-lees — meld weer aan om te stuur."
   },

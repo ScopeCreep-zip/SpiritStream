@@ -1,16 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { PlatformSignInButton } from '@/components/chat/settings/PlatformSignInButton';
+import { Settings } from 'lucide-react';
+import { Button } from '@/components/ui/Button';
 import { useProfileStore } from '@/stores/profileStore';
 import { useChatStore } from '@/stores/chatStore';
 import { createDefaultChatSettings } from '@/lib/profile-helpers';
-import { api } from '@/lib/client';
-import { logger } from '@/lib/logger';
-import type { OAuthProviderSummary } from '@spiritstream/api-client';
 import type { ChatPlatformStatus } from '@spiritstream/types';
 
 interface ChatReauthBannerProps {
   statuses: ChatPlatformStatus[];
+  /** Opens the Integrations → Chat panel where OAuth setup + sign-in live. */
+  onOpenIntegrations?: () => void;
 }
 
 /** OAuth-capable chat platforms whose read-only fallback is recoverable by
@@ -22,16 +22,19 @@ type OAuthPlatform = (typeof OAUTH_PLATFORMS)[number];
  * Inline "sign in to send" prompt shown directly above the composer when a
  * chat platform is connected but cannot send — the Twitch anonymous
  * read-only fallback (token failed connect-time validation) or a token that
- * expired mid-session (`twitchReauthNeeded`). Reachable without leaving chat.
+ * expired mid-session (`twitchReauthNeeded`).
  *
- * Delegates the actual sign-in to the canonical `PlatformSignInButton`, which
- * already handles BOTH states: it runs the device/browser flow when the
- * provider has credentials, and renders the in-app credentials form when it
- * does NOT (so a not-configured provider guides the user through setup
- * instead of dead-ending on `oauth_provider_not_configured`). Backend owns
- * the `canSend` verdict; this only renders it and routes recovery.
+ * Routes the user to the Integrations chat panel (via `onOpenIntegrations`)
+ * rather than inlining OAuth here: that panel owns the COMPLETE setup — the
+ * developer-portal link, paste-ready console fields, the credentials form
+ * for a not-yet-configured provider, AND the sign-in flow. Stuffing that
+ * into the chat column lost information and cramped the flow. Backend owns
+ * the `canSend` verdict; this only surfaces it and points at the fix.
  */
-export function ChatReauthBanner({ statuses }: ChatReauthBannerProps): React.ReactElement | null {
+export function ChatReauthBanner({
+  statuses,
+  onOpenIntegrations,
+}: ChatReauthBannerProps): React.ReactElement | null {
   const { t } = useTranslation();
   const currentProfile = useProfileStore((state) => state.current);
   const chatSettings = useMemo(
@@ -39,7 +42,6 @@ export function ChatReauthBanner({ statuses }: ChatReauthBannerProps): React.Rea
     [currentProfile]
   );
   const twitchReauthNeeded = useChatStore((state) => state.twitchReauthNeeded);
-  const [summaries, setSummaries] = useState<OAuthProviderSummary[] | null>(null);
 
   const needsReauth = useMemo<OAuthPlatform[]>(() => {
     return statuses
@@ -58,49 +60,20 @@ export function ChatReauthBanner({ statuses }: ChatReauthBannerProps): React.Rea
       });
   }, [statuses, chatSettings, twitchReauthNeeded]);
 
-  // Load backend OAuth setup summaries (only when something needs re-auth) so
-  // PlatformSignInButton can branch configured vs not-configured. The
-  // credentials-form save returns fresh summaries, so a successful in-app
-  // setup flips the button to sign-in without a refetch. Mirrors ChatPanel.
-  useEffect(() => {
-    if (needsReauth.length === 0) return;
-    let cancelled = false;
-    api.oauth
-      .getConfig()
-      .then((loaded) => {
-        if (!cancelled) setSummaries(loaded);
-      })
-      .catch((error) => logger.error('[ChatReauthBanner] failed to load oauth config:', error));
-    return () => {
-      cancelled = true;
-    };
-  }, [needsReauth.length]);
-
-  if (needsReauth.length === 0) return null;
-
-  const summaryFor = (provider: OAuthPlatform): OAuthProviderSummary | null =>
-    summaries?.find((s) => s.provider === provider) ?? null;
+  if (needsReauth.length === 0 || !onOpenIntegrations) return null;
 
   return (
-    <div className="mt-3 shrink-0 rounded-lg border border-border-strong bg-bg-elevated p-2">
-      {needsReauth.map((platform) => (
-        <div key={platform} className="py-0.5">
-          <span className="text-xs text-text-secondary">
-            {t('chat.reauth.prompt', {
-              defaultValue: 'Sign in to {{platform}} again to send messages.',
-              platform: t(`chat.platforms.${platform}`, platform),
-            })}
-          </span>
-          {/* signedInAs="" forces the sign-in affordance (never sign-out). */}
-          <PlatformSignInButton
-            provider={platform}
-            signedInAs=""
-            signInLabel={t('chat.reauth.signIn', { defaultValue: 'Sign in' })}
-            summary={summaryFor(platform)}
-            onCredentialsSaved={setSummaries}
-          />
-        </div>
-      ))}
+    <div className="mt-3 shrink-0 flex items-center gap-2 rounded-lg border border-border-strong bg-bg-elevated p-2">
+      <span className="flex-1 text-xs text-text-secondary">
+        {t('chat.reauth.prompt', {
+          defaultValue: 'Sign in to {{platform}} again to send messages.',
+          platform: needsReauth.map((p) => t(`chat.platforms.${p}`, p)).join(', '),
+        })}
+      </span>
+      <Button variant="primary" size="sm" onClick={onOpenIntegrations}>
+        <Settings className="w-3.5 h-3.5" />
+        {t('chat.reauth.openSettings', { defaultValue: 'Open settings' })}
+      </Button>
     </div>
   );
 }

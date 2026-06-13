@@ -59,7 +59,8 @@ pub(crate) use chat_lifecycle::{
     update_profile_oauth_account,
 };
 use chat_lifecycle::{
-    start_auto_retry_task, start_chat_reconnect_task, start_youtube_token_refresh_task,
+    start_auto_retry_task, start_chat_reconnect_task, start_twitch_token_refresh_task,
+    start_youtube_token_refresh_task,
 };
 use cloud_mode::{enforce_cloud_mode_preconditions, parse_bool};
 #[cfg(test)]
@@ -625,8 +626,11 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         event_tickets,
     };
 
-    // Start background YouTube token refresh task
+    // Start background OAuth token refresh tasks. Both keep the active
+    // profile's token fresh while connected so a long session never lapses
+    // to read-only (Twitch tokens expire in ~4h, YouTube ~1h).
     start_youtube_token_refresh_task(state.clone()).await;
+    start_twitch_token_refresh_task(state.clone()).await;
 
     // Backend-driven auto-retry on stream_error events. Frontend
     // used to do this; now the server owns both policy and trigger.
