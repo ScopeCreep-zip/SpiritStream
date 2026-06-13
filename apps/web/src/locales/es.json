@@ -244,7 +244,9 @@
     },
     "reauth": {
       "prompt": "Inicia sesión en {{platform}} de nuevo para enviar mensajes.",
-      "openSettings": "Abrir ajustes"
+      "openSettings": "Abrir ajustes",
+      "readOnly": "Conectado pero de solo lectura: inicia sesión de nuevo para enviar mensajes.",
+      "signInAgain": "Iniciar sesión de nuevo"
     },
     "sendReauthNeeded": "Tu sesión de chat es de solo lectura: inicia sesión de nuevo para enviar."
   },

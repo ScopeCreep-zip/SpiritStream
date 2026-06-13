@@ -100,6 +100,16 @@ export function ChatPanel(): React.ReactElement {
       statuses.find((s) => s.platform === platform)?.status ?? 'disconnected',
     [statuses]
   );
+  // A platform connected but unable to send (Twitch anonymous read-only
+  // fallback / expired token). Drives the read-only warning + "Sign in
+  // again" affordance so the user can recover from this panel.
+  const isReadOnly = useCallback(
+    (platform: ChatPlatformStatus['platform']): boolean => {
+      const s = statuses.find((st) => st.platform === platform);
+      return s?.status === 'connected' && !s.canSend;
+    },
+    [statuses]
+  );
 
   // Sticky "sign in with Twitch again" hint, set by useFollowerOnlyNotices
   // when the backend reports the follower-only scope is missing.
@@ -374,12 +384,23 @@ export function ChatPanel(): React.ReactElement {
                 defaultValue: 'e.g. spiritartlife',
               })}
             />
+            {isReadOnly('twitch') && (
+              <p
+                role="alert"
+                className="text-xs text-warning-text mt-2 p-2 bg-warning-subtle rounded"
+              >
+                {t('chat.reauth.readOnly', {
+                  defaultValue: 'Connected but read-only — sign in again to send messages.',
+                })}
+              </p>
+            )}
             <PlatformSignInButton
               provider="twitch"
               signedInAs={currentProfile.settings.oauth.twitch.username}
               signInLabel={t('chat.twitch.loginWithTwitch', { defaultValue: 'Login with Twitch' })}
               summary={oauthSummaryFor('twitch')}
               onCredentialsSaved={setOauthSummaries}
+              reauthAvailable={isReadOnly('twitch')}
             />
             {followerOnlyReauthNeeded && (
               <p

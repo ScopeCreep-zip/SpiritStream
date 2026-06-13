@@ -28,8 +28,27 @@ fn account_id_from_credentials(creds: &ChatCredentials) -> Option<String> {
 }
 
 impl super::ChatManager {
-    /// Connect to a chat platform.
+    /// Connect to a chat platform. Rejects if the platform is already
+    /// connected — callers wanting to swap a live session (e.g. read-only →
+    /// send-capable after a token refresh) use [`reconnect`].
     pub async fn connect(&self, config: ChatConfig) -> Result<(), CoreError> {
+        self.connect_inner(config, false).await
+    }
+
+    /// Reconnect a platform, REPLACING any live session. Used to apply a
+    /// freshly-refreshed token to a connection that's already up but can't
+    /// send (the Twitch anonymous read-only fallback): IRC bakes the token
+    /// in at connect, so `update_token` is a no-op there and a clean
+    /// disconnect+reconnect under the lock is the only way to swap it.
+    pub async fn reconnect(&self, config: ChatConfig) -> Result<(), CoreError> {
+        self.connect_inner(config, true).await
+    }
+
+    async fn connect_inner(
+        &self,
+        config: ChatConfig,
+        replace_connected: bool,
+    ) -> Result<(), CoreError> {
         if !config.enabled {
             return Err(chat_validation(
                 "chat_platform_not_enabled",
@@ -41,14 +60,17 @@ impl super::ChatManager {
 
         let mut platforms = self.platforms.lock().await;
 
-        // Check if already connected.
-        if let Some(connector) = platforms.get(&config.platform) {
-            if connector.is_connected() {
-                return Err(chat_validation(
-                    "chat_platform_already_connected",
-                    format!("{} is already connected", config.platform.as_str()),
-                ));
-            }
+        // Already connected: reject for a plain connect; for `reconnect`,
+        // tear the live session down first so the rebuild starts clean.
+        let was_connected = platforms
+            .get(&config.platform)
+            .map(|c| c.is_connected())
+            .unwrap_or(false);
+        if was_connected && !replace_connected {
+            return Err(chat_validation(
+                "chat_platform_already_connected",
+                format!("{} is already connected", config.platform.as_str()),
+            ));
         }
 
         // Create or get platform connector. The factory is total over
@@ -67,6 +89,12 @@ impl super::ChatManager {
                     )
                 })?,
         };
+
+        // Forced reconnect over a live session: close the old connection
+        // before rebuilding so we don't leave a stale receive loop running.
+        if was_connected && replace_connected {
+            let _ = connector.disconnect().await;
+        }
 
         // Capture the account_id before the connector consumes
         // `config.credentials`. Powers the audit-log entry below.

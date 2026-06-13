@@ -195,7 +195,7 @@ pub async fn v1_streams_start(
     if !was_streaming {
         // Chat (and its always-on encrypted history) is decoupled from
         // streaming — the log session is started once at boot, not here.
-        tokio::spawn(crate::auto_connect_chat_platforms(state.clone()));
+        tokio::spawn(crate::auto_connect_chat_platforms(state.clone(), false));
     }
     Ok(Json(StreamStartResponse { pid }))
 }
@@ -224,7 +224,7 @@ pub async fn v1_streams_start_all(
     let started = state
         .ffmpeg_handler
         .start_all(&req.groups, &req.incoming_url, event_sink)?;
-    tokio::spawn(crate::auto_connect_chat_platforms(state.clone()));
+    tokio::spawn(crate::auto_connect_chat_platforms(state.clone(), false));
     let (started_group_ids, pids) = started.into_iter().unzip();
     Ok(Json(StreamStartAllResponse {
         pids,

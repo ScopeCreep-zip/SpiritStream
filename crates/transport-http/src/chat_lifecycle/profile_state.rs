@@ -138,7 +138,10 @@ pub(crate) async fn update_profile_oauth_account(
     if let Some(platform) = chat_platform_for(provider) {
         state.chat_manager.clear_disconnect_intent(platform).await;
     }
-    tokio::spawn(crate::auto_connect_chat_platforms(state.clone()));
+    // Re-auth: force a reconnect so a live read-only session (e.g. Twitch
+    // anonymous fallback) is swapped for a send-capable one with the new
+    // token — auto_connect otherwise skips an "already connected" platform.
+    tokio::spawn(crate::auto_connect_chat_platforms(state.clone(), true));
 
     Ok(())
 }

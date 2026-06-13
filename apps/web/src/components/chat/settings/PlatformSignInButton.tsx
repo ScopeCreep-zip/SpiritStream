@@ -21,6 +21,10 @@ interface PlatformSignInButtonProps {
   summary: OAuthProviderSummary | null;
   /** Bubbles the post-save summaries up so the panel refreshes every card. */
   onCredentialsSaved: (updated: OAuthProviderSummary[]) => void;
+  /** When true, the stored sign-in is signed-in-but-unusable (connected
+   *  read-only / expired token). Surfaces "Sign in again" in the signed-in
+   *  branch so the user can re-auth without signing out first. */
+  reauthAvailable?: boolean;
 }
 
 /**
@@ -43,6 +47,7 @@ export function PlatformSignInButton({
   signInLabel,
   summary,
   onCredentialsSaved,
+  reauthAvailable,
 }: PlatformSignInButtonProps) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
@@ -118,36 +123,6 @@ export function PlatformSignInButton({
     }
   }, [provider, t]);
 
-  if (isSignedIn) {
-    return (
-      <div className="flex items-center gap-2 mt-3">
-        <span className="text-sm text-text-secondary flex-1">
-          {t('chat.oauth.signedInAs', {
-            defaultValue: 'Signed in as {{username}}',
-            username: signedInAs,
-          })}
-        </span>
-        <Button variant="ghost" size="sm" onClick={handleSignOut} disabled={busy}>
-          <LogOut className="w-3.5 h-3.5" />
-          {t('chat.signOut', { defaultValue: 'Sign out' })}
-        </Button>
-      </div>
-    );
-  }
-
-  if (!summary || !summary.configured) {
-    return (
-      <div className="mt-3">
-        <p className="text-xs text-text-tertiary">
-          {t('chat.oauth.notConfigured', {
-            defaultValue: 'Sign-in needs a one-time setup for this platform.',
-          })}
-        </p>
-        {summary && <ProviderCredentialsForm summary={summary} onSaved={onCredentialsSaved} />}
-      </div>
-    );
-  }
-
   const handleCopyUrl = async (): Promise<void> => {
     if (!manualUrl) return;
     try {
@@ -158,17 +133,11 @@ export function PlatformSignInButton({
     }
   };
 
-  return (
-    <div className="mt-3">
-      <Button
-        variant="primary"
-        size="sm"
-        onClick={handleSignIn}
-        disabled={busy || devicePanel !== null}
-      >
-        <LogIn className="w-3.5 h-3.5" />
-        {signInLabel}
-      </Button>
+  // Device-code / manual-URL panels render the SAME in both the signed-in
+  // (re-auth) and signed-out branches, so a "Sign in again" click surfaces
+  // the flow UI rather than silently setting unrendered state.
+  const flowPanels = (
+    <>
       {devicePanel && (
         <DeviceCodePanel
           userCode={devicePanel.userCode}
@@ -191,6 +160,68 @@ export function PlatformSignInButton({
           </Button>
         </div>
       )}
+    </>
+  );
+
+  if (isSignedIn) {
+    return (
+      <div className="mt-3">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-text-secondary flex-1">
+            {t('chat.oauth.signedInAs', {
+              defaultValue: 'Signed in as {{username}}',
+              username: signedInAs,
+            })}
+          </span>
+          {/* Signed-in username persists even when the token is dead
+              (read-only). `reauthAvailable` surfaces a re-sign-in here so
+              the user doesn't have to Sign out first to recover. */}
+          {reauthAvailable && summary?.configured && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleSignIn}
+              disabled={busy || devicePanel !== null}
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              {t('chat.reauth.signInAgain', { defaultValue: 'Sign in again' })}
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" onClick={handleSignOut} disabled={busy}>
+            <LogOut className="w-3.5 h-3.5" />
+            {t('chat.signOut', { defaultValue: 'Sign out' })}
+          </Button>
+        </div>
+        {flowPanels}
+      </div>
+    );
+  }
+
+  if (!summary || !summary.configured) {
+    return (
+      <div className="mt-3">
+        <p className="text-xs text-text-tertiary">
+          {t('chat.oauth.notConfigured', {
+            defaultValue: 'Sign-in needs a one-time setup for this platform.',
+          })}
+        </p>
+        {summary && <ProviderCredentialsForm summary={summary} onSaved={onCredentialsSaved} />}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3">
+      <Button
+        variant="primary"
+        size="sm"
+        onClick={handleSignIn}
+        disabled={busy || devicePanel !== null}
+      >
+        <LogIn className="w-3.5 h-3.5" />
+        {signInLabel}
+      </Button>
+      {flowPanels}
       {/* Configured via user-entered credentials: keep the form
           reachable (collapsed) so a typo'd id or rotated secret can be
           corrected without env vars. Saving empty values clears it. */}

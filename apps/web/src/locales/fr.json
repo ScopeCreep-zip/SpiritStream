@@ -244,7 +244,9 @@
     },
     "reauth": {
       "prompt": "Reconnecte-toi à {{platform}} pour envoyer des messages.",
-      "openSettings": "Ouvrir les paramètres"
+      "openSettings": "Ouvrir les paramètres",
+      "readOnly": "Connecté mais en lecture seule — reconnecte-toi pour envoyer des messages.",
+      "signInAgain": "Se reconnecter"
     },
     "sendReauthNeeded": "Ta connexion au chat est en lecture seule — reconnecte-toi pour envoyer."
   },

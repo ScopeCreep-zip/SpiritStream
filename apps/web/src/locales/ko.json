@@ -244,7 +244,9 @@
     },
     "reauth": {
       "prompt": "메시지를 보내려면 {{platform}}에 다시 로그인하세요.",
-      "openSettings": "설정 열기"
+      "openSettings": "설정 열기",
+      "readOnly": "연결되었지만 읽기 전용입니다. 메시지를 보내려면 다시 로그인하세요.",
+      "signInAgain": "다시 로그인"
     },
     "sendReauthNeeded": "채팅 로그인이 읽기 전용입니다. 보내려면 다시 로그인하세요."
   },

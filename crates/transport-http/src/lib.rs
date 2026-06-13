@@ -52,11 +52,10 @@ use auth::{
     security_revoke_all_sessions,
 };
 pub(crate) use chat_lifecycle::{
-    auto_connect_chat_platforms,
-    clear_profile_oauth_account, connect_trovo_chat, connect_twitch_chat,
-    connect_youtube_chat_with_retry, ensure_fresh_oauth_token, get_active_profile_name,
-    get_active_profile_settings, persist_active_profile_settings, set_active_profile,
-    update_profile_oauth_account,
+    auto_connect_chat_platforms, clear_profile_oauth_account, connect_youtube_chat_with_retry,
+    ensure_fresh_oauth_token, get_active_profile_name, get_active_profile_settings,
+    persist_active_profile_settings, refresh_and_connect_trovo, refresh_and_connect_twitch,
+    set_active_profile, update_profile_oauth_account,
 };
 use chat_lifecycle::{
     start_auto_retry_task, start_chat_reconnect_task, start_twitch_token_refresh_task,

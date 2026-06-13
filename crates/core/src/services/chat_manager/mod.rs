@@ -21,6 +21,8 @@ mod crosspost_tests;
 #[cfg(test)]
 mod panic_tests;
 #[cfg(test)]
+mod reconnect_tests;
+#[cfg(test)]
 mod send_message_tests;
 
 use log_writer::ChatLogCommand;

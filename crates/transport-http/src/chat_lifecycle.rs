@@ -86,6 +86,8 @@ pub(crate) async fn ensure_fresh_oauth_token(
 // call sites compile unchanged.
 #[path = "chat_lifecycle/profile_state.rs"]
 mod profile_state;
+#[path = "chat_lifecycle/reconnect.rs"]
+mod reconnect;
 #[path = "chat_lifecycle/twitch.rs"]
 mod twitch;
 #[path = "chat_lifecycle/youtube.rs"]
@@ -94,12 +96,15 @@ pub(crate) use profile_state::{
     clear_profile_oauth_account, get_active_profile_name, get_active_profile_settings,
     persist_active_profile_settings, set_active_profile, update_profile_oauth_account,
 };
+pub(crate) use reconnect::{
+    refresh_and_connect_kick, refresh_and_connect_trovo, refresh_and_connect_twitch,
+};
 pub(crate) use twitch::start_twitch_token_refresh_task;
 pub(crate) use youtube::{connect_youtube_chat_with_retry, start_youtube_token_refresh_task};
 
 /// Auto-connect all configured chat platforms when a stream starts.
 /// Runs as a fire-and-forget background task -- errors are logged, never block the stream.
-pub(crate) async fn auto_connect_chat_platforms(state: AppState) {
+pub(crate) async fn auto_connect_chat_platforms(state: AppState, force_readonly: bool) {
     let chat_settings = state.chat_manager.profile_chat_settings().await;
     // Facebook is intentionally excluded from this guard: it never auto-
     // connects, even with a persisted video_id. Identity-revealing connect
@@ -114,7 +119,7 @@ pub(crate) async fn auto_connect_chat_platforms(state: AppState) {
         return;
     }
 
-    let mut profile_settings = match get_active_profile_settings(&state).await {
+    let profile_settings = match get_active_profile_settings(&state).await {
         Some(settings) => settings,
         None => {
             log::warn!("Chat auto-connect skipped: no active profile settings");
@@ -122,187 +127,38 @@ pub(crate) async fn auto_connect_chat_platforms(state: AppState) {
         }
     };
 
-    // Twitch: refresh token if needed, then connect immediately (IRC works even when offline).
-    // Skip platforms the user deliberately disconnected (Disconnect button / panic) so
-    // auto-connect never silently undoes that — `is_disconnect_intended` is the safety gate.
+    // Twitch / Trovo / Kick: refresh the token then (re)connect. The
+    // `is_disconnect_intended` gate keeps a deliberate Disconnect/panic from
+    // being silently undone. `force_readonly` (only on re-auth) lets Twitch
+    // swap a read-only session for a send-capable one; ambient calls leave a
+    // read-only session alone to avoid churn. The per-platform refresh +
+    // skip-logic lives in `chat_lifecycle/reconnect.rs`.
     if !chat_settings.twitch_channel.is_empty()
         && !state
             .chat_manager
             .is_disconnect_intended(ChatPlatform::Twitch)
             .await
     {
-        let already_connected = state
-            .chat_manager
-            .get_platform_status(ChatPlatform::Twitch)
-            .await
-            .map(|s| s.status == spiritstream_core::models::ChatConnectionStatus::Connected)
-            .unwrap_or(false);
-
-        if !already_connected {
-            if !profile_settings.oauth.twitch.access_token.is_empty() {
-                // Refresh token if expired
-                match ensure_fresh_oauth_token(
-                    "twitch",
-                    &profile_settings.oauth.twitch.access_token,
-                    &profile_settings.oauth.twitch.refresh_token,
-                    profile_settings.oauth.twitch.expires_at,
-                    &state.oauth_service,
-                )
-                .await
-                {
-                    Ok(fresh) => {
-                        if fresh.refreshed {
-                            profile_settings.oauth.twitch.access_token = fresh.access_token.clone();
-                            if let Some(rt) = fresh.refresh_token {
-                                profile_settings.oauth.twitch.refresh_token = rt;
-                            }
-                            profile_settings.oauth.twitch.expires_at = fresh.expires_at;
-                            if let Err(err) =
-                                persist_active_profile_settings(&state, profile_settings.clone())
-                                    .await
-                            {
-                                log::warn!("Failed to persist Twitch OAuth refresh: {err}");
-                            }
-                        }
-                        connect_twitch_chat(
-                            &state.chat_manager,
-                            &chat_settings,
-                            &profile_settings,
-                            &state.event_bus,
-                        )
-                        .await;
-                    }
-                    Err(e) => {
-                        log::warn!("Twitch token refresh failed, trying with existing token: {e}");
-                        connect_twitch_chat(
-                            &state.chat_manager,
-                            &chat_settings,
-                            &profile_settings,
-                            &state.event_bus,
-                        )
-                        .await;
-                    }
-                }
-            } else {
-                connect_twitch_chat(
-                    &state.chat_manager,
-                    &chat_settings,
-                    &profile_settings,
-                    &state.event_bus,
-                )
-                .await;
-            }
-        } else {
-            log::debug!("Twitch chat already connected, skipping auto-connect");
-        }
+        refresh_and_connect_twitch(&state, &chat_settings, profile_settings.clone(), force_readonly)
+            .await;
     }
 
-    // Trovo: read-only websocket chat (requires SPIRITSTREAM_TROVO_CLIENT_ID + channel ID)
     if !chat_settings.trovo_channel_id.is_empty()
         && !state
             .chat_manager
             .is_disconnect_intended(ChatPlatform::Trovo)
             .await
     {
-        let already_connected = state
-            .chat_manager
-            .get_platform_status(ChatPlatform::Trovo)
-            .await
-            .map(|s| s.status == spiritstream_core::models::ChatConnectionStatus::Connected)
-            .unwrap_or(false);
-
-        if !already_connected {
-            // Refresh the Trovo OAuth token before capturing the bearer
-            // for the connector — same rationale as Kick below.
-            if !profile_settings.oauth.trovo.access_token.is_empty() {
-                if let Ok(fresh) = ensure_fresh_oauth_token(
-                    "trovo",
-                    &profile_settings.oauth.trovo.access_token,
-                    &profile_settings.oauth.trovo.refresh_token,
-                    profile_settings.oauth.trovo.expires_at,
-                    &state.oauth_service,
-                )
-                .await
-                {
-                    if fresh.refreshed {
-                        profile_settings.oauth.trovo.access_token = fresh.access_token.clone();
-                        if let Some(rt) = fresh.refresh_token {
-                            profile_settings.oauth.trovo.refresh_token = rt;
-                        }
-                        profile_settings.oauth.trovo.expires_at = fresh.expires_at;
-                        if let Err(err) =
-                            persist_active_profile_settings(&state, profile_settings.clone()).await
-                        {
-                            log::warn!("Failed to persist Trovo OAuth refresh: {err}");
-                        }
-                    }
-                }
-            }
-            connect_trovo_chat(
-                &state.chat_manager,
-                &chat_settings,
-                &profile_settings,
-                state.oauth_service.get_config().await.get_trovo_client_id(),
-                &state.event_bus,
-            )
-            .await;
-        } else {
-            log::debug!("Trovo chat already connected, skipping auto-connect");
-        }
+        refresh_and_connect_trovo(&state, &chat_settings, profile_settings.clone()).await;
     }
 
-    // Kick: Pusher-protocol websocket. Anonymous read; OAuth bearer needed for send.
     if !chat_settings.kick_channel.is_empty()
         && !state
             .chat_manager
             .is_disconnect_intended(ChatPlatform::Kick)
             .await
     {
-        let already_connected = state
-            .chat_manager
-            .get_platform_status(ChatPlatform::Kick)
-            .await
-            .map(|s| s.status == spiritstream_core::models::ChatConnectionStatus::Connected)
-            .unwrap_or(false);
-
-        if !already_connected {
-            // Refresh the Kick OAuth token if it's about to expire; do this
-            // before capturing the bearer for the connector so a stale token
-            // doesn't get baked in for the session.
-            if !profile_settings.oauth.kick.access_token.is_empty() {
-                if let Ok(fresh) = ensure_fresh_oauth_token(
-                    "kick",
-                    &profile_settings.oauth.kick.access_token,
-                    &profile_settings.oauth.kick.refresh_token,
-                    profile_settings.oauth.kick.expires_at,
-                    &state.oauth_service,
-                )
-                .await
-                {
-                    if fresh.refreshed {
-                        profile_settings.oauth.kick.access_token = fresh.access_token.clone();
-                        if let Some(rt) = fresh.refresh_token {
-                            profile_settings.oauth.kick.refresh_token = rt;
-                        }
-                        profile_settings.oauth.kick.expires_at = fresh.expires_at;
-                        if let Err(err) =
-                            persist_active_profile_settings(&state, profile_settings.clone()).await
-                        {
-                            log::warn!("Failed to persist Kick OAuth refresh: {err}");
-                        }
-                    }
-                }
-            }
-            connect_kick_chat(
-                &state.chat_manager,
-                &chat_settings,
-                &profile_settings,
-                &state.event_bus,
-            )
-            .await;
-        } else {
-            log::debug!("Kick chat already connected, skipping auto-connect");
-        }
+        refresh_and_connect_kick(&state, &chat_settings, profile_settings.clone()).await;
     }
 
     // TikTok: read-only via reverse-engineered protobuf-over-WebSocket.
@@ -368,6 +224,10 @@ pub(crate) async fn connect_twitch_chat(
     chat_settings: &ChatSettings,
     profile_settings: &ProfileSettings,
     event_bus: &EventBus,
+    // When true, REPLACE a live session (read-only → send-capable swap after
+    // a token refresh) via `ChatManager::reconnect`; otherwise a plain
+    // `connect` that no-ops on an already-connected platform.
+    force_replace: bool,
 ) {
     let auth = if profile_settings.oauth.twitch.access_token.is_empty() {
         None
@@ -392,7 +252,12 @@ pub(crate) async fn connect_twitch_chat(
             auth,
         },
     };
-    match chat_manager.connect(config).await {
+    let result = if force_replace {
+        chat_manager.reconnect(config).await
+    } else {
+        chat_manager.connect(config).await
+    };
+    match result {
         Ok(()) => {
             log::info!("Auto-connected to Twitch chat");
             event_bus.emit("chat_auto_connected", json!({ "platform": "twitch" }));
@@ -644,11 +509,15 @@ pub(crate) async fn start_chat_reconnect_task(state: AppState) {
                         if chat_settings.twitch_channel.is_empty() {
                             continue;
                         }
+                        // Reconnect task only fires on `Error` status (the
+                        // platform is down, not a live read-only session), so
+                        // a plain connect is correct here — no force-replace.
                         connect_twitch_chat(
                             &state.chat_manager,
                             &chat_settings,
                             &profile_settings,
                             &state.event_bus,
+                            false,
                         )
                         .await;
                     }

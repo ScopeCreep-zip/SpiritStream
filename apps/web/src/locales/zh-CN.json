@@ -244,7 +244,9 @@
     },
     "reauth": {
       "prompt": "请重新登录 {{platform}} 以发送消息。",
-      "openSettings": "打开设置"
+      "openSettings": "打开设置",
+      "readOnly": "已连接但为只读 — 请重新登录以发送消息。",
+      "signInAgain": "重新登录"
     },
     "sendReauthNeeded": "你的聊天登录为只读 — 请重新登录以发送。"
   },

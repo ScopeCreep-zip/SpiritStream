@@ -350,7 +350,7 @@ pub async fn v1_profile_activate(
     // re-activation), not only on stream start. Idempotent — already-
     // connected platforms are skipped, and any the user deliberately
     // disconnected are left alone by the intent guard inside.
-    tokio::spawn(crate::auto_connect_chat_platforms(state.clone()));
+    tokio::spawn(crate::auto_connect_chat_platforms(state.clone(), false));
 
     Ok(Json(outcome.profile.into()))
 }

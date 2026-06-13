@@ -353,13 +353,11 @@ pub async fn v1_chat_retry_proxy(
                 }
                 .into());
             }
-            crate::connect_twitch_chat(
-                &state.chat_manager,
-                &chat_settings,
-                &profile_settings,
-                &state.event_bus,
-            )
-            .await;
+            // Manual Connect/reconnect: refresh the token first and FORCE a
+            // reconnect so a live read-only session is swapped for a
+            // send-capable one (the bug behind "disconnect+reconnect does
+            // nothing" — the old path reused the stale token).
+            crate::refresh_and_connect_twitch(&state, &chat_settings, profile_settings, true).await;
         }
         ChatPlatform::Trovo => {
             if chat_settings.trovo_channel_id.is_empty() {
@@ -372,14 +370,7 @@ pub async fn v1_chat_retry_proxy(
                 }
                 .into());
             }
-            crate::connect_trovo_chat(
-                &state.chat_manager,
-                &chat_settings,
-                &profile_settings,
-                state.oauth_service.get_config().await.get_trovo_client_id(),
-                &state.event_bus,
-            )
-            .await;
+            crate::refresh_and_connect_trovo(&state, &chat_settings, profile_settings).await;
         }
         ChatPlatform::YouTube => {
             let has_oauth = !chat_settings.youtube_use_api_key
