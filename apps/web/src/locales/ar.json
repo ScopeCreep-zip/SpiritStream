@@ -219,7 +219,34 @@
       "connecting": "جارٍ الاتصال…",
       "disconnected": "تم الفصل",
       "failed": "تعذّر تغيير الاتصال: {{error}}"
-    }
+    },
+    "events": {
+      "raid": "أغار {{name}} ومعه {{count}} مشاهدًا",
+      "subGifted": "أهدى {{name}} {{count}} اشتراكًا",
+      "cheer": "شجّع {{name}} بـ {{bits}} بِت",
+      "memberMilestone": "{{name}} عضو منذ {{months}} شهرًا",
+      "newSponsor": "انضم {{name}} كعضو {{tier}}",
+      "superChat": "أرسل {{name}} رسالة Super Chat ({{amount}})",
+      "superSticker": "أرسل {{name}} ملصق Super Sticker ({{amount}})",
+      "hypeChat": "أرسل {{name}} رسالة Hype Chat ({{amount}})",
+      "poll": "استطلاع: {{question}}",
+      "chatEnded": "انتهت الدردشة.",
+      "userBanned": "تم حظر {{name}}",
+      "userTimedOut": "تم إسكات {{name}} لمدة {{secs}} ثانية"
+    },
+    "roomMode": {
+      "emoteOnly": "الرموز التعبيرية فقط",
+      "subscribersOnly": "المشتركون فقط",
+      "r9k": "دردشة فريدة",
+      "slowMode": "الوضع البطيء: {{secs}} ثانية",
+      "followersOnly": "المتابعون فقط: {{minutes}} دقيقة",
+      "followersOnlyAny": "المتابعون فقط"
+    },
+    "reauth": {
+      "prompt": "سجّل الدخول إلى {{platform}} مرة أخرى لإرسال الرسائل.",
+      "signIn": "تسجيل الدخول"
+    },
+    "sendReauthNeeded": "تسجيل دخولك للدردشة للقراءة فقط — سجّل الدخول مرة أخرى للإرسال."
   },
   "common": {
     "cancel": "يلغي",

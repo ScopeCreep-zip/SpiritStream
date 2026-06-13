@@ -219,7 +219,34 @@
       "connecting": "Verbinden…",
       "disconnected": "Getrennt",
       "failed": "Verbindung konnte nicht geändert werden: {{error}}"
-    }
+    },
+    "events": {
+      "raid": "{{name}} hat mit {{count}} Zuschauern geraidet",
+      "subGifted": "{{name}} hat {{count}} Abo(s) verschenkt",
+      "cheer": "{{name}} hat {{bits}} Bits gecheert",
+      "memberMilestone": "{{name}} ist seit {{months}} Monaten Mitglied",
+      "newSponsor": "{{name}} ist als {{tier}}-Mitglied beigetreten",
+      "superChat": "{{name}} hat einen Super Chat gesendet ({{amount}})",
+      "superSticker": "{{name}} hat einen Super-Sticker gesendet ({{amount}})",
+      "hypeChat": "{{name}} hat einen Hype Chat gesendet ({{amount}})",
+      "poll": "Umfrage: {{question}}",
+      "chatEnded": "Der Chat ist beendet.",
+      "userBanned": "{{name}} wurde gebannt",
+      "userTimedOut": "{{name}} wurde für {{secs}}s gesperrt"
+    },
+    "roomMode": {
+      "emoteOnly": "Nur Emotes",
+      "subscribersOnly": "Nur Abonnenten",
+      "r9k": "Einzigartiger Chat",
+      "slowMode": "Langsamer Modus: {{secs}}s",
+      "followersOnly": "Nur Follower: {{minutes}} Min.",
+      "followersOnlyAny": "Nur Follower"
+    },
+    "reauth": {
+      "prompt": "Melde dich erneut bei {{platform}} an, um Nachrichten zu senden.",
+      "signIn": "Anmelden"
+    },
+    "sendReauthNeeded": "Deine Chat-Anmeldung ist schreibgeschützt – melde dich erneut an, um zu senden."
   },
   "common": {
     "cancel": "Abbrechen",

@@ -26,6 +26,7 @@ interface OAuthCompleteEvent {
 export function useFollowerOnlyNotices(): void {
   const { t } = useTranslation();
   const setReauthNeeded = useChatStore((s) => s.setFollowerOnlyReauthNeeded);
+  const setTwitchReauthNeeded = useChatStore((s) => s.setTwitchReauthNeeded);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,11 +90,12 @@ export function useFollowerOnlyNotices(): void {
       }
       unlistenUnsupported = unsupported;
 
-      // A fresh Twitch sign-in carries the scope, so the sticky hint is
-      // stale the moment that flow completes.
+      // A fresh Twitch sign-in carries the scope AND a usable send token,
+      // so both sticky re-auth hints are stale the moment it completes.
       const oauthComplete = await events.on<OAuthCompleteEvent>('oauth_complete', (payload) => {
         if (payload.provider === 'twitch') {
           setReauthNeeded(false);
+          setTwitchReauthNeeded(false);
         }
       });
       if (cancelled) {
@@ -113,5 +115,5 @@ export function useFollowerOnlyNotices(): void {
       if (unlistenUnsupported) unlistenUnsupported();
       if (unlistenOAuthComplete) unlistenOAuthComplete();
     };
-  }, [setReauthNeeded, t]);
+  }, [setReauthNeeded, setTwitchReauthNeeded, t]);
 }

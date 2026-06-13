@@ -13,6 +13,7 @@ import { events } from '@spiritstream/api-client';
 import { logger } from '@/lib/logger';
 import i18n from '@/lib/i18n';
 import { toast } from '@/hooks/useToast';
+import { useChatStore } from '@/stores/chatStore';
 import type { ProfileActivatedEvent } from '@spiritstream/types';
 import { createCoreSlice } from './core';
 import { createPasswordSlice } from './password';
@@ -77,5 +78,12 @@ export async function subscribeOAuthTokenExpired(): Promise<() => void> {
         provider: label,
       })
     );
+    // Twitch IRC can stay connected with a now-stale `canSend` until the
+    // next reconnect, so flag the immediate re-auth need for the chat
+    // surface's inline "sign in to send" banner. Cleared on twitch
+    // `oauth_complete` (see useFollowerOnlyNotices).
+    if (payload.provider === 'twitch') {
+      useChatStore.getState().setTwitchReauthNeeded(true);
+    }
   });
 }

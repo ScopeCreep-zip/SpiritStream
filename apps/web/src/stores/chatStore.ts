@@ -25,6 +25,16 @@ interface ChatStore {
    * the chat settings panel. Not persisted — re-derived per session.
    */
   followerOnlyReauthNeeded: boolean;
+  /**
+   * Set when the backend reports a Twitch OAuth token expired (event
+   * `oauth_token_expired`, provider `twitch`) during activation/refresh.
+   * The IRC socket may stay open with a now-stale `canSend`, so this is
+   * the immediate signal that sending needs a re-auth; the chat status's
+   * `canSend` is the eventually-consistent one (flips on next reconnect).
+   * Drives the inline "sign in to send" banner. Not persisted — re-derived
+   * per session and cleared on `oauth_complete` for twitch.
+   */
+  twitchReauthNeeded: boolean;
 
   addMessage: (message: ChatMessage) => void;
   addMessages: (messages: ChatMessage[]) => void;
@@ -48,6 +58,7 @@ interface ChatStore {
   setOverlayTransparent: (transparent: boolean) => void;
   setOverlayAlwaysOnTop: (alwaysOnTop: boolean) => void;
   setFollowerOnlyReauthNeeded: (needed: boolean) => void;
+  setTwitchReauthNeeded: (needed: boolean) => void;
 }
 
 export const useChatStore = create<ChatStore>()(
@@ -57,6 +68,7 @@ export const useChatStore = create<ChatStore>()(
       overlayTransparent: false,
       overlayAlwaysOnTop: true,
       followerOnlyReauthNeeded: false,
+      twitchReauthNeeded: false,
 
       addMessage: (message) =>
         set((state) => ({
@@ -99,6 +111,8 @@ export const useChatStore = create<ChatStore>()(
       setOverlayAlwaysOnTop: (alwaysOnTop) => set({ overlayAlwaysOnTop: alwaysOnTop }),
 
       setFollowerOnlyReauthNeeded: (needed) => set({ followerOnlyReauthNeeded: needed }),
+
+      setTwitchReauthNeeded: (needed) => set({ twitchReauthNeeded: needed }),
     }),
     {
       name: 'spiritstream-chat',

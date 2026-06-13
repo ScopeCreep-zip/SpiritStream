@@ -219,7 +219,34 @@
       "connecting": "Connecting…",
       "disconnected": "Disconnected",
       "failed": "Could not change connection: {{error}}"
-    }
+    },
+    "events": {
+      "raid": "{{name}} raided with {{count}} viewers",
+      "subGifted": "{{name}} gifted {{count}} sub(s)",
+      "cheer": "{{name}} cheered {{bits}} bits",
+      "memberMilestone": "{{name}} has been a member for {{months}} months",
+      "newSponsor": "{{name}} joined as a {{tier}} member",
+      "superChat": "{{name}} sent a Super Chat ({{amount}})",
+      "superSticker": "{{name}} sent a Super Sticker ({{amount}})",
+      "hypeChat": "{{name}} sent a Hype Chat ({{amount}})",
+      "poll": "Poll: {{question}}",
+      "chatEnded": "Chat has ended.",
+      "userBanned": "{{name}} was banned",
+      "userTimedOut": "{{name}} was timed out for {{secs}}s"
+    },
+    "roomMode": {
+      "emoteOnly": "Emote-only",
+      "subscribersOnly": "Subscribers-only",
+      "r9k": "Unique-chat",
+      "slowMode": "Slow mode: {{secs}}s",
+      "followersOnly": "Followers-only: {{minutes}}m",
+      "followersOnlyAny": "Followers-only"
+    },
+    "reauth": {
+      "prompt": "Sign in to {{platform}} again to send messages.",
+      "signIn": "Sign in"
+    },
+    "sendReauthNeeded": "Your chat sign-in is read-only — sign in again to send."
   },
   "common": {
     "cancel": "Cancel",

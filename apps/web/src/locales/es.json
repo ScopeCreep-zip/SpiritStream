@@ -219,7 +219,34 @@
       "connecting": "Conectando…",
       "disconnected": "Desconectado",
       "failed": "No se pudo cambiar la conexión: {{error}}"
-    }
+    },
+    "events": {
+      "raid": "{{name}} hizo una incursión con {{count}} espectadores",
+      "subGifted": "{{name}} regaló {{count}} suscripción(es)",
+      "cheer": "{{name}} animó con {{bits}} bits",
+      "memberMilestone": "{{name}} ha sido miembro durante {{months}} meses",
+      "newSponsor": "{{name}} se unió como miembro {{tier}}",
+      "superChat": "{{name}} envió un Super Chat ({{amount}})",
+      "superSticker": "{{name}} envió un Super Sticker ({{amount}})",
+      "hypeChat": "{{name}} envió un Hype Chat ({{amount}})",
+      "poll": "Encuesta: {{question}}",
+      "chatEnded": "El chat ha terminado.",
+      "userBanned": "{{name}} fue baneado",
+      "userTimedOut": "{{name}} fue expulsado por {{secs}}s"
+    },
+    "roomMode": {
+      "emoteOnly": "Solo emotes",
+      "subscribersOnly": "Solo suscriptores",
+      "r9k": "Chat único",
+      "slowMode": "Modo lento: {{secs}}s",
+      "followersOnly": "Solo seguidores: {{minutes}} min",
+      "followersOnlyAny": "Solo seguidores"
+    },
+    "reauth": {
+      "prompt": "Inicia sesión en {{platform}} de nuevo para enviar mensajes.",
+      "signIn": "Iniciar sesión"
+    },
+    "sendReauthNeeded": "Tu sesión de chat es de solo lectura: inicia sesión de nuevo para enviar."
   },
   "common": {
     "cancel": "Cancelar",

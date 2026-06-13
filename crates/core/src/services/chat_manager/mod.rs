@@ -307,6 +307,7 @@ impl ChatManager {
                 message_count: connector.message_count(),
                 error: connector.last_error(),
                 last_activity_ms: activity.get(platform).copied(),
+                can_send: connector.can_send(),
             })
             .collect()
     }
@@ -321,6 +322,7 @@ impl ChatManager {
             message_count: connector.message_count(),
             error: connector.last_error(),
             last_activity_ms,
+            can_send: connector.can_send(),
         })
     }
 

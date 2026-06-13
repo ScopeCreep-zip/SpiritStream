@@ -219,7 +219,34 @@
       "connecting": "연결 중…",
       "disconnected": "연결 해제됨",
       "failed": "연결을 변경할 수 없습니다: {{error}}"
-    }
+    },
+    "events": {
+      "raid": "{{name}}님이 시청자 {{count}}명과 함께 레이드했습니다",
+      "subGifted": "{{name}}님이 구독 {{count}}개를 선물했습니다",
+      "cheer": "{{name}}님이 {{bits}} 비트로 응원했습니다",
+      "memberMilestone": "{{name}}님이 {{months}}개월째 멤버입니다",
+      "newSponsor": "{{name}}님이 {{tier}} 멤버로 가입했습니다",
+      "superChat": "{{name}}님이 슈퍼챗을 보냈습니다 ({{amount}})",
+      "superSticker": "{{name}}님이 슈퍼 스티커를 보냈습니다 ({{amount}})",
+      "hypeChat": "{{name}}님이 하이프 챗을 보냈습니다 ({{amount}})",
+      "poll": "투표: {{question}}",
+      "chatEnded": "채팅이 종료되었습니다.",
+      "userBanned": "{{name}}님이 차단되었습니다",
+      "userTimedOut": "{{name}}님이 {{secs}}초 동안 타임아웃되었습니다"
+    },
+    "roomMode": {
+      "emoteOnly": "이모트 전용",
+      "subscribersOnly": "구독자 전용",
+      "r9k": "고유 채팅",
+      "slowMode": "느린 모드: {{secs}}초",
+      "followersOnly": "팔로워 전용: {{minutes}}분",
+      "followersOnlyAny": "팔로워 전용"
+    },
+    "reauth": {
+      "prompt": "메시지를 보내려면 {{platform}}에 다시 로그인하세요.",
+      "signIn": "로그인"
+    },
+    "sendReauthNeeded": "채팅 로그인이 읽기 전용입니다. 보내려면 다시 로그인하세요."
   },
   "common": {
     "cancel": "취소",

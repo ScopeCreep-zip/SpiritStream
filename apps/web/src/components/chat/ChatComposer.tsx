@@ -10,6 +10,7 @@ import { logger } from '@/lib/logger';
 import { createDefaultChatSettings } from '@/lib/profile-helpers';
 import { cn } from '@/lib/cn';
 import { statusDotClass } from '@/components/chat/PlatformStatusDot';
+import { useChatStore } from '@/stores/chatStore';
 import type { ChatPlatformStatus } from '@spiritstream/types';
 
 interface ChatComposerProps {
@@ -33,6 +34,11 @@ export function ChatComposer({ statuses }: ChatComposerProps): React.ReactElemen
     () => currentProfile?.settings?.chat ?? createDefaultChatSettings(),
     [currentProfile]
   );
+  // Immediate re-auth signal: a Twitch token can expire while the IRC
+  // socket stays open (status `canSend` is then stale-true until the next
+  // reconnect). When this is set, Twitch is not a valid send target even
+  // if `canSend` hasn't flipped yet.
+  const twitchReauthNeeded = useChatStore((state) => state.twitchReauthNeeded);
   const [draftMessage, setDraftMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   // Per-message target when the user has disabled broadcast-to-all on
@@ -43,7 +49,13 @@ export function ChatComposer({ statuses }: ChatComposerProps): React.ReactElemen
   const sendTargets = useMemo(() => {
     return statuses.filter((status) => {
       if (status.status !== 'connected') return false;
-      if (status.platform === 'twitch') return chatSettings.twitchSendEnabled;
+      // Connected-but-read-only (anonymous Twitch fallback, expired token):
+      // the connection receives but the server rejects sends. Not a target.
+      if (!status.canSend) return false;
+      if (status.platform === 'twitch') {
+        if (twitchReauthNeeded) return false;
+        return chatSettings.twitchSendEnabled;
+      }
       if (status.platform === 'youtube') {
         return chatSettings.youtubeSendEnabled && !chatSettings.youtubeUseApiKey;
       }
@@ -59,7 +71,7 @@ export function ChatComposer({ statuses }: ChatComposerProps): React.ReactElemen
       // TikTok; the connector returns PlatformError on send.
       return false;
     });
-  }, [chatSettings, statuses]);
+  }, [chatSettings, statuses, twitchReauthNeeded]);
 
   // Keep `singleTarget` valid as the connected-set changes (e.g. a
   // platform drops). Picks the first available send-target whenever the
@@ -97,8 +109,18 @@ export function ChatComposer({ statuses }: ChatComposerProps): React.ReactElemen
   // facebook send is auth-gated server-side (config = opted-in via the
   // confirm-token gate at connect).
   const allPlatformStates = useMemo(() => {
+    const findStatus = (platform: ChatPlatformStatus['platform']) =>
+      statuses.find((status) => status.platform === platform);
     const getStatus = (platform: ChatPlatformStatus['platform']) =>
-      statuses.find((status) => status.platform === platform)?.status ?? 'disconnected';
+      findStatus(platform)?.status ?? 'disconnected';
+    // Connect-time send authorization. A connected platform with
+    // `canSend === false` is read-only (anonymous Twitch fallback / expired
+    // token); for twitch the immediate `twitchReauthNeeded` flag overrides
+    // a stale `canSend` that hasn't flipped yet.
+    const getCanSend = (platform: ChatPlatformStatus['platform']) => {
+      const authed = findStatus(platform)?.canSend ?? false;
+      return platform === 'twitch' ? authed && !twitchReauthNeeded : authed;
+    };
     const facebookConfigured = (chatSettings.facebookLiveVideoId ?? '').trim().length > 0;
 
     return [
@@ -109,6 +131,7 @@ export function ChatComposer({ statuses }: ChatComposerProps): React.ReactElemen
         sendEnabled: chatSettings.twitchSendEnabled,
         readOnly: false,
         status: getStatus('twitch'),
+        canSend: getCanSend('twitch'),
       },
       {
         id: 'youtube' as const,
@@ -117,6 +140,7 @@ export function ChatComposer({ statuses }: ChatComposerProps): React.ReactElemen
         sendEnabled: chatSettings.youtubeSendEnabled && !chatSettings.youtubeUseApiKey,
         readOnly: chatSettings.youtubeUseApiKey,
         status: getStatus('youtube'),
+        canSend: getCanSend('youtube'),
       },
       {
         id: 'trovo' as const,
@@ -125,6 +149,7 @@ export function ChatComposer({ statuses }: ChatComposerProps): React.ReactElemen
         sendEnabled: chatSettings.trovoSendEnabled,
         readOnly: false,
         status: getStatus('trovo'),
+        canSend: getCanSend('trovo'),
       },
       {
         id: 'kick' as const,
@@ -133,6 +158,7 @@ export function ChatComposer({ statuses }: ChatComposerProps): React.ReactElemen
         sendEnabled: chatSettings.kickSendEnabled,
         readOnly: false,
         status: getStatus('kick'),
+        canSend: getCanSend('kick'),
       },
       {
         id: 'tiktok' as const,
@@ -141,6 +167,7 @@ export function ChatComposer({ statuses }: ChatComposerProps): React.ReactElemen
         sendEnabled: false,
         readOnly: true,
         status: getStatus('tiktok'),
+        canSend: false,
       },
       {
         id: 'facebook' as const,
@@ -149,9 +176,10 @@ export function ChatComposer({ statuses }: ChatComposerProps): React.ReactElemen
         sendEnabled: facebookConfigured,
         readOnly: false,
         status: getStatus('facebook'),
+        canSend: getCanSend('facebook'),
       },
     ];
-  }, [chatSettings, statuses, t]);
+  }, [chatSettings, statuses, t, twitchReauthNeeded]);
 
   // Only badge platforms the user has actually configured — an unconfigured
   // row has no useful state to surface.
@@ -196,6 +224,18 @@ export function ChatComposer({ statuses }: ChatComposerProps): React.ReactElemen
       return t('chat.sendError', {
         defaultValue: 'Chat connection error: {{error}}',
         error: errorStatus.error,
+      });
+    }
+
+    // Configured + send-enabled + connected, but the connection is
+    // read-only (anonymous fallback / expired token). Point the user at
+    // re-auth instead of the generic "enable sending in Integrations" hint.
+    const readOnlyConnected = sendEnabledPlatforms.some(
+      (row) => row.status === 'connected' && !row.canSend
+    );
+    if (readOnlyConnected) {
+      return t('chat.sendReauthNeeded', {
+        defaultValue: 'Your chat sign-in is read-only — sign in again to send.',
       });
     }
 

@@ -46,8 +46,10 @@ export function useChatListener() {
       .on<ChatMessage>(CHAT_MESSAGE_EVENT, (payload) => {
         // Plan B4 contract: MessageDeleted and UserBanned events mutate
         // PAST messages rather than appending a new row. Every other
-        // ChatEvent variant (SubGifted, Raid, MemberMilestone,
-        // RoomStateChanged) flows through as a normal system row.
+        // ChatEvent variant flows through to the store: SubGifted / Raid /
+        // MemberMilestone / etc. render as localized notice rows
+        // (EventNotice), and RoomStateChanged feeds the ChannelModeBanner
+        // (ChatList filters it out of the visible list).
         const evt = payload.event;
         if (evt) {
           if (evt.kind === 'messageDeleted') {

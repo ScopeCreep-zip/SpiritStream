@@ -156,3 +156,14 @@ describe('chatStore.clearMessages', () => {
     expect(useChatStore.getState().messages).toHaveLength(0);
   });
 });
+
+describe('chatStore.twitchReauthNeeded', () => {
+  it('defaults false and toggles via setter', () => {
+    useChatStore.setState({ twitchReauthNeeded: false });
+    expect(useChatStore.getState().twitchReauthNeeded).toBe(false);
+    useChatStore.getState().setTwitchReauthNeeded(true);
+    expect(useChatStore.getState().twitchReauthNeeded).toBe(true);
+    useChatStore.getState().setTwitchReauthNeeded(false);
+    expect(useChatStore.getState().twitchReauthNeeded).toBe(false);
+  });
+});

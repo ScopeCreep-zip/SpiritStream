@@ -219,7 +219,34 @@
       "connecting": "连接中…",
       "disconnected": "已断开",
       "failed": "无法更改连接：{{error}}"
-    }
+    },
+    "events": {
+      "raid": "{{name}} 带着 {{count}} 名观众发起了突袭",
+      "subGifted": "{{name}} 赠送了 {{count}} 个订阅",
+      "cheer": "{{name}} 用 {{bits}} 个 Bits 欢呼",
+      "memberMilestone": "{{name}} 已成为会员 {{months}} 个月",
+      "newSponsor": "{{name}} 以 {{tier}} 会员身份加入",
+      "superChat": "{{name}} 发送了 Super Chat（{{amount}}）",
+      "superSticker": "{{name}} 发送了 Super Sticker（{{amount}}）",
+      "hypeChat": "{{name}} 发送了 Hype Chat（{{amount}}）",
+      "poll": "投票：{{question}}",
+      "chatEnded": "聊天已结束。",
+      "userBanned": "{{name}} 已被封禁",
+      "userTimedOut": "{{name}} 被禁言 {{secs}} 秒"
+    },
+    "roomMode": {
+      "emoteOnly": "仅限表情",
+      "subscribersOnly": "仅限订阅者",
+      "r9k": "去重聊天",
+      "slowMode": "慢速模式：{{secs}} 秒",
+      "followersOnly": "仅限关注者：{{minutes}} 分钟",
+      "followersOnlyAny": "仅限关注者"
+    },
+    "reauth": {
+      "prompt": "请重新登录 {{platform}} 以发送消息。",
+      "signIn": "登录"
+    },
+    "sendReauthNeeded": "你的聊天登录为只读 — 请重新登录以发送。"
   },
   "common": {
     "cancel": "取消",

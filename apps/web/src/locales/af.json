@@ -219,7 +219,34 @@
       "connecting": "Koppel tans…",
       "disconnected": "Ontkoppel",
       "failed": "Kon nie verbinding verander nie: {{error}}"
-    }
+    },
+    "events": {
+      "raid": "{{name}} het 'n inval gedoen met {{count}} kykers",
+      "subGifted": "{{name}} het {{count}} intekening(s) geskenk",
+      "cheer": "{{name}} het {{bits}} bits gejuig",
+      "memberMilestone": "{{name}} is al {{months}} maande 'n lid",
+      "newSponsor": "{{name}} het aangesluit as 'n {{tier}}-lid",
+      "superChat": "{{name}} het 'n Super Chat gestuur ({{amount}})",
+      "superSticker": "{{name}} het 'n Super Sticker gestuur ({{amount}})",
+      "hypeChat": "{{name}} het 'n Hype Chat gestuur ({{amount}})",
+      "poll": "Peiling: {{question}}",
+      "chatEnded": "Klets het geëindig.",
+      "userBanned": "{{name}} is verban",
+      "userTimedOut": "{{name}} is vir {{secs}}s uitgesit"
+    },
+    "roomMode": {
+      "emoteOnly": "Slegs emotes",
+      "subscribersOnly": "Slegs intekenaars",
+      "r9k": "Unieke klets",
+      "slowMode": "Stadige modus: {{secs}}s",
+      "followersOnly": "Slegs volgers: {{minutes}} min",
+      "followersOnlyAny": "Slegs volgers"
+    },
+    "reauth": {
+      "prompt": "Meld weer aan by {{platform}} om boodskappe te stuur.",
+      "signIn": "Meld aan"
+    },
+    "sendReauthNeeded": "Jou klets-aanmelding is slegs-lees — meld weer aan om te stuur."
   },
   "common": {
     "cancel": "Kanselleer",

@@ -219,7 +219,34 @@
       "connecting": "Підключення…",
       "disconnected": "Відключено",
       "failed": "Не вдалося змінити підключення: {{error}}"
-    }
+    },
+    "events": {
+      "raid": "{{name}} влаштував рейд із {{count}} глядачами",
+      "subGifted": "{{name}} подарував {{count}} підписк(у/и)",
+      "cheer": "{{name}} підтримав на {{bits}} бітів",
+      "memberMilestone": "{{name}} є учасником уже {{months}} міс.",
+      "newSponsor": "{{name}} приєднався як учасник {{tier}}",
+      "superChat": "{{name}} надіслав Super Chat ({{amount}})",
+      "superSticker": "{{name}} надіслав Super Sticker ({{amount}})",
+      "hypeChat": "{{name}} надіслав Hype Chat ({{amount}})",
+      "poll": "Опитування: {{question}}",
+      "chatEnded": "Чат завершено.",
+      "userBanned": "{{name}} заблокований",
+      "userTimedOut": "{{name}} отримав тайм-аут на {{secs}} с"
+    },
+    "roomMode": {
+      "emoteOnly": "Лише емоції",
+      "subscribersOnly": "Лише підписники",
+      "r9k": "Унікальний чат",
+      "slowMode": "Повільний режим: {{secs}} с",
+      "followersOnly": "Лише фоловери: {{minutes}} хв",
+      "followersOnlyAny": "Лише фоловери"
+    },
+    "reauth": {
+      "prompt": "Увійдіть у {{platform}} знову, щоб надсилати повідомлення.",
+      "signIn": "Увійти"
+    },
+    "sendReauthNeeded": "Вхід у чат доступний лише для читання — увійдіть знову, щоб надсилати."
   },
   "common": {
     "cancel": "Скасувати",

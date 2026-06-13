@@ -4,6 +4,7 @@ import { cn } from '@/lib/cn';
 import { hasFlag, MessageFlag } from '@/lib/messageFlags';
 import type { ChatMessage, ChatPlatform } from '@spiritstream/types';
 import { Fragment } from './Fragment';
+import { EventNotice } from './EventNotice';
 
 // Platform → CSS-variable suffix. The colors themselves live in
 // `tokens.css` (`--platform-X-bg` / `--platform-X-fg`).
@@ -112,6 +113,21 @@ export function ChatList({
       ) : (
         <div className={cn('flex flex-col', densityConfig.rowGap)}>
           {messages.map((message) => {
+            if (message.event) {
+              const kind = message.event.kind;
+              // ROOMSTATE feeds the channel-mode banner; messageDeleted /
+              // tombstone mutate or drop past rows — none render a row here
+              // (skip to avoid an empty gap-sized wrapper on history replay).
+              if (kind === 'roomStateChanged' || kind === 'messageDeleted' || kind === 'tombstone') {
+                return null;
+              }
+              // Other system events render as a localized notice, not a chat row.
+              return (
+                <div key={message.id} data-event={kind}>
+                  <EventNotice message={message} />
+                </div>
+              );
+            }
             const platforms =
               message.platforms && message.platforms.length > 0
                 ? message.platforms

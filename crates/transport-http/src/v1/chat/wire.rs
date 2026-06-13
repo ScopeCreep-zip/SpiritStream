@@ -72,6 +72,7 @@ pub struct ChatPlatformStatusWire {
     // `null` when absent, matching `error` above. Omitting it would make
     // the runtime shape (`undefined`) disagree with the generated type.
     pub last_activity_ms: Option<i64>,
+    pub can_send: bool,
 }
 
 impl From<ChatPlatformStatus> for ChatPlatformStatusWire {
@@ -82,6 +83,7 @@ impl From<ChatPlatformStatus> for ChatPlatformStatusWire {
             message_count: value.message_count,
             error: value.error,
             last_activity_ms: value.last_activity_ms,
+            can_send: value.can_send,
         }
     }
 }

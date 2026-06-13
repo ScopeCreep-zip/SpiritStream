@@ -219,7 +219,34 @@
       "connecting": "Подключение…",
       "disconnected": "Отключено",
       "failed": "Не удалось изменить подключение: {{error}}"
-    }
+    },
+    "events": {
+      "raid": "{{name}} устроил рейд с {{count}} зрителями",
+      "subGifted": "{{name}} подарил {{count}} подписк(у/и)",
+      "cheer": "{{name}} поддержал на {{bits}} битов",
+      "memberMilestone": "{{name}} состоит в подписке уже {{months}} мес.",
+      "newSponsor": "{{name}} присоединился как участник {{tier}}",
+      "superChat": "{{name}} отправил Super Chat ({{amount}})",
+      "superSticker": "{{name}} отправил Super Sticker ({{amount}})",
+      "hypeChat": "{{name}} отправил Hype Chat ({{amount}})",
+      "poll": "Опрос: {{question}}",
+      "chatEnded": "Чат завершён.",
+      "userBanned": "{{name}} забанен",
+      "userTimedOut": "{{name}} получил тайм-аут на {{secs}} с"
+    },
+    "roomMode": {
+      "emoteOnly": "Только эмоции",
+      "subscribersOnly": "Только подписчики",
+      "r9k": "Уникальный чат",
+      "slowMode": "Медленный режим: {{secs}} с",
+      "followersOnly": "Только фолловеры: {{minutes}} мин",
+      "followersOnlyAny": "Только фолловеры"
+    },
+    "reauth": {
+      "prompt": "Войдите в {{platform}} снова, чтобы отправлять сообщения.",
+      "signIn": "Войти"
+    },
+    "sendReauthNeeded": "Вход в чат доступен только для чтения — войдите снова, чтобы отправлять."
   },
   "common": {
     "cancel": "Отмена",

@@ -219,7 +219,34 @@
       "connecting": "接続中…",
       "disconnected": "切断しました",
       "failed": "接続を変更できませんでした: {{error}}"
-    }
+    },
+    "events": {
+      "raid": "{{name}} さんが {{count}} 人の視聴者とレイドしました",
+      "subGifted": "{{name}} さんが {{count}} 件のサブスクをギフトしました",
+      "cheer": "{{name}} さんが {{bits}} ビッツで応援しました",
+      "memberMilestone": "{{name}} さんはメンバー歴 {{months}} か月です",
+      "newSponsor": "{{name}} さんが {{tier}} メンバーとして加入しました",
+      "superChat": "{{name}} さんがスーパーチャットを送りました（{{amount}}）",
+      "superSticker": "{{name}} さんがスーパーステッカーを送りました（{{amount}}）",
+      "hypeChat": "{{name}} さんがハイプチャットを送りました（{{amount}}）",
+      "poll": "アンケート: {{question}}",
+      "chatEnded": "チャットが終了しました。",
+      "userBanned": "{{name}} さんがBANされました",
+      "userTimedOut": "{{name}} さんが {{secs}} 秒のタイムアウトを受けました"
+    },
+    "roomMode": {
+      "emoteOnly": "エモートのみ",
+      "subscribersOnly": "サブスク限定",
+      "r9k": "ユニークチャット",
+      "slowMode": "低速モード: {{secs}}秒",
+      "followersOnly": "フォロワー限定: {{minutes}}分",
+      "followersOnlyAny": "フォロワー限定"
+    },
+    "reauth": {
+      "prompt": "メッセージを送信するには {{platform}} に再度サインインしてください。",
+      "signIn": "サインイン"
+    },
+    "sendReauthNeeded": "チャットのサインインは読み取り専用です。送信するには再度サインインしてください。"
   },
   "common": {
     "cancel": "キャンセル",

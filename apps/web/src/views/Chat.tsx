@@ -13,7 +13,10 @@ import {
   ChatOverlayToggles,
 } from '@/components/chat/ChatOverlayControls';
 import { ChatComposer } from '@/components/chat/ChatComposer';
+import { ChatReauthBanner } from '@/components/chat/ChatReauthBanner';
+import { ChannelModeBanner } from '@/components/chat/ChannelModeBanner';
 import { ChatSearch } from '@/components/chat/ChatSearch';
+import { useRoomStateBanner } from '@/hooks/useRoomStateBanner';
 import { toast } from '@/hooks/useToast';
 import { logger } from '@/lib/logger';
 
@@ -30,6 +33,7 @@ export function Chat() {
   const messages = useChatStore((state) => state.messages);
   const clearMessages = useChatStore((state) => state.clearMessages);
   const { statuses } = useChatPlatformStatus();
+  const roomMode = useRoomStateBanner(messages);
   const [searchOpen, setSearchOpen] = useState(false);
 
   const handleExportLog = useCallback(async (): Promise<void> => {
@@ -72,7 +76,7 @@ export function Chat() {
   return (
     <>
       <FileBrowser />
-      <Card>
+      <Card className="h-full min-h-0 flex flex-col">
         <div className="border-b border-border-muted py-5 px-6 flex flex-col gap-2">
           <div className="flex items-center justify-between gap-3">
             <CardTitle>{t('chat.viewTitle', { defaultValue: 'Unified Chat' })}</CardTitle>
@@ -85,7 +89,7 @@ export function Chat() {
             })}
           </CardDescription>
         </div>
-        <CardBody className="p-4">
+        <CardBody className="p-4 flex-1 min-h-0 flex flex-col">
           <ChatOverlayToggles />
 
           <div className="mt-3 flex items-center gap-1">
@@ -118,16 +122,20 @@ export function Chat() {
             </Button>
           </div>
 
-          <div className="mt-3 rounded-lg border border-border-subtle bg-bg-elevated p-2">
+          <ChannelModeBanner mode={roomMode} />
+
+          <div className="mt-3 flex-1 min-h-0 flex flex-col rounded-lg border border-border-subtle bg-bg-elevated p-2">
             <ChatList
               messages={messages}
-              className="max-h-[520px]"
+              className="flex-1 min-h-0"
               emptyLabel={t('chat.empty', { defaultValue: 'No chat messages yet.' })}
               showTimestamps
             />
           </div>
 
-          <div className="mt-3">
+          <ChatReauthBanner statuses={statuses} />
+
+          <div className="mt-3 shrink-0">
             <ChatComposer statuses={statuses} />
           </div>
         </CardBody>

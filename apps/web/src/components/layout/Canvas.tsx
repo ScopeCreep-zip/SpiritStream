@@ -58,7 +58,7 @@ export function Canvas({
         className="border-s border-border-default overflow-hidden flex flex-col bg-bg-base"
       >
         <ChatCollapseToggle collapsed={chatCollapsed} onToggle={handleToggle} />
-        {!chatCollapsed && <div className="flex-1 overflow-y-auto">{chat}</div>}
+        {!chatCollapsed && <div className="flex-1 min-h-0 overflow-hidden">{chat}</div>}
       </aside>
     </main>
   );

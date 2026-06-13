@@ -689,6 +689,18 @@ pub struct ChatPlatformStatus {
     /// reconnect loop, so this is informational, not a kill signal.
     #[ts(type = "number | null")]
     pub last_activity_ms: Option<i64>,
+    /// Whether this connection is authorized to SEND, not just receive.
+    /// A Twitch token that failed connect-time validation falls back to an
+    /// anonymous read-only IRC session: `status == Connected` but
+    /// `can_send == false`. The composer must gate send targets on this,
+    /// not on `status`, or it offers a send the server rejects.
+    ///
+    /// Reflects CONNECT-TIME validation (see each connector's `can_send()`),
+    /// so a token dying mid-session while the socket stays open won't flip
+    /// this until the next reconnect/`Error`. The `oauth_token_expired`
+    /// event covers that gap on the frontend — no silent fallback, just
+    /// eventually-consistent.
+    pub can_send: bool,
 }
 
 /// Result of sending a chat message to a platform.
