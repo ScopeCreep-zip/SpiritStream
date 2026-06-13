@@ -21,7 +21,7 @@ pub struct StreamValidateRequest {
     /// Full profile body. Runtime type is the core `Profile`; OpenAPI
     /// schema is `ProfileWire`. Encoding-config rules (bitrate /
     /// keyframe / resolution / fps) are evaluated server-side.
-    #[schema(value_type = crate::v1::ProfileWire)]
+    #[schema(value_type = ProfileWire)]
     pub profile: spiritstream_core::models::Profile,
 }
 
@@ -99,7 +99,7 @@ pub async fn v1_streams_status(State(state): State<AppState>) -> Json<StreamStat
 pub struct StreamStartRequest {
     /// Output group to start. Runtime type is the core `OutputGroup`;
     /// OpenAPI schema is `OutputGroupWire`.
-    #[schema(value_type = crate::v1::OutputGroupWire)]
+    #[schema(value_type = OutputGroupWire)]
     pub group: spiritstream_core::models::OutputGroup,
     pub incoming_url: String,
 }
@@ -115,7 +115,7 @@ pub struct StreamStartResponse {
 pub struct StreamStartAllRequest {
     /// Output groups to start. Runtime is `Vec<OutputGroup>`; OpenAPI
     /// schema is `Vec<OutputGroupWire>`.
-    #[schema(value_type = Vec<crate::v1::OutputGroupWire>)]
+    #[schema(value_type = Vec<OutputGroupWire>)]
     pub groups: Vec<spiritstream_core::models::OutputGroup>,
     pub incoming_url: String,
 }
@@ -149,7 +149,7 @@ pub struct StreamToggleTargetRequest {
     pub enabled: bool,
     /// Output group context for the target toggle. Runtime is core
     /// `OutputGroup`; OpenAPI schema is `OutputGroupWire`.
-    #[schema(value_type = crate::v1::OutputGroupWire)]
+    #[schema(value_type = OutputGroupWire)]
     pub group: spiritstream_core::models::OutputGroup,
     pub incoming_url: String,
 }

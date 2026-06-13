@@ -1,14 +1,12 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Copy, LogIn } from 'lucide-react';
-import { Button } from '@/components/ui/Button';
-import { DeviceCodePanel } from '@/components/chat/settings/DeviceCodePanel';
+import { PlatformSignInButton } from '@/components/chat/settings/PlatformSignInButton';
 import { useProfileStore } from '@/stores/profileStore';
 import { useChatStore } from '@/stores/chatStore';
 import { createDefaultChatSettings } from '@/lib/profile-helpers';
 import { api } from '@/lib/client';
-import { toast } from '@/hooks/useToast';
 import { logger } from '@/lib/logger';
+import type { OAuthProviderSummary } from '@spiritstream/api-client';
 import type { ChatPlatformStatus } from '@spiritstream/types';
 
 interface ChatReauthBannerProps {
@@ -20,27 +18,18 @@ interface ChatReauthBannerProps {
 const OAUTH_PLATFORMS = ['twitch', 'youtube', 'kick', 'trovo', 'facebook'] as const;
 type OAuthPlatform = (typeof OAUTH_PLATFORMS)[number];
 
-interface ActiveFlow {
-  provider: OAuthPlatform;
-  manualUrl: string | null;
-  device: {
-    userCode: string;
-    verificationUri: string;
-    expiresIn: number;
-    browserOpened: boolean;
-  } | null;
-}
-
 /**
  * Inline "sign in to send" prompt shown directly above the composer when a
  * chat platform is connected but cannot send — the Twitch anonymous
  * read-only fallback (token failed connect-time validation) or a token that
- * expired mid-session (`twitchReauthNeeded`). Reachable without leaving the
- * chat surface: clicking kicks off the SAME `api.oauth.startFlow` the
- * Integrations sign-in button uses. Self-hides when nothing needs re-auth.
+ * expired mid-session (`twitchReauthNeeded`). Reachable without leaving chat.
  *
- * Backend owns the decision (`canSend` on the status, emitted by core); this
- * only renders the verdict and starts the recovery flow.
+ * Delegates the actual sign-in to the canonical `PlatformSignInButton`, which
+ * already handles BOTH states: it runs the device/browser flow when the
+ * provider has credentials, and renders the in-app credentials form when it
+ * does NOT (so a not-configured provider guides the user through setup
+ * instead of dead-ending on `oauth_provider_not_configured`). Backend owns
+ * the `canSend` verdict; this only renders it and routes recovery.
  */
 export function ChatReauthBanner({ statuses }: ChatReauthBannerProps): React.ReactElement | null {
   const { t } = useTranslation();
@@ -50,7 +39,7 @@ export function ChatReauthBanner({ statuses }: ChatReauthBannerProps): React.Rea
     [currentProfile]
   );
   const twitchReauthNeeded = useChatStore((state) => state.twitchReauthNeeded);
-  const [activeFlow, setActiveFlow] = useState<ActiveFlow | null>(null);
+  const [summaries, setSummaries] = useState<OAuthProviderSummary[] | null>(null);
 
   const needsReauth = useMemo<OAuthPlatform[]>(() => {
     return statuses
@@ -69,99 +58,49 @@ export function ChatReauthBanner({ statuses }: ChatReauthBannerProps): React.Rea
       });
   }, [statuses, chatSettings, twitchReauthNeeded]);
 
-  const handleSignIn = useCallback(
-    async (provider: OAuthPlatform): Promise<void> => {
-      setActiveFlow(null);
-      try {
-        const started = await api.oauth.startFlow(provider);
-        if (started.flow === 'device' && started.userCode && started.verificationUri) {
-          setActiveFlow({
-            provider,
-            manualUrl: null,
-            device: {
-              userCode: started.userCode,
-              verificationUri: started.verificationUri,
-              expiresIn: started.expiresIn ?? 600,
-              browserOpened: started.browserOpened ?? false,
-            },
-          });
-        } else if (started.browserOpened) {
-          toast.info(
-            t('chat.oauth.browserOpened', {
-              defaultValue: 'Check your browser to complete authentication',
-            })
-          );
-        } else if (started.authUrl) {
-          setActiveFlow({ provider, manualUrl: started.authUrl, device: null });
-        }
-      } catch (error) {
-        logger.error(`[ChatReauthBanner] ${provider} sign-in failed:`, error);
-        toast.error(
-          t('chat.oauth.startFailed', {
-            defaultValue: 'Failed to start sign-in: {{error}}',
-            error: error instanceof Error ? error.message : String(error),
-          })
-        );
-      }
-    },
-    [t]
-  );
-
-  const handleCopyUrl = useCallback(async (): Promise<void> => {
-    if (!activeFlow?.manualUrl) return;
-    try {
-      await navigator.clipboard.writeText(activeFlow.manualUrl);
-      toast.success(t('common.copied'));
-    } catch {
-      toast.error(t('common.error'));
-    }
-  }, [activeFlow, t]);
+  // Load backend OAuth setup summaries (only when something needs re-auth) so
+  // PlatformSignInButton can branch configured vs not-configured. The
+  // credentials-form save returns fresh summaries, so a successful in-app
+  // setup flips the button to sign-in without a refetch. Mirrors ChatPanel.
+  useEffect(() => {
+    if (needsReauth.length === 0) return;
+    let cancelled = false;
+    api.oauth
+      .getConfig()
+      .then((loaded) => {
+        if (!cancelled) setSummaries(loaded);
+      })
+      .catch((error) => logger.error('[ChatReauthBanner] failed to load oauth config:', error));
+    return () => {
+      cancelled = true;
+    };
+  }, [needsReauth.length]);
 
   if (needsReauth.length === 0) return null;
+
+  const summaryFor = (provider: OAuthPlatform): OAuthProviderSummary | null =>
+    summaries?.find((s) => s.provider === provider) ?? null;
 
   return (
     <div className="mt-3 shrink-0 rounded-lg border border-border-strong bg-bg-elevated p-2">
       {needsReauth.map((platform) => (
-        <div key={platform} className="flex items-center gap-2 py-0.5">
-          <span className="flex-1 text-xs text-text-secondary">
+        <div key={platform} className="py-0.5">
+          <span className="text-xs text-text-secondary">
             {t('chat.reauth.prompt', {
               defaultValue: 'Sign in to {{platform}} again to send messages.',
               platform: t(`chat.platforms.${platform}`, platform),
             })}
           </span>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => handleSignIn(platform)}
-            disabled={activeFlow?.device !== null && activeFlow?.provider === platform}
-          >
-            <LogIn className="w-3.5 h-3.5" />
-            {t('chat.reauth.signIn', { defaultValue: 'Sign in' })}
-          </Button>
+          {/* signedInAs="" forces the sign-in affordance (never sign-out). */}
+          <PlatformSignInButton
+            provider={platform}
+            signedInAs=""
+            signInLabel={t('chat.reauth.signIn', { defaultValue: 'Sign in' })}
+            summary={summaryFor(platform)}
+            onCredentialsSaved={setSummaries}
+          />
         </div>
       ))}
-      {activeFlow?.device && (
-        <DeviceCodePanel
-          userCode={activeFlow.device.userCode}
-          verificationUri={activeFlow.device.verificationUri}
-          expiresIn={activeFlow.device.expiresIn}
-          browserOpened={activeFlow.device.browserOpened}
-          onFinished={() => setActiveFlow(null)}
-        />
-      )}
-      {activeFlow?.manualUrl && (
-        <div className="mt-2 flex items-center gap-2">
-          <span className="text-xs text-text-secondary">
-            {t('chat.oauth.openManually', {
-              defaultValue: 'Your browser didn’t open — copy the sign-in link:',
-            })}
-          </span>
-          <Button variant="ghost" size="sm" onClick={handleCopyUrl}>
-            <Copy className="w-3.5 h-3.5" />
-            {t('chat.oauth.copyLink', { defaultValue: 'Copy link' })}
-          </Button>
-        </div>
-      )}
     </div>
   );
 }

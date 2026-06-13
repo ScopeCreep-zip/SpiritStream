@@ -12,6 +12,9 @@ use utoipa::ToSchema;
 use crate::AppState;
 
 use super::{ChatAckResponse, ChatLogStatusWire};
+// Imported by SHORT name so utoipa's response-`body` $ref matches the
+// schema's registered name (`ChatMessageWire`, not `crate.v1.…`).
+use crate::v1::ChatMessageWire;
 
 #[utoipa::path(get, path = "/chat/log", tag = "chat",
     responses((status = 200, body = ChatLogStatusWire)),
@@ -121,13 +124,13 @@ pub struct ChatSearchRequest {
 // the prior `Vec<serde_json::Value>` placeholder.
 #[utoipa::path(post, path = "/chat/log/search", tag = "chat",
     request_body = ChatSearchRequest,
-    responses((status = 200, body = Vec<crate::v1::ChatMessageWire>,
+    responses((status = 200, body = Vec<ChatMessageWire>,
         description = "Matching ChatMessage entries.")),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_chat_search_session_proxy(
     State(state): State<AppState>,
     axum::Json(req): axum::Json<ChatSearchRequest>,
-) -> Result<Json<Vec<crate::v1::ChatMessageWire>>, crate::ApiError> {
+) -> Result<Json<Vec<ChatMessageWire>>, crate::ApiError> {
     use spiritstream_core::models::ChatMessage;
 
     let limit = req.limit.unwrap_or(500);
@@ -156,6 +159,6 @@ pub async fn v1_chat_search_session_proxy(
         matches
             .into_iter()
             .map(Into::into)
-            .collect::<Vec<crate::v1::ChatMessageWire>>(),
+            .collect::<Vec<ChatMessageWire>>(),
     ))
 }

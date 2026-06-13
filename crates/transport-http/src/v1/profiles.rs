@@ -10,6 +10,9 @@ use utoipa::ToSchema;
 use spiritstream_core::services::EventSink;
 
 use crate::AppState;
+// Imported by SHORT name so utoipa refs the schema as `ProfileWire`
+// (matching its registered name), not `crate.v1.ProfileWire`.
+use crate::v1::ProfileWire;
 
 // ---------------------------------------------------------------------------
 // Profiles — proof-of-concept typed handler. Full CRUD ships later.
@@ -73,7 +76,7 @@ pub struct ProfileSaveRequest {
     /// us document the schema typed without forcing `ToSchema` onto
     /// the core type (utoipa is transport-only per
     /// `.claude/rules/architecture.md`).
-    #[schema(value_type = crate::v1::ProfileWire)]
+    #[schema(value_type = ProfileWire)]
     pub profile: spiritstream_core::models::Profile,
     /// Optional password — when present the profile is encrypted on disk.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -90,7 +93,7 @@ pub struct ProfileSaveResponse {
     /// server-computed fields go stale in memory (an edited profile's
     /// empty `input.url` later flowed into a stream start as a blank
     /// ingest URL).
-    pub profile: crate::v1::ProfileWire,
+    pub profile: ProfileWire,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
@@ -129,7 +132,7 @@ pub async fn v1_profile_show(
     State(state): State<AppState>,
     axum::extract::Path(name): axum::extract::Path<String>,
     axum::extract::Query(q): axum::extract::Query<ProfileShowQuery>,
-) -> Result<Json<crate::v1::ProfileWire>, crate::ApiError> {
+) -> Result<Json<ProfileWire>, crate::ApiError> {
     let profile = state
         .profile_manager
         .load_with_key_decryption(&name, q.password.as_deref())
@@ -322,7 +325,7 @@ pub async fn v1_profile_activate(
     State(state): State<AppState>,
     axum::extract::Path(name): axum::extract::Path<String>,
     axum::Json(req): axum::Json<ProfileActivateRequest>,
-) -> Result<Json<crate::v1::ProfileWire>, crate::ApiError> {
+) -> Result<Json<ProfileWire>, crate::ApiError> {
     // Single call into the orchestrator. The service composes profile
     // load + OAuth refresh + chat/OBS propagation + `profile_activated`
     // bus emission. The transport handles only its own session state
@@ -573,7 +576,7 @@ pub struct ProfileValidateInputRequest {
     pub profile_id: String,
     /// RTMP input shape — runtime type is the core `RtmpInput`;
     /// OpenAPI schema is `RtmpInputWire`.
-    #[schema(value_type = crate::v1::RtmpInputWire)]
+    #[schema(value_type = RtmpInputWire)]
     pub input: spiritstream_core::models::RtmpInput,
 }
 

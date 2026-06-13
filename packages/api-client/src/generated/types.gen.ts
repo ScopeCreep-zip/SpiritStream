@@ -77,6 +77,12 @@ export type AuditChainStatusWire = {
 };
 
 export type AuditLogResponse = {
+    /**
+     * Tail-anchor persistence state: `"ok"` or `"degraded"` (anchor
+     * writes to the secret store are failing, so truncation detection
+     * is impaired until it recovers). Loud by design.
+     */
+    anchorState: string;
     chain: AuditChainStatusWire;
     /**
      * Page slice (oldest-first within the returned window).
@@ -103,6 +109,15 @@ export type BackendSettingsWire = {
     uiEnabled: boolean;
 };
 
+export type BadgeProviderWire = 'twitch' | 'ffz' | 'seventv' | 'chatterino' | 'site';
+
+export type BanPayloadWire = {
+    durationSecs?: number | null;
+    reason?: string | null;
+    userId: string;
+    userLogin: string;
+};
+
 /**
  * Empty 200 OK response — used for handlers whose success payload is
  * just acknowledgement (`connect`, `disconnect`, `retry`, `export`).
@@ -110,6 +125,25 @@ export type BackendSettingsWire = {
  */
 export type ChatAckResponse = {
     [key: string]: unknown;
+};
+
+export type ChatAuthorWire = {
+    badgesRaw: Array<string>;
+    color?: FragmentColorWire | null;
+    displayName: string;
+    login: string;
+    userId: string;
+};
+
+/**
+ * Mirror of [`ChatConfig`] used as the request body for
+ * `POST /chat/connections`. Wire shape matches the ts-rs export at
+ * `@spiritstream/types/ChatConfig`.
+ */
+export type ChatConfigWire = {
+    credentials: ChatCredentialsWire;
+    enabled: boolean;
+    platform: ChatPlatformWire;
 };
 
 /**
@@ -124,6 +158,67 @@ export type ChatConnectedResponse = {
  */
 export type ChatConnectionStatusWire = 'disconnected' | 'connecting' | 'connected' | 'error';
 
+/**
+ * Mirror of [`ChatCredentials`].
+ */
+export type ChatCredentialsWire = {
+    auth?: TwitchAuthWire | null;
+    channel: string;
+    type: 'twitch';
+} | {
+    sessionToken?: string | null;
+    type: 'tiktok';
+    username: string;
+} | {
+    auth: YouTubeAuthWire;
+    channelId: string;
+    type: 'youtube';
+} | {
+    channelId: string;
+    oauthToken?: string | null;
+    type: 'trovo';
+} | {
+    broadcasterUserId?: number | null;
+    channel: string;
+    oauthToken?: string | null;
+    type: 'kick';
+} | {
+    accessToken: string;
+    type: 'facebook';
+    videoId: string;
+};
+
+export type ChatEventWire = (SuperChatPayloadWire & {
+    kind: 'superChat';
+}) | (SuperStickerPayloadWire & {
+    kind: 'superSticker';
+}) | (HypeChatPayloadWire & {
+    kind: 'hypeChat';
+}) | (NewSponsorPayloadWire & {
+    kind: 'newSponsor';
+}) | (MilestonePayloadWire & {
+    kind: 'memberMilestone';
+}) | (GiftedPayloadWire & {
+    kind: 'subGifted';
+}) | (CheerPayloadWire & {
+    kind: 'cheer';
+}) | (RaidPayloadWire & {
+    kind: 'raid';
+}) | {
+    id: string;
+    kind: 'messageDeleted';
+} | (BanPayloadWire & {
+    kind: 'userBanned';
+}) | {
+    kind: 'chatEnded';
+} | (PollPayloadWire & {
+    kind: 'poll';
+}) | (RoomStatePayloadWire & {
+    kind: 'roomStateChanged';
+}) | {
+    kind: 'tombstone';
+};
+
 export type ChatExportRequest = {
     path: string;
 };
@@ -137,11 +232,45 @@ export type ChatLogStatusWire = {
     startedAt: number;
 };
 
+export type ChatMessageDirectionWire = 'inbound' | 'outbound';
+
+export type ChatMessageWire = {
+    accountId?: string | null;
+    author?: ChatAuthorWire | null;
+    badges?: Array<string> | null;
+    bitsTotal?: number | null;
+    channelId?: string | null;
+    color?: string | null;
+    direction: ChatMessageDirectionWire;
+    elevatedTier?: ElevatedTierWire | null;
+    event?: ChatEventWire | null;
+    /**
+     * `MessageFlags` bitflag serialised as a plain u64. Wire shape
+     * matches the ts-rs export (`flags: number`); frontend does
+     * `(flags & MASK) !== 0` to test individual bits.
+     */
+    flags: number;
+    fragments: Array<MessageFragmentWire>;
+    highlightColor?: FragmentColorWire | null;
+    id: string;
+    message: string;
+    platform: ChatPlatformWire;
+    platforms?: Array<ChatPlatformWire> | null;
+    rawText?: string | null;
+    reply?: ReplyContextWire | null;
+    serverReceivedAtMs?: number | null;
+    sourceId?: string | null;
+    timestamp: number;
+    username: string;
+};
+
 /**
  * Mirror of [`ChatPlatformStatus`] with `ToSchema`.
  */
 export type ChatPlatformStatusWire = {
+    canSend: boolean;
     error?: string | null;
+    lastActivityMs?: number | null;
     messageCount: number;
     platform: ChatPlatformWire;
     status: ChatConnectionStatusWire;
@@ -161,9 +290,11 @@ export type ChatSendRequest = {
     message: string;
     /**
      * Optional per-message target override. When `Some`, dispatch
-     * only to the listed platforms (subject to each connector's
-     * `can_send()` gate). When `None`, the handler auto-builds the
-     * target set from the profile's `*_send_enabled` flags — the
+     * only to the listed platforms — this can NARROW the broadcast
+     * set but never widen it: `ChatManager::send_message` re-checks
+     * the profile's `*_send_enabled` flags (and each connector's
+     * `can_send()` gate) for every target. When `None`, the handler
+     * auto-builds the target set from those same flags — the
      * "broadcast to all enabled" behaviour controlled by
      * `chatSettings.sendAllEnabled` on the frontend.
      *
@@ -188,6 +319,12 @@ export type ChatSendResultWire = {
 export type ChatSettingsWire = {
     crosspostEnabled: boolean;
     facebookLiveVideoId: string;
+    /**
+     * Apply follower-only chat at Twitch connect. Dropping this from
+     * the mirror made a plain UI round-trip silently DISABLE it —
+     * unacceptable for the harassment-prone users the flag protects.
+     */
+    followerOnlyDefault: boolean;
     kickChannel: string;
     kickSendEnabled: boolean;
     sendAllEnabled: boolean;
@@ -202,6 +339,11 @@ export type ChatSettingsWire = {
     youtubeChannelId: string;
     youtubeSendEnabled: boolean;
     youtubeUseApiKey: boolean;
+};
+
+export type CheerPayloadWire = {
+    bits: number;
+    userTotalBits?: number | null;
 };
 
 export type ClientConfigResponse = {
@@ -295,6 +437,10 @@ export type DiscordWebhookTestRequest = {
     url: string;
 };
 
+export type ElevatedTierWire = 'one_min' | 'five_min' | 'ten_min' | 'thirty_min' | 'one_hour' | 'two_hour' | 'three_hour' | 'four_hour' | 'five_hour';
+
+export type EmoteProviderWire = 'twitch' | 'bttv' | 'ffz' | 'seventv' | 'emoji' | 'kick';
+
 /**
  * Mirror of [`EncoderKind`] with `ToSchema`.
  */
@@ -386,6 +532,18 @@ export type FFmpegVersionResponse = {
     version: string;
 };
 
+export type FragmentColorWire = {
+    hex: string;
+};
+
+export type GiftedPayloadWire = {
+    count: number;
+    gifterDisplayName: string;
+    gifterLogin: string;
+    recipientLogins: Array<string>;
+    tier: string;
+};
+
 export type HealthResponse = {
     /**
      * Per-subsystem report. Frontend status views render
@@ -401,6 +559,12 @@ export type HealthResponse = {
      * they can grep for.
      */
     status: string;
+};
+
+export type HypeChatPayloadWire = {
+    amountMicros: number;
+    currency: string;
+    tier: ElevatedTierWire;
 };
 
 export type IntegrationDirectionWire = 'obs-to-spiritstream' | 'spiritstream-to-obs' | 'bidirectional' | 'disabled';
@@ -419,6 +583,76 @@ export type LogsQuery = {
  */
 export type LogsResponse = {
     lines: Array<string>;
+};
+
+export type MessageFragmentWire = {
+    color?: FragmentColorWire | null;
+    content: string;
+    kind: 'text';
+    style: TextStyleWire;
+} | {
+    displayName: string;
+    kind: 'mention';
+    login: string;
+    userColor?: FragmentColorWire | null;
+} | {
+    display: string;
+    isSafeBrowsingFlagged: boolean;
+    kind: 'link';
+    url: string;
+} | {
+    animated: boolean;
+    id: string;
+    kind: 'emote';
+    name: string;
+    provider: EmoteProviderWire;
+    url1x: string;
+    url2x: string;
+    url4x?: string | null;
+    zeroWidth: boolean;
+} | {
+    base: MessageFragmentWire;
+    kind: 'layeredEmote';
+    overlays: Array<MessageFragmentWire>;
+} | {
+    id: string;
+    kind: 'badge';
+    provider: BadgeProviderWire;
+    tint?: FragmentColorWire | null;
+    title: string;
+    url1x: string;
+    url2x: string;
+} | {
+    amount: number;
+    kind: 'cheermote';
+    prefix: string;
+    tierColor: FragmentColorWire;
+    url1x: string;
+    url2x: string;
+} | {
+    formatted: string;
+    kind: 'timestamp';
+    unixMs: number;
+} | {
+    kind: 'replyPreview';
+    parentDisplayName: string;
+    parentLogin: string;
+    parentMessageId: string;
+    parentTextPreview: string;
+} | {
+    kind: 'linebreak';
+};
+
+export type MilestonePayloadWire = {
+    displayName: string;
+    message: string;
+    months: number;
+};
+
+export type NewSponsorPayloadWire = {
+    sponsorDisplayName: string;
+    sponsorLogin: string;
+    tierName: string;
 };
 
 /**
@@ -456,29 +690,21 @@ export type OAuthCompleteRequest = {
 };
 
 /**
- * Mirror of [`OAuthConfig`] — accepted by `PUT /oauth/config` and
- * surfaced in OpenAPI instead of the previous `serde_json::Value`.
+ * Mirror of [`OAuthConfig`] — accepted by the full-replace
+ * `PUT /oauth/config` and surfaced in OpenAPI instead of the previous
+ * `serde_json::Value`.
  */
 export type OAuthConfigRequest = {
     facebookClientId?: string | null;
     facebookClientSecret?: string | null;
     kickClientId?: string | null;
     kickClientSecret?: string | null;
+    trovoClientId?: string | null;
+    trovoClientSecret?: string | null;
     twitchClientId?: string | null;
     twitchClientSecret?: string | null;
     youtubeClientId?: string | null;
     youtubeClientSecret?: string | null;
-};
-
-/**
- * `{"twitchConfigured": …, "youtubeConfigured": …}` — pre-flight check
- * the UI runs before showing "Sign in with Twitch / YouTube" buttons.
- */
-export type OAuthConfiguredFlagsResponse = {
-    facebookConfigured: boolean;
-    kickConfigured: boolean;
-    twitchConfigured: boolean;
-    youtubeConfigured: boolean;
 };
 
 /**
@@ -489,13 +715,42 @@ export type OAuthConfiguredResponse = {
 };
 
 /**
- * Mirror of [`OAuthFlowResult`] — `POST /oauth/{provider}/flow` returns
- * the authorization URL + bound callback port + PKCE state nonce.
+ * One field the user pastes/selects in the provider's dev console.
+ */
+export type OAuthConsoleFieldWire = {
+    copyable: boolean;
+    label: string;
+    note?: string | null;
+    value: string;
+};
+
+/**
+ * `POST /oauth/{provider}/flow` response — a backend-chosen variant.
+ * `flow: "redirect"` carries the loopback fields; `flow: "device"`
+ * carries the device-code fields. The frontend renders whichever
+ * arrives and never decides which grant a provider uses.
  */
 export type OAuthFlowResponse = {
-    authUrl: string;
-    callbackPort: number;
-    state: string;
+    authUrl?: string | null;
+    /**
+     * Redirect flows only: whether the server managed to open the
+     * system browser. When false (headless session, missing xdg-open,
+     * sandboxed desktop), the UI surfaces `auth_url` with a copy
+     * affordance instead of telling the user to "check your browser"
+     * for a tab that never opened.
+     */
+    browserOpened?: boolean | null;
+    callbackPort?: number | null;
+    expiresIn?: number | null;
+    /**
+     * `"redirect"` (loopback authorization-code) or `"device"` (RFC
+     * 8628 device code — Twitch's mandated desktop sign-in).
+     */
+    flow: string;
+    interval?: number | null;
+    state?: string | null;
+    userCode?: string | null;
+    verificationUri?: string | null;
 };
 
 /**
@@ -516,6 +771,51 @@ export type OAuthForgetResponse = {
     revokeFailed?: string | null;
 };
 
+/**
+ * Body of `PUT /oauth/config/{provider}` — the in-app setup form.
+ * Empty / absent fields clear the stored override for that field.
+ */
+export type OAuthProviderCredentialsRequest = {
+    clientId?: string | null;
+    clientSecret?: string | null;
+};
+
+/**
+ * Pre-filled guided-setup walkthrough for registering an app.
+ */
+export type OAuthProviderSetupWire = {
+    consoleFields: Array<OAuthConsoleFieldWire>;
+    steps: Array<string>;
+};
+
+/**
+ * One provider's setup state — array element of `GET /oauth/config`.
+ */
+export type OAuthProviderSummaryWire = {
+    /**
+     * Real credentials present (user-entered, env, or release-embedded).
+     */
+    configured: boolean;
+    /**
+     * Whether the credentials form must collect a client secret.
+     */
+    needsSecret: boolean;
+    /**
+     * The stored client-id override, when the user entered one.
+     * Secrets never appear on this surface.
+     */
+    overrideClientId?: string | null;
+    /**
+     * `twitch` | `youtube` | `kick` | `facebook` | `trovo`.
+     */
+    provider: string;
+    /**
+     * The provider's developer-portal page for registering an app.
+     */
+    registrationUrl: string;
+    setup: OAuthProviderSetupWire;
+};
+
 export type OAuthRefreshRequest = {
     refreshToken: string;
 };
@@ -523,6 +823,7 @@ export type OAuthRefreshRequest = {
 export type OAuthSettingsWire = {
     facebook: OAuthAccountWire;
     kick: OAuthAccountWire;
+    trovo: OAuthAccountWire;
     twitch: OAuthAccountWire;
     youtube: OAuthAccountWire;
 };
@@ -563,11 +864,17 @@ export type ObsAckResponse = {
     [key: string]: unknown;
 };
 
+/**
+ * The OBS password never rides this response — only whether one is
+ * set. Clients that need the value already have it from the profile
+ * document; shipping it here (the old shape returned the DECRYPTED
+ * password) widened the exposure surface for zero benefit.
+ */
 export type ObsConfigResponse = {
     autoConnect: boolean;
     direction: IntegrationDirectionWire;
+    hasPassword: boolean;
     host: string;
-    password: string;
     port: number;
     useAuth: boolean;
 };
@@ -614,12 +921,20 @@ export type ObsStreamStatusWire = 'inactive' | 'starting' | 'active' | 'stopping
 export type OutputGroupWire = {
     audio: AudioSettingsWire;
     container: ContainerSettingsWire;
+    enabled: boolean;
     generatePts: boolean;
     id: string;
     isDefault: boolean;
     name: string;
     streamTargets: Array<StreamTargetWire>;
     video: VideoSettingsWire;
+};
+
+export type PollPayloadWire = {
+    choices: Array<string>;
+    pollId: string;
+    question: string;
+    votes?: Array<number> | null;
 };
 
 /**
@@ -695,14 +1010,12 @@ export type ProfileSaveRequest = {
      * Optional password — when present the profile is encrypted on disk.
      */
     password?: string | null;
-    /**
-     * Full profile body (matches the `Profile` ts-rs export).
-     */
-    profile: unknown;
+    profile: ProfileWire;
 };
 
 export type ProfileSaveResponse = {
     name: string;
+    profile: ProfileWire;
     saved: boolean;
 };
 
@@ -759,7 +1072,7 @@ export type ProfileUnlockResponse = {
 };
 
 export type ProfileValidateInputRequest = {
-    input: unknown;
+    input: RtmpInputWire;
     profileId: string;
 };
 
@@ -781,6 +1094,12 @@ export type ProfilesListResponse = {
      * Profile names in user-defined order.
      */
     names: Array<string>;
+};
+
+export type RaidPayloadWire = {
+    raiderDisplayName: string;
+    raiderLogin: string;
+    viewerCount: number;
 };
 
 export type RangeU32 = {
@@ -814,6 +1133,20 @@ export type ReadyResponse = {
     ready: boolean;
 };
 
+export type ReplyContextWire = {
+    parentMessageId: string;
+    threadRootId: string;
+};
+
+export type RoomStatePayloadWire = {
+    emoteOnly?: boolean | null;
+    followersOnlyDisabled?: boolean | null;
+    followersOnlyMinutes?: number | null;
+    r9k?: boolean | null;
+    slowModeSecs?: number | null;
+    subscribersOnly?: boolean | null;
+};
+
 export type RotateMachineKeyRequest = {
     /**
      * Password for each password-protected (`.mgs`) profile on disk, keyed
@@ -843,6 +1176,13 @@ export type RtmpInputWire = {
     bindAddress: string;
     port: number;
     type: string;
+    /**
+     * Server-computed ingest URL (`refresh_url`). Dropping this field
+     * from the mirror once shipped clients an input with NO url — the
+     * UI then started streams with an empty ingest URL and FFmpeg's
+     * relay died instantly. The drift guard below pins the full set.
+     */
+    url: string;
 };
 
 export type RtmpTestRequest = {
@@ -921,16 +1261,26 @@ export type StreamRetryResponse = {
 };
 
 export type StreamStartAllRequest = {
-    groups: unknown;
+    /**
+     * Output groups to start. Runtime is `Vec<OutputGroup>`; OpenAPI
+     * schema is `Vec<OutputGroupWire>`.
+     */
+    groups: Array<OutputGroupWire>;
     incomingUrl: string;
 };
 
 export type StreamStartAllResponse = {
     pids: Array<number>;
+    /**
+     * Group ids core actually started (eligibility is decided
+     * server-side). Clients set their active state from this list
+     * instead of inferring it from what they sent.
+     */
+    startedGroupIds: Array<string>;
 };
 
 export type StreamStartRequest = {
-    group: unknown;
+    group: OutputGroupWire;
     incomingUrl: string;
 };
 
@@ -962,6 +1312,7 @@ export type StreamTargetDisabledResponse = {
 };
 
 export type StreamTargetWire = {
+    enabled: boolean;
     id: string;
     name: string;
     /**
@@ -978,7 +1329,7 @@ export type StreamTargetWire = {
 
 export type StreamToggleTargetRequest = {
     enabled: boolean;
-    group: unknown;
+    group: OutputGroupWire;
     incomingUrl: string;
 };
 
@@ -987,11 +1338,7 @@ export type StreamToggleTargetResponse = {
 };
 
 export type StreamValidateRequest = {
-    /**
-     * Full profile body (matches the `Profile` ts-rs export). Encoding-config
-     * rules (bitrate / keyframe / resolution / fps) are evaluated server-side.
-     */
-    profile: unknown;
+    profile: ProfileWire;
 };
 
 export type StreamValidateResponse = {
@@ -1023,6 +1370,23 @@ export type SubsystemStatus = {
     state: 'tampered';
 };
 
+export type SuperChatPayloadWire = {
+    amountMicros: number;
+    backgroundColor?: FragmentColorWire | null;
+    currency: string;
+    message: string;
+    tier: number;
+};
+
+export type SuperStickerPayloadWire = {
+    altText: string;
+    amountMicros: number;
+    currency: string;
+    stickerId: string;
+    stickerUrl: string;
+    tier: number;
+};
+
 /**
  * Empty 200 ack body — used by handlers whose success payload is just
  * acknowledgement (logs export). Serialises as `{}`.
@@ -1030,6 +1394,8 @@ export type SubsystemStatus = {
 export type SystemAckResponse = {
     [key: string]: unknown;
 };
+
+export type TextStyleWire = 'Normal' | 'Bold' | 'Italic' | 'Monospace';
 
 export type ThemeInstallRequest = {
     themePath: string;
@@ -1058,6 +1424,19 @@ export type ThemeTokensResponse = {
     };
 };
 
+/**
+ * Mirror of [`TwitchAuth`].
+ */
+export type TwitchAuthWire = {
+    method: 'userToken';
+    oauthToken: string;
+} | {
+    accessToken?: string;
+    expiresAt?: number | null;
+    method: 'appOAuth';
+    refreshToken?: string | null;
+};
+
 export type VideoSettingsWire = {
     bitrate: string;
     codec: string;
@@ -1073,6 +1452,19 @@ export type WebhookResultResponse = {
     message: string;
     skippedCooldown: boolean;
     success: boolean;
+};
+
+/**
+ * Mirror of [`YouTubeAuth`].
+ */
+export type YouTubeAuthWire = {
+    key: string;
+    method: 'apiKey';
+} | {
+    accessToken?: string;
+    expiresAt?: number | null;
+    method: 'appOAuth';
+    refreshToken?: string | null;
 };
 
 export type V1AuditLogData = {
@@ -1153,7 +1545,7 @@ export type V1ChatStatusProxyResponses = {
 export type V1ChatStatusProxyResponse = V1ChatStatusProxyResponses[keyof V1ChatStatusProxyResponses];
 
 export type V1ChatConnectProxyData = {
-    body: unknown;
+    body: ChatConfigWire;
     path?: never;
     query?: never;
     url: '/chat/connections';
@@ -1318,9 +1710,9 @@ export type V1ChatSearchSessionProxyData = {
 
 export type V1ChatSearchSessionProxyResponses = {
     /**
-     * Matching ChatMessage entries (typed schema deferred until in-flight ChatMessage shape stabilises).
+     * Matching ChatMessage entries.
      */
-    200: Array<unknown>;
+    200: Array<ChatMessageWire>;
 };
 
 export type V1ChatSearchSessionProxyResponse = V1ChatSearchSessionProxyResponses[keyof V1ChatSearchSessionProxyResponses];
@@ -1353,6 +1745,19 @@ export type V1ChatSendProxyResponses = {
 };
 
 export type V1ChatSendProxyResponse = V1ChatSendProxyResponses[keyof V1ChatSendProxyResponses];
+
+export type V1ChatRecentMessagesProxyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/chat/messages/recent';
+};
+
+export type V1ChatRecentMessagesProxyResponses = {
+    200: Array<ChatMessageWire>;
+};
+
+export type V1ChatRecentMessagesProxyResponse = V1ChatRecentMessagesProxyResponses[keyof V1ChatRecentMessagesProxyResponses];
 
 export type V1DiscordResetCooldownProxyData = {
     body?: never;
@@ -1417,7 +1822,7 @@ export type V1OauthGetConfigProxyData = {
 };
 
 export type V1OauthGetConfigProxyResponses = {
-    200: OAuthConfiguredFlagsResponse;
+    200: Array<OAuthProviderSummaryWire>;
 };
 
 export type V1OauthGetConfigProxyResponse = V1OauthGetConfigProxyResponses[keyof V1OauthGetConfigProxyResponses];
@@ -1446,6 +1851,36 @@ export type V1OauthSetConfigProxyResponses = {
 };
 
 export type V1OauthSetConfigProxyResponse = V1OauthSetConfigProxyResponses[keyof V1OauthSetConfigProxyResponses];
+
+export type V1OauthSetProviderCredentialsProxyData = {
+    body: OAuthProviderCredentialsRequest;
+    path: {
+        /**
+         * OAuth provider
+         */
+        provider: string;
+    };
+    query?: never;
+    url: '/oauth/config/{provider}';
+};
+
+export type V1OauthSetProviderCredentialsProxyErrors = {
+    /**
+     * Unknown provider.
+     */
+    501: ApiErrorBody;
+};
+
+export type V1OauthSetProviderCredentialsProxyError = V1OauthSetProviderCredentialsProxyErrors[keyof V1OauthSetProviderCredentialsProxyErrors];
+
+export type V1OauthSetProviderCredentialsProxyResponses = {
+    /**
+     * Credentials stored; updated summaries returned.
+     */
+    200: Array<OAuthProviderSummaryWire>;
+};
+
+export type V1OauthSetProviderCredentialsProxyResponse = V1OauthSetProviderCredentialsProxyResponses[keyof V1OauthSetProviderCredentialsProxyResponses];
 
 export type V1OauthDisconnectProxyData = {
     body?: never;

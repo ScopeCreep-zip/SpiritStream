@@ -20,6 +20,9 @@ use utoipa::ToSchema;
 use spiritstream_core::services::EventSink;
 
 use crate::AppState;
+// Imported by SHORT name so utoipa's response-`body` $ref matches the
+// schema's registered name (`ChatMessageWire`, not `crate.v1.…`).
+use crate::v1::ChatMessageWire;
 
 // K5: wire-mirror types live in `v1/chat/wire.rs` and the log-status /
 // export / search handlers in `v1/chat/log.rs` so this orchestrator
@@ -66,13 +69,13 @@ pub async fn v1_chat_status_proxy(
 /// `Cache-Control: no-store` so the webview can't cache it (OWASP ASVS
 /// anti-caching for sensitive data).
 #[utoipa::path(get, path = "/chat/messages/recent", tag = "chat",
-    responses((status = 200, body = Vec<crate::v1::ChatMessageWire>)),
+    responses((status = 200, body = Vec<ChatMessageWire>)),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_chat_recent_messages_proxy(
     State(state): State<AppState>,
 ) -> Result<axum::response::Response, crate::ApiError> {
     use axum::response::IntoResponse;
-    let wire: Vec<crate::v1::ChatMessageWire> = state
+    let wire: Vec<ChatMessageWire> = state
         .chat_manager
         .recent_messages()
         .await
