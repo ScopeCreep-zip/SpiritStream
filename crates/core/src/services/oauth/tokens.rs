@@ -20,8 +20,31 @@ pub struct OAuthTokens {
     pub expires_in: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token_type: Option<String>,
+    // RFC 6749 says `scope` is a space-delimited string, but Twitch
+    // returns it as a JSON array (`["chat:read","chat:edit"]`). Accept
+    // either and normalise to the space-delimited string — parsing a
+    // real Twitch token response into `Option<String>` otherwise fails
+    // with "invalid type: sequence, expected a string".
+    #[serde(default, deserialize_with = "deserialize_scope")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scope: Option<String>,
+}
+
+fn deserialize_scope<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Scope {
+        Text(String),
+        List(Vec<String>),
+    }
+    Ok(match Option::<Scope>::deserialize(deserializer)? {
+        Some(Scope::Text(s)) => Some(s),
+        Some(Scope::List(items)) => Some(items.join(" ")),
+        None => None,
+    })
 }
 
 impl std::fmt::Debug for OAuthTokens {

@@ -296,6 +296,10 @@ mod tests {
                 "access_token": "granted-token",
                 "refresh_token": "granted-refresh",
                 "expires_in": 14400,
+                // Twitch returns scope as an ARRAY, not the RFC's
+                // space-delimited string — exercise the real shape so a
+                // regression to `Option<String>` is caught here.
+                "scope": ["chat:read", "chat:edit"],
                 "token_type": "bearer"
             })))
             .mount(&server)
