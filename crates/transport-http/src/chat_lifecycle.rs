@@ -143,8 +143,15 @@ pub(crate) async fn auto_connect_chat_platforms(state: AppState) {
         }
     };
 
-    // Twitch: refresh token if needed, then connect immediately (IRC works even when offline)
-    if !chat_settings.twitch_channel.is_empty() {
+    // Twitch: refresh token if needed, then connect immediately (IRC works even when offline).
+    // Skip platforms the user deliberately disconnected (Disconnect button / panic) so
+    // auto-connect never silently undoes that — `is_disconnect_intended` is the safety gate.
+    if !chat_settings.twitch_channel.is_empty()
+        && !state
+            .chat_manager
+            .is_disconnect_intended(ChatPlatform::Twitch)
+            .await
+    {
         let already_connected = state
             .chat_manager
             .get_platform_status(ChatPlatform::Twitch)
@@ -212,7 +219,12 @@ pub(crate) async fn auto_connect_chat_platforms(state: AppState) {
     }
 
     // Trovo: read-only websocket chat (requires SPIRITSTREAM_TROVO_CLIENT_ID + channel ID)
-    if !chat_settings.trovo_channel_id.is_empty() {
+    if !chat_settings.trovo_channel_id.is_empty()
+        && !state
+            .chat_manager
+            .is_disconnect_intended(ChatPlatform::Trovo)
+            .await
+    {
         let already_connected = state
             .chat_manager
             .get_platform_status(ChatPlatform::Trovo)
@@ -261,7 +273,12 @@ pub(crate) async fn auto_connect_chat_platforms(state: AppState) {
     }
 
     // Kick: Pusher-protocol websocket. Anonymous read; OAuth bearer needed for send.
-    if !chat_settings.kick_channel.is_empty() {
+    if !chat_settings.kick_channel.is_empty()
+        && !state
+            .chat_manager
+            .is_disconnect_intended(ChatPlatform::Kick)
+            .await
+    {
         let already_connected = state
             .chat_manager
             .get_platform_status(ChatPlatform::Kick)
@@ -311,7 +328,12 @@ pub(crate) async fn auto_connect_chat_platforms(state: AppState) {
 
     // TikTok: read-only via reverse-engineered protobuf-over-WebSocket.
     // No auth required — connect by username, host must be live.
-    if !chat_settings.tiktok_username.is_empty() {
+    if !chat_settings.tiktok_username.is_empty()
+        && !state
+            .chat_manager
+            .is_disconnect_intended(ChatPlatform::TikTok)
+            .await
+    {
         let already_connected = state
             .chat_manager
             .get_platform_status(ChatPlatform::TikTok)
@@ -333,7 +355,12 @@ pub(crate) async fn auto_connect_chat_platforms(state: AppState) {
     // here on every profile activation would bypass that gate.
 
     // YouTube: connect with retry (broadcast won't be live until OBS starts streaming)
-    if !chat_settings.youtube_channel_id.is_empty() {
+    if !chat_settings.youtube_channel_id.is_empty()
+        && !state
+            .chat_manager
+            .is_disconnect_intended(ChatPlatform::YouTube)
+            .await
+    {
         let has_oauth = !chat_settings.youtube_use_api_key
             && !profile_settings.oauth.youtube.access_token.is_empty();
         let has_api_key =
@@ -546,24 +573,6 @@ pub(crate) async fn connect_kick_chat(
     }
 }
 
-/// Auto-disconnect all chat platforms when all streams stop.
-pub(crate) async fn auto_disconnect_chat_platforms(
-    chat_manager: Arc<ChatManager>,
-    event_bus: EventBus,
-) {
-    if chat_manager.is_any_connected().await {
-        match chat_manager.disconnect_all("streams_stopped").await {
-            Ok(()) => {
-                log::info!("Auto-disconnected all chat platforms");
-                event_bus.emit("chat_auto_disconnected", json!({}));
-            }
-            Err(e) => {
-                log::warn!("Failed to auto-disconnect chat: {e}");
-            }
-        }
-    }
-}
-
 /// Background task to retry chat connections when a platform drops.
 /// Subscribe to the server's own event bus and auto-retry failed streams.
 /// Replaces the frontend's `handleAutoRetry` (in `useStreamStats.ts`) which
@@ -612,13 +621,24 @@ pub(crate) async fn start_chat_reconnect_task(state: AppState) {
         loop {
             interval.tick().await;
 
-            if state.ffmpeg_handler.active_count() == 0 {
-                continue;
-            }
-
+            // Chat is now decoupled from streaming: reconnect dropped
+            // platforms whenever they error, whether or not a stream is
+            // running. (Previously this returned early unless streaming.)
             let statuses = state.chat_manager.get_status().await;
             for status in statuses {
                 if status.status != spiritstream_core::models::ChatConnectionStatus::Error {
+                    continue;
+                }
+
+                // Never reconnect a platform the user deliberately
+                // disconnected (Disconnect button / panic). A panic
+                // leaves connectors `Disconnected` not `Error`, so this
+                // is a belt-and-suspenders guard on top of that.
+                if state
+                    .chat_manager
+                    .is_disconnect_intended(status.platform)
+                    .await
+                {
                     continue;
                 }
 

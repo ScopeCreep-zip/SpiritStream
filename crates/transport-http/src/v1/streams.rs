@@ -263,10 +263,9 @@ pub async fn v1_streams_stop(
             context: format!("ffmpeg stop join: {e}"),
         })??;
     if state.ffmpeg_handler.active_count() == 0 {
+        // Chat is decoupled from streaming — stopping a stream no longer
+        // tears down chat. The log session still brackets the broadcast.
         state.chat_manager.end_log_session();
-        let chat_mgr = state.chat_manager.clone();
-        let bus = state.event_bus.clone();
-        tokio::spawn(crate::auto_disconnect_chat_platforms(chat_mgr, bus));
     }
     Ok(Json(StreamStopAllResponse { stopped: true }))
 }
@@ -297,9 +296,7 @@ pub async fn v1_streams_stop_all(
         .map_err(|e| spiritstream_core::CoreError::Internal {
             context: format!("ffmpeg stop_all join: {e}"),
         })??;
-    let chat_mgr = state.chat_manager.clone();
-    let bus = state.event_bus.clone();
-    tokio::spawn(crate::auto_disconnect_chat_platforms(chat_mgr, bus));
+    // Chat stays connected after streams stop (decoupled lifecycle).
     Ok(Json(StreamStopAllResponse { stopped: true }))
 }
 

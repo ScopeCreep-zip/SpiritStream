@@ -137,7 +137,7 @@ export function Chat() {
           </div>
 
           <div className="mt-3">
-            <ChatComposer statuses={statuses} activeStreamCount={activeStreamCount} />
+            <ChatComposer statuses={statuses} />
           </div>
         </CardBody>
 

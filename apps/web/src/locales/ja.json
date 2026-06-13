@@ -119,7 +119,9 @@
       "deviceOpened": "ブラウザでサインインページを開きました。そこにこのコードを入力してください:",
       "portalLabel": "開発者ポータル（ブラウザで開く）",
       "pasteTheseValues": "アプリのフォームでこれらの値を使用してください:",
-      "copyValue": "{{label}}をコピー"
+      "copyValue": "{{label}}をコピー",
+      "signInSuccess": "サインインしました",
+      "signInSuccessNamed": "{{name}} としてサインインしました"
     },
     "platformReadOnly": "読み取り専用",
     "platforms": {
@@ -157,7 +159,7 @@
     "sendOn": "送信してください",
     "sendPartialFail": "一部のプラットフォームでメッセージを受信できませんでした。",
     "sendPlaceholder": "有効になっているすべてのチャットにメッセージを送信します...",
-    "sendRequiresConfig": "統合でチャット プラットフォームを構成して送信を有効にします。",
+    "sendRequiresConfig": "チャットを接続するには、サインインするか連携でチャンネルを設定してください。",
     "sendRequiresStream": "ストリーミングを開始するとチャットが接続されます。ストリームを開始して送信を有効にします。",
     "sendTargets": "送信先: {{targets}}",
     "sendTo": "送信先:",
@@ -211,6 +213,13 @@
       "reauth": "フォロワー限定チャットの権限を付与するには、もう一度 Twitch にサインインしてください。",
       "unsupported": "{{platform}} はフォロワー限定チャットに対応していないため、この保護は適用されません。",
       "failed": "フォロワー限定チャットを有効にできませんでした: {{reason}}"
+    },
+    "connect": {
+      "connect": "チャットを接続",
+      "disconnect": "チャットを切断",
+      "connecting": "接続中…",
+      "disconnected": "切断しました",
+      "failed": "接続を変更できませんでした: {{error}}"
     }
   },
   "common": {

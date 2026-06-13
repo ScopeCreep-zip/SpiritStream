@@ -43,6 +43,20 @@ export const chat = {
       `/api/v1/chat/connections/${encodeURIComponent(String(platform))}/retry`
     );
   },
+  /**
+   * Connect a single platform on demand (the per-platform Connect
+   * button), independent of streaming. The backend builds credentials
+   * from the active profile, so the frontend passes no creds. Backed by
+   * the same endpoint as {@link retryConnection}; clears the platform's
+   * deliberate-disconnect intent server-side on success. (Distinct from
+   * {@link connect}, which takes a full `ChatConfig`.)
+   */
+  connectPlatform: async (platform: ChatPlatform) => {
+    await fetchTypedJson<unknown>(
+      'POST',
+      `/api/v1/chat/connections/${encodeURIComponent(String(platform))}/retry`
+    );
+  },
   disconnectAll: async () => {
     await fetchTypedJson<unknown>('DELETE', '/api/v1/chat/connections');
   },

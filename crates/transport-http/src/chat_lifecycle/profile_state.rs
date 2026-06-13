@@ -17,7 +17,16 @@ use crate::AppState;
 pub(crate) async fn set_active_profile(state: &AppState, profile: &Profile) {
     {
         let mut guard = state.active_profile_name.lock().await;
+        // Switching to a DIFFERENT profile is a fresh slate: drop any
+        // deliberate-disconnect intent so the new profile's platforms
+        // are free to auto-connect. A same-profile re-activation
+        // (settings save) intentionally leaves intent untouched, so a
+        // panic / Disconnect survives saving settings.
+        let switched = guard.as_deref() != Some(profile.name.as_str());
         *guard = Some(profile.name.clone());
+        if switched {
+            state.chat_manager.clear_all_disconnect_intent().await;
+        }
     }
     {
         let mut guard = state.active_profile_settings.lock().await;
@@ -106,7 +115,46 @@ pub(crate) async fn update_profile_oauth_account(
     account.username = user_info.username.clone();
     account.display_name = user_info.display_name.clone();
 
-    persist_active_profile_settings(state, profile_settings).await
+    // Twitch-only convenience: if the user hasn't picked a channel, sign-
+    // in is enough to know it — `OAuthUserInfo.username` IS the Twitch
+    // login. Default it so "sign in → connected to your own chat" needs
+    // no manual channel entry. Other providers use channel *IDs* that
+    // don't map to the OAuth username, so they're left for the user.
+    if provider == "twitch" && profile_settings.chat.twitch_channel.trim().is_empty() {
+        profile_settings.chat.twitch_channel = user_info.username.clone();
+    }
+
+    persist_active_profile_settings(state, profile_settings.clone()).await?;
+
+    // Sign-in is a deliberate "I want this platform" — connect it now,
+    // independent of streaming. Push the (possibly channel-defaulted)
+    // chat settings into the manager, clear any stale disconnect intent
+    // for this provider, then auto-connect (idempotent; skips already-
+    // connected and intent-disconnected platforms).
+    state
+        .chat_manager
+        .update_profile_chat_settings(profile_settings.chat.clone())
+        .await;
+    if let Some(platform) = chat_platform_for(provider) {
+        state.chat_manager.clear_disconnect_intent(platform).await;
+    }
+    tokio::spawn(crate::auto_connect_chat_platforms(state.clone()));
+
+    Ok(())
+}
+
+/// Provider name → the `ChatPlatform` whose chat we auto-connect on
+/// sign-in. Facebook is intentionally absent — it never auto-connects
+/// (identity-revealing connect needs an explicit confirm-token click).
+fn chat_platform_for(provider: &str) -> Option<spiritstream_core::models::ChatPlatform> {
+    use spiritstream_core::models::ChatPlatform;
+    match provider {
+        "twitch" => Some(ChatPlatform::Twitch),
+        "youtube" => Some(ChatPlatform::YouTube),
+        "kick" => Some(ChatPlatform::Kick),
+        "trovo" => Some(ChatPlatform::Trovo),
+        _ => None,
+    }
 }
 
 /// Provider-name → mutable account slot. One lookup shared by the

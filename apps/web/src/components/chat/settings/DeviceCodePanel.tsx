@@ -26,9 +26,9 @@ interface DeviceCodePanelProps {
 /**
  * Pure presentation of an RFC 8628 device sign-in: show the short code
  * + verification link, then wait for the backend's `oauth_complete` /
- * `oauth_error` events (the backend owns the polling). The profile
- * refresh that flips the parent to "Signed in as …" rides the same
- * event path every other OAuth flow uses.
+ * `oauth_error` events (the backend owns the polling). On
+ * `oauth_complete` the app-level `useOAuthCompletion` hook reloads the
+ * active profile, which flips the parent button to "Signed in as …".
  *
  * The verification URL is rendered as selectable text with a copy
  * button — NOT a clickable `target="_blank"` link. In the Tauri webview

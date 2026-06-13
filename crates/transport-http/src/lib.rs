@@ -51,7 +51,7 @@ use auth::{
     security_revoke_all_sessions,
 };
 pub(crate) use chat_lifecycle::{
-    auto_connect_chat_platforms, auto_disconnect_chat_platforms, build_hour_keys,
+    auto_connect_chat_platforms, build_hour_keys,
     clear_profile_oauth_account, connect_trovo_chat, connect_twitch_chat,
     connect_youtube_chat_with_retry, ensure_fresh_oauth_token, get_active_profile_name,
     get_active_profile_settings, persist_active_profile_settings, set_active_profile,

@@ -119,7 +119,9 @@
       "deviceOpened": "Nous avons ouvert la page de connexion dans votre navigateur. Saisissez-y ce code :",
       "portalLabel": "Portail développeurs (ouvrir dans le navigateur)",
       "pasteTheseValues": "Utilisez ces valeurs dans le formulaire de l’application :",
-      "copyValue": "Copier {{label}}"
+      "copyValue": "Copier {{label}}",
+      "signInSuccess": "Connecté",
+      "signInSuccessNamed": "Connecté en tant que {{name}}"
     },
     "platformReadOnly": "lecture seule",
     "platforms": {
@@ -157,7 +159,7 @@
     "sendOn": "Envoyer",
     "sendPartialFail": "Certaines plateformes n'ont pas réussi à recevoir votre message.",
     "sendPlaceholder": "Envoyer un message à tous les chats activés...",
-    "sendRequiresConfig": "Configurez une plateforme de chat dans Intégrations pour activer l'envoi.",
+    "sendRequiresConfig": "Connectez-vous ou définissez une chaîne dans Intégrations pour connecter le chat.",
     "sendRequiresStream": "Le chat se connecte lorsque vous démarrez la diffusion. Démarrez un flux pour activer l’envoi.",
     "sendTargets": "Envoi à : {{targets}}",
     "sendTo": "Envoyer à :",
@@ -211,6 +213,13 @@
       "reauth": "Reconnectez-vous à Twitch pour accorder la permission du chat réservé aux followers.",
       "unsupported": "{{platform}} ne prend pas en charge le chat réservé aux followers — cette protection n’y est pas active.",
       "failed": "Impossible d’activer le chat réservé aux followers : {{reason}}"
+    },
+    "connect": {
+      "connect": "Connecter le chat",
+      "disconnect": "Déconnecter le chat",
+      "connecting": "Connexion…",
+      "disconnected": "Déconnecté",
+      "failed": "Impossible de changer la connexion : {{error}}"
     }
   },
   "common": {

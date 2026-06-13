@@ -306,16 +306,11 @@ pub async fn v1_chat_retry_proxy(
     let profile_settings = crate::get_active_profile_settings(&state)
         .await
         .ok_or(spiritstream_core::CoreError::NoActiveProfile)?;
-    if state.ffmpeg_handler.active_count() == 0 {
-        return Err(spiritstream_core::CoreError::ValidationFailed {
-            reasons: vec![spiritstream_core::errors::ValidationIssue {
-                code: "no_active_stream".into(),
-                message: "Cannot reconnect chat when no stream is active".into(),
-                path: None,
-            }],
-        }
-        .into());
-    }
+    // Chat is decoupled from streaming: connecting/reconnecting a
+    // platform no longer requires an active stream. This endpoint backs
+    // the per-platform Connect button. `ChatManager::connect` clears the
+    // platform's disconnect-intent on success, so an explicit Connect
+    // here also re-arms auto-connect/reconnect for it.
     match platform_enum {
         ChatPlatform::Twitch => {
             if chat_settings.twitch_channel.is_empty() {

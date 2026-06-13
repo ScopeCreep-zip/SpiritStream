@@ -100,6 +100,11 @@ impl super::ChatManager {
 
         info!("Successfully connected to {}", config.platform.as_str());
 
+        // An explicit successful connect is the user asking for this
+        // platform back — clear any deliberate-disconnect intent so the
+        // reconnect/auto-connect loops keep it alive from here on.
+        self.user_disconnected.lock().await.remove(&config.platform);
+
         if let Some(audit) = self.audit() {
             let _ = audit.record(AuditAction::ChatPlatformConnected {
                 platform: config.platform.as_str().to_string(),
@@ -188,6 +193,11 @@ impl super::ChatManager {
     /// Disconnect from a chat platform.
     pub async fn disconnect(&self, platform: ChatPlatform) -> Result<(), CoreError> {
         info!("Disconnecting from {} chat", platform.as_str());
+
+        // Record the deliberate-disconnect intent BEFORE the await so a
+        // concurrent reconnect can't slip in and re-establish the
+        // platform between disconnect and the flag being set.
+        self.user_disconnected.lock().await.insert(platform);
 
         let mut platforms = self.platforms.lock().await;
 
@@ -303,6 +313,18 @@ impl super::ChatManager {
             match outcome {
                 Ok(()) => disconnected.push(platform),
                 Err(e) => errors.push(format!("{}: {}", platform.as_str(), e)),
+            }
+        }
+
+        // A panic or an explicit "disconnect all" must STAY down — record
+        // intent for every platform we just tore down so the reconnect /
+        // auto-connect loops don't silently bring chat back. A `shutdown`
+        // teardown is not a user "go silent" signal, so it leaves intent
+        // untouched (chat returns on next startup as expected).
+        if reason == "panic_triggered" || reason == "user_requested" {
+            let mut intent = self.user_disconnected.lock().await;
+            for platform in &disconnected {
+                intent.insert(*platform);
             }
         }
 

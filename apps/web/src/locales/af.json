@@ -119,7 +119,9 @@
       "deviceOpened": "Ons het die aanmeldbladsy in jou blaaier oopgemaak. Voer hierdie kode daar in:",
       "portalLabel": "Ontwikkelaarportaal (maak in blaaier oop)",
       "pasteTheseValues": "Gebruik hierdie waardes in die app-vorm:",
-      "copyValue": "Kopieer {{label}}"
+      "copyValue": "Kopieer {{label}}",
+      "signInSuccess": "Aangemeld",
+      "signInSuccessNamed": "Aangemeld as {{name}}"
     },
     "platformReadOnly": "leesalleen",
     "platforms": {
@@ -157,7 +159,7 @@
     "sendOn": "Stuur aan",
     "sendPartialFail": "Sommige platforms kon nie jou boodskap ontvang nie.",
     "sendPlaceholder": "Stuur 'n boodskap aan alle geaktiveerde kletse...",
-    "sendRequiresConfig": "Stel 'n kletsplatform in Integrasies op om stuur moontlik te maak.",
+    "sendRequiresConfig": "Meld aan of stel ’n kanaal in Integrasies om klets te koppel.",
     "sendRequiresStream": "Klets verbind wanneer jy begin stroom. Begin 'n stroom om stuur te aktiveer.",
     "sendTargets": "Stuur tans na: {{targets}}",
     "sendTo": "Stuur na:",
@@ -211,6 +213,13 @@
       "reauth": "Meld weer by Twitch aan om die slegs-volgers-toestemming toe te staan.",
       "unsupported": "{{platform}} ondersteun nie slegs-volgers-klets nie — daardie beskerming is nie daar aktief nie.",
       "failed": "Kon nie slegs-volgers-klets aanskakel nie: {{reason}}"
+    },
+    "connect": {
+      "connect": "Koppel klets",
+      "disconnect": "Ontkoppel klets",
+      "connecting": "Koppel tans…",
+      "disconnected": "Ontkoppel",
+      "failed": "Kon nie verbinding verander nie: {{error}}"
     }
   },
   "common": {

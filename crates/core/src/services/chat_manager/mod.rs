@@ -23,7 +23,7 @@ mod send_message_tests;
 
 use log_writer::ChatLogCommand;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicI64};
 use std::sync::Arc;
@@ -86,6 +86,15 @@ pub(super) fn check_platform_length(
 pub struct ChatManager {
     pub(super) event_sink: Arc<dyn EventSink>,
     pub(super) platforms: Arc<Mutex<HashMap<ChatPlatform, BoxedPlatform>>>,
+    /// Platforms the user deliberately disconnected (the "go silent"
+    /// control + panic + "disconnect all"). The auto-connect and
+    /// reconnect loops SKIP these so a deliberate disconnect — most
+    /// importantly a panic — is never silently undone by a background
+    /// reconnect or a passive settings-save re-activation. Cleared per
+    /// platform on an explicit `connect` (Connect button / sign-in) or
+    /// when that platform's channel changes; cleared wholesale only when
+    /// the active profile actually switches (`set_active_profile`).
+    pub(super) user_disconnected: Arc<Mutex<HashSet<ChatPlatform>>>,
     pub(super) last_statuses: Arc<Mutex<HashMap<ChatPlatform, ChatConnectionStatus>>>,
     pub(super) message_rx: Arc<Mutex<Option<mpsc::Receiver<ChatMessage>>>>,
     pub(super) message_tx: mpsc::Sender<ChatMessage>,
@@ -174,6 +183,7 @@ impl ChatManager {
         let manager = Self {
             event_sink,
             platforms: Arc::new(Mutex::new(HashMap::new())),
+            user_disconnected: Arc::new(Mutex::new(HashSet::new())),
             last_statuses: Arc::new(Mutex::new(HashMap::new())),
             message_rx: Arc::new(Mutex::new(Some(message_rx))),
             message_tx,
@@ -282,6 +292,27 @@ impl ChatManager {
     pub async fn is_any_connected(&self) -> bool {
         let platforms = self.platforms.lock().await;
         platforms.values().any(|c| c.is_connected())
+    }
+
+    /// True if the user deliberately disconnected `platform` and hasn't
+    /// asked for it back. The auto-connect + reconnect loops consult
+    /// this so a panic / Disconnect isn't silently undone.
+    pub async fn is_disconnect_intended(&self, platform: ChatPlatform) -> bool {
+        self.user_disconnected.lock().await.contains(&platform)
+    }
+
+    /// Clear the deliberate-disconnect intent for `platform` — called on
+    /// any explicit reconnect (Connect button, sign-in) and when the
+    /// platform's channel changes (reconfiguration implies wanting it).
+    pub async fn clear_disconnect_intent(&self, platform: ChatPlatform) {
+        self.user_disconnected.lock().await.remove(&platform);
+    }
+
+    /// Drop ALL disconnect intent — only when the active profile truly
+    /// changes (a different profile is a fresh slate). NOT called on a
+    /// same-profile re-activation, so a panic survives settings saves.
+    pub async fn clear_all_disconnect_intent(&self) {
+        self.user_disconnected.lock().await.clear();
     }
 
     /// Initialize a platform connector. Returns `None` for platforms

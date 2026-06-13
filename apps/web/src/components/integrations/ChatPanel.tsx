@@ -14,6 +14,7 @@ import { Toggle } from '@/components/ui/Toggle';
 import { FacebookConnectGate } from '@/components/chat/settings/FacebookConnectGate';
 import { PlatformSignInButton } from '@/components/chat/settings/PlatformSignInButton';
 import { PlatformConnectionBadge } from '@/components/chat/PlatformStatusDot';
+import { PlatformConnectControl } from '@/components/chat/settings/PlatformConnectControl';
 import { useChatPlatformStatus } from '@/hooks/useChatPlatformStatus';
 import { useChatStore } from '@/stores/chatStore';
 import { cn } from '@/lib/cn';
@@ -400,6 +401,7 @@ export function ChatPanel(): React.ReactElement {
                 label={t('chat.sendEnabled', { defaultValue: 'Allow sending messages' })}
               />
             </div>
+            <PlatformConnectControl platform="twitch" status={statusFor('twitch')} />
           </CardBody>
         </Card>
       )}
@@ -474,6 +476,7 @@ export function ChatPanel(): React.ReactElement {
                 </div>
               </>
             )}
+            <PlatformConnectControl platform="youtube" status={statusFor('youtube')} />
           </CardBody>
         </Card>
       )}
@@ -520,6 +523,7 @@ export function ChatPanel(): React.ReactElement {
                 label={t('chat.sendEnabled', { defaultValue: 'Allow sending messages' })}
               />
             </div>
+            <PlatformConnectControl platform="trovo" status={statusFor('trovo')} />
           </CardBody>
         </Card>
       )}
@@ -567,6 +571,7 @@ export function ChatPanel(): React.ReactElement {
                 })}
               />
             </div>
+            <PlatformConnectControl platform="kick" status={statusFor('kick')} />
           </CardBody>
         </Card>
       )}
@@ -596,6 +601,7 @@ export function ChatPanel(): React.ReactElement {
             <p role="note" className="text-xs text-warning-text mt-3 p-2 bg-warning-subtle rounded">
               {t('chat.tiktok.readOnlyNotice')}
             </p>
+            <PlatformConnectControl platform="tiktok" status={statusFor('tiktok')} />
           </CardBody>
         </Card>
       )}

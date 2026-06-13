@@ -19,6 +19,7 @@ import { useBackendConnection } from '@/hooks/useBackendConnection';
 import { useDataSync } from '@/hooks/useDataSync';
 import { useObsEvents } from '@/hooks/useObsEvents';
 import { useFollowerOnlyNotices } from '@/hooks/useFollowerOnlyNotices';
+import { useOAuthCompletion } from '@/hooks/useOAuthCompletion';
 import { useThemeStore, subscribeThemesUpdated } from '@/stores/themeStore';
 import { hydrateClientConfig } from '@/lib/constants';
 import { hydrateEncoderPresets, hydrateEncoderMetadata } from '@/lib/encoderPresets';
@@ -362,6 +363,9 @@ function AppContent() {
 
   // Surface follower-only applied/unsupported outcomes (toast + re-auth hint)
   useFollowerOnlyNotices();
+
+  // Reflect completed OAuth sign-ins: reload the profile + success toast
+  useOAuthCompletion();
 
   // Set up handler to close chat overlay when main window closes
   useEffect(() => setupMainWindowCloseHandler(), []);

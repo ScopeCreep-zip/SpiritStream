@@ -119,7 +119,9 @@
       "deviceOpened": "Abrimos la página de inicio de sesión en tu navegador. Ingresa este código allí:",
       "portalLabel": "Portal de desarrolladores (abrir en el navegador)",
       "pasteTheseValues": "Usa estos valores en el formulario de la app:",
-      "copyValue": "Copiar {{label}}"
+      "copyValue": "Copiar {{label}}",
+      "signInSuccess": "Sesión iniciada",
+      "signInSuccessNamed": "Sesión iniciada como {{name}}"
     },
     "platformReadOnly": "solo lectura",
     "platforms": {
@@ -157,7 +159,7 @@
     "sendOn": "Mandar",
     "sendPartialFail": "Algunas plataformas no pudieron recibir su mensaje.",
     "sendPlaceholder": "Enviar un mensaje a todos los chats habilitados...",
-    "sendRequiresConfig": "Configure una plataforma de chat en Integraciones para habilitar el envío.",
+    "sendRequiresConfig": "Inicia sesión o configura un canal en Integraciones para conectar el chat.",
     "sendRequiresStream": "El chat se conecta cuando comienzas a transmitir. Inicie una transmisión para habilitar el envío.",
     "sendTargets": "Enviando a: {{targets}}",
     "sendTo": "Enviar a:",
@@ -211,6 +213,13 @@
       "reauth": "Vuelva a iniciar sesión con Twitch para conceder el permiso de chat solo para seguidores.",
       "unsupported": "{{platform}} no admite el chat solo para seguidores; esa protección no está activa allí.",
       "failed": "No se pudo activar el chat solo para seguidores: {{reason}}"
+    },
+    "connect": {
+      "connect": "Conectar chat",
+      "disconnect": "Desconectar chat",
+      "connecting": "Conectando…",
+      "disconnected": "Desconectado",
+      "failed": "No se pudo cambiar la conexión: {{error}}"
     }
   },
   "common": {

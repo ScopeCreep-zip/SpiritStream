@@ -119,7 +119,9 @@
       "deviceOpened": "We opened the sign-in page in your browser. Enter this code there:",
       "portalLabel": "Developer portal (open in browser)",
       "pasteTheseValues": "Use these values in the app form:",
-      "copyValue": "Copy {{label}}"
+      "copyValue": "Copy {{label}}",
+      "signInSuccess": "Signed in",
+      "signInSuccessNamed": "Signed in as {{name}}"
     },
     "platformReadOnly": "read-only",
     "platforms": {
@@ -157,7 +159,7 @@
     "sendOn": "Send on",
     "sendPartialFail": "Some platforms failed to receive your message.",
     "sendPlaceholder": "Send a message to all enabled chats...",
-    "sendRequiresConfig": "Configure a chat platform in Integrations to enable sending.",
+    "sendRequiresConfig": "Sign in or set a channel in Integrations to connect chat.",
     "sendRequiresStream": "Chat connects when you start streaming. Start a stream to enable sending.",
     "sendTargets": "Sending to: {{targets}}",
     "sendTo": "Send to:",
@@ -211,6 +213,13 @@
       "reauth": "Sign in with Twitch again to grant the follower-only permission.",
       "unsupported": "{{platform}} does not support follower-only chat — that protection is not active there.",
       "failed": "Could not turn on follower-only chat: {{reason}}"
+    },
+    "connect": {
+      "connect": "Connect chat",
+      "disconnect": "Disconnect chat",
+      "connecting": "Connecting…",
+      "disconnected": "Disconnected",
+      "failed": "Could not change connection: {{error}}"
     }
   },
   "common": {

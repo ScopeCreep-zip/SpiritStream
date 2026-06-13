@@ -119,7 +119,9 @@
       "deviceOpened": "فتحنا صفحة تسجيل الدخول في متصفحك. أدخل هذا الرمز هناك:",
       "portalLabel": "بوابة المطوّرين (افتحها في المتصفح)",
       "pasteTheseValues": "استخدم هذه القيم في نموذج التطبيق:",
-      "copyValue": "نسخ {{label}}"
+      "copyValue": "نسخ {{label}}",
+      "signInSuccess": "تم تسجيل الدخول",
+      "signInSuccessNamed": "تم تسجيل الدخول باسم {{name}}"
     },
     "platformReadOnly": "للقراءة فقط",
     "platforms": {
@@ -157,7 +159,7 @@
     "sendOn": "أرسل",
     "sendPartialFail": "فشلت بعض المنصات في تلقي رسالتك.",
     "sendPlaceholder": "إرسال رسالة إلى جميع الدردشات المفعلة...",
-    "sendRequiresConfig": "قم بتكوين نظام أساسي للدردشة في عمليات التكامل لتمكين الإرسال.",
+    "sendRequiresConfig": "سجّل الدخول أو اضبط قناة في التكاملات لتوصيل الدردشة.",
     "sendRequiresStream": "تتصل الدردشة عند بدء البث. ابدأ البث لتمكين الإرسال.",
     "sendTargets": "الإرسال إلى: {{targets}}",
     "sendTo": "إرسال إلى:",
@@ -211,6 +213,13 @@
       "reauth": "سجّل الدخول إلى Twitch مرة أخرى لمنح إذن دردشة المتابعين فقط.",
       "unsupported": "{{platform}} لا يدعم دردشة المتابعين فقط — هذه الحماية غير مفعّلة هناك.",
       "failed": "تعذّر تفعيل دردشة المتابعين فقط: {{reason}}"
+    },
+    "connect": {
+      "connect": "وصل الدردشة",
+      "disconnect": "افصل الدردشة",
+      "connecting": "جارٍ الاتصال…",
+      "disconnected": "تم الفصل",
+      "failed": "تعذّر تغيير الاتصال: {{error}}"
     }
   },
   "common": {

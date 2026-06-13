@@ -119,7 +119,9 @@
       "deviceOpened": "브라우저에서 로그인 페이지를 열었습니다. 거기에 이 코드를 입력하세요:",
       "portalLabel": "개발자 포털 (브라우저에서 열기)",
       "pasteTheseValues": "앱 양식에 다음 값을 사용하세요:",
-      "copyValue": "{{label}} 복사"
+      "copyValue": "{{label}} 복사",
+      "signInSuccess": "로그인됨",
+      "signInSuccessNamed": "{{name}}(으)로 로그인됨"
     },
     "platformReadOnly": "읽기 전용",
     "platforms": {
@@ -157,7 +159,7 @@
     "sendOn": "보내다",
     "sendPartialFail": "일부 플랫폼에서 메시지를 받지 못했습니다.",
     "sendPlaceholder": "활성화된 모든 채팅에 메시지 보내기...",
-    "sendRequiresConfig": "전송을 활성화하려면 통합에서 채팅 플랫폼을 구성하세요.",
+    "sendRequiresConfig": "채팅을 연결하려면 로그인하거나 통합에서 채널을 설정하세요.",
     "sendRequiresStream": "스트리밍을 시작하면 채팅이 연결됩니다. 전송을 활성화하려면 스트림을 시작하세요.",
     "sendTargets": "보내는 사람: {{targets}}",
     "sendTo": "보낼 대상:",
@@ -211,6 +213,13 @@
       "reauth": "팔로워 전용 채팅 권한을 부여하려면 Twitch에 다시 로그인하세요.",
       "unsupported": "{{platform}}은(는) 팔로워 전용 채팅을 지원하지 않으므로 해당 보호 기능이 적용되지 않습니다.",
       "failed": "팔로워 전용 채팅을 켤 수 없습니다: {{reason}}"
+    },
+    "connect": {
+      "connect": "채팅 연결",
+      "disconnect": "채팅 연결 해제",
+      "connecting": "연결 중…",
+      "disconnected": "연결 해제됨",
+      "failed": "연결을 변경할 수 없습니다: {{error}}"
     }
   },
   "common": {

@@ -119,7 +119,9 @@
       "deviceOpened": "Wir haben die Anmeldeseite in deinem Browser geöffnet. Gib dort diesen Code ein:",
       "portalLabel": "Entwicklerportal (im Browser öffnen)",
       "pasteTheseValues": "Verwende diese Werte im App-Formular:",
-      "copyValue": "{{label}} kopieren"
+      "copyValue": "{{label}} kopieren",
+      "signInSuccess": "Angemeldet",
+      "signInSuccessNamed": "Angemeldet als {{name}}"
     },
     "platformReadOnly": "schreibgeschützt",
     "platforms": {
@@ -157,7 +159,7 @@
     "sendOn": "Weiterschicken",
     "sendPartialFail": "Einige Plattformen konnten Ihre Nachricht nicht empfangen.",
     "sendPlaceholder": "Senden Sie eine Nachricht an alle aktivierten Chats...",
-    "sendRequiresConfig": "Konfigurieren Sie eine Chat-Plattform in Integrationen, um das Senden zu ermöglichen.",
+    "sendRequiresConfig": "Melde dich an oder lege in Integrationen einen Kanal fest, um den Chat zu verbinden.",
     "sendRequiresStream": "Der Chat stellt eine Verbindung her, wenn Sie mit dem Streaming beginnen. Starten Sie einen Stream, um das Senden zu ermöglichen.",
     "sendTargets": "Senden an: {{targets}}",
     "sendTo": "Senden an:",
@@ -211,6 +213,13 @@
       "reauth": "Melde dich erneut bei Twitch an, um die Berechtigung für den Nur-Follower-Chat zu erteilen.",
       "unsupported": "{{platform}} unterstützt keinen Nur-Follower-Chat – dieser Schutz ist dort nicht aktiv.",
       "failed": "Nur-Follower-Chat konnte nicht aktiviert werden: {{reason}}"
+    },
+    "connect": {
+      "connect": "Chat verbinden",
+      "disconnect": "Chat trennen",
+      "connecting": "Verbinden…",
+      "disconnected": "Getrennt",
+      "failed": "Verbindung konnte nicht geändert werden: {{error}}"
     }
   },
   "common": {

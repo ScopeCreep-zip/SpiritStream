@@ -342,6 +342,13 @@ pub async fn v1_profile_activate(
         );
     }
 
+    // Chat is decoupled from streaming: connect configured platforms on
+    // activation (profile switch, channel-save re-activation, startup
+    // re-activation), not only on stream start. Idempotent — already-
+    // connected platforms are skipped, and any the user deliberately
+    // disconnected are left alone by the intent guard inside.
+    tokio::spawn(crate::auto_connect_chat_platforms(state.clone()));
+
     Ok(Json(outcome.profile.into()))
 }
 

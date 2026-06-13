@@ -14,21 +14,19 @@ import type { ChatPlatformStatus } from '@spiritstream/types';
 
 interface ChatComposerProps {
   statuses: ChatPlatformStatus[];
-  activeStreamCount: number;
 }
 
 /**
  * Send draft + platform pills + the "why can't I send?" hint. Owns its
- * own draftMessage + isSending state; reads statuses + activeStreamCount
- * from the parent's `useChatPlatformStatus` hook so we don't double-poll.
+ * own draftMessage + isSending state; reads statuses from the parent's
+ * `useChatPlatformStatus` hook so we don't double-poll. Chat is
+ * decoupled from streaming — sending is gated on a connected, send-
+ * capable platform, not on an active stream.
  *
  * Backend decides what's valid to send: this component only formats the
  * draft and calls `api.chat.sendMessage`.
  */
-export function ChatComposer({
-  statuses,
-  activeStreamCount,
-}: ChatComposerProps): React.ReactElement {
+export function ChatComposer({ statuses }: ChatComposerProps): React.ReactElement {
   const { t } = useTranslation();
   const currentProfile = useProfileStore((state) => state.current);
   const chatSettings = useMemo(
@@ -163,22 +161,16 @@ export function ChatComposer({
   );
 
   const sendDisabledReason = useMemo(() => {
-    const isStreaming = activeStreamCount > 0;
     const configuredPlatforms = allPlatformStates.filter((row) => row.configured);
     // TikTok cannot send by design; exclude from "can we send?" enumeration.
     const sendEnabledPlatforms = allPlatformStates.filter(
       (row) => row.configured && row.sendEnabled && !row.readOnly
     );
 
-    if (!isStreaming) {
-      return t('chat.sendRequiresStream', {
-        defaultValue: 'Chat connects when you start streaming. Start a stream to enable sending.',
-      });
-    }
-
+    // Chat is decoupled from streaming — no "start a stream first" gate.
     if (configuredPlatforms.length === 0) {
       return t('chat.sendRequiresConfig', {
-        defaultValue: 'Configure a chat platform in Integrations to enable sending.',
+        defaultValue: 'Sign in or set a channel in Integrations to connect chat.',
       });
     }
 
@@ -217,7 +209,7 @@ export function ChatComposer({
     return t('chat.sendDisabledHint', {
       defaultValue: 'Enable sending in Integrations and connect your chat to send messages.',
     });
-  }, [activeStreamCount, allPlatformStates, chatSettings, statuses, t]);
+  }, [allPlatformStates, chatSettings, statuses, t]);
 
   const handleSend = useCallback(async (): Promise<void> => {
     const trimmed = draftMessage.trim();
