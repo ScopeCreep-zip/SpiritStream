@@ -8,14 +8,12 @@ const MAX_MESSAGES = 500;
 const hasMessageId = (existing: readonly ChatMessage[], id: string): boolean =>
   existing.some((m) => m.id === id);
 
-const dedupeAgainst =
-  (existing: readonly ChatMessage[]) =>
-  (incoming: ChatMessage): boolean =>
-    !hasMessageId(existing, incoming.id);
-
 interface ChatStore {
   messages: ChatMessage[];
-  overlayTransparent: boolean;
+  /** Overlay opacity (0 = fully see-through, 1 = opaque). Drives the
+   *  `--overlay-opacity` CSS var; tuned by the transparency slider. Applies to
+   *  the whole pop-out window background. */
+  overlayOpacity: number;
   overlayAlwaysOnTop: boolean;
   /**
    * Set when the backend reports the follower-only default could not be
@@ -55,7 +53,7 @@ interface ChatStore {
    * `username` (case-insensitive).
    */
   markUserTimedOut: (login: string) => void;
-  setOverlayTransparent: (transparent: boolean) => void;
+  setOverlayOpacity: (opacity: number) => void;
   setOverlayAlwaysOnTop: (alwaysOnTop: boolean) => void;
   setFollowerOnlyReauthNeeded: (needed: boolean) => void;
   setTwitchReauthNeeded: (needed: boolean) => void;
@@ -65,7 +63,7 @@ export const useChatStore = create<ChatStore>()(
   persist(
     (set) => ({
       messages: [],
-      overlayTransparent: false,
+      overlayOpacity: 1,
       overlayAlwaysOnTop: true,
       followerOnlyReauthNeeded: false,
       twitchReauthNeeded: false,
@@ -78,11 +76,22 @@ export const useChatStore = create<ChatStore>()(
         })),
 
       addMessages: (messages) =>
-        set((state) => ({
-          messages: [...state.messages, ...messages.filter(dedupeAgainst(state.messages))].slice(
-            -MAX_MESSAGES
-          ),
-        })),
+        set((state) => {
+          // Dedup the incoming batch against existing AND against itself.
+          // A server-side history replay can carry the same id more than
+          // once (e.g. the persisted log retained duplicates from an
+          // earlier connector bug); filtering only against `state.messages`
+          // let same-batch repeats through, producing duplicate React keys
+          // that break the feed's reconciliation + auto-scroll.
+          const seen = new Set(state.messages.map((m) => m.id));
+          const fresh: ChatMessage[] = [];
+          for (const message of messages) {
+            if (seen.has(message.id)) continue;
+            seen.add(message.id);
+            fresh.push(message);
+          }
+          return { messages: [...state.messages, ...fresh].slice(-MAX_MESSAGES) };
+        }),
 
       clearMessages: () => set({ messages: [] }),
 
@@ -106,7 +115,7 @@ export const useChatStore = create<ChatStore>()(
           };
         }),
 
-      setOverlayTransparent: (transparent) => set({ overlayTransparent: transparent }),
+      setOverlayOpacity: (overlayOpacity) => set({ overlayOpacity }),
 
       setOverlayAlwaysOnTop: (alwaysOnTop) => set({ overlayAlwaysOnTop: alwaysOnTop }),
 
@@ -116,6 +125,33 @@ export const useChatStore = create<ChatStore>()(
     }),
     {
       name: 'spiritstream-chat',
+      // v0: boolean `overlayTransparent`. v1: `overlayVariant` enum +
+      // `overlayGlassOpacity`. v2: dropped the `transparent` variant (now
+      // `normal` at opacity 0) + renamed opacity to `overlayOpacity`. v3:
+      // dropped the overlay-variant concept entirely (no glass) — the pop-out
+      // is just a transparency slider over a flat background.
+      version: 3,
+      migrate: (persisted, version) => {
+        const p = (persisted ?? {}) as {
+          overlayTransparent?: boolean;
+          overlayVariant?: string;
+          overlayGlassOpacity?: number;
+          overlayOpacity?: number;
+          overlayAlwaysOnTop?: boolean;
+        };
+        const overlayAlwaysOnTop = p.overlayAlwaysOnTop ?? true;
+        if (version < 1) {
+          return { overlayOpacity: p.overlayTransparent ? 0 : 1, overlayAlwaysOnTop };
+        }
+        if (version < 2) {
+          // v1 had per-variant opacity in `overlayGlassOpacity`; collapse to a
+          // single opacity (0 for the old `transparent` preset, else opaque).
+          const overlayOpacity =
+            p.overlayVariant === 'transparent' ? 0 : p.overlayGlassOpacity ?? 1;
+          return { overlayOpacity, overlayAlwaysOnTop };
+        }
+        return { overlayOpacity: p.overlayOpacity ?? 1, overlayAlwaysOnTop };
+      },
       // `messages` is DELIBERATELY excluded from localStorage. Inbound
       // chat is sensitive (harassment/doxxing content + PII) and the
       // webview renders chat from strangers — an XSS-exposed surface.
@@ -125,7 +161,7 @@ export const useChatStore = create<ChatStore>()(
       // message endpoint on (re)connect instead; only the non-sensitive
       // overlay UI prefs persist here.
       partialize: (state) => ({
-        overlayTransparent: state.overlayTransparent,
+        overlayOpacity: state.overlayOpacity,
         overlayAlwaysOnTop: state.overlayAlwaysOnTop,
       }),
     }

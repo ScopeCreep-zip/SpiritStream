@@ -84,6 +84,21 @@ describe('chatStore.addMessages', () => {
     expect(ids).toEqual(['twitch:1', 'twitch:2', 'twitch:3']);
   });
 
+  it('dedupes repeats WITHIN a single batch (history replay can carry dup ids)', () => {
+    // A server-side history replay retained duplicates from an earlier
+    // connector bug; the same id arriving twice in one batch must collapse
+    // to one row — duplicate React keys break the feed's auto-scroll.
+    useChatStore.getState().addMessages([
+      makeMessage({ id: 'youtube:LCC.a', message: 'first' }),
+      makeMessage({ id: 'youtube:LCC.a', message: 'dup' }),
+      makeMessage({ id: 'youtube:LCC.b' }),
+      makeMessage({ id: 'youtube:LCC.a', message: 'dup again' }),
+    ]);
+    const ids = useChatStore.getState().messages.map((m) => m.id);
+    expect(ids).toEqual(['youtube:LCC.a', 'youtube:LCC.b']);
+    expect(useChatStore.getState().messages[0].message).toBe('first');
+  });
+
   it('caps a bulk insert at the most recent 500', () => {
     const batch = Array.from({ length: 700 }, (_, i) => makeMessage({ id: `twitch:${i}` }));
     useChatStore.getState().addMessages(batch);

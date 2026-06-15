@@ -1,12 +1,7 @@
 import { useEffect } from 'react';
-import { useTranslation } from 'react-i18next';
-import { X } from 'lucide-react';
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { emit, listen } from '@tauri-apps/api/event';
-import { cn } from '@/lib/cn';
 import { ChatList } from '@/components/chat/ChatList';
-import { Button } from '@/components/ui/Button';
 import {
   CHAT_OVERLAY_SETTINGS_EVENT,
   CHAT_OVERLAY_ALWAYS_ON_TOP_EVENT,
@@ -20,10 +15,9 @@ import { useChatStore } from '@/stores/chatStore';
 import type { ChatMessage } from '@spiritstream/types';
 
 export function ChatOverlay() {
-  const { t } = useTranslation();
   const messages = useChatStore((state) => state.messages);
-  const overlayTransparent = useChatStore((state) => state.overlayTransparent);
-  const setOverlayTransparent = useChatStore((state) => state.setOverlayTransparent);
+  const overlayOpacity = useChatStore((state) => state.overlayOpacity);
+  const setOverlayOpacity = useChatStore((state) => state.setOverlayOpacity);
   const addMessages = useChatStore((state) => state.addMessages);
 
   // Set up auto-close when main window closes
@@ -39,8 +33,10 @@ export function ChatOverlay() {
     let unlistenAlwaysOnTop: (() => void) | undefined;
     let unlistenSync: (() => void) | undefined;
 
-    listen<{ transparent: boolean }>(CHAT_OVERLAY_SETTINGS_EVENT, (event) => {
-      setOverlayTransparent(event.payload.transparent);
+    listen<{ opacity: number }>(CHAT_OVERLAY_SETTINGS_EVENT, (event) => {
+      if (typeof event.payload.opacity === 'number') {
+        setOverlayOpacity(event.payload.opacity);
+      }
     }).then((fn) => {
       unlistenTransparent = fn;
     });
@@ -69,7 +65,7 @@ export function ChatOverlay() {
       unlistenAlwaysOnTop?.();
       unlistenSync?.();
     };
-  }, [addMessages, setOverlayTransparent]);
+  }, [addMessages, setOverlayOpacity]);
 
   useEffect(() => {
     if (isTauri()) {
@@ -113,29 +109,20 @@ export function ChatOverlay() {
     html.dataset.window = 'chat-overlay';
     body.dataset.window = 'chat-overlay';
 
-    if (overlayTransparent) {
-      html.dataset.overlayTransparent = 'true';
-      body.dataset.overlayTransparent = 'true';
-    } else {
-      delete html.dataset.overlayTransparent;
-      delete body.dataset.overlayTransparent;
-    }
-
     return () => {
       delete html.dataset.window;
-      delete html.dataset.overlayTransparent;
       delete body.dataset.window;
-      delete body.dataset.overlayTransparent;
     };
-  }, [overlayTransparent]);
+  }, []);
 
-  const handleClose = async () => {
-    try {
-      await WebviewWindow.getCurrent().close();
-    } catch (error) {
-      logger.error('Failed to close chat overlay window:', error);
-    }
-  };
+  // Overlay opacity → CSS var consumed by the normal background layer.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.documentElement.style.setProperty('--overlay-opacity', String(overlayOpacity));
+    return () => {
+      document.documentElement.style.removeProperty('--overlay-opacity');
+    };
+  }, [overlayOpacity]);
 
   const handleDragStart = () => {
     getCurrentWindow()
@@ -145,29 +132,19 @@ export function ChatOverlay() {
       });
   };
 
+  // `h-screen` (definite height), NOT `min-h-screen` — the flex chain needs a
+  // bounded height so ChatList scrolls INTERNALLY (header fixed,
+  // auto-scroll-to-newest works) instead of growing past the window.
+  // `chat-overlay-normal` paints a flat bg at the opacity slider.
   return (
-    <div
-      className={cn(
-        'min-h-screen w-full flex flex-col',
-        overlayTransparent ? 'bg-transparent' : 'bg-bg-base'
-      )}
-    >
+    <div className="h-screen w-full flex flex-col chat-overlay-normal">
+      {/* Slim grab strip — no close button (pop-out / collapse is owned by the
+          console). Keeps the window draggable. */}
       <div
-        className="flex items-center justify-end px-6 pt-3 pb-2 cursor-grab active:cursor-grabbing"
+        className="h-7 w-full flex-shrink-0 cursor-grab active:cursor-grabbing"
         data-tauri-drag-region
         onPointerDown={handleDragStart}
-      >
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={handleClose}
-          aria-label={t('chat.closeOverlay', { defaultValue: 'Close chat overlay' })}
-          data-tauri-drag-region="false"
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          <X className="w-4 h-4" />
-        </Button>
-      </div>
+      />
       <div className="flex-1 min-h-0 px-6 pb-6">
         <ChatList messages={messages} showEmptyState={false} density="compact" className="h-full" />
       </div>

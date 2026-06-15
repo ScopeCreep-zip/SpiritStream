@@ -4,7 +4,14 @@ import { api } from '@/lib/client';
 import { logger } from '@/lib/logger';
 import { useChatStore } from '@/stores/chatStore';
 import type { ChatMessage } from '@spiritstream/types';
-import { CHAT_MESSAGE_EVENT, CHAT_OVERLAY_SETTINGS_EVENT } from '@/lib/chatEvents';
+import {
+  CHAT_AUTO_CONNECTED_EVENT,
+  CHAT_AUTO_CONNECT_FAILED_EVENT,
+  CHAT_MESSAGE_EVENT,
+  CHAT_OVERLAY_SETTINGS_EVENT,
+} from '@/lib/chatEvents';
+import { toast } from '@/hooks/useToast';
+import i18n from '@/lib/i18n';
 
 type UnlistenFn = () => void;
 
@@ -13,7 +20,7 @@ export function useChatListener() {
   const addMessages = useChatStore((state) => state.addMessages);
   const markMessageDeleted = useChatStore((state) => state.markMessageDeleted);
   const markUserTimedOut = useChatStore((state) => state.markUserTimedOut);
-  const setOverlayTransparent = useChatStore((state) => state.setOverlayTransparent);
+  const setOverlayOpacity = useChatStore((state) => state.setOverlayOpacity);
 
   useEffect(() => {
     // Unmount can race the async registrations; the cancelled flag makes
@@ -21,6 +28,11 @@ export function useChatListener() {
     let cancelled = false;
     let unlistenMessages: UnlistenFn | null = null;
     let unlistenOverlay: UnlistenFn | null = null;
+    let unlistenConnected: UnlistenFn | null = null;
+    let unlistenConnectFailed: UnlistenFn | null = null;
+
+    const platformLabel = (platform: string): string =>
+      i18n.t(`chat.platforms.${platform}`, { defaultValue: platform });
 
     // Repopulate chat history from the BACKEND on first load and on every
     // (re)connect — the message store is in-memory only (OWASP: sensitive
@@ -75,8 +87,10 @@ export function useChatListener() {
       });
 
     events
-      .on<{ transparent: boolean }>(CHAT_OVERLAY_SETTINGS_EVENT, (payload) => {
-        setOverlayTransparent(payload.transparent);
+      .on<{ opacity?: number }>(CHAT_OVERLAY_SETTINGS_EVENT, (payload) => {
+        if (typeof payload.opacity === 'number') {
+          setOverlayOpacity(payload.opacity);
+        }
       })
       .then((unsubscribe) => {
         if (cancelled) {
@@ -89,6 +103,55 @@ export function useChatListener() {
         logger.error('Failed to listen for chat overlay settings:', error);
       });
 
+    // Connect outcomes were emitted by the backend but nothing listened, so a
+    // failed Connect (e.g. YouTube with no live broadcast) silently did
+    // nothing. Surface both as toasts so the user always gets an answer.
+    events
+      .on<{ platform: string }>(CHAT_AUTO_CONNECTED_EVENT, (payload) => {
+        toast.success(
+          i18n.t('chat.connect.connected', {
+            defaultValue: '{{platform}} chat connected.',
+            platform: platformLabel(payload.platform),
+          })
+        );
+      })
+      .then((unsubscribe) => {
+        if (cancelled) {
+          unsubscribe();
+          return;
+        }
+        unlistenConnected = unsubscribe;
+      })
+      .catch((error) => {
+        logger.error('Failed to listen for chat connect events:', error);
+      });
+
+    events
+      .on<{ platform: string; kind?: string; error?: string }>(
+        CHAT_AUTO_CONNECT_FAILED_EVENT,
+        (payload) => {
+          toast.error(
+            i18n.t('chat.connect.connectFailed', {
+              defaultValue: 'Could not connect {{platform}} chat: {{error}}',
+              platform: platformLabel(payload.platform),
+              error:
+                payload.error ??
+                i18n.t('chat.connect.unknownError', { defaultValue: 'unknown error' }),
+            })
+          );
+        }
+      )
+      .then((unsubscribe) => {
+        if (cancelled) {
+          unsubscribe();
+          return;
+        }
+        unlistenConnectFailed = unsubscribe;
+      })
+      .catch((error) => {
+        logger.error('Failed to listen for chat connect-failed events:', error);
+      });
+
     return () => {
       cancelled = true;
       window.removeEventListener('backend:connected', seedRecent);
@@ -99,6 +162,18 @@ export function useChatListener() {
       if (unlistenOverlay) {
         unlistenOverlay();
       }
+      if (unlistenConnected) {
+        unlistenConnected();
+      }
+      if (unlistenConnectFailed) {
+        unlistenConnectFailed();
+      }
     };
-  }, [addMessage, addMessages, markMessageDeleted, markUserTimedOut, setOverlayTransparent]);
+  }, [
+    addMessage,
+    addMessages,
+    markMessageDeleted,
+    markUserTimedOut,
+    setOverlayOpacity,
+  ]);
 }

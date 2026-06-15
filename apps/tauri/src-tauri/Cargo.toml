@@ -24,7 +24,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 # Tauri
-tauri = { version = "2", features = ["image-png"] }
+tauri = { version = "2", features = ["macos-private-api", "image-png"] }
 tauri-plugin-log = "2"
 # Must register FIRST so a second launch forwards to the running
 # instance instead of killing its backend out from under it.
