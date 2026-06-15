@@ -6,6 +6,36 @@
 /* Tailwind CSS v4 */
 @import 'tailwindcss';
 
+/* Bundled service-logo font: a Symbols Nerd Font subset holding ONLY the
+   Twitch/YouTube/Facebook glyphs (740 B). Self-hosted for offline use (this is
+   a local app); see public/fonts/. `block` so the PUA glyph never flashes as
+   tofu — the tiny file loads near-instantly. */
+@font-face {
+  font-family: 'Symbols Nerd Font';
+  src: url('/fonts/SymbolsNerdFont-Brands-Subset.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+
+/* Inner mark of a service badge (components/stream/ServiceMark.tsx). Both
+   variants render a single-color mark in the badge's inherited foreground
+   color, sitting where the abbreviation text used to. */
+.service-mark-glyph {
+  font-family: 'Symbols Nerd Font';
+  font-weight: normal;
+  font-size: 1.4em;
+  line-height: 1;
+}
+.service-mark-svg {
+  display: inline-block;
+  width: 1.4em;
+  height: 1.4em;
+  background-color: currentColor;
+  -webkit-mask: var(--service-mark) center / contain no-repeat;
+  mask: var(--service-mark) center / contain no-repeat;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    CUSTOM THEME EXTENSIONS
    Tailwind v4 CSS-based theme configuration
@@ -143,20 +173,55 @@
     min-height: 100vh;
   }
 
-  /* Chat overlay window styles */
+  /* Chat overlay window: html/body MUST be transparent (the `!important` beats
+     the global `body { background: var(--bg-base) }` — without it the window
+     stays solid behind everything, which is what broke the slider). The React
+     root paints the look: a flat bg layer at `--overlay-opacity` (1 = solid,
+     0 = fully see-through, driven by the transparency slider). */
   html[data-window='chat-overlay'],
   body[data-window='chat-overlay'] {
-    background: var(--bg-base);
-  }
-
-  html[data-window='chat-overlay'][data-overlay-transparent='true'],
-  body[data-window='chat-overlay'][data-overlay-transparent='true'] {
     background: transparent !important;
   }
-
   body[data-window='chat-overlay'] #root {
     min-height: 100vh;
     background: transparent;
+  }
+
+  /* Overlay background as a separate layer so the transparency slider drives
+     the universally-supported `opacity` property — NOT `color-mix` with a
+     calc-percentage from a var, which WebKit (the macOS WKWebView) doesn't
+     reliably apply. `var(--bg-base)` keeps it theme-correct. */
+  .chat-overlay-normal {
+    position: relative;
+  }
+  .chat-overlay-normal::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: var(--bg-base);
+    opacity: var(--overlay-opacity, 1);
+    pointer-events: none;
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    .chat-overlay-normal::before {
+      background: var(--bg-base);
+      opacity: 1;
+    }
+  }
+
+  /* Chat overlay: auto-hiding scrollbar — invisible track + thumb until the
+     scroll area is hovered, so it stays out of the way. */
+  [data-window='chat-overlay'] ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  [data-window='chat-overlay'] ::-webkit-scrollbar-thumb {
+    background: transparent;
+    transition: background 150ms ease;
+  }
+  [data-window='chat-overlay'] :hover::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
   }
 
   /* Scrollbar */

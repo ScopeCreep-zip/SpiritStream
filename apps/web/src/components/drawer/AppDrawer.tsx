@@ -11,6 +11,8 @@ import {
   type ServiceEntry,
 } from './serviceCatalog';
 import type { Platform } from '@spiritstream/types';
+import { ServiceMark } from '@/components/stream/ServiceMark';
+import { brandSlug } from '@/lib/serviceLogos';
 
 interface AppDrawerProps {
   open: boolean;
@@ -175,7 +177,7 @@ function ServiceCard({ entry, onSelect }: ServiceCardProps): React.ReactElement 
         // as CSS vars (Modal.tsx pattern).
         style={{ '--service-bg': entry.color, '--service-fg': entry.textColor } as React.CSSProperties}
       >
-        {entry.abbreviation}
+        <ServiceMark slug={brandSlug(entry.displayName)} abbreviation={entry.abbreviation} />
       </span>
       <span className="flex flex-col min-w-0">
         <span className="text-sm font-medium text-text-primary truncate">{entry.displayName}</span>

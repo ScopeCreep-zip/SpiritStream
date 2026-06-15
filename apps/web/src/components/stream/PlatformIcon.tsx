@@ -1,6 +1,8 @@
 import { cn } from '@/lib/cn';
 import type { Platform } from '@spiritstream/types';
 import { PLATFORMS } from '@/lib/profile-helpers';
+import { ServiceMark } from '@/components/stream/ServiceMark';
+import { brandSlug } from '@/lib/serviceLogos';
 
 export interface PlatformIconProps {
   platform: Platform;
@@ -34,7 +36,10 @@ export function PlatformIcon({ platform, size = 'md', className }: PlatformIconP
         } as React.CSSProperties
       }
     >
-      {platformConfig.abbreviation}
+      <ServiceMark
+        slug={brandSlug(platformConfig.displayName)}
+        abbreviation={platformConfig.abbreviation}
+      />
     </div>
   );
 }
