@@ -11,10 +11,13 @@
 use std::time::Duration;
 
 use spiritstream_core::models::ChatPlatform;
+use spiritstream_core::services::EventSink;
 
 use crate::AppState;
 
-use super::{ensure_fresh_oauth_token, get_active_profile_settings, persist_active_profile_settings};
+use super::{
+    ensure_fresh_oauth_token, get_active_profile_settings, persist_active_profile_settings,
+};
 
 /// Background loop that keeps the active profile's Twitch OAuth token fresh
 /// while Twitch chat is connected. Fire-and-forget; errors are logged.
@@ -22,9 +25,16 @@ pub(crate) async fn start_twitch_token_refresh_task(state: AppState) {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(60));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        // Tick counter drives Twitch's mandated token-validation cadence:
+        // once on session start (tick 1) and hourly thereafter (every 60th
+        // 60s tick). Separate from expiry-based refresh above — `/validate`
+        // catches server-side invalidation (revoked access / password
+        // change) that `expires_at` can't see.
+        let mut ticks: u64 = 0;
 
         loop {
             interval.tick().await;
+            ticks = ticks.saturating_add(1);
 
             let is_connected = state
                 .chat_manager
@@ -91,6 +101,34 @@ pub(crate) async fn start_twitch_token_refresh_task(state: AppState) {
                 }
                 Err(e) => {
                     log::warn!("Twitch token refresh failed: {e}");
+                }
+            }
+
+            // Twitch policy: validate the token on session start and hourly.
+            // A 401 means it was invalidated server-side even if `expires_at`
+            // is in the future — per Twitch's docs the app MUST end every
+            // session using the token. We disconnect Twitch chat and emit
+            // `oauth_token_expired` so the UI surfaces the re-auth prompt
+            // (reusing the same event the proactive-refresh failure path uses).
+            if ticks == 1 || ticks % 60 == 0 {
+                let token = profile_settings.oauth.twitch.access_token.clone();
+                match state.oauth_service.validate_twitch_token(&token).await {
+                    Ok(()) => {}
+                    Err(spiritstream_core::CoreError::Unauthorized) => {
+                        log::warn!(
+                            "Twitch token failed /validate (401) — ending session per Twitch policy"
+                        );
+                        if let Err(e) = state.chat_manager.disconnect(ChatPlatform::Twitch).await {
+                            log::warn!("Twitch disconnect after failed validation: {e}");
+                        }
+                        state.event_bus.emit(
+                            "oauth_token_expired",
+                            serde_json::json!({ "provider": "twitch" }),
+                        );
+                    }
+                    Err(e) => {
+                        log::debug!("Twitch token validation transient error (will retry): {e}");
+                    }
                 }
             }
         }

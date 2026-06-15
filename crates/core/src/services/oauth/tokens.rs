@@ -476,9 +476,33 @@ impl super::OAuthService {
         })
     }
 
-    /// Validate a Twitch token and get user info (alias for fetch_twitch_user).
-    pub async fn validate_twitch_token(&self, access_token: &str) -> Result<TwitchUser, CoreError> {
-        self.fetch_twitch_user(access_token).await
+    /// Validate a Twitch user access token against Twitch's mandatory
+    /// `GET https://id.twitch.tv/oauth2/validate` endpoint.
+    ///
+    /// Twitch REQUIRES any app holding an OAuth token to validate it on
+    /// startup and hourly thereafter; a `401` means the token was
+    /// invalidated server-side (user revoked access, password change, etc.)
+    /// even if it hasn't expired by `expires_at`, and the app must end every
+    /// session using it. Returns `Ok(())` on `200`, `Err(Unauthorized)` on
+    /// `401`, and a network error otherwise (transient — caller retries
+    /// on the next tick rather than ending the session).
+    pub async fn validate_twitch_token(&self, access_token: &str) -> Result<(), CoreError> {
+        let response = self
+            .http_client
+            .get("https://id.twitch.tv/oauth2/validate")
+            .header("Authorization", format!("OAuth {access_token}"))
+            .send()
+            .await
+            .map_err(|e| network(format!("Twitch token validation request failed: {e}")))?;
+        let status = response.status();
+        let _ = response.text().await;
+        if status.as_u16() == 401 {
+            return Err(CoreError::Unauthorized);
+        }
+        if !status.is_success() {
+            return Err(network(format!("Twitch /validate returned HTTP {status}")));
+        }
+        Ok(())
     }
 
     /// Fetch the bearer-identified Facebook user. Meta's `/me` endpoint
