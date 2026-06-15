@@ -266,23 +266,48 @@ impl FFmpegHandler {
         }
     }
 
-    pub(super) fn fire_obs_trigger(&self, start: bool) {
+    /// Fire the SpiritStream→OBS *start* trigger after a short settle delay,
+    /// so SpiritStream's relay is listening before OBS connects to it. The
+    /// stop direction is deliberately NOT symmetric — see
+    /// `stop_all_orchestrated`: OBS must be told to stop *before* the relay is
+    /// torn down, or OBS drops into a reconnect-then-stop hang
+    /// (obs-websocket #1230 / #486). Spawned so the synchronous `start_all`
+    /// caller doesn't block.
+    pub(super) fn fire_obs_start_trigger(&self) {
         let trigger = match self.obs_trigger.read() {
             Ok(g) => g.clone(),
             Err(_) => None,
         };
         let Some(trigger) = trigger else { return };
-        // The trigger runs after a small delay so SpiritStream can
-        // settle its own pipeline first. Spawned on the runtime so the
-        // synchronous `start_all` / `stop_all` callers don't block.
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
-            if start {
-                trigger.trigger_start().await;
-            } else {
-                trigger.trigger_stop().await;
-            }
+            trigger.trigger_start().await;
         });
+    }
+
+    /// App-initiated full stop with OBS-safe ordering. Tells OBS to stop
+    /// FIRST — while the relay's RTMP ingest is still listening — and (inside
+    /// `trigger_stop`) waits bounded for OBS to reach STOPPED, THEN tears down
+    /// the relay + platform outputs off-thread. Tearing the relay down first
+    /// drops OBS into "reconnecting", and a StopStream landing on a
+    /// reconnecting output makes OBS hang on the STOPPING→STOPPED transition
+    /// (obs-websocket #1230). The OBS→SpiritStream cascade and the panic path
+    /// use the bare `stop_all` instead — OBS has already stopped itself, or
+    /// (panic) going dark immediately outranks a clean OBS handshake.
+    pub async fn stop_all_orchestrated(self: Arc<Self>) -> Result<(), CoreError> {
+        let trigger = match self.obs_trigger.read() {
+            Ok(g) => g.clone(),
+            Err(_) => None,
+        };
+        if let Some(trigger) = trigger {
+            trigger.trigger_stop().await;
+        }
+        let this = Arc::clone(&self);
+        tokio::task::spawn_blocking(move || this.stop_all())
+            .await
+            .map_err(|e| CoreError::Internal {
+                context: format!("ffmpeg stop_all join: {e}"),
+            })?
     }
 
     /// Active stream count.

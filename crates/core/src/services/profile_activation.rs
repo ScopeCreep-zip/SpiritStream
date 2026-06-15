@@ -16,11 +16,11 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::errors::CoreError;
-use crate::models::{ObsIntegrationDirection, Profile};
+use crate::models::{ChatSettings, Profile, RtmpInput};
 use crate::services::profile_manager::ProfileActivatedEvent;
 use crate::services::{
-    AuthSurveillanceService, ChatManager, EventSink, IntegrationDirection, OAuthService, ObsConfig,
-    ObsConnectionStatus, ObsWebSocketHandler, ProfileManager, SettingsManager,
+    AuthSurveillanceService, ChatManager, EventSink, OAuthService, ObsConfig, ObsConnectionStatus,
+    ObsWebSocketHandler, ProfileManager, SettingsManager,
 };
 
 /// Refresh leeway for OAuth tokens evaluated during activation. Matches the
@@ -28,6 +28,21 @@ use crate::services::{
 /// enough ahead of expiry that the first chat-connect or stream-start after
 /// activate doesn't 401.
 const OAUTH_REFRESH_LEEWAY_SECS: i64 = 300;
+
+/// The RTMP ingest URL OBS should push to, derived from the profile input.
+///
+/// Wildcard / loopback binds (`0.0.0.0`, `::`, `localhost`, `127.0.0.1`, …) are
+/// forced to the explicit IPv4 literal `127.0.0.1`: the FFmpeg `-listen` ingest
+/// binds IPv4 loopback, and on macOS `localhost` resolves to `::1` (IPv6) first,
+/// so OBS pushing to a name would hit `::1` and get "Failed to connect to
+/// server." A specific bind IP (e.g. a LAN address for a remote OBS) is kept.
+fn obs_ingest_url(input: &RtmpInput) -> String {
+    let host = match input.bind_address.trim() {
+        "" | "0.0.0.0" | "::" | "[::]" | "localhost" | "::1" | "[::1]" | "127.0.0.1" => "127.0.0.1",
+        other => other,
+    };
+    format!("rtmp://{host}:{}/{}", input.port, input.application)
+}
 
 /// Structured result of `ProfileActivationService::activate`. Transports
 /// emit `profile.event` on their event bus and translate
@@ -38,6 +53,14 @@ pub struct ActivationOutcome {
     pub profile: Profile,
     pub event: ProfileActivatedEvent,
     pub oauth_refresh_failed: Vec<String>,
+}
+
+/// Structured result of `ProfileActivationService::deactivate`. Carries the
+/// name of the profile that was active (if any) so transports can shape a
+/// response / CLI output without re-reading settings.
+#[derive(Debug)]
+pub struct DeactivationOutcome {
+    pub deactivated: Option<String>,
 }
 
 /// Composes profile load + OAuth refresh + chat propagation + OBS
@@ -162,27 +185,11 @@ impl ProfileActivationService {
             Err(e) => log::warn!("Could not load settings to persist last_profile: {e}"),
         }
 
-        self.chat
-            .update_profile_chat_settings(profile.settings.chat.clone())
-            .await;
-
-        // Push the anonymous-mode policy from core so EVERY transport
-        // gets it (the CLI previously never set it — only the HTTP
-        // transport's post-activation hook did, so CLI-driven chat
-        // sessions logged plaintext usernames with anonymous mode on).
-        // Fails the activation outright on an invalid salt: an enabled
-        // policy that can't pseudonymise would drop every message.
-        self.chat
-            .set_anonymous_policy(profile.anonymous_logging, profile.anonymous_salt.clone())?;
-
-        // Same single-source push for the PII policy snapshot the
-        // crosspost gate consumes.
-        self.chat
-            .set_pii_policy(profile.pii_blocklist.clone(), profile.pii_fuzzy);
-
-        // Tear down any existing OBS session before reconfigure — otherwise
-        // we'd hold a connection authenticated with the prior profile's
-        // password while the new config replaces it.
+        // Tear down any existing OBS session before reconfigure — otherwise we'd
+        // hold a connection authenticated with the prior profile's password
+        // while the new config replaces it. A profile SWITCH always wants this
+        // explicit teardown; the within-profile save path lets
+        // `apply_profile_obs` decide (reconnect only when params changed).
         let prior_status = self.obs.get_state().await.connection_status;
         if matches!(
             prior_status,
@@ -193,37 +200,10 @@ impl ProfileActivationService {
             }
         }
 
-        let obs_settings = &profile.settings.obs;
-        let direction = match obs_settings.direction {
-            ObsIntegrationDirection::ObsToSpiritstream => IntegrationDirection::ObsToSpiritstream,
-            ObsIntegrationDirection::SpiritstreamToObs => IntegrationDirection::SpiritstreamToObs,
-            ObsIntegrationDirection::Bidirectional => IntegrationDirection::Bidirectional,
-            ObsIntegrationDirection::Disabled => IntegrationDirection::Disabled,
-        };
-        self.obs
-            .set_config(ObsConfig {
-                host: obs_settings.host.clone(),
-                port: obs_settings.port,
-                password: obs_settings.password.clone(),
-                use_auth: obs_settings.use_auth,
-                direction,
-                auto_connect: obs_settings.auto_connect,
-            })
-            .await;
-
-        // Auto-connect when OBS integration is in use: an explicit
-        // auto-connect opt-in, OR any non-Disabled trigger direction
-        // (picking a direction means the user wants OBS wired up, so the
-        // trigger cascade needs a live connection). Use the self-healing
-        // supervisor rather than a one-shot connect — OBS may not be
-        // running yet at launch, and the supervisor retries with backoff
-        // until it's reachable. A later manual disconnect or re-activation
-        // tears it down (single owner).
-        if obs_settings.auto_connect
-            || obs_settings.direction != ObsIntegrationDirection::Disabled
-        {
-            self.obs.clone().spawn_auto_connect(self.events.clone()).await;
-        }
+        // Re-derive live runtime (chat policy + OBS) from the profile — the
+        // single source of truth. Shared with the active-profile save path so a
+        // settings change takes effect without re-activation.
+        self.apply_profile_runtime(&profile).await?;
 
         let event = ProfileActivatedEvent::from_profile_public(&profile);
         // Emit the consolidated event from the orchestrator itself so HTTP
@@ -241,6 +221,125 @@ impl ProfileActivationService {
             oauth_refresh_failed: refresh.failed,
         })
     }
+
+    /// Re-derive the live runtime services from a profile document — the single
+    /// A→B sync from the profile (source of truth) onto the live `ChatManager`
+    /// and OBS handler. Pushes the chat settings + anonymous/PII policy and maps
+    /// the OBS settings in (reconnecting only if connection params changed).
+    ///
+    /// Shared by `activate` (after its profile-switch OBS teardown) and the
+    /// transport's active-profile SAVE path, so editing a setting takes effect
+    /// without a full re-activation. Does NOT touch Discord/OAuth — those are
+    /// persistence-only (no long-lived connection to re-derive).
+    pub async fn apply_profile_runtime(&self, profile: &Profile) -> Result<(), CoreError> {
+        self.chat
+            .update_profile_chat_settings(profile.settings.chat.clone())
+            .await;
+
+        // Push the anonymous-mode policy from core so EVERY transport gets it
+        // (CLI-driven chat sessions would otherwise log plaintext usernames with
+        // anonymous mode on). Fails outright on an invalid salt: an enabled
+        // policy that can't pseudonymise would drop every message.
+        self.chat
+            .set_anonymous_policy(profile.anonymous_logging, profile.anonymous_salt.clone())?;
+
+        // Same single-source push for the PII policy snapshot the crosspost gate
+        // consumes.
+        self.chat
+            .set_pii_policy(profile.pii_blocklist.clone(), profile.pii_fuzzy);
+
+        // Tell OBS where to push: the relay's RTMP ingest, derived from the
+        // profile input (explicit IPv4 loopback so OBS dodges the localhost→::1
+        // trap). `apply_profile_obs` connects below, and connect points OBS's
+        // stream service here.
+        self.obs
+            .set_ingest_url(Some(obs_ingest_url(&profile.input)))
+            .await;
+
+        self.obs
+            .clone()
+            .apply_profile_obs(&profile.settings.obs, self.events.clone())
+            .await;
+
+        Ok(())
+    }
+
+    /// Sign out of the active profile — the inverse of `activate`. Clears
+    /// the persisted active-profile pointer and tears down every piece of
+    /// per-profile session state so nothing from the signed-out profile
+    /// lingers in memory or on a live connection:
+    ///
+    /// - **Anonymizer salt** (`clear_anonymous_policy`): re-identification
+    ///   needs the per-profile salt, so it must not outlive the session. A
+    ///   vulnerable user stepping away from a shared machine must not leave
+    ///   the key that maps pseudonyms back to real identities resident.
+    /// - **Chat platforms**: disconnected so no session stays authenticated
+    ///   as the profile the user just left.
+    /// - **PII / chat policy snapshots**: reset to inert defaults.
+    /// - **OBS**: disconnected (single owner) and reset to default config.
+    ///
+    /// Idempotent: deactivating with no active profile still scrubs the
+    /// transient policy state and returns `deactivated: None`. Holds the
+    /// same `activation_lock` as `activate` so a sign-out can't interleave
+    /// with a concurrent activation.
+    pub async fn deactivate(&self) -> Result<DeactivationOutcome, CoreError> {
+        let _activation_guard = self.activation_lock.lock().await;
+
+        // Clear the persisted active-profile pointer first, capturing the
+        // prior name for the outcome.
+        let deactivated = match self.settings.load() {
+            Ok(mut current) => {
+                let prev = current.last_profile.take();
+                if prev.is_some() {
+                    if let Err(e) = self.settings.save(&current) {
+                        log::warn!("Failed to clear last_profile on deactivate: {e}");
+                    }
+                }
+                prev
+            }
+            Err(e) => {
+                log::warn!("Could not load settings to clear last_profile: {e}");
+                None
+            }
+        };
+
+        // Sign-out must not leave a chat session live and authenticated as
+        // the profile being left behind.
+        if let Err(e) = self.chat.disconnect_all("profile_deactivated").await {
+            log::warn!("chat disconnect_all during deactivate failed: {e}");
+        }
+
+        // The reason this method exists: drop the per-profile anonymizer
+        // salt + policy from memory.
+        self.chat.clear_anonymous_policy();
+
+        // Reset transient policy snapshots so no stale PII / chat-target
+        // policy from the signed-out profile survives into the next session.
+        self.chat.set_pii_policy(Vec::new(), false);
+        self.chat
+            .update_profile_chat_settings(ChatSettings::default())
+            .await;
+
+        // Tear down OBS (single owner) and reset to default config, mirroring
+        // activate's pre-reconfigure teardown.
+        let prior_status = self.obs.get_state().await.connection_status;
+        if matches!(
+            prior_status,
+            ObsConnectionStatus::Connected | ObsConnectionStatus::Connecting
+        ) {
+            if let Err(e) = self.obs.disconnect(self.events.clone()).await {
+                log::warn!("OBS disconnect during deactivate failed: {e}");
+            }
+        }
+        self.obs.set_config(ObsConfig::default_config()).await;
+
+        self.events.emit(
+            "profile_deactivated",
+            serde_json::json!({ "profile": deactivated }),
+        );
+
+        Ok(DeactivationOutcome { deactivated })
+    }
 }
 
 #[cfg(test)]
@@ -250,14 +349,54 @@ mod tests {
     use crate::services::{AuditLogService, OAuthConfig};
     use crate::NoopEventSink;
 
+    #[test]
+    fn obs_ingest_url_forces_ipv4_loopback_for_wildcards() {
+        let mk = |bind: &str| RtmpInput {
+            input_type: "rtmp".into(),
+            bind_address: bind.into(),
+            port: 1935,
+            application: "live".into(),
+            url: String::new(),
+        };
+        // Wildcard / loopback binds collapse to the explicit IPv4 literal so OBS
+        // never resolves a name to `::1` against the IPv4-only ingest.
+        for bind in [
+            "0.0.0.0",
+            "::",
+            "[::]",
+            "localhost",
+            "::1",
+            "[::1]",
+            "127.0.0.1",
+            "",
+        ] {
+            assert_eq!(
+                obs_ingest_url(&mk(bind)),
+                "rtmp://127.0.0.1:1935/live",
+                "bind={bind}"
+            );
+        }
+        // A specific (e.g. LAN) bind address is preserved for a remote OBS.
+        assert_eq!(
+            obs_ingest_url(&mk("192.168.1.50")),
+            "rtmp://192.168.1.50:1935/live"
+        );
+    }
+
     fn fresh_dir() -> std::path::PathBuf {
+        // A monotonic counter guarantees uniqueness even when two parallel tests
+        // call within the same clock tick — `as_nanos()` alone collides under
+        // coarse OS clock granularity, which flaked the audit-log setup.
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static SEQ: AtomicU64 = AtomicU64::new(0);
         let p = std::env::temp_dir().join(format!(
-            "spiritstream-activation-test-{}-{}",
+            "spiritstream-activation-test-{}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
-                .as_nanos()
+                .as_nanos(),
+            SEQ.fetch_add(1, Ordering::Relaxed)
         ));
         std::fs::create_dir_all(p.join("profiles")).unwrap();
         p
@@ -396,7 +535,8 @@ mod tests {
             data_dir.to_path_buf(),
         ));
         let obs = Arc::new(ObsWebSocketHandler::new(data_dir.to_path_buf()));
-        let audit = Arc::new(AuditLogService::new_for_tests(data_dir.to_path_buf()).expect("audit log"));
+        let audit =
+            Arc::new(AuditLogService::new_for_tests(data_dir.to_path_buf()).expect("audit log"));
         let surveillance = Arc::new(AuthSurveillanceService::new(audit, events.clone()));
         ProfileActivationService::new(profiles, settings, oauth, chat, obs, events, surveillance)
     }

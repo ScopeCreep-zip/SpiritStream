@@ -1,3 +1,4 @@
+use super::connection::obs_connection_params_changed;
 use super::types::{IntegrationDirection, ObsConfig};
 use super::ObsWebSocketHandler;
 use tempfile::TempDir;
@@ -55,21 +56,21 @@ fn mark_consume_mark_consume_rearms() {
 #[tokio::test]
 async fn direction_gates_match_documented_transitions() {
     let (_dir, h) = handler();
-    h.set_config(ObsConfig {
+    let base = ObsConfig {
         host: "127.0.0.1".into(),
         port: 4455,
         password: String::new(),
         use_auth: false,
         direction: IntegrationDirection::Disabled,
         auto_connect: false,
-    })
-    .await;
+    };
+    h.set_config(base.clone()).await;
     assert!(!h.should_obs_trigger_spiritstream().await);
     assert!(!h.should_spiritstream_trigger_obs().await);
 
     h.set_config(ObsConfig {
         direction: IntegrationDirection::ObsToSpiritstream,
-        ..h.get_config().await
+        ..base.clone()
     })
     .await;
     assert!(h.should_obs_trigger_spiritstream().await);
@@ -77,7 +78,7 @@ async fn direction_gates_match_documented_transitions() {
 
     h.set_config(ObsConfig {
         direction: IntegrationDirection::SpiritstreamToObs,
-        ..h.get_config().await
+        ..base.clone()
     })
     .await;
     assert!(!h.should_obs_trigger_spiritstream().await);
@@ -85,11 +86,68 @@ async fn direction_gates_match_documented_transitions() {
 
     h.set_config(ObsConfig {
         direction: IntegrationDirection::Bidirectional,
-        ..h.get_config().await
+        ..base.clone()
     })
     .await;
     assert!(h.should_obs_trigger_spiritstream().await);
     assert!(h.should_spiritstream_trigger_obs().await);
+}
+
+/// `apply_profile_obs` reconnects an already-open socket only when a
+/// connection-affecting param changed. This pins the decision helper that
+/// drives that: host/port/password/use_auth force a reconnect;
+/// direction/auto_connect (cascade + supervisor concerns) do NOT.
+#[test]
+fn connection_params_change_excludes_direction_and_auto_connect() {
+    let base = ObsConfig {
+        host: "localhost".into(),
+        port: 4455,
+        password: String::new(),
+        use_auth: false,
+        direction: IntegrationDirection::Disabled,
+        auto_connect: false,
+    };
+
+    // Identical → no reconnect.
+    assert!(!obs_connection_params_changed(&base, &base.clone()));
+
+    // Direction / auto_connect changes → no reconnect (handled live).
+    assert!(!obs_connection_params_changed(
+        &base,
+        &ObsConfig {
+            direction: IntegrationDirection::Bidirectional,
+            ..base.clone()
+        }
+    ));
+    assert!(!obs_connection_params_changed(
+        &base,
+        &ObsConfig {
+            auto_connect: true,
+            ..base.clone()
+        }
+    ));
+
+    // Connection params → reconnect required.
+    for changed in [
+        ObsConfig {
+            host: "obs.local".into(),
+            ..base.clone()
+        },
+        ObsConfig {
+            port: 4444,
+            ..base.clone()
+        },
+        ObsConfig {
+            password: "pw".into(),
+            ..base.clone()
+        },
+        ObsConfig {
+            use_auth: true,
+            ..base.clone()
+        },
+    ] {
+        assert!(obs_connection_params_changed(&base, &changed));
+    }
 }
 
 /// Loop scenario: simulate `start_stream` having flipped the flag (the

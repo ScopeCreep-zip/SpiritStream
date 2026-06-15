@@ -127,11 +127,11 @@ impl super::FFmpegHandler {
 
         self.ensure_relay_running(incoming_url, &desired_group_ids)?;
 
-        // SpiritStream→OBS cascade. The trigger checks the active
-        // profile's `obs.direction` server-side; this call is a no-op
-        // when the trigger handle isn't installed (tests / CLI) or
-        // when direction forbids it.
-        self.fire_obs_trigger(true);
+        // SpiritStream→OBS start cascade. Fires AFTER the relay is up so OBS
+        // connects to a live ingest. The trigger checks the active profile's
+        // `obs.direction` server-side; this call is a no-op when the trigger
+        // handle isn't installed (tests / CLI) or when direction forbids it.
+        self.fire_obs_start_trigger();
 
         Ok(started)
     }
@@ -194,8 +194,12 @@ impl super::FFmpegHandler {
 
         self.sync_process_registry();
 
-        // SpiritStream→OBS cascade — mirror of `start_all`.
-        self.fire_obs_trigger(false);
+        // NB: no SpiritStream→OBS stop trigger here. The relay's RTMP ingest
+        // has just been torn down, so OBS is mid-reconnect; a StopStream now
+        // would hang OBS (obs-websocket #1230). App-initiated stops go through
+        // `stop_all_orchestrated`, which stops OBS first while the relay is
+        // still listening. OBS→SpiritStream cascade stops reach here directly
+        // (OBS already stopped itself), as does the panic path.
 
         Ok(())
     }

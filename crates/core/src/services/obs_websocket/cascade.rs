@@ -1,21 +1,19 @@
 use std::sync::Arc;
 
+use futures_util::StreamExt;
+use obws::events::{Event, OutputState};
+use obws::Client;
+
 use crate::services::{EventSink, FFmpegHandler, ProfileManager, SettingsManager};
 
 use super::types::ObsStreamStatus;
 
-/// OBS→SpiritStream cascade delay before starting the relay. Mirrors
-/// the 2-second stabilization window the frontend used to apply
-/// client-side; centralising it here so any client (Tauri / Docker /
-/// CLI) gets the same behaviour without re-implementing the delay.
-const OBS_TRIGGER_DELAY_MS: u64 = 2000;
-
 /// Server-side cascade dependencies. Set once at startup by
 /// `ServiceRegistry::build` after every service is constructed. When
-/// present, `start_event_listener` runs the OBS→SpiritStream trigger
+/// present, the OBS event listener runs the OBS→SpiritStream trigger
 /// cascade in core (read active profile → check direction → call
-/// `FFmpegHandler::start_all`) instead of relying on a frontend
-/// observer to do it. Frontend keeps only display state.
+/// `FFmpegHandler::start_all` / `stop_all`) instead of relying on a
+/// frontend observer to do it. Frontend keeps only display state.
 #[derive(Clone)]
 pub struct ObsCascadeDeps {
     pub profiles: Arc<ProfileManager>,
@@ -36,106 +34,145 @@ impl<E: EventSink + Send + Sync + 'static> EventSink for EventSinkClone<E> {
 }
 
 impl super::ObsWebSocketHandler {
-    /// Start listening for OBS events via polling.
+    /// Subscribe to OBS's event stream for the just-connected `client` and
+    /// run the OBS→SpiritStream trigger cascade.
     ///
-    /// When `cascade_deps` is set, the listener runs the
-    /// OBS→SpiritStream trigger cascade in core on every active↔inactive
-    /// transition (read direction from active profile → optionally
-    /// call `FFmpegHandler::start_all` / `stop_all`). The frontend
-    /// only sees informational `obs://stream_state` events and an
-    /// optional `stream_started_by_obs` / `stream_stopped_by_obs` —
-    /// it never decides whether to start streaming.
+    /// Why events, not polling: OBS reports `outputActive == true` only
+    /// AFTER its RTMP output has successfully connected. When SpiritStream
+    /// IS the RTMP ingest, OBS can't connect until the relay is listening,
+    /// and the relay only starts once we see the start signal — a deadlock
+    /// that made "Start Streaming" from OBS never reach SpiritStream (it
+    /// failed with "Failed to connect to server"). The `StreamStateChanged`
+    /// event fires `OutputState::Starting` the instant the user clicks
+    /// Start, BEFORE the connection attempt, so we bring the relay up while
+    /// OBS is still (re)connecting. App-initiated starts already work because
+    /// the relay is up first; this restores the OBS-initiated direction.
+    ///
+    /// When `cascade_deps` is set, the listener runs the cascade in core on
+    /// `Starting` (start) and `Stopped` (stop). The frontend only sees
+    /// informational `obs://stream_state` events and the resulting
+    /// `stream_started_by_obs` / `stream_stopped_by_obs` — it never decides
+    /// whether to start streaming.
     pub(super) async fn start_event_listener<E: EventSink + Send + Sync + Clone + 'static>(
         &self,
+        client: Arc<Client>,
         event_sink: E,
     ) {
         let state = self.state.clone();
-        let client = self.client.clone();
         let triggered_by_us = self.triggered_by_us.clone();
         let cascade_deps = self.cascade_deps.clone();
-        let cascade_start_handle = self.cascade_start_handle.clone();
         let mut shutdown_rx = self.shutdown_tx.subscribe();
 
-        // I1: if a previous poll task is already running (reconnect
-        // flow), abort it before spawning the replacement. The aborted
-        // task observes a CancelError immediately so the old poll loop
-        // doesn't continue racing the fresh client.
+        // Single listener: abort any prior task before spawning the
+        // replacement (reconnect flow) so two event streams don't race the
+        // cascade.
         if let Some(prev) = self.listener_handle.lock().await.take() {
             prev.abort();
         }
 
         let handle = tokio::spawn(async move {
-            loop {
-                if shutdown_rx.try_recv().is_ok() {
-                    log::debug!("OBS event listener shutting down");
-                    break;
+            // `events()` borrows `*client` for the stream's lifetime; the Arc
+            // is moved into this task so the borrow — and the underlying
+            // socket — lives exactly as long as the loop, and is released
+            // when the task ends (shutdown / disconnect / OBS close).
+            let events = match client.events() {
+                Ok(stream) => stream,
+                Err(e) => {
+                    log::warn!("OBS event subscription failed: {e}");
+                    return;
                 }
+            };
+            futures_util::pin_mut!(events);
 
-                let client_guard = client.read().await;
-                if let Some(ref obs_client) = *client_guard {
-                    let sink = event_sink.clone();
+            loop {
+                let event = tokio::select! {
+                    _ = shutdown_rx.recv() => {
+                        log::debug!("OBS event listener shutting down");
+                        break;
+                    }
+                    next = events.next() => match next {
+                        Some(ev) => ev,
+                        None => break,
+                    },
+                };
 
-                    match obs_client.streaming().status().await {
-                        Ok(stream_status) => {
-                            let new_status = if stream_status.active {
-                                ObsStreamStatus::Active
-                            } else {
-                                ObsStreamStatus::Inactive
-                            };
+                let Event::StreamStateChanged {
+                    active,
+                    state: out_state,
+                } = event
+                else {
+                    continue;
+                };
 
-                            let mut state_guard = state.write().await;
-                            if state_guard.stream_status != new_status {
-                                state_guard.stream_status = new_status;
-                                drop(state_guard);
-
-                                let was_self_triggered = triggered_by_us
-                                    .swap(false, std::sync::atomic::Ordering::SeqCst);
-
-                                sink.emit(
-                                    "obs://stream_state",
-                                    serde_json::json!({
-                                        "status": new_status,
-                                        "active": stream_status.active,
-                                        "triggeredByUs": was_self_triggered,
-                                    }),
-                                );
-
-                                // Cascade: when not self-triggered, ask
-                                // the active profile's `obs.direction`
-                                // whether to drive SpiritStream and run
-                                // the action server-side.
-                                if !was_self_triggered {
-                                    let deps_snapshot = match cascade_deps.read() {
-                                        Ok(g) => g.clone(),
-                                        Err(e) => {
-                                            log::error!(
-                                                "obs cascade_deps read lock poisoned — OBS→SS cascade dropped: {e}"
-                                            );
-                                            None
-                                        }
-                                    };
-                                    if let Some(deps) = deps_snapshot {
-                                        Self::run_obs_to_ss_cascade(
-                                            stream_status.active,
-                                            deps,
-                                            event_sink.clone(),
-                                            cascade_start_handle.clone(),
-                                        )
-                                        .await;
-                                    }
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            log::debug!("Failed to poll OBS stream status: {e}");
+                // OBS output state → display status. Every transition
+                // refreshes the widget; only Starting/Stopped drive the
+                // cascade below.
+                let status = match out_state {
+                    OutputState::Starting | OutputState::Reconnecting => ObsStreamStatus::Starting,
+                    OutputState::Started
+                    | OutputState::Reconnected
+                    | OutputState::Resumed
+                    | OutputState::Paused => ObsStreamStatus::Active,
+                    OutputState::Stopping => ObsStreamStatus::Stopping,
+                    OutputState::Stopped => ObsStreamStatus::Inactive,
+                    _ => {
+                        if active {
+                            ObsStreamStatus::Active
+                        } else {
+                            ObsStreamStatus::Inactive
                         }
                     }
-                } else {
-                    break;
+                };
+                {
+                    let mut guard = state.write().await;
+                    guard.stream_status = status;
                 }
-                drop(client_guard);
 
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                // The cascade fires on exactly two transitions: Starting →
+                // start SpiritStream (relay up NOW so OBS's (re)connect
+                // lands), Stopped → stop it. Started / Stopping / Reconnecting
+                // are display-only. The `triggered_by_us` flag is consumed on
+                // these two events so a SpiritStream→OBS drive doesn't bounce
+                // back into a re-trigger.
+                let cascade_start = match out_state {
+                    OutputState::Starting => true,
+                    OutputState::Stopped => false,
+                    _ => {
+                        event_sink.emit(
+                            "obs://stream_state",
+                            serde_json::json!({ "status": status, "active": active }),
+                        );
+                        continue;
+                    }
+                };
+
+                let was_self_triggered =
+                    triggered_by_us.swap(false, std::sync::atomic::Ordering::SeqCst);
+
+                event_sink.emit(
+                    "obs://stream_state",
+                    serde_json::json!({
+                        "status": status,
+                        "active": active,
+                        "triggeredByUs": was_self_triggered,
+                    }),
+                );
+
+                if was_self_triggered {
+                    continue;
+                }
+                let deps_snapshot = match cascade_deps.read() {
+                    Ok(g) => g.clone(),
+                    Err(e) => {
+                        log::error!(
+                            "obs cascade_deps read lock poisoned — OBS→SS cascade dropped: {e}"
+                        );
+                        None
+                    }
+                };
+                if let Some(deps) = deps_snapshot {
+                    Self::run_obs_to_ss_cascade(cascade_start, deps, event_sink.clone()).await;
+                }
             }
         });
         *self.listener_handle.lock().await = Some(handle);
@@ -143,16 +180,14 @@ impl super::ObsWebSocketHandler {
 
     /// Run the OBS→SpiritStream trigger cascade. Decides whether to
     /// start/stop SpiritStream based on the active profile's
-    /// `obs.direction` and current FFmpeg state. Spawns a delayed task
-    /// for the actual start so OBS has time to settle. The delayed-start
-    /// task handle is captured in `cascade_start_handle` (I1) so OBS
-    /// oscillation inside the delay window cancels the stale start
-    /// instead of queueing a duplicate.
+    /// `obs.direction` and current FFmpeg state. The start path runs
+    /// immediately (no settling delay): OBS has just issued its start
+    /// request and is connecting to the relay, so the relay must be
+    /// listening before OBS's retry window closes.
     async fn run_obs_to_ss_cascade<E: EventSink + Send + Sync + 'static>(
         obs_now_active: bool,
         deps: ObsCascadeDeps,
         event_sink: E,
-        cascade_start_handle: Arc<tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>>,
     ) {
         let Ok(settings) = deps.settings.load() else {
             return;
@@ -183,8 +218,7 @@ impl super::ObsWebSocketHandler {
 
         if obs_now_active {
             // OBS started → start SpiritStream if not already.
-            let already = deps.ffmpeg.active_count() > 0;
-            if already {
+            if deps.ffmpeg.active_count() > 0 {
                 log::debug!("OBS cascade: SpiritStream already streaming, skipping start trigger");
                 return;
             }
@@ -203,32 +237,22 @@ impl super::ObsWebSocketHandler {
                 profile.input.bind_address, profile.input.port, profile.input.application
             );
             let count = eligible.len();
-            let delay = std::time::Duration::from_millis(OBS_TRIGGER_DELAY_MS);
-            let ffmpeg = deps.ffmpeg.clone();
             let sink_arc: Arc<dyn EventSink> = Arc::new(EventSinkClone(event_sink));
-            let handle = tokio::spawn(async move {
-                tokio::time::sleep(delay).await;
-                match ffmpeg.start_all(&eligible, &incoming_url, sink_arc.clone()) {
-                    Ok(_) => {
-                        log::info!("OBS cascade: started SpiritStream ({count} groups)");
-                        sink_arc.emit(
-                            "stream_started_by_obs",
-                            serde_json::json!({ "groupCount": count }),
-                        );
-                    }
-                    Err(err) => {
-                        log::error!("OBS cascade: failed to start SpiritStream: {err}");
-                    }
+            match deps
+                .ffmpeg
+                .start_all(&eligible, &incoming_url, sink_arc.clone())
+            {
+                Ok(_) => {
+                    log::info!("OBS cascade: started SpiritStream ({count} groups)");
+                    sink_arc.emit(
+                        "stream_started_by_obs",
+                        serde_json::json!({ "groupCount": count }),
+                    );
                 }
-            });
-            // Single-flight: cancel any prior delayed-start before
-            // recording the new one. Lock contention here is fine —
-            // we only reach this branch on an active-transition.
-            let mut guard = cascade_start_handle.lock().await;
-            if let Some(prev) = guard.take() {
-                prev.abort();
+                Err(err) => {
+                    log::error!("OBS cascade: failed to start SpiritStream: {err}");
+                }
             }
-            *guard = Some(handle);
         } else {
             // OBS stopped → stop SpiritStream if streaming.
             if deps.ffmpeg.active_count() == 0 {

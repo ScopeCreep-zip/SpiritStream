@@ -2,11 +2,89 @@ use obws::Client;
 use std::sync::Arc;
 
 use crate::errors::CoreError;
-use crate::services::{Encryption, EventSink};
+use crate::models::{ObsIntegrationDirection, ObsSettings};
+use crate::services::{Encryption, EventSink, IntegrationDirection, ObsConfig};
 
 use super::types::{ObsConnectionStatus, ObsStreamStatus};
 
+/// Whether two OBS configs differ in a way that requires reconnecting an
+/// already-open socket. `direction` and `auto_connect` are deliberately
+/// excluded: `direction` only affects the trigger cascade (read live from the
+/// config), and `auto_connect` only gates whether the supervisor runs — neither
+/// needs the connection itself to be re-established.
+pub(super) fn obs_connection_params_changed(old: &ObsConfig, new: &ObsConfig) -> bool {
+    old.host != new.host
+        || old.port != new.port
+        || old.password != new.password
+        || old.use_auth != new.use_auth
+}
+
 impl super::ObsWebSocketHandler {
+    /// Apply the active profile's OBS settings to the live handler — the single
+    /// A→B sync that keeps the profile as the one source of truth. Updates the
+    /// runtime config, then matches the auto-connect supervisor to the settings.
+    /// Called on profile activation AND whenever the active profile's OBS
+    /// settings are saved, so settings never round-trip through a set-config
+    /// endpoint.
+    ///
+    /// Reconnect-on-change: if a connection-affecting param (host/port/password/
+    /// use_auth) changed while a socket was live, the old socket is torn down
+    /// first so the supervisor reconnects with the new params — otherwise
+    /// `spawn_auto_connect` would see "already connected" and silently keep the
+    /// stale connection. A direction-only / auto_connect-only change does NOT
+    /// churn the connection.
+    pub async fn apply_profile_obs<E: EventSink + Send + Sync + Clone + 'static>(
+        self: Arc<Self>,
+        obs: &ObsSettings,
+        event_sink: E,
+    ) {
+        let direction = match obs.direction {
+            ObsIntegrationDirection::ObsToSpiritstream => IntegrationDirection::ObsToSpiritstream,
+            ObsIntegrationDirection::SpiritstreamToObs => IntegrationDirection::SpiritstreamToObs,
+            ObsIntegrationDirection::Bidirectional => IntegrationDirection::Bidirectional,
+            ObsIntegrationDirection::Disabled => IntegrationDirection::Disabled,
+        };
+        let new_config = ObsConfig {
+            host: obs.host.clone(),
+            port: obs.port,
+            password: obs.password.clone(),
+            use_auth: obs.use_auth,
+            direction,
+            auto_connect: obs.auto_connect,
+        };
+
+        // Snapshot the live state + current config BEFORE overwriting, so we can
+        // decide whether an already-open socket must be torn down to pick up new
+        // connection params.
+        let was_live = {
+            let state = self.state.read().await;
+            matches!(
+                state.connection_status,
+                ObsConnectionStatus::Connected | ObsConnectionStatus::Connecting
+            )
+        };
+        let conn_changed = {
+            let old = self.config.read().await;
+            obs_connection_params_changed(&old, &new_config)
+        };
+
+        self.set_config(new_config).await;
+
+        let in_use = obs.auto_connect || obs.direction != ObsIntegrationDirection::Disabled;
+        if !in_use {
+            // OBS integration turned off — stop the supervisor and drop any live
+            // connection so a now-disabled profile stops talking to OBS.
+            let _ = self.disconnect(event_sink).await;
+            return;
+        }
+        // Integration is in use. Tear down a live-but-now-stale socket first so
+        // the supervisor reconnects with the new params; otherwise it no-ops.
+        if was_live && conn_changed {
+            let _ = self.disconnect(event_sink.clone()).await;
+        }
+        self.spawn_auto_connect(event_sink).await;
+    }
+
     /// Connect with exponential-backoff auto-retry. Spawned at profile
     /// activation when OBS integration is in use (an explicit
     /// `obs.auto_connect`, or any non-Disabled trigger direction), so an
@@ -104,7 +182,14 @@ impl super::ObsWebSocketHandler {
             }),
         );
 
-        let password = if config.use_auth && !config.password.is_empty() {
+        // Pass the password whenever one is set — the obs-websocket v5 server's
+        // Hello dictates whether auth is required, and `obws` only answers the
+        // challenge when the server asks. Gating on `use_auth` (a UI hint) used
+        // to send NO auth when the box was unchecked, so an OBS with a password
+        // (the 28+ default) rejected the Identify and the client never appeared
+        // in OBS's connection list. A password set against an auth-disabled OBS
+        // is harmless — `obws` won't send it unless challenged.
+        let password = if !config.password.is_empty() {
             if Encryption::is_stream_key_encrypted(&config.password) {
                 Some(Encryption::decrypt_stream_key(
                     &config.password,
@@ -148,9 +233,42 @@ impl super::ObsWebSocketHandler {
                     };
                 }
 
+                // Point OBS's stream service at the relay's RTMP ingest so its
+                // StartStream pushes to SpiritStream — using the explicit IPv4
+                // loopback URL, which sidesteps the `localhost`→`::1` resolution
+                // that makes an IPv4-only ingest refuse OBS ("Failed to connect
+                // to server"). Only when a trigger direction is set (the user
+                // linked OBS ↔ SpiritStream); never touch OBS's stream config
+                // for a Disabled/monitor-only connection. Best-effort: OBS
+                // rejects this while actively streaming, and connecting must not
+                // fail just because we couldn't pre-point it.
+                if config.direction != IntegrationDirection::Disabled {
+                    if let Some(server) = self.ingest_url.read().await.clone() {
+                        let settings = serde_json::json!({
+                            "server": server,
+                            "key": "spiritstream",
+                            "use_auth": false,
+                        });
+                        match client
+                            .config()
+                            .set_stream_service_settings("rtmp_custom", &settings)
+                            .await
+                        {
+                            Ok(()) => log::info!("Pointed OBS stream service at relay ingest {server}"),
+                            Err(e) => log::warn!(
+                                "Could not point OBS stream service at relay ingest (will use OBS's own config): {e}"
+                            ),
+                        }
+                    }
+                }
+
+                // Share via Arc so the event listener can own a clone for its
+                // `client.events()` stream while the command path keeps driving
+                // the same socket.
+                let client = Arc::new(client);
                 {
                     let mut client_guard = self.client.write().await;
-                    *client_guard = Some(client);
+                    *client_guard = Some(client.clone());
                 }
 
                 let state = self.state.read().await.clone();
@@ -164,7 +282,7 @@ impl super::ObsWebSocketHandler {
                     }),
                 );
 
-                self.start_event_listener(event_sink).await;
+                self.start_event_listener(client, event_sink).await;
 
                 Ok(())
             }
@@ -226,13 +344,5 @@ impl super::ObsWebSocketHandler {
         );
 
         Ok(())
-    }
-
-    /// Encrypt and save OBS password
-    pub fn encrypt_password(&self, password: &str) -> Result<String, CoreError> {
-        if password.is_empty() {
-            return Ok(String::new());
-        }
-        Encryption::encrypt_stream_key(password, &self.app_data_dir)
     }
 }

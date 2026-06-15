@@ -111,6 +111,7 @@ pub struct ProfileIsEncryptedResponse {
     tag = "profiles",
     params(
         ("name" = String, Path, description = "Profile name"),
+        ("password" = Option<String>, Query, description = "Decryption password — required for encrypted profiles, ignored for plaintext."),
     ),
     responses(
         // G5: body is `ProfileWire` — the full mirror of the core
@@ -191,6 +192,19 @@ pub async fn v1_profile_save(
         .profile_manager
         .load_with_key_decryption(&name, req.password.as_deref())
         .await?;
+
+    // Single source of truth: when the ACTIVE profile's settings are saved,
+    // re-derive the live runtime (chat policy + OBS) from the saved document so
+    // a settings change takes effect immediately — no restart, no separate
+    // set-config endpoint. One shared routine maps the profile (source) onto the
+    // live services, the same one activation uses.
+    if crate::get_active_profile_name(&state).await.as_deref() == Some(name.as_str()) {
+        state
+            .profile_activation
+            .apply_profile_runtime(&canonical)
+            .await?;
+    }
+
     Ok(Json(ProfileSaveResponse {
         name,
         saved: true,
@@ -353,6 +367,47 @@ pub async fn v1_profile_activate(
     tokio::spawn(crate::auto_connect_chat_platforms(state.clone(), false));
 
     Ok(Json(outcome.profile.into()))
+}
+
+/// Result of `POST /profiles/deactivate`. `deactivated` is the name of the
+/// profile that was active (or `null` if none was), so the UI can confirm
+/// what it signed out of.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileDeactivateResponse {
+    pub deactivated: Option<String>,
+}
+
+/// `POST /profiles/deactivate` — sign out of the active profile. The
+/// orchestrator clears the persisted active-profile pointer, drops the
+/// anonymizer salt from memory, disconnects chat + OBS, and emits
+/// `profile_deactivated`; the transport then clears its own session-scoped
+/// active-profile snapshot. Idempotent — succeeds with `deactivated: null`
+/// when no profile is active.
+#[utoipa::path(
+    post,
+    path = "/profiles/deactivate",
+    tag = "profiles",
+    responses(
+        (status = 200, description = "Signed out; body names the prior active profile (or null).", body = ProfileDeactivateResponse),
+        (status = 500, description = "Internal error during chat/OBS teardown.", body = ApiErrorBody),
+    ),
+    security(("session_cookie" = []), ("bearer" = [])),
+)]
+pub async fn v1_profile_deactivate(
+    State(state): State<AppState>,
+) -> Result<Json<ProfileDeactivateResponse>, crate::ApiError> {
+    // Core scrubs persisted + in-memory per-profile state (last_profile,
+    // anonymizer salt, chat/PII policy, OBS) and emits `profile_deactivated`.
+    let outcome = state.profile_activation.deactivate().await?;
+
+    // The transport owns only its session-scoped snapshot — clear it so no
+    // signed-out profile data is served to subsequent requests.
+    crate::clear_active_profile(&state).await;
+
+    Ok(Json(ProfileDeactivateResponse {
+        deactivated: outcome.deactivated,
+    }))
 }
 
 /// `POST /profiles/{name}/unlock` — validate the password and add the

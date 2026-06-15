@@ -1,15 +1,15 @@
 //! OBS WebSocket handlers — `/api/v1/obs/*`.
 //!
-//! Connection lifecycle, state snapshot, config get/set, and the
-//! OBS stream start/stop pair. Thin shims over `ObsWebSocketHandler`.
+//! Connection lifecycle, state snapshot, and the OBS stream start/stop pair.
+//! Thin shims over `ObsWebSocketHandler`. OBS settings are NOT read or written
+//! here — the active profile is the single source of truth; the handler is
+//! synced from it on activation / save (`apply_profile_obs`).
 
 use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use spiritstream_core::services::{
-    IntegrationDirection, ObsConfig, ObsConnectionStatus, ObsState, ObsStreamStatus,
-};
+use spiritstream_core::services::{ObsConnectionStatus, ObsState, ObsStreamStatus};
 
 use crate::AppState;
 
@@ -61,26 +61,6 @@ impl From<ObsStreamStatus> for ObsStreamStatusWire {
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "kebab-case")]
-pub enum IntegrationDirectionWire {
-    ObsToSpiritstream,
-    SpiritstreamToObs,
-    Bidirectional,
-    Disabled,
-}
-
-impl From<IntegrationDirection> for IntegrationDirectionWire {
-    fn from(d: IntegrationDirection) -> Self {
-        match d {
-            IntegrationDirection::ObsToSpiritstream => Self::ObsToSpiritstream,
-            IntegrationDirection::SpiritstreamToObs => Self::SpiritstreamToObs,
-            IntegrationDirection::Bidirectional => Self::Bidirectional,
-            IntegrationDirection::Disabled => Self::Disabled,
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ObsStateResponse {
     pub connection_status: ObsConnectionStatusWire,
@@ -98,34 +78,6 @@ impl From<ObsState> for ObsStateResponse {
             error_message: s.error_message,
             obs_version: s.obs_version,
             websocket_version: s.websocket_version,
-        }
-    }
-}
-
-/// The OBS password never rides this response — only whether one is
-/// set. Clients that need the value already have it from the profile
-/// document; shipping it here (the old shape returned the DECRYPTED
-/// password) widened the exposure surface for zero benefit.
-#[derive(Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ObsConfigResponse {
-    pub host: String,
-    pub port: u16,
-    pub has_password: bool,
-    pub use_auth: bool,
-    pub direction: IntegrationDirectionWire,
-    pub auto_connect: bool,
-}
-
-impl From<ObsConfig> for ObsConfigResponse {
-    fn from(c: ObsConfig) -> Self {
-        Self {
-            host: c.host,
-            port: c.port,
-            has_password: !c.password.is_empty(),
-            use_auth: c.use_auth,
-            direction: c.direction.into(),
-            auto_connect: c.auto_connect,
         }
     }
 }
@@ -153,68 +105,6 @@ pub async fn v1_obs_state_proxy(
 ) -> Result<Json<ObsStateResponse>, crate::ApiError> {
     let obs_state = state.obs_handler.get_state().await;
     Ok(Json(obs_state.into()))
-}
-
-#[utoipa::path(get, path = "/obs/config", tag = "obs",
-    responses((status = 200, body = ObsConfigResponse)),
-    security(("session_cookie" = []), ("bearer" = [])))]
-pub async fn v1_obs_get_config_proxy(
-    State(state): State<AppState>,
-) -> Result<Json<ObsConfigResponse>, crate::ApiError> {
-    // No decryption: the response carries `hasPassword`, never the value.
-    let config = state.obs_handler.get_config().await;
-    Ok(Json(config.into()))
-}
-
-#[derive(Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ObsSetConfigRequest {
-    pub host: String,
-    pub port: u16,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub password: Option<String>,
-    pub use_auth: bool,
-    pub direction: String,
-    pub auto_connect: bool,
-}
-
-#[utoipa::path(put, path = "/obs/config", tag = "obs",
-    request_body = ObsSetConfigRequest,
-    responses(
-        (status = 200, body = ObsAckResponse, description = "OBS config persisted."),
-        (status = 500, body = ApiErrorBody, description = "Internal error encrypting password."),
-    ),
-    security(("session_cookie" = []), ("bearer" = [])))]
-pub async fn v1_obs_set_config_proxy(
-    State(state): State<AppState>,
-    axum::Json(req): axum::Json<ObsSetConfigRequest>,
-) -> Result<Json<ObsAckResponse>, crate::ApiError> {
-    let current_config = state.obs_handler.get_config().await;
-    let encrypted_password = if let Some(ref pass) = req.password {
-        if pass.is_empty() {
-            String::new()
-        } else {
-            state.obs_handler.encrypt_password(pass)?
-        }
-    } else {
-        current_config.password
-    };
-    let dir = match req.direction.as_str() {
-        "obs-to-spiritstream" => IntegrationDirection::ObsToSpiritstream,
-        "spiritstream-to-obs" => IntegrationDirection::SpiritstreamToObs,
-        "bidirectional" => IntegrationDirection::Bidirectional,
-        _ => IntegrationDirection::Disabled,
-    };
-    let config = ObsConfig {
-        host: req.host,
-        port: req.port,
-        password: encrypted_password,
-        use_auth: req.use_auth,
-        direction: dir,
-        auto_connect: req.auto_connect,
-    };
-    state.obs_handler.set_config(config).await;
-    Ok(Json(ObsAckResponse {}))
 }
 
 #[utoipa::path(get, path = "/obs/connection", tag = "obs",

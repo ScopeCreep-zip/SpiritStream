@@ -278,15 +278,12 @@ pub async fn v1_streams_stop(
 pub async fn v1_streams_stop_all(
     State(state): State<AppState>,
 ) -> Result<Json<StreamStopAllResponse>, crate::ApiError> {
-    // I3: graceful-shutdown poll loop runs per group — keep the async
-    // runtime free. Chat history is always-on (stream-decoupled), so the
-    // log session is NOT ended here.
-    let ffmpeg = state.ffmpeg_handler.clone();
-    tokio::task::spawn_blocking(move || ffmpeg.stop_all())
-        .await
-        .map_err(|e| spiritstream_core::CoreError::Internal {
-            context: format!("ffmpeg stop_all join: {e}"),
-        })??;
+    // Stop OBS FIRST (while the relay is still listening) so OBS can't hang on
+    // a reconnect-then-stop, THEN tear the relay down off-thread. I3: the
+    // graceful-shutdown poll loop runs per group inside `stop_all`, which
+    // `stop_all_orchestrated` keeps on a blocking thread. Chat history is
+    // always-on (stream-decoupled), so the log session is NOT ended here.
+    state.ffmpeg_handler.clone().stop_all_orchestrated().await?;
     // Chat stays connected after streams stop (decoupled lifecycle).
     Ok(Json(StreamStopAllResponse { stopped: true }))
 }

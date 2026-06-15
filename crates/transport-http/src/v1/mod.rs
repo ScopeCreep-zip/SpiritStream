@@ -111,6 +111,7 @@ pub fn protected_router(state: AppState) -> Router<AppState> {
             patch(v1_streams_toggle_target),
         )
         // Profile activation + decrypt + lock — server-side session state.
+        .route("/api/v1/profiles/deactivate", post(v1_profile_deactivate))
         .route("/api/v1/profiles/:name/activate", post(v1_profile_activate))
         .route("/api/v1/profiles/:name/unlock", post(v1_profile_unlock))
         .route("/api/v1/profiles/:name/decrypt", post(v1_profile_decrypt))
@@ -183,12 +184,10 @@ pub fn protected_router(state: AppState) -> Router<AppState> {
             "/api/v1/themes/:theme_id/tokens",
             get(v1_theme_tokens_proxy),
         )
-        // OBS.
+        // OBS. Settings are owned by the active profile (single source of
+        // truth) — there is no /obs/config endpoint; the handler is synced
+        // from the profile on activation/save.
         .route("/api/v1/obs/state", get(v1_obs_state_proxy))
-        .route(
-            "/api/v1/obs/config",
-            get(v1_obs_get_config_proxy).put(v1_obs_set_config_proxy),
-        )
         .route(
             "/api/v1/obs/connection",
             get(v1_obs_is_connected_proxy)

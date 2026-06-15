@@ -49,15 +49,8 @@ function toConnectionStatus(status: ObsStatusEvent['status']): ObsConnectionStat
  * answers "how should this look?", never "should this action happen?".
  */
 export function useObsEvents() {
-  const { updateFromEvent, config, loadConfig } = useObsStore();
+  const { updateFromEvent } = useObsStore();
   const setIsStreaming = useStreamStore((s) => s.setIsStreaming);
-
-  // Load OBS config on mount if not already loaded
-  useEffect(() => {
-    if (!config) {
-      loadConfig();
-    }
-  }, [config, loadConfig]);
 
   useEffect(() => {
     // Track unmount across the async setup window. Pre-fix, cleanup ran

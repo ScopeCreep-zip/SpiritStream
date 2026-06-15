@@ -12,8 +12,17 @@ use super::types::{IntegrationDirection, ObsConfig, ObsState};
 /// file but all hang off `impl super::ObsWebSocketHandler`.
 pub struct ObsWebSocketHandler {
     pub(super) state: Arc<RwLock<ObsState>>,
-    pub(super) client: Arc<RwLock<Option<Client>>>,
+    /// Shared via `Arc<Client>` so the per-connection OBS event listener can
+    /// own a clone for the lifetime of its `client.events()` stream while the
+    /// command path (`start_stream`/`stop_stream`) still drives the same socket.
+    pub(super) client: Arc<RwLock<Option<Arc<Client>>>>,
     pub(super) config: Arc<RwLock<ObsConfig>>,
+    /// The relay's RTMP ingest URL (e.g. `rtmp://127.0.0.1:1935/live`) derived
+    /// from the active profile's input. On connect, OBS's stream service is
+    /// pointed here (via `SetStreamServiceSettings`) so OBS pushes to the relay
+    /// using an explicit IPv4 loopback — sidestepping the `localhost`→`::1`
+    /// resolution that makes an IPv4-only ingest refuse OBS's RTMP connection.
+    pub(super) ingest_url: Arc<RwLock<Option<String>>>,
     pub(super) shutdown_tx: broadcast::Sender<()>,
     pub(super) app_data_dir: std::path::PathBuf,
     /// Loop-prevention flag for SpiritStream → OBS triggers. When this side
@@ -43,13 +52,6 @@ pub struct ObsWebSocketHandler {
     /// loop without cancelling the old one. `Drop` aborts the handle
     /// so the runtime reclaims the task immediately.
     pub(super) listener_handle: Arc<TokioMutex<Option<JoinHandle<()>>>>,
-    /// I1: handle to the in-flight OBS→SpiritStream delayed-start task
-    /// spawned in `run_obs_to_ss_cascade`. Single-flight — a fresh
-    /// trigger aborts the previous delayed task, so OBS oscillating
-    /// active↔inactive inside the 2 s OBS_TRIGGER_DELAY_MS window
-    /// cancels the stale start instead of queueing duplicates. Drop
-    /// also aborts so the task can't outlive the handler.
-    pub(super) cascade_start_handle: Arc<TokioMutex<Option<JoinHandle<()>>>>,
     /// Handle to the self-healing auto-connect supervisor spawned by
     /// `spawn_auto_connect` (started at profile activation when OBS
     /// integration is in use). Single owner: a fresh `spawn_auto_connect`
@@ -71,11 +73,6 @@ impl Drop for ObsWebSocketHandler {
                 handle.abort();
             }
         }
-        if let Ok(mut guard) = self.cascade_start_handle.try_lock() {
-            if let Some(handle) = guard.take() {
-                handle.abort();
-            }
-        }
         if let Ok(mut guard) = self.auto_connect_handle.try_lock() {
             if let Some(handle) = guard.take() {
                 handle.abort();
@@ -91,12 +88,12 @@ impl ObsWebSocketHandler {
             state: Arc::new(RwLock::new(ObsState::default())),
             client: Arc::new(RwLock::new(None)),
             config: Arc::new(RwLock::new(ObsConfig::default_config())),
+            ingest_url: Arc::new(RwLock::new(None)),
             shutdown_tx,
             app_data_dir,
             triggered_by_us: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             cascade_deps: Arc::new(std::sync::RwLock::new(None)),
             listener_handle: Arc::new(TokioMutex::new(None)),
-            cascade_start_handle: Arc::new(TokioMutex::new(None)),
             auto_connect_handle: Arc::new(TokioMutex::new(None)),
         }
     }
@@ -133,8 +130,10 @@ impl ObsWebSocketHandler {
         *cfg = config;
     }
 
-    pub async fn get_config(&self) -> ObsConfig {
-        self.config.read().await.clone()
+    /// Store the relay's RTMP ingest URL so the next connect points OBS's
+    /// stream service at it. Set from the active profile's input.
+    pub async fn set_ingest_url(&self, url: Option<String>) {
+        *self.ingest_url.write().await = url;
     }
 
     pub async fn get_state(&self) -> ObsState {

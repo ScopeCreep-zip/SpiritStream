@@ -32,8 +32,12 @@ export function SourceCard({ profile, onConfigure }: SourceCardProps): React.Rea
     );
   }
 
-  // Server-computed (`RtmpInput::refresh_url`) — never string-built here.
-  const url = profile.input.url;
+  // Server-computed (`RtmpInput::refresh_url`). The bind URL may carry a
+  // wildcard host (`0.0.0.0` / `[::]`) which is NOT pushable — OBS would fail
+  // to connect. Show the explicit IPv4 loopback an encoder actually pushes to
+  // (presentation only; the relay normalizes the bind internally, and OBS is
+  // auto-pointed here via SetStreamServiceSettings on connect).
+  const url = profile.input.url.replace(/\/\/(?:0\.0\.0\.0|\[::\]|::)(?=[:/])/, '//127.0.0.1');
 
   return (
     <Card>

@@ -9,7 +9,7 @@ import { clientConfig } from '@/lib/constants';
 import { ObsConnectionForm } from '@/components/obs/ObsConnectionForm';
 import { ObsStatusCard } from '@/components/obs/ObsStatusCard';
 import { ObsDirectionSelector } from '@/components/obs/ObsDirectionSelector';
-import type { ObsIntegrationDirection } from '@spiritstream/types';
+import type { ObsIntegrationDirection, ObsSettings } from '@spiritstream/types';
 
 /**
  * OBS integration orchestrator. Owns the form state, debounced auto-save,
@@ -20,23 +20,24 @@ import type { ObsIntegrationDirection } from '@spiritstream/types';
 export function ObsPanel() {
   const { t } = useTranslation();
   const currentProfile = useProfileStore((state) => state.current);
+  const updateProfileSettings = useProfileStore((state) => state.updateProfileSettings);
+  // OBS settings come from the active profile — the single source of truth.
+  const obsSettings = currentProfile?.settings?.obs;
   const {
     connectionStatus,
     streamStatus,
     errorMessage,
     obsVersion,
     websocketVersion,
-    config,
-    isLoading,
     showPassword,
     setShowPassword,
     loadState,
-    updateConfig,
     connect,
     disconnect,
   } = useObsStore();
 
-  // Local form state — mirrors the obsStore config; saved via autoSave / immediate update.
+  // Local form state — mirrors the profile's OBS settings while editing; saved
+  // back to the profile via autoSave / immediate update.
   const [host, setHost] = useState('localhost');
   const [port, setPort] = useState('4455');
   const [password, setPassword] = useState('');
@@ -46,24 +47,37 @@ export function ObsPanel() {
 
   // Debounced save infrastructure.
   const saveTimeoutRef = useRef<number | null>(null);
-  const pendingUpdatesRef = useRef<Parameters<typeof updateConfig>[0] | null>(null);
+  const pendingUpdatesRef = useRef<Partial<ObsSettings> | null>(null);
 
-  // Load initial OBS connection state (not config — that comes from profile).
+  // Persist OBS settings to the active profile (the single source of truth).
+  // Toggles/blurs send only the changed field; the merge keeps every other
+  // value — including the real password — so a partial edit never blanks it.
+  // The backend re-syncs its handler from the saved profile (apply_profile_obs).
+  const saveObs = useCallback(
+    async (updates: Partial<ObsSettings>) => {
+      const cur = useProfileStore.getState().current?.settings?.obs;
+      if (!cur) return;
+      await updateProfileSettings({ obs: { ...cur, ...updates } });
+    },
+    [updateProfileSettings]
+  );
+
+  // Load initial OBS connection state (not settings — those come from profile).
   useEffect(() => {
     loadState();
   }, [loadState]);
 
-  // Sync form with config when loaded.
+  // Sync the form from the active profile's OBS settings.
   useEffect(() => {
-    if (config) {
-      setHost(config.host || 'localhost');
-      setPort(String(config.port || 4455));
-      setPassword(config.password || '');
-      setUseAuth(config.useAuth);
-      setDirection(config.direction);
-      setAutoConnect(config.autoConnect);
+    if (obsSettings) {
+      setHost(obsSettings.host || 'localhost');
+      setPort(String(obsSettings.port || 4455));
+      setPassword(obsSettings.password || '');
+      setUseAuth(obsSettings.useAuth);
+      setDirection(obsSettings.direction);
+      setAutoConnect(obsSettings.autoConnect);
     }
-  }, [config]);
+  }, [obsSettings]);
 
   // Flush pending saves on unmount.
   useEffect(() => {
@@ -72,17 +86,17 @@ export function ObsPanel() {
         window.clearTimeout(saveTimeoutRef.current);
       }
       if (pendingUpdatesRef.current) {
-        updateConfig(pendingUpdatesRef.current).catch((error) => {
-          logger.error('Failed to flush OBS config on unmount:', error);
+        saveObs(pendingUpdatesRef.current).catch((error) => {
+          logger.error('Failed to flush OBS settings on unmount:', error);
         });
         pendingUpdatesRef.current = null;
       }
     };
-  }, [updateConfig]);
+  }, [saveObs]);
 
   // Auto-save with debounce.
   const autoSave = useCallback(
-    (updates: Parameters<typeof updateConfig>[0]) => {
+    (updates: Partial<ObsSettings>) => {
       pendingUpdatesRef.current = { ...pendingUpdatesRef.current, ...updates };
 
       if (saveTimeoutRef.current) {
@@ -91,29 +105,29 @@ export function ObsPanel() {
 
       saveTimeoutRef.current = window.setTimeout(async () => {
         try {
-          await updateConfig(pendingUpdatesRef.current!);
+          await saveObs(pendingUpdatesRef.current!);
           pendingUpdatesRef.current = null;
         } catch (error) {
-          logger.error('Failed to save OBS config:', error);
+          logger.error('Failed to save OBS settings:', error);
         }
       }, clientConfig.AUTO_SAVE_DELAY_MS);
     },
-    [updateConfig]
+    [saveObs]
   );
 
   // Field-level handlers.
   const handleHostBlur = useCallback(() => {
-    if (config && host !== config.host) autoSave({ host });
-  }, [host, config, autoSave]);
+    if (obsSettings && host !== obsSettings.host) autoSave({ host });
+  }, [host, obsSettings, autoSave]);
 
   const handlePortBlur = useCallback(() => {
     const portNum = parseInt(port, 10) || 4455;
-    if (config && portNum !== config.port) autoSave({ port: portNum });
-  }, [port, config, autoSave]);
+    if (obsSettings && portNum !== obsSettings.port) autoSave({ port: portNum });
+  }, [port, obsSettings, autoSave]);
 
   const handlePasswordBlur = useCallback(() => {
-    if (config && password !== config.password) autoSave({ password });
-  }, [password, config, autoSave]);
+    if (obsSettings && password !== obsSettings.password) autoSave({ password });
+  }, [password, obsSettings, autoSave]);
 
   const handleCopyPassword = useCallback(async () => {
     if (!password) return;
@@ -129,34 +143,38 @@ export function ObsPanel() {
   const handleUseAuthChange = useCallback(
     async (checked: boolean) => {
       setUseAuth(checked);
-      if (!checked) setPassword('');
+      const updates: Partial<ObsSettings> = { useAuth: checked };
+      if (!checked) {
+        setPassword('');
+        updates.password = '';
+      }
       try {
-        await updateConfig({ useAuth: checked });
+        await saveObs(updates);
       } catch (error) {
         logger.error('Failed to save useAuth:', error);
       }
     },
-    [updateConfig]
+    [saveObs]
   );
 
   const handleAutoConnectChange = useCallback(
     async (checked: boolean) => {
       setAutoConnect(checked);
       try {
-        await updateConfig({ autoConnect: checked });
+        await saveObs({ autoConnect: checked });
       } catch (error) {
         logger.error('Failed to save autoConnect:', error);
       }
     },
-    [updateConfig]
+    [saveObs]
   );
 
   const handleDirectionSelect = useCallback(
     (next: ObsIntegrationDirection) => {
       setDirection(next);
-      updateConfig({ direction: next }).catch(logger.error);
+      saveObs({ direction: next }).catch(logger.error);
     },
-    [updateConfig]
+    [saveObs]
   );
 
   const handleConnect = useCallback(async () => {
@@ -225,7 +243,7 @@ export function ObsPanel() {
           errorMessage={errorMessage}
           obsVersion={obsVersion}
           websocketVersion={websocketVersion}
-          isLoading={isLoading}
+          isLoading={connectionStatus === 'connecting'}
           onConnect={handleConnect}
           onDisconnect={handleDisconnect}
         />
