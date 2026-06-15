@@ -278,7 +278,7 @@ jobs:
       - name: Cache cargo target
         uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
       - name: Install cargo-tarpaulin
-        uses: taiki-e/install-action@84c20235bedc3797c7eee0a8f5803338efb13a3a # v2.62.51
+        uses: taiki-e/install-action@0be4756f42223b67aa4b7df5effad59010cbf4b9 # v2.62.51
         with:
           tool: cargo-tarpaulin
       - name: cargo tarpaulin -p spiritstream-core --fail-under 60
