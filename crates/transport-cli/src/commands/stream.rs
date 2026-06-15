@@ -134,7 +134,7 @@ pub async fn run(
                 }
                 None => {
                     let stopped = registry.ffmpeg.get_active_group_ids();
-                    registry.ffmpeg.stop_all()?;
+                    registry.ffmpeg.clone().stop_all_orchestrated().await?;
                     // Stop-all also reaches across processes (see
                     // StopResponse docs).
                     let run_dir = registry.data_dir.join("run");

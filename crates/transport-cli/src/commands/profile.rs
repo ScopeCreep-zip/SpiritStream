@@ -32,6 +32,22 @@ pub enum ProfileCmd {
         #[arg(long = "password-from", value_enum)]
         password_from: Option<crate::secret_input::SecretSource>,
     },
+    /// Edit a profile's settings by dotted key path: load → mutate → save.
+    /// One or more `--set key=value` target `settings.*` (e.g. `obs.host`,
+    /// `obs.autoConnect`, `obs.direction`, `discord.webhookEnabled`,
+    /// `chat.twitchChannel`). Values parse as JSON when possible, else a raw
+    /// string; unknown keys exit with an `argument` error. Secrets
+    /// (`obs.password`, …) are encrypted at the save boundary — the CLI never
+    /// encrypts them itself. This is the headless equivalent of the GUI's
+    /// settings forms. Persists only; a running server re-derives its runtime
+    /// on its own save path.
+    Set {
+        name: String,
+        #[arg(long = "set", value_name = "KEY=VALUE", required = true)]
+        overrides: Vec<String>,
+        #[arg(long = "password-from", value_enum)]
+        password_from: Option<crate::secret_input::SecretSource>,
+    },
     /// Delete a profile.
     Delete { name: String },
     /// Report whether the named profile is stored encrypted on disk.
@@ -62,6 +78,12 @@ pub enum ProfileCmd {
         #[arg(long = "password-from", value_enum)]
         password_from: Option<crate::secret_input::SecretSource>,
     },
+    /// Sign out of the active profile — runs `ProfileActivationService::
+    /// deactivate()`. Clears the persisted active profile, drops the
+    /// anonymizer salt from memory, disconnects chat + OBS, and emits
+    /// `profile_deactivated`. Mirrors `POST /api/v1/profiles/deactivate`.
+    /// Prints the name of the profile that was active (or `null`).
+    Deactivate,
     /// Atomically remove encryption from a profile: load with `--password`,
     /// re-save unencrypted. Mirrors `POST /api/v1/profiles/{name}/decrypt`.
     Decrypt {
@@ -163,6 +185,38 @@ pub async fn run(
             out.emit(&SaveResponse { name, saved: true })?;
             Ok(())
         }
+        ProfileCmd::Set {
+            name,
+            overrides,
+            password_from,
+        } => {
+            let password =
+                crate::secret_input::read_optional_secret(password_from, "Profile password")?;
+            let mut profile = registry
+                .profiles
+                .load_with_key_decryption(&name, password.as_deref())
+                .await?;
+
+            // Mutate the settings subtree as JSON, then re-type it back through
+            // serde so the typed `ProfileSettings` shape/bounds/enums validate
+            // (a bad `obs.direction` fails here as `serialization`/EX_DATAERR).
+            let mut settings_json = serde_json::to_value(&profile.settings)
+                .map_err(|e| CliError::Serialization(e.to_string()))?;
+            for raw in &overrides {
+                let (key, value) = crate::commands::json_path::parse_override(raw)?;
+                crate::commands::json_path::set_dotted(&mut settings_json, key, value)?;
+            }
+            profile.settings = serde_json::from_value(settings_json)
+                .map_err(|e| CliError::Serialization(format!("invalid settings shape: {e}")))?;
+
+            // Save encrypts secrets at the boundary (`visit_secret_fields`).
+            registry
+                .profiles
+                .save_with_key_encryption(&profile, password.as_deref())
+                .await?;
+            out.emit(&profile.settings)?;
+            Ok(())
+        }
         ProfileCmd::Delete { name } => {
             registry.profiles.delete(&name).await?;
             out.emit(&DeleteResponse {
@@ -245,12 +299,19 @@ pub async fn run(
             }))?;
             Ok(())
         }
+        ProfileCmd::Deactivate => {
+            // Stateless CLI: the core orchestrator clears persisted +
+            // in-memory per-profile state. There's no long-lived session
+            // snapshot to clear (that's the HTTP transport's concern).
+            let outcome = registry.profile_activation.deactivate().await?;
+            out.emit(&serde_json::json!({ "deactivated": outcome.deactivated }))?;
+            Ok(())
+        }
         ProfileCmd::Decrypt {
             name,
             password_from,
         } => {
-            let password =
-                crate::secret_input::read_secret(password_from, "Profile password")?;
+            let password = crate::secret_input::read_secret(password_from, "Profile password")?;
             let profile = registry
                 .profiles
                 .load_with_key_decryption(&name, Some(&password))
@@ -266,8 +327,7 @@ pub async fn run(
             name,
             password_from,
         } => {
-            let password =
-                crate::secret_input::read_secret(password_from, "Profile password")?;
+            let password = crate::secret_input::read_secret(password_from, "Profile password")?;
             // Validates the password by attempting decryption; the HTTP
             // transport additionally tracks an in-memory unlock set on
             // AppState, but the CLI is a one-shot process so the

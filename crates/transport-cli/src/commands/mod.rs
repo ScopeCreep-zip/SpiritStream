@@ -10,6 +10,7 @@ pub mod data;
 pub mod discord;
 pub mod events;
 pub mod files;
+pub mod json_path;
 pub mod oauth;
 pub mod obs;
 pub mod profile;

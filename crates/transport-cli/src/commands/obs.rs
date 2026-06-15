@@ -1,4 +1,10 @@
-//! `spiritstream-cli obs …` — OBS Studio WebSocket integration.
+//! `spiritstream-cli obs …` — OBS Studio WebSocket integration (runtime only).
+//!
+//! Connection lifecycle + stream control. OBS *settings* are owned by the active
+//! profile (the single source of truth): edit them with
+//! `profile set <name> --set obs.host=… --set obs.autoConnect=…` and read them
+//! with `profile show <name>`. There is no `obs config` / `obs set-config` —
+//! those mutated an ephemeral per-invocation handler that never persisted.
 
 use clap::Subcommand;
 use spiritstream_core::ServiceRegistry;
@@ -10,9 +16,7 @@ use crate::output::Output;
 pub enum ObsCmd {
     /// Snapshot of OBS connection + streaming state.
     State,
-    /// Show the current OBS WebSocket config (password masked).
-    Config,
-    /// Connect to the configured OBS WebSocket.
+    /// Connect to the OBS WebSocket using the active profile's settings.
     Connect,
     /// Disconnect from OBS.
     Disconnect,
@@ -20,23 +24,6 @@ pub enum ObsCmd {
     StreamStart,
     /// Stop streaming in OBS.
     StreamStop,
-    /// Replace the OBS WebSocket configuration. `--password` is encrypted
-    /// before persisting; omit to keep the existing password.
-    SetConfig {
-        #[arg(long)]
-        host: String,
-        #[arg(long)]
-        port: u16,
-        #[arg(long = "password-from", value_enum)]
-        password_from: Option<crate::secret_input::SecretSource>,
-        #[arg(long, default_value_t = false)]
-        use_auth: bool,
-        /// One of `obs-to-spiritstream`, `spiritstream-to-obs`, `bidirectional`, `disabled`.
-        #[arg(long, default_value = "disabled")]
-        direction: String,
-        #[arg(long, default_value_t = false)]
-        auto_connect: bool,
-    },
 }
 
 pub async fn run(
@@ -48,13 +35,6 @@ pub async fn run(
         ObsCmd::State => {
             let state = registry.obs.get_state().await;
             out.emit(&state)?;
-            Ok(())
-        }
-        ObsCmd::Config => {
-            let config = registry.obs.get_config().await;
-            // Password is masked at the model layer — `ObsConfig` ts-rs export
-            // already strips it for the wire shape.
-            out.emit(&config)?;
             Ok(())
         }
         ObsCmd::Connect => {
@@ -75,47 +55,6 @@ pub async fn run(
         ObsCmd::StreamStop => {
             registry.obs.stop_stream().await?;
             out.emit(&serde_json::json!({ "stopped": true }))?;
-            Ok(())
-        }
-        ObsCmd::SetConfig {
-            host,
-            port,
-            password_from,
-            use_auth,
-            direction,
-            auto_connect,
-        } => {
-            use spiritstream_core::services::IntegrationDirection;
-            let password = crate::secret_input::read_optional_secret(
-                password_from,
-                "OBS WebSocket password",
-            )?;
-            let current = registry.obs.get_config().await;
-            let encrypted = if let Some(p) = password.as_deref() {
-                if p.is_empty() {
-                    String::new()
-                } else {
-                    registry.obs.encrypt_password(p)?
-                }
-            } else {
-                current.password
-            };
-            let dir = match direction.as_str() {
-                "obs-to-spiritstream" => IntegrationDirection::ObsToSpiritstream,
-                "spiritstream-to-obs" => IntegrationDirection::SpiritstreamToObs,
-                "bidirectional" => IntegrationDirection::Bidirectional,
-                _ => IntegrationDirection::Disabled,
-            };
-            let config = spiritstream_core::services::ObsConfig {
-                host,
-                port,
-                password: encrypted,
-                use_auth,
-                direction: dir,
-                auto_connect,
-            };
-            registry.obs.set_config(config).await;
-            out.emit(&serde_json::json!({ "saved": true }))?;
             Ok(())
         }
     }
