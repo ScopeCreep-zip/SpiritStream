@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { events } from '@spiritstream/api-client';
+import { events, parseChatMessage } from '@spiritstream/api-client';
 import { api } from '@/lib/client';
 import { logger } from '@/lib/logger';
 import { useChatStore } from '@/stores/chatStore';
@@ -55,7 +55,13 @@ export function useChatListener() {
     window.addEventListener('backend:reconnected', seedRecent);
 
     events
-      .on<ChatMessage>(CHAT_MESSAGE_EVENT, (payload) => {
+      .on<ChatMessage>(CHAT_MESSAGE_EVENT, (raw) => {
+        // Untrusted inbound: live chat messages originate from arbitrary
+        // third parties on the streaming platforms. Validate the scalar
+        // fields at runtime before anything renders them; a malformed /
+        // hostile payload is dropped (logged) rather than reaching the UI.
+        const payload = parseChatMessage(raw);
+        if (!payload) return;
         // Plan B4 contract: MessageDeleted and UserBanned events mutate
         // PAST messages rather than appending a new row. Every other
         // ChatEvent variant flows through to the store: SubGifted / Raid /
@@ -169,11 +175,5 @@ export function useChatListener() {
         unlistenConnectFailed();
       }
     };
-  }, [
-    addMessage,
-    addMessages,
-    markMessageDeleted,
-    markUserTimedOut,
-    setOverlayOpacity,
-  ]);
+  }, [addMessage, addMessages, markMessageDeleted, markUserTimedOut, setOverlayOpacity]);
 }
