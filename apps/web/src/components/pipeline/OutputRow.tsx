@@ -7,6 +7,7 @@ import { toast } from '@/hooks/useToast';
 import { logger } from '@/lib/logger';
 import type { ChatPlatform, ChatPlatformStatus, StreamTarget } from '@spiritstream/types';
 import { serviceToChatPlatform } from '@/lib/serviceChat';
+import { PlatformIcon } from '@/components/stream/PlatformIcon';
 
 export type OutputRowStatus = 'live' | 'connecting' | 'offline' | 'error';
 
@@ -82,6 +83,10 @@ export function OutputRow({
         className={cn('w-2.5 h-2.5 rounded-full flex-shrink-0', STATUS_DOT_CLASS[status])}
         aria-hidden="true"
       />
+
+      {/* Brand-colored service badge. Decorative (aria-hidden inside); the
+          `target.service` subtitle below carries the accessible platform label. */}
+      <PlatformIcon platform={target.service} size="sm" className="flex-shrink-0" />
 
       <div className="flex-1 min-w-0 flex flex-col">
         <span className="text-sm font-medium text-text-primary truncate">{target.name}</span>

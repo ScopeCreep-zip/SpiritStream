@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, CardHeader, CardTitle, CardDescription, CardBody } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -29,7 +29,8 @@ const LANGUAGE_OPTIONS: Array<{ value: string; label: string }> = [
  */
 export function AppearanceSection() {
   const { t } = useTranslation();
-  const { currentThemeId, themes, setTheme, refreshThemes } = useThemeStore();
+  const { currentThemeId, themes, setTheme, refreshThemes, isInitialized, waitForInit } =
+    useThemeStore();
   const currentProfile = useProfileStore((state) => state.current);
   const updateProfileSettings = useProfileStore((state) => state.updateProfileSettings);
   const profileSettings = currentProfile?.settings;
@@ -37,6 +38,29 @@ export function AppearanceSection() {
 
   const [themeInstalling, setThemeInstalling] = useState(false);
   const [themeInstallError, setThemeInstallError] = useState<string | null>(null);
+
+  // The backend theme catalog loads asynchronously (App-level refreshThemes).
+  // Until it's in, `themes` holds only the bundled set — rendering the picker
+  // as enabled would let a user "pick" from a list that's silently missing
+  // their installed/custom themes. Gate on init: `waitForInit` resolves on the
+  // first catalog load (success OR failure), so this never hangs even offline.
+  const [catalogReady, setCatalogReady] = useState(isInitialized);
+  useEffect(() => {
+    if (catalogReady) return;
+    let cancelled = false;
+    // `.catch` is defensive — `waitForInit` resolves on success OR failure, so
+    // this clears the gate either way rather than leaving the picker disabled.
+    waitForInit()
+      .then(() => {
+        if (!cancelled) setCatalogReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) setCatalogReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [catalogReady, waitForInit]);
 
   const themeOptions = (
     themes.length
@@ -114,11 +138,16 @@ export function AppearanceSection() {
         <Select
           label={t('settings.theme', { defaultValue: 'Theme' })}
           value={currentThemeId}
+          disabled={!catalogReady}
           onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleThemeChange(e.target.value)}
           options={themeOptions}
-          helper={t('settings.themeHelper', {
-            defaultValue: 'Choose your preferred theme appearance.',
-          })}
+          helper={
+            catalogReady
+              ? t('settings.themeHelper', {
+                  defaultValue: 'Choose your preferred theme appearance.',
+                })
+              : t('settings.themeLoading', { defaultValue: 'Loading themes…' })
+          }
         />
         <div className="flex items-center gap-3">
           <Button variant="outline" onClick={handleInstallTheme} disabled={themeInstalling}>

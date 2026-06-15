@@ -477,6 +477,7 @@
     "moreIssues": "...and {{count}} more issues to fix",
     "noProfileSelected": "No profile selected",
     "oauthExpired": "{{provider}} sign-in expired — reconnect to send chat or stream.",
+    "signOutFailed": "Failed to sign out: {{error}}",
     "removeEncryptionFailed": "Failed to remove encryption: {{error}}",
     "reorderProfilesFailed": "Failed to reorder profiles: {{error}}",
     "themeLoadFailed": "Failed to load theme: {{error}}",
@@ -588,7 +589,8 @@
     },
     "profile": {
       "edit": "Edit current…",
-      "label": "Profile"
+      "label": "Profile",
+      "signOut": "Sign out"
     },
     "safety": {
       "label": "Safety",
@@ -894,6 +896,7 @@
     "tagline": "Multi-destination streaming made simple",
     "theme": "Theme",
     "themeHelper": "Choose your preferred theme appearance.",
+    "themeLoading": "Loading themes…",
     "thirdPartyLicenses": "Third-party licenses",
     "thirdPartyLicensesFfmpegBundled": "Bundled with this build of SpiritStream.",
     "thirdPartyLicensesFfmpegLicense": "License (ffmpeg.org/legal.html)",
