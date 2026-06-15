@@ -31,6 +31,11 @@ pub struct YouTubeConnector {
     oauth_token_tx: Option<watch::Sender<String>>,
     recent_outbound: Arc<StdMutex<VecDeque<OutboundMessage>>>,
     api_base: String,
+    /// Handle to THE single poll task. `is_active()` consults it so a duplicate
+    /// connect is a no-op while the loop lives; `disconnect()`/`Drop` abort it.
+    /// This is what makes YouTube a single-owner connection (no orphan pollers,
+    /// no connect churn).
+    poll_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl YouTubeConnector {
@@ -55,6 +60,18 @@ impl YouTubeConnector {
             oauth_token_tx: None,
             recent_outbound: Arc::new(StdMutex::new(VecDeque::new())),
             api_base: endpoints.youtube_api_base.clone(),
+            poll_handle: None,
+        }
+    }
+}
+
+impl Drop for YouTubeConnector {
+    fn drop(&mut self) {
+        // Belt-and-suspenders against orphan pollers: if the connector is
+        // dropped (e.g. replaced in the platforms map) without a clean
+        // disconnect, abort its poll task so it can't keep flooding the feed.
+        if let Some(handle) = self.poll_handle.take() {
+            handle.abort();
         }
     }
 }
@@ -123,16 +140,28 @@ impl ChatPlatform for YouTubeConnector {
             .build()
             .map_err(|e| PlatformError::Network(format!("Failed to create HTTP client: {}", e)))?;
 
-        // Find the active live chat ID
-        let live_chat_id =
+        // Find the active live chat ID + the authenticated owner channel id.
+        let (live_chat_id, owner_channel_id) =
             match find_live_chat_id(&http_client, &auth_mode, &channel_id, &self.api_base).await {
-                Ok(id) => {
+                Ok(target) => {
                     info!("Found YouTube live chat ID");
-                    id
+                    target
                 }
                 Err(e) => {
-                    self.status
-                        .store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
+                    // "Not live yet" and "quota exhausted" are waiting states,
+                    // not failures: report DISCONNECTED so the UI doesn't show
+                    // an error and the reconnect loop (which fires on ERROR)
+                    // doesn't churn — hammering an exhausted quota every 30s
+                    // only digs the hole deeper.
+                    let status = if matches!(
+                        e,
+                        PlatformError::NotLive(_) | PlatformError::QuotaExceeded(_)
+                    ) {
+                        ChatConnectionStatus::Disconnected
+                    } else {
+                        ChatConnectionStatus::Error
+                    };
+                    self.status.store(status_to_u8(status), Ordering::Relaxed);
                     if let Ok(mut guard) = self.last_error.lock() {
                         *guard = Some(format!("{}", e));
                     }
@@ -140,11 +169,16 @@ impl ChatPlatform for YouTubeConnector {
                 }
             };
 
-        self.channel_id = Some(channel_id);
+        self.channel_id = Some(channel_id.clone());
         self.live_chat_id = Some(live_chat_id.clone());
         self.auth_mode = Some(auth_mode.clone());
         self.can_send = matches!(auth_mode, AuthMode::OAuth { .. });
-        self.self_channel_id = self.channel_id.clone();
+        // Self-echo suppression keys on the AUTHENTICATED owner channel id
+        // (canonical `UCxxxx` from the broadcast), falling back to the typed
+        // setting only if the API didn't return one. Using the typed setting
+        // alone double-posts the streamer's own messages whenever it isn't the
+        // exact canonical id (e.g. a handle or URL).
+        self.self_channel_id = owner_channel_id.or(Some(channel_id));
         self.status.store(
             status_to_u8(ChatConnectionStatus::Connected),
             Ordering::Relaxed,
@@ -156,8 +190,8 @@ impl ChatPlatform for YouTubeConnector {
 
         info!("Connected to YouTube Live Chat, starting polling");
 
-        // Spawn the polling task
-        PollTask {
+        // Spawn THE single poll task and keep its handle (drives is_active()).
+        let handle = PollTask {
             status: self.status.clone(),
             last_error: self.last_error.clone(),
             message_count: self.message_count.clone(),
@@ -171,6 +205,7 @@ impl ChatPlatform for YouTubeConnector {
             message_tx,
         }
         .spawn(disconnect_rx);
+        self.poll_handle = Some(handle);
 
         Ok(())
     }
@@ -183,9 +218,13 @@ impl ChatPlatform for YouTubeConnector {
         info!("Disconnecting from YouTube Live Chat");
         self.disconnecting.store(true, Ordering::Relaxed);
 
-        // Send disconnect signal to polling task
+        // Send the graceful disconnect signal, then abort the poll task so it
+        // stops immediately (no overlap with a subsequent reconnect's poller).
         if let Some(tx) = self.disconnect_tx.take() {
             let _ = tx.send(()).await;
+        }
+        if let Some(handle) = self.poll_handle.take() {
+            handle.abort();
         }
 
         self.channel_id = None;
@@ -208,6 +247,18 @@ impl ChatPlatform for YouTubeConnector {
 
     fn status(&self) -> ChatConnectionStatus {
         status_from_u8(self.status.load(Ordering::Relaxed))
+    }
+
+    /// "Active" = the single poll task is alive. This is the idempotency key:
+    /// while a poll loop is running, a duplicate `connect()` from any of the
+    /// many triggers is a no-op (vs. the default `is_connected()`, which is
+    /// false during a transient Error blip and would let a 2nd poller spawn —
+    /// the connect churn + duplicate flood). The task is the single owner.
+    fn is_active(&self) -> bool {
+        self.poll_handle
+            .as_ref()
+            .map(|h| !h.is_finished())
+            .unwrap_or(false)
     }
 
     fn message_count(&self) -> u64 {
@@ -276,6 +327,20 @@ impl ChatPlatform for YouTubeConnector {
                 .text()
                 .await
                 .unwrap_or_else(|e| format!("<failed to read response body: {e}>"));
+            // `INVALID_REQUEST_METADATA` on insert is YouTube refusing to
+            // resolve WHICH channel is posting — the request body is valid
+            // (reads work with the same token), so it's an identity binding
+            // the API can't carry. Surface an actionable message instead of
+            // the raw Google error blob; the fix is account-side re-consent.
+            if status.as_u16() == 400 && body.contains("INVALID_REQUEST_METADATA") {
+                return Err(PlatformError::Authentication(
+                    "YouTube won't accept messages from this sign-in: it can't confirm which \
+                     channel is posting. Sign out of YouTube here, sign back in, and pick the \
+                     exact channel you stream from (for a Brand Account choose the brand channel, \
+                     not your personal Google account)."
+                        .to_string(),
+                ));
+            }
             return Err(PlatformError::Platform(format!(
                 "YouTube send failed ({}): {}",
                 status, body

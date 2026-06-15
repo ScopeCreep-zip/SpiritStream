@@ -26,16 +26,61 @@ impl AuthMode {
     }
 }
 
-/// Find the live chat ID for the active broadcast
+/// Map a non-2xx YouTube API response to the right error by reading the actual
+/// Google error `reason` — NEVER by guessing from the status code (a 403 is
+/// quota for `quotaExceeded` but an auth failure for `authError`; conflating
+/// them sent users to chase a daily-quota reset for a dead token). Quota →
+/// `QuotaExceeded` (calm, wait for reset). Auth → `Authentication` (re-sign-in).
+/// Everything else preserves the real reason + body.
+fn youtube_http_error(status: reqwest::StatusCode, body: String) -> PlatformError {
+    let reason = serde_json::from_str::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|v| v["error"]["errors"][0]["reason"].as_str().map(str::to_string))
+        .unwrap_or_default();
+    let code = status.as_u16();
+    match reason.as_str() {
+        "quotaExceeded" | "rateLimitExceeded" => PlatformError::QuotaExceeded(
+            "YouTube API quota exhausted (resets daily ~midnight US Pacific). For sustained \
+             chat, request a higher quota in Google Cloud Console (APIs & Services → YouTube \
+             Data API v3 → Quotas)."
+                .to_string(),
+        ),
+        "authError" => PlatformError::Authentication(
+            "YouTube rejected your sign-in (invalid credentials). Sign out of YouTube here and \
+             sign back in. If your Google app is still in \"Testing\", publish it — testing-mode \
+             tokens expire after 7 days."
+                .to_string(),
+        ),
+        _ if code == 401 => PlatformError::Authentication(
+            "YouTube authentication expired. Sign out of YouTube here and sign back in.".to_string(),
+        ),
+        _ => PlatformError::Platform(format!("YouTube API error ({code} {reason}): {body}")),
+    }
+}
+
+/// Find the live chat for the user's CURRENTLY-LIVE broadcast, returning
+/// `(live_chat_id, owner_channel_id)`. The owner id (the broadcast's canonical
+/// `UCxxxx`) is what the poll loop uses to suppress the streamer's OWN echoed
+/// messages — it must NOT be the user-typed channel setting (a handle/URL won't
+/// match `authorDetails.channelId`).
+///
+/// ACTIVE-ONLY by design: a broadcast with `broadcastStatus=active` is LIVE,
+/// so its chat is both readable AND postable. An `upcoming`/scheduled broadcast
+/// has a readable chat too, but `liveChatMessages.insert` rejects it with HTTP
+/// 400 `INVALID_REQUEST_METADATA` until it goes live — so attaching to one
+/// gives a "connected but can't send" trap. We refuse it and fail loud as
+/// `NotLive` instead.
 pub(super) async fn find_live_chat_id(
     client: &reqwest::Client,
     auth: &AuthMode,
     channel_id: &str,
     api_base: &str,
-) -> Result<String, PlatformError> {
+) -> Result<(String, Option<String>), PlatformError> {
     match auth {
         AuthMode::OAuth { .. } => {
-            // OAuth mode: use liveBroadcasts.list with mine=true (5 quota units)
+            // `liveBroadcasts.list?broadcastStatus=active` (5 quota units) —
+            // the status filter already scopes to the authenticated user's
+            // broadcasts, so it returns this account's live broadcast.
             let url = format!("{}/liveBroadcasts", api_base);
             let resp = auth
                 .apply(client.get(&url))
@@ -46,9 +91,7 @@ pub(super) async fn find_live_chat_id(
                 ])
                 .send()
                 .await
-                .map_err(|e| {
-                    PlatformError::Network(format!("Failed to fetch broadcasts: {}", e))
-                })?;
+                .map_err(|e| PlatformError::Network(format!("Failed to fetch broadcasts: {}", e)))?;
 
             if !resp.status().is_success() {
                 let status = resp.status();
@@ -56,25 +99,26 @@ pub(super) async fn find_live_chat_id(
                     .text()
                     .await
                     .unwrap_or_else(|e| format!("<failed to read response body: {e}>"));
-                return Err(PlatformError::Platform(format!(
-                    "YouTube API error ({}): {}",
-                    status, body
-                )));
+                return Err(youtube_http_error(status, body));
             }
 
             let data: serde_json::Value = resp.json().await.map_err(|e| {
                 PlatformError::Network(format!("Failed to parse broadcasts response: {}", e))
             })?;
 
-            // Get the first active broadcast's liveChatId
             data["items"]
                 .as_array()
                 .and_then(|items| items.first())
-                .and_then(|item| item["snippet"]["liveChatId"].as_str())
-                .map(|s| s.to_string())
+                .and_then(|item| {
+                    let snippet = &item["snippet"];
+                    let chat_id = snippet["liveChatId"].as_str()?.to_string();
+                    let owner = snippet["channelId"].as_str().map(|s| s.to_string());
+                    Some((chat_id, owner))
+                })
                 .ok_or_else(|| {
-                    PlatformError::Platform(
-                        "No active live broadcast found. Make sure you are currently live streaming on YouTube.".to_string(),
+                    PlatformError::NotLive(
+                        "No active YouTube broadcast found. Go live on YouTube, then connect chat."
+                            .to_string(),
                     )
                 })
         }
@@ -103,10 +147,7 @@ pub(super) async fn find_live_chat_id(
                     .text()
                     .await
                     .unwrap_or_else(|e| format!("<failed to read response body: {e}>"));
-                return Err(PlatformError::Platform(format!(
-                    "YouTube API error ({}): {}",
-                    status, body
-                )));
+                return Err(youtube_http_error(status, body));
             }
 
             let search_data: serde_json::Value = resp.json().await.map_err(|e| {
@@ -118,7 +159,7 @@ pub(super) async fn find_live_chat_id(
                 .and_then(|items| items.first())
                 .and_then(|item| item["id"]["videoId"].as_str())
                 .ok_or_else(|| {
-                    PlatformError::Platform(
+                    PlatformError::NotLive(
                         "No active live stream found for this channel. Make sure the channel is currently live streaming.".to_string(),
                     )
                 })?
@@ -141,10 +182,7 @@ pub(super) async fn find_live_chat_id(
                     .text()
                     .await
                     .unwrap_or_else(|e| format!("<failed to read response body: {e}>"));
-                return Err(PlatformError::Platform(format!(
-                    "YouTube API error ({}): {}",
-                    status, body
-                )));
+                return Err(youtube_http_error(status, body));
             }
 
             let video_data: serde_json::Value = resp.json().await.map_err(|e| {
@@ -155,7 +193,9 @@ pub(super) async fn find_live_chat_id(
                 .as_array()
                 .and_then(|items| items.first())
                 .and_then(|item| item["liveStreamingDetails"]["activeLiveChatId"].as_str())
-                .map(|s| s.to_string())
+                // API-key mode is read-only — no outbound messages to
+                // self-suppress, so the owner id is irrelevant here.
+                .map(|s| (s.to_string(), None))
                 .ok_or_else(|| {
                     PlatformError::Platform(
                         "Live stream found but no active chat. Chat may be disabled for this stream.".to_string(),

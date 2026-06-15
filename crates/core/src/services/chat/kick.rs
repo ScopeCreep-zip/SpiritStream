@@ -27,10 +27,12 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 use crate::models::{
     ChatConnectionStatus, ChatCredentials, ChatMessage, ChatPlatform as ChatPlatformEnum,
+    MessageFlags,
 };
 
 use super::endpoints::ChatEndpoints;
 use super::platform::{ChatPlatform, PlatformError, PlatformResult};
+use super::self_echo::{SelfClass, SelfEcho};
 
 const STATUS_DISCONNECTED: u8 = 0;
 const STATUS_CONNECTING: u8 = 1;
@@ -176,6 +178,10 @@ pub struct KickConnector {
     /// Send credentials captured at `connect()` time. `None` keeps the
     /// connector in read-only mode.
     send_state: Arc<StdMutex<Option<SendState>>>,
+    /// Self-message detector + outbound echo dedup, built at `connect()` from
+    /// the user's own Kick username. Shared between the WS read task (to mark
+    /// native self-messages) and `send_message` (to record app-sent echoes).
+    self_echo: Arc<StdMutex<Option<Arc<SelfEcho>>>>,
     /// Q1: handle to the background WS poll task spawned in `connect()`.
     /// Pre-Q1 the spawn handle was dropped on the floor, so a connector
     /// dropped without `disconnect()` (panic-disconnect path, test
@@ -221,6 +227,7 @@ impl KickConnector {
             disconnecting: Arc::new(AtomicBool::new(false)),
             disconnect_tx: None,
             send_state: Arc::new(StdMutex::new(None)),
+            self_echo: Arc::new(StdMutex::new(None)),
             task_handle: Arc::new(TokioMutex::new(None)),
             pusher_ws: endpoints.kick_pusher_ws.clone(),
             channel_lookup: endpoints.kick_channel_lookup.clone(),
@@ -258,12 +265,13 @@ impl ChatPlatform for KickConnector {
             *guard = None;
         }
 
-        let (channel, oauth_token, broadcaster_user_id) = match credentials {
+        let (channel, oauth_token, broadcaster_user_id, self_identity) = match credentials {
             ChatCredentials::Kick {
                 channel,
                 oauth_token,
                 broadcaster_user_id,
-            } => (channel, oauth_token, broadcaster_user_id),
+                self_identity,
+            } => (channel, oauth_token, broadcaster_user_id, self_identity),
             _ => {
                 self.set_error("Expected Kick credentials");
                 return Err(PlatformError::InvalidConfig(
@@ -398,6 +406,13 @@ impl ChatPlatform for KickConnector {
             *guard = captured_send_state;
         }
 
+        // Kick usernames are case-insensitive. Built once here, shared with the
+        // read task (mark native self-messages) and `send_message` (record echoes).
+        let self_echo = Arc::new(SelfEcho::new(self_identity, true));
+        if let Ok(mut guard) = self.self_echo.lock() {
+            *guard = Some(self_echo.clone());
+        }
+
         let (disconnect_tx, mut disconnect_rx) = mpsc::channel::<()>(1);
         self.disconnect_tx = Some(disconnect_tx);
         self.status.store(
@@ -451,12 +466,20 @@ impl ChatPlatform for KickConnector {
                                     }
                                 };
 
-                                if let Some(msg) = parse_kick_chat_event(&payload) {
-                                    if message_tx.send(msg).await.is_err() {
-                                        warn!("Failed to deliver Kick chat message: receiver dropped");
-                                        break;
+                                if let Some(mut msg) = parse_kick_chat_event(&payload) {
+                                    // Drop our own app-sent echo; mark a natively
+                                    // typed self-message as "you".
+                                    let class = self_echo.classify(&msg.username, &msg.message);
+                                    if class != SelfClass::Echo {
+                                        if class == SelfClass::Native {
+                                            msg.flags |= MessageFlags::SELF_AUTHOR;
+                                        }
+                                        if message_tx.send(msg).await.is_err() {
+                                            warn!("Failed to deliver Kick chat message: receiver dropped");
+                                            break;
+                                        }
+                                        message_count.fetch_add(1, Ordering::Relaxed);
                                     }
-                                    message_count.fetch_add(1, Ordering::Relaxed);
                                 }
                             }
                             Ok(Message::Ping(data)) => {
@@ -565,6 +588,13 @@ impl ChatPlatform for KickConnector {
                     .to_string(),
             )
         })?;
+
+        // Record for echo-dedup: the platform broadcasts this back over Pusher
+        // and the read task must recognize it as our own outbound, not a fresh
+        // native message.
+        if let Some(echo) = self.self_echo.lock().ok().and_then(|g| g.clone()) {
+            echo.record_outbound(&message);
+        }
 
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(15))

@@ -263,6 +263,9 @@ impl From<ChatCredentialsWire> for ChatCredentials {
             } => Self::TikTok {
                 username,
                 session_token,
+                // Never wire-supplied: the connect handler injects it from
+                // settings after this conversion.
+                self_identity: None,
             },
             ChatCredentialsWire::YouTube { channel_id, auth } => Self::YouTube {
                 channel_id,
@@ -277,6 +280,7 @@ impl From<ChatCredentialsWire> for ChatCredentials {
                 // from the OAuth config after this conversion.
                 client_id: None,
                 oauth_token,
+                self_identity: None,
             },
             ChatCredentialsWire::Kick {
                 channel,
@@ -286,6 +290,7 @@ impl From<ChatCredentialsWire> for ChatCredentials {
                 channel,
                 oauth_token,
                 broadcaster_user_id,
+                self_identity: None,
             },
             ChatCredentialsWire::Facebook {
                 video_id,
@@ -293,6 +298,7 @@ impl From<ChatCredentialsWire> for ChatCredentials {
             } => Self::Facebook {
                 video_id,
                 access_token,
+                self_identity: None,
             },
         }
     }

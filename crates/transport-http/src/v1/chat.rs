@@ -119,6 +119,17 @@ pub async fn v1_chat_connect_proxy(
         .await
         .ok_or(spiritstream_core::CoreError::NoActiveProfile)?;
 
+    // A blank stored identity means "not connected / not set" — pass `None` so
+    // the connector does no self-matching rather than matching the empty string.
+    let non_empty = |s: String| -> Option<String> {
+        let t = s.trim();
+        if t.is_empty() {
+            None
+        } else {
+            Some(t.to_string())
+        }
+    };
+
     config.credentials = match config.credentials {
         ChatCredentials::Twitch { channel, auth } => {
             let enriched_auth = match auth {
@@ -259,6 +270,11 @@ pub async fn v1_chat_connect_proxy(
         // The frontend never knows client ids — the transport resolves
         // Trovo's from the OAuth config chain (in-app setup → env →
         // embedded) and the connector fails loud on a placeholder.
+        //
+        // `self_identity` (the user's own account name/id on the platform) is
+        // injected here too, from the stored OAuth account / chat settings, so
+        // the connector can mark the user's natively-typed messages as "you".
+        // It's only the public login/id — never a token — so it's safe to pass.
         ChatCredentials::Trovo {
             channel_id,
             oauth_token,
@@ -267,8 +283,39 @@ pub async fn v1_chat_connect_proxy(
             channel_id,
             client_id: Some(state.oauth_service.get_config().await.get_trovo_client_id()),
             oauth_token,
+            self_identity: non_empty(profile_settings.oauth.trovo.username.clone()),
         },
-        other => other,
+        ChatCredentials::Kick {
+            channel,
+            oauth_token,
+            broadcaster_user_id,
+            ..
+        } => ChatCredentials::Kick {
+            channel,
+            oauth_token,
+            broadcaster_user_id,
+            self_identity: non_empty(profile_settings.oauth.kick.username.clone()),
+        },
+        ChatCredentials::Facebook {
+            video_id,
+            access_token,
+            ..
+        } => ChatCredentials::Facebook {
+            video_id,
+            access_token,
+            // Facebook matches on the stable actor id, not the display name.
+            self_identity: non_empty(profile_settings.oauth.facebook.user_id.clone()),
+        },
+        ChatCredentials::TikTok {
+            username,
+            session_token,
+            ..
+        } => ChatCredentials::TikTok {
+            username,
+            session_token,
+            // TikTok has no OAuth; the user enters their own handle in settings.
+            self_identity: non_empty(profile_settings.chat.tiktok_username.clone()),
+        },
     };
 
     state.chat_manager.connect(config).await?;
@@ -387,7 +434,10 @@ pub async fn v1_chat_retry_proxy(
                 }
                 .into());
             }
-            tokio::spawn(crate::connect_youtube_chat_with_retry(state.clone()));
+            // Single immediate attempt with a toast on failure: the user gets
+            // a definitive result — connected, or a clear "go live on YouTube
+            // first" via chat_auto_connect_failed.
+            crate::connect_youtube_chat(&state, true, 1, std::time::Duration::from_secs(15)).await;
         }
         _ => {
             return Err(spiritstream_core::CoreError::ValidationFailed {
@@ -401,6 +451,41 @@ pub async fn v1_chat_retry_proxy(
         }
     }
     Ok(Json(ChatAckResponse {}))
+}
+
+/// Request body for `POST /chat/reidentify`. Confirms a guess — it cannot
+/// reverse a hash. The salt stays in core; only a boolean comes back.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatReidentifyRequest {
+    /// A plaintext identity the user already suspects (e.g. a username).
+    pub candidate: String,
+    /// The pseudonym to test — the canonical `hash:` value carried on a
+    /// pseudonymised message's `author.login` / `author.userId`.
+    pub pseudonym: String,
+}
+
+/// Result of a re-identification check.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatReidentifyResponse {
+    /// True iff `candidate` pseudonymises to `pseudonym` under this profile's
+    /// salt — i.e. the guess is correct.
+    pub matches: bool,
+}
+
+#[utoipa::path(post, path = "/chat/reidentify", tag = "chat",
+    request_body = ChatReidentifyRequest,
+    responses((status = 200, body = ChatReidentifyResponse, description = "Whether the guess matches the pseudonym.")),
+    security(("session_cookie" = []), ("bearer" = [])))]
+pub async fn v1_chat_reidentify_proxy(
+    State(state): State<AppState>,
+    axum::Json(req): axum::Json<ChatReidentifyRequest>,
+) -> Json<ChatReidentifyResponse> {
+    let matches = state
+        .chat_manager
+        .reidentify(&req.candidate, &req.pseudonym);
+    Json(ChatReidentifyResponse { matches })
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]

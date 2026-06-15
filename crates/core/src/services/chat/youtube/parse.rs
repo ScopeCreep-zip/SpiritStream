@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use crate::models::{ChatMessage, ChatPlatform as ChatPlatformEnum};
+use crate::models::{ChatAuthor, ChatMessage, ChatPlatform as ChatPlatformEnum};
 
 #[derive(Debug, Clone)]
 pub(super) struct OutboundMessage {
@@ -33,11 +33,12 @@ pub(crate) fn parse_youtube_chat_item(item: &serde_json::Value) -> Option<ChatMe
         .as_str()
         .unwrap_or("Unknown")
         .to_string();
-
-    let mut chat_msg = ChatMessage::new(ChatPlatformEnum::YouTube, username, message_text);
-    if let Some(source_id) = item["id"].as_str() {
-        chat_msg = chat_msg.with_source_id(source_id.to_string());
-    }
+    // The channel id is YouTube's stable per-viewer identifier. Populating
+    // `author` lets anonymous mode key the friendly label off it (so the
+    // alias stays stable even if the viewer renames) and hash it as the
+    // canonical correlation id — parity with Twitch. YouTube has no separate
+    // "login", so the channel id serves as both id and login.
+    let channel_id = author["channelId"].as_str().unwrap_or("").to_string();
 
     let mut badges = Vec::new();
     if author["isChatOwner"].as_bool().unwrap_or(false) {
@@ -48,6 +49,18 @@ pub(crate) fn parse_youtube_chat_item(item: &serde_json::Value) -> Option<ChatMe
     }
     if author["isChatSponsor"].as_bool().unwrap_or(false) {
         badges.push("member".to_string());
+    }
+
+    let mut chat_msg = ChatMessage::new(ChatPlatformEnum::YouTube, username.clone(), message_text)
+        .with_author(ChatAuthor {
+            user_id: channel_id.clone(),
+            login: channel_id,
+            display_name: username,
+            color: None,
+            badges_raw: badges.clone(),
+        });
+    if let Some(source_id) = item["id"].as_str() {
+        chat_msg = chat_msg.with_source_id(source_id.to_string());
     }
     if !badges.is_empty() {
         chat_msg = chat_msg.with_badges(badges);

@@ -32,10 +32,12 @@ use tokio::task::JoinHandle;
 
 use crate::models::{
     ChatConnectionStatus, ChatCredentials, ChatMessage, ChatPlatform as ChatPlatformEnum,
+    MessageFlags,
 };
 
 use super::endpoints::ChatEndpoints;
 use super::platform::{ChatPlatform, PlatformError, PlatformResult};
+use super::self_echo::{SelfClass, SelfEcho};
 
 const STATUS_DISCONNECTED: u8 = 0;
 const STATUS_CONNECTING: u8 = 1;
@@ -120,6 +122,9 @@ pub struct FacebookConnector {
     disconnect_tx: Option<mpsc::Sender<()>>,
     /// Send credentials captured at connect time. Cleared on disconnect.
     send_state: Arc<StdMutex<Option<SendState>>>,
+    /// Self-message detector + outbound echo dedup, built at `connect()` from
+    /// the user's own Facebook actor id. Shared between the poll task and `send`.
+    self_echo: Arc<StdMutex<Option<Arc<SelfEcho>>>>,
     /// Q2: handle to the background Graph API poll task. Pre-this fix
     /// the spawn handle was dropped; a connector dropped without
     /// `disconnect()` (panic-disconnect, test teardown) leaked the
@@ -158,6 +163,7 @@ impl FacebookConnector {
             disconnecting: Arc::new(AtomicBool::new(false)),
             disconnect_tx: None,
             send_state: Arc::new(StdMutex::new(None)),
+            self_echo: Arc::new(StdMutex::new(None)),
             task_handle: Arc::new(TokioMutex::new(None)),
             graph_base: endpoints.facebook_graph_base.clone(),
         }
@@ -193,11 +199,12 @@ impl ChatPlatform for FacebookConnector {
             *guard = None;
         }
 
-        let (video_id, access_token) = match credentials {
+        let (video_id, access_token, self_identity) = match credentials {
             ChatCredentials::Facebook {
                 video_id,
                 access_token,
-            } => (video_id, access_token),
+                self_identity,
+            } => (video_id, access_token, self_identity),
             _ => {
                 self.set_error("Expected Facebook credentials");
                 return Err(PlatformError::InvalidConfig(
@@ -283,6 +290,13 @@ impl ChatPlatform for FacebookConnector {
                 video_id: video_id.clone(),
                 access_token: access_token.clone(),
             });
+        }
+
+        // Facebook actor ids are exact (numeric strings) — case-sensitive match.
+        // Shared with the poll task (mark native self-comments) and `send_message`.
+        let self_echo = Arc::new(SelfEcho::new(self_identity, false));
+        if let Ok(mut guard) = self.self_echo.lock() {
+            *guard = Some(self_echo.clone());
         }
 
         let (disconnect_tx, mut disconnect_rx) = mpsc::channel::<()>(1);
@@ -386,7 +400,7 @@ impl ChatPlatform for FacebookConnector {
                         let mut emitted = 0_u64;
                         let mut latest_epoch = since;
                         for comment in comments {
-                            let Some((chat_msg, epoch_secs)) = parse_facebook_comment(comment)
+                            let Some((mut chat_msg, epoch_secs)) = parse_facebook_comment(comment)
                             else {
                                 continue;
                             };
@@ -394,6 +408,19 @@ impl ChatPlatform for FacebookConnector {
                                 if epoch > latest_epoch {
                                     latest_epoch = epoch;
                                 }
+                            }
+
+                            // Match on the stable `from.id` (the parser keeps
+                            // `from.name` as the username but drops the id).
+                            // Drop our own app-sent echo; mark a natively typed
+                            // self-comment as "you".
+                            let author_id = comment["from"]["id"].as_str().unwrap_or("");
+                            let class = self_echo.classify(author_id, &chat_msg.message);
+                            if class == SelfClass::Echo {
+                                continue;
+                            }
+                            if class == SelfClass::Native {
+                                chat_msg.flags |= MessageFlags::SELF_AUTHOR;
                             }
 
                             if message_tx.send(chat_msg).await.is_err() {
@@ -404,9 +431,11 @@ impl ChatPlatform for FacebookConnector {
                         }
                         if emitted > 0 {
                             message_count.fetch_add(emitted, Ordering::Relaxed);
-                            // Advance the cursor past the latest comment
-                            // we just emitted so the next poll won't
-                            // re-emit them.
+                        }
+                        // Advance the cursor past the newest comment SEEN (even
+                        // ones skipped as our own echo), or an echo-only poll
+                        // would never advance and refetch forever.
+                        if latest_epoch > since {
                             since_epoch.store(latest_epoch + 1, Ordering::Relaxed);
                         }
                     }
@@ -499,6 +528,11 @@ impl ChatPlatform for FacebookConnector {
                 "Facebook send disabled — no access token captured at connect".to_string(),
             )
         })?;
+
+        // Record for echo-dedup: this comment comes back on the next poll.
+        if let Some(echo) = self.self_echo.lock().ok().and_then(|g| g.clone()) {
+            echo.record_outbound(&message);
+        }
 
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(15))

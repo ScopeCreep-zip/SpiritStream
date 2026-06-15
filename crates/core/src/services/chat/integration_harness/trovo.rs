@@ -79,6 +79,7 @@ async fn trovo_round_trip_connect_receive_disconnect() {
                 // credentials saved through the in-app setup form.
                 client_id: Some("harness-client-id".into()),
                 oauth_token: None,
+                self_identity: None,
             },
             tx,
         )

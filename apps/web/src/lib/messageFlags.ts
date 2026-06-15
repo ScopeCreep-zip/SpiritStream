@@ -26,6 +26,9 @@ export const MessageFlag = {
   MONITORED_AUTHOR: 1 << 14,
   SHARED_FROM_OTHER_CHANNEL: 1 << 15,
   REDEEMED_CHANNEL_POINT_REWARD: 1 << 16,
+  // Author is the local user's own account (native-platform message). Rendered
+  // as "you", like app-sent outbound messages.
+  SELF_AUTHOR: 1 << 17,
 } as const;
 
 export type MessageFlagName = keyof typeof MessageFlag;

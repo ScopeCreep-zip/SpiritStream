@@ -52,6 +52,13 @@ pub enum ChatCredentials {
         username: String,
         /// Session cookies/token (may be needed for some unofficial APIs)
         session_token: Option<String>,
+        /// The LOCAL user's own TikTok nickname (from `ChatSettings`), used to
+        /// mark their natively-typed messages as "you". TikTok has no auth, so
+        /// this is the user-entered handle; `None` ⇒ no self-marking. Not a
+        /// secret (it's a public display name).
+        #[serde(default)]
+        #[ts(optional)]
+        self_identity: Option<String>,
     },
     #[serde(rename_all = "camelCase")]
     YouTube {
@@ -81,6 +88,12 @@ pub enum ChatCredentials {
         /// (`chat_send_self` scope).
         #[serde(default)]
         oauth_token: Option<String>,
+        /// The LOCAL user's own Trovo username (from the stored OAuth account),
+        /// used to mark their natively-typed messages as "you". Compared
+        /// case-insensitively against the inbound author. Public, not a secret.
+        #[serde(default)]
+        #[ts(optional)]
+        self_identity: Option<String>,
     },
     #[serde(rename_all = "camelCase")]
     Kick {
@@ -96,6 +109,12 @@ pub enum ChatCredentials {
         /// fetches this once when activating the profile.
         #[serde(default)]
         broadcaster_user_id: Option<u64>,
+        /// The LOCAL user's own Kick username (from the stored OAuth account),
+        /// used to mark their natively-typed messages as "you". Compared
+        /// case-insensitively against the inbound author. Public, not a secret.
+        #[serde(default)]
+        #[ts(optional)]
+        self_identity: Option<String>,
     },
     #[serde(rename_all = "camelCase")]
     Facebook {
@@ -103,6 +122,12 @@ pub enum ChatCredentials {
         video_id: String,
         /// Facebook access token
         access_token: String,
+        /// The LOCAL user's own Facebook actor id (from the stored OAuth
+        /// account), used to mark their natively-typed comments as "you".
+        /// Compared exactly against the inbound `from.id`. Public, not a secret.
+        #[serde(default)]
+        #[ts(optional)]
+        self_identity: Option<String>,
     },
 }
 
@@ -178,6 +203,7 @@ impl std::fmt::Debug for ChatCredentials {
             ChatCredentials::TikTok {
                 username,
                 session_token,
+                self_identity,
             } => f
                 .debug_struct("ChatCredentials::TikTok")
                 .field("username", username)
@@ -185,6 +211,7 @@ impl std::fmt::Debug for ChatCredentials {
                     "session_token",
                     &session_token.as_ref().map(|_| "<redacted>"),
                 )
+                .field("self_identity", self_identity)
                 .finish(),
             ChatCredentials::YouTube { channel_id, auth } => f
                 .debug_struct("ChatCredentials::YouTube")
@@ -195,30 +222,36 @@ impl std::fmt::Debug for ChatCredentials {
                 channel_id,
                 client_id,
                 oauth_token,
+                self_identity,
             } => f
                 .debug_struct("ChatCredentials::Trovo")
                 .field("channel_id", channel_id)
                 // Client ids are public by design — safe to log.
                 .field("client_id", client_id)
                 .field("oauth_token", &oauth_token.as_ref().map(|_| "<redacted>"))
+                .field("self_identity", self_identity)
                 .finish(),
             ChatCredentials::Kick {
                 channel,
                 oauth_token,
                 broadcaster_user_id,
+                self_identity,
             } => f
                 .debug_struct("ChatCredentials::Kick")
                 .field("channel", channel)
                 .field("oauth_token", &oauth_token.as_ref().map(|_| "<redacted>"))
                 .field("broadcaster_user_id", broadcaster_user_id)
+                .field("self_identity", self_identity)
                 .finish(),
             ChatCredentials::Facebook {
                 video_id,
                 access_token: _,
+                self_identity,
             } => f
                 .debug_struct("ChatCredentials::Facebook")
                 .field("video_id", video_id)
                 .field("access_token", &"<redacted>")
+                .field("self_identity", self_identity)
                 .finish(),
         }
     }
@@ -284,6 +317,7 @@ mod tests {
         let creds = ChatCredentials::Facebook {
             video_id: "vid-1".into(),
             access_token: "SUPER-SECRET-FACEBOOK-BEARER".into(),
+            self_identity: None,
         };
         let rendered = format!("{creds:?}");
         assert!(
@@ -323,6 +357,7 @@ mod tests {
             channel: "kingbob".into(),
             oauth_token: Some("SUPER-SECRET-KICK-OAUTH".into()),
             broadcaster_user_id: Some(123),
+            self_identity: None,
         };
         let rendered = format!("{creds:?}");
         assert!(!rendered.contains("SUPER-SECRET-KICK-OAUTH"));
@@ -388,6 +423,7 @@ mod tests {
         let creds = ChatCredentials::TikTok {
             username: "tikuser".into(),
             session_token: Some("SECRET-TIKTOK-SESSION".into()),
+            self_identity: None,
         };
         let rendered = format!("{creds:?}");
         assert!(!rendered.contains("SECRET-TIKTOK-SESSION"), "{rendered}");
@@ -403,6 +439,7 @@ mod tests {
             channel_id: "1234567".into(),
             client_id: Some("public-client-id".into()),
             oauth_token: None,
+            self_identity: None,
         };
         let rendered = format!("{creds:?}");
         assert!(

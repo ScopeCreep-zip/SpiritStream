@@ -41,6 +41,7 @@ fn foreign_cred() -> ChatCredentials {
         channel_id: "someone-else".into(),
         client_id: None,
         oauth_token: None,
+        self_identity: None,
     }
 }
 
@@ -139,6 +140,7 @@ async fn kick_requires_a_channel_name() {
             channel: "   ".into(),
             oauth_token: None,
             broadcaster_user_id: None,
+            self_identity: None,
         },
     )
     .await;
@@ -155,6 +157,7 @@ async fn tiktok_requires_a_username() {
         ChatCredentials::TikTok {
             username: "  @  ".into(),
             session_token: None,
+            self_identity: None,
         },
     )
     .await;
@@ -171,6 +174,7 @@ async fn facebook_requires_video_id_then_access_token() {
         ChatCredentials::Facebook {
             video_id: "  ".into(),
             access_token: "tok".into(),
+            self_identity: None,
         },
     )
     .await;
@@ -186,6 +190,7 @@ async fn facebook_requires_video_id_then_access_token() {
         ChatCredentials::Facebook {
             video_id: "123".into(),
             access_token: "   ".into(),
+            self_identity: None,
         },
     )
     .await;
@@ -206,6 +211,7 @@ async fn failed_connect_records_last_error() {
             channel: "".into(),
             oauth_token: None,
             broadcaster_user_id: None,
+            self_identity: None,
         },
     )
     .await;
@@ -447,6 +453,12 @@ fn youtube_text_message_maps_fields_and_badges() {
         m.badges.as_deref(),
         Some(&["owner".to_string(), "member".to_string()][..])
     );
+    // Author is populated from the stable channel id so anonymous mode keys
+    // the friendly alias off it (parity with Twitch), not the mutable name.
+    let author = m.author.as_ref().expect("youtube author populated");
+    assert_eq!(author.user_id, "UC123");
+    assert_eq!(author.login, "UC123");
+    assert_eq!(author.display_name, "Alice");
 }
 
 #[test]

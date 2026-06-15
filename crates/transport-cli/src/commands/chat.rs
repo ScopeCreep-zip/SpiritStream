@@ -79,6 +79,9 @@ fn build_connect_config(
                 // loud on a placeholder.
                 client_id: Some(trovo_client_id),
                 oauth_token: oauth,
+                // Self-marking is driven by stored profile settings, which the
+                // headless CLI path doesn't load — no "you" tagging here.
+                self_identity: None,
             }
         }
         ChatPlatform::TikTok => {
@@ -88,6 +91,7 @@ fn build_connect_config(
             ChatCredentials::TikTok {
                 username,
                 session_token,
+                self_identity: None,
             }
         }
         ChatPlatform::Kick | ChatPlatform::Facebook => {
@@ -184,6 +188,19 @@ pub enum ChatCmd {
         query: String,
         #[arg(long)]
         limit: Option<usize>,
+    },
+    /// Confirm whether a plaintext identity pseudonymises to a given
+    /// `hash:` value under the active profile's anonymizer salt. Mirrors
+    /// `POST /api/v1/chat/reidentify`: a one-way CONFIRMATION of a guess
+    /// the user already holds ("is this anonymised viewer actually
+    /// @handle?") — it cannot reverse the hash or enumerate identities.
+    /// Prints `{ "matches": false }` when no salt is set.
+    Reidentify {
+        /// The plaintext identity to test (e.g. a username).
+        candidate: String,
+        /// The pseudonym to check against (the `hash:` value carried on a
+        /// pseudonymised message's author fields).
+        pseudonym: String,
     },
 }
 
@@ -448,6 +465,17 @@ pub async fn run(
                 }
             }
             out.emit(&matches)?;
+            Ok(())
+        }
+        ChatCmd::Reidentify {
+            candidate,
+            pseudonym,
+        } => {
+            // Pure confirmation against the active profile's salt — the
+            // salt never leaves core and only a boolean comes back, matching
+            // the HTTP `ChatReidentifyResponse { matches }` wire shape.
+            let matches = registry.chat.reidentify(&candidate, &pseudonym);
+            out.emit(&serde_json::json!({ "matches": matches }))?;
             Ok(())
         }
     }

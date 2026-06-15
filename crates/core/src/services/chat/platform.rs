@@ -29,6 +29,20 @@ pub enum PlatformError {
 
     #[error("Platform error: {0}")]
     Platform(String),
+
+    /// No active or upcoming broadcast to attach chat to — the channel
+    /// simply isn't live yet. Distinct from a real failure so the connector
+    /// can report DISCONNECTED ("waiting to go live") rather than a scary
+    /// ERROR badge, and the auto-connect/reconnect machinery doesn't churn.
+    #[error("{0}")]
+    NotLive(String),
+
+    /// The platform's API quota is exhausted (YouTube Data API HTTP 403).
+    /// Retrying is pointless until the daily quota resets, so — like
+    /// [`NotLive`] — the connector reports DISCONNECTED and the reconnect
+    /// loop leaves it alone instead of hammering an already-exhausted quota.
+    #[error("{0}")]
+    QuotaExceeded(String),
 }
 
 /// Trait that all chat platform connectors must implement
@@ -67,6 +81,15 @@ pub trait ChatPlatform: Send + Sync {
     /// Check if currently connected
     fn is_connected(&self) -> bool {
         matches!(self.status(), ChatConnectionStatus::Connected)
+    }
+
+    /// Whether this connection is "active" — has a live owner task and should
+    /// NOT be re-connected. Defaults to `is_connected()` (unchanged for every
+    /// platform whose connection state IS its status). A connector that
+    /// self-heals through transient blips (YouTube's poll loop) overrides this
+    /// to stay active during reconnects so duplicate `connect()` calls no-op.
+    fn is_active(&self) -> bool {
+        self.is_connected()
     }
 
     /// Send a chat message (if supported by the platform and authenticated)

@@ -13,6 +13,33 @@ use spiritstream_core::services::{ChatManager, EventSink, OAuthService};
 use crate::events::EventBus;
 use crate::AppState;
 
+/// User-facing reason for a failed chat connect, for the
+/// `chat_auto_connect_failed` toast.
+///
+/// `ChatManager::connect` wraps every connector failure as
+/// `CoreError::Internal`, whose `Display` is the deliberately-opaque
+/// "internal error" (it must not leak unexpected internals). But a connect
+/// failure usually has a *known, actionable* reason the connector authored —
+/// e.g. YouTube's "No active live broadcast found. Make sure you are
+/// currently live streaming on YouTube." — flattened into the Internal
+/// context as `"Failed to connect to <platform>: <reason>"`. Surface that
+/// reason so the user gets the actionable message instead of "internal
+/// error"; fall back to the Display for any other variant.
+pub(crate) fn connect_failure_reason(e: &spiritstream_core::CoreError) -> String {
+    match e {
+        spiritstream_core::CoreError::Internal { context }
+            if context.starts_with("Failed to connect to ") =>
+        {
+            context
+                .split_once(": ")
+                .map(|(_, reason)| reason)
+                .unwrap_or(context)
+                .to_string()
+        }
+        other => other.to_string(),
+    }
+}
+
 pub(crate) struct FreshOAuthToken {
     pub(crate) access_token: String,
     pub(crate) refresh_token: Option<String>,
@@ -100,7 +127,7 @@ pub(crate) use reconnect::{
     refresh_and_connect_kick, refresh_and_connect_trovo, refresh_and_connect_twitch,
 };
 pub(crate) use twitch::start_twitch_token_refresh_task;
-pub(crate) use youtube::{connect_youtube_chat_with_retry, start_youtube_token_refresh_task};
+pub(crate) use youtube::{connect_youtube_chat, start_youtube_token_refresh_task};
 
 /// Auto-connect all configured chat platforms when a stream starts.
 /// Runs as a fire-and-forget background task -- errors are logged, never block the stream.
@@ -189,34 +216,17 @@ pub(crate) async fn auto_connect_chat_platforms(state: AppState, force_readonly:
     // and acknowledges it before the connection opens. Auto-connecting
     // here on every profile activation would bypass that gate.
 
-    // YouTube: connect with retry (broadcast won't be live until OBS starts streaming)
-    if !chat_settings.youtube_channel_id.is_empty()
-        && !state
-            .chat_manager
-            .is_disconnect_intended(ChatPlatform::YouTube)
-            .await
-    {
-        let has_oauth = !chat_settings.youtube_use_api_key
-            && !profile_settings.oauth.youtube.access_token.is_empty();
-        let has_api_key =
-            chat_settings.youtube_use_api_key && !chat_settings.youtube_api_key.is_empty();
-
-        if has_oauth || has_api_key {
-            let already_connected = state
-                .chat_manager
-                .get_platform_status(ChatPlatform::YouTube)
-                .await
-                .map(|s| s.status == spiritstream_core::models::ChatConnectionStatus::Connected)
-                .unwrap_or(false);
-
-            if !already_connected {
-                // Spawn as separate task -- retries can take up to 5 minutes
-                tokio::spawn(connect_youtube_chat_with_retry(state.clone()));
-            } else {
-                log::debug!("YouTube chat already connected, skipping auto-connect");
-            }
-        }
-    }
+    // YouTube: one connect path. When SpiritStream is actively streaming
+    // (ffmpeg pushing), the broadcast is going/just-went live, so give a
+    // bounded retry to absorb YouTube's registration lag; otherwise a single
+    // attempt that reconnects if already live and stays a calm Disconnected
+    // ("go live first") if not. No idle polling.
+    let yt_attempts = if state.ffmpeg_handler.active_count() > 0 {
+        6
+    } else {
+        1
+    };
+    connect_youtube_chat(&state, false, yt_attempts, std::time::Duration::from_secs(15)).await;
 }
 
 pub(crate) async fn connect_twitch_chat(
@@ -272,7 +282,7 @@ pub(crate) async fn connect_twitch_chat(
                 // stream itself continues regardless.
                 event_bus.emit(
                     "chat_auto_connect_failed",
-                    json!({ "platform": "twitch", "kind": e.kind(), "error": e.to_string() }),
+                    json!({ "platform": "twitch", "kind": e.kind(), "error": connect_failure_reason(&e) }),
                 );
             }
         }
@@ -306,6 +316,10 @@ pub(crate) async fn connect_trovo_chat(
             // loud on a placeholder.
             client_id: Some(trovo_client_id),
             oauth_token,
+            // The user's own Trovo login, so their natively-typed messages
+            // render as "you". Public, not a secret.
+            self_identity: Some(profile_settings.oauth.trovo.username.clone())
+                .filter(|s| !s.trim().is_empty()),
         },
     };
     match chat_manager.connect(config).await {
@@ -320,7 +334,7 @@ pub(crate) async fn connect_trovo_chat(
                 log::warn!("Failed to auto-connect Trovo chat: {e}");
                 event_bus.emit(
                     "chat_auto_connect_failed",
-                    json!({ "platform": "trovo", "kind": e.kind(), "error": e.to_string() }),
+                    json!({ "platform": "trovo", "kind": e.kind(), "error": connect_failure_reason(&e) }),
                 );
             }
         }
@@ -342,6 +356,10 @@ pub(crate) async fn connect_tiktok_chat(
         credentials: ChatCredentials::TikTok {
             username: chat_settings.tiktok_username.clone(),
             session_token: None,
+            // Auto-connect targets the user's own TikTok, so the same handle is
+            // their self-identity — marks their own messages as "you".
+            self_identity: Some(chat_settings.tiktok_username.clone())
+                .filter(|s| !s.trim().is_empty()),
         },
     };
     match chat_manager.connect(config).await {
@@ -356,7 +374,7 @@ pub(crate) async fn connect_tiktok_chat(
                 log::warn!("Failed to auto-connect TikTok chat: {e}");
                 event_bus.emit(
                     "chat_auto_connect_failed",
-                    json!({ "platform": "tiktok", "kind": e.kind(), "error": e.to_string() }),
+                    json!({ "platform": "tiktok", "kind": e.kind(), "error": connect_failure_reason(&e) }),
                 );
             }
         }
@@ -396,6 +414,10 @@ pub(crate) async fn connect_kick_chat(
             channel: chat_settings.kick_channel.clone(),
             oauth_token,
             broadcaster_user_id,
+            // The user's own Kick login, so their natively-typed messages
+            // render as "you". Public, not a secret.
+            self_identity: Some(profile_settings.oauth.kick.username.clone())
+                .filter(|s| !s.trim().is_empty()),
         },
     };
     match chat_manager.connect(config).await {
@@ -410,7 +432,7 @@ pub(crate) async fn connect_kick_chat(
                 log::warn!("Failed to auto-connect Kick chat: {e}");
                 event_bus.emit(
                     "chat_auto_connect_failed",
-                    json!({ "platform": "kick", "kind": e.kind(), "error": e.to_string() }),
+                    json!({ "platform": "kick", "kind": e.kind(), "error": connect_failure_reason(&e) }),
                 );
             }
         }
@@ -534,18 +556,12 @@ pub(crate) async fn start_chat_reconnect_task(state: AppState) {
                         )
                         .await;
                     }
-                    ChatPlatform::YouTube => {
-                        let has_oauth = !chat_settings.youtube_use_api_key
-                            && !profile_settings.oauth.youtube.access_token.is_empty();
-                        let has_api_key = chat_settings.youtube_use_api_key
-                            && !chat_settings.youtube_api_key.is_empty();
-                        if chat_settings.youtube_channel_id.is_empty()
-                            || (!has_oauth && !has_api_key)
-                        {
-                            continue;
-                        }
-                        tokio::spawn(connect_youtube_chat_with_retry(state.clone()));
-                    }
+                    // YouTube is deliberately ABSENT: its single poll loop is a
+                    // self-healing owner (it retries transient errors internally
+                    // with backoff and stays `is_active`), so the external
+                    // reconnect-on-Error task must NOT drive it — that was the
+                    // duplicate-poller / connect-churn source. YouTube reconnects
+                    // only via explicit triggers (stream-start, Connect button).
                     _ => {}
                 }
             }

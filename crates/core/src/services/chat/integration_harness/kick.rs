@@ -89,6 +89,7 @@ async fn kick_round_trip_connect_receive_send_disconnect() {
             channel: "TestStreamer".into(),
             oauth_token: Some("kick-oauth".into()),
             broadcaster_user_id: Some(777),
+            self_identity: None,
         },
         tx,
     )

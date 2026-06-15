@@ -38,9 +38,11 @@ const TIKTOK_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 
 use crate::models::{
     ChatConnectionStatus, ChatCredentials, ChatMessage, ChatPlatform as ChatPlatformEnum,
+    MessageFlags,
 };
 
 use super::platform::{ChatPlatform, PlatformError, PlatformResult};
+use super::self_echo::{SelfClass, SelfEcho};
 
 const STATUS_DISCONNECTED: u8 = 0;
 const STATUS_CONNECTING: u8 = 1;
@@ -156,8 +158,12 @@ impl ChatPlatform for TikTokConnector {
             *guard = None;
         }
 
-        let username = match credentials {
-            ChatCredentials::TikTok { username, .. } => username,
+        let (username, self_identity) = match credentials {
+            ChatCredentials::TikTok {
+                username,
+                self_identity,
+                ..
+            } => (username, self_identity),
             _ => {
                 self.set_error("Expected TikTok credentials");
                 return Err(PlatformError::InvalidConfig(
@@ -202,6 +208,11 @@ impl ChatPlatform for TikTokConnector {
             Ordering::Relaxed,
         );
 
+        // TikTok is read-only (no app send → no echoes), so this only marks the
+        // local user's own natively-typed messages as "you". Nicknames are
+        // display names — matched case-insensitively; `None` ⇒ no self-marking.
+        let self_echo = Arc::new(SelfEcho::new(self_identity, true));
+
         let status = self.status.clone();
         let last_error = self.last_error.clone();
         let message_count = self.message_count.clone();
@@ -217,7 +228,13 @@ impl ChatPlatform for TikTokConnector {
                     next = stream.next_event() => {
                         match next {
                             Some(TikTokLiveEvent::Chat(msg)) => {
-                                if let Some(chat_msg) = parse_tiktok_chat(&msg) {
+                                if let Some(mut chat_msg) = parse_tiktok_chat(&msg) {
+                                    // Mark the local user's own message as "you".
+                                    if self_echo.classify(&chat_msg.username, &chat_msg.message)
+                                        == SelfClass::Native
+                                    {
+                                        chat_msg.flags |= MessageFlags::SELF_AUTHOR;
+                                    }
                                     if message_tx.send(chat_msg).await.is_err() {
                                         warn!("TikTok chat receiver dropped; stopping task");
                                         break;

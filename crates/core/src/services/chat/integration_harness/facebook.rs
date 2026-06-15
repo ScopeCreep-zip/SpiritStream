@@ -66,6 +66,7 @@ async fn facebook_round_trip_connect_receive_send_disconnect() {
             ChatCredentials::Facebook {
                 video_id: "vid123".into(),
                 access_token: "fb-token".into(),
+                self_identity: None,
             },
             tx,
         )

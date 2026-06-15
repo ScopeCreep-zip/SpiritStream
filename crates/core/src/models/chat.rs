@@ -234,6 +234,11 @@ impl ChatMessage {
         self.badges = Some(badges);
         self
     }
+
+    pub fn with_author(mut self, author: ChatAuthor) -> Self {
+        self.author = Some(author);
+        self
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -425,6 +430,13 @@ bitflags::bitflags! {
         const MONITORED_AUTHOR                = 1 << 14;
         const SHARED_FROM_OTHER_CHANNEL       = 1 << 15;
         const REDEEMED_CHANNEL_POINT_REWARD   = 1 << 16;
+        /// The author is the local user's own connected account on that
+        /// platform (matched by login/id against the stored credentials). Set
+        /// for messages typed in the platform's NATIVE chat so the app renders
+        /// them as "you", like app-sent outbound messages. App-sent echoes are
+        /// dropped by the per-connector dedup window BEFORE this is set, so an
+        /// already-shown outbound is never double-marked.
+        const SELF_AUTHOR                     = 1 << 17;
     }
 }
 

@@ -2,6 +2,7 @@ mod endpoints;
 mod facebook;
 mod kick;
 mod platform;
+mod self_echo;
 mod tiktok;
 mod trovo;
 pub(crate) mod twitch;

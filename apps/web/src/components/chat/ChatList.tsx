@@ -5,6 +5,8 @@ import { hasFlag, MessageFlag } from '@/lib/messageFlags';
 import type { ChatMessage, ChatPlatform } from '@spiritstream/types';
 import { Fragment } from './Fragment';
 import { EventNotice } from './EventNotice';
+import { AuthorName } from './AuthorName';
+import { ServiceMark } from '@/components/stream/ServiceMark';
 
 // Platform → CSS-variable suffix. The colors themselves live in
 // `tokens.css` (`--platform-X-bg` / `--platform-X-fg`).
@@ -40,7 +42,7 @@ function ChatPlatformIcon({ platform, size = 'sm' }: { platform: string; size?: 
       )}
       data-platform={tokenKey}
     >
-      {abbreviation}
+      <ServiceMark slug={platform} abbreviation={abbreviation} />
     </div>
   );
 }
@@ -154,6 +156,10 @@ export function ChatList({
             const isElevated = hasFlag(flags, MessageFlag.ELEVATED_MESSAGE);
             const isSystem = hasFlag(flags, MessageFlag.SYSTEM);
             const isTimedOutAuthor = hasFlag(flags, MessageFlag.TIMED_OUT_AUTHOR);
+            // "Own" = sent through the app (outbound) OR typed in the platform's
+            // native chat by the local user (SELF_AUTHOR). Both render as "you".
+            const isSelf = hasFlag(flags, MessageFlag.SELF_AUTHOR);
+            const isOwn = isOutbound || isSelf;
 
             const highlightStyle: React.CSSProperties | undefined = message.highlightColor
               ? { backgroundColor: message.highlightColor.hex }
@@ -164,7 +170,7 @@ export function ChatList({
                 key={message.id}
                 className={cn(
                   'flex items-start gap-3 rounded-lg border p-3',
-                  isOutbound
+                  isOwn
                     ? 'border-border-strong bg-bg-base'
                     : 'border-border-subtle bg-bg-elevated',
                   isDisabled && 'opacity-50 line-through',
@@ -189,12 +195,18 @@ export function ChatList({
                     densityConfig.text
                   )}
                 >
-                  <span
-                    className="font-semibold text-text-primary"
-                    style={message.author?.color ? { color: message.author.color.hex } : undefined}
-                  >
-                    {isOutbound ? t('chat.you') : (message.author?.displayName ?? message.username)}
-                  </span>
+                  {isOwn ? (
+                    <span className="font-semibold text-text-primary">{t('chat.you')}</span>
+                  ) : (
+                    <AuthorName
+                      className="font-semibold text-text-primary"
+                      style={
+                        message.author?.color ? { color: message.author.color.hex } : undefined
+                      }
+                      displayName={message.author?.displayName ?? message.username}
+                      pseudonym={message.author?.login}
+                    />
+                  )}
                   {timestamp && (
                     <span className="text-[0.7rem] text-text-tertiary">{timestamp}</span>
                   )}

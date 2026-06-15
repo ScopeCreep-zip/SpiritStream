@@ -9,10 +9,12 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 use crate::models::{
     ChatConnectionStatus, ChatCredentials, ChatMessage, ChatPlatform as ChatPlatformEnum,
+    MessageFlags,
 };
 
 use super::endpoints::ChatEndpoints;
 use super::platform::{ChatPlatform, PlatformError, PlatformResult};
+use super::self_echo::{SelfClass, SelfEcho};
 
 const STATUS_DISCONNECTED: u8 = 0;
 const STATUS_CONNECTING: u8 = 1;
@@ -154,6 +156,9 @@ pub struct TrovoConnector {
     client_id: Option<String>,
     /// OAuth bearer for `Authorization: OAuth <token>` sends.
     oauth_token: Option<String>,
+    /// Self-message detector + outbound echo dedup, built at `connect()` from
+    /// the user's own Trovo username. Shared between the read task and `send`.
+    self_echo: Arc<StdMutex<Option<Arc<SelfEcho>>>>,
 }
 
 impl TrovoConnector {
@@ -173,6 +178,7 @@ impl TrovoConnector {
             chat_ws: endpoints.trovo_chat_ws.clone(),
             client_id: None,
             oauth_token: None,
+            self_echo: Arc::new(StdMutex::new(None)),
         }
     }
 }
@@ -199,12 +205,13 @@ impl ChatPlatform for TrovoConnector {
             *guard = None;
         }
 
-        let (channel_id, client_id, oauth_token) = match credentials {
+        let (channel_id, client_id, oauth_token, self_identity) = match credentials {
             ChatCredentials::Trovo {
                 channel_id,
                 client_id,
                 oauth_token,
-            } => (channel_id, client_id, oauth_token),
+                self_identity,
+            } => (channel_id, client_id, oauth_token, self_identity),
             _ => {
                 self.status
                     .store(status_to_u8(ChatConnectionStatus::Error), Ordering::Relaxed);
@@ -337,6 +344,13 @@ impl ChatPlatform for TrovoConnector {
             Ordering::Relaxed,
         );
 
+        // Trovo usernames are case-insensitive. Shared with the read task (mark
+        // native self-messages) and `send_message` (record app-sent echoes).
+        let self_echo = Arc::new(SelfEcho::new(self_identity, true));
+        if let Ok(mut guard) = self.self_echo.lock() {
+            *guard = Some(self_echo.clone());
+        }
+
         let status = self.status.clone();
         let last_error = self.last_error.clone();
         let message_count = self.message_count.clone();
@@ -382,7 +396,16 @@ impl ChatPlatform for TrovoConnector {
                                 };
 
                                 let mut emitted = 0_u64;
-                                for msg in parse_trovo_chats(&payload) {
+                                for mut msg in parse_trovo_chats(&payload) {
+                                    // Drop our own app-sent echo; mark a natively
+                                    // typed self-message as "you".
+                                    let class = self_echo.classify(&msg.username, &msg.message);
+                                    if class == SelfClass::Echo {
+                                        continue;
+                                    }
+                                    if class == SelfClass::Native {
+                                        msg.flags |= MessageFlags::SELF_AUTHOR;
+                                    }
                                     if message_tx.send(msg).await.is_err() {
                                         warn!("Failed to deliver Trovo chat message: receiver dropped");
                                         break;
@@ -461,6 +484,10 @@ impl ChatPlatform for TrovoConnector {
                 "Trovo send requires signing in with Trovo first".to_string(),
             ));
         };
+        // Record for echo-dedup: Trovo broadcasts this back over the chat socket.
+        if let Some(echo) = self.self_echo.lock().ok().and_then(|g| g.clone()) {
+            echo.record_outbound(&message);
+        }
         let url = format!("{}/openplatform/chat/send", self.api_base);
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(15))

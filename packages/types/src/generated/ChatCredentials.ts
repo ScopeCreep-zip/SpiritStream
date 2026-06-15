@@ -25,7 +25,14 @@ username: string,
 /**
  * Session cookies/token (may be needed for some unofficial APIs)
  */
-sessionToken: string | null, } | { "type": "youtube", 
+sessionToken: string | null, 
+/**
+ * The LOCAL user's own TikTok nickname (from `ChatSettings`), used to
+ * mark their natively-typed messages as "you". TikTok has no auth, so
+ * this is the user-entered handle; `None` ⇒ no self-marking. Not a
+ * secret (it's a public display name).
+ */
+selfIdentity?: string, } | { "type": "youtube", 
 /**
  * YouTube channel ID or handle (e.g., "UCxxxxxx" or "@channelname")
  * The backend will automatically find the current live stream
@@ -56,7 +63,13 @@ clientId: string | null,
  * enables send through `openplatform/chat/send`
  * (`chat_send_self` scope).
  */
-oauthToken: string | null, } | { "type": "kick", 
+oauthToken: string | null, 
+/**
+ * The LOCAL user's own Trovo username (from the stored OAuth account),
+ * used to mark their natively-typed messages as "you". Compared
+ * case-insensitively against the inbound author. Public, not a secret.
+ */
+selfIdentity?: string, } | { "type": "kick", 
 /**
  * Kick channel name (case-insensitive — Kick normalises internally).
  */
@@ -72,7 +85,13 @@ oauthToken: string | null,
  * numeric broadcaster id, NOT the username). The chat lifecycle
  * fetches this once when activating the profile.
  */
-broadcasterUserId: bigint | null, } | { "type": "facebook", 
+broadcasterUserId: bigint | null, 
+/**
+ * The LOCAL user's own Kick username (from the stored OAuth account),
+ * used to mark their natively-typed messages as "you". Compared
+ * case-insensitively against the inbound author. Public, not a secret.
+ */
+selfIdentity?: string, } | { "type": "facebook", 
 /**
  * Facebook Live video ID
  */
@@ -80,4 +99,10 @@ videoId: string,
 /**
  * Facebook access token
  */
-accessToken: string, };
+accessToken: string, 
+/**
+ * The LOCAL user's own Facebook actor id (from the stored OAuth
+ * account), used to mark their natively-typed comments as "you".
+ * Compared exactly against the inbound `from.id`. Public, not a secret.
+ */
+selfIdentity?: string, };

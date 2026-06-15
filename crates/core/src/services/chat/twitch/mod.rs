@@ -22,7 +22,7 @@ use twitch_irc::login::StaticLoginCredentials;
 use twitch_irc::message::ServerMessage;
 use twitch_irc::{ClientConfig, SecureTCPTransport, TwitchIRCClient};
 
-use crate::models::{ChatConnectionStatus, ChatCredentials, ChatMessage, TwitchAuth};
+use crate::models::{ChatConnectionStatus, ChatCredentials, ChatMessage, MessageFlags, TwitchAuth};
 
 use super::endpoints::ChatEndpoints;
 use super::platform::{ChatPlatform, PlatformError, PlatformResult};
@@ -346,8 +346,15 @@ impl ChatPlatform for TwitchConnector {
             while let Some(message) = incoming_messages.recv().await {
                 match message {
                     ServerMessage::Privmsg(msg) => {
+                        // Is this message from our own connected account? If so
+                        // and it matches a recent app-sent message, it's the
+                        // echo of an outbound we already show — drop it. If it
+                        // survives, it was typed in Twitch's native chat, so we
+                        // mark it SELF_AUTHOR and render it as "you".
+                        let mut is_self = false;
                         if let Some(login) = &self_login {
                             if msg.sender.login.eq_ignore_ascii_case(login) {
+                                is_self = true;
                                 let mut recent =
                                     recent_outbound.lock().unwrap_or_else(|e| e.into_inner());
                                 let now = Instant::now();
@@ -371,7 +378,10 @@ impl ChatPlatform for TwitchConnector {
                         // log fields (username / message / color / badges)
                         // are mirrored inside the builder so old JSONL
                         // chat-log files keep round-tripping.
-                        let chat_message = fragments::build_chat_message_from_privmsg(&msg);
+                        let mut chat_message = fragments::build_chat_message_from_privmsg(&msg);
+                        if is_self {
+                            chat_message.flags |= MessageFlags::SELF_AUTHOR;
+                        }
 
                         if message_tx.send(chat_message).await.is_err() {
                             warn!("Failed to send Twitch message: receiver dropped");

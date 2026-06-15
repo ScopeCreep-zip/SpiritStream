@@ -84,4 +84,15 @@ export const chat = {
     fetchTypedJson<{ connected: boolean }>('GET', '/api/v1/chat/connected').then(
       (r) => r.connected
     ),
+  /**
+   * Re-identify a pseudonymised author: confirm whether `candidate` (a real
+   * name the user already suspects) matches the `pseudonym` carried on a
+   * message's `author.login`/`author.userId`. The salt stays server-side and
+   * the hash is one-way, so this only CONFIRMS a guess — it can't reverse it.
+   */
+  reidentify: (candidate: string, pseudonym: string) =>
+    fetchTypedJson<{ matches: boolean }>('POST', '/api/v1/chat/reidentify', undefined, {
+      candidate,
+      pseudonym,
+    }).then((r) => r.matches),
 };
