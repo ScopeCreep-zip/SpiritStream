@@ -487,6 +487,50 @@ async fn provider_credentials_persist_across_service_rebuild() {
     assert_eq!(cfg.kick_client_secret.as_deref(), Some("pasted-secret"), "inputs are trimmed");
 }
 
+/// Regression for the reported "Twitch client id vanishes on restart" bug.
+/// Production now builds `OAuthService` over a fresh `EncryptedFileSecretStore`
+/// (registry.rs), NOT the probed OS keyring — the keyring orphaned items
+/// across binary rebuilds / probe flips. This pins that a Twitch client id
+/// saved through the in-app form survives a relaunch (a brand-new store
+/// instance over the same data dir), which is exactly the registry wiring.
+#[tokio::test]
+async fn twitch_client_id_survives_restart_via_file_store() {
+    use std::sync::Arc;
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    // First launch: save the Twitch client id.
+    let first = OAuthService::new(
+        OAuthConfig::default(),
+        Arc::new(crate::services::EncryptedFileSecretStore::new(
+            dir.path().to_path_buf(),
+        )),
+    );
+    first
+        .set_provider_credentials("twitch", Some("my-twitch-client-id".into()), None)
+        .await
+        .expect("save credentials");
+    assert!(first.is_configured("twitch").await);
+
+    // Relaunch: a BRAND-NEW service AND a brand-new file-store instance over
+    // the same data dir (what the registry does at startup).
+    let second = OAuthService::new(
+        OAuthConfig::default(),
+        Arc::new(crate::services::EncryptedFileSecretStore::new(
+            dir.path().to_path_buf(),
+        )),
+    );
+    assert!(!second.is_configured("twitch").await, "pre-load: defaults");
+    second.load_persisted().await.expect("load persisted");
+    assert!(
+        second.is_configured("twitch").await,
+        "Twitch client id must survive the restart"
+    );
+    assert_eq!(
+        second.get_config().await.get_twitch_client_id(),
+        "my-twitch-client-id"
+    );
+}
+
 /// Clearing = saving empty values; the override drops back to None and
 /// the provider reports unconfigured again (placeholder tier).
 #[tokio::test]

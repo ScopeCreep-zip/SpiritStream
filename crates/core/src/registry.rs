@@ -151,9 +151,21 @@ impl ServiceRegistry {
             opts.log_dir.clone(),
             opts.data_dir.clone(),
         ));
+        // OAuth APP credentials (client id/secret) persist in the durable
+        // encrypted file store under DATA_DIR — NOT the probed OS keyring.
+        // Per RFC 8252 (OAuth 2.0 for Native Apps) these are PUBLIC for a
+        // native/public client and need no OS-keychain protection; meanwhile
+        // the keychain was silently dropping them across runs (it orphans
+        // items when the binary signature changes on rebuild, and the
+        // startup probe can flip keyring<->file). The file store is
+        // AES-256-GCM-SIV at rest — an OWASP-acceptable home for desktop
+        // credentials — so they now survive restarts. (Personal access/
+        // refresh tokens live encrypted in the profile, with rotation.)
         let oauth = Arc::new(OAuthService::new(
             OAuthConfig::default(),
-            opts.secret_store.clone(),
+            Arc::new(crate::services::EncryptedFileSecretStore::new(
+                opts.data_dir.clone(),
+            )),
         ));
         // Keyed phrase-id secret for the PII filter's audit identifiers
         // (HMAC, not bare SHA-256 — blocklist phrases are guessable, so

@@ -31,11 +31,22 @@ pub struct OAuthConsoleFieldWire {
     pub note: Option<String>,
 }
 
+/// One numbered setup instruction, with an optional direct link to the
+/// page it happens on.
+#[derive(Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OAuthStepWire {
+    pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    pub fields: Vec<OAuthConsoleFieldWire>,
+}
+
 /// Pre-filled guided-setup walkthrough for registering an app.
 #[derive(Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct OAuthProviderSetupWire {
-    pub steps: Vec<String>,
+    pub steps: Vec<OAuthStepWire>,
     pub console_fields: Vec<OAuthConsoleFieldWire>,
 }
 
@@ -70,10 +81,20 @@ impl From<spiritstream_core::services::OAuthConsoleField> for OAuthConsoleFieldW
     }
 }
 
+impl From<spiritstream_core::services::OAuthStep> for OAuthStepWire {
+    fn from(s: spiritstream_core::services::OAuthStep) -> Self {
+        Self {
+            text: s.text,
+            url: s.url,
+            fields: s.fields.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
 impl From<spiritstream_core::services::OAuthProviderSetup> for OAuthProviderSetupWire {
     fn from(s: spiritstream_core::services::OAuthProviderSetup) -> Self {
         Self {
-            steps: s.steps,
+            steps: s.steps.into_iter().map(Into::into).collect(),
             console_fields: s.console_fields.into_iter().map(Into::into).collect(),
         }
     }

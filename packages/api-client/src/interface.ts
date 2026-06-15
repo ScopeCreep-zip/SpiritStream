@@ -191,6 +191,13 @@ export interface ChatApi {
   searchSession(query: string, limit?: number): Promise<ChatMessage[]>;
   getPlatformStatus(platform: ChatPlatform): Promise<ChatPlatformStatus | null>;
   isConnected(): Promise<boolean>;
+  /**
+   * Re-identify a pseudonymised author: confirm whether `candidate` (a real
+   * name the user already suspects) matches the one-way `pseudonym` carried
+   * on a message's `author.login`/`author.userId`. The salt stays server-side
+   * — this confirms a guess, it cannot reverse the alias.
+   */
+  reidentify(candidate: string, pseudonym: string): Promise<boolean>;
 }
 
 export interface FilesApi {

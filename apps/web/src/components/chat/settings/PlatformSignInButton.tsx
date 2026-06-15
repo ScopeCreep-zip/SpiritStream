@@ -34,12 +34,18 @@ type AccountState = 'needsSetup' | 'signedOut' | 'needsReauth' | 'signedIn';
 
 /** The single source of truth for what the control renders. */
 function deriveAccountState(
+  notConfigured: boolean,
   hasAccount: boolean,
-  broken: boolean,
-  configured: boolean
+  broken: boolean
 ): AccountState {
+  // No app credentials → no OAuth flow can start, so the ONLY action is the
+  // in-app credentials setup — even for a signed-in account whose app
+  // credentials are missing (they must be re-entered before re-auth). This
+  // is what stops "Sign back in" from dead-ending on
+  // `oauth_provider_not_configured`.
+  if (notConfigured) return 'needsSetup';
   if (hasAccount) return broken ? 'needsReauth' : 'signedIn';
-  return configured ? 'signedOut' : 'needsSetup';
+  return 'signedOut';
 }
 
 /**
@@ -82,12 +88,19 @@ export function PlatformSignInButton({
     browserOpened: boolean;
   } | null>(null);
 
+  // Set when `startFlow` reports the provider has no credentials — a
+  // backstop for the race where the summary hadn't loaded (or disagreed)
+  // when the user clicked. Flips the control to the setup form.
+  const [flowNotConfigured, setFlowNotConfigured] = useState(false);
+
   const hasAccount = signedInAs.trim().length > 0;
   // A stored account whose live connection is up but can't send is a dead
   // token, not a healthy sign-in. `canSend` is only meaningful while
   // connected, so we only treat connected-but-!canSend as broken.
   const broken = connectionStatus === 'connected' && canSend === false;
-  const accountState = deriveAccountState(hasAccount, broken, !!summary?.configured);
+  // Trust a loaded summary; fall back to the flow's verdict while it loads.
+  const notConfigured = summary != null ? !summary.configured : flowNotConfigured;
+  const accountState = deriveAccountState(notConfigured, hasAccount, broken);
 
   const platformLabel = t(`chat.platforms.${provider}`, provider);
 
@@ -115,16 +128,29 @@ export function PlatformSignInButton({
       }
     } catch (error) {
       logger.error(`[PlatformSignInButton] ${provider} sign-in failed:`, error);
-      toast.error(
-        t('chat.oauth.startFailed', {
-          defaultValue: 'Failed to start sign-in: {{error}}',
-          error: error instanceof Error ? error.message : String(error),
-        })
-      );
+      const kind =
+        (error as { kind?: string })?.kind ?? (error instanceof Error ? error.message : '');
+      if (kind.includes('oauth_provider_not_configured')) {
+        // Missing app credentials — route to setup, don't dead-end.
+        setFlowNotConfigured(true);
+        toast.error(
+          t('chat.oauth.needsSetupToStart', {
+            defaultValue: 'Set up {{platform}} sign-in credentials first.',
+            platform: platformLabel,
+          })
+        );
+      } else {
+        toast.error(
+          t('chat.oauth.startFailed', {
+            defaultValue: 'Failed to start sign-in: {{error}}',
+            error: error instanceof Error ? error.message : String(error),
+          })
+        );
+      }
     } finally {
       setBusy(false);
     }
-  }, [provider, t]);
+  }, [provider, platformLabel, t]);
 
   const handleSignOut = useCallback(async () => {
     setBusy(true);

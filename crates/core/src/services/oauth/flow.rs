@@ -426,10 +426,13 @@ impl super::OAuthService {
             }
             "youtube" => {
                 let channel = self.fetch_youtube_channel(access_token).await?;
+                // `username` is the human-readable label shown as "Signed in
+                // as …"; use the channel TITLE, not the opaque `UC…` channel
+                // id (which looks like a leaked key). `user_id` keeps the id.
                 OAuthUserInfo {
                     provider: "youtube".to_string(),
-                    user_id: channel.id.clone(),
-                    username: channel.id,
+                    user_id: channel.id,
+                    username: channel.title.clone(),
                     display_name: channel.title,
                 }
             }

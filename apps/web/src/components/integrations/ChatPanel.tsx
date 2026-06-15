@@ -18,7 +18,7 @@ import { PlatformConnectControl } from '@/components/chat/settings/PlatformConne
 import { useChatPlatformStatus } from '@/hooks/useChatPlatformStatus';
 import { useChatStore } from '@/stores/chatStore';
 import { cn } from '@/lib/cn';
-import type { ChatPlatformStatus } from '@spiritstream/types';
+import type { ChatPlatform, ChatPlatformStatus } from '@spiritstream/types';
 
 type ChatField =
   | 'twitch_channel'
@@ -54,7 +54,13 @@ const ALL_VISIBLE_PLATFORMS: readonly VisiblePlatform[] = [
  * delegated to {@link FacebookConnectGate} which handles the
  * confirm-token + identity-warning UX before persisting the video id.
  */
-export function ChatPanel(): React.ReactElement {
+interface ChatPanelProps {
+  /** Deep-link: scroll to + ensure-visible this platform's card on mount,
+   *  e.g. when opened from a stream-target row's chat icon. */
+  initialPlatform?: ChatPlatform;
+}
+
+export function ChatPanel({ initialPlatform }: ChatPanelProps = {}): React.ReactElement {
   const { t } = useTranslation();
   const currentProfile = useProfileStore((state) => state.current);
   const updateProfileSettings = useProfileStore((state) => state.updateProfileSettings);
@@ -185,10 +191,24 @@ export function ChatPanel(): React.ReactElement {
     return auto.length > 0 ? auto : ['twitch', 'youtube'];
   }, [chatSettings]);
 
-  const resolvedVisiblePlatforms = useMemo<readonly VisiblePlatform[]>(
-    () => (visiblePlatforms.length > 0 ? visiblePlatforms : autoVisiblePlatforms),
-    [visiblePlatforms, autoVisiblePlatforms]
-  );
+  const resolvedVisiblePlatforms = useMemo<readonly VisiblePlatform[]>(() => {
+    const base = visiblePlatforms.length > 0 ? visiblePlatforms : autoVisiblePlatforms;
+    // Deep-link: always surface the platform we were asked to configure, even
+    // if the user's visibility filter would hide it (display-only, not saved).
+    if (initialPlatform && !base.includes(initialPlatform)) {
+      return [...base, initialPlatform];
+    }
+    return base;
+  }, [visiblePlatforms, autoVisiblePlatforms, initialPlatform]);
+
+  // Deep-link: scroll the requested platform's card into view once it renders.
+  useEffect(() => {
+    if (!initialPlatform) return;
+    const raf = requestAnimationFrame(() => {
+      document.getElementById(`chat-platform-${initialPlatform}`)?.scrollIntoView({ block: 'start' });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [initialPlatform, resolvedVisiblePlatforms]);
 
   const handleVisibilityToggle = useCallback(
     (platform: VisiblePlatform, enabled: boolean) => {
@@ -362,7 +382,7 @@ export function ChatPanel(): React.ReactElement {
 
       {/* Twitch */}
       {resolvedVisiblePlatforms.includes('twitch') && (
-        <Card>
+        <Card id="chat-platform-twitch">
           <CardHeader>
             <div>
               <CardTitle>{t('chat.platforms.twitch')}</CardTitle>
@@ -418,7 +438,7 @@ export function ChatPanel(): React.ReactElement {
 
       {/* YouTube */}
       {resolvedVisiblePlatforms.includes('youtube') && (
-        <Card>
+        <Card id="chat-platform-youtube">
           <CardHeader>
             <div>
               <CardTitle>{t('chat.platforms.youtube')}</CardTitle>
@@ -467,7 +487,10 @@ export function ChatPanel(): React.ReactElement {
               <>
                 <PlatformSignInButton
                   provider="youtube"
-                  signedInAs={currentProfile.settings.oauth.youtube.username}
+                  signedInAs={
+                    currentProfile.settings.oauth.youtube.displayName ||
+                    currentProfile.settings.oauth.youtube.username
+                  }
                   summary={oauthSummaryFor('youtube')}
                   onCredentialsSaved={setOauthSummaries}
                   signInLabel={t('chat.youtube.loginWithYouTube', {
@@ -495,7 +518,7 @@ export function ChatPanel(): React.ReactElement {
 
       {/* Trovo */}
       {resolvedVisiblePlatforms.includes('trovo') && (
-        <Card>
+        <Card id="chat-platform-trovo">
           <CardHeader>
             <div>
               <CardTitle>{t('chat.platforms.trovo')}</CardTitle>
@@ -544,7 +567,7 @@ export function ChatPanel(): React.ReactElement {
 
       {/* Kick */}
       {resolvedVisiblePlatforms.includes('kick') && (
-        <Card>
+        <Card id="chat-platform-kick">
           <CardHeader>
             <div>
               <CardTitle>{t('chat.platforms.kick')}</CardTitle>
@@ -594,7 +617,7 @@ export function ChatPanel(): React.ReactElement {
 
       {/* TikTok */}
       {resolvedVisiblePlatforms.includes('tiktok') && (
-        <Card>
+        <Card id="chat-platform-tiktok">
           <CardHeader>
             <div>
               <CardTitle>{t('chat.platforms.tiktok')}</CardTitle>
@@ -624,11 +647,13 @@ export function ChatPanel(): React.ReactElement {
 
       {/* Facebook — identity-revealing connect gate */}
       {resolvedVisiblePlatforms.includes('facebook') && (
-        <FacebookConnectGate
-          oauthSummary={oauthSummaryFor('facebook')}
-          onCredentialsSaved={setOauthSummaries}
-          connectionStatus={statusFor('facebook')}
-        />
+        <div id="chat-platform-facebook">
+          <FacebookConnectGate
+            oauthSummary={oauthSummaryFor('facebook')}
+            onCredentialsSaved={setOauthSummaries}
+            connectionStatus={statusFor('facebook')}
+          />
+        </div>
       )}
     </div>
   );

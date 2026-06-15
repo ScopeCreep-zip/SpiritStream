@@ -29,7 +29,7 @@ pub use device::OAuthDeviceFlowStart;
 pub use flow::OAuthFlowResult;
 pub use loopback::{OAuthCallback, OAuthCallbackServer};
 pub use provider::{OAuthProvider, FACEBOOK_GRAPH_VERSION};
-pub use setup::{OAuthConsoleField, OAuthProviderSetup};
+pub use setup::{OAuthConsoleField, OAuthProviderSetup, OAuthStep};
 pub use tokens::{
     OAuthCompleteResult, OAuthRefreshOutcome, OAuthTokens, OAuthUserInfo, TwitchUser,
     YouTubeChannel,

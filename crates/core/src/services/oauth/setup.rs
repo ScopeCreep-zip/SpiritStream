@@ -32,18 +32,53 @@ pub struct OAuthConsoleField {
     pub note: Option<String>,
 }
 
+/// One numbered instruction in the guided setup. When the action happens on
+/// a specific console page the user would otherwise have to hunt for (e.g.
+/// Google's separate "Audience" / "Data Access" pages), `url` carries the
+/// direct deep-link so the frontend can show a copy-the-link button — the
+/// webview can't open external links itself.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../../packages/types/src/generated/")]
+pub struct OAuthStep {
+    /// Plain-language instruction, written for a non-technical user.
+    pub text: String,
+    /// Direct link to the exact page this step happens on, if any.
+    pub url: Option<String>,
+    /// Values to paste AT THIS step, shown inline right where the
+    /// instruction asks for them (e.g. the App name on the "name the app"
+    /// step) — not collected at the bottom away from their context.
+    pub fields: Vec<OAuthConsoleField>,
+}
+
 /// Everything the in-app guided setup needs to walk a user through
 /// registering an OAuth app for one provider without thinking about it.
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../../packages/types/src/generated/")]
 pub struct OAuthProviderSetup {
-    /// Plain-language steps shown before the fields (e.g. "Enable the
-    /// YouTube Data API v3"). Empty for providers whose console is a
-    /// single create-app form.
-    pub steps: Vec<String>,
+    /// Numbered instructions shown before the paste-values. Empty for
+    /// providers whose console is a single create-app form.
+    pub steps: Vec<OAuthStep>,
     /// The labeled values to paste/select into the console form, in order.
     pub console_fields: Vec<OAuthConsoleField>,
+}
+
+fn step(text: &str, url: Option<&str>) -> OAuthStep {
+    OAuthStep {
+        text: text.to_string(),
+        url: url.map(str::to_string),
+        fields: vec![],
+    }
+}
+
+/// A step that asks the user to paste one or more values, shown inline.
+fn step_with(text: &str, url: Option<&str>, fields: Vec<OAuthConsoleField>) -> OAuthStep {
+    OAuthStep {
+        text: text.to_string(),
+        url: url.map(str::to_string),
+        fields,
+    }
 }
 
 fn field(label: &str, value: impl Into<String>, copyable: bool, note: Option<&str>) -> OAuthConsoleField {
@@ -70,7 +105,7 @@ pub fn console_setup(provider: &str, channel_hint: Option<&str>) -> OAuthProvide
     } else {
         "Names must be globally unique — set your channel above and this personalises itself."
     };
-    let name = field("Name", app_name, true, Some(name_note));
+    let name = field("Name", app_name.clone(), true, Some(name_note));
 
     match provider {
         // Public client / Device Code Flow — no real redirect, but the
@@ -95,23 +130,50 @@ pub fn console_setup(provider: &str, channel_hint: Option<&str>) -> OAuthProvide
                 ),
             ],
         },
-        // Google Desktop-app client: loopback is automatic, so there's
-        // no redirect to paste. The work is enabling the API + consent.
+        // Google's 2025+ console reorganised OAuth setup into the "Google
+        // Auth Platform" (a first-run Get-started wizard, then Branding /
+        // Audience / Data Access / Clients pages). A non-technical user can't
+        // find these from a menu, so every step carries its OWN direct
+        // deep-link AND the link renders before the instruction (go there
+        // first, then do the thing). Two gotchas drive the wording: the scope
+        // lives in a "Manually add scopes" box at the BOTTOM of Data Access
+        // (paste → "Add to table" → Update → Save), and Testing-mode tokens
+        // die after 7 days unless the app is published.
         "youtube" => OAuthProviderSetup {
             steps: vec![
-                "Create or pick a project, then configure the OAuth consent screen.".to_string(),
-                "Enable \"YouTube Data API v3\" under APIs & Services → Library.".to_string(),
-                "Open Credentials → Create credentials → OAuth client ID.".to_string(),
-            ],
-            console_fields: vec![
-                field(
-                    "Application type",
-                    "Desktop app",
-                    false,
-                    Some("No redirect URL needed — desktop clients use loopback automatically."),
+                step(
+                    "Turn the API on — click the blue \"Enable\" button on the page that opens.",
+                    Some("https://console.cloud.google.com/apis/library/youtube.googleapis.com"),
                 ),
-                name,
+                step_with(
+                    "Start the setup wizard — click \"Get started\", then enter this App name and your email, and when it asks for an audience pick \"External\". Finish the short wizard.",
+                    Some("https://console.cloud.google.com/auth/overview"),
+                    vec![field("App name", app_name, true, None)],
+                ),
+                step_with(
+                    "Add the permission — click \"Add or remove scopes\", scroll to the \"Manually add scopes\" box at the bottom, paste this in, click \"Add to table\", then \"Update\" and \"Save\".",
+                    Some("https://console.cloud.google.com/auth/scopes"),
+                    vec![field(
+                        "Scope",
+                        "https://www.googleapis.com/auth/youtube.force-ssl",
+                        true,
+                        None,
+                    )],
+                ),
+                step(
+                    "Let yourself in — under \"Test users\" click \"Add users\", add your Google email, and Save. In Testing mode sign-in stops working after 7 days, so click \"Publish app\" on this page to make it permanent.",
+                    Some("https://console.cloud.google.com/auth/audience"),
+                ),
+                step(
+                    "Create the login — click \"Create client\", set Application type to \"Desktop app\", click \"Create\", then copy the Client ID it shows you.",
+                    Some("https://console.cloud.google.com/auth/clients"),
+                ),
+                step(
+                    "One thing to expect when you sign in: because it's your own brand-new app, Google warns \"Google hasn't verified this app\". Click \"Advanced\", then \"Go to … (unsafe)\" — it's safe, it's yours.",
+                    None,
+                ),
             ],
+            console_fields: vec![],
         },
         "kick" => OAuthProviderSetup {
             steps: vec![],
@@ -126,9 +188,10 @@ pub fn console_setup(provider: &str, channel_hint: Option<&str>) -> OAuthProvide
             ],
         },
         "trovo" => OAuthProviderSetup {
-            steps: vec![
-                "Apply for an app on the Trovo Open Platform — approval is manual.".to_string(),
-            ],
+            steps: vec![step(
+                "Apply for an app on the Trovo Open Platform — approval is manual, so this one isn't instant.",
+                None,
+            )],
             console_fields: vec![
                 name,
                 field(
@@ -140,9 +203,10 @@ pub fn console_setup(provider: &str, channel_hint: Option<&str>) -> OAuthProvide
             ],
         },
         "facebook" => OAuthProviderSetup {
-            steps: vec![
-                "Create a Business app, then add the \"Facebook Login\" product.".to_string(),
-            ],
+            steps: vec![step(
+                "Create a Business app, then add the \"Facebook Login\" product.",
+                None,
+            )],
             console_fields: vec![
                 name,
                 field(
@@ -214,12 +278,69 @@ mod tests {
     }
 
     #[test]
-    fn youtube_has_no_redirect_and_lists_api_step() {
+    fn youtube_guidance_has_direct_links_and_the_token_caveat() {
         let s = console_setup("youtube", Some("ch"));
-        assert!(s.steps.iter().any(|step| step.contains("YouTube Data API v3")));
+        // No redirect (desktop loopback).
         assert!(
             !s.console_fields.iter().any(|f| f.label.contains("Redirect")),
             "desktop-app clients have no redirect to paste"
+        );
+        // Real guidance, not a stub: the scope to paste is shown INLINE at
+        // its step (Add the permission), not collected at the bottom.
+        assert!(
+            s.steps
+                .iter()
+                .flat_map(|st| &st.fields)
+                .any(|f| f.value.contains("youtube.force-ssl")),
+            "the youtube.force-ssl scope must be attached to its step"
+        );
+        assert!(
+            s.console_fields.is_empty(),
+            "youtube values live on their steps, not the trailing list"
+        );
+        // Every step that means "go somewhere" carries a direct deep-link —
+        // non-technical users can't find Google's separate pages from a menu.
+        let with_links = s.steps.iter().filter(|st| st.url.is_some()).count();
+        assert!(
+            with_links >= 4,
+            "each console page (enable API, branding, audience, scopes, clients) needs its own link"
+        );
+        assert!(s
+            .steps
+            .iter()
+            .any(|st| st.url.as_deref() == Some("https://console.cloud.google.com/auth/audience")));
+        // Current console flow (2025+): first-run setup is the "Get started"
+        // wizard on the Auth-Platform overview, not the old standalone
+        // Branding page.
+        assert!(
+            s.steps
+                .iter()
+                .any(|st| st.url.as_deref()
+                    == Some("https://console.cloud.google.com/auth/overview")),
+            "first-run setup goes through the Get-started wizard on /auth/overview"
+        );
+        // The 7-day testing-token expiry / publish caveat — the single most
+        // important thing for staying signed in.
+        assert!(
+            s.steps.iter().any(|st| st.text.contains("7 days"))
+                && s.steps.iter().any(|st| st.text.contains("Publish app")),
+            "must warn about the Testing-mode token expiry and the publish fix"
+        );
+        // The exact-label nuances a non-technical user can't infer: the scope
+        // is added via "Add to table", the client is a "Desktop app", and the
+        // browser will flag the unverified app (click "Advanced").
+        let all_text: String = s.steps.iter().map(|st| st.text.as_str()).collect();
+        assert!(
+            all_text.contains("Add to table"),
+            "scope step must name the \"Add to table\" button"
+        );
+        assert!(
+            all_text.contains("Desktop app"),
+            "client step must specify the \"Desktop app\" application type"
+        );
+        assert!(
+            all_text.contains("Advanced"),
+            "must prep the user for Google's unverified-app warning (\"Advanced\")"
         );
     }
 }

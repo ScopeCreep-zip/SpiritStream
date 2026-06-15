@@ -13,10 +13,20 @@ export interface OAuthConsoleField {
   note?: string | null;
 }
 
+/** One numbered instruction; `url` is a direct deep-link to the page this
+ *  step happens on (e.g. Google's separate Audience / Data Access pages),
+ *  shown as a copy-the-link button since the webview can't open links. */
+export interface OAuthStep {
+  text: string;
+  url?: string | null;
+  /** Values to paste at this step, shown inline where the step asks for them. */
+  fields: OAuthConsoleField[];
+}
+
 /** Pre-filled guided walkthrough for registering an app — all backend-computed. */
 export interface OAuthProviderSetup {
-  /** Plain-language steps shown before the fields (may be empty). */
-  steps: string[];
+  /** Numbered instructions shown before the fields (may be empty). */
+  steps: OAuthStep[];
   /** The labeled values to paste/select into the console form, in order. */
   consoleFields: OAuthConsoleField[];
 }

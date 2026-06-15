@@ -64,6 +64,24 @@ describe('PlatformSignInButton account state', () => {
     expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument();
   });
 
+  it('routes a read-only account to setup (not a failing "Sign back in") when the provider has no credentials', () => {
+    const notConfigured = { ...configured, configured: false };
+    render(
+      <PlatformSignInButton
+        provider="twitch"
+        signedInAs="alice"
+        signInLabel="Login with Twitch"
+        summary={notConfigured}
+        onCredentialsSaved={vi.fn()}
+        connectionStatus="connected"
+        canSend={false}
+      />
+    );
+    // No "Sign back in" — it would dead-end on oauth_provider_not_configured.
+    expect(screen.queryByRole('button', { name: /sign back in/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/needs a one-time setup for this platform/i)).toBeInTheDocument();
+  });
+
   it('shows "Sign in" when no account is stored', () => {
     render(
       <PlatformSignInButton
