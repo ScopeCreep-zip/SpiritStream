@@ -60,11 +60,14 @@ impl super::ChatManager {
 
         let mut platforms = self.platforms.lock().await;
 
-        // Already connected: reject for a plain connect; for `reconnect`,
-        // tear the live session down first so the rebuild starts clean.
+        // Already ACTIVE: reject for a plain connect; for `reconnect`, tear the
+        // live session down first so the rebuild starts clean. `is_active()`
+        // (not `is_connected()`) is the idempotency key — a self-healing
+        // connector (YouTube) stays active through transient blips, so the
+        // many connect triggers no-op instead of spawning duplicate pollers.
         let was_connected = platforms
             .get(&config.platform)
-            .map(|c| c.is_connected())
+            .map(|c| c.is_active())
             .unwrap_or(false);
         if was_connected && !replace_connected {
             return Err(chat_validation(

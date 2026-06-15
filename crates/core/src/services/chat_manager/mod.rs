@@ -10,6 +10,7 @@
 //! - `log_writer`: chat log session lifecycle + per-hour rotation +
 //!   ChatLogState + ChatLogCommand.
 
+mod anonymize;
 mod connection;
 mod log_writer;
 mod send;

@@ -164,6 +164,24 @@ impl super::ChatManager {
             }
         }
     }
+
+    /// Re-identify a pseudonymised chat author: does `candidate` plaintext
+    /// produce `pseudonym` under the active profile's salt? The salt never
+    /// leaves core, and the hash is one-way — this only CONFIRMS a guess the
+    /// user already has (e.g. "is this anonymised viewer actually @harasser?"),
+    /// it can't enumerate identities. Returns `false` when no salt is set
+    /// (re-identification needs the per-profile salt the policy carries even
+    /// while anonymous mode is toggled off).
+    pub fn reidentify(&self, candidate: &str, pseudonym: &str) -> bool {
+        let guard = self
+            .anonymous_policy
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
+        match guard.as_ref() {
+            Some((_, salt)) => crate::services::pseudonymizer::matches(candidate, salt, pseudonym),
+            None => false,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -227,6 +245,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn reidentify_confirms_only_the_correct_guess() {
+        let (mgr, _dir) = manager();
+        let salt = crate::services::pseudonymizer::generate_salt();
+        mgr.set_anonymous_policy(true, salt.clone()).unwrap();
+        let pseudonym = crate::services::pseudonymizer::pseudonymize("harasser", &salt).unwrap();
+        assert!(mgr.reidentify("harasser", &pseudonym), "correct guess matches");
+        assert!(
+            !mgr.reidentify("innocent", &pseudonym),
+            "a wrong guess must not match"
+        );
+    }
+
+    #[tokio::test]
+    async fn reidentify_is_false_without_a_salt() {
+        let (mgr, _dir) = manager();
+        // No policy ever set → no salt → cannot re-identify anything.
+        assert!(!mgr.reidentify("harasser", "hash:1234567890abcdef"));
+    }
+
+    #[tokio::test]
     async fn set_then_clear_anonymous_policy_round_trips() {
         let (mgr, _dir) = manager();
         mgr.set_anonymous_policy(true, "deadbeef".into()).unwrap();
@@ -286,11 +324,10 @@ mod tests {
             persisted[0].username, "RealUser",
             "the real username must never reach disk under anonymous mode"
         );
-        assert!(
-            crate::services::pseudonymizer::looks_pseudonymized(&persisted[0].username),
-            "persisted username must be pseudonymized: {}",
-            persisted[0].username
-        );
+        // Displayed name persists as a friendly label (not plaintext, not the
+        // raw hash). The canonical hash lives on author.login/user_id.
+        assert!(!persisted[0].username.is_empty());
+        assert!(!persisted[0].username.starts_with("hash:"));
         // The ciphertext itself must not contain the plaintext name either.
         let raw = std::fs::read(&files[0]).unwrap();
         assert!(

@@ -20,13 +20,12 @@ use super::log_writer::ChatLogCommand;
 /// UI said it was on.
 fn apply_anonymous_policy_inbound(
     policy: &Arc<std::sync::RwLock<Option<(bool, String)>>>,
-    mut message: ChatMessage,
+    message: ChatMessage,
 ) -> Result<ChatMessage, CoreError> {
     let guard = policy.read().unwrap_or_else(|e| e.into_inner());
     if let Some((enabled, salt)) = guard.as_ref() {
         if *enabled {
-            message.username =
-                crate::services::pseudonymizer::pseudonymize(&message.username, salt)?;
+            return super::anonymize::anonymize_message(message, salt);
         }
     }
     Ok(message)
@@ -331,24 +330,36 @@ mod tests {
     /// `start_message_handler` path bypassed the pseudonymiser; only
     /// the outbound `log_message` API rewrote.
     ///
-    /// Q10: also pins `pseudonymizer::looks_pseudonymized` (the format
-    /// detector the chat-log viewer UI uses to decide whether to show
-    /// a "decode" affordance). Asserting `looks_pseudonymized(...)`
-    /// here gives the format-detector a real consumer + a regression
-    /// guard against the prefix/length shape drifting.
+    /// Q10: the canonical correlation id (`author.login`) keeps the
+    /// `hash:` format the chat-log viewer's decode affordance detects via
+    /// `pseudonymizer::looks_pseudonymized`. The DISPLAYED name is now a
+    /// friendly label instead, so this also guards that the displayed name
+    /// is neither the plaintext nor the raw hash.
     #[tokio::test]
     async fn anonymous_policy_pseudonymises_inbound_username() {
         let policy: Arc<RwLock<Option<(bool, String)>>> =
             Arc::new(RwLock::new(Some((true, "deadbeef".into()))));
-        let original = sample_message("RealUser");
+        let mut original = sample_message("RealUser");
+        original.author = Some(crate::models::ChatAuthor {
+            user_id: "u1".into(),
+            login: "realuser".into(),
+            display_name: "RealUser".into(),
+            color: None,
+            badges_raw: vec![],
+        });
         let rewritten = apply_anonymous_policy_inbound(&policy, original).unwrap();
+        // Displayed name → friendly label: not plaintext, not the raw hash.
         assert_ne!(rewritten.username, "RealUser");
         assert!(!rewritten.username.is_empty());
+        assert!(!rewritten.username.starts_with("hash:"));
+        // Correlation id → canonical hash the decode affordance detects.
+        let author = rewritten.author.unwrap();
         assert!(
-            crate::services::pseudonymizer::looks_pseudonymized(&rewritten.username),
-            "pseudonymised username must match the format detector: {}",
-            rewritten.username,
+            crate::services::pseudonymizer::looks_pseudonymized(&author.login),
+            "login must keep the canonical hash format: {}",
+            author.login,
         );
+        assert_ne!(author.display_name, "RealUser");
     }
 
     /// Anonymous-mode off → username passes through unchanged.
@@ -494,6 +505,8 @@ mod tests {
             emitted, "RealName",
             "anonymous mode must rewrite the username"
         );
-        assert!(crate::services::pseudonymizer::looks_pseudonymized(emitted));
+        // Displayed name is now a friendly label, not the raw hash form.
+        assert!(!emitted.starts_with("hash:"));
+        assert!(!emitted.is_empty());
     }
 }

@@ -121,7 +121,7 @@ impl super::ChatManager {
     /// human-paced profile activation), so this sync path always sees it.
     fn apply_anonymous_policy_to_message(
         &self,
-        mut message: ChatMessage,
+        message: ChatMessage,
     ) -> Result<ChatMessage, CoreError> {
         let guard = self
             .anonymous_policy
@@ -129,8 +129,7 @@ impl super::ChatManager {
             .unwrap_or_else(|e| e.into_inner());
         if let Some((enabled, salt)) = guard.as_ref() {
             if *enabled {
-                message.username =
-                    crate::services::pseudonymizer::pseudonymize(&message.username, salt)?;
+                return super::anonymize::anonymize_message(message, salt);
             }
         }
         Ok(message)

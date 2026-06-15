@@ -54,15 +54,52 @@ pub fn generate_salt() -> String {
 /// flowed to logs and the event stream. Callers must treat the error
 /// as "drop this message", never "pass it through".
 pub fn pseudonymize(value: &str, salt_hex: &str) -> Result<String, CoreError> {
+    let digest = hmac_digest(value, salt_hex)?;
+    let encoded = hex::encode(&digest[..(HASH_PREFIX_LEN / 2)]);
+    Ok(format!("{HASH_PREFIX}{encoded}"))
+}
+
+/// Friendly, human-readable pseudonym for DISPLAY in the chat feed —
+/// `Adjective + Animal + NN` (e.g. `QuietOtter47`). Derived from the same
+/// keyed HMAC as [`pseudonymize`], so it's deterministic (same viewer →
+/// same label all session) and one-way. It is intentionally lower-entropy
+/// than the canonical `hash:` form: two viewers can occasionally share a
+/// label, which is harmless for display. The full-entropy `pseudonymize`
+/// hash remains the canonical id for logs, moderation correlation, and
+/// re-identification — never use this label for those.
+pub fn friendly_label(value: &str, salt_hex: &str) -> Result<String, CoreError> {
+    let digest = hmac_digest(value, salt_hex)?;
+    let adj = ADJECTIVES[u16::from_be_bytes([digest[0], digest[1]]) as usize % ADJECTIVES.len()];
+    let animal = ANIMALS[u16::from_be_bytes([digest[2], digest[3]]) as usize % ANIMALS.len()];
+    let number = u16::from_be_bytes([digest[4], digest[5]]) % 100;
+    Ok(format!("{adj}{animal}{number:02}"))
+}
+
+/// Keyed HMAC-SHA256 of `value` under the hex `salt`. Single source of the
+/// salted digest shared by [`pseudonymize`] and [`friendly_label`].
+fn hmac_digest(value: &str, salt_hex: &str) -> Result<[u8; 32], CoreError> {
     let Some(salt) = decode_salt(salt_hex) else {
         return Err(CoreError::AnonymousSaltInvalid);
     };
     let mut mac = HmacSha256::new_from_slice(&salt).expect("HMAC accepts any key length");
     mac.update(value.as_bytes());
-    let digest = mac.finalize().into_bytes();
-    let encoded = hex::encode(&digest[..(HASH_PREFIX_LEN / 2)]);
-    Ok(format!("{HASH_PREFIX}{encoded}"))
+    Ok(mac.finalize().into_bytes().into())
 }
+
+/// Curated, unmistakably-not-a-real-name word lists for [`friendly_label`].
+/// 32 × 32 × 100 = 102,400 combinations — readable, distinct at a glance,
+/// and never offensive (these names get shown on stream).
+const ADJECTIVES: &[&str] = &[
+    "Quiet", "Brave", "Calm", "Clever", "Cosmic", "Gentle", "Jolly", "Lucky", "Mellow", "Nimble",
+    "Plucky", "Quirky", "Rapid", "Sunny", "Swift", "Witty", "Bold", "Breezy", "Cheery", "Dapper",
+    "Eager", "Fuzzy", "Glossy", "Happy", "Ivory", "Keen", "Lively", "Merry", "Noble", "Peppy",
+    "Royal", "Zesty",
+];
+const ANIMALS: &[&str] = &[
+    "Otter", "Puma", "Finch", "Heron", "Lynx", "Moth", "Newt", "Owl", "Panda", "Quail", "Raven",
+    "Seal", "Tapir", "Vole", "Wren", "Yak", "Bison", "Crane", "Dingo", "Egret", "Ferret", "Gecko",
+    "Hare", "Ibex", "Koala", "Llama", "Marten", "Numbat", "Osprey", "Possum", "Robin", "Stoat",
+];
 
 /// Test whether `candidate` plaintext would produce `pseudonym` under
 /// `salt`. The UI uses this to decode hashes back to plaintexts the
@@ -204,5 +241,41 @@ mod tests {
     fn generate_salt_is_64_hex_chars() {
         // 32 bytes hex-encoded = 64 chars.
         assert_eq!(generate_salt().len(), 64);
+    }
+
+    #[test]
+    fn friendly_label_is_deterministic_and_readable() {
+        let salt = generate_salt();
+        let a = friendly_label("alice", &salt).unwrap();
+        let b = friendly_label("alice", &salt).unwrap();
+        assert_eq!(a, b, "same viewer + salt must yield the same label");
+        // Adjective+Animal+NN, no `hash:` prefix, ends in two digits.
+        assert!(!a.starts_with("hash:"));
+        assert!(a[a.len() - 2..].chars().all(|c| c.is_ascii_digit()));
+        assert!(a.chars().next().unwrap().is_ascii_uppercase());
+    }
+
+    #[test]
+    fn friendly_label_differs_across_inputs_and_salts() {
+        let salt = generate_salt();
+        // Different viewers almost always differ (102k label space).
+        assert_ne!(
+            friendly_label("alice", &salt).unwrap(),
+            friendly_label("bob", &salt).unwrap()
+        );
+        // Same viewer under a different salt differs.
+        let salt2 = generate_salt();
+        assert_ne!(
+            friendly_label("alice", &salt).unwrap(),
+            friendly_label("alice", &salt2).unwrap()
+        );
+    }
+
+    #[test]
+    fn friendly_label_fails_loud_on_bad_salt() {
+        assert!(matches!(
+            friendly_label("alice", ""),
+            Err(CoreError::AnonymousSaltInvalid)
+        ));
     }
 }
