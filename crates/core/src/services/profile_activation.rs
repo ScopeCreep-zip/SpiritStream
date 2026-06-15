@@ -211,10 +211,18 @@ impl ProfileActivationService {
             })
             .await;
 
-        if obs_settings.auto_connect {
-            if let Err(e) = self.obs.connect(self.events.clone()).await {
-                log::warn!("OBS auto-connect during profile activate failed: {e}");
-            }
+        // Auto-connect when OBS integration is in use: an explicit
+        // auto-connect opt-in, OR any non-Disabled trigger direction
+        // (picking a direction means the user wants OBS wired up, so the
+        // trigger cascade needs a live connection). Use the self-healing
+        // supervisor rather than a one-shot connect — OBS may not be
+        // running yet at launch, and the supervisor retries with backoff
+        // until it's reachable. A later manual disconnect or re-activation
+        // tears it down (single owner).
+        if obs_settings.auto_connect
+            || obs_settings.direction != ObsIntegrationDirection::Disabled
+        {
+            self.obs.clone().spawn_auto_connect(self.events.clone()).await;
         }
 
         let event = ProfileActivatedEvent::from_profile_public(&profile);

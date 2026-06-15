@@ -7,23 +7,33 @@ use crate::services::{Encryption, EventSink};
 use super::types::{ObsConnectionStatus, ObsStreamStatus};
 
 impl super::ObsWebSocketHandler {
-    /// Connect with exponential-backoff auto-retry. Used by the
-    /// startup auto-connect flow when the active profile's
-    /// `obs.auto_connect` flag is on. Honors `shutdown_tx` so a manual
-    /// `disconnect()` (or app shutdown) interrupts the retry loop
-    /// immediately. Backend-side replacement for the frontend's
-    /// previous `useObsEvents.ts` retry state machine — same backoff
-    /// curve (200ms → 30s, multiplier 1.5).
-    pub fn spawn_auto_connect<E: EventSink + Send + Sync + Clone + 'static>(
+    /// Connect with exponential-backoff auto-retry. Spawned at profile
+    /// activation when OBS integration is in use (an explicit
+    /// `obs.auto_connect`, or any non-Disabled trigger direction), so an
+    /// already-open OBS is picked up automatically and one that opens
+    /// later is caught on a subsequent retry. Honors `shutdown_tx` so a
+    /// manual `disconnect()` (or app shutdown) interrupts the retry loop;
+    /// backoff curve 2s → 30s, multiplier 1.5.
+    ///
+    /// Single owner: aborts any prior supervisor loop before spawning a
+    /// new one and stores the handle in `auto_connect_handle`, so repeated
+    /// activations can't stack competing loops that race `connect()`.
+    pub async fn spawn_auto_connect<E: EventSink + Send + Sync + Clone + 'static>(
         self: Arc<Self>,
         event_sink: E,
     ) {
         const INITIAL_DELAY_MS: u64 = 2000;
         const MAX_DELAY_MS: u64 = 30000;
         const BACKOFF_MULT: f64 = 1.5;
+
+        // Tear down any prior supervisor before starting a fresh one.
+        if let Some(prior) = self.auto_connect_handle.lock().await.take() {
+            prior.abort();
+        }
+
         let mut shutdown_rx = self.shutdown_tx.subscribe();
         let handler = self.clone();
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             let mut delay_ms = INITIAL_DELAY_MS;
             loop {
                 if shutdown_rx.try_recv().is_ok() {
@@ -53,6 +63,7 @@ impl super::ObsWebSocketHandler {
                 }
             }
         });
+        *self.auto_connect_handle.lock().await = Some(handle);
     }
 
     pub async fn connect<E: EventSink + Send + Sync + Clone + 'static>(
@@ -182,6 +193,14 @@ impl super::ObsWebSocketHandler {
 
     pub async fn disconnect<E: EventSink>(&self, event_sink: E) -> Result<(), CoreError> {
         let _ = self.shutdown_tx.send(());
+
+        // Stop the auto-connect supervisor: a manual disconnect is an
+        // intentional "stay disconnected", so don't let the retry loop
+        // immediately reconnect. (`shutdown_tx` already signals it, but a
+        // loop sleeping in backoff wouldn't notice until its next tick.)
+        if let Some(handle) = self.auto_connect_handle.lock().await.take() {
+            handle.abort();
+        }
 
         {
             let mut client = self.client.write().await;

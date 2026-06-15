@@ -50,6 +50,13 @@ pub struct ObsWebSocketHandler {
     /// cancels the stale start instead of queueing duplicates. Drop
     /// also aborts so the task can't outlive the handler.
     pub(super) cascade_start_handle: Arc<TokioMutex<Option<JoinHandle<()>>>>,
+    /// Handle to the self-healing auto-connect supervisor spawned by
+    /// `spawn_auto_connect` (started at profile activation when OBS
+    /// integration is in use). Single owner: a fresh `spawn_auto_connect`
+    /// aborts the prior loop before starting, and `disconnect` aborts it
+    /// so a manual disconnect doesn't immediately reconnect. `Drop` aborts
+    /// it so the supervisor can't outlive the handler.
+    pub(super) auto_connect_handle: Arc<TokioMutex<Option<JoinHandle<()>>>>,
 }
 
 impl Drop for ObsWebSocketHandler {
@@ -65,6 +72,11 @@ impl Drop for ObsWebSocketHandler {
             }
         }
         if let Ok(mut guard) = self.cascade_start_handle.try_lock() {
+            if let Some(handle) = guard.take() {
+                handle.abort();
+            }
+        }
+        if let Ok(mut guard) = self.auto_connect_handle.try_lock() {
             if let Some(handle) = guard.take() {
                 handle.abort();
             }
@@ -85,6 +97,7 @@ impl ObsWebSocketHandler {
             cascade_deps: Arc::new(std::sync::RwLock::new(None)),
             listener_handle: Arc::new(TokioMutex::new(None)),
             cascade_start_handle: Arc::new(TokioMutex::new(None)),
+            auto_connect_handle: Arc::new(TokioMutex::new(None)),
         }
     }
 
