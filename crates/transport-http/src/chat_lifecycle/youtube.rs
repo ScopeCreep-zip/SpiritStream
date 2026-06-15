@@ -200,8 +200,7 @@ pub(crate) async fn connect_youtube_chat(
                 // is the actionable message ("go live first" / "quota
                 // exhausted"), not the opaque "internal error".
                 let reason = connect_failure_reason(&e);
-                let calm =
-                    youtube_status(state).await == Some(ChatConnectionStatus::Disconnected);
+                let calm = youtube_status(state).await == Some(ChatConnectionStatus::Disconnected);
                 let quota = reason.to_lowercase().contains("quota");
                 // Only the not-live registration lag is worth a bounded retry;
                 // retrying an exhausted quota just burns more of it.

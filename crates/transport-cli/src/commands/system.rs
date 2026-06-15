@@ -242,8 +242,7 @@ pub async fn run(
             url,
             stream_key_from,
         } => {
-            let stream_key =
-                crate::secret_input::read_secret(stream_key_from, "Stream key")?;
+            let stream_key = crate::secret_input::read_secret(stream_key_from, "Stream key")?;
             let result =
                 spiritstream_core::commands::test_rtmp_target(url, stream_key.to_string())?;
             out.emit(&result)?;

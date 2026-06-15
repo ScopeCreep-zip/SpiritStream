@@ -523,8 +523,7 @@ mod drift_guard {
         .expect("core Profile deserializes with serde defaults");
 
         let model_json = serde_json::to_value(&profile).expect("model serializes");
-        let wire_json =
-            serde_json::to_value(ProfileWire::from(profile)).expect("wire serializes");
+        let wire_json = serde_json::to_value(ProfileWire::from(profile)).expect("wire serializes");
 
         let mut model_keys = Vec::new();
         let mut wire_keys = Vec::new();

@@ -179,4 +179,3 @@ impl From<MessageFragment> for MessageFragmentWire {
         }
     }
 }
-

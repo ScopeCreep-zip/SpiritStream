@@ -428,7 +428,10 @@ pub async fn run(
                 // HTTP config endpoint serves). Secret VALUES are
                 // deliberately omitted — `configured` already conveys
                 // their presence.
-                let summaries = registry.oauth.provider_summaries(&std::collections::HashMap::new()).await;
+                let summaries = registry
+                    .oauth
+                    .provider_summaries(&std::collections::HashMap::new())
+                    .await;
                 out.emit(&serde_json::json!({ "providers": summaries }))?;
                 Ok(())
             }
@@ -437,19 +440,16 @@ pub async fn run(
                 client_id,
                 client_secret_from,
             } => {
-                let secret = crate::secret_input::read_optional_secret(
-                    client_secret_from,
-                    "client secret",
-                )?;
+                let secret =
+                    crate::secret_input::read_optional_secret(client_secret_from, "client secret")?;
                 registry
                     .oauth
-                    .set_provider_credentials(
-                        &provider,
-                        client_id,
-                        secret.map(|s| s.to_string()),
-                    )
+                    .set_provider_credentials(&provider, client_id, secret.map(|s| s.to_string()))
                     .await?;
-                let summaries = registry.oauth.provider_summaries(&std::collections::HashMap::new()).await;
+                let summaries = registry
+                    .oauth
+                    .provider_summaries(&std::collections::HashMap::new())
+                    .await;
                 out.emit(&serde_json::json!({ "providers": summaries }))?;
                 Ok(())
             }

@@ -281,4 +281,3 @@ impl From<ChatEvent> for ChatEventWire {
         }
     }
 }
-

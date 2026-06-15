@@ -94,11 +94,11 @@ pub async fn v1_chat_export_log_proxy(
                         context: format!("Failed to write export file: {e}"),
                     }
                 })?;
-                writer.write_all(b"\n").map_err(|e| {
-                    spiritstream_core::CoreError::Internal {
+                writer
+                    .write_all(b"\n")
+                    .map_err(|e| spiritstream_core::CoreError::Internal {
                         context: format!("Failed to write export file: {e}"),
-                    }
-                })?;
+                    })?;
             }
         }
     }

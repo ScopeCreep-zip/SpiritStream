@@ -87,4 +87,3 @@ impl From<TextStyle> for TextStyleWire {
         }
     }
 }
-

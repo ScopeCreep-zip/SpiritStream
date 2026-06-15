@@ -111,7 +111,6 @@ pub(crate) fn loading_page_style_csp_hash() -> String {
     )
 }
 
-
 /// Mount `/`, `/index.html`, and the asset fallback when UI serving is
 /// enabled and the bundle directory exists.
 pub(crate) fn mount_static_ui(

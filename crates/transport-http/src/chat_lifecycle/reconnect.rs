@@ -13,7 +13,9 @@
 //! activation) passes `false` so a genuinely-dead sign-in doesn't churn the
 //! connection on every save.
 
-use spiritstream_core::models::{ChatConnectionStatus, ChatPlatform, ChatSettings, ProfileSettings};
+use spiritstream_core::models::{
+    ChatConnectionStatus, ChatPlatform, ChatSettings, ProfileSettings,
+};
 
 use crate::AppState;
 

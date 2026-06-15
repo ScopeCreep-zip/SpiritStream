@@ -114,10 +114,7 @@ pub(crate) fn client_ip(
     if trusted.is_empty() || !trusted.iter().any(|net| net.contains(&peer)) {
         return peer;
     }
-    let Some(xff) = headers
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-    else {
+    let Some(xff) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) else {
         return peer;
     };
     for entry in xff.split(',').rev() {
@@ -349,11 +346,7 @@ mod client_ip_tests {
     #[test]
     fn xff_from_untrusted_peer_is_ignored() {
         let trusted = nets(&["172.18.0.0/16"]);
-        let got = client_ip(
-            ip("203.0.113.9"),
-            &headers_with_xff("10.0.0.1"),
-            &trusted,
-        );
+        let got = client_ip(ip("203.0.113.9"), &headers_with_xff("10.0.0.1"), &trusted);
         assert_eq!(got, ip("203.0.113.9"));
     }
 

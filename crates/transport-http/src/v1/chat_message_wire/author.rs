@@ -78,4 +78,3 @@ impl From<ReplyContext> for ReplyContextWire {
         }
     }
 }
-
