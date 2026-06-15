@@ -1,6 +1,7 @@
 use axum::{extract::State, http::HeaderMap, Json};
 use serde::{Deserialize, Serialize};
 use tower_cookies::{Cookie, Cookies};
+use utoipa::ToSchema;
 
 use spiritstream_core::services::{CONFIRM_TOKEN_TTL_SECS, EVENT_TICKET_TTL_SECS};
 
@@ -21,7 +22,7 @@ pub(crate) struct LoginRequest {
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct AuthLoginResponse {}
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub(crate) struct AuthLogoutResponse {}
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -31,7 +32,7 @@ pub(crate) struct AuthCheckResponse {
     pub required: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct RevokeAllSessionsResponse {
     pub revoked: usize,
@@ -122,6 +123,13 @@ pub(crate) async fn auth_login(
 }
 
 /// POST /api/v1/auth/logout — drop session ID from active set, clear cookie.
+#[utoipa::path(
+    post,
+    path = "/auth/logout",
+    tag = "auth",
+    responses((status = 200, description = "Session ended; cookie cleared.", body = AuthLogoutResponse)),
+    security(("session_cookie" = []), ("bearer" = [])),
+)]
 pub(crate) async fn auth_logout(
     State(state): State<AppState>,
     cookies: Cookies,
@@ -141,6 +149,16 @@ pub(crate) async fn auth_logout(
 /// session ID. Existing cookies fail the next `auth_middleware` check
 /// even though the client still possesses them. Requires a confirm
 /// token issued for the `revoke_all_sessions` intent.
+#[utoipa::path(
+    post,
+    path = "/security/sessions/revoke-all",
+    tag = "security",
+    responses(
+        (status = 200, description = "All sessions revoked; body carries the count.", body = RevokeAllSessionsResponse),
+        (status = 403, description = "Missing or invalid X-Confirm-Token.", body = ApiErrorBody),
+    ),
+    security(("session_cookie" = []), ("bearer" = [])),
+)]
 pub(crate) async fn security_revoke_all_sessions(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -222,12 +240,12 @@ pub(crate) fn require_confirm_token(
 /// Issue a confirmation token. The frontend / CLI calls this immediately
 /// before showing the user a "are you sure?" prompt, then includes the
 /// returned token in the destructive request's `X-Confirm-Token` header.
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub(crate) struct ConfirmTokenRequest {
     intent: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub(crate) struct ConfirmTokenResponse {
     token: String,
     /// Seconds the token remains valid. Mirrors `CONFIRM_TOKEN_TTL_SECS`.
@@ -246,13 +264,20 @@ pub(crate) struct ConfirmTokenResponse {
 /// long-lived bearer token in the query string (and which no
 /// production code could even use, since the auth middleware rejected
 /// the upgrade before the token check ran).
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub(crate) struct EventTicketResponse {
     ticket: String,
     #[serde(rename = "expiresInSeconds")]
     expires_in_seconds: u64,
 }
 
+#[utoipa::path(
+    post,
+    path = "/events/ticket",
+    tag = "events",
+    responses((status = 200, description = "One-shot WebSocket upgrade ticket + its TTL.", body = EventTicketResponse)),
+    security(("session_cookie" = []), ("bearer" = [])),
+)]
 pub(crate) async fn events_ticket_issue(
     State(state): State<AppState>,
 ) -> Result<Json<EventTicketResponse>, ApiError> {
@@ -262,6 +287,17 @@ pub(crate) async fn events_ticket_issue(
     }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/security/confirm-token",
+    tag = "security",
+    request_body = ConfirmTokenRequest,
+    responses(
+        (status = 200, description = "One-shot intent-scoped token + its TTL.", body = ConfirmTokenResponse),
+        (status = 400, description = "Unknown or malformed intent.", body = ApiErrorBody),
+    ),
+    security(("session_cookie" = []), ("bearer" = [])),
+)]
 pub(crate) async fn confirm_token_issue(
     State(state): State<AppState>,
     Json(payload): Json<ConfirmTokenRequest>,

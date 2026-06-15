@@ -5,7 +5,8 @@ use axum::{
     extract::{Query, State},
     Json,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use utoipa::{IntoParams, ToSchema};
 
 use spiritstream_core::models::{FileBrowseResponse, FileEntry, FileHomeResponse};
 use spiritstream_core::services::validate_path_within_any;
@@ -13,9 +14,65 @@ use spiritstream_core::services::validate_path_within_any;
 use crate::error::ApiError;
 use crate::{AppState, FilesOpenResponse};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams)]
 pub(crate) struct FileBrowseQuery {
     pub(crate) path: Option<String>,
+}
+
+// Wire mirrors for the file-browser responses. `crates/core` must compile
+// without utoipa, so the OpenAPI schema can't derive `ToSchema` on the core
+// `FileEntry` / `FileBrowseResponse` / `FileHomeResponse` models directly —
+// these transport-side mirrors carry the `ToSchema` derive and convert from
+// the core models in the handler (same pattern as `ChatMessageWire`). The
+// camelCase shape is byte-identical to the ts-rs export.
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct FileEntryWire {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub entry_type: String,
+    pub size: Option<u64>,
+}
+
+impl From<FileEntry> for FileEntryWire {
+    fn from(e: FileEntry) -> Self {
+        Self {
+            name: e.name,
+            entry_type: e.entry_type,
+            size: e.size,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct FileBrowseResponseWire {
+    pub path: String,
+    pub entries: Vec<FileEntryWire>,
+    pub parent: Option<String>,
+}
+
+impl From<FileBrowseResponse> for FileBrowseResponseWire {
+    fn from(r: FileBrowseResponse) -> Self {
+        Self {
+            path: r.path,
+            entries: r.entries.into_iter().map(Into::into).collect(),
+            parent: r.parent,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct FileHomeResponseWire {
+    pub path: String,
+}
+
+impl From<FileHomeResponse> for FileHomeResponseWire {
+    fn from(r: FileHomeResponse) -> Self {
+        Self { path: r.path }
+    }
 }
 
 pub(crate) fn system_bin_paths() -> Vec<PathBuf> {
@@ -64,10 +121,21 @@ pub(crate) fn system_bin_paths() -> Vec<PathBuf> {
 
 /// GET /api/v1/files/browse — list directory contents.
 /// Query params: path (optional, defaults to home directory).
+#[utoipa::path(
+    get,
+    path = "/files/browse",
+    tag = "files",
+    params(FileBrowseQuery),
+    responses(
+        (status = 200, description = "Directory listing (entries + parent).", body = FileBrowseResponseWire),
+        (status = 400, description = "Path outside the allowed roots.", body = ApiErrorBody),
+    ),
+    security(("session_cookie" = []), ("bearer" = [])),
+)]
 pub(crate) async fn files_browse(
     State(state): State<AppState>,
     Query(params): Query<FileBrowseQuery>,
-) -> Result<Json<FileBrowseResponse>, ApiError> {
+) -> Result<Json<FileBrowseResponseWire>, ApiError> {
     use spiritstream_core::errors::ValidationIssue;
     use spiritstream_core::CoreError;
 
@@ -163,17 +231,27 @@ pub(crate) async fn files_browse(
         }
     });
 
-    Ok(Json(FileBrowseResponse {
-        path: browse_path.to_string_lossy().to_string(),
-        entries: file_entries,
-        parent,
-    }))
+    Ok(Json(
+        FileBrowseResponse {
+            path: browse_path.to_string_lossy().to_string(),
+            entries: file_entries,
+            parent,
+        }
+        .into(),
+    ))
 }
 
 /// GET /api/v1/files/home — get user home directory path.
+#[utoipa::path(
+    get,
+    path = "/files/home",
+    tag = "files",
+    responses((status = 200, description = "User home directory path.", body = FileHomeResponseWire)),
+    security(("session_cookie" = []), ("bearer" = [])),
+)]
 pub(crate) async fn files_home(
     State(state): State<AppState>,
-) -> Result<Json<FileHomeResponse>, ApiError> {
+) -> Result<Json<FileHomeResponseWire>, ApiError> {
     use spiritstream_core::CoreError;
 
     let home = state.home_dir.as_ref().ok_or_else(|| {
@@ -182,17 +260,32 @@ pub(crate) async fn files_home(
         })
     })?;
 
-    Ok(Json(FileHomeResponse {
-        path: home.to_string_lossy().to_string(),
-    }))
+    Ok(Json(
+        FileHomeResponse {
+            path: home.to_string_lossy().to_string(),
+        }
+        .into(),
+    ))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub(crate) struct OpenPathRequest {
     pub(crate) path: String,
 }
 
 /// POST /api/v1/files/open — open path in the native file manager.
+#[utoipa::path(
+    post,
+    path = "/files/open",
+    tag = "files",
+    request_body = OpenPathRequest,
+    responses(
+        (status = 200, description = "Path handed to the OS opener.", body = FilesOpenResponse),
+        (status = 400, description = "Path outside the allowed roots.", body = ApiErrorBody),
+        (status = 404, description = "Path does not exist.", body = ApiErrorBody),
+    ),
+    security(("session_cookie" = []), ("bearer" = [])),
+)]
 pub(crate) async fn files_open(
     State(state): State<AppState>,
     Json(payload): Json<OpenPathRequest>,
