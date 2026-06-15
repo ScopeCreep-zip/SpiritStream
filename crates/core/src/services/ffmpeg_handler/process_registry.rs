@@ -86,10 +86,7 @@ pub(super) fn write_records(
 /// Does `pid` still belong to the FFmpeg binary the record was spawned
 /// with? Compares the executable/cmd basename — a recycled pid running
 /// someone else's program never matches.
-fn pid_is_recorded_ffmpeg(
-    system: &sysinfo::System,
-    record: &StreamProcessRecord,
-) -> bool {
+fn pid_is_recorded_ffmpeg(system: &sysinfo::System, record: &StreamProcessRecord) -> bool {
     let Some(process) = system.process(sysinfo::Pid::from_u32(record.pid)) else {
         return false;
     };
@@ -284,7 +281,11 @@ mod tests {
         // Spawn-and-reap a child so its pid is very likely unused.
         let mut child = std::process::Command::new("true")
             .spawn()
-            .or_else(|_| std::process::Command::new("cmd").args(["/C", "exit"]).spawn())
+            .or_else(|_| {
+                std::process::Command::new("cmd")
+                    .args(["/C", "exit"])
+                    .spawn()
+            })
             .expect("spawn trivial child");
         let pid = child.id();
         let _ = child.wait();

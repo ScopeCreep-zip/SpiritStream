@@ -171,8 +171,7 @@ impl super::FFmpegHandler {
                         Some(info) => {
                             // Stable run → fresh retry budget for the next
                             // incident (see STABLE_RUN_RESET docs).
-                            if !retry_budget_reset
-                                && info.start_time.elapsed() >= STABLE_RUN_RESET
+                            if !retry_budget_reset && info.start_time.elapsed() >= STABLE_RUN_RESET
                             {
                                 retry_budget_reset = true;
                                 if let Ok(mut states) = reconnection_states.lock() {
