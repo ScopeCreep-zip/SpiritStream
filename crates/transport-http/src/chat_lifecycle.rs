@@ -120,8 +120,9 @@ mod twitch;
 #[path = "chat_lifecycle/youtube.rs"]
 mod youtube;
 pub(crate) use profile_state::{
-    clear_profile_oauth_account, get_active_profile_name, get_active_profile_settings,
-    persist_active_profile_settings, set_active_profile, update_profile_oauth_account,
+    clear_active_profile, clear_profile_oauth_account, get_active_profile_name,
+    get_active_profile_settings, persist_active_profile_settings, set_active_profile,
+    update_profile_oauth_account,
 };
 pub(crate) use reconnect::{
     refresh_and_connect_kick, refresh_and_connect_trovo, refresh_and_connect_twitch,
@@ -166,8 +167,13 @@ pub(crate) async fn auto_connect_chat_platforms(state: AppState, force_readonly:
             .is_disconnect_intended(ChatPlatform::Twitch)
             .await
     {
-        refresh_and_connect_twitch(&state, &chat_settings, profile_settings.clone(), force_readonly)
-            .await;
+        refresh_and_connect_twitch(
+            &state,
+            &chat_settings,
+            profile_settings.clone(),
+            force_readonly,
+        )
+        .await;
     }
 
     if !chat_settings.trovo_channel_id.is_empty()
@@ -226,7 +232,13 @@ pub(crate) async fn auto_connect_chat_platforms(state: AppState, force_readonly:
     } else {
         1
     };
-    connect_youtube_chat(&state, false, yt_attempts, std::time::Duration::from_secs(15)).await;
+    connect_youtube_chat(
+        &state,
+        false,
+        yt_attempts,
+        std::time::Duration::from_secs(15),
+    )
+    .await;
 }
 
 pub(crate) async fn connect_twitch_chat(

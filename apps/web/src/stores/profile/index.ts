@@ -55,6 +55,24 @@ export async function subscribeProfileActivated(): Promise<() => void> {
 }
 
 /**
+ * Backend → frontend bridge: the server emits `profile_deactivated` whenever
+ * `ProfileActivationService::deactivate()` runs — from this UI's `signOut`
+ * action, the CLI, or another session. The frontend converges by clearing
+ * `current`; clearing an already-null `current` is a harmless no-op, so this
+ * stays correct whether or not the local `signOut` already ran.
+ *
+ * Subscribed from `AppContent` (after the server-readiness gate passes) —
+ * same rationale as `subscribeProfileActivated`.
+ */
+export async function subscribeProfileDeactivated(): Promise<() => void> {
+  return events.on<{ profile: string | null }>('profile_deactivated', () => {
+    if (useProfileStore.getState().current !== null) {
+      useProfileStore.setState({ current: null });
+    }
+  });
+}
+
+/**
  * Backend → frontend bridge: the server emits `oauth_token_expired` whenever
  * a proactive refresh inside `refresh_expiring_oauth_tokens` fails — typically
  * because the refresh token itself was revoked or expired. The frontend just

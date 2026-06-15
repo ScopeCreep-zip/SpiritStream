@@ -15,6 +15,7 @@ type CoreSlice = Pick<
   | 'loading'
   | 'loadProfiles'
   | 'loadProfile'
+  | 'signOut'
   | 'saveProfile'
   | 'deleteProfile'
   | 'createProfile'
@@ -119,6 +120,27 @@ export const createCoreSlice: StateCreator<ProfileState, [], [], CoreSlice> = (s
         );
         get().setLoading(false);
       }
+    }
+  },
+
+  signOut: async () => {
+    // Backend owns the teardown decision: it clears the active profile,
+    // drops the anonymizer salt from memory, and disconnects chat + OBS.
+    // The frontend only reflects the result (clear `current`) — and the
+    // server also emits `profile_deactivated`, which `subscribeProfile
+    // Deactivated` converges on for CLI/other-client sign-outs.
+    try {
+      await api.profile.deactivate();
+      set({ current: null, pendingPasswordProfile: null, passwordError: null });
+      toast.success(i18n.t('profile.signedOut', { defaultValue: 'Signed out of profile' }));
+    } catch (error) {
+      logger.error('[ProfileStore] signOut failed:', error);
+      toast.error(
+        i18n.t('errors.signOutFailed', {
+          defaultValue: 'Failed to sign out: {{error}}',
+          error: error instanceof Error ? error.message : String(error),
+        })
+      );
     }
   },
 

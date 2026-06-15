@@ -15,10 +15,9 @@ use tower_http::set_header::SetResponseHeaderLayer;
 use spiritstream_core::models::ProfileSettings;
 use spiritstream_core::services::{
     prune_chat_history, prune_logs, validate_path_within_any, AuditLogService, AuthService,
-    ChatManager,
-    ConfirmTokenService, DiscordWebhookService, EventSink, FFmpegHandler, FFmpegLocator,
-    OAuthService, ObsWebSocketHandler, ProfileManager, SafetyService, SettingsManager,
-    ThemeManager,
+    ChatManager, ConfirmTokenService, DiscordWebhookService, EventSink, FFmpegHandler,
+    FFmpegLocator, OAuthService, ObsWebSocketHandler, ProfileManager, SafetyService,
+    SettingsManager, ThemeManager,
 };
 
 // Versioned REST API surface (`/api/v1/*`). New typed handlers live here.
@@ -52,9 +51,9 @@ use auth::{
     security_revoke_all_sessions,
 };
 pub(crate) use chat_lifecycle::{
-    auto_connect_chat_platforms, clear_profile_oauth_account, ensure_fresh_oauth_token,
-    get_active_profile_name, get_active_profile_settings,
-    connect_youtube_chat, persist_active_profile_settings, refresh_and_connect_trovo,
+    auto_connect_chat_platforms, clear_active_profile, clear_profile_oauth_account,
+    connect_youtube_chat, ensure_fresh_oauth_token, get_active_profile_name,
+    get_active_profile_settings, persist_active_profile_settings, refresh_and_connect_trovo,
     refresh_and_connect_twitch, set_active_profile, update_profile_oauth_account,
 };
 use chat_lifecycle::{
@@ -203,7 +202,7 @@ struct MiddlewareErrorResponse {
 // FilesOpenResponse is consumed by `file_browser::files_open` but defined here
 // (and exposed via `crate::FilesOpenResponse`) so v1 OpenAPI tooling can see
 // the type at the crate root.
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 pub(crate) struct FilesOpenResponse {}
 
 // ============================================================================
@@ -339,9 +338,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         &app_data_dir,
         secret_store_override.as_deref(),
     )
-    .map_err(|e| -> Box<dyn std::error::Error> {
-        format!("secret store selection: {e}").into()
-    })?;
+    .map_err(|e| -> Box<dyn std::error::Error> { format!("secret store selection: {e}").into() })?;
     let registry =
         spiritstream_core::ServiceRegistry::build(spiritstream_core::ServiceRegistryOptions {
             data_dir: app_data_dir.clone(),
@@ -438,18 +435,20 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             .split(',')
             .map(|entry| {
                 let entry = entry.trim();
-                entry.parse::<ipnet::IpNet>().or_else(|_| {
-                    entry
-                        .parse::<std::net::IpAddr>()
-                        .map(ipnet::IpNet::from)
-                        .map_err(|_| ())
-                })
-                .map_err(|_| -> Box<dyn std::error::Error> {
-                    format!(
+                entry
+                    .parse::<ipnet::IpNet>()
+                    .or_else(|_| {
+                        entry
+                            .parse::<std::net::IpAddr>()
+                            .map(ipnet::IpNet::from)
+                            .map_err(|_| ())
+                    })
+                    .map_err(|_| -> Box<dyn std::error::Error> {
+                        format!(
                         "SPIRITSTREAM_TRUSTED_PROXIES entry {entry:?} is not a valid IP or CIDR"
                     )
-                    .into()
-                })
+                        .into()
+                    })
             })
             .collect::<Result<_, _>>()?,
         _ => Vec::new(),
@@ -462,7 +461,11 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .ok()
                 .and_then(|v| parse_bool(&v))
                 .unwrap_or(false);
-            enforce_cloud_mode_preconditions(&auth_token, tls_declared, !trusted_proxies.is_empty())?;
+            enforce_cloud_mode_preconditions(
+                &auth_token,
+                tls_declared,
+                !trusted_proxies.is_empty(),
+            )?;
         }
     }
 

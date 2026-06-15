@@ -7,6 +7,7 @@ import { ConnectionError } from '@/components/ui/ConnectionError';
 import {
   useProfileStore,
   subscribeProfileActivated,
+  subscribeProfileDeactivated,
   subscribeOAuthTokenExpired,
 } from '@/stores/profileStore';
 import { useLanguageStore } from '@/stores/languageStore';
@@ -297,6 +298,7 @@ function AppContent() {
   useEffect(() => {
     let unsubscribeThemes: (() => void) | null = null;
     let unsubscribeProfile: (() => void) | null = null;
+    let unsubscribeProfileDeactivated: (() => void) | null = null;
     let unsubscribeOAuth: (() => void) | null = null;
 
     subscribeThemesUpdated()
@@ -311,6 +313,12 @@ function AppContent() {
       })
       .catch((err) => logger.error('Failed to subscribe to profile_activated events:', err));
 
+    subscribeProfileDeactivated()
+      .then((unsub) => {
+        unsubscribeProfileDeactivated = unsub;
+      })
+      .catch((err) => logger.error('Failed to subscribe to profile_deactivated events:', err));
+
     subscribeOAuthTokenExpired()
       .then((unsub) => {
         unsubscribeOAuth = unsub;
@@ -320,6 +328,7 @@ function AppContent() {
     return () => {
       if (unsubscribeThemes) unsubscribeThemes();
       if (unsubscribeProfile) unsubscribeProfile();
+      if (unsubscribeProfileDeactivated) unsubscribeProfileDeactivated();
       if (unsubscribeOAuth) unsubscribeOAuth();
     };
   }, []);

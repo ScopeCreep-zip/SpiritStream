@@ -53,6 +53,28 @@ pub(crate) async fn set_active_profile(state: &AppState, profile: &Profile) {
     }
 }
 
+/// Clear all session-scoped active-profile state — the transport-side
+/// inverse of [`set_active_profile`], run after
+/// `ProfileActivationService::deactivate` has scrubbed core state. Drops
+/// the cached name / settings / PII snapshot so nothing from the signed-out
+/// profile is served, and clears disconnect-intent so the next activation
+/// starts from a clean slate.
+pub(crate) async fn clear_active_profile(state: &AppState) {
+    {
+        let mut guard = state.active_profile_name.lock().await;
+        *guard = None;
+    }
+    {
+        let mut guard = state.active_profile_settings.lock().await;
+        *guard = None;
+    }
+    {
+        let mut guard = state.active_profile_pii.lock().await;
+        *guard = None;
+    }
+    state.chat_manager.clear_all_disconnect_intent().await;
+}
+
 pub(crate) async fn get_active_profile_name(state: &AppState) -> Option<String> {
     let guard = state.active_profile_name.lock().await;
     guard.clone()

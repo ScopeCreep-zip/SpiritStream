@@ -17,6 +17,7 @@ export interface ProfileState {
 
   loadProfiles: () => Promise<void>;
   loadProfile: (name: string, password?: string) => Promise<void>;
+  signOut: () => Promise<void>;
   saveProfile: (password?: string) => Promise<void>;
   deleteProfile: (name: string) => Promise<void>;
   createProfile: (name: string) => Promise<void>;
@@ -43,7 +44,7 @@ export interface ProfileState {
   updateStreamTarget: (
     groupId: string,
     targetId: string,
-    updates: Partial<StreamTarget>,
+    updates: Partial<StreamTarget>
   ) => Promise<void>;
   removeStreamTarget: (groupId: string, targetId: string) => Promise<void>;
   moveStreamTarget: (fromGroupId: string, toGroupId: string, targetId: string) => Promise<void>;

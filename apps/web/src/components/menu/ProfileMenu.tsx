@@ -2,7 +2,7 @@ import React from 'react';
 import * as Menubar from '@radix-ui/react-menubar';
 import { useTranslation } from 'react-i18next';
 import { useProfileStore } from '@/stores/profileStore';
-import { TRIGGER_CLASS, CONTENT_CLASS, ITEM_CLASS } from './menuStyles';
+import { TRIGGER_CLASS, CONTENT_CLASS, ITEM_CLASS, SEPARATOR_CLASS } from './menuStyles';
 import type { SettingsSection } from '@/hooks/useModalRegistry';
 
 interface ProfileMenuProps {
@@ -12,6 +12,7 @@ interface ProfileMenuProps {
 export function ProfileMenu({ onOpenSettings }: ProfileMenuProps): React.ReactElement {
   const { t } = useTranslation();
   const current = useProfileStore((s) => s.current);
+  const signOut = useProfileStore((s) => s.signOut);
 
   return (
     <Menubar.Menu>
@@ -26,6 +27,10 @@ export function ProfileMenu({ onOpenSettings }: ProfileMenuProps): React.ReactEl
             onSelect={() => onOpenSettings('profileEdit')}
           >
             {t('menu.profile.edit', { defaultValue: 'Edit current…' })}
+          </Menubar.Item>
+          <Menubar.Separator className={SEPARATOR_CLASS} />
+          <Menubar.Item className={ITEM_CLASS} disabled={!current} onSelect={() => void signOut()}>
+            {t('menu.profile.signOut', { defaultValue: 'Sign out' })}
           </Menubar.Item>
         </Menubar.Content>
       </Menubar.Portal>
