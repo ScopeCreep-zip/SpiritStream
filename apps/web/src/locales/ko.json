@@ -107,7 +107,6 @@
       "signedOut": "{{platform}}에서 로그아웃됨",
       "startFailed": "로그인 시작 실패: {{error}}",
       "setup": "로그인 설정",
-      "setupHint": "한 번만 설정하면 됩니다. {{platform}} 개발자 사이트에서 (무료) 앱을 만든 뒤 자격 증명을 여기에 붙여넣으세요. 이 기기에 암호화되어 저장됩니다.",
       "openPortal": "{{platform}} 개발자 포털 열기",
       "clientId": "클라이언트 ID",
       "clientSecret": "클라이언트 시크릿",
@@ -117,10 +116,23 @@
       "saveCredentials": "저장하고 로그인 활성화",
       "deviceOpened": "브라우저에서 로그인 페이지를 열었습니다. 거기에 이 코드를 입력하세요:",
       "portalLabel": "개발자 포털 (브라우저에서 열기)",
-      "pasteTheseValues": "앱 양식에 다음 값을 사용하세요:",
       "copyValue": "{{label}} 복사",
       "signInSuccess": "로그인됨",
-      "signInSuccessNamed": "{{name}}(으)로 로그인됨"
+      "signInSuccessNamed": "{{name}}(으)로 로그인됨",
+      "needsSetupToStart": "먼저 {{platform}} 로그인 자격 증명을 설정하세요.",
+      "wizard": {
+        "step1Title": "개발자 사이트 열기",
+        "step2Title": "앱 설정하기",
+        "step3Title": "자격 증명 입력",
+        "stepOf": "{{total}}단계 중 {{current}}단계",
+        "next": "다음",
+        "back": "뒤로",
+        "step1Hint": "{{platform}} 개발자 사이트에서 무료 앱을 등록합니다 — 그곳에서만 해야 하는 유일한 단계입니다. 이 링크를 복사해 브라우저에서 여세요:",
+        "step2Hint": "순서대로 진행하세요. 각 링크는 필요한 페이지를 바로 엽니다:",
+        "step3Hint": "앱이 생성되면 Client ID를 여기에 붙여넣으세요. 이 기기에 암호화되어 저장됩니다.",
+        "valuesLabel": "양식에 복사할 값:",
+        "copyLink": "링크 복사"
+      }
     },
     "platformReadOnly": "읽기 전용",
     "platforms": {
@@ -218,7 +230,19 @@
       "disconnect": "채팅 연결 해제",
       "connecting": "연결 중…",
       "disconnected": "연결 해제됨",
-      "failed": "연결을 변경할 수 없습니다: {{error}}"
+      "failed": "연결을 변경할 수 없습니다: {{error}}",
+      "connected": "{{platform}} 채팅에 연결되었습니다.",
+      "connectFailed": "{{platform}} 채팅에 연결할 수 없습니다: {{error}}",
+      "unknownError": "알 수 없는 오류"
+    },
+    "reidentify": {
+      "failed": "신원 확인 실패",
+      "hint": "익명 처리됨 — 클릭하여 누구인지 확인",
+      "prompt": "이미 의심하는 이름을 확인합니다 — 별칭은 되돌릴 수 없습니다.",
+      "placeholder": "의심되는 사용자 이름",
+      "check": "확인",
+      "match": "일치 — {{name}}입니다.",
+      "noMatch": "일치하지 않음."
     },
     "events": {
       "raid": "{{name}}님이 시청자 {{count}}명과 함께 레이드했습니다",
@@ -744,7 +768,7 @@
   },
   "safety": {
     "wizard": {
-      "anonymousBody": "채팅 사용자 이름은 로그와 내보내기에서 `hash:abcd1234` 형태로 표시됩니다. 프로필 솔트로 로컬에서는 여전히 복호화할 수 있습니다. 유출된 로그로는 불가능합니다.",
+      "anonymousBody": "채팅 이름은 실제 사용자 이름 대신 `QuietOtter47` 같은 친근한 별칭으로 표시됩니다 — 라이브 피드, 로그, 내보내기에서요. 프로필 솔트로 로컬에서는 시청자를 다시 식별할 수 있지만, 유출된 로그로는 불가능합니다.",
       "anonymousTitle": "익명 모드",
       "anonymousToggle": "익명 채팅 로깅을 켜진 상태로 유지 (권장)",
       "anonymousWarning": "익명 모드를 비활성화하면 유출된 로그 파일에서 채팅에 등장한 모든 사람이 드러납니다.",

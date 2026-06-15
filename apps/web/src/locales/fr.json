@@ -107,7 +107,6 @@
       "signedOut": "Déconnecté de {{platform}}",
       "startFailed": "Échec du démarrage de la connexion : {{error}}",
       "setup": "Configurer la connexion",
-      "setupHint": "Configuration unique : créez une application (gratuite) sur le site développeurs de {{platform}}, puis collez ses identifiants ici. Ils sont stockés chiffrés sur cet appareil.",
       "openPortal": "Ouvrir le portail développeurs {{platform}}",
       "clientId": "ID client",
       "clientSecret": "Secret client",
@@ -117,10 +116,23 @@
       "saveCredentials": "Enregistrer et activer la connexion",
       "deviceOpened": "Nous avons ouvert la page de connexion dans votre navigateur. Saisissez-y ce code :",
       "portalLabel": "Portail développeurs (ouvrir dans le navigateur)",
-      "pasteTheseValues": "Utilisez ces valeurs dans le formulaire de l’application :",
       "copyValue": "Copier {{label}}",
       "signInSuccess": "Connecté",
-      "signInSuccessNamed": "Connecté en tant que {{name}}"
+      "signInSuccessNamed": "Connecté en tant que {{name}}",
+      "needsSetupToStart": "Configure d’abord les identifiants de connexion {{platform}}.",
+      "wizard": {
+        "step1Title": "Ouvrir le site développeur",
+        "step2Title": "Configurer l’application",
+        "step3Title": "Saisir tes identifiants",
+        "stepOf": "Étape {{current}} sur {{total}}",
+        "next": "Suivant",
+        "back": "Retour",
+        "step1Hint": "Tu vas enregistrer une application gratuite sur le site développeur de {{platform}} — la seule étape qui doit s’y faire. Copie ce lien et ouvre-le dans ton navigateur :",
+        "step2Hint": "Fais ceci dans l’ordre — chaque lien ouvre la bonne page :",
+        "step3Hint": "Une fois l’application créée, colle son Client ID ici. Stocké chiffré sur cet appareil.",
+        "valuesLabel": "Valeurs à copier dans le formulaire :",
+        "copyLink": "Copier le lien"
+      }
     },
     "platformReadOnly": "lecture seule",
     "platforms": {
@@ -218,7 +230,19 @@
       "disconnect": "Déconnecter le chat",
       "connecting": "Connexion…",
       "disconnected": "Déconnecté",
-      "failed": "Impossible de changer la connexion : {{error}}"
+      "failed": "Impossible de changer la connexion : {{error}}",
+      "connected": "Chat {{platform}} connecté.",
+      "connectFailed": "Impossible de connecter le chat {{platform}} : {{error}}",
+      "unknownError": "erreur inconnue"
+    },
+    "reidentify": {
+      "failed": "Échec de la vérification d’identité",
+      "hint": "Anonymisé — cliquez pour vérifier de qui il s’agit",
+      "prompt": "Confirmez un nom que vous soupçonnez déjà — l’alias ne peut pas être inversé.",
+      "placeholder": "Nom d’utilisateur suspecté",
+      "check": "Vérifier",
+      "match": "Correspondance — c’est {{name}}.",
+      "noMatch": "Aucune correspondance."
     },
     "events": {
       "raid": "{{name}} a raid avec {{count}} spectateurs",
@@ -744,7 +768,7 @@
   },
   "safety": {
     "wizard": {
-      "anonymousBody": "Les pseudos du chat apparaissent sous la forme `hash:abcd1234` dans les journaux et exports. Vous pouvez toujours les décoder localement avec le sel de votre profil. Un journal divulgué ne le peut PAS.",
+      "anonymousBody": "Les noms du chat s’affichent sous forme d’alias amical comme `QuietOtter47` au lieu des vrais noms — dans le flux en direct, les journaux et les exports. Vous pouvez toujours réidentifier les spectateurs localement avec le sel de votre profil ; un journal divulgué NE le peut PAS.",
       "anonymousTitle": "Mode anonyme",
       "anonymousToggle": "Garder la journalisation anonyme du chat ACTIVÉE (recommandé)",
       "anonymousWarning": "Désactiver le mode anonyme signifie qu'un fichier journal divulgué énumère toutes les personnes apparues dans votre chat.",

@@ -107,7 +107,6 @@
       "signedOut": "Signed out of {{platform}}",
       "startFailed": "Failed to start sign-in: {{error}}",
       "setup": "Set up sign-in",
-      "setupHint": "One-time setup: create a (free) app on {{platform}}’s developer site, then paste its credentials here. They’re stored encrypted on this device.",
       "openPortal": "Open {{platform}} developer portal",
       "clientId": "Client ID",
       "clientSecret": "Client secret",
@@ -117,10 +116,23 @@
       "saveCredentials": "Save and enable sign-in",
       "deviceOpened": "We opened the sign-in page in your browser. Enter this code there:",
       "portalLabel": "Developer portal (open in browser)",
-      "pasteTheseValues": "Use these values in the app form:",
       "copyValue": "Copy {{label}}",
       "signInSuccess": "Signed in",
-      "signInSuccessNamed": "Signed in as {{name}}"
+      "signInSuccessNamed": "Signed in as {{name}}",
+      "needsSetupToStart": "Set up {{platform}} sign-in credentials first.",
+      "wizard": {
+        "step1Title": "Open the developer site",
+        "step2Title": "Set up the app",
+        "step3Title": "Enter your credentials",
+        "stepOf": "Step {{current}} of {{total}}",
+        "next": "Next",
+        "back": "Back",
+        "step1Hint": "You’ll register a free app on {{platform}}’s developer site — the one step that has to happen there. Copy this link and open it in your browser:",
+        "step2Hint": "Do these in order — each link opens the exact page you need:",
+        "step3Hint": "Once the app is created, paste its Client ID here. Stored encrypted on this device.",
+        "valuesLabel": "Values to copy into the form:",
+        "copyLink": "Copy link"
+      }
     },
     "platformReadOnly": "read-only",
     "platforms": {
@@ -218,7 +230,19 @@
       "disconnect": "Disconnect chat",
       "connecting": "Connecting…",
       "disconnected": "Disconnected",
-      "failed": "Could not change connection: {{error}}"
+      "failed": "Could not change connection: {{error}}",
+      "connected": "{{platform}} chat connected.",
+      "connectFailed": "Could not connect {{platform}} chat: {{error}}",
+      "unknownError": "unknown error"
+    },
+    "reidentify": {
+      "failed": "Identity check failed",
+      "hint": "Anonymised — click to check who this is",
+      "prompt": "Confirm a name you already suspect — the alias can’t be reversed.",
+      "placeholder": "Suspected username",
+      "check": "Check",
+      "match": "Match — this is {{name}}.",
+      "noMatch": "No match."
     },
     "events": {
       "raid": "{{name}} raided with {{count}} viewers",
@@ -744,7 +768,7 @@
   },
   "safety": {
     "wizard": {
-      "anonymousBody": "Chat usernames render as `hash:abcd1234` in logs and exports. You can still decode them locally with your profile salt. A leaked log can NOT.",
+      "anonymousBody": "Chat names show as a friendly alias like `QuietOtter47` instead of real usernames — in the live feed, logs, and exports. You can still re-identify viewers locally with your profile salt; a leaked log can NOT.",
       "anonymousTitle": "Anonymous mode",
       "anonymousToggle": "Keep anonymous chat logging ON (recommended)",
       "anonymousWarning": "Disabling anonymous mode means a leaked log file enumerates everyone who appeared in your chat.",

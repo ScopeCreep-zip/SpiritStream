@@ -107,7 +107,6 @@
       "signedOut": "Von {{platform}} abgemeldet",
       "startFailed": "Anmeldung konnte nicht gestartet werden: {{error}}",
       "setup": "Anmeldung einrichten",
-      "setupHint": "Einmalige Einrichtung: Erstelle eine (kostenlose) App auf der Entwicklerseite von {{platform}} und füge die Zugangsdaten hier ein. Sie werden verschlüsselt auf diesem Gerät gespeichert.",
       "openPortal": "{{platform}}-Entwicklerportal öffnen",
       "clientId": "Client-ID",
       "clientSecret": "Client-Secret",
@@ -117,10 +116,23 @@
       "saveCredentials": "Speichern und Anmeldung aktivieren",
       "deviceOpened": "Wir haben die Anmeldeseite in deinem Browser geöffnet. Gib dort diesen Code ein:",
       "portalLabel": "Entwicklerportal (im Browser öffnen)",
-      "pasteTheseValues": "Verwende diese Werte im App-Formular:",
       "copyValue": "{{label}} kopieren",
       "signInSuccess": "Angemeldet",
-      "signInSuccessNamed": "Angemeldet als {{name}}"
+      "signInSuccessNamed": "Angemeldet als {{name}}",
+      "needsSetupToStart": "Richte zuerst die {{platform}}-Anmeldedaten ein.",
+      "wizard": {
+        "step1Title": "Entwicklerseite öffnen",
+        "step2Title": "App einrichten",
+        "step3Title": "Zugangsdaten eingeben",
+        "stepOf": "Schritt {{current}} von {{total}}",
+        "next": "Weiter",
+        "back": "Zurück",
+        "step1Hint": "Du registrierst eine kostenlose App auf der Entwicklerseite von {{platform}} — der einzige Schritt, der dort passieren muss. Kopiere diesen Link und öffne ihn im Browser:",
+        "step2Hint": "Mach das der Reihe nach — jeder Link öffnet genau die richtige Seite:",
+        "step3Hint": "Sobald die App erstellt ist, füge hier ihre Client-ID ein. Verschlüsselt auf diesem Gerät gespeichert.",
+        "valuesLabel": "Werte zum Einfügen ins Formular:",
+        "copyLink": "Link kopieren"
+      }
     },
     "platformReadOnly": "schreibgeschützt",
     "platforms": {
@@ -218,7 +230,19 @@
       "disconnect": "Chat trennen",
       "connecting": "Verbinden…",
       "disconnected": "Getrennt",
-      "failed": "Verbindung konnte nicht geändert werden: {{error}}"
+      "failed": "Verbindung konnte nicht geändert werden: {{error}}",
+      "connected": "{{platform}}-Chat verbunden.",
+      "connectFailed": "{{platform}}-Chat konnte nicht verbunden werden: {{error}}",
+      "unknownError": "unbekannter Fehler"
+    },
+    "reidentify": {
+      "failed": "Identitätsprüfung fehlgeschlagen",
+      "hint": "Anonymisiert — klicke, um zu prüfen, wer das ist",
+      "prompt": "Bestätige einen Namen, den du bereits vermutest — der Alias lässt sich nicht zurückverfolgen.",
+      "placeholder": "Vermuteter Benutzername",
+      "check": "Prüfen",
+      "match": "Treffer — das ist {{name}}.",
+      "noMatch": "Kein Treffer."
     },
     "events": {
       "raid": "{{name}} hat mit {{count}} Zuschauern geraidet",
@@ -744,7 +768,7 @@
   },
   "safety": {
     "wizard": {
-      "anonymousBody": "Chat-Benutzernamen erscheinen in Protokollen und Exporten als `hash:abcd1234`. Du kannst sie lokal mit deinem Profil-Salt weiterhin entschlüsseln. Ein geleaktes Protokoll kann das NICHT.",
+      "anonymousBody": "Chat-Namen erscheinen als freundlicher Alias wie `QuietOtter47` statt echter Benutzernamen — im Live-Feed, in Protokollen und Exporten. Mit dem Salt deines Profils kannst du Zuschauer lokal weiterhin zuordnen; ein geleaktes Protokoll NICHT.",
       "anonymousTitle": "Anonymer Modus",
       "anonymousToggle": "Anonyme Chat-Protokollierung AN lassen (empfohlen)",
       "anonymousWarning": "Wenn du den anonymen Modus deaktivierst, listet eine geleakte Protokolldatei alle auf, die in deinem Chat erschienen sind.",

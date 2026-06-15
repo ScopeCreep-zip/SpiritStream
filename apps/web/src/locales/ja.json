@@ -107,7 +107,6 @@
       "signedOut": "{{platform}}からログアウトしました",
       "startFailed": "サインインの開始に失敗しました: {{error}}",
       "setup": "サインインを設定",
-      "setupHint": "初回のみの設定です。{{platform}} の開発者サイトで（無料の）アプリを作成し、その認証情報をここに貼り付けてください。この端末に暗号化して保存されます。",
       "openPortal": "{{platform}} 開発者ポータルを開く",
       "clientId": "クライアント ID",
       "clientSecret": "クライアントシークレット",
@@ -117,10 +116,23 @@
       "saveCredentials": "保存してサインインを有効化",
       "deviceOpened": "ブラウザでサインインページを開きました。そこにこのコードを入力してください:",
       "portalLabel": "開発者ポータル（ブラウザで開く）",
-      "pasteTheseValues": "アプリのフォームでこれらの値を使用してください:",
       "copyValue": "{{label}}をコピー",
       "signInSuccess": "サインインしました",
-      "signInSuccessNamed": "{{name}} としてサインインしました"
+      "signInSuccessNamed": "{{name}} としてサインインしました",
+      "needsSetupToStart": "まず {{platform}} のサインイン認証情報を設定してください。",
+      "wizard": {
+        "step1Title": "開発者サイトを開く",
+        "step2Title": "アプリを設定する",
+        "step3Title": "認証情報を入力する",
+        "stepOf": "ステップ {{current}}/{{total}}",
+        "next": "次へ",
+        "back": "戻る",
+        "step1Hint": "{{platform}} の開発者サイトで無料のアプリを登録します。そこで行う必要がある唯一の手順です。このリンクをコピーしてブラウザで開いてください:",
+        "step2Hint": "上から順に進めてください。各リンクで必要なページが開きます:",
+        "step3Hint": "アプリを作成したら、その Client ID をここに貼り付けてください。この端末に暗号化して保存されます。",
+        "valuesLabel": "フォームにコピーする値:",
+        "copyLink": "リンクをコピー"
+      }
     },
     "platformReadOnly": "読み取り専用",
     "platforms": {
@@ -218,7 +230,19 @@
       "disconnect": "チャットを切断",
       "connecting": "接続中…",
       "disconnected": "切断しました",
-      "failed": "接続を変更できませんでした: {{error}}"
+      "failed": "接続を変更できませんでした: {{error}}",
+      "connected": "{{platform}}のチャットに接続しました。",
+      "connectFailed": "{{platform}}のチャットに接続できませんでした：{{error}}",
+      "unknownError": "不明なエラー"
+    },
+    "reidentify": {
+      "failed": "本人確認に失敗しました",
+      "hint": "匿名化されています — クリックして誰なのか確認",
+      "prompt": "すでに疑っている名前を確認します — エイリアスは元に戻せません。",
+      "placeholder": "疑わしいユーザー名",
+      "check": "確認",
+      "match": "一致 — これは {{name}} です。",
+      "noMatch": "一致しません。"
     },
     "events": {
       "raid": "{{name}} さんが {{count}} 人の視聴者とレイドしました",
@@ -744,7 +768,7 @@
   },
   "safety": {
     "wizard": {
-      "anonymousBody": "チャットのユーザー名はログとエクスポートで `hash:abcd1234` として表示されます。プロファイルのソルトを使えばローカルで復号できます。流出したログでは復号できません。",
+      "anonymousBody": "チャットの名前は、本名の代わりに `QuietOtter47` のような親しみやすいエイリアスとして表示されます（ライブフィード、ログ、エクスポート）。プロファイルのソルトを使えばローカルで視聴者を再識別できますが、流出したログでは不可能です。",
       "anonymousTitle": "匿名モード",
       "anonymousToggle": "匿名チャットログを ON のままにする（推奨）",
       "anonymousWarning": "匿名モードを無効にすると、流出したログファイルからチャットに現れた全員が列挙されてしまいます。",

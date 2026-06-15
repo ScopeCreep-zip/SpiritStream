@@ -107,7 +107,6 @@
       "signedOut": "已退出 {{platform}}",
       "startFailed": "无法开始登录:{{error}}",
       "setup": "设置登录",
-      "setupHint": "一次性设置：在 {{platform}} 的开发者网站上创建一个（免费）应用，然后将其凭据粘贴到此处。凭据将加密存储在本设备上。",
       "openPortal": "打开 {{platform}} 开发者门户",
       "clientId": "客户端 ID",
       "clientSecret": "客户端密钥",
@@ -117,10 +116,23 @@
       "saveCredentials": "保存并启用登录",
       "deviceOpened": "我们已在您的浏览器中打开登录页面。请在那里输入此代码：",
       "portalLabel": "开发者门户（在浏览器中打开）",
-      "pasteTheseValues": "在应用表单中使用这些值：",
       "copyValue": "复制 {{label}}",
       "signInSuccess": "已登录",
-      "signInSuccessNamed": "已登录为 {{name}}"
+      "signInSuccessNamed": "已登录为 {{name}}",
+      "needsSetupToStart": "请先设置 {{platform}} 的登录凭据。",
+      "wizard": {
+        "step1Title": "打开开发者网站",
+        "step2Title": "设置应用",
+        "step3Title": "输入凭据",
+        "stepOf": "第 {{current}} 步，共 {{total}} 步",
+        "next": "下一步",
+        "back": "上一步",
+        "step1Hint": "你将在 {{platform}} 的开发者网站上注册一个免费应用 —— 这是唯一必须在那里完成的步骤。复制此链接并在浏览器中打开：",
+        "step2Hint": "按顺序操作 —— 每个链接都会打开你需要的确切页面：",
+        "step3Hint": "应用创建后，将其 Client ID 粘贴到此处。已在本设备上加密存储。",
+        "valuesLabel": "复制到表单中的值：",
+        "copyLink": "复制链接"
+      }
     },
     "platformReadOnly": "只读",
     "platforms": {
@@ -218,7 +230,19 @@
       "disconnect": "断开聊天",
       "connecting": "连接中…",
       "disconnected": "已断开",
-      "failed": "无法更改连接：{{error}}"
+      "failed": "无法更改连接：{{error}}",
+      "connected": "{{platform}} 聊天已连接。",
+      "connectFailed": "无法连接 {{platform}} 聊天：{{error}}",
+      "unknownError": "未知错误"
+    },
+    "reidentify": {
+      "failed": "身份核对失败",
+      "hint": "已匿名——点击核对这是谁",
+      "prompt": "确认一个你已经怀疑的名字——别名无法被还原。",
+      "placeholder": "怀疑的用户名",
+      "check": "核对",
+      "match": "匹配——这是 {{name}}。",
+      "noMatch": "不匹配。"
     },
     "events": {
       "raid": "{{name}} 带着 {{count}} 名观众发起了突袭",
@@ -744,7 +768,7 @@
   },
   "safety": {
     "wizard": {
-      "anonymousBody": "聊天用户名在日志和导出中显示为 `hash:abcd1234`。你仍可使用配置文件的盐在本地解码。泄露的日志则无法解码。",
+      "anonymousBody": "聊天名称显示为像 `QuietOtter47` 这样的友好别名，而非真实用户名——在实时聊天、日志和导出中均如此。你仍可使用配置文件的盐在本地重新识别观众；泄露的日志则无法做到。",
       "anonymousTitle": "匿名模式",
       "anonymousToggle": "保持匿名聊天记录开启（推荐）",
       "anonymousWarning": "关闭匿名模式意味着泄露的日志文件会列出在你聊天中出现过的所有人。",

@@ -107,7 +107,6 @@
       "signedOut": "Afgemeld van {{platform}}",
       "startFailed": "Kon nie aanmelding begin nie: {{error}}",
       "setup": "Stel aanmelding op",
-      "setupHint": "Eenmalige opstelling: skep ’n (gratis) app op {{platform}} se ontwikkelaarwebwerf en plak die bewyse hier. Hulle word geënkripteer op hierdie toestel gestoor.",
       "openPortal": "Maak {{platform}}-ontwikkelaarportaal oop",
       "clientId": "Kliënt-ID",
       "clientSecret": "Kliëntgeheim",
@@ -117,10 +116,23 @@
       "saveCredentials": "Stoor en aktiveer aanmelding",
       "deviceOpened": "Ons het die aanmeldbladsy in jou blaaier oopgemaak. Voer hierdie kode daar in:",
       "portalLabel": "Ontwikkelaarportaal (maak in blaaier oop)",
-      "pasteTheseValues": "Gebruik hierdie waardes in die app-vorm:",
       "copyValue": "Kopieer {{label}}",
       "signInSuccess": "Aangemeld",
-      "signInSuccessNamed": "Aangemeld as {{name}}"
+      "signInSuccessNamed": "Aangemeld as {{name}}",
+      "needsSetupToStart": "Stel eers die {{platform}}-aanmeldbewyse op.",
+      "wizard": {
+        "step1Title": "Maak die ontwikkelaarwerf oop",
+        "step2Title": "Stel die app op",
+        "step3Title": "Voer jou geloofsbriewe in",
+        "stepOf": "Stap {{current}} van {{total}}",
+        "next": "Volgende",
+        "back": "Terug",
+        "step1Hint": "Jy gaan ’n gratis app op {{platform}} se ontwikkelaarwerf registreer — die enigste stap wat daar moet gebeur. Kopieer hierdie skakel en maak dit in jou blaaier oop:",
+        "step2Hint": "Doen dit in volgorde — elke skakel maak die presiese bladsy oop:",
+        "step3Hint": "Sodra die app geskep is, plak sy Client ID hier. Geënkripteer op hierdie toestel gestoor.",
+        "valuesLabel": "Waardes om in die vorm te plak:",
+        "copyLink": "Kopieer skakel"
+      }
     },
     "platformReadOnly": "leesalleen",
     "platforms": {
@@ -218,7 +230,19 @@
       "disconnect": "Ontkoppel klets",
       "connecting": "Koppel tans…",
       "disconnected": "Ontkoppel",
-      "failed": "Kon nie verbinding verander nie: {{error}}"
+      "failed": "Kon nie verbinding verander nie: {{error}}",
+      "connected": "{{platform}}-klets gekoppel.",
+      "connectFailed": "Kon nie {{platform}}-klets koppel nie: {{error}}",
+      "unknownError": "onbekende fout"
+    },
+    "reidentify": {
+      "failed": "Identiteitskontrole het misluk",
+      "hint": "Geanonimiseer — klik om te kyk wie dit is",
+      "prompt": "Bevestig ’n naam wat jy reeds vermoed — die skuilnaam kan nie omgekeer word nie.",
+      "placeholder": "Vermoedelike gebruikersnaam",
+      "check": "Kontroleer",
+      "match": "Pas — dit is {{name}}.",
+      "noMatch": "Geen passing nie."
     },
     "events": {
       "raid": "{{name}} het 'n inval gedoen met {{count}} kykers",
@@ -744,7 +768,7 @@
   },
   "safety": {
     "wizard": {
-      "anonymousBody": "Kletsgebruikersname verskyn as `hash:abcd1234` in logboeke en uitvoere. Jy kan hulle steeds plaaslik dekodeer met jou profielsout. 'n Uitgelekte logboek kan NIE.",
+      "anonymousBody": "Klesname verskyn as ’n vriendelike skuilnaam soos `QuietOtter47` in plaas van regte gebruikersname — in die regstreekse voer, logboeke en uitvoere. Jy kan kykers steeds plaaslik heridentifiseer met jou profiel se sout; ’n gelekte logboek KAN NIE.",
       "anonymousTitle": "Anonieme modus",
       "anonymousToggle": "Hou anonieme kletsregistrasie AAN (aanbeveel)",
       "anonymousWarning": "Om anonieme modus af te skakel beteken 'n uitgelekte logboeklêer lys almal wat in jou klets verskyn het.",

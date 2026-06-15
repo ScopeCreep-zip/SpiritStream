@@ -107,7 +107,6 @@
       "signedOut": "Sesión cerrada en {{platform}}",
       "startFailed": "Error al iniciar el inicio de sesión: {{error}}",
       "setup": "Configurar el inicio de sesión",
-      "setupHint": "Configuración única: cree una aplicación (gratuita) en el sitio de desarrolladores de {{platform}} y pegue sus credenciales aquí. Se guardan cifradas en este dispositivo.",
       "openPortal": "Abrir el portal de desarrolladores de {{platform}}",
       "clientId": "ID de cliente",
       "clientSecret": "Secreto de cliente",
@@ -117,10 +116,23 @@
       "saveCredentials": "Guardar y habilitar el inicio de sesión",
       "deviceOpened": "Abrimos la página de inicio de sesión en tu navegador. Ingresa este código allí:",
       "portalLabel": "Portal de desarrolladores (abrir en el navegador)",
-      "pasteTheseValues": "Usa estos valores en el formulario de la app:",
       "copyValue": "Copiar {{label}}",
       "signInSuccess": "Sesión iniciada",
-      "signInSuccessNamed": "Sesión iniciada como {{name}}"
+      "signInSuccessNamed": "Sesión iniciada como {{name}}",
+      "needsSetupToStart": "Primero configura las credenciales de inicio de sesión de {{platform}}.",
+      "wizard": {
+        "step1Title": "Abre el sitio para desarrolladores",
+        "step2Title": "Configura la app",
+        "step3Title": "Introduce tus credenciales",
+        "stepOf": "Paso {{current}} de {{total}}",
+        "next": "Siguiente",
+        "back": "Atrás",
+        "step1Hint": "Registrarás una app gratuita en el sitio para desarrolladores de {{platform}}: el único paso que debe ocurrir allí. Copia este enlace y ábrelo en tu navegador:",
+        "step2Hint": "Haz esto en orden: cada enlace abre la página exacta que necesitas:",
+        "step3Hint": "Cuando la app esté creada, pega aquí su Client ID. Se guarda cifrado en este dispositivo.",
+        "valuesLabel": "Valores para copiar en el formulario:",
+        "copyLink": "Copiar enlace"
+      }
     },
     "platformReadOnly": "solo lectura",
     "platforms": {
@@ -218,7 +230,19 @@
       "disconnect": "Desconectar chat",
       "connecting": "Conectando…",
       "disconnected": "Desconectado",
-      "failed": "No se pudo cambiar la conexión: {{error}}"
+      "failed": "No se pudo cambiar la conexión: {{error}}",
+      "connected": "Chat de {{platform}} conectado.",
+      "connectFailed": "No se pudo conectar el chat de {{platform}}: {{error}}",
+      "unknownError": "error desconocido"
+    },
+    "reidentify": {
+      "failed": "La verificación de identidad falló",
+      "hint": "Anonimizado — haz clic para comprobar quién es",
+      "prompt": "Confirma un nombre que ya sospechas — el alias no se puede revertir.",
+      "placeholder": "Nombre de usuario sospechado",
+      "check": "Comprobar",
+      "match": "Coincide — es {{name}}.",
+      "noMatch": "Sin coincidencia."
     },
     "events": {
       "raid": "{{name}} hizo una incursión con {{count}} espectadores",
@@ -744,7 +768,7 @@
   },
   "safety": {
     "wizard": {
-      "anonymousBody": "Los nombres de usuario del chat aparecen como `hash:abcd1234` en registros y exportaciones. Todavía puedes decodificarlos localmente con la sal de tu perfil. Un registro filtrado NO puede.",
+      "anonymousBody": "Los nombres del chat aparecen como un alias amistoso como `QuietOtter47` en lugar de los nombres reales — en el feed en vivo, los registros y las exportaciones. Aún puedes reidentificar a los espectadores localmente con la sal de tu perfil; un registro filtrado NO puede.",
       "anonymousTitle": "Modo anónimo",
       "anonymousToggle": "Mantener ACTIVADO el registro anónimo del chat (recomendado)",
       "anonymousWarning": "Desactivar el modo anónimo significa que un archivo de registro filtrado enumera a todos los que aparecieron en tu chat.",
