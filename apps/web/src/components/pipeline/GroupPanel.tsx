@@ -5,7 +5,7 @@ import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { OutputRow, type OutputRowStatus } from './OutputRow';
 import { cn } from '@/lib/cn';
-import type { OutputGroup, StreamTarget } from '@spiritstream/types';
+import type { ChatPlatform, ChatPlatformStatus, OutputGroup, StreamTarget } from '@spiritstream/types';
 
 interface GroupPanelProps {
   group: OutputGroup;
@@ -23,6 +23,10 @@ interface GroupPanelProps {
   onEditTarget: (target: StreamTarget) => void;
   onRemoveTarget: (target: StreamTarget) => void;
   onToggleTargetEnabled: (target: StreamTarget) => void;
+  /** Jump to a target service's chat settings (icon shown only for chat-capable services). */
+  onOpenChatSettings?: (platform: ChatPlatform) => void;
+  /** Resolve a platform's live chat status, or null when not set up (gates the row toggle). */
+  chatConnectionFor?: (platform: ChatPlatform) => ChatPlatformStatus['status'] | null;
   /** Per-group start — wires `streamStore.startGroup`. */
   onStartGroup: () => void;
   /** Per-group stop — wires `streamStore.stopGroup`. */
@@ -50,6 +54,8 @@ export function GroupPanel({
   onEditTarget,
   onRemoveTarget,
   onToggleTargetEnabled,
+  onOpenChatSettings,
+  chatConnectionFor,
   onStartGroup,
   onStopGroup,
   onToggleGroupEnabled,
@@ -177,6 +183,8 @@ export function GroupPanel({
                   onToggleEnabled={() => onToggleTargetEnabled(target)}
                   onEdit={() => onEditTarget(target)}
                   onRemove={() => onRemoveTarget(target)}
+                  onOpenChatSettings={onOpenChatSettings}
+                  chatConnectionFor={chatConnectionFor}
                 />
               ))}
             </ul>

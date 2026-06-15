@@ -8,7 +8,15 @@ import { useStreamStore } from '@/stores/streamStore';
 import { toast } from '@/hooks/useToast';
 import { logger } from '@/lib/logger';
 import { createDefaultOutputGroup } from '@/lib/profile-helpers';
-import type { Profile, OutputGroup, StreamTarget } from '@spiritstream/types';
+import { useChatPlatformStatus } from '@/hooks/useChatPlatformStatus';
+import { isChatPlatformConfigured } from '@/lib/serviceChat';
+import type {
+  ChatPlatform,
+  ChatPlatformStatus,
+  Profile,
+  OutputGroup,
+  StreamTarget,
+} from '@spiritstream/types';
 
 interface PipelineColumnProps {
   profile: Profile | null;
@@ -20,6 +28,8 @@ interface PipelineColumnProps {
   onEditTarget: (group: OutputGroup, target: StreamTarget) => void;
   /** Group edit / encoder edit — opens OutputGroupModal in edit mode. */
   onEditGroup: (group: OutputGroup) => void;
+  /** Row chat icon — jump straight to a target service's chat settings. */
+  onOpenChatSettings: (platform: ChatPlatform) => void;
 }
 
 /**
@@ -35,6 +45,7 @@ export function PipelineColumn({
   onAddTargetForGroup,
   onEditTarget,
   onEditGroup,
+  onOpenChatSettings,
 }: PipelineColumnProps): React.ReactElement {
   const { t } = useTranslation();
   const addOutputGroup = useProfileStore((s) => s.addOutputGroup);
@@ -48,6 +59,18 @@ export function PipelineColumn({
   const liveTargetOverrides = useStreamStore((s) => s.liveTargetOverrides);
   const globalStatus = useStreamStore((s) => s.globalStatus);
   const activeGroups = useStreamStore((s) => s.activeGroups);
+
+  // Single chat-status poller for the pipeline — feeds every row's chat
+  // connect/disconnect toggle (rows must NOT each spin up a poller).
+  const { statuses: chatStatuses } = useChatPlatformStatus();
+  const chatSettings = profile?.settings?.chat ?? null;
+  const chatConnectionFor = useCallback(
+    (platform: ChatPlatform): ChatPlatformStatus['status'] | null => {
+      if (!chatSettings || !isChatPlatformConfigured(platform, chatSettings)) return null;
+      return chatStatuses.find((s) => s.platform === platform)?.status ?? 'disconnected';
+    },
+    [chatStatuses, chatSettings]
+  );
 
   /**
    * Effective per-target enablement the panel renders: the persisted
@@ -312,6 +335,8 @@ export function PipelineColumn({
           onEditTarget={(target) => onEditTarget(activeGroup, target)}
           onRemoveTarget={(target) => handleRemoveTarget(activeGroup.id, target)}
           onToggleTargetEnabled={(target) => handleToggleTarget(activeGroup, target)}
+          onOpenChatSettings={onOpenChatSettings}
+          chatConnectionFor={chatConnectionFor}
           onStartGroup={() => handleStartGroup(activeGroup)}
           onStopGroup={() => handleStopGroup(activeGroup)}
           onToggleGroupEnabled={() => handleToggleGroupEnabled(activeGroup)}
