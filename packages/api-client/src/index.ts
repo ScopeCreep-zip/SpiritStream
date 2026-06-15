@@ -11,6 +11,12 @@
 
 import { HttpClient } from './http-client';
 import type { ApiClient, ApiClientOptions } from './interface';
+import { configureGeneratedClient } from './clientConfig';
+
+// Configure the generated @hey-api client (baseUrl tracking, cookie auth,
+// retry fetch, structured-error mapping) at import time — before any resource
+// API method can issue a request. Idempotent.
+configureGeneratedClient();
 
 export type {
   ApiClient,
@@ -74,3 +80,5 @@ export {
   safeFetch,
 } from './config';
 export type { AuthStatus, BackendMode, ServerReadyError, ServerReadyStatus } from './config';
+export type { ApiError } from './clientConfig';
+export { parseChatMessage, parseChatMessages } from './validation/chatMessage';

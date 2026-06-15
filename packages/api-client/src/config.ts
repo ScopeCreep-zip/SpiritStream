@@ -51,10 +51,19 @@ export const backendMode: BackendMode = 'http';
  * For external URLs in Tauri context, the HTTP plugin is used to bypass
  * CORS/CSP restrictions (not currently used, but available for future needs).
  */
-export async function safeFetch(url: string, options?: RequestInit): Promise<Response> {
+export async function safeFetch(
+  input: RequestInfo | URL,
+  options?: RequestInit
+): Promise<Response> {
   // For localhost requests, always use browser fetch with retry logic.
   // The Tauri HTTP plugin has known bugs with localhost/127.0.0.1.
   // Browser fetch works fine since CSP allows any loopback port.
+  //
+  // `input` is a string/URL for the hand-written auth helpers below AND a
+  // `Request` object when this is wired as the generated @hey-api client's
+  // `fetch` (it builds `new Request(url, init)` and calls `fetch(request)`).
+  // Resolve the URL from whichever shape we got.
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   const isLocalhost = url.startsWith('http://127.0.0.1') || url.startsWith('http://localhost');
 
   if (isLocalhost) {
@@ -67,12 +76,17 @@ export async function safeFetch(url: string, options?: RequestInit): Promise<Res
     // connection dropped mid-response can mean the server already
     // executed the request — a blind retry would start a second stream
     // or send a chat message twice. Those fail straight to the caller.
-    const method = (options?.method ?? 'GET').toUpperCase();
+    const method = (
+      options?.method ?? (input instanceof Request ? input.method : 'GET')
+    ).toUpperCase();
     const idempotent = method !== 'POST' && method !== 'PATCH';
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const response = await fetch(url, options);
+        // A `Request` body is a one-shot stream; clone per attempt so a
+        // retry re-issues with an unconsumed body. String/URL inputs pass
+        // through unchanged.
+        const response = await fetch(input instanceof Request ? input.clone() : input, options);
 
         // RFC 9110 — only retry 5xx when the server provided
         // `Retry-After`. A 5xx without `Retry-After` is a "fix it
@@ -118,7 +132,7 @@ export async function safeFetch(url: string, options?: RequestInit): Promise<Res
 
   // External URLs always use browser fetch — Tauri 2 webview supports it
   // natively and CSP is configured to allow the localhost backend.
-  return fetch(url, options);
+  return fetch(input, options);
 }
 
 export const backendUrlStorageKey = 'spiritstream-backend-url';
@@ -161,8 +175,30 @@ let runtimeBaseUrl: string | null = null;
  * stored during a previous launch is stale by construction when ports
  * are negotiated per launch.
  */
+// Subscribers notified whenever the resolved backend base URL changes. The
+// generated @hey-api client registers here (see `clientConfig.ts`) so its
+// `baseUrl` always tracks the runtime-discovered URL — there is no single
+// static base to bake into the generated client.
+const baseUrlSubscribers = new Set<(baseUrl: string) => void>();
+
+/**
+ * Register a callback invoked immediately with the current backend base URL
+ * and again on every change. Used to keep the generated client's `baseUrl`
+ * in sync with the runtime-discovered backend.
+ */
+export function onBackendBaseUrlChange(fn: (baseUrl: string) => void): void {
+  baseUrlSubscribers.add(fn);
+  fn(getBackendBaseUrl());
+}
+
+function notifyBaseUrlChange(): void {
+  const current = getBackendBaseUrl();
+  for (const fn of baseUrlSubscribers) fn(current);
+}
+
 export function setBackendBaseUrl(url: string): void {
   runtimeBaseUrl = url.replace(/\/$/, '');
+  notifyBaseUrlChange();
 }
 
 export const getBackendBaseUrl = (): string => {
@@ -200,6 +236,7 @@ export function updateBackendUrl(host: string, port: number): void {
 
   const newUrl = `http://${host}:${port}`;
   window.localStorage.setItem(backendUrlStorageKey, newUrl);
+  notifyBaseUrlChange();
 }
 
 /**
@@ -209,6 +246,7 @@ export function updateBackendUrl(host: string, port: number): void {
 export function clearBackendUrl(): void {
   if (typeof window === 'undefined') return;
   window.localStorage.removeItem(backendUrlStorageKey);
+  notifyBaseUrlChange();
 }
 
 // ============================================================================

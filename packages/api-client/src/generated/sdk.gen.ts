@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { V1AuditLogData, V1AuditLogErrors, V1AuditLogResponses, V1ChatConnectProxyData, V1ChatConnectProxyErrors, V1ChatConnectProxyResponses, V1ChatDisconnectAllProxyData, V1ChatDisconnectAllProxyResponses, V1ChatDisconnectProxyData, V1ChatDisconnectProxyErrors, V1ChatDisconnectProxyResponses, V1ChatExportLogProxyData, V1ChatExportLogProxyErrors, V1ChatExportLogProxyResponses, V1ChatIsConnectedProxyData, V1ChatIsConnectedProxyResponses, V1ChatLogStatusProxyData, V1ChatLogStatusProxyResponses, V1ChatPlatformStatusProxyData, V1ChatPlatformStatusProxyResponses, V1ChatRecentMessagesProxyData, V1ChatRecentMessagesProxyResponses, V1ChatRetryProxyData, V1ChatRetryProxyErrors, V1ChatRetryProxyResponses, V1ChatSearchSessionProxyData, V1ChatSearchSessionProxyResponses, V1ChatSendProxyData, V1ChatSendProxyErrors, V1ChatSendProxyResponses, V1ChatStatusProxyData, V1ChatStatusProxyResponses, V1DiscordResetCooldownProxyData, V1DiscordResetCooldownProxyResponses, V1DiscordSendNotificationProxyData, V1DiscordSendNotificationProxyResponses, V1DiscordTestWebhookProxyData, V1DiscordTestWebhookProxyResponses, V1HealthData, V1HealthResponses, V1OauthCompleteFlowProxyData, V1OauthCompleteFlowProxyErrors, V1OauthCompleteFlowProxyResponses, V1OauthDisconnectProxyData, V1OauthDisconnectProxyResponses, V1OauthForgetProxyData, V1OauthForgetProxyResponses, V1OauthGetAccountProxyData, V1OauthGetAccountProxyResponses, V1OauthGetConfigProxyData, V1OauthGetConfigProxyResponses, V1OauthIsConfiguredProxyData, V1OauthIsConfiguredProxyResponses, V1OauthRefreshTokenProxyData, V1OauthRefreshTokenProxyErrors, V1OauthRefreshTokenProxyResponses, V1OauthSetConfigProxyData, V1OauthSetConfigProxyErrors, V1OauthSetConfigProxyResponses, V1OauthSetProviderCredentialsProxyData, V1OauthSetProviderCredentialsProxyErrors, V1OauthSetProviderCredentialsProxyResponses, V1OauthStartFlowProxyData, V1OauthStartFlowProxyErrors, V1OauthStartFlowProxyResponses, V1ObsConnectProxyData, V1ObsConnectProxyErrors, V1ObsConnectProxyResponses, V1ObsDisconnectProxyData, V1ObsDisconnectProxyResponses, V1ObsGetConfigProxyData, V1ObsGetConfigProxyResponses, V1ObsIsConnectedProxyData, V1ObsIsConnectedProxyResponses, V1ObsSetConfigProxyData, V1ObsSetConfigProxyErrors, V1ObsSetConfigProxyResponses, V1ObsStartStreamProxyData, V1ObsStartStreamProxyResponses, V1ObsStateProxyData, V1ObsStateProxyResponses, V1ObsStopStreamProxyData, V1ObsStopStreamProxyResponses, V1ProfileActivateData, V1ProfileActivateErrors, V1ProfileActivateResponses, V1ProfileDecryptData, V1ProfileDecryptErrors, V1ProfileDecryptResponses, V1ProfileDeleteData, V1ProfileDeleteErrors, V1ProfileDeleteResponses, V1ProfileIsEncryptedData, V1ProfileIsEncryptedResponses, V1ProfileLockData, V1ProfileLockedListData, V1ProfileLockedListResponses, V1ProfileLockResponses, V1ProfileOrderEnsureProxyData, V1ProfileOrderEnsureProxyErrors, V1ProfileOrderEnsureProxyResponses, V1ProfileOrderGetProxyData, V1ProfileOrderGetProxyErrors, V1ProfileOrderGetProxyResponses, V1ProfileOrderSetProxyData, V1ProfileOrderSetProxyErrors, V1ProfileOrderSetProxyResponses, V1ProfileSaveData, V1ProfileSaveErrors, V1ProfileSaveResponses, V1ProfileShowData, V1ProfileShowErrors, V1ProfileShowResponses, V1ProfilesListData, V1ProfilesListErrors, V1ProfilesListResponses, V1ProfileSummariesProxyData, V1ProfileSummariesProxyErrors, V1ProfileSummariesProxyResponses, V1ProfileUnlockData, V1ProfileUnlockErrors, V1ProfileUnlockResponses, V1ProfileValidateInputProxyData, V1ProfileValidateInputProxyErrors, V1ProfileValidateInputProxyResponses, V1ReadyData, V1ReadyErrors, V1ReadyResponses, V1SafetyPanicData, V1SafetyPanicErrors, V1SafetyPanicResponses, V1SecurityRotateMachineKeyProxyData, V1SecurityRotateMachineKeyProxyErrors, V1SecurityRotateMachineKeyProxyResponses, V1SettingsClearDataData, V1SettingsClearDataErrors, V1SettingsClearDataResponses, V1SettingsExportData, V1SettingsExportErrors, V1SettingsExportResponses, V1SettingsGetData, V1SettingsGetErrors, V1SettingsGetResponses, V1SettingsProfilesPathData, V1SettingsProfilesPathResponses, V1SettingsSaveData, V1SettingsSaveErrors, V1SettingsSaveResponses, V1StreamsRetryData, V1StreamsRetryErrors, V1StreamsRetryResponses, V1StreamsStartAllData, V1StreamsStartAllErrors, V1StreamsStartAllResponses, V1StreamsStartData, V1StreamsStartErrors, V1StreamsStartResponses, V1StreamsStatusData, V1StreamsStatusResponses, V1StreamsStopAllData, V1StreamsStopAllErrors, V1StreamsStopAllResponses, V1StreamsStopData, V1StreamsStopErrors, V1StreamsStopResponses, V1StreamsToggleTargetData, V1StreamsToggleTargetErrors, V1StreamsToggleTargetResponses, V1StreamsValidateData, V1StreamsValidateErrors, V1StreamsValidateResponses, V1StreamTargetDisabledProxyData, V1StreamTargetDisabledProxyResponses, V1SystemAppVersionData, V1SystemAppVersionResponses, V1SystemAuditAppUpdateFailureData, V1SystemAuditAppUpdateFailureResponses, V1SystemClientConfigData, V1SystemClientConfigResponses, V1SystemEncoderPresetsData, V1SystemEncoderPresetsResponses, V1SystemEncodersProxyData, V1SystemEncodersProxyResponses, V1SystemFfmpegPathProxyData, V1SystemFfmpegPathProxyResponses, V1SystemFfmpegTestProxyData, V1SystemFfmpegTestProxyResponses, V1SystemFfmpegUpdateProxyData, V1SystemFfmpegUpdateProxyResponses, V1SystemFfmpegValidateProxyData, V1SystemFfmpegValidateProxyResponses, V1SystemLogsExportProxyData, V1SystemLogsExportProxyErrors, V1SystemLogsExportProxyResponses, V1SystemLogsProxyData, V1SystemLogsProxyErrors, V1SystemLogsProxyResponses, V1SystemRtmpTestProxyData, V1SystemRtmpTestProxyResponses, V1ThemesInstallProxyData, V1ThemesInstallProxyErrors, V1ThemesInstallProxyResponses, V1ThemesListProxyData, V1ThemesListProxyResponses, V1ThemesRefreshProxyData, V1ThemesRefreshProxyResponses, V1ThemeTokensProxyData, V1ThemeTokensProxyErrors, V1ThemeTokensProxyResponses } from './types.gen';
+import type { AuthLogoutData, AuthLogoutResponses, ConfirmTokenIssueData, ConfirmTokenIssueErrors, ConfirmTokenIssueResponses, EventsTicketIssueData, EventsTicketIssueResponses, FilesBrowseData, FilesBrowseErrors, FilesBrowseResponses, FilesHomeData, FilesHomeResponses, FilesOpenData, FilesOpenErrors, FilesOpenResponses, SecurityRevokeAllSessionsData, SecurityRevokeAllSessionsErrors, SecurityRevokeAllSessionsResponses, V1AuditLogData, V1AuditLogErrors, V1AuditLogResponses, V1ChatConnectProxyData, V1ChatConnectProxyErrors, V1ChatConnectProxyResponses, V1ChatDisconnectAllProxyData, V1ChatDisconnectAllProxyResponses, V1ChatDisconnectProxyData, V1ChatDisconnectProxyErrors, V1ChatDisconnectProxyResponses, V1ChatExportLogProxyData, V1ChatExportLogProxyErrors, V1ChatExportLogProxyResponses, V1ChatIsConnectedProxyData, V1ChatIsConnectedProxyResponses, V1ChatLogStatusProxyData, V1ChatLogStatusProxyResponses, V1ChatPlatformStatusProxyData, V1ChatPlatformStatusProxyResponses, V1ChatRecentMessagesProxyData, V1ChatRecentMessagesProxyResponses, V1ChatReidentifyProxyData, V1ChatReidentifyProxyResponses, V1ChatRetryProxyData, V1ChatRetryProxyErrors, V1ChatRetryProxyResponses, V1ChatSearchSessionProxyData, V1ChatSearchSessionProxyResponses, V1ChatSendProxyData, V1ChatSendProxyErrors, V1ChatSendProxyResponses, V1ChatStatusProxyData, V1ChatStatusProxyResponses, V1DiscordResetCooldownProxyData, V1DiscordResetCooldownProxyResponses, V1DiscordSendNotificationProxyData, V1DiscordSendNotificationProxyResponses, V1DiscordTestWebhookProxyData, V1DiscordTestWebhookProxyResponses, V1HealthData, V1HealthResponses, V1OauthCompleteFlowProxyData, V1OauthCompleteFlowProxyErrors, V1OauthCompleteFlowProxyResponses, V1OauthDisconnectProxyData, V1OauthDisconnectProxyResponses, V1OauthForgetProxyData, V1OauthForgetProxyResponses, V1OauthGetAccountProxyData, V1OauthGetAccountProxyResponses, V1OauthGetConfigProxyData, V1OauthGetConfigProxyResponses, V1OauthIsConfiguredProxyData, V1OauthIsConfiguredProxyResponses, V1OauthRefreshTokenProxyData, V1OauthRefreshTokenProxyErrors, V1OauthRefreshTokenProxyResponses, V1OauthSetConfigProxyData, V1OauthSetConfigProxyErrors, V1OauthSetConfigProxyResponses, V1OauthSetProviderCredentialsProxyData, V1OauthSetProviderCredentialsProxyErrors, V1OauthSetProviderCredentialsProxyResponses, V1OauthStartFlowProxyData, V1OauthStartFlowProxyErrors, V1OauthStartFlowProxyResponses, V1ObsConnectProxyData, V1ObsConnectProxyErrors, V1ObsConnectProxyResponses, V1ObsDisconnectProxyData, V1ObsDisconnectProxyResponses, V1ObsIsConnectedProxyData, V1ObsIsConnectedProxyResponses, V1ObsStartStreamProxyData, V1ObsStartStreamProxyResponses, V1ObsStateProxyData, V1ObsStateProxyResponses, V1ObsStopStreamProxyData, V1ObsStopStreamProxyResponses, V1ProfileActivateData, V1ProfileActivateErrors, V1ProfileActivateResponses, V1ProfileDeactivateData, V1ProfileDeactivateErrors, V1ProfileDeactivateResponses, V1ProfileDecryptData, V1ProfileDecryptErrors, V1ProfileDecryptResponses, V1ProfileDeleteData, V1ProfileDeleteErrors, V1ProfileDeleteResponses, V1ProfileIsEncryptedData, V1ProfileIsEncryptedResponses, V1ProfileLockData, V1ProfileLockedListData, V1ProfileLockedListResponses, V1ProfileLockResponses, V1ProfileOrderEnsureProxyData, V1ProfileOrderEnsureProxyErrors, V1ProfileOrderEnsureProxyResponses, V1ProfileOrderGetProxyData, V1ProfileOrderGetProxyErrors, V1ProfileOrderGetProxyResponses, V1ProfileOrderSetProxyData, V1ProfileOrderSetProxyErrors, V1ProfileOrderSetProxyResponses, V1ProfileSaveData, V1ProfileSaveErrors, V1ProfileSaveResponses, V1ProfileShowData, V1ProfileShowErrors, V1ProfileShowResponses, V1ProfilesListData, V1ProfilesListErrors, V1ProfilesListResponses, V1ProfileSummariesProxyData, V1ProfileSummariesProxyErrors, V1ProfileSummariesProxyResponses, V1ProfileUnlockData, V1ProfileUnlockErrors, V1ProfileUnlockResponses, V1ProfileValidateInputProxyData, V1ProfileValidateInputProxyErrors, V1ProfileValidateInputProxyResponses, V1ReadyData, V1ReadyErrors, V1ReadyResponses, V1SafetyPanicData, V1SafetyPanicErrors, V1SafetyPanicResponses, V1SecurityRotateMachineKeyProxyData, V1SecurityRotateMachineKeyProxyErrors, V1SecurityRotateMachineKeyProxyResponses, V1SettingsClearDataData, V1SettingsClearDataErrors, V1SettingsClearDataResponses, V1SettingsExportData, V1SettingsExportErrors, V1SettingsExportResponses, V1SettingsGetData, V1SettingsGetErrors, V1SettingsGetResponses, V1SettingsProfilesPathData, V1SettingsProfilesPathResponses, V1SettingsSaveData, V1SettingsSaveErrors, V1SettingsSaveResponses, V1StreamsRetryData, V1StreamsRetryErrors, V1StreamsRetryResponses, V1StreamsStartAllData, V1StreamsStartAllErrors, V1StreamsStartAllResponses, V1StreamsStartData, V1StreamsStartErrors, V1StreamsStartResponses, V1StreamsStatusData, V1StreamsStatusResponses, V1StreamsStopAllData, V1StreamsStopAllErrors, V1StreamsStopAllResponses, V1StreamsStopData, V1StreamsStopErrors, V1StreamsStopResponses, V1StreamsToggleTargetData, V1StreamsToggleTargetErrors, V1StreamsToggleTargetResponses, V1StreamsValidateData, V1StreamsValidateErrors, V1StreamsValidateResponses, V1StreamTargetDisabledProxyData, V1StreamTargetDisabledProxyResponses, V1SystemAppVersionData, V1SystemAppVersionResponses, V1SystemAuditAppUpdateFailureData, V1SystemAuditAppUpdateFailureResponses, V1SystemClientConfigData, V1SystemClientConfigResponses, V1SystemEncoderPresetsData, V1SystemEncoderPresetsResponses, V1SystemEncodersProxyData, V1SystemEncodersProxyResponses, V1SystemFfmpegPathProxyData, V1SystemFfmpegPathProxyResponses, V1SystemFfmpegTestProxyData, V1SystemFfmpegTestProxyResponses, V1SystemFfmpegUpdateProxyData, V1SystemFfmpegUpdateProxyResponses, V1SystemFfmpegValidateProxyData, V1SystemFfmpegValidateProxyResponses, V1SystemLogsExportProxyData, V1SystemLogsExportProxyErrors, V1SystemLogsExportProxyResponses, V1SystemLogsProxyData, V1SystemLogsProxyErrors, V1SystemLogsProxyResponses, V1SystemRtmpTestProxyData, V1SystemRtmpTestProxyResponses, V1ThemesInstallProxyData, V1ThemesInstallProxyErrors, V1ThemesInstallProxyResponses, V1ThemesListProxyData, V1ThemesListProxyResponses, V1ThemesRefreshProxyData, V1ThemesRefreshProxyResponses, V1ThemeTokensProxyData, V1ThemeTokensProxyErrors, V1ThemeTokensProxyResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -29,6 +29,16 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
 export const v1AuditLog = <ThrowOnError extends boolean = false>(options?: Options<V1AuditLogData, ThrowOnError>) => {
     return (options?.client ?? client).get<V1AuditLogResponses, V1AuditLogErrors, ThrowOnError>({
         url: '/audit/log',
+        ...options
+    });
+};
+
+/**
+ * POST /api/v1/auth/logout — drop session ID from active set, clear cookie.
+ */
+export const authLogout = <ThrowOnError extends boolean = false>(options?: Options<AuthLogoutData, ThrowOnError>) => {
+    return (options?.client ?? client).post<AuthLogoutResponses, unknown, ThrowOnError>({
+        url: '/auth/logout',
         ...options
     });
 };
@@ -142,6 +152,17 @@ export const v1ChatRecentMessagesProxy = <ThrowOnError extends boolean = false>(
     });
 };
 
+export const v1ChatReidentifyProxy = <ThrowOnError extends boolean = false>(options: Options<V1ChatReidentifyProxyData, ThrowOnError>) => {
+    return (options.client ?? client).post<V1ChatReidentifyProxyResponses, unknown, ThrowOnError>({
+        url: '/chat/reidentify',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
 export const v1DiscordResetCooldownProxy = <ThrowOnError extends boolean = false>(options?: Options<V1DiscordResetCooldownProxyData, ThrowOnError>) => {
     return (options?.client ?? client).delete<V1DiscordResetCooldownProxyResponses, unknown, ThrowOnError>({
         url: '/discord/webhook/cooldown',
@@ -159,6 +180,49 @@ export const v1DiscordSendNotificationProxy = <ThrowOnError extends boolean = fa
 export const v1DiscordTestWebhookProxy = <ThrowOnError extends boolean = false>(options: Options<V1DiscordTestWebhookProxyData, ThrowOnError>) => {
     return (options.client ?? client).post<V1DiscordTestWebhookProxyResponses, unknown, ThrowOnError>({
         url: '/discord/webhook/test',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
+export const eventsTicketIssue = <ThrowOnError extends boolean = false>(options?: Options<EventsTicketIssueData, ThrowOnError>) => {
+    return (options?.client ?? client).post<EventsTicketIssueResponses, unknown, ThrowOnError>({
+        url: '/events/ticket',
+        ...options
+    });
+};
+
+/**
+ * GET /api/v1/files/browse — list directory contents.
+ *
+ * Query params: path (optional, defaults to home directory).
+ */
+export const filesBrowse = <ThrowOnError extends boolean = false>(options?: Options<FilesBrowseData, ThrowOnError>) => {
+    return (options?.client ?? client).get<FilesBrowseResponses, FilesBrowseErrors, ThrowOnError>({
+        url: '/files/browse',
+        ...options
+    });
+};
+
+/**
+ * GET /api/v1/files/home — get user home directory path.
+ */
+export const filesHome = <ThrowOnError extends boolean = false>(options?: Options<FilesHomeData, ThrowOnError>) => {
+    return (options?.client ?? client).get<FilesHomeResponses, unknown, ThrowOnError>({
+        url: '/files/home',
+        ...options
+    });
+};
+
+/**
+ * POST /api/v1/files/open — open path in the native file manager.
+ */
+export const filesOpen = <ThrowOnError extends boolean = false>(options: Options<FilesOpenData, ThrowOnError>) => {
+    return (options.client ?? client).post<FilesOpenResponses, FilesOpenErrors, ThrowOnError>({
+        url: '/files/open',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -260,24 +324,6 @@ export const v1OauthRefreshTokenProxy = <ThrowOnError extends boolean = false>(o
     });
 };
 
-export const v1ObsGetConfigProxy = <ThrowOnError extends boolean = false>(options?: Options<V1ObsGetConfigProxyData, ThrowOnError>) => {
-    return (options?.client ?? client).get<V1ObsGetConfigProxyResponses, unknown, ThrowOnError>({
-        url: '/obs/config',
-        ...options
-    });
-};
-
-export const v1ObsSetConfigProxy = <ThrowOnError extends boolean = false>(options: Options<V1ObsSetConfigProxyData, ThrowOnError>) => {
-    return (options.client ?? client).put<V1ObsSetConfigProxyResponses, V1ObsSetConfigProxyErrors, ThrowOnError>({
-        url: '/obs/config',
-        ...options,
-        headers: {
-            'Content-Type': 'application/json',
-            ...options.headers
-        }
-    });
-};
-
 export const v1ObsDisconnectProxy = <ThrowOnError extends boolean = false>(options?: Options<V1ObsDisconnectProxyData, ThrowOnError>) => {
     return (options?.client ?? client).delete<V1ObsDisconnectProxyResponses, unknown, ThrowOnError>({
         url: '/obs/connection',
@@ -323,6 +369,22 @@ export const v1ObsStartStreamProxy = <ThrowOnError extends boolean = false>(opti
 export const v1ProfilesList = <ThrowOnError extends boolean = false>(options?: Options<V1ProfilesListData, ThrowOnError>) => {
     return (options?.client ?? client).get<V1ProfilesListResponses, V1ProfilesListErrors, ThrowOnError>({
         url: '/profiles',
+        ...options
+    });
+};
+
+/**
+ * `POST /profiles/deactivate` — sign out of the active profile. The
+ *
+ * orchestrator clears the persisted active-profile pointer, drops the
+ * anonymizer salt from memory, disconnects chat + OBS, and emits
+ * `profile_deactivated`; the transport then clears its own session-scoped
+ * active-profile snapshot. Idempotent — succeeds with `deactivated: null`
+ * when no profile is active.
+ */
+export const v1ProfileDeactivate = <ThrowOnError extends boolean = false>(options?: Options<V1ProfileDeactivateData, ThrowOnError>) => {
+    return (options?.client ?? client).post<V1ProfileDeactivateResponses, V1ProfileDeactivateErrors, ThrowOnError>({
+        url: '/profiles/deactivate',
         ...options
     });
 };
@@ -532,6 +594,17 @@ export const v1SafetyPanic = <ThrowOnError extends boolean = false>(options?: Op
     });
 };
 
+export const confirmTokenIssue = <ThrowOnError extends boolean = false>(options: Options<ConfirmTokenIssueData, ThrowOnError>) => {
+    return (options.client ?? client).post<ConfirmTokenIssueResponses, ConfirmTokenIssueErrors, ThrowOnError>({
+        url: '/security/confirm-token',
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+};
+
 export const v1SecurityRotateMachineKeyProxy = <ThrowOnError extends boolean = false>(options: Options<V1SecurityRotateMachineKeyProxyData, ThrowOnError>) => {
     return (options.client ?? client).post<V1SecurityRotateMachineKeyProxyResponses, V1SecurityRotateMachineKeyProxyErrors, ThrowOnError>({
         url: '/security/machine-key/rotate',
@@ -540,6 +613,20 @@ export const v1SecurityRotateMachineKeyProxy = <ThrowOnError extends boolean = f
             'Content-Type': 'application/json',
             ...options.headers
         }
+    });
+};
+
+/**
+ * `POST /api/v1/security/sessions/revoke-all` — drop every active
+ *
+ * session ID. Existing cookies fail the next `auth_middleware` check
+ * even though the client still possesses them. Requires a confirm
+ * token issued for the `revoke_all_sessions` intent.
+ */
+export const securityRevokeAllSessions = <ThrowOnError extends boolean = false>(options?: Options<SecurityRevokeAllSessionsData, ThrowOnError>) => {
+    return (options?.client ?? client).post<SecurityRevokeAllSessionsResponses, SecurityRevokeAllSessionsErrors, ThrowOnError>({
+        url: '/security/sessions/revoke-all',
+        ...options
     });
 };
 

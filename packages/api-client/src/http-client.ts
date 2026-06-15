@@ -1,8 +1,10 @@
 // `HttpClient` is the HTTP implementation of `ApiClient`. It delegates to the
-// existing `api` object in `./api.ts`, which is the transitional
-// `POST /api/v1/invoke/:command` dispatch bridge plus typed REST handlers as
-// they migrate. Future transport implementations (VeilidClient)
-// implement the same `ApiClient` contract against their own protocol.
+// `api` object in `./api.ts`, a thin facade over the `@hey-api/openapi-ts`
+// client generated from the server's OpenAPI spec (utoipa). Cross-cutting
+// concerns (cookie auth, retry, structured-error mapping) are configured once
+// on the generated client in `./clientConfig.ts`. Future transport
+// implementations (VeilidClient) implement the same `ApiClient` contract
+// against their own protocol.
 
 import { api } from './api';
 import type { ApiClient } from './interface';

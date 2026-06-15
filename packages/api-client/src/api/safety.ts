@@ -1,4 +1,4 @@
-import { fetchTypedJson } from './_internal';
+import { v1SafetyPanic } from '../generated';
 
 export const safety = {
   /**
@@ -6,6 +6,8 @@ export const safety = {
    * chat + OBS, wipes in-memory secret caches, records an audit
    * entry. Returns the action summary.
    */
-  panic: () =>
-    fetchTypedJson<{ streamsStopped: number; elapsedMs: number }>('POST', '/api/v1/safety/panic'),
+  panic: async (): Promise<{ streamsStopped: number; elapsedMs: number }> => {
+    const { data } = await v1SafetyPanic({ throwOnError: true });
+    return data;
+  },
 };

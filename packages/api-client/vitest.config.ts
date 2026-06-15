@@ -1,15 +1,15 @@
 /// <reference types="vitest" />
 import { defineConfig } from 'vitest/config';
 
-// N5: api-client coverage gate. Scoped to the three logic-bearing
-// modules — URL resolution + localhost retry (`config.ts`), the WebSocket
-// event bus (`events.ts`), and the typed-REST error mapping
-// (`api/_internal.ts`). The per-namespace files under `api/*.ts` are thin
-// passthroughs over `fetchTypedJson`; their shared behaviour is covered
-// here, and the generated `@hey-api` client + pure type-declaration files
-// carry no branches worth pinning. Ratchet thresholds sit a few points
-// below measured so a regression fails CI while the plan floor
-// (≥50% lines) stays comfortably met.
+// N5: api-client coverage gate. Scoped to the logic-bearing modules — URL
+// resolution + localhost/Request-aware retry (`config.ts`), the WebSocket
+// event bus (`events.ts`), the structured non-2xx error mapping the generated
+// client's response interceptor uses (`clientConfig.ts`), and the
+// untrusted-inbound chat-message guard (`validation/chatMessage.ts`). The
+// per-namespace files under `api/*.ts` are thin facades over the generated
+// `@hey-api` SDK; the generated client + pure type-declaration files carry no
+// branches worth pinning. Ratchet thresholds sit a few points below measured
+// so a regression fails CI while the plan floor (≥50% lines) stays met.
 export default defineConfig({
   test: {
     environment: 'jsdom',
@@ -17,7 +17,12 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
-      include: ['src/config.ts', 'src/events.ts', 'src/api/_internal.ts'],
+      include: [
+        'src/config.ts',
+        'src/events.ts',
+        'src/clientConfig.ts',
+        'src/validation/chatMessage.ts',
+      ],
       thresholds: {
         lines: 80,
         functions: 80,

@@ -1,4 +1,5 @@
-import { fetchTypedJson, withConfirmToken } from './_internal';
+import { authLogout, confirmTokenIssue, securityRevokeAllSessions } from '../generated';
+import { confirmTokenHeader } from './_confirm';
 
 export const security = {
   /**
@@ -6,36 +7,35 @@ export const security = {
    * store and expires the HttpOnly cookie. Other devices' sessions
    * stay valid — use `revokeAllSessions` for those.
    */
-  logout: () => fetchTypedJson<Record<string, never>>('POST', '/api/v1/auth/logout'),
+  logout: async (): Promise<Record<string, never>> => {
+    await authLogout({ throwOnError: true });
+    return {};
+  },
   /**
    * Request a one-shot confirmation token for the given destructive
    * intent. The token expires after `expiresInSeconds` and is
    * consumed by the destructive endpoint's `X-Confirm-Token` header.
    *
-   * Most callers don't need this directly — use the wrapped
-   * destructive methods (`settings.clearData`,
-   * `settings.rotateMachineKey`, `security.revokeAllSessions`)
-   * which do the token dance internally via `withConfirmToken`.
-   * Exposed for the rare case a custom intent needs custom handling.
+   * Most callers don't need this directly — use the wrapped destructive
+   * methods (`settings.clearData`, `settings.rotateMachineKey`,
+   * `security.revokeAllSessions`), which do the token dance internally.
    */
-  requestConfirmToken: (intent: string) =>
-    fetchTypedJson<{ token: string; expiresInSeconds: number }>(
-      'POST',
-      '/api/v1/security/confirm-token',
-      undefined,
-      { intent }
-    ),
+  requestConfirmToken: async (intent: string) => {
+    const { data } = await confirmTokenIssue({ body: { intent }, throwOnError: true });
+    return data;
+  },
   /**
-   * Revoke every active session server-side, effectively logging out
-   * every device that holds a session cookie / bearer token. The
-   * caller's own session is invalidated by this call; the UI should
-   * route the user to the login screen immediately after.
-   *
-   * Wires the same confirm-token flow as `clearData` /
+   * Revoke every active session server-side, logging out every device
+   * that holds a session cookie / bearer token. The caller's own session
+   * is invalidated; the UI should route to the login screen immediately
+   * after. Wires the same confirm-token flow as `clearData` /
    * `rotateMachineKey`.
    */
-  revokeAllSessions: () =>
-    withConfirmToken<{ revoked: number }>('revoke_all_sessions', (headers) =>
-      fetchTypedJson('POST', '/api/v1/security/sessions/revoke-all', undefined, undefined, headers)
-    ),
+  revokeAllSessions: async () => {
+    const { data } = await securityRevokeAllSessions({
+      headers: await confirmTokenHeader('revoke_all_sessions'),
+      throwOnError: true,
+    });
+    return data;
+  },
 };

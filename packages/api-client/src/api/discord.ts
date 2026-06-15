@@ -1,19 +1,19 @@
-import { fetchTypedJson } from './_internal';
+import {
+  v1DiscordTestWebhookProxy,
+  v1DiscordSendNotificationProxy,
+  v1DiscordResetCooldownProxy,
+} from '../generated';
 
 export const discord = {
-  testWebhook: (url: string) =>
-    fetchTypedJson<{ success: boolean; message: string; skippedCooldown: boolean }>(
-      'POST',
-      '/api/v1/discord/webhook/test',
-      undefined,
-      { url }
-    ),
-  sendNotification: () =>
-    fetchTypedJson<{ success: boolean; message: string; skippedCooldown: boolean }>(
-      'POST',
-      '/api/v1/discord/webhook/send'
-    ),
-  resetCooldown: async () => {
-    await fetchTypedJson<Record<string, never>>('DELETE', '/api/v1/discord/webhook/cooldown');
+  testWebhook: async (url: string) => {
+    const { data } = await v1DiscordTestWebhookProxy({ body: { url }, throwOnError: true });
+    return data;
+  },
+  sendNotification: async () => {
+    const { data } = await v1DiscordSendNotificationProxy({ throwOnError: true });
+    return data;
+  },
+  resetCooldown: async (): Promise<void> => {
+    await v1DiscordResetCooldownProxy({ throwOnError: true });
   },
 };

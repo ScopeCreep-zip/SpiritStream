@@ -1,8 +1,10 @@
 /**
  * Public api-client surface. The `api` object exposes every backend
- * namespace; each namespace lives in its own file under `./api/` and
- * shares the internal `fetchTypedJson` / `withConfirmToken` helpers in
- * `./api/_internal.ts`.
+ * namespace; each namespace lives in its own file under `./api/` and is a
+ * thin, ergonomic facade over the generated `@hey-api/openapi-ts` SDK in
+ * `./generated/` (typed from the server's OpenAPI spec). Destructive ops use
+ * the `confirmTokenHeader` helper in `./api/_confirm.ts`; cross-cutting
+ * concerns (auth, retry, error mapping) live in `./clientConfig.ts`.
  *
  * Consumers do `import { api } from '@spiritstream/api-client'` and reach
  * for the namespaces they need (`api.profile.save`, `api.stream.start`,

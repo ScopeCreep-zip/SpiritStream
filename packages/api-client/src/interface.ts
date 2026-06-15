@@ -23,9 +23,7 @@ import type {
   FFmpegVersionInfo,
   RotationReport,
   RtmpTestResult,
-  ObsConfig,
   ObsState,
-  ObsIntegrationDirection,
   Settings,
   ChatConfig,
   ChatPlatform,
@@ -46,6 +44,8 @@ export interface ProfileApi {
   load(name: string, password?: string, setActive?: boolean): Promise<Profile>;
   /** Load + set-active + emit `profile_activated` consolidated event. */
   activate(name: string, password?: string): Promise<Profile>;
+  /** Sign out of the active profile: clears active state, anonymizer salt, chat/OBS; emits `profile_deactivated`. */
+  deactivate(): Promise<{ deactivated: string | null }>;
   unlock(name: string, password: string): Promise<{ name: string; unlocked: boolean }>;
   /** Atomic encryption-removal (load with password + save unencrypted in one call). */
   decrypt(name: string, password: string): Promise<{ name: string; decrypted: boolean }>;
@@ -138,16 +138,8 @@ export interface ThemeApi {
 
 export interface ObsApi {
   getState(): Promise<ObsState>;
-  /** Never carries the password value — only whether one is set. */
-  getConfig(): Promise<Omit<ObsConfig, 'password'> & { hasPassword: boolean }>;
-  setConfig(config: {
-    host: string;
-    port: number;
-    password?: string;
-    useAuth: boolean;
-    direction: ObsIntegrationDirection;
-    autoConnect: boolean;
-  }): Promise<void>;
+  // OBS settings are owned by the active profile (single source of truth) and
+  // persist via the profile save endpoint — there is no config get/set here.
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   startStream(): Promise<void>;

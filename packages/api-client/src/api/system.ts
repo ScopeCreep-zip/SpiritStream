@@ -1,5 +1,18 @@
 import type { Encoders, FFmpegVersionInfo, RtmpTestResult } from '@spiritstream/types';
-import { fetchTypedJson } from './_internal';
+import {
+  v1SystemEncodersProxy,
+  v1SystemFfmpegTestProxy,
+  v1SystemFfmpegPathProxy,
+  v1SystemFfmpegUpdateProxy,
+  v1SystemFfmpegValidateProxy,
+  v1SystemRtmpTestProxy,
+  v1SystemLogsProxy,
+  v1SystemLogsExportProxy,
+  v1SystemEncoderPresets,
+  v1SystemClientConfig,
+  v1SystemAppVersion,
+  v1SystemAuditAppUpdateFailure,
+} from '../generated';
 
 export interface EncoderPresetsResponse {
   resolutions: string[];
@@ -38,55 +51,58 @@ export interface ClientConfigResponse {
 }
 
 export const system = {
-  getEncoders: () => fetchTypedJson<Encoders>('GET', '/api/v1/system/encoders'),
-  testFfmpeg: () =>
-    fetchTypedJson<{ version: string }>('GET', '/api/v1/system/ffmpeg/test').then((r) => r.version),
-  getFfmpegPath: () =>
-    fetchTypedJson<{ path: string | null }>('GET', '/api/v1/system/ffmpeg/path').then(
-      (r) => r.path
-    ),
-  checkFfmpegUpdate: (installedVersion?: string) =>
-    fetchTypedJson<FFmpegVersionInfo>(
-      'GET',
-      '/api/v1/system/ffmpeg/update',
-      installedVersion ? { installedVersion } : undefined
-    ),
-  validateFfmpegPath: (path: string) =>
-    fetchTypedJson<{ validated: string }>(
-      'POST',
-      '/api/v1/system/ffmpeg/validate-path',
-      undefined,
-      { path }
-    ).then((r) => r.validated),
-  testRtmpTarget: (url: string, streamKey: string) =>
-    fetchTypedJson<RtmpTestResult>('POST', '/api/v1/system/rtmp/test', undefined, {
-      url,
-      streamKey,
-    }),
-  getRecentLogs: (maxLines?: number) =>
-    fetchTypedJson<{ lines: string[] }>(
-      'GET',
-      '/api/v1/system/logs',
-      maxLines ? { maxLines: String(maxLines) } : undefined
-    ).then((r) => r.lines),
-  exportLogs: async (path: string, content: string) => {
-    await fetchTypedJson<Record<string, never>>('POST', '/api/v1/system/logs/export', undefined, {
-      path,
-      content,
+  getEncoders: async (): Promise<Encoders> => {
+    const { data } = await v1SystemEncodersProxy({ throwOnError: true });
+    return data as Encoders;
+  },
+  testFfmpeg: async (): Promise<string> => {
+    const { data } = await v1SystemFfmpegTestProxy({ throwOnError: true });
+    return data.version;
+  },
+  getFfmpegPath: async (): Promise<string | null> => {
+    const { data } = await v1SystemFfmpegPathProxy({ throwOnError: true });
+    return data.path ?? null;
+  },
+  checkFfmpegUpdate: async (installedVersion?: string): Promise<FFmpegVersionInfo> => {
+    const { data } = await v1SystemFfmpegUpdateProxy({
+      query: installedVersion ? { installedVersion } : undefined,
+      throwOnError: true,
     });
+    return data as FFmpegVersionInfo;
+  },
+  validateFfmpegPath: async (path: string): Promise<string> => {
+    const { data } = await v1SystemFfmpegValidateProxy({ body: { path }, throwOnError: true });
+    return data.validated;
+  },
+  testRtmpTarget: async (url: string, streamKey: string): Promise<RtmpTestResult> => {
+    const { data } = await v1SystemRtmpTestProxy({ body: { url, streamKey }, throwOnError: true });
+    return data as RtmpTestResult;
+  },
+  getRecentLogs: async (maxLines?: number): Promise<string[]> => {
+    const { data } = await v1SystemLogsProxy({
+      query: maxLines ? { maxLines } : undefined,
+      throwOnError: true,
+    });
+    return data.lines;
+  },
+  exportLogs: async (path: string, content: string): Promise<void> => {
+    await v1SystemLogsExportProxy({ body: { path, content }, throwOnError: true });
   },
   /** Encoder preset matrix replacing `OutputGroupModal.tsx`'s hardcoded lists. */
-  encoderPresets: () =>
-    fetchTypedJson<EncoderPresetsResponse>('GET', '/api/v1/system/encoders/presets'),
+  encoderPresets: async (): Promise<EncoderPresetsResponse> => {
+    const { data } = await v1SystemEncoderPresets({ throwOnError: true });
+    return data as unknown as EncoderPresetsResponse;
+  },
   /** Server-tuned client constants replacing `apps/web/src/lib/constants.ts`. */
-  clientConfig: () => fetchTypedJson<ClientConfigResponse>('GET', '/api/v1/system/client-config'),
-  appVersion: () => fetchTypedJson<{ version: string }>('GET', '/api/v1/system/app-version'),
-  recordAppUpdateFailure: async (detail: string) => {
-    await fetchTypedJson<{ recorded: boolean }>(
-      'POST',
-      '/api/v1/system/audit/app-update-failure',
-      undefined,
-      { detail }
-    );
+  clientConfig: async (): Promise<ClientConfigResponse> => {
+    const { data } = await v1SystemClientConfig({ throwOnError: true });
+    return data as unknown as ClientConfigResponse;
+  },
+  appVersion: async (): Promise<{ version: string }> => {
+    const { data } = await v1SystemAppVersion({ throwOnError: true });
+    return data;
+  },
+  recordAppUpdateFailure: async (detail: string): Promise<void> => {
+    await v1SystemAuditAppUpdateFailure({ body: { detail }, throwOnError: true });
   },
 };

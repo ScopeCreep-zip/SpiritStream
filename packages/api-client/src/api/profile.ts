@@ -1,58 +1,94 @@
 import type { Profile, ProfileSummary, RtmpInput } from '@spiritstream/types';
-import { fetchTypedJson } from './_internal';
+import {
+  v1ProfilesList,
+  v1ProfileSummariesProxy,
+  v1ProfileShow,
+  v1ProfileActivate,
+  v1ProfileDeactivate,
+  v1ProfileUnlock,
+  v1ProfileDecrypt,
+  v1ProfileLock,
+  v1ProfileLockedList,
+  v1ProfileSave,
+  v1ProfileDelete,
+  v1ProfileIsEncrypted,
+  v1ProfileValidateInputProxy,
+  v1ProfileOrderSetProxy,
+  v1ProfileOrderGetProxy,
+  v1ProfileOrderEnsureProxy,
+} from '../generated';
 
 export const profile = {
-  getAll: async () => {
-    const { names } = await fetchTypedJson<{ names: string[] }>('GET', '/api/v1/profiles');
-    return names;
+  getAll: async (): Promise<string[]> => {
+    const { data } = await v1ProfilesList({ throwOnError: true });
+    return data.names;
   },
-  getSummaries: () => fetchTypedJson<ProfileSummary[]>('GET', '/api/v1/profiles/summaries'),
-  load: (name: string, password?: string, _setActive: boolean = true) =>
-    fetchTypedJson<Profile>(
-      'GET',
-      `/api/v1/profiles/${encodeURIComponent(name)}`,
-      password ? { password } : undefined
-    ),
+  getSummaries: async (): Promise<ProfileSummary[]> => {
+    const { data } = await v1ProfileSummariesProxy({ throwOnError: true });
+    return data as unknown as ProfileSummary[];
+  },
+  load: async (name: string, password?: string, _setActive: boolean = true): Promise<Profile> => {
+    const { data } = await v1ProfileShow({
+      path: { name },
+      query: password ? { password } : undefined,
+      throwOnError: true,
+    });
+    return data as Profile;
+  },
   /**
    * Load + set-active in one round-trip. Server emits `profile_activated`
    * with consolidated state — UI stores listen for the event instead of
    * running the old `applyProfileSettings` cascade themselves.
    */
-  activate: (name: string, password?: string) =>
-    fetchTypedJson<Profile>(
-      'POST',
-      `/api/v1/profiles/${encodeURIComponent(name)}/activate`,
-      undefined,
-      { password }
-    ),
+  activate: async (name: string, password?: string): Promise<Profile> => {
+    const { data } = await v1ProfileActivate({
+      path: { name },
+      body: { password },
+      throwOnError: true,
+    });
+    return data as Profile;
+  },
+  /**
+   * Sign out of the active profile. The server clears active-profile state,
+   * drops the anonymizer salt from memory, disconnects chat + OBS, and emits
+   * `profile_deactivated`. Returns the prior active profile name (or null).
+   */
+  deactivate: async (): Promise<{ deactivated: string | null }> => {
+    const { data } = await v1ProfileDeactivate({ throwOnError: true });
+    return { deactivated: data.deactivated ?? null };
+  },
   /** Unlock an encrypted profile in the server-side session unlock set. */
-  unlock: (name: string, password: string) =>
-    fetchTypedJson<{ name: string; unlocked: boolean }>(
-      'POST',
-      `/api/v1/profiles/${encodeURIComponent(name)}/unlock`,
-      undefined,
-      { password }
-    ),
+  unlock: async (name: string, password: string) => {
+    const { data } = await v1ProfileUnlock({
+      path: { name },
+      body: { password },
+      throwOnError: true,
+    });
+    return data;
+  },
   /**
    * Atomic encryption removal: load with password + re-save without it
    * in one server call. Replaces the legacy two-round-trip
    * `loadProfile(password) → saveProfile(no password)` flow.
    */
-  decrypt: (name: string, password: string) =>
-    fetchTypedJson<{ name: string; decrypted: boolean }>(
-      'POST',
-      `/api/v1/profiles/${encodeURIComponent(name)}/decrypt`,
-      undefined,
-      { password }
-    ),
+  decrypt: async (name: string, password: string) => {
+    const { data } = await v1ProfileDecrypt({
+      path: { name },
+      body: { password },
+      throwOnError: true,
+    });
+    return data;
+  },
   /** Remove a profile from the server-side session unlock set. */
-  lock: (name: string) =>
-    fetchTypedJson<{ name: string; locked: boolean }>(
-      'POST',
-      `/api/v1/profiles/${encodeURIComponent(name)}/lock`
-    ),
+  lock: async (name: string) => {
+    const { data } = await v1ProfileLock({ path: { name }, throwOnError: true });
+    return data;
+  },
   /** List every encrypted profile currently unlocked in the session. */
-  lockedList: () => fetchTypedJson<{ unlocked: string[] }>('GET', '/api/v1/profiles/locked'),
+  lockedList: async () => {
+    const { data } = await v1ProfileLockedList({ throwOnError: true });
+    return data;
+  },
   /**
    * Persist a profile and return the CANONICAL document the server
    * actually wrote (input.url recomputed, PII blocklist normalized).
@@ -60,47 +96,32 @@ export const profile = {
    * stale the moment the server post-processes it.
    */
   save: async (profile: Profile, password?: string): Promise<Profile> => {
-    const response = await fetchTypedJson<{ saved: boolean; profile: Profile }>(
-      'PUT',
-      `/api/v1/profiles/${encodeURIComponent(profile.name)}`,
-      undefined,
-      { profile, password }
-    );
-    return response.profile;
-  },
-  delete: async (name: string) => {
-    await fetchTypedJson<{ deleted: boolean }>(
-      'DELETE',
-      `/api/v1/profiles/${encodeURIComponent(name)}`
-    );
-  },
-  isEncrypted: async (name: string) => {
-    const { encrypted } = await fetchTypedJson<{ encrypted: boolean }>(
-      'GET',
-      `/api/v1/profiles/${encodeURIComponent(name)}/encrypted`
-    );
-    return encrypted;
-  },
-  validateInput: async (profileId: string, input: RtmpInput) => {
-    await fetchTypedJson<Record<string, never>>(
-      'POST',
-      '/api/v1/profiles/validate-input',
-      undefined,
-      { profileId, input }
-    );
-  },
-  setProfileOrder: async (orderedNames: string[]) => {
-    await fetchTypedJson<Record<string, never>>('PATCH', '/api/v1/profiles/order', undefined, {
-      orderedNames,
+    const { data } = await v1ProfileSave({
+      path: { name: profile.name },
+      body: { profile, password },
+      throwOnError: true,
     });
+    return data.profile as Profile;
   },
-  getOrderIndexMap: () =>
-    fetchTypedJson<{ indices: Record<string, number> }>('GET', '/api/v1/profiles/order').then(
-      (r) => r.indices
-    ),
-  ensureOrderIndexes: () =>
-    fetchTypedJson<{ indices: Record<string, number> }>(
-      'POST',
-      '/api/v1/profiles/order/ensure'
-    ).then((r) => r.indices),
+  delete: async (name: string): Promise<void> => {
+    await v1ProfileDelete({ path: { name }, throwOnError: true });
+  },
+  isEncrypted: async (name: string): Promise<boolean> => {
+    const { data } = await v1ProfileIsEncrypted({ path: { name }, throwOnError: true });
+    return data.encrypted;
+  },
+  validateInput: async (profileId: string, input: RtmpInput): Promise<void> => {
+    await v1ProfileValidateInputProxy({ body: { profileId, input }, throwOnError: true });
+  },
+  setProfileOrder: async (orderedNames: string[]): Promise<void> => {
+    await v1ProfileOrderSetProxy({ body: { orderedNames }, throwOnError: true });
+  },
+  getOrderIndexMap: async (): Promise<Record<string, number>> => {
+    const { data } = await v1ProfileOrderGetProxy({ throwOnError: true });
+    return data.indices;
+  },
+  ensureOrderIndexes: async (): Promise<Record<string, number>> => {
+    const { data } = await v1ProfileOrderEnsureProxy({ throwOnError: true });
+    return data.indices;
+  },
 };

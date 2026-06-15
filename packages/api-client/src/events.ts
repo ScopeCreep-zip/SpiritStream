@@ -1,5 +1,5 @@
 import { getBackendWsUrl } from './config';
-import { fetchTypedJson } from './api/_internal';
+import { eventsTicketIssue } from './generated';
 
 // Connection state changes are surfaced through `window` CustomEvents so
 // frontends can listen without taking a dependency on a specific state
@@ -90,12 +90,9 @@ async function buildWsUrl(): Promise<string> {
     const isCrossOrigin = wsHost !== window.location.host;
     if (isCrossOrigin) {
       try {
-        const { ticket } = await fetchTypedJson<{ ticket: string; expiresInSeconds: number }>(
-          'POST',
-          '/api/v1/events/ticket'
-        );
+        const { data } = await eventsTicketIssue({ throwOnError: true });
         const separator = wsUrl.includes('?') ? '&' : '?';
-        wsUrl = `${wsUrl}${separator}ticket=${encodeURIComponent(ticket)}`;
+        wsUrl = `${wsUrl}${separator}ticket=${encodeURIComponent(data.ticket)}`;
       } catch (error) {
         // Not authenticated yet (or backend briefly down): connect
         // without a ticket and let the upgrade's 401 drive the

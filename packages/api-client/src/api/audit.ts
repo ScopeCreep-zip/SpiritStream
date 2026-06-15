@@ -1,9 +1,12 @@
-import { fetchTypedJson } from './_internal';
+import { v1AuditLog } from '../generated';
 
 /**
  * HMAC chain verification status returned alongside every audit log
  * fetch. The audit-log UI inspects `chain.state` on each load and
  * renders the red tamper banner when it equals `"tampered"`.
+ *
+ * Hand-typed as a discriminated union — richer than the flat object the
+ * OpenAPI generator emits — so the UI can exhaustively switch on `state`.
  */
 export type AuditChainStatus =
   | { state: 'ok'; entriesVerified: number }
@@ -23,15 +26,19 @@ export const audit = {
    * Always returns a `chain` field — the audit-log UI must read it
    * on every fetch to render the tamper banner.
    */
-  log: (opts?: { skip?: number; limit?: number; kind?: string }) => {
-    const params: Record<string, string> = {};
-    if (opts?.skip !== undefined) params.skip = String(opts.skip);
-    if (opts?.limit !== undefined) params.limit = String(opts.limit);
-    if (opts?.kind !== undefined) params.kind = opts.kind;
-    return fetchTypedJson<AuditLogResponse>(
-      'GET',
-      '/api/v1/audit/log',
-      Object.keys(params).length > 0 ? params : undefined
-    );
+  log: async (opts?: {
+    skip?: number;
+    limit?: number;
+    kind?: string;
+  }): Promise<AuditLogResponse> => {
+    const query: { skip?: number; limit?: number; kind?: string } = {};
+    if (opts?.skip !== undefined) query.skip = opts.skip;
+    if (opts?.limit !== undefined) query.limit = opts.limit;
+    if (opts?.kind !== undefined) query.kind = opts.kind;
+    const { data } = await v1AuditLog({
+      query: Object.keys(query).length > 0 ? query : undefined,
+      throwOnError: true,
+    });
+    return data as unknown as AuditLogResponse;
   },
 };

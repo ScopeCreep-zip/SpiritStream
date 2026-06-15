@@ -1,12 +1,22 @@
 import type { FileBrowseResponse, FileHomeResponse } from '@spiritstream/types';
-import { fetchTypedJson } from './_internal';
+import { filesBrowse, filesHome, filesOpen } from '../generated';
 
 export const files = {
   /** Browse a directory. Empty path returns server-side default (typically home). */
-  browse: (path?: string) =>
-    fetchTypedJson<FileBrowseResponse>('GET', '/api/v1/files/browse', path ? { path } : undefined),
+  browse: async (path?: string): Promise<FileBrowseResponse> => {
+    const { data } = await filesBrowse({
+      query: path ? { path } : undefined,
+      throwOnError: true,
+    });
+    return data as FileBrowseResponse;
+  },
   /** Resolve the home directory for the current user. */
-  home: () => fetchTypedJson<FileHomeResponse>('GET', '/api/v1/files/home'),
+  home: async (): Promise<FileHomeResponse> => {
+    const { data } = await filesHome({ throwOnError: true });
+    return data as FileHomeResponse;
+  },
   /** Open a path in the OS file manager / default application. */
-  open: (path: string) => fetchTypedJson<void>('POST', '/api/v1/files/open', undefined, { path }),
+  open: async (path: string): Promise<void> => {
+    await filesOpen({ body: { path }, throwOnError: true });
+  },
 };

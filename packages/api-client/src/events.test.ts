@@ -32,9 +32,12 @@ class FakeWebSocket {
 }
 
 // The cross-origin path fetches a one-shot WS ticket before connecting;
-// stub the REST call so tests stay network-free.
-vi.mock('./api/_internal', () => ({
-  fetchTypedJson: vi.fn().mockResolvedValue({ ticket: 'test-ticket', expiresInSeconds: 30 }),
+// stub the generated SDK call so tests stay network-free. `eventsTicketIssue`
+// resolves to the @hey-api `{ data }` envelope events.ts destructures.
+vi.mock('./generated', () => ({
+  eventsTicketIssue: vi
+    .fn()
+    .mockResolvedValue({ data: { ticket: 'test-ticket', expiresInSeconds: 30 } }),
 }));
 
 type EventsModule = typeof import('./events');
@@ -86,7 +89,9 @@ describe('events.on', () => {
     expect(seen).toEqual(['connecting', 'connected']);
     expect(FakeWebSocket.instances).toHaveLength(1);
 
-    lastSocket().fire('message', { data: JSON.stringify({ event: 'chat_message', payload: { a: 1 } }) });
+    lastSocket().fire('message', {
+      data: JSON.stringify({ event: 'chat_message', payload: { a: 1 } }),
+    });
     expect(handler).toHaveBeenCalledWith({ a: 1 });
   });
 

@@ -1,5 +1,16 @@
 import type { OAuthAccountStatus } from '@spiritstream/types';
-import { fetchTypedJson } from './_internal';
+import {
+  v1OauthIsConfiguredProxy,
+  v1OauthStartFlowProxy,
+  v1OauthCompleteFlowProxy,
+  v1OauthGetAccountProxy,
+  v1OauthDisconnectProxy,
+  v1OauthForgetProxy,
+  v1OauthRefreshTokenProxy,
+  v1OauthGetConfigProxy,
+  v1OauthSetProviderCredentialsProxy,
+  v1OauthSetConfigProxy,
+} from '../generated';
 
 /** One value the user pastes/selects in a provider's dev console. */
 export interface OAuthConsoleField {
@@ -34,8 +45,7 @@ export interface OAuthProviderSetup {
 /**
  * One provider's setup state from `GET /oauth/config`. Everything the
  * in-app "Set up sign-in" form renders comes from here — the frontend
- * holds zero provider knowledge (which fields to show, what to paste,
- * where to register). Secret values never appear on this surface.
+ * holds zero provider knowledge. Secret values never appear on this surface.
  */
 export interface OAuthProviderSummary {
   provider: 'twitch' | 'youtube' | 'kick' | 'facebook' | 'trovo';
@@ -53,11 +63,10 @@ export interface OAuthProviderSummary {
 
 /**
  * `startFlow` response — the BACKEND chooses the grant per provider:
- * - `flow: 'redirect'` → loopback authorization-code; `authUrl` etc.
- *   present, `browserOpened: false` means show a copy-link affordance.
- * - `flow: 'device'`   → RFC 8628 device code (Twitch's mandated
- *   desktop sign-in); render `userCode` + `verificationUri` and wait
- *   for the `oauth_complete` event.
+ * - `flow: 'redirect'` → loopback authorization-code.
+ * - `flow: 'device'`   → RFC 8628 device code (Twitch's mandated desktop
+ *   sign-in); render `userCode` + `verificationUri` and wait for the
+ *   `oauth_complete` event.
  */
 export interface OAuthFlowStarted {
   flow: 'redirect' | 'device';
@@ -72,65 +81,71 @@ export interface OAuthFlowStarted {
 }
 
 export const oauth = {
-  isConfigured: (provider: string) =>
-    fetchTypedJson<{ configured: boolean }>(
-      'GET',
-      `/api/v1/oauth/${encodeURIComponent(provider)}/configured`
-    ).then((r) => r.configured),
-  startFlow: (provider: string) =>
-    fetchTypedJson<OAuthFlowStarted>('POST', `/api/v1/oauth/${encodeURIComponent(provider)}/flow`),
-  completeFlow: (provider: string, code: string, state: string) =>
-    fetchTypedJson<{
-      provider: string;
-      userId: string;
-      username: string;
-      displayName: string;
-    }>('POST', `/api/v1/oauth/${encodeURIComponent(provider)}/complete`, undefined, {
-      code,
-      state,
-    }),
-  getAccount: (provider: string) =>
-    fetchTypedJson<OAuthAccountStatus>(
-      'GET',
-      `/api/v1/oauth/${encodeURIComponent(provider)}/account`
-    ),
-  disconnect: async (provider: string) => {
-    await fetchTypedJson<Record<string, never>>(
-      'DELETE',
-      `/api/v1/oauth/${encodeURIComponent(provider)}/account`
-    );
+  isConfigured: async (provider: string): Promise<boolean> => {
+    const { data } = await v1OauthIsConfiguredProxy({ path: { provider }, throwOnError: true });
+    return data.configured;
   },
-  forget: async (provider: string) => {
-    await fetchTypedJson<Record<string, never>>(
-      'POST',
-      `/api/v1/oauth/${encodeURIComponent(provider)}/forget`
-    );
+  startFlow: async (provider: string): Promise<OAuthFlowStarted> => {
+    const { data } = await v1OauthStartFlowProxy({ path: { provider }, throwOnError: true });
+    return data as OAuthFlowStarted;
   },
-  refreshToken: (provider: string, refreshToken: string) =>
-    fetchTypedJson<{
-      accessToken: string;
-      refreshToken?: string;
-      expiresIn?: number;
-    }>('POST', `/api/v1/oauth/${encodeURIComponent(provider)}/refresh`, undefined, {
-      refreshToken,
-    }),
-  getConfig: () => fetchTypedJson<OAuthProviderSummary[]>('GET', '/api/v1/oauth/config'),
+  completeFlow: async (
+    provider: string,
+    code: string,
+    state: string
+  ): Promise<{ provider: string; userId: string; username: string; displayName: string }> => {
+    const { data } = await v1OauthCompleteFlowProxy({
+      path: { provider },
+      body: { code, state },
+      throwOnError: true,
+    });
+    return data;
+  },
+  getAccount: async (provider: string): Promise<OAuthAccountStatus> => {
+    const { data } = await v1OauthGetAccountProxy({ path: { provider }, throwOnError: true });
+    return data as OAuthAccountStatus;
+  },
+  disconnect: async (provider: string): Promise<void> => {
+    await v1OauthDisconnectProxy({ path: { provider }, throwOnError: true });
+  },
+  forget: async (provider: string): Promise<void> => {
+    await v1OauthForgetProxy({ path: { provider }, throwOnError: true });
+  },
+  refreshToken: async (
+    provider: string,
+    refreshToken: string
+  ): Promise<{ accessToken: string; refreshToken?: string; expiresIn?: number }> => {
+    const { data } = await v1OauthRefreshTokenProxy({
+      path: { provider },
+      body: { refreshToken },
+      throwOnError: true,
+    });
+    return {
+      accessToken: data.accessToken,
+      refreshToken: data.refreshToken ?? undefined,
+      expiresIn: data.expiresIn ?? undefined,
+    };
+  },
+  getConfig: async (): Promise<OAuthProviderSummary[]> => {
+    const { data } = await v1OauthGetConfigProxy({ throwOnError: true });
+    return data as unknown as OAuthProviderSummary[];
+  },
   /**
    * Store one provider's client credentials (the in-app setup form).
-   * Persisted server-side via the secret store — survives restarts.
-   * Empty/absent values clear the stored override. Returns the updated
-   * summaries so the caller can refresh without a second round-trip.
+   * Persisted server-side via the secret store. Empty/absent values clear
+   * the stored override. Returns the updated summaries.
    */
-  setProviderCredentials: (
+  setProviderCredentials: async (
     provider: string,
     credentials: { clientId?: string; clientSecret?: string }
-  ) =>
-    fetchTypedJson<OAuthProviderSummary[]>(
-      'PUT',
-      `/api/v1/oauth/config/${encodeURIComponent(provider)}`,
-      undefined,
-      credentials
-    ),
+  ): Promise<OAuthProviderSummary[]> => {
+    const { data } = await v1OauthSetProviderCredentialsProxy({
+      path: { provider },
+      body: credentials,
+      throwOnError: true,
+    });
+    return data as unknown as OAuthProviderSummary[];
+  },
   setConfig: async (config: {
     twitchClientId?: string;
     twitchClientSecret?: string;
@@ -142,7 +157,7 @@ export const oauth = {
     facebookClientSecret?: string;
     trovoClientId?: string;
     trovoClientSecret?: string;
-  }) => {
-    await fetchTypedJson<Record<string, never>>('PUT', '/api/v1/oauth/config', undefined, config);
+  }): Promise<void> => {
+    await v1OauthSetConfigProxy({ body: config, throwOnError: true });
   },
 };

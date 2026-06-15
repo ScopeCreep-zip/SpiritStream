@@ -1,36 +1,37 @@
-import type { ObsConfig, ObsIntegrationDirection, ObsState } from '@spiritstream/types';
-import { fetchTypedJson } from './_internal';
+import type { ObsState } from '@spiritstream/types';
+import {
+  v1ObsStateProxy,
+  v1ObsConnectProxy,
+  v1ObsDisconnectProxy,
+  v1ObsStartStreamProxy,
+  v1ObsStopStreamProxy,
+  v1ObsIsConnectedProxy,
+} from '../generated';
 
-/** `GET /obs/config` — never carries the password value, only whether one is set. */
-export type ObsConfigView = Omit<ObsConfig, 'password'> & { hasPassword: boolean };
+// OBS settings are NOT read/written through the API. The active profile is the
+// single source of truth: settings persist via the profile save endpoint, and
+// the backend syncs its runtime handler from the profile on activation/save.
+// This client only drives the runtime connection (connect/disconnect/stream).
 
 export const obs = {
-  getState: () => fetchTypedJson<ObsState>('GET', '/api/v1/obs/state'),
-  getConfig: () => fetchTypedJson<ObsConfigView>('GET', '/api/v1/obs/config'),
-  setConfig: async (config: {
-    host: string;
-    port: number;
-    password?: string;
-    useAuth: boolean;
-    direction: ObsIntegrationDirection;
-    autoConnect: boolean;
-  }) => {
-    await fetchTypedJson<Record<string, never>>('PUT', '/api/v1/obs/config', undefined, config);
+  getState: async (): Promise<ObsState> => {
+    const { data } = await v1ObsStateProxy({ throwOnError: true });
+    return data as ObsState;
   },
-  connect: async () => {
-    await fetchTypedJson<Record<string, never>>('POST', '/api/v1/obs/connection');
+  connect: async (): Promise<void> => {
+    await v1ObsConnectProxy({ throwOnError: true });
   },
-  disconnect: async () => {
-    await fetchTypedJson<Record<string, never>>('DELETE', '/api/v1/obs/connection');
+  disconnect: async (): Promise<void> => {
+    await v1ObsDisconnectProxy({ throwOnError: true });
   },
-  startStream: async () => {
-    await fetchTypedJson<Record<string, never>>('POST', '/api/v1/obs/stream');
+  startStream: async (): Promise<void> => {
+    await v1ObsStartStreamProxy({ throwOnError: true });
   },
-  stopStream: async () => {
-    await fetchTypedJson<Record<string, never>>('DELETE', '/api/v1/obs/stream');
+  stopStream: async (): Promise<void> => {
+    await v1ObsStopStreamProxy({ throwOnError: true });
   },
-  isConnected: () =>
-    fetchTypedJson<{ connected: boolean }>('GET', '/api/v1/obs/connection').then(
-      (r) => r.connected
-    ),
+  isConnected: async (): Promise<boolean> => {
+    const { data } = await v1ObsIsConnectedProxy({ throwOnError: true });
+    return data.connected;
+  },
 };

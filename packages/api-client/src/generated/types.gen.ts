@@ -101,6 +101,10 @@ export type AuditRecordedResponse = {
     recorded: boolean;
 };
 
+export type AuthLogoutResponse = {
+    [key: string]: unknown;
+};
+
 export type BackendSettingsWire = {
     host: string;
     port: number;
@@ -281,6 +285,33 @@ export type ChatPlatformStatusWire = {
  */
 export type ChatPlatformWire = 'twitch' | 'tiktok' | 'youtube' | 'trovo' | 'kick' | 'facebook';
 
+/**
+ * Request body for `POST /chat/reidentify`. Confirms a guess — it cannot
+ * reverse a hash. The salt stays in core; only a boolean comes back.
+ */
+export type ChatReidentifyRequest = {
+    /**
+     * A plaintext identity the user already suspects (e.g. a username).
+     */
+    candidate: string;
+    /**
+     * The pseudonym to test — the canonical `hash:` value carried on a
+     * pseudonymised message's `author.login` / `author.userId`.
+     */
+    pseudonym: string;
+};
+
+/**
+ * Result of a re-identification check.
+ */
+export type ChatReidentifyResponse = {
+    /**
+     * True iff `candidate` pseudonymises to `pseudonym` under this profile's
+     * salt — i.e. the guess is correct.
+     */
+    matches: boolean;
+};
+
 export type ChatSearchRequest = {
     limit?: number | null;
     query: string;
@@ -412,6 +443,23 @@ export type ClientConfigResponse = {
     toastDurationMs: number;
 };
 
+/**
+ * Issue a confirmation token. The frontend / CLI calls this immediately
+ * before showing the user a "are you sure?" prompt, then includes the
+ * returned token in the destructive request's `X-Confirm-Token` header.
+ */
+export type ConfirmTokenRequest = {
+    intent: string;
+};
+
+export type ConfirmTokenResponse = {
+    /**
+     * Seconds the token remains valid. Mirrors `CONFIRM_TOKEN_TTL_SECS`.
+     */
+    expiresInSeconds: number;
+    token: string;
+};
+
 export type ContainerSettingsWire = {
     format: string;
 };
@@ -494,6 +542,24 @@ export type EncodersWire = {
 };
 
 /**
+ * One-shot ticket for the `/api/v1/events` WebSocket upgrade.
+ *
+ * Browsers can't attach an Authorization header to a WS upgrade, and
+ * cross-origin deployments don't send the SameSite=Lax cookie on it
+ * either. The client calls this (authenticated) endpoint immediately
+ * before connecting and passes `?ticket=` on the upgrade URL; the
+ * ticket is single-use and expires in seconds, so a proxy-logged URL
+ * is dead on arrival — unlike the previous design, which put a
+ * long-lived bearer token in the query string (and which no
+ * production code could even use, since the auth middleware rejected
+ * the upgrade before the token check ran).
+ */
+export type EventTicketResponse = {
+    expiresInSeconds: number;
+    ticket: string;
+};
+
+/**
  * `{"path": "/usr/bin/ffmpeg"}` (or null) from `/system/ffmpeg/path`.
  */
 export type FFmpegPathResponse = {
@@ -532,6 +598,26 @@ export type FFmpegVersionResponse = {
     version: string;
 };
 
+export type FileBrowseResponseWire = {
+    entries: Array<FileEntryWire>;
+    parent?: string | null;
+    path: string;
+};
+
+export type FileEntryWire = {
+    name: string;
+    size?: number | null;
+    type: string;
+};
+
+export type FileHomeResponseWire = {
+    path: string;
+};
+
+export type FilesOpenResponse = {
+    [key: string]: unknown;
+};
+
 export type FragmentColorWire = {
     hex: string;
 };
@@ -566,8 +652,6 @@ export type HypeChatPayloadWire = {
     currency: string;
     tier: ElevatedTierWire;
 };
-
-export type IntegrationDirectionWire = 'obs-to-spiritstream' | 'spiritstream-to-obs' | 'bidirectional' | 'disabled';
 
 export type LogsExportRequest = {
     content: string;
@@ -785,7 +869,7 @@ export type OAuthProviderCredentialsRequest = {
  */
 export type OAuthProviderSetupWire = {
     consoleFields: Array<OAuthConsoleFieldWire>;
-    steps: Array<string>;
+    steps: Array<OAuthStepWire>;
 };
 
 /**
@@ -829,6 +913,16 @@ export type OAuthSettingsWire = {
 };
 
 /**
+ * One numbered setup instruction, with an optional direct link to the
+ * page it happens on.
+ */
+export type OAuthStepWire = {
+    fields: Array<OAuthConsoleFieldWire>;
+    text: string;
+    url?: string | null;
+};
+
+/**
  * Mirror of [`OAuthTokens`] — returned from `POST /oauth/{provider}/refresh`.
  * Token fields are camelCase on the wire (frontend reads `accessToken`,
  * `refreshToken`, `expiresIn`). The core `OAuthTokens` keeps snake_case
@@ -865,21 +959,6 @@ export type ObsAckResponse = {
 };
 
 /**
- * The OBS password never rides this response — only whether one is
- * set. Clients that need the value already have it from the profile
- * document; shipping it here (the old shape returned the DECRYPTED
- * password) widened the exposure surface for zero benefit.
- */
-export type ObsConfigResponse = {
-    autoConnect: boolean;
-    direction: IntegrationDirectionWire;
-    hasPassword: boolean;
-    host: string;
-    port: number;
-    useAuth: boolean;
-};
-
-/**
  * `{"connected": bool}` — single-flag connection probe.
  */
 export type ObsConnectedResponse = {
@@ -889,15 +968,6 @@ export type ObsConnectedResponse = {
 export type ObsConnectionStatusWire = 'disconnected' | 'connecting' | 'connected' | 'error';
 
 export type ObsIntegrationDirectionWire = 'obs-to-spiritstream' | 'spiritstream-to-obs' | 'bidirectional' | 'disabled';
-
-export type ObsSetConfigRequest = {
-    autoConnect: boolean;
-    direction: string;
-    host: string;
-    password?: string | null;
-    port: number;
-    useAuth: boolean;
-};
 
 export type ObsSettingsWire = {
     autoConnect: boolean;
@@ -917,6 +987,10 @@ export type ObsStateResponse = {
 };
 
 export type ObsStreamStatusWire = 'inactive' | 'starting' | 'active' | 'stopping' | 'unknown';
+
+export type OpenPathRequest = {
+    path: string;
+};
 
 export type OutputGroupWire = {
     audio: AudioSettingsWire;
@@ -950,6 +1024,15 @@ export type ProfileActivateRequest = {
      * Password for encrypted profiles. Plaintext profiles ignore this field.
      */
     password?: string | null;
+};
+
+/**
+ * Result of `POST /profiles/deactivate`. `deactivated` is the name of the
+ * profile that was active (or `null` if none was), so the UI can confirm
+ * what it signed out of.
+ */
+export type ProfileDeactivateResponse = {
+    deactivated?: string | null;
 };
 
 export type ProfileDecryptRequest = {
@@ -1136,6 +1219,10 @@ export type ReadyResponse = {
 export type ReplyContextWire = {
     parentMessageId: string;
     threadRootId: string;
+};
+
+export type RevokeAllSessionsResponse = {
+    revoked: number;
 };
 
 export type RoomStatePayloadWire = {
@@ -1505,6 +1592,22 @@ export type V1AuditLogResponses = {
 
 export type V1AuditLogResponse = V1AuditLogResponses[keyof V1AuditLogResponses];
 
+export type AuthLogoutData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/auth/logout';
+};
+
+export type AuthLogoutResponses = {
+    /**
+     * Session ended; cookie cleared.
+     */
+    200: AuthLogoutResponse;
+};
+
+export type AuthLogoutResponse2 = AuthLogoutResponses[keyof AuthLogoutResponses];
+
 export type V1ChatIsConnectedProxyData = {
     body?: never;
     path?: never;
@@ -1759,6 +1862,22 @@ export type V1ChatRecentMessagesProxyResponses = {
 
 export type V1ChatRecentMessagesProxyResponse = V1ChatRecentMessagesProxyResponses[keyof V1ChatRecentMessagesProxyResponses];
 
+export type V1ChatReidentifyProxyData = {
+    body: ChatReidentifyRequest;
+    path?: never;
+    query?: never;
+    url: '/chat/reidentify';
+};
+
+export type V1ChatReidentifyProxyResponses = {
+    /**
+     * Whether the guess matches the pseudonym.
+     */
+    200: ChatReidentifyResponse;
+};
+
+export type V1ChatReidentifyProxyResponse = V1ChatReidentifyProxyResponses[keyof V1ChatReidentifyProxyResponses];
+
 export type V1DiscordResetCooldownProxyData = {
     body?: never;
     path?: never;
@@ -1797,6 +1916,94 @@ export type V1DiscordTestWebhookProxyResponses = {
 };
 
 export type V1DiscordTestWebhookProxyResponse = V1DiscordTestWebhookProxyResponses[keyof V1DiscordTestWebhookProxyResponses];
+
+export type EventsTicketIssueData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/events/ticket';
+};
+
+export type EventsTicketIssueResponses = {
+    /**
+     * One-shot WebSocket upgrade ticket + its TTL.
+     */
+    200: EventTicketResponse;
+};
+
+export type EventsTicketIssueResponse = EventsTicketIssueResponses[keyof EventsTicketIssueResponses];
+
+export type FilesBrowseData = {
+    body?: never;
+    path?: never;
+    query?: {
+        path?: string | null;
+    };
+    url: '/files/browse';
+};
+
+export type FilesBrowseErrors = {
+    /**
+     * Path outside the allowed roots.
+     */
+    400: ApiErrorBody;
+};
+
+export type FilesBrowseError = FilesBrowseErrors[keyof FilesBrowseErrors];
+
+export type FilesBrowseResponses = {
+    /**
+     * Directory listing (entries + parent).
+     */
+    200: FileBrowseResponseWire;
+};
+
+export type FilesBrowseResponse = FilesBrowseResponses[keyof FilesBrowseResponses];
+
+export type FilesHomeData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/files/home';
+};
+
+export type FilesHomeResponses = {
+    /**
+     * User home directory path.
+     */
+    200: FileHomeResponseWire;
+};
+
+export type FilesHomeResponse = FilesHomeResponses[keyof FilesHomeResponses];
+
+export type FilesOpenData = {
+    body: OpenPathRequest;
+    path?: never;
+    query?: never;
+    url: '/files/open';
+};
+
+export type FilesOpenErrors = {
+    /**
+     * Path outside the allowed roots.
+     */
+    400: ApiErrorBody;
+    /**
+     * Path does not exist.
+     */
+    404: ApiErrorBody;
+};
+
+export type FilesOpenError = FilesOpenErrors[keyof FilesOpenErrors];
+
+export type FilesOpenResponses = {
+    /**
+     * Path handed to the OS opener.
+     */
+    200: FilesOpenResponse;
+};
+
+export type FilesOpenResponse2 = FilesOpenResponses[keyof FilesOpenResponses];
 
 export type V1HealthData = {
     body?: never;
@@ -2080,44 +2287,6 @@ export type V1OauthRefreshTokenProxyResponses = {
 
 export type V1OauthRefreshTokenProxyResponse = V1OauthRefreshTokenProxyResponses[keyof V1OauthRefreshTokenProxyResponses];
 
-export type V1ObsGetConfigProxyData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/obs/config';
-};
-
-export type V1ObsGetConfigProxyResponses = {
-    200: ObsConfigResponse;
-};
-
-export type V1ObsGetConfigProxyResponse = V1ObsGetConfigProxyResponses[keyof V1ObsGetConfigProxyResponses];
-
-export type V1ObsSetConfigProxyData = {
-    body: ObsSetConfigRequest;
-    path?: never;
-    query?: never;
-    url: '/obs/config';
-};
-
-export type V1ObsSetConfigProxyErrors = {
-    /**
-     * Internal error encrypting password.
-     */
-    500: ApiErrorBody;
-};
-
-export type V1ObsSetConfigProxyError = V1ObsSetConfigProxyErrors[keyof V1ObsSetConfigProxyErrors];
-
-export type V1ObsSetConfigProxyResponses = {
-    /**
-     * OBS config persisted.
-     */
-    200: ObsAckResponse;
-};
-
-export type V1ObsSetConfigProxyResponse = V1ObsSetConfigProxyResponses[keyof V1ObsSetConfigProxyResponses];
-
 export type V1ObsDisconnectProxyData = {
     body?: never;
     path?: never;
@@ -2240,6 +2409,31 @@ export type V1ProfilesListResponses = {
 };
 
 export type V1ProfilesListResponse = V1ProfilesListResponses[keyof V1ProfilesListResponses];
+
+export type V1ProfileDeactivateData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/profiles/deactivate';
+};
+
+export type V1ProfileDeactivateErrors = {
+    /**
+     * Internal error during chat/OBS teardown.
+     */
+    500: ApiErrorBody;
+};
+
+export type V1ProfileDeactivateError = V1ProfileDeactivateErrors[keyof V1ProfileDeactivateErrors];
+
+export type V1ProfileDeactivateResponses = {
+    /**
+     * Signed out; body names the prior active profile (or null).
+     */
+    200: ProfileDeactivateResponse;
+};
+
+export type V1ProfileDeactivateResponse = V1ProfileDeactivateResponses[keyof V1ProfileDeactivateResponses];
 
 export type V1ProfileLockedListData = {
     body?: never;
@@ -2428,7 +2622,12 @@ export type V1ProfileShowData = {
          */
         name: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Decryption password — required for encrypted profiles, ignored for plaintext.
+         */
+        password?: string | null;
+    };
     url: '/profiles/{name}';
 };
 
@@ -2698,6 +2897,31 @@ export type V1SafetyPanicResponses = {
 
 export type V1SafetyPanicResponse = V1SafetyPanicResponses[keyof V1SafetyPanicResponses];
 
+export type ConfirmTokenIssueData = {
+    body: ConfirmTokenRequest;
+    path?: never;
+    query?: never;
+    url: '/security/confirm-token';
+};
+
+export type ConfirmTokenIssueErrors = {
+    /**
+     * Unknown or malformed intent.
+     */
+    400: ApiErrorBody;
+};
+
+export type ConfirmTokenIssueError = ConfirmTokenIssueErrors[keyof ConfirmTokenIssueErrors];
+
+export type ConfirmTokenIssueResponses = {
+    /**
+     * One-shot intent-scoped token + its TTL.
+     */
+    200: ConfirmTokenResponse;
+};
+
+export type ConfirmTokenIssueResponse = ConfirmTokenIssueResponses[keyof ConfirmTokenIssueResponses];
+
 export type V1SecurityRotateMachineKeyProxyData = {
     body: RotateMachineKeyRequest;
     path?: never;
@@ -2726,6 +2950,31 @@ export type V1SecurityRotateMachineKeyProxyResponses = {
 };
 
 export type V1SecurityRotateMachineKeyProxyResponse = V1SecurityRotateMachineKeyProxyResponses[keyof V1SecurityRotateMachineKeyProxyResponses];
+
+export type SecurityRevokeAllSessionsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/security/sessions/revoke-all';
+};
+
+export type SecurityRevokeAllSessionsErrors = {
+    /**
+     * Missing or invalid X-Confirm-Token.
+     */
+    403: ApiErrorBody;
+};
+
+export type SecurityRevokeAllSessionsError = SecurityRevokeAllSessionsErrors[keyof SecurityRevokeAllSessionsErrors];
+
+export type SecurityRevokeAllSessionsResponses = {
+    /**
+     * All sessions revoked; body carries the count.
+     */
+    200: RevokeAllSessionsResponse;
+};
+
+export type SecurityRevokeAllSessionsResponse = SecurityRevokeAllSessionsResponses[keyof SecurityRevokeAllSessionsResponses];
 
 export type V1SettingsGetData = {
     body?: never;

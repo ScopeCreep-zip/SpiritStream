@@ -1,42 +1,46 @@
 import type { RotationReport, Settings as AppSettings } from '@spiritstream/types';
-import { fetchTypedJson, withConfirmToken } from './_internal';
+import {
+  v1SettingsGet,
+  v1SettingsSave,
+  v1SettingsProfilesPath,
+  v1SettingsExport,
+  v1SettingsClearData,
+  v1SecurityRotateMachineKeyProxy,
+} from '../generated';
+import { confirmTokenHeader } from './_confirm';
 
 export const settings = {
-  get: () => fetchTypedJson<AppSettings>('GET', '/api/v1/settings'),
-  save: async (settings: AppSettings) => {
-    await fetchTypedJson<{ saved: boolean }>('PUT', '/api/v1/settings', undefined, { settings });
+  get: async (): Promise<AppSettings> => {
+    const { data } = await v1SettingsGet({ throwOnError: true });
+    return data as AppSettings;
   },
-  getProfilesPath: async () => {
-    const { path } = await fetchTypedJson<{ path: string }>(
-      'GET',
-      '/api/v1/settings/profiles-path'
-    );
-    return path;
+  save: async (settings: AppSettings): Promise<void> => {
+    await v1SettingsSave({ body: { settings }, throwOnError: true });
   },
-  exportData: async (exportPath: string) => {
-    await fetchTypedJson<{ exported: boolean }>('POST', '/api/v1/settings/export', undefined, {
-      exportPath,
+  getProfilesPath: async (): Promise<string> => {
+    const { data } = await v1SettingsProfilesPath({ throwOnError: true });
+    return data.path;
+  },
+  exportData: async (exportPath: string): Promise<void> => {
+    await v1SettingsExport({ body: { exportPath }, throwOnError: true });
+  },
+  clearData: async (): Promise<void> => {
+    // Destructive op gated by a one-shot confirm token. The backend
+    // (`DELETE /api/v1/settings/data`) calls `require_confirm_token(..,
+    // "clear_data")` and rejects requests missing `X-Confirm-Token`.
+    await v1SettingsClearData({
+      headers: await confirmTokenHeader('clear_data'),
+      throwOnError: true,
     });
   },
-  clearData: async () => {
-    // Destructive op gated by one-shot confirm token.
-    // The backend (`DELETE /api/v1/settings/data` at
-    // crates/transport-http/src/v1.rs::v1_settings_clear_data) calls
-    // `require_confirm_token(state, headers, "clear_data")` which
-    // rejects requests missing `X-Confirm-Token`. We acquire the
-    // token + attach in one helper call.
-    await withConfirmToken<{ cleared: boolean }>('clear_data', (headers) =>
-      fetchTypedJson('DELETE', '/api/v1/settings/data', undefined, undefined, headers)
-    );
+  rotateMachineKey: async (
+    unlockedPasswords: Record<string, string> = {}
+  ): Promise<RotationReport> => {
+    const { data } = await v1SecurityRotateMachineKeyProxy({
+      headers: await confirmTokenHeader('rotate_machine_key'),
+      body: { unlockedPasswords },
+      throwOnError: true,
+    });
+    return data as RotationReport;
   },
-  rotateMachineKey: (unlockedPasswords: Record<string, string> = {}) =>
-    withConfirmToken<RotationReport>('rotate_machine_key', (headers) =>
-      fetchTypedJson(
-        'POST',
-        '/api/v1/security/machine-key/rotate',
-        undefined,
-        { unlockedPasswords },
-        headers
-      )
-    ),
 };
