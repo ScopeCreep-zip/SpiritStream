@@ -87,21 +87,6 @@ export function ChatComposer({ statuses }: ChatComposerProps): React.ReactElemen
 
   const canSend = draftMessage.trim().length > 0 && sendTargets.length > 0;
 
-  const sendTargetLabel = useMemo(() => {
-    if (sendTargets.length === 0) return '';
-    return sendTargets
-      .map((target) => {
-        if (target.platform === 'twitch') return t('chat.platforms.twitch');
-        if (target.platform === 'youtube') return t('chat.platforms.youtube');
-        if (target.platform === 'trovo') return t('chat.platforms.trovo');
-        if (target.platform === 'kick') return t('chat.platforms.kick');
-        if (target.platform === 'facebook') return t('chat.platforms.facebook');
-        if (target.platform === 'tiktok') return t('chat.platforms.tiktok');
-        return target.platform;
-      })
-      .join(', ');
-  }, [sendTargets, t]);
-
   // Single source of truth for "what state is each chat platform in?" —
   // drives both the bottom badge row and the disabled-send hint below.
   // Mirrors the configured/send-enabled logic used by ChatPanel's auto-
@@ -330,14 +315,12 @@ export function ChatComposer({ statuses }: ChatComposerProps): React.ReactElemen
         </Button>
       </div>
 
-      <p className="text-xs text-text-tertiary">
-        {sendTargets.length === 0
-          ? sendDisabledReason
-          : t('chat.sendTargets', {
-              defaultValue: 'Sending to: {{targets}}',
-              targets: sendTargetLabel,
-            })}
-      </p>
+      {/* When nothing is sendable, surface the actionable reason here. When
+          there ARE targets, the platform chips below already show which
+          platforms will receive the message — no redundant "Sending to:". */}
+      {sendTargets.length === 0 && (
+        <p className="text-xs text-text-tertiary">{sendDisabledReason}</p>
+      )}
 
       {platformStates.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 text-xs">
