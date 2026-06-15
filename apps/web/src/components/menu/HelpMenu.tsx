@@ -2,13 +2,13 @@ import React from 'react';
 import * as Menubar from '@radix-ui/react-menubar';
 import { useTranslation } from 'react-i18next';
 import { TRIGGER_CLASS, CONTENT_CLASS, ITEM_CLASS, SHORTCUT_CLASS } from './menuStyles';
-import type { ModalName } from '@/hooks/useModalRegistry';
+import type { SettingsSection } from '@/hooks/useModalRegistry';
 
 interface HelpMenuProps {
-  onOpenModal: (name: ModalName) => void;
+  onOpenSettings: (section: SettingsSection) => void;
 }
 
-export function HelpMenu({ onOpenModal }: HelpMenuProps): React.ReactElement {
+export function HelpMenu({ onOpenSettings }: HelpMenuProps): React.ReactElement {
   const { t } = useTranslation();
 
   return (
@@ -30,7 +30,7 @@ export function HelpMenu({ onOpenModal }: HelpMenuProps): React.ReactElement {
           >
             {t('menu.help.docs', { defaultValue: 'Documentation' })}
           </Menubar.Item>
-          <Menubar.Item className={ITEM_CLASS} onSelect={() => onOpenModal('shortcuts')}>
+          <Menubar.Item className={ITEM_CLASS} onSelect={() => onOpenSettings('shortcuts')}>
             <span>{t('menu.help.shortcuts', { defaultValue: 'Keyboard shortcuts' })}</span>
             <span className={SHORTCUT_CLASS}>⌘/</span>
           </Menubar.Item>

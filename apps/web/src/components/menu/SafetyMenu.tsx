@@ -10,13 +10,13 @@ import {
   SHORTCUT_CLASS,
   SEPARATOR_CLASS,
 } from './menuStyles';
-import type { ModalName } from '@/hooks/useModalRegistry';
+import type { SettingsSection } from '@/hooks/useModalRegistry';
 
 interface SafetyMenuProps {
-  onOpenModal: (name: ModalName) => void;
+  onOpenSettings: (section: SettingsSection) => void;
 }
 
-export function SafetyMenu({ onOpenModal }: SafetyMenuProps): React.ReactElement {
+export function SafetyMenu({ onOpenSettings }: SafetyMenuProps): React.ReactElement {
   const { t } = useTranslation();
 
   const handlePanic = useCallback(async (): Promise<void> => {
@@ -51,7 +51,7 @@ export function SafetyMenu({ onOpenModal }: SafetyMenuProps): React.ReactElement
             <span className={SHORTCUT_CLASS}>⌘P</span>
           </Menubar.Item>
           <Menubar.Separator className={SEPARATOR_CLASS} />
-          <Menubar.Item className={ITEM_CLASS} onSelect={() => onOpenModal('safetyWizard')}>
+          <Menubar.Item className={ITEM_CLASS} onSelect={() => onOpenSettings('safetyWizard')}>
             {t('menu.safety.wizard', { defaultValue: 'Safety wizard…' })}
           </Menubar.Item>
         </Menubar.Content>

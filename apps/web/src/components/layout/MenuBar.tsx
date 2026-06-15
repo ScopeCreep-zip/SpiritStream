@@ -8,10 +8,12 @@ import { ToolsMenu } from '@/components/menu/ToolsMenu';
 import { SafetyMenu } from '@/components/menu/SafetyMenu';
 import { ViewMenu } from '@/components/menu/ViewMenu';
 import { HelpMenu } from '@/components/menu/HelpMenu';
-import type { ModalName } from '@/hooks/useModalRegistry';
+import type { ModalName, SettingsSection } from '@/hooks/useModalRegistry';
 
 interface MenuBarProps {
   onOpenModal: (name: ModalName) => void;
+  /** Open the unified settings window at a section (Tools/Safety/Help/Profile destinations). */
+  onOpenSettings: (section: SettingsSection) => void;
   /** Toggle the chat column collapsed/expanded state. */
   onToggleChat: () => void;
   chatCollapsed: boolean;
@@ -30,6 +32,7 @@ interface MenuBarProps {
  */
 export function MenuBar({
   onOpenModal,
+  onOpenSettings,
   onToggleChat,
   chatCollapsed,
   onEditEncoder,
@@ -44,12 +47,12 @@ export function MenuBar({
     >
       <span className="ps-1 pe-3 text-sm font-semibold text-text-primary">SpiritStream</span>
       <FileMenu onOpenModal={onOpenModal} />
-      <ProfileMenu onOpenModal={onOpenModal} />
+      <ProfileMenu onOpenSettings={onOpenSettings} />
       <StreamMenu onEditEncoder={onEditEncoder} canEditEncoder={canEditEncoder} />
-      <ToolsMenu onOpenModal={onOpenModal} />
-      <SafetyMenu onOpenModal={onOpenModal} />
+      <ToolsMenu onOpenSettings={onOpenSettings} />
+      <SafetyMenu onOpenSettings={onOpenSettings} />
       <ViewMenu onToggleChat={onToggleChat} chatCollapsed={chatCollapsed} />
-      <HelpMenu onOpenModal={onOpenModal} />
+      <HelpMenu onOpenSettings={onOpenSettings} />
     </Menubar.Root>
   );
 }

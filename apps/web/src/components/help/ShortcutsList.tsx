@@ -1,6 +1,5 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Modal } from '@/components/ui/Modal';
 import { useStoredHotkey } from '@/hooks/useStoredHotkey';
 import { DEFAULT_PANIC_BINDING } from '@/hooks/usePanicHotkey';
 import { formatBindingTokens, isMacPlatform } from '@/lib/hotkey';
@@ -12,20 +11,18 @@ interface Shortcut {
   readonly fallback: string;
 }
 
-interface ShortcutsOverlayProps {
-  open: boolean;
-  onClose: () => void;
-}
-
-export function ShortcutsOverlay({ open, onClose }: ShortcutsOverlayProps): React.ReactElement {
+/**
+ * Keyboard-shortcut reference body — the `<dl>` of bindings. Rendered as a
+ * section of the unified settings window (no Modal of its own). The panic key
+ * is user-configurable and shown live; the rest are still hard-coded until
+ * they gain rebinding via `useStoredHotkey`.
+ */
+export function ShortcutsList(): React.ReactElement {
   const { t } = useTranslation();
   const { binding: panicBinding } = useStoredHotkey('panic', DEFAULT_PANIC_BINDING);
   const isMac = isMacPlatform();
   const cmd = isMac ? '⌘' : 'Ctrl';
 
-  // Panic key is user-configurable; render the live binding. Everything else
-  // is still hard-coded — those will gain rebinding when they land in
-  // `useStoredHotkey`.
   const shortcuts: ReadonlyArray<Shortcut> = [
     {
       id: 'panic',
@@ -61,13 +58,10 @@ export function ShortcutsOverlay({ open, onClose }: ShortcutsOverlayProps): Reac
   ];
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title={t('shortcuts.title', { defaultValue: 'Keyboard shortcuts' })}
-      maxWidth="520px"
-      closeOnBackdropClick
-    >
+    <section aria-labelledby="settings-shortcuts-heading" className="space-y-4">
+      <h2 id="settings-shortcuts-heading" className="text-lg font-semibold text-text-primary">
+        {t('shortcuts.title', { defaultValue: 'Keyboard shortcuts' })}
+      </h2>
       <dl className="divide-y divide-border-muted">
         {shortcuts.map((s) => (
           <div key={s.id} className="flex items-center justify-between py-3 first:pt-0 last:pb-0">
@@ -85,6 +79,6 @@ export function ShortcutsOverlay({ open, onClose }: ShortcutsOverlayProps): Reac
           </div>
         ))}
       </dl>
-    </Modal>
+    </section>
   );
 }

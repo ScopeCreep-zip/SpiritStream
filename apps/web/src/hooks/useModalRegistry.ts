@@ -1,46 +1,47 @@
 import { useCallback, useState } from 'react';
 
 /**
- * The set of modals reachable from the single-panel shell. Every member
- * must have a live caller in the same change — no speculative additions.
+ * The set of transient/object-editing modals reachable from the single-panel
+ * shell. Every member must have a live caller in the same change — no
+ * speculative additions. Settings/inspection DESTINATIONS (OBS, Chat, Logs, …)
+ * are NOT here — they live in the unified settings window as `SettingsSection`.
  */
 export type ModalName =
   | 'profileCreate'
-  | 'profileEdit'
   | 'openProfile'
   | 'targetCreate'
   | 'targetEdit'
   | 'outputGroupCreate'
   | 'outputGroupEdit'
-  | 'appDrawerStream'
-  | 'settings'
+  | 'appDrawerStream';
+
+/**
+ * Sections of the unified settings window (one window, left tab-rail). Order
+ * here is the flat rail order. Opening any of these routes into the single
+ * window at that section; switching sections never closes the window.
+ */
+export type SettingsSection =
+  | 'profileEdit'
+  | 'safetyWizard'
   | 'obs'
-  | 'discord'
   | 'chat'
+  | 'discord'
+  | 'encoder'
+  | 'settings'
   | 'logs'
   | 'audit'
-  | 'shortcuts'
-  | 'safetyWizard';
+  | 'shortcuts';
 
 export type ModalState = Readonly<Record<ModalName, boolean>>;
 
 const MODAL_NAMES: readonly ModalName[] = [
   'profileCreate',
-  'profileEdit',
   'openProfile',
   'targetCreate',
   'targetEdit',
   'outputGroupCreate',
   'outputGroupEdit',
   'appDrawerStream',
-  'settings',
-  'obs',
-  'discord',
-  'chat',
-  'logs',
-  'audit',
-  'shortcuts',
-  'safetyWizard',
 ];
 
 const INITIAL_STATE: ModalState = Object.freeze(
@@ -58,10 +59,16 @@ export interface ModalRegistry {
   open: (name: ModalName) => void;
   close: (name: ModalName) => void;
   closeAll: () => void;
+  /** Active settings-window section, or null when the window is closed. */
+  settingsSection: SettingsSection | null;
+  /** Open the settings window at `section` (deep-link), or switch to it. */
+  openSettings: (section: SettingsSection) => void;
+  closeSettings: () => void;
 }
 
 export function useModalRegistry(): ModalRegistry {
   const [state, setState] = useState<ModalState>(INITIAL_STATE);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
 
   const open = useCallback((name: ModalName) => {
     setState((prev) => ({ ...prev, [name]: true }));
@@ -73,7 +80,14 @@ export function useModalRegistry(): ModalRegistry {
 
   const closeAll = useCallback(() => {
     setState(INITIAL_STATE);
+    setSettingsSection(null);
   }, []);
 
-  return { state, open, close, closeAll };
+  const openSettings = useCallback((section: SettingsSection) => {
+    setSettingsSection(section);
+  }, []);
+
+  const closeSettings = useCallback(() => setSettingsSection(null), []);
+
+  return { state, open, close, closeAll, settingsSection, openSettings, closeSettings };
 }

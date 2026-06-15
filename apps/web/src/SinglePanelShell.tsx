@@ -27,7 +27,6 @@ import { usePanicHotkey } from '@/hooks/usePanicHotkey';
 import { MenuBar } from '@/components/layout/MenuBar';
 import { StatusStrip } from '@/components/layout/StatusStrip';
 import { Canvas } from '@/components/layout/Canvas';
-import { ShortcutsOverlay } from '@/components/help/ShortcutsOverlay';
 import { ProfileModal } from '@/components/modals/ProfileModal';
 import { TargetModal } from '@/components/modals/TargetModal';
 import { OutputGroupModal } from '@/components/modals/OutputGroupModal';
@@ -39,17 +38,12 @@ import { InputColumn } from '@/components/input/InputColumn';
 import { PipelineColumn } from '@/components/pipeline/PipelineColumn';
 import { AppDrawer } from '@/components/drawer/AppDrawer';
 import { Chat } from '@/views/Chat';
-import { SafetyWizard, type SafetyWizardResult } from '@/views/SafetyWizard';
-import { LogsViewer } from '@/components/logs/LogsViewer';
-import { AuditLogViewer } from '@/components/audit/AuditLogViewer';
-import { Settings } from '@/views/Settings';
-import { ObsPanel } from '@/components/integrations/ObsPanel';
-import { ChatPanel } from '@/components/integrations/ChatPanel';
-import { DiscordPanel } from '@/components/integrations/DiscordPanel';
+import { SettingsWindow } from '@/components/settings/SettingsWindow';
+import type { SafetyWizardResult } from '@/views/SafetyWizard';
 import { ChevronUp, ChevronDown, Copy } from 'lucide-react';
 import { toast } from '@/hooks/useToast';
 import { logger } from '@/lib/logger';
-import type { Platform, OutputGroup, StreamTarget } from '@spiritstream/types';
+import type { ChatPlatform, Platform, OutputGroup, StreamTarget } from '@spiritstream/types';
 
 export interface SinglePanelShellProps {
   /** Auth gate state owned by AppContent — surfaced here so the LoginModal renders alongside the shell. */
@@ -77,14 +71,15 @@ export function SinglePanelShell({
     updateProfile,
   } = useProfileStore();
 
-  const { state: modals, open, close } = useModalRegistry();
+  const { state: modals, open, close, settingsSection, openSettings, closeSettings } =
+    useModalRegistry();
 
   /**
    * Persist the wizard's choices onto the active profile. The wizard is
    * pure presentation; the blocklist normalization (trim/dedupe) and
-   * the follower-only application both happen backend-side. The modal
-   * only closes on a successful save — a vulnerable user must never
-   * believe their blocklist is armed when the save failed.
+   * the follower-only application both happen backend-side. On failure we
+   * surface an error toast and keep the choices on screen — a vulnerable
+   * user must never believe their blocklist is armed when the save failed.
    */
   const handleSafetyWizardComplete = useCallback(
     async (result: SafetyWizardResult): Promise<void> => {
@@ -114,7 +109,9 @@ export function SinglePanelShell({
             defaultValue: 'Safety settings saved to your profile.',
           })
         );
-        close('safetyWizard');
+        // Stay in the settings window — finishing the wizard saves in place
+        // (the success toast is the confirmation); it must NOT close the
+        // whole window the way the old standalone first-run modal did.
       } catch (error) {
         logger.error('[SinglePanelShell] safety wizard save failed:', error);
         toast.error(
@@ -124,7 +121,7 @@ export function SinglePanelShell({
         );
       }
     },
-    [updateProfile, close, t]
+    [updateProfile, t]
   );
   const [chatCollapsed, setChatCollapsed] = useState(false);
   /**
@@ -149,6 +146,16 @@ export function SinglePanelShell({
    */
   const [drawerGroupId, setDrawerGroupId] = useState<string | null>(null);
   const [pendingService, setPendingService] = useState<Platform | null>(null);
+
+  /**
+   * When a target row's chat icon is clicked, the unified settings window opens
+   * to the Chat section deep-linked to that platform (ChatPanel scrolls to its
+   * card). Cleared on window close so a later plain "Tools → Chat" doesn't
+   * re-scroll to a stale platform.
+   */
+  const [chatInitialPlatform, setChatInitialPlatform] = useState<ChatPlatform | undefined>(
+    undefined
+  );
 
   useDocumentTitle();
   usePanicHotkey();
@@ -196,10 +203,32 @@ export function SinglePanelShell({
     [open]
   );
 
-  /** Stream menu → Encoder Settings on the active group. */
-  const handleEditActiveEncoder = useCallback(() => {
-    if (activeGroup) handleEditGroup(activeGroup);
-  }, [activeGroup, handleEditGroup]);
+  /**
+   * "Encoder settings" on the ACTIVE group → opens the unified settings
+   * window's Encoder section (Stream menu + Input encoder card). Only the
+   * passthrough group has no encoder settings, so it's a no-op there. Editing
+   * a SPECIFIC group from its pipeline row stays the focused OutputGroupModal
+   * (`handleEditGroup`).
+   */
+  const openEncoderSettings = useCallback(() => {
+    if (activeGroup && !activeGroup.isDefault) openSettings('encoder');
+  }, [activeGroup, openSettings]);
+
+  /** Row chat icon → open the settings window's Chat section, scrolled to the
+   *  target's platform. */
+  const handleOpenChatSettings = useCallback(
+    (platform: ChatPlatform) => {
+      setChatInitialPlatform(platform);
+      openSettings('chat');
+    },
+    [openSettings]
+  );
+
+  /** Close the settings window and drop any chat deep-link. */
+  const handleCloseSettings = useCallback(() => {
+    closeSettings();
+    setChatInitialPlatform(undefined);
+  }, [closeSettings]);
 
   return (
     <div className="flex flex-col h-screen bg-bg-base text-text-primary">
@@ -212,9 +241,10 @@ export function SinglePanelShell({
 
       <MenuBar
         onOpenModal={open}
+        onOpenSettings={openSettings}
         onToggleChat={toggleChat}
         chatCollapsed={chatCollapsed}
-        onEditEncoder={handleEditActiveEncoder}
+        onEditEncoder={openEncoderSettings}
         canEditEncoder={!!activeGroup && !activeGroup.isDefault}
       />
 
@@ -227,9 +257,9 @@ export function SinglePanelShell({
           <InputColumn
             profile={current}
             activeGroup={activeGroup}
-            onConfigureSource={() => open('profileEdit')}
-            onEditEncoder={handleEditGroup}
-            onConfigureObs={() => open('obs')}
+            onConfigureSource={() => openSettings('profileEdit')}
+            onEditEncoder={openEncoderSettings}
+            onConfigureObs={() => openSettings('obs')}
           />
         }
         pipeline={
@@ -240,23 +270,14 @@ export function SinglePanelShell({
             onAddTargetForGroup={handleAddTargetForGroup}
             onEditTarget={handleEditTarget}
             onEditGroup={handleEditGroup}
+            onOpenChatSettings={handleOpenChatSettings}
           />
         }
-        chat={<Chat onOpenIntegrations={() => open('chat')} />}
+        chat={<Chat onOpenIntegrations={() => openSettings('chat')} />}
       />
 
       {/* ─── Profile modals ─── */}
-      <ProfileModal
-        open={modals.profileCreate}
-        onClose={() => close('profileCreate')}
-        mode="create"
-      />
-      <ProfileModal
-        open={modals.profileEdit}
-        onClose={() => close('profileEdit')}
-        mode="edit"
-        profile={current ?? undefined}
-      />
+      <ProfileModal open={modals.profileCreate} onClose={() => close('profileCreate')} />
       {modals.openProfile && <OpenProfileModal open onClose={() => close('openProfile')} />}
 
       {/* ─── Target modals (create from AppDrawer / edit from row) ─── */}
@@ -306,71 +327,17 @@ export function SinglePanelShell({
         onSelect={handleDrawerSelect}
       />
 
-      {/* ─── Tools menu ─── */}
-      <ViewModal
-        open={modals.obs}
-        onClose={() => close('obs')}
-        title={t('menu.tools.obs', { defaultValue: 'OBS connection' })}
-        maxWidth="720px"
-      >
-        <ObsPanel />
-      </ViewModal>
-      <ViewModal
-        open={modals.discord}
-        onClose={() => close('discord')}
-        title={t('menu.tools.discord', { defaultValue: 'Discord notifications' })}
-        maxWidth="720px"
-      >
-        <DiscordPanel />
-      </ViewModal>
-      <ViewModal
-        open={modals.chat}
-        onClose={() => close('chat')}
-        title={t('menu.tools.chat', { defaultValue: 'Chat platforms' })}
-        maxWidth="720px"
-      >
-        <ChatPanel />
-      </ViewModal>
-      <ViewModal
-        open={modals.settings}
-        onClose={() => close('settings')}
-        title={t('menu.tools.settings', { defaultValue: 'Settings' })}
-        maxWidth="960px"
-      >
-        <Settings />
-      </ViewModal>
-      <ViewModal
-        open={modals.audit}
-        onClose={() => close('audit')}
-        title={t('menu.tools.audit', { defaultValue: 'Audit log' })}
-        maxWidth="900px"
-      >
-        <AuditLogViewer />
-      </ViewModal>
-      <ViewModal
-        open={modals.logs}
-        onClose={() => close('logs')}
-        title={t('menu.tools.logs', { defaultValue: 'Logs' })}
-        maxWidth="900px"
-      >
-        <LogsViewer />
-      </ViewModal>
-
-      {/* ─── Safety / Help ─── */}
-      {modals.safetyWizard && (
-        <Modal
-          open
-          onClose={() => close('safetyWizard')}
-          title={t('safety.wizard.title', { defaultValue: 'Safety wizard' })}
-          maxWidth="640px"
-        >
-          <SafetyWizard
-            onComplete={handleSafetyWizardComplete}
-            onSkip={() => close('safetyWizard')}
-          />
-        </Modal>
-      )}
-      <ShortcutsOverlay open={modals.shortcuts} onClose={() => close('shortcuts')} />
+      {/* ─── Unified settings window (Tools / Safety / Help / Profile destinations) ─── */}
+      <SettingsWindow
+        open={settingsSection != null}
+        section={settingsSection}
+        onSectionChange={openSettings}
+        onClose={handleCloseSettings}
+        onSafetyComplete={handleSafetyWizardComplete}
+        editProfile={current ?? undefined}
+        editGroup={activeGroup ?? undefined}
+        chatInitialPlatform={chatInitialPlatform}
+      />
 
       {/* ─── Always-on auth + session leaves ─── */}
       <PasswordModal
@@ -386,40 +353,6 @@ export function SinglePanelShell({
 
       <ToastContainer />
     </div>
-  );
-}
-
-/**
- * Mount an existing view as the body of a generic modal. Kept around for
- * Settings / Logs / Audit / OBS / Discord — these views are stable read /
- * config surfaces that don't fit the column shape and don't block the
- * single-panel UX.
- */
-interface ViewModalProps {
-  open: boolean;
-  onClose: () => void;
-  title: string;
-  maxWidth?: string;
-  children: React.ReactNode;
-}
-
-function ViewModal({
-  open,
-  onClose,
-  title,
-  maxWidth,
-  children,
-}: ViewModalProps): React.ReactElement {
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title={title}
-      maxWidth={maxWidth ?? '800px'}
-      closeOnBackdropClick
-    >
-      {children}
-    </Modal>
   );
 }
 
