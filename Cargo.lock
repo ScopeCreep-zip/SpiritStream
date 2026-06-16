@@ -3967,8 +3967,6 @@ dependencies = [
 [[package]]
 name = "piratetok-live-rs"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e31951ece97190a2d89b45755081803361436dbd9edf29f4cde4f78d5a822c4"
 dependencies = [
  "base64 0.22.1",
  "flate2",

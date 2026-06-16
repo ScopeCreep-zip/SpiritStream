@@ -33,6 +33,9 @@ pre-commit:
     # `cargo fmt --all -- --check` for stronger enforcement.
     rust-fmt:
       glob: '*.rs'
+      # Vendored external crates under third_party/ carry upstream style and
+      # a [patch.crates-io] override — not ours to reformat or lint.
+      exclude: 'third_party/'
       run: rustfmt --edition 2021 --check {staged_files}
       stage_fixed: false
       fail_text: |
@@ -40,6 +43,9 @@ pre-commit:
 
     rust-clippy:
       glob: '*.rs'
+      # third_party/ is workspace-excluded, so clippy never lints it; this
+      # also stops a vendored-only change from firing a full workspace lint.
+      exclude: 'third_party/'
       # Only lint workspace-wide on touched crates; per-file clippy
       # would miss cross-module warnings.
       run: cargo clippy --workspace --all-targets -- -D warnings
@@ -57,7 +63,7 @@ pre-commit:
 
     prettier:
       glob: '*.{ts,tsx,js,jsx,json,md,yml,yaml,css}'
-      exclude: 'pnpm-lock.yaml|Cargo.lock|target/|node_modules/|dist/|packages/types/src/'
+      exclude: 'pnpm-lock.yaml|Cargo.lock|target/|node_modules/|dist/|packages/types/src/|third_party/'
       run: pnpm exec prettier --check {staged_files}
       stage_fixed: false
       fail_text: |
@@ -70,6 +76,7 @@ pre-commit:
     # `.claude/rules/coding-standards.md#file-size-limit`.
     loc-gate:
       glob: '*.{rs,ts,tsx,sh,mjs}'
+      exclude: 'third_party/'
       run: bash scripts/check-loc.sh --changed-only
       fail_text: |
         One or more staged files exceeds the 600 LOC ceiling.

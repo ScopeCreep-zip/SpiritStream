@@ -8,6 +8,11 @@ members = [
     "server",
     "apps/tauri/src-tauri",
 ]
+# Vendored only to apply a Windows-path fix to its build.rs (see
+# third_party/piratetok-live-rs/build.rs); not a workspace member.
+exclude = [
+    "third_party/piratetok-live-rs",
+]
 
 [workspace.package]
 edition = "2021"
@@ -29,3 +34,12 @@ opt-level = 3
 lto = "thin"
 codegen-units = 1
 strip = true
+
+# Upstream piratetok-live-rs 0.2.0 ships a build.rs whose "build
+# constitution" scan hardcodes forward-slash exemption paths, so it
+# spuriously panics on Windows (read_dir yields backslash paths). The
+# vendored copy applies a one-line separator-normalization fix; library
+# code is byte-identical, so this is a no-op on Linux/macOS. Drop once a
+# fixed release is published upstream.
+[patch.crates-io]
+piratetok-live-rs = { path = "third_party/piratetok-live-rs" }
