@@ -1,0 +1,166 @@
+name: Build FFmpeg dev sidecars
+
+# Publishes the per-platform static FFmpeg binaries that
+# `scripts/fetch-bundled-ffmpeg.ts` downloads so contributors can
+# `pnpm dev:desktop` without a 30-min from-source compile.
+#
+# Decoupled from the app Release pipeline (release.yml) on purpose: the
+# dev sidecar tracks the *pinned ffmpeg version* (scripts/ffmpeg-pins.json),
+# not the app version, so it only needs to rebuild when that pin (or the
+# build scripts) change — not on every app release. The binaries are
+# published to a stable, version-pinned release tag `ffmpeg-sidecar-v<ver>`
+# that the fetch script addresses directly.
+#
+# GPL §3(a): the corresponding ffmpeg.org source tarball (same pinned
+# version compiled into these binaries) is attached to the same release,
+# satisfying the "machine-readable source from the same place" obligation.
+#
+# This reuses the same matrix + scripts/build-ffmpeg/build.sh as the
+# build-ffmpeg job in release.yml; the two stay in lockstep via the shared
+# pin file and build scripts.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/build-ffmpeg/**'
+      - 'scripts/ffmpeg-pins.json'
+      - '.github/workflows/build-ffmpeg-sidecars.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ffmpeg-sidecars
+  cancel-in-progress: false
+
+jobs:
+  build-ffmpeg:
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: 'aarch64-apple-darwin'
+            runner: 'macos-14'
+          - target: 'x86_64-apple-darwin'
+            runner: 'macos-13'
+          - target: 'x86_64-unknown-linux-gnu'
+            runner: 'ubuntu-22.04'
+          - target: 'aarch64-unknown-linux-gnu'
+            runner: 'ubuntu-22.04-arm'
+          - target: 'x86_64-pc-windows-msvc'
+            runner: 'windows-latest'
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Harden runner
+        if: runner.os == 'Linux'
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.19.3
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Read FFmpeg pin
+        id: ffmpeg
+        shell: bash
+        run: |
+          VER="$(jq -r .ffmpegVersion scripts/ffmpeg-pins.json)"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          BUILD_HASH="$(find scripts/build-ffmpeg scripts/ffmpeg-pins.json -type f -print0 \
+            | sort -z \
+            | xargs -0 shasum -a 256 \
+            | shasum -a 256 \
+            | awk '{print $1}')"
+          echo "build-hash=$BUILD_HASH" >> "$GITHUB_OUTPUT"
+
+      - name: Cache compiled FFmpeg
+        id: cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ffmpeg-bin-${{ matrix.target }}
+          key: ffmpeg-${{ steps.ffmpeg.outputs.version }}-${{ matrix.target }}-${{ steps.ffmpeg.outputs.build-hash }}
+
+      - name: Setup MSYS2 (Windows)
+        if: matrix.target == 'x86_64-pc-windows-msvc' && steps.cache.outputs.cache-hit != 'true'
+        uses: msys2/setup-msys2@e9898307ac31d1a803454791be09ab9973336e1c # v2.31.1
+        with:
+          msystem: MINGW64
+          update: true
+          install: 'base-devel git jq'
+
+      - name: Build FFmpeg (Windows, MSYS2)
+        if: steps.cache.outputs.cache-hit != 'true' && matrix.target == 'x86_64-pc-windows-msvc'
+        shell: 'msys2 {0}'
+        run: bash scripts/build-ffmpeg/build.sh "${{ matrix.target }}"
+
+      - name: Build FFmpeg (POSIX)
+        if: steps.cache.outputs.cache-hit != 'true' && matrix.target != 'x86_64-pc-windows-msvc'
+        shell: bash
+        run: bash scripts/build-ffmpeg/build.sh "${{ matrix.target }}"
+
+      - name: Upload FFmpeg artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ffmpeg-${{ matrix.target }}
+          path: ffmpeg-bin-${{ matrix.target }}/
+          retention-days: 7
+          if-no-files-found: error
+
+  publish-sidecars:
+    needs: build-ffmpeg
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.19.3
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Read FFmpeg pin
+        id: ffmpeg
+        run: echo "version=$(jq -r .ffmpegVersion scripts/ffmpeg-pins.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Download compiled FFmpeg binaries (all targets)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: ffmpeg-*
+          path: ffmpeg-binaries
+          merge-multiple: true
+
+      - name: Fetch corresponding FFmpeg source tarball (GPL §3(a))
+        env:
+          VERSION: ${{ steps.ffmpeg.outputs.version }}
+        run: |
+          # Same canonical source URL + size sanity check as
+          # scripts/attach-ffmpeg-source.ts, inlined so this job needs no
+          # pnpm/tsx install. The pinned-version source compiled into the
+          # binaries here satisfies GPL §3(a) "source from the same place".
+          SRC="ffmpeg-${VERSION}.tar.bz2"
+          curl -fLso "$SRC" --retry 3 --retry-delay 2 "https://ffmpeg.org/releases/${SRC}"
+          # ffmpeg source tarball is ~12-15 MiB; <1 MiB means a 404/HTML error page.
+          if [ "$(stat -c%s "$SRC")" -lt 1048576 ]; then
+            echo "::error::FFmpeg source tarball for ${VERSION} looks wrong (too small)"; exit 69
+          fi
+
+      - name: Create or update the version-pinned sidecar release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          VERSION: ${{ steps.ffmpeg.outputs.version }}
+        run: |
+          TAG="ffmpeg-sidecar-v${VERSION}"
+          if ! gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --repo "$REPO" \
+              --target "$GITHUB_SHA" \
+              --title "FFmpeg dev sidecars v${VERSION}" \
+              --prerelease \
+              --notes "Static FFmpeg ${VERSION} binaries for local \`pnpm dev:desktop\`, built from source by .github/workflows/build-ffmpeg-sidecars.yml. This is a development convenience artifact, not an application release. GPL §3(a) corresponding source is attached as ffmpeg-${VERSION}.tar.bz2."
+          fi
+          gh release upload "$TAG" ffmpeg-binaries/ffmpeg-* "ffmpeg-${VERSION}.tar.bz2" --repo "$REPO" --clobber
