@@ -21,6 +21,7 @@ apps/tauri/src-tauri/target/
 
 # Tauri sidecar binaries (built by scripts/build-server.ts)
 src-tauri/binaries/
+apps/desktop/src-tauri/binaries/
 apps/tauri/src-tauri/binaries/
 
 # Local FFmpeg build output (produced by scripts/build-ffmpeg/build.sh)
