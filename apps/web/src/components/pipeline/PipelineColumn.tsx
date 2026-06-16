@@ -328,7 +328,6 @@ export function PipelineColumn({
           isStreaming={activeGroups.has(activeGroup.id)}
           isEnabled={activeGroup.enabled}
           onEditEncoder={() => onEditGroup(activeGroup)}
-          onEditGroup={() => onEditGroup(activeGroup)}
           onDuplicateGroup={() => handleDuplicateGroup(activeGroup)}
           onRemoveGroup={() => handleRemoveGroup(activeGroup.id)}
           onAddTarget={() => onAddTargetForGroup(activeGroup)}

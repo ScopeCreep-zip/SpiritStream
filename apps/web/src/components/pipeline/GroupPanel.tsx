@@ -16,7 +16,6 @@ interface GroupPanelProps {
   /** Whether the group participates in `Start all streams`. */
   isEnabled: boolean;
   onEditEncoder: () => void;
-  onEditGroup: () => void;
   onDuplicateGroup: () => void;
   onRemoveGroup: () => void;
   onAddTarget: () => void;
@@ -47,7 +46,6 @@ export function GroupPanel({
   isStreaming,
   isEnabled,
   onEditEncoder,
-  onEditGroup,
   onDuplicateGroup,
   onRemoveGroup,
   onAddTarget,
@@ -146,12 +144,6 @@ export function GroupPanel({
               <Pencil className="w-4 h-4" aria-hidden="true" />
               {t('pipeline.group.editEncoder', { defaultValue: 'Edit encoder' })}
             </Button>
-            <IconButton
-              icon={<Pencil className="w-4 h-4" />}
-              label={t('pipeline.group.edit', { defaultValue: 'Edit group' })}
-              onClick={onEditGroup}
-              disabled={isPassthrough}
-            />
             <IconButton
               icon={<Copy className="w-4 h-4" />}
               label={t('pipeline.group.duplicate', { defaultValue: 'Duplicate group' })}
