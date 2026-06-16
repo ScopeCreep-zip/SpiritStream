@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { useProfileStore } from '@/stores/profileStore';
@@ -44,28 +43,25 @@ const defaultFormData: FormData = {
 
 /**
  * Profile create / edit FORM body — fields, unified form state + validation,
- * the port-conflict probe + confirmation modal, and persistence dispatch. No
- * outer Modal of its own, so it mounts equally as a create-modal body and as
- * the "Edit profile" section of the unified settings window. The RTMP input
- * and password blocks are focused sibling components under `components/forms/`.
+ * and persistence dispatch. No outer Modal of its own, so it mounts equally
+ * as a create-modal body and as the "Edit profile" section of the unified
+ * settings window. The RTMP input and password blocks are focused sibling
+ * components under `components/forms/`.
  *
  * Resets on mount (and when the target profile changes) — the host mounts this
  * only when visible, so mount === "form opened".
  */
 export function ProfileForm({ mode, profile, onDone, onCancel }: ProfileFormProps): React.ReactElement {
   const { t } = useTranslation();
-  const tDynamic = t as (key: string, options?: { defaultValue?: string }) => string;
   const { updateProfile, current } = useProfileStore();
   const form = useFormState<FormData>(defaultFormData);
   const formData = form.values;
-  const [portConflictMessage, setPortConflictMessage] = useState<string | undefined>();
-  const [portConflictOpen, setPortConflictOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [serverError, setServerError] = useState<string | undefined>();
 
   // Validation rules via useFormValidation. UI-state checks only — semantic
-  // validation (port conflicts, weak-password policy) stays on the backend and
+  // validation (weak-password policy, runtime bind failures) stays on the backend and
   // surfaces via `CoreError::ValidationFailed`.
   const rules: Partial<Record<keyof FormData, ValidationRule<FormData>>> = {
     name: (v) => (!v.name.trim() ? t('validation.profileNameRequired') : null),
@@ -106,37 +102,8 @@ export function ProfileForm({ mode, profile, onDone, onCancel }: ProfileFormProp
       form.reset(defaultFormData);
     }
     clearErrors();
-    setPortConflictMessage(undefined);
-    setPortConflictOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, profile]);
-
-  // Validate port conflict with other profiles.
-  const validatePortConflict = async (): Promise<{
-    conflictMessage?: string;
-    errorMessage?: string;
-  }> => {
-    const profileId = mode === 'edit' && profile ? profile.id : '';
-    const input: RtmpInput = {
-      type: 'rtmp',
-      bindAddress: formData.bindAddress,
-      port: parseInt(formData.port),
-      application: formData.application,
-      // Recomputed authoritatively server-side on save (refresh_url).
-      url: '',
-    };
-
-    try {
-      await api.profile.validateInput(profileId, input);
-      return {};
-    } catch (error) {
-      const message = String(error);
-      if (message.includes('already configured') || message.includes('already in use')) {
-        return { conflictMessage: message };
-      }
-      return { errorMessage: message };
-    }
-  };
 
   const persistProfile = async () => {
     // Trim the name on save — the validator only checks `!v.name.trim()`;
@@ -169,23 +136,11 @@ export function ProfileForm({ mode, profile, onDone, onCancel }: ProfileFormProp
     onDone();
   };
 
-  const handleSave = async (skipPortCheck: boolean = false) => {
+  const handleSave = async () => {
     if (!validate()) return;
     setServerError(undefined);
     setSaving(true);
     try {
-      if (!skipPortCheck) {
-        const { conflictMessage, errorMessage } = await validatePortConflict();
-        if (errorMessage) {
-          setServerError(errorMessage);
-          return;
-        }
-        if (conflictMessage) {
-          setPortConflictMessage(conflictMessage);
-          setPortConflictOpen(true);
-          return;
-        }
-      }
       await persistProfile();
     } catch (error) {
       setServerError(String(error));
@@ -197,10 +152,6 @@ export function ProfileForm({ mode, profile, onDone, onCancel }: ProfileFormProp
   const handleChange =
     (field: keyof FormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       form.set(field, e.target.value as FormData[typeof field]);
-      if ((field === 'bindAddress' || field === 'port') && portConflictMessage) {
-        setPortConflictMessage(undefined);
-        setPortConflictOpen(false);
-      }
       if (field === 'port' && serverError) setServerError(undefined);
     };
 
@@ -224,114 +175,62 @@ export function ProfileForm({ mode, profile, onDone, onCancel }: ProfileFormProp
   })();
 
   return (
-    <>
-      <div className="flex flex-col gap-4">
-        {serverError && (
-          <div className="p-3 rounded-lg bg-error-subtle border border-error-border text-error-text text-sm">
-            {serverError}
-          </div>
-        )}
+    <div className="flex flex-col gap-4">
+      {serverError && (
+        <div className="p-3 rounded-lg bg-error-subtle border border-error-border text-error-text text-sm">
+          {serverError}
+        </div>
+      )}
 
-        <Input
-          label={t('modals.profileName')}
-          placeholder={t('modals.profileNamePlaceholder')}
-          value={formData.name}
-          onChange={handleChange('name')}
-          error={errors.name}
-        />
+      <Input
+        label={t('modals.profileName')}
+        placeholder={t('modals.profileNamePlaceholder')}
+        value={formData.name}
+        onChange={handleChange('name')}
+        error={errors.name}
+      />
 
-        <RtmpInputForm
-          bindAddress={formData.bindAddress}
-          port={formData.port}
-          application={formData.application}
-          onBindAddressChange={handleChange('bindAddress')}
-          onPortChange={handleChange('port')}
-          onApplicationChange={handleChange('application')}
+      <RtmpInputForm
+        bindAddress={formData.bindAddress}
+        port={formData.port}
+        application={formData.application}
+        onBindAddressChange={handleChange('bindAddress')}
+        onPortChange={handleChange('port')}
+        onApplicationChange={handleChange('application')}
+        errors={{
+          bindAddress: errors.bindAddress,
+          port: errors.port,
+          application: errors.application,
+        }}
+      />
+
+      {mode === 'create' && (
+        <ProfilePasswordForm
+          usePassword={formData.usePassword}
+          password={formData.password}
+          confirmPassword={formData.confirmPassword}
+          onUsePasswordChange={handleUsePasswordChange}
+          onPasswordChange={handleChange('password')}
+          onConfirmPasswordChange={handleChange('confirmPassword')}
+          showPassword={showPassword}
+          setShowPassword={setShowPassword}
           errors={{
-            bindAddress: errors.bindAddress,
-            port: errors.port,
-            application: errors.application,
+            password: errors.password,
+            confirmPassword: errors.confirmPassword,
           }}
         />
+      )}
 
-        {mode === 'create' && (
-          <ProfilePasswordForm
-            usePassword={formData.usePassword}
-            password={formData.password}
-            confirmPassword={formData.confirmPassword}
-            onUsePasswordChange={handleUsePasswordChange}
-            onPasswordChange={handleChange('password')}
-            onConfirmPasswordChange={handleChange('confirmPassword')}
-            showPassword={showPassword}
-            setShowPassword={setShowPassword}
-            errors={{
-              password: errors.password,
-              confirmPassword: errors.confirmPassword,
-            }}
-          />
-        )}
-
-        <div className="flex justify-end gap-3 pt-4 mt-2 border-t border-border-muted">
-          {onCancel && (
-            <Button variant="ghost" onClick={onCancel} disabled={saving}>
-              {t('common.cancel')}
-            </Button>
-          )}
-          <Button onClick={() => handleSave()} disabled={saving}>
-            {saveLabel}
+      <div className="flex justify-end gap-3 pt-4 mt-2 border-t border-border-muted">
+        {onCancel && (
+          <Button variant="ghost" onClick={onCancel} disabled={saving}>
+            {t('common.cancel')}
           </Button>
-        </div>
+        )}
+        <Button onClick={() => handleSave()} disabled={saving}>
+          {saveLabel}
+        </Button>
       </div>
-
-      <Modal
-        open={portConflictOpen}
-        onClose={() => {
-          setPortConflictOpen(false);
-          setPortConflictMessage(undefined);
-        }}
-        title={tDynamic('modals.portConflictTitle', { defaultValue: 'Port already in use' })}
-        footer={
-          <>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setPortConflictOpen(false);
-                setPortConflictMessage(undefined);
-              }}
-            >
-              {t('common.cancel')}
-            </Button>
-            <Button
-              onClick={async () => {
-                setPortConflictOpen(false);
-                setPortConflictMessage(undefined);
-                await handleSave(true);
-              }}
-            >
-              {t('common.confirm')}
-            </Button>
-          </>
-        }
-      >
-        <div className="space-y-3">
-          <p className="text-text-secondary">
-            {tDynamic('modals.portConflictBody', {
-              defaultValue:
-                'Another profile is already configured to use this port. Only one profile can listen on a port at a time.',
-            })}
-          </p>
-          {portConflictMessage && (
-            <div className="p-3 rounded-lg bg-warning-subtle border border-warning-border text-warning-text text-sm">
-              {portConflictMessage}
-            </div>
-          )}
-          <p className="text-text-secondary">
-            {tDynamic('modals.portConflictConfirm', {
-              defaultValue: 'Do you want to save anyway?',
-            })}
-          </p>
-        </div>
-      </Modal>
-    </>
+    </div>
   );
 }

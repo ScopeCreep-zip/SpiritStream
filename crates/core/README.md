@@ -27,7 +27,7 @@ src/
 
 | Service | Responsibility |
 |---|---|
-| `profile_manager` | Profile CRUD, validation, port-conflict, encryption boundaries |
+| `profile_manager` | Profile CRUD, validation, encryption boundaries |
 | `settings_manager` | Global settings, bounds-checking, atomic owner-only writes |
 | `stream_service` (in `ffmpeg_handler.rs`) | Stream lifecycle, retry policy |
 | `chat_manager` | Multi-platform chat connect / send / receive; PII filter; anonymous-mode pseudonymizer |

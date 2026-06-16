@@ -68,7 +68,7 @@ fn profile_put_then_get_round_trips() {
 }
 
 #[test]
-fn profile_put_rejects_port_conflict_with_typed_409() {
+fn profile_put_allows_duplicate_inactive_input_ports() {
     let server = boot();
     let body1 = serde_json::json!({
         "profile": sample_profile("first", 1935),
@@ -82,10 +82,10 @@ fn profile_put_rejects_port_conflict_with_typed_409() {
         "password": null,
     });
     let (s2, body2_resp) = put_json(&server, "/api/v1/profiles/second", &body2);
-    assert_eq!(s2, 409, "expected 409 PortConflict: {body2_resp}");
-    let json: Value = serde_json::from_str(&body2_resp).unwrap();
-    assert_eq!(json["kind"], "port_conflict", "expected typed kind: {json}");
-    assert_eq!(json["details"]["port"], 1935);
+    assert_eq!(
+        s2, 200,
+        "inactive profiles may share RTMP input ports; runtime bind remains authoritative: {body2_resp}"
+    );
 }
 
 #[test]

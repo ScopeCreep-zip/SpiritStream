@@ -474,7 +474,6 @@ export const v1ProfileShow = <ThrowOnError extends boolean = false>(options: Opt
  *
  * Server-side validation enforced (see `ProfileManager::save_with_key_encryption`):
  * - profile name charset/length
- * - RTMP input port-conflict with other profiles
  * - URL normalization via `PlatformRegistry::normalize_url`
  */
 export const v1ProfileSave = <ThrowOnError extends boolean = false>(options: Options<V1ProfileSaveData, ThrowOnError>) => {

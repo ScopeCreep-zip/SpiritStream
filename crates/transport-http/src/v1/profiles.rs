@@ -146,7 +146,6 @@ pub async fn v1_profile_show(
 ///
 /// Server-side validation enforced (see `ProfileManager::save_with_key_encryption`):
 /// - profile name charset/length
-/// - RTMP input port-conflict with other profiles
 /// - URL normalization via `PlatformRegistry::normalize_url`
 #[utoipa::path(
     put,
@@ -159,7 +158,6 @@ pub async fn v1_profile_show(
     responses(
         (status = 200, description = "Profile saved.", body = ProfileSaveResponse),
         (status = 400, description = "Validation failed.", body = ApiErrorBody),
-        (status = 409, description = "Port conflict with another profile.", body = ApiErrorBody),
         (status = 500, description = "Internal server error.", body = ApiErrorBody),
     ),
     security(("session_cookie" = []), ("bearer" = [])),
@@ -638,19 +636,14 @@ pub struct ProfileValidateInputRequest {
 #[utoipa::path(post, path = "/profiles/validate-input", tag = "profiles",
     request_body = ProfileValidateInputRequest,
     responses(
-        (status = 200, body = ProfileAckResponse, description = "Input validates against other profiles."),
+        (status = 200, body = ProfileAckResponse, description = "Input accepted. Runtime port binding remains authoritative."),
         (status = 400, body = ApiErrorBody, description = "Malformed RtmpInput payload."),
-        (status = 409, body = ApiErrorBody, description = "Port conflict with another profile."),
     ),
     security(("session_cookie" = []), ("bearer" = [])))]
 pub async fn v1_profile_validate_input_proxy(
-    State(state): State<AppState>,
-    axum::Json(req): axum::Json<ProfileValidateInputRequest>,
+    State(_state): State<AppState>,
+    axum::Json(_req): axum::Json<ProfileValidateInputRequest>,
 ) -> Result<Json<ProfileAckResponse>, crate::ApiError> {
-    state
-        .profile_manager
-        .validate_input_conflict(&req.profile_id, &req.input)
-        .await?;
     Ok(Json(ProfileAckResponse {}))
 }
 

@@ -7,7 +7,7 @@
 //! - `events.rs`        — `ProfileActivatedEvent` + `ActivatedObs` (DTOs)
 //! - `validation.rs`    — name + settings-bounds validation, public constants
 //! - `order_index.rs`   — order-index file I/O (drag-reorder support)
-//! - `io.rs`            — file I/O: list, load, delete, is-encrypted, port-conflict
+//! - `io.rs`            — file I/O: list, load, delete, is-encrypted
 //! - `secret_fields.rs` — the walker enumerating every machine-key-encrypted field
 //! - `security.rs`      — encryption boundary (per-field + whole-file envelope)
 //!

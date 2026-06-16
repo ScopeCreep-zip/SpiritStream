@@ -84,12 +84,10 @@ impl super::ProfileManager {
 
     /// Save a profile with optional password-based encryption.
     ///
-    /// Two normalizations happen on the way in:
+    /// One normalization happens on the way in:
     /// 1. `PlatformRegistry::normalize_url()` runs on every stream-target URL
     ///    so platform-specific path prefixes are consistent regardless of
     ///    what the user typed.
-    /// 2. `validate_input_conflict()` verifies no other profile claims the
-    ///    same RTMP `(bindAddress, port)`.
     ///
     /// Encryption uses the profile's own `settings.encrypt_stream_keys`
     /// (stream keys + sensitive settings fields) and the optional `password`
@@ -132,9 +130,6 @@ impl super::ProfileManager {
                 });
             }
         }
-
-        self.validate_input_conflict(&profile.id, &profile.input)
-            .await?;
 
         // Clone so we can normalize + encrypt without mutating the caller's
         // profile.

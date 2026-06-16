@@ -2567,17 +2567,13 @@ export type V1ProfileValidateInputProxyErrors = {
      * Malformed RtmpInput payload.
      */
     400: ApiErrorBody;
-    /**
-     * Port conflict with another profile.
-     */
-    409: ApiErrorBody;
 };
 
 export type V1ProfileValidateInputProxyError = V1ProfileValidateInputProxyErrors[keyof V1ProfileValidateInputProxyErrors];
 
 export type V1ProfileValidateInputProxyResponses = {
     /**
-     * Input validates against other profiles.
+     * Input accepted. Runtime port binding remains authoritative.
      */
     200: ProfileAckResponse;
 };
@@ -2674,10 +2670,6 @@ export type V1ProfileSaveErrors = {
      * Validation failed.
      */
     400: ApiErrorBody;
-    /**
-     * Port conflict with another profile.
-     */
-    409: ApiErrorBody;
     /**
      * Internal server error.
      */
