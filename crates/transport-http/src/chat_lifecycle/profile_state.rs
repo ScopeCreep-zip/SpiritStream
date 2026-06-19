@@ -137,14 +137,7 @@ pub(crate) async fn update_profile_oauth_account(
     account.username = user_info.username.clone();
     account.display_name = user_info.display_name.clone();
 
-    // Twitch-only convenience: if the user hasn't picked a channel, sign-
-    // in is enough to know it — `OAuthUserInfo.username` IS the Twitch
-    // login. Default it so "sign in → connected to your own chat" needs
-    // no manual channel entry. Other providers use channel *IDs* that
-    // don't map to the OAuth username, so they're left for the user.
-    if provider == "twitch" && profile_settings.chat.twitch_channel.trim().is_empty() {
-        profile_settings.chat.twitch_channel = user_info.username.clone();
-    }
+    seed_chat_identity_from_oauth(provider, &mut profile_settings, user_info);
 
     persist_active_profile_settings(state, profile_settings.clone()).await?;
 
@@ -166,6 +159,27 @@ pub(crate) async fn update_profile_oauth_account(
     tokio::spawn(crate::auto_connect_chat_platforms(state.clone(), true));
 
     Ok(())
+}
+
+fn seed_chat_identity_from_oauth(
+    provider: &str,
+    profile_settings: &mut ProfileSettings,
+    user_info: &spiritstream_core::services::OAuthUserInfo,
+) {
+    match provider {
+        // Twitch sign-in already gives the exact chat login.
+        "twitch" if profile_settings.chat.twitch_channel.trim().is_empty() => {
+            profile_settings.chat.twitch_channel = user_info.username.clone();
+        }
+        // YouTube chat lookup needs a stable channel identifier. The OAuth
+        // profile title is for display only; the channel id is the safe
+        // backend default when the user hasn't already entered an `@handle`
+        // or channel id themselves.
+        "youtube" if profile_settings.chat.youtube_channel_id.trim().is_empty() => {
+            profile_settings.chat.youtube_channel_id = user_info.user_id.clone();
+        }
+        _ => {}
+    }
 }
 
 /// Provider name → the `ChatPlatform` whose chat we auto-connect on
@@ -213,4 +227,54 @@ pub(crate) async fn clear_profile_oauth_account(
     *oauth_account_mut(&mut profile_settings.oauth, provider)? = Default::default();
 
     persist_active_profile_settings(state, profile_settings).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::seed_chat_identity_from_oauth;
+    use spiritstream_core::models::ProfileSettings;
+    use spiritstream_core::services::OAuthUserInfo;
+
+    fn user_info(provider: &str, user_id: &str, username: &str, display_name: &str) -> OAuthUserInfo {
+        OAuthUserInfo {
+            provider: provider.to_string(),
+            user_id: user_id.to_string(),
+            username: username.to_string(),
+            display_name: display_name.to_string(),
+        }
+    }
+
+    #[test]
+    fn twitch_seed_uses_oauth_username_when_channel_blank() {
+        let mut settings = ProfileSettings::default();
+        seed_chat_identity_from_oauth(
+            "twitch",
+            &mut settings,
+            &user_info("twitch", "123", "streamer_login", "Streamer"),
+        );
+        assert_eq!(settings.chat.twitch_channel, "streamer_login");
+    }
+
+    #[test]
+    fn youtube_seed_uses_channel_id_when_field_blank() {
+        let mut settings = ProfileSettings::default();
+        seed_chat_identity_from_oauth(
+            "youtube",
+            &mut settings,
+            &user_info("youtube", "UC123456789", "Channel Title", "Channel Title"),
+        );
+        assert_eq!(settings.chat.youtube_channel_id, "UC123456789");
+    }
+
+    #[test]
+    fn youtube_seed_preserves_user_entered_handle() {
+        let mut settings = ProfileSettings::default();
+        settings.chat.youtube_channel_id = "@already-set".to_string();
+        seed_chat_identity_from_oauth(
+            "youtube",
+            &mut settings,
+            &user_info("youtube", "UC123456789", "Channel Title", "Channel Title"),
+        );
+        assert_eq!(settings.chat.youtube_channel_id, "@already-set");
+    }
 }

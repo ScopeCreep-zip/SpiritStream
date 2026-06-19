@@ -28,6 +28,14 @@ type ChatField =
   | 'tiktok_username'
   | 'facebook_video_id';
 
+type TextDraftField =
+  | 'twitchChannel'
+  | 'youtubeChannelId'
+  | 'youtubeApiKey'
+  | 'trovoChannelId'
+  | 'kickChannel'
+  | 'tiktokUsername';
+
 /// Stable IDs for the visibility-panel toggles. Match the platform
 /// discriminators on the backend `ChatPlatform` enum so the values
 /// round-trip through `chatSettings.visiblePlatforms` unchanged.
@@ -41,6 +49,15 @@ const ALL_VISIBLE_PLATFORMS: readonly VisiblePlatform[] = [
   'tiktok',
   'facebook',
 ];
+
+const INITIAL_TEXT_DRAFT_DIRTY: Record<TextDraftField, boolean> = {
+  twitchChannel: false,
+  youtubeChannelId: false,
+  youtubeApiKey: false,
+  trovoChannelId: false,
+  kickChannel: false,
+  tiktokUsername: false,
+};
 
 /**
  * Chat-platform settings panel. Exposes per-platform channel /
@@ -130,6 +147,8 @@ export function ChatPanel({ initialPlatform }: ChatPanelProps = {}): React.React
   const [kickChannel, setKickChannel] = useState('');
   const [kickSend, setKickSend] = useState(false);
   const [tiktokUsername, setTiktokUsername] = useState('');
+  const [textDraftDirty, setTextDraftDirty] =
+    useState<Record<TextDraftField, boolean>>(INITIAL_TEXT_DRAFT_DIRTY);
   // Visibility-panel state (custom selection + collapse). Empty
   // `visiblePlatforms` array means "auto" — the resolved set is then
   // derived from which channels are actually configured.
@@ -144,17 +163,17 @@ export function ChatPanel({ initialPlatform }: ChatPanelProps = {}): React.React
   const [sendAllEnabled, setSendAllEnabled] = useState(true);
 
   useEffect(() => {
-    setTwitchChannel(chatSettings.twitchChannel);
+    if (!textDraftDirty.twitchChannel) setTwitchChannel(chatSettings.twitchChannel);
     setTwitchSend(chatSettings.twitchSendEnabled);
-    setYoutubeChannelId(chatSettings.youtubeChannelId);
-    setYoutubeApiKey(chatSettings.youtubeApiKey);
+    if (!textDraftDirty.youtubeChannelId) setYoutubeChannelId(chatSettings.youtubeChannelId);
+    if (!textDraftDirty.youtubeApiKey) setYoutubeApiKey(chatSettings.youtubeApiKey);
     setYoutubeUseApiKey(chatSettings.youtubeUseApiKey);
     setYoutubeSend(chatSettings.youtubeSendEnabled);
-    setTrovoChannelId(chatSettings.trovoChannelId);
+    if (!textDraftDirty.trovoChannelId) setTrovoChannelId(chatSettings.trovoChannelId);
     setTrovoSend(chatSettings.trovoSendEnabled);
-    setKickChannel(chatSettings.kickChannel);
+    if (!textDraftDirty.kickChannel) setKickChannel(chatSettings.kickChannel);
     setKickSend(chatSettings.kickSendEnabled);
-    setTiktokUsername(chatSettings.tiktokUsername);
+    if (!textDraftDirty.tiktokUsername) setTiktokUsername(chatSettings.tiktokUsername);
     setVisiblePlatforms(
       (chatSettings.visiblePlatforms ?? []).filter((p): p is VisiblePlatform =>
         (ALL_VISIBLE_PLATFORMS as readonly string[]).includes(p)
@@ -162,18 +181,81 @@ export function ChatPanel({ initialPlatform }: ChatPanelProps = {}): React.React
     );
     setVisibilityPanelCollapsed(chatSettings.visibilityPanelCollapsed ?? true);
     setSendAllEnabled(chatSettings.sendAllEnabled);
-  }, [chatSettings]);
+  }, [chatSettings, textDraftDirty]);
+
+  const markTextDraftDirty = useCallback((field: TextDraftField) => {
+    setTextDraftDirty((current) => (current[field] ? current : { ...current, [field]: true }));
+  }, []);
+
+  const clearTextDraftDirty = useCallback((field: TextDraftField) => {
+    setTextDraftDirty((current) => (current[field] ? { ...current, [field]: false } : current));
+  }, []);
+
+  const getLatestChatSettings = useCallback(
+    () => useProfileStore.getState().current?.settings?.chat ?? createDefaultChatSettings(),
+    []
+  );
+
+  const persistOrThrow = useCallback(
+    async (patch: Partial<typeof chatSettings>): Promise<void> => {
+      await updateProfileSettings({ chat: { ...getLatestChatSettings(), ...patch } });
+    },
+    [getLatestChatSettings, updateProfileSettings]
+  );
 
   const persist = useCallback(
     async (patch: Partial<typeof chatSettings>): Promise<void> => {
       try {
-        await updateProfileSettings({ chat: { ...chatSettings, ...patch } });
+        await persistOrThrow(patch);
       } catch (error) {
         logger.error('[ChatPanel] save failed:', error);
         toast.error(t('chat.saveFailed', { defaultValue: 'Failed to save chat settings' }));
       }
     },
-    [chatSettings, updateProfileSettings, t]
+    [persistOrThrow, t]
+  );
+
+  const flushField = useCallback(
+    async (field: ChatField, value: string, throwOnError: boolean = false): Promise<void> => {
+      const latestChatSettings = getLatestChatSettings();
+      const save = throwOnError ? persistOrThrow : persist;
+
+      switch (field) {
+        case 'twitch_channel':
+          if (value !== latestChatSettings.twitchChannel) {
+            await save({ twitchChannel: value });
+          }
+          clearTextDraftDirty('twitchChannel');
+          break;
+        case 'youtube_channel':
+          if (value !== latestChatSettings.youtubeChannelId) {
+            await save({ youtubeChannelId: value });
+          }
+          clearTextDraftDirty('youtubeChannelId');
+          break;
+        case 'trovo_channel':
+          if (value !== latestChatSettings.trovoChannelId) {
+            await save({ trovoChannelId: value });
+          }
+          clearTextDraftDirty('trovoChannelId');
+          break;
+        case 'kick_channel':
+          if (value !== latestChatSettings.kickChannel) {
+            await save({ kickChannel: value });
+          }
+          clearTextDraftDirty('kickChannel');
+          break;
+        case 'tiktok_username':
+          if (value !== latestChatSettings.tiktokUsername) {
+            await save({ tiktokUsername: value });
+          }
+          clearTextDraftDirty('tiktokUsername');
+          break;
+        case 'facebook_video_id':
+          break;
+      }
+    },
+    [clearTextDraftDirty, getLatestChatSettings, persist, persistOrThrow]
   );
 
   /// In "auto" mode, surface every platform that the user has actually
@@ -247,30 +329,9 @@ export function ChatPanel({ initialPlatform }: ChatPanelProps = {}): React.React
 
   const handleBlur = useCallback(
     (field: ChatField, value: string) => {
-      switch (field) {
-        case 'twitch_channel':
-          if (value !== chatSettings.twitchChannel) persist({ twitchChannel: value });
-          break;
-        case 'youtube_channel':
-          if (value !== chatSettings.youtubeChannelId) persist({ youtubeChannelId: value });
-          break;
-        case 'trovo_channel':
-          if (value !== chatSettings.trovoChannelId) persist({ trovoChannelId: value });
-          break;
-        case 'kick_channel':
-          if (value !== chatSettings.kickChannel) persist({ kickChannel: value });
-          break;
-        case 'tiktok_username':
-          if (value !== chatSettings.tiktokUsername) persist({ tiktokUsername: value });
-          break;
-        case 'facebook_video_id':
-          // Facebook persistence goes through FacebookConnectGate so the
-          // confirm-token gate fires on enable; bypassing it here would
-          // defeat the warning UX.
-          break;
-      }
+      void flushField(field, value);
     },
-    [chatSettings, persist]
+    [flushField]
   );
 
   if (!currentProfile) {
@@ -396,7 +457,10 @@ export function ChatPanel({ initialPlatform }: ChatPanelProps = {}): React.React
             <Input
               label={t('chat.twitch.channel', { defaultValue: 'Channel name' })}
               value={twitchChannel}
-              onChange={(e) => setTwitchChannel(e.target.value)}
+              onChange={(e) => {
+                markTextDraftDirty('twitchChannel');
+                setTwitchChannel(e.target.value);
+              }}
               onBlur={(e) => handleBlur('twitch_channel', e.target.value)}
               placeholder={t('chat.twitch.channelPlaceholder', {
                 defaultValue: 'e.g. spiritartlife',
@@ -410,6 +474,7 @@ export function ChatPanel({ initialPlatform }: ChatPanelProps = {}): React.React
               onCredentialsSaved={setOauthSummaries}
               connectionStatus={statusFor('twitch')}
               canSend={fullStatusFor('twitch')?.canSend}
+              beforeSignIn={() => flushField('twitch_channel', twitchChannel, true)}
             />
             {followerOnlyReauthNeeded && (
               <p
@@ -452,7 +517,10 @@ export function ChatPanel({ initialPlatform }: ChatPanelProps = {}): React.React
             <Input
               label={t('chat.youtube.channelId', { defaultValue: 'Channel ID or @handle' })}
               value={youtubeChannelId}
-              onChange={(e) => setYoutubeChannelId(e.target.value)}
+              onChange={(e) => {
+                markTextDraftDirty('youtubeChannelId');
+                setYoutubeChannelId(e.target.value);
+              }}
               onBlur={(e) => handleBlur('youtube_channel', e.target.value)}
               placeholder="UCxxxxxxxxxx or @handle"
             />
@@ -473,9 +541,13 @@ export function ChatPanel({ initialPlatform }: ChatPanelProps = {}): React.React
                 <Input
                   label={t('chat.youtube.apiKey', { defaultValue: 'API key' })}
                   value={youtubeApiKey}
-                  onChange={(e) => setYoutubeApiKey(e.target.value)}
+                  onChange={(e) => {
+                    markTextDraftDirty('youtubeApiKey');
+                    setYoutubeApiKey(e.target.value);
+                  }}
                   onBlur={(e) => {
-                    if (e.target.value !== chatSettings.youtubeApiKey) {
+                    clearTextDraftDirty('youtubeApiKey');
+                    if (e.target.value !== getLatestChatSettings().youtubeApiKey) {
                       persist({ youtubeApiKey: e.target.value });
                     }
                   }}
@@ -498,6 +570,7 @@ export function ChatPanel({ initialPlatform }: ChatPanelProps = {}): React.React
                   })}
                   connectionStatus={statusFor('youtube')}
                   canSend={fullStatusFor('youtube')?.canSend}
+                  beforeSignIn={() => flushField('youtube_channel', youtubeChannelId, true)}
                 />
                 <div className="mt-3">
                   <Toggle
@@ -534,7 +607,10 @@ export function ChatPanel({ initialPlatform }: ChatPanelProps = {}): React.React
             <Input
               label={t('chat.trovo.channelId', { defaultValue: 'Channel ID' })}
               value={trovoChannelId}
-              onChange={(e) => setTrovoChannelId(e.target.value)}
+              onChange={(e) => {
+                markTextDraftDirty('trovoChannelId');
+                setTrovoChannelId(e.target.value);
+              }}
               onBlur={(e) => handleBlur('trovo_channel', e.target.value)}
               placeholder={t('chat.trovo.channelIdPlaceholder', { defaultValue: 'e.g. 100000021' })}
               helper={t('chat.trovo.channelIdHint', {
@@ -549,6 +625,7 @@ export function ChatPanel({ initialPlatform }: ChatPanelProps = {}): React.React
               onCredentialsSaved={setOauthSummaries}
               connectionStatus={statusFor('trovo')}
               canSend={fullStatusFor('trovo')?.canSend}
+              beforeSignIn={() => flushField('trovo_channel', trovoChannelId, true)}
             />
             <div className="mt-3">
               <Toggle
@@ -583,7 +660,10 @@ export function ChatPanel({ initialPlatform }: ChatPanelProps = {}): React.React
             <Input
               label={t('chat.kick.channel', { defaultValue: 'Channel name' })}
               value={kickChannel}
-              onChange={(e) => setKickChannel(e.target.value)}
+              onChange={(e) => {
+                markTextDraftDirty('kickChannel');
+                setKickChannel(e.target.value);
+              }}
               onBlur={(e) => handleBlur('kick_channel', e.target.value)}
               placeholder={t('chat.kick.channelPlaceholder', {
                 defaultValue: 'e.g. kick_streamer',
@@ -597,6 +677,7 @@ export function ChatPanel({ initialPlatform }: ChatPanelProps = {}): React.React
               onCredentialsSaved={setOauthSummaries}
               connectionStatus={statusFor('kick')}
               canSend={fullStatusFor('kick')?.canSend}
+              beforeSignIn={() => flushField('kick_channel', kickChannel, true)}
             />
             <div className="mt-3">
               <Toggle
@@ -633,7 +714,10 @@ export function ChatPanel({ initialPlatform }: ChatPanelProps = {}): React.React
             <Input
               label={t('chat.tiktok.username', { defaultValue: 'TikTok username' })}
               value={tiktokUsername}
-              onChange={(e) => setTiktokUsername(e.target.value)}
+              onChange={(e) => {
+                markTextDraftDirty('tiktokUsername');
+                setTiktokUsername(e.target.value);
+              }}
               onBlur={(e) => handleBlur('tiktok_username', e.target.value)}
               placeholder="@username"
             />

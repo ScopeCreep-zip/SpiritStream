@@ -9,6 +9,8 @@ import type { ChatPlatformStatus } from '@spiritstream/types';
 import { api } from '@/lib/client';
 import { toast } from '@/hooks/useToast';
 import { logger } from '@/lib/logger';
+import { useProfileStore } from '@/stores/profileStore';
+import { createDefaultOAuthAccount } from '@/lib/profile-helpers';
 
 interface PlatformSignInButtonProps {
   provider: 'twitch' | 'youtube' | 'kick' | 'facebook' | 'trovo';
@@ -28,6 +30,9 @@ interface PlatformSignInButtonProps {
    *  and make "Sign back in" the primary action instead of "Sign out". */
   connectionStatus?: ChatPlatformStatus['status'];
   canSend?: boolean;
+  /** Optional preflight used by parent panels to flush unsaved channel/id
+   *  edits before the OAuth flow steals focus or reloads the profile. */
+  beforeSignIn?: () => Promise<void> | void;
 }
 
 type AccountState = 'needsSetup' | 'signedOut' | 'needsReauth' | 'signedIn';
@@ -72,6 +77,7 @@ export function PlatformSignInButton({
   onCredentialsSaved,
   connectionStatus,
   canSend,
+  beforeSignIn,
 }: PlatformSignInButtonProps) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
@@ -104,11 +110,47 @@ export function PlatformSignInButton({
 
   const platformLabel = t(`chat.platforms.${provider}`, provider);
 
+  const clearStoredAccount = useCallback(() => {
+    const current = useProfileStore.getState().current;
+    if (!current) return;
+
+    const clearedAccount = createDefaultOAuthAccount();
+    const nextOauth = { ...current.settings.oauth };
+    switch (provider) {
+      case 'twitch':
+        nextOauth.twitch = clearedAccount;
+        break;
+      case 'youtube':
+        nextOauth.youtube = clearedAccount;
+        break;
+      case 'kick':
+        nextOauth.kick = clearedAccount;
+        break;
+      case 'facebook':
+        nextOauth.facebook = clearedAccount;
+        break;
+      case 'trovo':
+        nextOauth.trovo = clearedAccount;
+        break;
+    }
+
+    useProfileStore.setState({
+      current: {
+        ...current,
+        settings: {
+          ...current.settings,
+          oauth: nextOauth,
+        },
+      },
+    });
+  }, [provider]);
+
   const handleSignIn = useCallback(async () => {
     setBusy(true);
     setManualUrl(null);
     setDevicePanel(null);
     try {
+      await beforeSignIn?.();
       const started = await api.oauth.startFlow(provider);
       if (started.flow === 'device' && started.userCode && started.verificationUri) {
         setDevicePanel({
@@ -150,12 +192,13 @@ export function PlatformSignInButton({
     } finally {
       setBusy(false);
     }
-  }, [provider, platformLabel, t]);
+  }, [beforeSignIn, provider, platformLabel, t]);
 
   const handleSignOut = useCallback(async () => {
     setBusy(true);
     try {
       await api.oauth.forget(provider);
+      clearStoredAccount();
       toast.success(
         t('chat.oauth.signedOut', {
           defaultValue: 'Signed out of {{platform}}',
@@ -173,7 +216,7 @@ export function PlatformSignInButton({
     } finally {
       setBusy(false);
     }
-  }, [provider, platformLabel, t]);
+  }, [clearStoredAccount, provider, platformLabel, t]);
 
   const handleCopyUrl = async (): Promise<void> => {
     if (!manualUrl) return;

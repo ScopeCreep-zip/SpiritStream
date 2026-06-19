@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@/lib/i18n';
 import type { OAuthProviderSummary } from '@spiritstream/api-client';
 
@@ -8,13 +8,34 @@ import type { OAuthProviderSummary } from '@spiritstream/api-client';
 // `reauthAvailable` flag must surface "Sign in again" so they can recover
 // without signing out first.
 
+const { startFlowMock, forgetMock } = vi.hoisted(() => ({
+  startFlowMock: vi.fn(),
+  forgetMock: vi.fn(),
+}));
+
 vi.mock('@/lib/client', () => ({
-  api: { oauth: { startFlow: vi.fn(), forget: vi.fn() } },
+  api: { oauth: { startFlow: startFlowMock, forget: forgetMock } },
 }));
 vi.mock('@/hooks/useToast', () => ({
   toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
 }));
 vi.mock('@/lib/logger', () => ({ logger: { error: vi.fn() } }));
+vi.mock('@/stores/profileStore', () => ({
+  useProfileStore: {
+    getState: vi.fn(() => ({ current: null })),
+    setState: vi.fn(),
+  },
+}));
+vi.mock('@/lib/profile-helpers', () => ({
+  createDefaultOAuthAccount: vi.fn(() => ({
+    accessToken: '',
+    refreshToken: '',
+    expiresAt: 0,
+    userId: '',
+    username: '',
+    displayName: '',
+  })),
+}));
 
 import { PlatformSignInButton } from './PlatformSignInButton';
 
@@ -28,6 +49,34 @@ const configured: OAuthProviderSummary = {
 };
 
 describe('PlatformSignInButton account state', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('flushes pending parent edits before starting sign-in', async () => {
+    const beforeSignIn = vi.fn().mockResolvedValue(undefined);
+    startFlowMock.mockResolvedValue({
+      flow: 'redirect',
+      browserOpened: true,
+    });
+
+    render(
+      <PlatformSignInButton
+        provider="twitch"
+        signedInAs=""
+        signInLabel="Login with Twitch"
+        summary={configured}
+        onCredentialsSaved={vi.fn()}
+        beforeSignIn={beforeSignIn}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /login with twitch/i }));
+
+    await waitFor(() => expect(beforeSignIn).toHaveBeenCalledTimes(1));
+    expect(startFlowMock).toHaveBeenCalledWith('twitch');
+  });
+
   it('makes "Sign back in" the primary action when connected read-only (dead token)', () => {
     render(
       <PlatformSignInButton
